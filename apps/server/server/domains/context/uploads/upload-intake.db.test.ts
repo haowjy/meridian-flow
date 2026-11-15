@@ -388,20 +388,6 @@ if (!RUN) {
         .innerJoin(contextSources, eq(contextSources.id, treeNodes.contextSourceId))
         .where(eq(treeNodes.id, result.value.documentId as never));
       expect(stored?.chatThreadId).toBe(NEW_CHAT);
-
-      // Consuming marks the upload used, and only for the chat that owns it.
-      const publishedUsed = async () => {
-        const [row] = await database.current
-          .select({ consumedAt: uploadIntakes.consumedAt })
-          .from(uploadIntakes)
-          .where(eq(uploadIntakes.documentId, result.value.documentId as never));
-        return row?.consumedAt != null;
-      };
-      expect(await publishedUsed()).toBe(false);
-      await service.consume([result.value.documentId], CHAT);
-      expect(await publishedUsed()).toBe(false);
-      await service.consume([result.value.documentId], NEW_CHAT);
-      expect(await publishedUsed()).toBe(true);
     });
 
     describe("start, PUT, finish", () => {

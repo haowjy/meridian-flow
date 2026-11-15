@@ -1,7 +1,7 @@
 import type { ChatUploadsResult } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, uploadIntakes } from "@meridian/database/schema";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 
@@ -42,7 +42,6 @@ export function createDrizzleChatUploads(db: Database): ChatUploads {
           and(
             eq(uploadIntakes.projectId, projectId as never),
             eq(uploadIntakes.ownerThreadId, chatId as never),
-            ne(uploadIntakes.state, "deleted"),
           ),
         )
         .orderBy(desc(uploadIntakes.createdAt), desc(uploadIntakes.documentId));

@@ -108,7 +108,7 @@ and the one that finishes second lands as `notes (2).zip` under a chip labelled 
 link still finds it). A guess that the bytes overrule (text past the text cap kept as a file) can
 differ the same way. The label is never rewritten after the file lands: a chip's words are the
 writer's once it stands (see the link identity design). `assets/` is created by that write wherever it has gone missing. Chat-only paths
-(`lockForDelete`, `consume`, `lookupUpload`) skip these rows.
+(`lockForDelete`, `lookupUpload`) skip these rows.
 
 The server does not say whether a source upload is still being sent: a `doc:` ref that names
 nothing yet resolves `gone`. The sending tab announces it over presence, and other tabs' chips
@@ -125,7 +125,6 @@ objects of its intakes first, as Work purge does.
 
 Uploads are flat and cannot be created through general ContextFS operations.
 Catalog visibility and finalized intake state commit in the ambient ContextFS
-transaction. `consume()` stamps `consumed_at` on a sent message's uploads; nothing reads it
-now that a used upload can be deleted.
+transaction.
 
 [uploads]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/uploads.md

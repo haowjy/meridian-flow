@@ -7,7 +7,6 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" && process.env.DATABASE_URL;
 if (!RUN) {
@@ -31,9 +30,6 @@ if (!RUN) {
     );
     const { createThreadEventHub } = await import("../../threads/thread-event-hub.js");
     const { createNoopEventSink } = await import("../../observability/index.js");
-    const { createDrizzleUploadIntakeRepository } = await import(
-      "../../context/uploads/drizzle-upload-intake.js"
-    );
     const { createDrizzleAdmissionRecords } = await import("./drizzle-admission-records.js");
     const { createWriterTurnProducer } = await import("./writer-turn-producer.js");
     const { createUserTurnAdmission } = await import("./user-turn-admission.js");
@@ -134,7 +130,6 @@ if (!RUN) {
         journalReader: eventReader,
         eventSink: createNoopEventSink(),
       });
-      const uploadIntake = createDrizzleUploadIntakeRepository(firstDb, NO_PROJECT_HINTS);
       const delivery = createTestDrizzleDelivery(firstDb, { repos, eventWriter: hub });
       return createUserTurnAdmission({
         chatMedia: {
@@ -202,9 +197,6 @@ if (!RUN) {
           turns: repos.turns,
           delivery,
           records,
-          async uploadsUsed(documentIds) {
-            await uploadIntake.consume(documentIds, THREAD);
-          },
           async attachDocument(threadId, documentId, relationship) {
             const attached = await repos.threadDocuments.attach(
               threadId as never,
@@ -369,11 +361,6 @@ if (!RUN) {
           relationship: "reading",
         }),
       ]);
-      await expect(firstDb.select().from(schema.uploadIntakes)).resolves.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ documentId: DOCUMENT, consumedAt: expect.any(Date) }),
-        ]),
-      );
 
       const rollbackService = await composeAdmission({
         threadId: ROLLBACK_THREAD,
@@ -391,8 +378,6 @@ if (!RUN) {
       expect(allAdmissions.find((row) => row.threadId === ROLLBACK_THREAD)).toMatchObject({
         state: "pending",
       });
-      const uploads = await firstDb.select().from(schema.uploadIntakes);
-      expect(uploads.find((row) => row.documentId === ROLLBACK_DOCUMENT)?.consumedAt).toBeNull();
       const provenance = await firstDb.select().from(schema.threadDocuments);
       expect(provenance.some((row) => row.threadId === ROLLBACK_THREAD)).toBe(false);
     });

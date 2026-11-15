@@ -88,7 +88,6 @@ export interface UploadReservation {
   finalPath: string | null;
   /** A chat upload's address, from the chat's current handle; a source upload's depends on the scope its caller resolved. */
   canonicalUri: string | null;
-  consumed: boolean;
   /** `chatRef` is null until the chat's row, and so its handle, exists. */
   owner: { kind: "chat"; chatId: string; chatRef: string | null } | { kind: "source" };
 }
@@ -159,11 +158,6 @@ export interface UploadIntakeRepository {
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
   /** `finalPath` is the name the upload took. */
   finalize(projectId: string, intakeId: string, finalPath: string): Promise<PlacedUpload>;
-  /**
-   * Marks the chat's own finalized uploads among `documentIds` as used by a sent message and
-   * returns the sources whose rows changed. Another chat's file named here is left alone.
-   */
-  consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Intakes never finalized and untouched since `cutoff`, oldest first. */
   listAbandoned(
     cutoff: Date,
@@ -228,8 +222,6 @@ export interface UploadIntake {
     owner: UploadOwner;
     source?: UploadSourceDestination;
   }): Promise<UploadIntakeOutcome>;
-  /** Runs in the sending transaction: marks the chat's uploads in these documents used. */
-  consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Drops uploads untouched for a day, objects and row. Returns how many it dropped. */
   sweepAbandoned(now?: Date): Promise<number>;
 }
@@ -595,10 +587,6 @@ export function createUploadIntake<Bound>(deps: {
         });
         return storageFailed;
       }
-    },
-
-    async consume(documentIds, chatId) {
-      await deps.repository.consume(documentIds, chatId);
     },
 
     async sweepAbandoned(now = new Date()) {
