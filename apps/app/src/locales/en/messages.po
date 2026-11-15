@@ -4355,6 +4355,10 @@ msgstr "No Works match “{query}”."
 msgid "None"
 msgstr "None"
 
+#: src/features/chat/command-descriptor.ts
+msgid "Not applied to"
+msgstr "Not applied to"
+
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"

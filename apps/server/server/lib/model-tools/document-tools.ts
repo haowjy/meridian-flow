@@ -320,6 +320,37 @@ export async function returnedEdit(
 }
 
 /**
+ * The answer for a write to a document the writer removed, from the node the model was shown: it
+ * is returned as `document_removed`, whatever the command, naming who removed it. Null when the
+ * reached node is not a removed document.
+ */
+async function removedAnswer(
+  deps: ToolWiringDeps,
+  principal: Principal,
+  written: Parameters<typeof returnedEdit>[2],
+  ctx: ToolHandlerContext,
+  reached: Reached,
+): Promise<{
+  output: Awaited<ReturnType<typeof returnedEdit>>["result"];
+  evidence: ResultEvidence;
+} | null> {
+  if (reached.node?.kind !== "document") return null;
+  const id = reached.node.id as DocumentId;
+  const removal = (await deps.documentRemovals.lookup([id])).get(id);
+  if (!removal) return null;
+  const outcome = await returnedEdit(
+    deps,
+    principal,
+    written,
+    { documentId: id, filePath: reached.path, uri: reached.path },
+    ctx,
+    "document_removed",
+    { removal },
+  );
+  return { output: outcome.result, evidence: outcome.evidence };
+}
+
+/**
  * The write itself: the edit grant on the document, then the pool call that
  * carries it. A seam that refuses the grant under its locks reports the same
  * error a preflight denial does.
@@ -558,8 +589,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       // The path the model wrote is the node it was shown: a create only looks up its folders.
       const first = await reachShown(call, ctx, written.command, written.path, {
         folderOf: creates,
+        allowGone: !creates,
       });
       if (isToolError(first)) return first;
+      const removed = await removedAnswer(deps, principal, written, ctx, first);
+      if (removed) return settle(async () => removed);
       reached = first;
       parsed = { ...written, path: first.path } as typeof written;
     }
@@ -656,24 +690,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         });
         // A reversed creation took the document and its text steps with it.
         if (isToolError(first)) return tree?.kind === "then_text" ? tree.answer : first;
-        if (first.node?.kind === "document") {
-          const removal = (await deps.documentRemovals.lookup([first.node.id as DocumentId])).get(
-            first.node.id as DocumentId,
-          );
-          if (removal) {
-            if (tree?.kind === "then_text") return tree.answer;
-            const outcome = await returnedEdit(
-              deps,
-              principal,
-              written,
-              { documentId: first.node.id, filePath: first.path, uri: first.path },
-              ctx,
-              "document_removed",
-              { removal },
-            );
-            return { output: outcome.result, evidence: outcome.evidence };
-          }
-        }
+        const removed = await removedAnswer(deps, principal, written, ctx, first);
+        if (removed) return tree?.kind === "then_text" ? tree.answer : removed;
         reached = first;
         engine = { ...engine, path: first.path } as typeof written;
       }

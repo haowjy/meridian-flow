@@ -74,13 +74,15 @@ export const writeDocumentText: DocumentTextPolicy = {
   kind: "write",
   elide({ input = {}, result }, changed, treatment) {
     const documents = documentsLabel(changed, input);
-    if (showsDocumentText(result))
+    // The edit did not land, so the stub says so and asks for no re-read: the text it showed was
+    // a read, and what the call carried is not worth keeping.
+    if (showsDocumentText(result)) {
+      const { content: _content, find: _find, around: _around, ...kept } = input;
       return {
-        text:
-          treatment === "history"
-            ? `[edit not applied to ${documents} (${input.command}): its text was shown instead]`
-            : readStub(documents, treatment),
+        ...(["create", "insert", "replace"].includes(String(input.command)) ? { input: kept } : {}),
+        text: `[edit not applied to ${documents} (${input.command})]`,
       };
+    }
     if (treatment === "history") {
       return { text: `[edit applied to ${documents} (${input.command})]` };
     }

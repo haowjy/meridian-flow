@@ -4355,6 +4355,10 @@ msgstr ""
 msgid "None"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Not applied to"
+msgstr ""
+
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"

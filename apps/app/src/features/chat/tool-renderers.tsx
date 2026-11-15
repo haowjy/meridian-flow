@@ -21,6 +21,7 @@ import { CommandTitle } from "./CommandTitle";
 import {
   type CommandExpand,
   descriptorFor,
+  failureOrReturnedVerb,
   humanizeToolName,
   type ToolActivityPhrase,
   toolActivityPhrase,
@@ -452,7 +453,7 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   }
 
   if (documentToolFailed(tool)) {
-    const verb = descriptor.failureVerb();
+    const verb = failureOrReturnedVerb(tool);
     // A move that didn't run left its document where it was.
     const subject = command === "move" ? (sourcePath(input) ?? path) : path;
     return subject ? (

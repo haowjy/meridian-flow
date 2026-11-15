@@ -310,6 +310,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text.indexOf("Between them.")).toBeLessThan(text.indexOf("Charlie three."));
     });
 
+    it("a write after the writer deleted the document is returned, naming who, and none of it is a refusal", async () => {
+      const { call } = await reply(LIVE_CHAT);
+      await call("read", { path: "ch1" });
+      await treeSeeder(db).store.submit({
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, CH1),
+      });
+      for (const args of [
+        { command: "replace", path: "ch1", find: "Alpha one.", content: "Alpha, edited." },
+        { command: "insert", path: "ch1", after: "Alpha one.", content: "More." },
+      ]) {
+        const answer = await call("write", args);
+        expect(answer.isError, `${args.command}: ${answer.text}`).toBeFalsy();
+        expect(answer.text, args.command).toContain("status: returned");
+        expect(answer.text, args.command).toContain("deleted by Ana");
+      }
+      expect(JSON.stringify((await modelEditRows()).slice(-1))).toContain("document_removed");
+    });
+
+    it("the writer deletes the folder a document is in: a write, undo and revert name the document", async () => {
+      const CH2 = "00000000-0000-4000-8000-000000000e0a";
+      await treeSeeder(db).document(SOURCE_ID, "Part/ch2", { id: CH2 });
+      const { runtime, call } = await reply(LIVE_CHAT);
+      await writeMarkdown(runtime.ports.documentSync, {
+        documentId: CH2,
+        markdown: "Delta four.",
+        origin: { type: "user", actorUserId: USER_ID },
+        threadId: LIVE_CHAT.threadId,
+      });
+      const read = await call("read", { path: "Part/ch2" });
+      expect(read.isError, read.text).toBeFalsy();
+      const part = await treeSeeder(db).folder(SOURCE_ID, "Part");
+      await treeSeeder(db).store.submit({
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, part),
+      });
+      for (const args of [
+        { command: "replace", path: "Part/ch2", find: "Delta four.", content: "Delta, edited." },
+        { command: "undo", path: "Part/ch2" },
+        { command: "revert", path: "Part/ch2", edit: "e1" },
+      ]) {
+        const answer = await call("write", args);
+        expect(answer.isError, `${args.command}: ${answer.text}`).toBeFalsy();
+        expect(answer.text, args.command).toContain("status: returned");
+        expect(answer.text, args.command).toContain("deleted by Ana");
+        expect(answer.text, args.command).not.toContain("File not found");
+      }
+    });
+
     it("the writer deletes the document under the edit: it is returned, naming who", async () => {
       const { call } = await reply(LIVE_CHAT);
       await call("read", { path: "ch1" });
