@@ -123,6 +123,11 @@ msgstr "{0, plural, other {# 次调用}}"
 msgid "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
 msgstr ""
 
+#. placeholder {0}: said.treeLeft
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{0, plural, one {# document stayed as it is: it was changed since.} other {# documents stayed as they are: they were changed since.}}"
+msgstr ""
+
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
@@ -4742,9 +4747,21 @@ msgstr ""
 msgid "Not sent: {0}"
 msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone"
+msgstr ""
+
 #: src/features/agents/AgentSavesReceipt.tsx
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone: it was changed since."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone: it was edited since."
+msgstr ""
 
 #. placeholder {0}: whose(file.hiddenBy, file.slug)
 #: src/features/agents/AgentFileNotice.tsx
@@ -7260,12 +7277,16 @@ msgid "Undid"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undid applying {name}."
-msgstr ""
+#~ msgid "Undid applying {name}."
+#~ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undid change to Work {0}."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undid part of applying {name}."
 msgstr ""
 
 #: src/features/agents/AgentSavesReceipt.tsx
@@ -7340,8 +7361,8 @@ msgid "Undo save of {label}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undo skipped applying {name}: the tree changed since."
-msgstr ""
+#~ msgid "Undo skipped applying {name}: the tree changed since."
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped your change to {name}: it was changed again since."

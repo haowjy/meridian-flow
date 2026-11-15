@@ -123,6 +123,11 @@ msgstr "{0, plural, one {# call} other {# calls}}"
 msgid "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
 msgstr "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
 
+#. placeholder {0}: said.treeLeft
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{0, plural, one {# document stayed as it is: it was changed since.} other {# documents stayed as they are: they were changed since.}}"
+msgstr "{0, plural, one {# document stayed as it is: it was changed since.} other {# documents stayed as they are: they were changed since.}}"
+
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
@@ -4742,9 +4747,21 @@ msgstr "Not sent, signed out"
 msgid "Not sent: {0}"
 msgstr "Not sent: {0}"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone"
+msgstr "Not undone"
+
 #: src/features/agents/AgentSavesReceipt.tsx
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr "Not undone: {label} was saved again since."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone: it was changed since."
+msgstr "Not undone: it was changed since."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone: it was edited since."
+msgstr "Not undone: it was edited since."
 
 #. placeholder {0}: whose(file.hiddenBy, file.slug)
 #: src/features/agents/AgentFileNotice.tsx
@@ -7260,13 +7277,17 @@ msgid "Undid"
 msgstr "Undid"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undid applying {name}."
-msgstr "Undid applying {name}."
+#~ msgid "Undid applying {name}."
+#~ msgstr "Undid applying {name}."
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undid part of applying {name}."
+msgstr "Undid part of applying {name}."
 
 #: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
@@ -7340,8 +7361,8 @@ msgid "Undo save of {label}"
 msgstr "Undo save of {label}"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undo skipped applying {name}: the tree changed since."
-msgstr "Undo skipped applying {name}: the tree changed since."
+#~ msgid "Undo skipped applying {name}: the tree changed since."
+#~ msgstr "Undo skipped applying {name}: the tree changed since."
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped your change to {name}: it was changed again since."
