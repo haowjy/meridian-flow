@@ -646,6 +646,19 @@ export function reachPath(
 }
 
 /**
+ * Whether `folder` holds a node at `rest` (a path below it, through the names shown), in Trash
+ * included: what an undo at an old address asks of a folder that moved from above it.
+ */
+export function folderHolds(
+  scope: Pick<TreeScope, "writer" | "view">,
+  shown: NamesShown,
+): (folder: string, rest: string) => boolean {
+  const projection = scope.writer.view(scope.view);
+  return (folder, rest) =>
+    resolveShown(projection, shown, folder, splitSegments(rest)).kind === "node";
+}
+
+/**
  * What stayed standing in a folder after a delete or an Undo took only what the model saw or
  * made: the folder with what is in it, and who put that there (the last record to set its place).
  */

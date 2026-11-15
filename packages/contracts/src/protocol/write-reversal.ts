@@ -39,6 +39,12 @@ export type UndoRedoOutcome =
 // Keep in sync with @meridian/agent-edit WriteStatus; do not couple the extractable package to wire contracts.
 export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoRedoOutcome;
 
+/** The statuses of a write that did what it was asked: an undo or redo that took the change back included. */
+export const DONE_WRITE_STATUSES = ["success", "reversed", "reconciled"] as const;
+export type DoneWriteStatus = (typeof DONE_WRITE_STATUSES)[number];
+export const isDoneWriteStatus = (status: string): status is DoneWriteStatus =>
+  (DONE_WRITE_STATUSES as readonly string[]).includes(status);
+
 export interface DocumentReversalResult {
   documentId: string;
   uri: string;

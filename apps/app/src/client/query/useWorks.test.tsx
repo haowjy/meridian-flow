@@ -121,6 +121,8 @@ async function withProbe(server: WorksSnapshot, run: (client: QueryClient) => Pr
     transport,
     changes: { post() {}, subscribe: () => () => undefined, close() {} },
     online: () => true,
+    held: () => false,
+    unreadable: () => {},
     routes: {
       lookup: (id) => `/api/commands/${id}`,
       resolve: (id) => `/api/commands/${id}/resolve`,

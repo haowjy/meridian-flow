@@ -19,6 +19,7 @@ import {
   type MeridianError,
   parseWsServerMessage,
 } from "@meridian/contracts/protocol";
+import type { ServerProtocol } from "@meridian/contracts/release";
 import type { DraftAnswers } from "@meridian/contracts/threads";
 
 import { dispatchWsServerMessage } from "./dispatch-ws-server-message";
@@ -37,6 +38,8 @@ import { WsThreadSubscriptionRegistry } from "./ws-thread-subscription";
 export type ThreadSocketClientOptions = SocketLifecycleOptions & {
   url: () => string;
   failureLog?: FailureLog;
+  /** What the server's `connected` frame says it is: its release id and, from a server that sends one, its protocol. */
+  onServer?: (seen: { release: string; protocol: ServerProtocol | undefined }) => void;
   toError: (error: MeridianError) => Error;
   cancelTurn: (threadId: string, turnId: string) => Promise<CancelTurnResponse>;
 };
@@ -220,7 +223,8 @@ export class ThreadSocketClient implements ThreadTransport {
       },
       handleGap: (gap) => this.subscriptions.handleGap(gap),
       send: (payload) => this.send(payload),
-      onConnected: () => {
+      onConnected: ({ serverVersion, protocol }) => {
+        this.options.onServer?.({ release: serverVersion, protocol });
         this.socket.markConnected();
         this.subscriptions.connected();
         for (const [projectId, listeners] of this.catalogSubscriptions) {

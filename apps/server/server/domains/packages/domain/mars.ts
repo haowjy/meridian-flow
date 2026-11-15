@@ -7,6 +7,8 @@
  */
 import {
   type AgentFields,
+  type Check,
+  check,
   type DefinitionRead,
   type Diagnostic,
   type ManifestRead,
@@ -28,7 +30,7 @@ export { rewriteBlock };
  * part of a revision's key, and without a bump the same bytes are never read twice, so the
  * change never reaches a stored Agent.
  */
-export const GRAMMAR_VERSION = `mars-${version()}+flow-5`;
+export const GRAMMAR_VERSION = `mars-${version()}+flow-8`;
 
 const AGENT_PATH = /^agents\/([^/]+)\.md$/;
 const SKILL_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
@@ -39,15 +41,40 @@ export const skillPath = (slug: string): `skills/${string}/SKILL.md` => `skills/
 export const agentSlugOf = (path: string): string | undefined => AGENT_PATH.exec(path)?.[1];
 export const skillSlugOf = (path: string): string | undefined => SKILL_PATH.exec(path)?.[1];
 
-export type { AgentFields, Diagnostic, Prepared, SkillFields, ToolProjection };
+export type { AgentFields, Check, Diagnostic, Prepared, SkillFields, ToolProjection };
 export { project as projectRules };
 
 const encoder = new TextEncoder();
+const treeOf = (files: Record<string, string>) =>
+  new Map(Object.entries(files).map(([path, text]) => [path, encoder.encode(text)]));
 export const readPackage = (files: Record<string, string>): Prepared =>
-  prepare({
-    files: new Map(Object.entries(files).map(([path, text]) => [path, encoder.encode(text)])),
+  prepare({ files: treeOf(files), context: "package" });
+/**
+ * Mars's verdict on a package's files. No dependency is passed because Flow vendors none yet: a
+ * package that declares one comes back with it in `missing_dependencies`. Flow couldn't read the
+ * `unreadable` paths, so each goes to Mars as an empty file, which keeps Mars's rules about what
+ * the package holds true (a skill ref to it resolves, its folder has a `SKILL.md`), and Mars's
+ * findings on those stand-ins are dropped: Flow alone speaks of a file it couldn't read. A stand-in
+ * is not right about its name (Mars names it after its path), so a duplicate name against one is
+ * dropped too.
+ */
+export const checkFiles = (files: Record<string, string>, unreadable: string[]): Check => {
+  const verdict = check({
+    files: treeOf({ ...files, ...Object.fromEntries(unreadable.map((path) => [path, ""])) }),
     context: "package",
+    dependencies: {},
   });
+  for (const path of unreadable) delete verdict.diagnostics[path];
+  const names = unreadable.map((path) => `\`${path}\``);
+  for (const [path, found] of Object.entries(verdict.diagnostics)) {
+    verdict.diagnostics[path] = found.filter(
+      (item) =>
+        item.code !== "definition.duplicate-name" ||
+        !names.some((name) => item.message.includes(name)),
+    );
+  }
+  return verdict;
+};
 
 export const readManifest = (text: string): ManifestRead => read(MANIFEST_PATH, text);
 export const readAgent = (slug: string, text: string): DefinitionRead<AgentFields> =>
