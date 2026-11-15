@@ -75,7 +75,11 @@ the replay uses them (package `AGENTS.md`).
   connection with the one terminal code. Names, sources, drafts and types are not its business.
 - **`admit` stamps `dropped`** (`Admission.dropped`, settled by `system`, reason "Work was
   closed") on a create whose draft is not open, whose source is a closed Work's, or that is
-  made inside a dropped node. The server's arrival order is the only true order of "raced the
+  made inside a dropped node. The source is where the create's parent stands at the create's
+  place in the update: the server's list before it, then the update's own moves and creates in
+  order (a move rule 1 would skip doesn't count). So a folder moved out of a closed Work and then
+  written into keeps its chapter, and an honest catch-up gets the same stamps however it is cut
+  into parts. With no closed source nothing is replayed for it. The server's arrival order is the only true order of "raced the
   close", so this one verdict is the server's. The replay needs no rule: `viewValues` leaves a
   settled drafted record out and filters `dropped` in the live branch. The projection's `dropped`
   list comes from the settle log; a dropped create stays dropped after the Work is restored.

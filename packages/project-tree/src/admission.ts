@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { type CreateRecord, isSourceRoot, recordsOf, type TreeRecord } from "./record.js";
+import { isSourceRoot, recordsOf, sourceIdOf, type TreeRecord } from "./record.js";
 import { replay, type TreeProjection } from "./replay.js";
 import { readStored, SERVER_BASE, SERVER_FIELDS } from "./validate.js";
 import { droppedCreates, viewRecords } from "./view.js";
@@ -184,48 +184,87 @@ export type Admission = {
 };
 
 /**
- * Stamps `dropped` on each create whose draft is not open, or whose source (its own, or its
- * parent's, or the stamped source of a folder made in this update) is a closed Work's, and on
- * what is created inside a dropped node. Only the server can tell a create raced the close: its
- * arrival order is the only true one, and a replay can't see the Work's state.
+ * Stamps `dropped` on each create whose draft is not open, whose parent is a dropped node, or
+ * whose source is a closed Work's: the source its parent stands in at the create's place in the
+ * update, after the update's own moves and creates before it (a folder moved out of a closed Work
+ * and then written into keeps its chapter; one moved in takes it). The same answer however an
+ * honest catch-up is cut into parts: a part's moves are the server's before the next part arrives.
+ * Only the server can tell a create raced the close: its arrival order is the only true one, and
+ * a replay can't see the Work's state.
  */
 function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): string[] {
-  const creates = added.filter((record): record is CreateRecord => record.type === "create");
+  if (!added.some((record) => record.type === "create")) return [];
   const fresh = new Set(added.map((record) => record.id));
-  const views = new Map<string | null, TreeProjection>();
-  const viewOf = (draft: string | null) => {
-    const cached = views.get(draft);
-    if (cached) return cached;
-    const view = replay(
-      viewRecords(doc, { draft }).filter((record) => !fresh.has(record.id)),
-      { draft },
-    );
-    views.set(draft, view);
-    return view;
+  // What the server held before this update, by view: replayed only when a source is closed.
+  const before = new Map<string | null, TreeProjection>();
+  const baseParent = (draft: string | null, node: string) => {
+    let view = before.get(draft);
+    if (!view) {
+      view = replay(
+        viewRecords(doc, { draft }).filter((record) => !fresh.has(record.id)),
+        { draft },
+      );
+      before.set(draft, view);
+    }
+    return view.nodes.get(node)?.parent;
   };
-  const sources = new Map<string, string>();
+  // Where the update's own records put each node so far: live ones in every view, a Work's in its.
+  const placed = new Map<string | null, Map<string, string>>();
+  const placedIn = (draft: string | null) => {
+    const map = placed.get(draft) ?? new Map<string, string>();
+    placed.set(draft, map);
+    return map;
+  };
+  const parentOf = (draft: string | null, node: string) =>
+    (draft === null ? undefined : placedIn(draft).get(node)) ??
+    placedIn(null).get(node) ??
+    baseParent(draft, node);
+  // The source a place is in, or undefined when its folder is not in the view (rule 6 then puts
+  // the create at the top of its own source).
+  const sourceOf = (draft: string | null, place: string): string | undefined => {
+    const seen = new Set<string>();
+    for (let at: string | undefined = place; at !== undefined; at = parentOf(draft, at)) {
+      if (isSourceRoot(at)) return sourceIdOf(at);
+      if (seen.has(at)) return undefined;
+      seen.add(at);
+    }
+    return undefined;
+  };
+  // Whether a move would put a folder inside itself, which the replay skips (rule 1).
+  const intoItself = (draft: string | null, node: string, parent: string) => {
+    const seen = new Set<string>();
+    for (let at: string | undefined = parent; at !== undefined && !isSourceRoot(at); ) {
+      if (at === node || seen.has(at)) return true;
+      seen.add(at);
+      at = parentOf(draft, at);
+    }
+    return false;
+  };
+
+  let droppedBefore: Set<string> | undefined;
   const dropped = new Set<string>();
-  let droppedNodes: Set<string> | undefined;
   const out: string[] = [];
-  for (const create of creates) {
-    const inside = isSourceRoot(create.parent);
-    if (!inside && droppedNodes === undefined)
-      droppedNodes = new Set(droppedCreates(doc).map((each) => each.node));
-    const closedParent =
-      !inside && (droppedNodes?.has(create.parent) || dropped.has(create.parent));
-    const source = inside
-      ? create.source
-      : (sources.get(create.parent) ??
-        viewOf(create.draft).nodes.get(create.parent)?.source ??
-        create.source);
-    sources.set(create.node, source);
-    if (
-      closedParent ||
-      (create.draft !== null && !connection.drafts.has(create.draft)) ||
-      connection.closedSources.has(source)
-    ) {
-      dropped.add(create.node);
-      out.push(create.id);
+  for (const record of added) {
+    if (record.type === "move") {
+      if (
+        connection.closedSources.size > 0 &&
+        !intoItself(record.draft, record.node, record.parent)
+      )
+        placedIn(record.draft).set(record.node, record.parent);
+      continue;
+    }
+    if (record.type !== "create") continue;
+    const inside = isSourceRoot(record.parent);
+    if (!inside) droppedBefore ??= new Set(droppedCreates(doc).map((each) => each.node));
+    const closed =
+      (!inside && (droppedBefore?.has(record.parent) || dropped.has(record.parent))) ||
+      (record.draft !== null && !connection.drafts.has(record.draft)) ||
+      (connection.closedSources.size > 0 &&
+        connection.closedSources.has(sourceOf(record.draft, record.parent) ?? record.source));
+    placedIn(record.draft).set(record.node, record.parent);
+    if (closed) {
+      dropped.add(record.node);
+      out.push(record.id);
     }
   }
   return out;
