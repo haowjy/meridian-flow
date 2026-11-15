@@ -70,7 +70,10 @@ JSON-looking scalar strings into other values.
 
 Undo records an inverse as a new edit rather than rewriting history. Immutable
 `document_edits` and `document_edit_parts` retain the original edit, its author
-and the inverse needed to take it back.
+and the inverse needed to take it back. A drafted part keeps the branch its draft was in
+(`draft_branch_id`, no foreign key), and the Trash purge writes what became of it
+(`purged_disposition`) before it deletes the draft, so its turn's card still finds its owner and
+its answer after the draft row is gone.
 
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on

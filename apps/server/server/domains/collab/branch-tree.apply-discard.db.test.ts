@@ -30,6 +30,7 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
+import { createTestDraftCoordinator } from "../../test-support/draft-coordinator.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
@@ -89,9 +90,15 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       },
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
     });
+    const branchStore = createDrizzleBranchStore(db);
     const workBranches = createBranches({
-      store: createDrizzleBranchStore(db),
+      store: branchStore,
       boundary: createDrizzleBranchWriteBoundary(db, workProjection),
+    });
+    const coordinator = createTestDraftCoordinator(db, {
+      close: draftClose,
+      workProjection,
+      branches: branchStore,
     });
     const tree = createTreeReader(db);
     const branchTree = createDrizzleBranchTreeState(db, tree);
@@ -99,7 +106,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const pending = createDrizzleWorkBranchPendingStore(db);
     // A tree-only click reads no text: no text base is read or replayed.
     const reopen = createReopenDrafts(db, {
-      coordinator: {} as never,
+      coordinator,
       close: draftClose,
       treeLists,
       workProjection,
@@ -108,7 +115,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const apply = createDrizzleApplyClick(db, {
       workProjection,
       branches: workBranches,
-      coordinator: {} as never,
+      coordinator,
       reopen,
       live: {} as never,
       liveCoordinator: {} as never,
@@ -122,8 +129,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       answeredWithoutLanding: () => {},
     });
     const discard = createBranchDiscard({
-      branches: workBranches,
       store: createDrizzleBranchDiscard(db, {
+        coordinator,
         close: draftClose,
         branches: workBranches,
         workProjection,
@@ -346,7 +353,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         },
         command: asCommand(),
       });
-      expect(result).toMatchObject({ status: "discarded", closed: [made] });
+      expect(result).toMatchObject({ closed: [made], settled: [] });
       // The discarded create is in no view and keeps its document row for retention.
       expect(await liveRow(made)).toBeUndefined();
       expect(await branchRow(made)).toBeUndefined();
@@ -427,7 +434,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         selection: { kind: "whole" },
         command: asCommand(),
       });
-      expect(result).toMatchObject({ status: "discarded", branchClosed: true });
+      expect(result).toMatchObject({ branchClosed: true });
       expect(await liveRow(a)).toMatchObject({ trashRecord: null });
       expect(await liveRow(made)).toBeUndefined();
       expect((await db.select().from(documents).where(eq(documents.id, made)))[0]).toBeDefined();
@@ -508,7 +515,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect(certified).toMatchObject({ ok: true });
     });
 
-    it("refuses a Discard of an item the Work has nothing left on", async () => {
+    it("answers `already` for a Discard of an item the Work has nothing left on", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await expect(
         discard.discardItems({
@@ -517,7 +524,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           selection: { kind: "items", items: [{ documentId: a, origin: "edited", ends: "tree" }] },
           command: asCommand(),
         }),
-      ).resolves.toMatchObject({ status: "refused", reason: "stale" });
+      ).resolves.toMatchObject({
+        closed: [a],
+        settled: [{ rule: "already", state: "discarded", item: a }],
+      });
     });
 
     describe("commands over the tree half", () => {
@@ -561,6 +571,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           state: Buffer.from(Y.encodeStateAsUpdate(doc)),
           stateVector: Buffer.from(Y.encodeStateVector(doc)),
+          // Judged at its revision: it holds a change, as the effect projection would say.
+          hasEffect: true,
+          hasEffectRevision: 0,
         });
         return id;
       }
@@ -680,8 +693,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await branchRow(made)).toMatchObject({ existsOnlyInDraft: true, deleted: false });
         expect(await branchRow(a)).toMatchObject({ name: "renamed" });
         expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "refused",
-          reason: "already_restored",
+          status: "restored",
+          restored: 0,
+          settled: [{ rule: "already", state: "restored" }],
         });
 
         // A whole Discard closes the branch; its Undo lands on the Work's new one.
@@ -749,8 +763,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         // Nothing is left to take from the entry, and a retirement of the Discard that runs now
         // finds the draft reopened and closes no room.
         expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "refused",
-          reason: "already_restored",
+          status: "restored",
+          restored: 0,
+          settled: [{ rule: "already", state: "restored" }],
         });
         const closedRooms: string[] = [];
         await createDraftRetirement({

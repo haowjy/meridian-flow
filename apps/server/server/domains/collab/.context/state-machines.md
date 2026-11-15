@@ -22,11 +22,19 @@ stateDiagram-v2
     [*] --> d_active
     d_active --> d_closed: discard, the document is removed, or an Apply's delete copy covers it
     d_closed --> d_active: restore of the Discard that closed it, or Un-Apply of the Apply whose delete did
+    d_closed --> [*]: purged with its Trash entry at day 30, or released with its document or Work
     state "active" as d_active
     state "closed" as d_closed
   }
 ```
 
+- **A closed draft ends when its Trash entry is purged.** At day 30 the discard purge
+  (`adapters/drizzle-discard-purge.ts`) deletes the entry's command row and the closed drafts
+  that name it (a drafted create's draft is left to the tree's own purge). A Restore after that
+  finds nothing and answers `left_out purged`. Before it deletes a draft, the purge writes what
+  became of each of its parts (`document_edit_parts.purged_disposition`, read from the draft's
+  bytes), and the turn's card finds the draft's owner from `draft_branch_id`: a purged draft
+  reads `applied` or `discarded` as it did before the purge, never as a live edit.
 - **A closed branch never reopens; a closed draft reopens only through `reopenDrafts`.** A Discard
   stamps each draft it closes with `closed_by`, its command id. Restoring that Discard
   (`undo_discard`, from the notice or Trash) sets the same row `active` again in the Work's

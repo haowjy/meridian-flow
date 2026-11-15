@@ -66,6 +66,7 @@ import {
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
 import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
+import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
@@ -121,6 +122,7 @@ import {
 import { createDraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { AttemptScope } from "./domain/draft-attempts.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
+import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createDraftProjection } from "./domain/draft-projection.js";
 import { createDraftProvenanceReader } from "./domain/draft-provenance.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
@@ -485,13 +487,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
   );
   const discardStore = createDrizzleBranchDiscard(deps.db, {
+    coordinator: draftCoordinator,
     close: deps.draftClose,
     branches: workBranches,
     workProjection: deps.workProjectionMutation,
     treeLists: deps.treeLists,
   });
   const discard = createBranchDiscard({
-    branches: workBranches,
     store: discardStore,
     holdRetirement: deps.draftClose.holdRetirement,
   });
@@ -554,6 +556,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
   });
   const discardEntries = createDrizzleDiscardEntries(deps.db);
+  const discardPurge = createDrizzleDiscardPurge(deps.db, {
+    workProjection: deps.workProjectionMutation,
+    treeLists: deps.treeLists,
+    readDisposition: createDraftDispositionReader(createDrizzleDraftDispositionStore(deps.db)),
+  });
   const undoDiscard = createUndoDiscardService({
     commands,
     store: createDrizzleUndoDiscard(deps.db, {
@@ -569,6 +576,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     unapplyClick: applyCommands.unapply,
     undoDiscard,
     listDiscards: (projectId) => discardEntries.list(projectId),
+    purgeDiscards: () => discardPurge.purge(),
     branches: workBranches,
     reviewItems,
     identity,

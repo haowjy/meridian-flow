@@ -539,8 +539,12 @@ CREATE TABLE "document_edit_parts" (
 	"frontier" jsonb NOT NULL,
 	"aliases" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"origin" jsonb NOT NULL,
+	"draft_branch_id" uuid,
+	"purged_disposition" text,
 	CONSTRAINT "document_edit_parts_ordinal_valid" CHECK ("document_edit_parts"."ordinal" >= 0),
-	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' IN ('pending','live'))
+	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' IN ('pending','live')),
+	CONSTRAINT "document_edit_parts_purged_disposition_valid" CHECK ("document_edit_parts"."purged_disposition" IN ('applied','discarded')),
+	CONSTRAINT "document_edit_parts_draft_branch_valid" CHECK (("document_edit_parts"."origin"->>'kind' = 'pending') = ("document_edit_parts"."draft_branch_id" IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "document_edits" (

@@ -477,6 +477,8 @@ export type DraftReviewApi = {
     }): Promise<DocumentId[]>;
   };
   /** The document half of Trash's Discard entries in a project; the tree answers its own half. */
+  /** The day-30 purge of Trash's command entries (`drizzle-discard-purge.ts`); the rows removed. */
+  purgeDiscards(): Promise<number>;
   listDiscards(
     projectId: ProjectId,
   ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
@@ -526,10 +528,10 @@ export type DraftReviewApi = {
   }): Promise<ResolvedReviewItem | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   discardItem(input: {
-    item: DraftReviewItem;
-    /** What ends, and the text draft the writer saw (`DraftDiscardRequest`). */
+    /** The item as the route resolved it; a document the branch holds nothing on has no row to resolve. */
+    item: Pick<DraftReviewItem, "branchId" | "itemKey" | "documentId" | "origin">;
+    /** What ends (`DraftDiscardRequest`). */
     ends: DiscardItem["ends"];
-    draftSeenAt?: DiscardItem["draftSeenAt"];
     userId: UserId;
     envelope: CommandEnvelope;
   }): Promise<CommandOutcome>;

@@ -205,20 +205,33 @@ a newer active draft of the document, the restore closes it first with `closed_b
 own command id (`swapped` in the answer): that draft is a member of the restore's entry, and
 restoring that entry swaps it back. Nothing is refused because a newer draft exists. The restore marks the owner's
 current drafts changed (`draftMembershipChanged`), so the Work's revision moves and its owner hint
-goes out even when the pending count stays the same (a swap). A second restore finds no member:
-`already_restored` (the tree took its records, or a stored restore named this command). Other
-refusals: `expired` (the command is older than `DELETION_RETENTION_DAYS`), `document_purged`
-(what the entry held was purged: a node, or text drafts a document purge deleted),
-`nothing_to_restore` (its tree records belong to another Work), `work_purged` (the Work and its
-branches are gone; the route lets the command through instead of answering 404 so the refusal is
-stored). A branch of another project is a 404 at the route and `not_found` in the store. A Work or
+goes out even when the pending count stays the same (a swap). Restore never refuses and reads no
+clock; a restore that brings nothing back is `done` with `restored: 0` and says why in
+`settled`: `already restored` (the tree took its records, another Work holds them, or a stored restore
+named this command), `left_out purged` (no command of kind `discard`, `undo_discard` or `unapply`
+is stored under the id: the day-30 purge took it, or it never was; or what the entry held was
+purged), with `leftOut` counting purged nodes beside a partial restore. A purged Work's branch is a 404
+at the route. A branch of another project is a 404 too. A Work or
 chat that cannot take the restore (archived, deleted, a chat in Trash) bounces: stored `done`, nothing
 changed, `restored: 0`, `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
 The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
-result in the command's refusal mapper; Discard bounces the same way (`status: "returned"`). Apply and
+result in the command's mapper; Discard bounces the same way (the item as it stands, with the `returned` line). Apply and
 Un-Apply land on a closed owner, and it stays closed. `listDiscards(projectId)` is the document half of Trash's Discard entries.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
-the copies act on, then the draft rows. The browser rejoining a restored draft's room is the
+the copies act on, then the draft rows.
+
+**The day-30 purge** (`recovery.purgeDiscards`, `adapters/drizzle-discard-purge.ts`, run hourly
+beside `purgeWorks` and `purgeDocuments`) is the only reader of the clock for Trash's command
+entries. For each due command row of the three entry kinds it takes the Work lock with no
+`requireActive` (an archived or deleted Work's entries expire too), then the keys of the closed
+drafts' documents in id order, re-reads the drafts still `closed_by` the command, and deletes them
+and then the row. That is a prefix of Restore's order (Work, branch, lists, documents), and the
+lists are only read, without a key, before the first document key. A Restore takes the same Work
+lock, so it sees all of an entry or none. The tree's `purgeUnviewed` purges a drafted create (and
+its draft and content) on its own clock, so the sweep leaves those drafts alone; the tree's
+`discarded` records stay. A row whose branch is gone (a Work purge cascades the branch and its
+drafts, not `commands`) is deleted with nothing to lock. A resend of a purged command id runs
+again. Trash's listing has no clock: it lists whatever still exists, which is what restores. The browser rejoining a restored draft's room is the
 client's.
 
 [frozen]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/apply.md#the-click-owns-its-meaning

@@ -11,6 +11,7 @@
  */
 import { blocksEqual, REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type * as Y from "yjs";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import { DraftMissingError, type DraftStore, type StaleEffectCursor } from "./draft-store.js";
 
@@ -22,6 +23,16 @@ const BACKOFF_MS = 250;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_RUNS = 4;
 const SWEEP_PAGE = 50;
+
+const schema = buildDocumentSchema();
+
+/** The one judgement of `has_effect`: the draft's text differs from its review base. */
+export function draftHoldsText(doc: Y.Doc): boolean {
+  return !blocksEqual(
+    readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+    readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+  );
+}
 
 export type DraftProjection = {
   /** A committed append made the draft's derived state stale. */
@@ -67,7 +78,6 @@ export function createDraftProjection(input: {
   const maxRuns = input.maxRuns ?? MAX_RUNS;
   const entries = new Map<string, Entry>();
   const queue: string[] = [];
-  const schema = buildDocumentSchema();
   const running = new Set<Promise<void>>();
   let sweep: Promise<number> | null = null;
   let disposed = false;
@@ -186,10 +196,7 @@ export function createDraftProjection(input: {
           write: {
             draftId,
             revision: snapshot.revision,
-            hasEffect: !blocksEqual(
-              readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
-              readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-            ),
+            hasEffect: draftHoldsText(doc),
             workId: snapshot.workId,
             rootThreadId: snapshot.rootThreadId,
           },

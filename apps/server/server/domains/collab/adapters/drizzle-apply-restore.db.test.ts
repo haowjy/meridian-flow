@@ -21,7 +21,14 @@ import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contract
 import type { ApplyClick } from "@meridian/contracts/branches";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { branches, contextSources, projects, users, works } from "@meridian/database/schema";
+import {
+  branches,
+  contextSources,
+  documentDrafts,
+  projects,
+  users,
+  works,
+} from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -133,8 +140,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       }),
     });
     const discardKernel = createBranchDiscard({
-      branches: workBranches,
       store: createDrizzleBranchDiscard(db, {
+        coordinator: coordinator,
         close: draftClose,
         branches: workBranches,
         workProjection: projection,
@@ -355,32 +362,38 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
     async function discard(f: Fixture) {
       const commandId = randomUUID();
+      // A Restore of Discard all reopens the draft on the Work's new branch.
+      const [{ branchId }] = await db
+        .select({ branchId: documentDrafts.branchId })
+        .from(documentDrafts)
+        .where(eq(documentDrafts.id, f.draftId));
       const out = await discardKernel.discardItems({
-        branchId: f.branchId,
+        branchId,
         userId: USER,
-        selection: {
-          kind: "items",
-          items: [{ documentId: f.documentId, origin: "edited", ends: "item" }],
-        },
+        // Whole: an item Discard takes nothing from a draft its Applies emptied (it answers
+        // `overtaken applied`), and Discard all closes every draft of the branch.
+        selection: { kind: "whole" },
         command: {
           envelope: envelope("discard", commandId),
-          result: () => ({ status: "discarded", branchId: f.branchId }) as never,
+          result: () => ({ status: "discarded", branchId }) as never,
         },
       });
-      expect((out as { status: string }).status).not.toBe("refused");
-      return commandId;
+      expect(out).toMatchObject({ branchClosed: true, settled: [] });
+      return { commandId, branchId };
     }
     const envelope = (kind: string, commandId: string) =>
       ({ commandId, accountId: USER, projectId: PROJECT, kind, digest: commandId }) as never;
-    async function restore(f: Fixture, discardCommandId: string) {
+    /** Restore as Trash sends it: the branch the Discard ran on, not the draft's current one. */
+    async function restore(discarded: Awaited<ReturnType<typeof discard>>) {
       const commandId = randomUUID();
       const out = (await undoDiscard({
-        branchId: f.branchId,
+        branchId: discarded.branchId,
         userId: USER,
         envelope: envelope("undo_discard", commandId),
-        request: { commandId: commandId as CommandId, discardCommandId },
-      } as never)) as { status: string };
-      expect(out.status).toBe("restored");
+        request: { commandId: commandId as CommandId, discardCommandId: discarded.commandId },
+      } as never)) as { status: string; restored: number };
+      expect(out).toMatchObject({ status: "restored" });
+      expect(out.restored).toBeGreaterThan(0);
     }
 
     it("A1, A2 inside A1's text, Discard, Un-Apply both, Restore: the draft is what it is without the Discard", async () => {
@@ -393,7 +406,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       const discarded = await discard(withDiscard.f);
       await withDiscard.f.unapply(withDiscard.a2);
       await withDiscard.f.unapply(withDiscard.a1);
-      await restore(withDiscard.f, discarded);
+      await restore(discarded);
       const got = await withDiscard.f.seen();
 
       expect(got).toEqual(wanted);
@@ -408,10 +421,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await f.apply(a1);
       const discarded = await discard(f);
       await f.unapply(a1);
-      await restore(f, discarded);
+      await restore(discarded);
       const first = await f.seen();
       const again = await discard(f);
-      await restore(f, again);
+      await restore(again);
       expect(await f.seen()).toEqual(first);
       expect(first.pending).toBe(1);
       expect(first.base).toEqual(["The cat sat."]);
@@ -426,7 +439,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await f.apply(f.click());
       const before = await f.seen();
       expect(before.base).toEqual(["The big cat sat."]);
-      await restore(f, await discard(f));
+      await restore(await discard(f));
       expect(await f.seen()).toEqual(before);
     });
 

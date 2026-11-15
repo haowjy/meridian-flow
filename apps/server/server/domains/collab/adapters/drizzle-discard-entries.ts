@@ -1,21 +1,23 @@
 /**
  * The document half of Trash's Discard entries (design section 7): every Discard, and every
- * restore or Un-Apply that swapped a newer draft out, that ran in the project within the retention, with the
+ * restore or Un-Apply that swapped a newer draft out, that the day-30 purge hasn't removed, with the
  * text drafts it closed that are still closed. A restore reopens a draft by clearing `closed_by`,
  * so a taken member leaves the entry by itself. A deleted Work's entries are hidden until it is
  * restored, and a purged Work's branches (and so its entries) are gone.
  */
 import type { BranchId, CommandId, ProjectId } from "@meridian/contracts";
 import type { DiscardEntry } from "@meridian/contracts/branches";
-import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+
+/** The commands whose id can name closed drafts that Trash lists and Restore reopens. */
+export const ENTRY_KINDS = ["discard", "undo_discard", "unapply"] as const;
 
 export function createDrizzleDiscardEntries(db: Database) {
   return {
-    async list(projectId: ProjectId, now: Date = new Date()): Promise<DiscardEntry[]> {
+    async list(projectId: ProjectId): Promise<DiscardEntry[]> {
       const tx = currentDrizzleDb(db);
       const rows = await tx
         .select({
@@ -42,7 +44,6 @@ export function createDrizzleDiscardEntries(db: Database) {
                 ),
               ),
             ),
-            gt(commands.createdAt, deletionPurgeCutoff(now)),
             sql`${commands.outcome}->>'status' = 'done'`,
           ),
         )

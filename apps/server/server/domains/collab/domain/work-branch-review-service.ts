@@ -30,6 +30,7 @@ export function createWorkBranchReviewService(input: {
   unapplyClick: CollabBranches["draftReview"]["unapplyClick"];
   undoDiscard: CollabBranches["draftReview"]["undoDiscard"];
   listDiscards: CollabBranches["draftReview"]["listDiscards"];
+  purgeDiscards: CollabBranches["draftReview"]["purgeDiscards"];
   commandDocuments: CollabBranches["draftReview"]["commandDocuments"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   folderIds(branchId: BranchId): Promise<{ id: string }[]>;
@@ -88,6 +89,7 @@ export function createWorkBranchReviewService(input: {
       unapplyClick: input.unapplyClick,
       undoDiscard: input.undoDiscard,
       listDiscards: input.listDiscards,
+      purgeDiscards: input.purgeDiscards,
       commandDocuments: input.commandDocuments,
       async list(command) {
         const { items } = await ownerItems(command.owner);
@@ -127,30 +129,20 @@ export function createWorkBranchReviewService(input: {
         const { envelope, item } = command;
         const first = await known(envelope);
         if (first) return first;
-        const refused = (status: "stale" | "gone" | "draft_changed"): DiscardCommandResult => ({
-          status,
-          branchId: item.branchId,
-          itemKey: item.itemKey,
-        });
         // What the kernel ended decides the answer, stored with the command in its transaction.
         const settled = (ended: DiscardResult): DiscardCommandResult => {
-          if (ended.status === "gone") return refused("gone");
-          if (ended.status === "returned")
-            return {
-              status: "returned",
-              branchId: item.branchId,
-              itemKey: item.itemKey,
-              settled: ended.settled,
-            };
-          if (ended.status === "refused") return refused(ended.reason);
           const closed = ended.branchClosed || ended.closed.includes(item.documentId);
+          const overtaken = ended.settled.some(
+            (one) => one.rule === "overtaken" && one.state === "applied",
+          );
           return {
             status: "discarded",
             branchId: item.branchId,
             itemKey: item.itemKey,
             ...(closed
-              ? { itemClosed: true, itemDisposition: "discarded" as const }
+              ? { itemClosed: true, itemDisposition: overtaken ? "applied" : "discarded" }
               : { itemClosed: false }),
+            ...notesOf(ended),
           };
         };
         return effect(envelope, async () => {
@@ -164,9 +156,6 @@ export function createWorkBranchReviewService(input: {
                     documentId: item.documentId,
                     origin: item.origin,
                     ends: command.ends,
-                    ...(command.draftSeenAt !== undefined
-                      ? { draftSeenAt: command.draftSeenAt }
-                      : {}),
                   },
                 ],
               },
@@ -180,16 +169,12 @@ export function createWorkBranchReviewService(input: {
         const { envelope, branchId, selection } = command;
         const first = await known(envelope);
         if (first) return first;
-        const settled = (ended: DiscardResult): DiscardCommandResult =>
-          ended.status === "refused"
-            ? { status: ended.reason, branchId }
-            : ended.status === "gone"
-              ? { status: "gone", branchId }
-              : ended.status === "returned"
-                ? { status: "returned", branchId, settled: ended.settled }
-                : ended.branchClosed
-                  ? { status: "discarded", branchId }
-                  : { status: "discarded", branchId, closed: [...ended.closed] };
+        const settled = (ended: DiscardResult): DiscardCommandResult => ({
+          status: "discarded",
+          branchId,
+          ...(ended.branchClosed ? {} : { closed: [...ended.closed] }),
+          ...notesOf(ended),
+        });
         return effect(envelope, async () =>
           settled(
             await input.discard.discardItems({
@@ -204,6 +189,9 @@ export function createWorkBranchReviewService(input: {
     },
   };
 }
+
+const notesOf = (ended: DiscardResult) =>
+  ended.settled.length > 0 ? { settled: ended.settled } : {};
 
 export function reviewContextLocation(uri: string | null): ThreadDraftListItem["contextLocation"] {
   if (!uri) return null;

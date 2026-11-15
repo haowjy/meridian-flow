@@ -125,6 +125,9 @@ export function useWorkBranchCommands({
           row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
         ),
       );
+    /** A Discard's item left review, taken here or before: all but one an Apply took first. */
+    const leftReview = (answer: CommandOutcome, itemKey: string) =>
+      (answer.kind === "done" || answer.kind === "settled") && !owner.state(itemKey).failure;
     const blocked = (): CommandStart => ({
       sent: false,
       outcome: Promise.resolve({ kind: "blocked" }),
@@ -534,16 +537,14 @@ export function useWorkBranchCommands({
       if (target.kind === "draft") {
         if (!item) return none(blocked());
         const commandId = crypto.randomUUID();
-        const outcome = owner
-          .discardOnServer(ref(draft), item, frozen, commandId)
-          .then((answer) => {
-            if (answer.kind === "done")
-              patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-                rows.filter((listed) => listed.itemKey !== item.itemKey),
-              );
-            refresh([draft.documentId]);
-            return answer;
-          });
+        const outcome = owner.discardOnServer(ref(draft), item, commandId).then((answer) => {
+          if (leftReview(answer, item.itemKey))
+            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+              rows.filter((listed) => listed.itemKey !== item.itemKey),
+            );
+          refresh([draft.documentId]);
+          return answer;
+        });
         return {
           start: { sent: true, outcome },
           part: {
@@ -646,28 +647,20 @@ export function useWorkBranchCommands({
             ? { all: true, refs: [...refs, ...folderRefs] }
             : {
                 items: [
-                  ...input.drafts.map((draft) => {
-                    const item = row(draft);
-                    return {
-                      ref: ref(draft),
-                      ends: "item" as const,
-                      // A frozen owner's Discard names the drafts the writer saw.
-                      ...(frozen && item
-                        ? { draftSeenAt: item.hasDraft ? item.updatedAt : null }
-                        : {}),
-                    };
-                  }),
+                  ...input.drafts.map((draft) => ({ ref: ref(draft), ends: "item" as const })),
                   ...folderRefs.map((folderRef) => ({ ref: folderRef, ends: "item" as const })),
                 ],
               },
         })
         .then((answer) => {
-          if (answer.kind === "done") {
-            const ended = new Set(input.drafts.map((draft) => draft.itemKey));
-            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-              rows.filter((listed) => !ended.has(listed.itemKey)),
-            );
-          }
+          const ended = new Set(
+            input.drafts.flatMap((draft) =>
+              leftReview(answer, draft.itemKey) ? [draft.itemKey] : [],
+            ),
+          );
+          patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+            rows.filter((listed) => !ended.has(listed.itemKey)),
+          );
           refresh(documentIds);
           return answer;
         });
@@ -791,17 +784,18 @@ export async function restoreDiscard(
         queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
       });
     }
-    // A closed owner stores the restore as `restored` with a `returned` settlement: nothing came back.
-    const closed = answer.status === "restored" ? returnedIn(answer.settled) : null;
+    if (answer.status === "conflict") return { answer: "failed" };
+    // A restore that brought nothing back says why: a closed owner, a restore that took it first,
+    // or an entry Trash no longer holds.
+    const closed = returnedIn(answer.settled);
     if (closed) {
       if (closed === "work-closed")
         void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
       return { answer: "returned", why: closed };
     }
-    if (answer.status === "restored")
+    if (answer.restored > 0)
       return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
-    if (answer.status === "conflict") return { answer: "failed" };
-    return answer.reason === "already_restored" || answer.reason === "nothing_to_restore"
+    return answer.settled?.some((one) => one.rule === "already")
       ? { answer: "gone" }
       : { answer: "returned", why: "gone-from-trash" };
   } catch {

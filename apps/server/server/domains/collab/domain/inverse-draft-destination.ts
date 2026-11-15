@@ -26,7 +26,8 @@ export type ActiveInverseDestination = {
 export type GoneInverseDestination = {
   kind: "draft";
   closed: ClosedOwnerWhy | null;
-  branchId: BranchId;
+  /** Null: the draft's row is gone (its entry or its Work was purged), and with it its branch. */
+  branchId: BranchId | null;
   state: "gone";
 };
 export type InverseDestination =
@@ -51,10 +52,17 @@ export function createInverseDestinationResolver(
     const cached = drafts.get(draftId);
     if (cached) return cached;
     const captured = document.drafts.get(draftId);
-    if (!captured)
-      throw new Error(
-        `Inverse origin draft ${draftId} was not captured for ${document.documentId}`,
-      );
+    // Capture skips a draft with no row: purged with its entry or its Work, which is gone for good.
+    if (!captured) {
+      const purged: InverseDestination = {
+        kind: "draft",
+        closed: null,
+        branchId: null,
+        state: "gone",
+      };
+      drafts.set(draftId, purged);
+      return purged;
+    }
     const row = captured.documentDraft;
     const destination: InverseDestination =
       row.status === "active"

@@ -194,13 +194,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...scope,
         branchId: row.branchId,
         documentId: CH1 as never,
-        request: {
-          branchId: row.branchId,
-          itemKey: row.itemKey,
-          commandId: randomUUID(),
-          ends: "item",
-          draftSeenAt: row.updatedAt,
-        },
+        request: { itemKey: row.itemKey, commandId: randomUUID(), ends: "item" },
       } as never);
     }
 

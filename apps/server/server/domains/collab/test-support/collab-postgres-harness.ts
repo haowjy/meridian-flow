@@ -490,6 +490,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       ofDiscard: async () => [],
     },
     listDiscards: async () => [],
+    purgeDiscards: async () => 0,
     undoDiscard: async () => {
       throw new Error("Undo of a Discard is not configured in the collab fixture");
     },
@@ -501,9 +502,9 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({
-      branches: workBranches,
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
+        coordinator: draftCoordinator,
         close: draftClose,
         branches: workBranches,
         workProjection: createTestWorkProjectionMutation(db),

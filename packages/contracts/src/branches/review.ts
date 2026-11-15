@@ -176,40 +176,25 @@ export type UndoDiscardClick = {
   commandId: CommandId;
   discardCommandId: CommandId;
 };
-export type UndoDiscardResult =
-  | {
-      status: "restored";
-      commandId: CommandId;
-      /** The Discard (or earlier restore) this took the members of. */
-      discardCommandId: CommandId;
-      /** The Work's current branch: where the copies and the reopened drafts are. */
-      branchId: BranchId;
-      /** What came back: tree records copied and text drafts reopened. */
-      restored: number;
-      /** Newer drafts of the same documents this restore closed, now members of its own entry. */
-      swapped: number;
-      /** What the Discard held that could not come back: a node or document that has been purged. */
-      leftOut: number;
-      /** `returned`: the draft's owner is closed, so nothing came back and `restored` is 0. */
-      settled?: Settlement[];
-    }
-  | {
-      status: "refused";
-      commandId: CommandId;
-      /**
-       * `already_restored`: a restore took the entry's members already. `nothing_to_restore`: the
-       * entry's records belong to another Work. `expired`: older than the Trash retention.
-       * `document_purged`: what the entry held was purged, nodes or text. `work_purged`: the Work
-       * is gone.
-       */
-      reason:
-        | "already_restored"
-        | "nothing_to_restore"
-        | "expired"
-        | "document_purged"
-        | "work_purged"
-        | "not_found";
-    };
+export type UndoDiscardResult = {
+  status: "restored";
+  commandId: CommandId;
+  /** The Discard (or earlier restore) this took the members of. */
+  discardCommandId: CommandId;
+  /** The Work's current branch: where the copies and the reopened drafts are. */
+  branchId: BranchId;
+  /** What came back: tree records copied and text drafts reopened. */
+  restored: number;
+  /** Newer drafts of the same documents this restore closed, now members of its own entry. */
+  swapped: number;
+  /** What the Discard held that could not come back: a node or document that has been purged. */
+  leftOut: number;
+  /**
+   * Why `restored` is 0: `returned` (the draft's owner is closed), `already` (a restore took the
+   * members), `left_out purged` (the entry is gone from Trash or what it held was purged).
+   */
+  settled?: Settlement[];
+};
 export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
 
 /**
@@ -332,10 +317,7 @@ export interface ThreadDraftListItem {
   } | null;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
-  /**
-   * The text draft's last committed write (content-free folds keep it), which a whole-item
-   * Discard sends back as `draftSeenAt`. Meaningless when `hasDraft` is false.
-   */
+  /** The text draft's last committed write (content-free folds keep it). Meaningless when `hasDraft` is false. */
   updatedAt: string;
 }
 
@@ -409,36 +391,31 @@ export type DraftItemSettlement = {
   itemDisposition?: "applied" | "discarded";
 };
 
-/** `draft_changed`: the text draft moved on since the writer saw it (`draftSeenAt`); nothing ended. */
-export type DraftDiscardRefusalStatus =
-  | "stale"
-  | "gone"
-  | "whole_item"
-  | "incomplete_class"
-  | "draft_changed";
+/**
+ * What a Discard answers, item or selection: it never refuses. `settled` says what became of an
+ * item this command did not take: `already` (a Discard took it), `overtaken` (an Apply did), or
+ * `returned` (the owner is closed, nothing changed).
+ */
+export type DiscardOutcomeNotes = { settled?: Settlement[] };
 
-export type DraftDiscardResponse =
-  | ({
-      status: "discarded";
-      branchId: BranchId;
-      itemKey: DraftItemKey;
-    } & DraftItemSettlement)
-  | { status: DraftDiscardRefusalStatus; branchId: BranchId; itemKey: DraftItemKey }
-  /** The draft's owner is closed (`settled` says how): nothing changed. */
-  | { status: "returned"; branchId: BranchId; itemKey: DraftItemKey; settled: Settlement[] };
+export type DraftDiscardResponse = {
+  status: "discarded";
+  branchId: BranchId;
+  itemKey: DraftItemKey;
+} & DraftItemSettlement &
+  DiscardOutcomeNotes;
 
 /**
  * One item's Discard on the server. `tree` ends only the branch's move or delete: a live chat's
  * Discard, whose text the writer reverts in the room. `item` ends everything the branch holds
  * on the document: a still-hidden creation, or a frozen owner's draft, whose room refuses the
- * writer's text. `draftSeenAt` is the item's `updatedAt` the writer decided on (null: no text
- * draft); when sent, a draft that moved on refuses as `draft_changed`.
+ * writer's text. The URL names the branch.
  */
 export type DraftDiscardRequest = {
-  branchId: BranchId;
   itemKey: DraftItemKey;
   commandId: CommandId;
-} & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
+  ends: "tree" | "item";
+};
 
 /**
  * `POST …/branches/:branchId/discard`, one server command either way. `all`: Discard all, every
@@ -446,18 +423,18 @@ export type DraftDiscardRequest = {
  * of nodes, documents or folders (a folder group's ×, a folder changed alone), each ending as
  * `DraftDiscardRequest.ends` says; what stands on a node it discards goes with it (a document
  * moved into a folder the Work created). Its text halves close on the server, and Undo of a
- * Discard brings both halves back.
+ * Discard brings both halves back. Not strict at either level: a tab still on the old code sends
+ * `draftSeenAt` on each item, and it is dropped, not a 400.
  */
 export const BranchDiscardRequestSchema = z.union([
-  z.strictObject({ commandId: CommandIdSchema, all: z.literal(true) }),
-  z.strictObject({
+  z.object({ commandId: CommandIdSchema, all: z.literal(true) }),
+  z.object({
     commandId: CommandIdSchema,
     items: z
       .array(
-        z.strictObject({
+        z.object({
           node: z.string().min(1),
           ends: z.enum(["tree", "item"]),
-          draftSeenAt: z.string().nullable().optional(),
         }),
       )
       .min(1),
@@ -465,16 +442,15 @@ export const BranchDiscardRequestSchema = z.union([
 ]);
 export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
 /**
- * `discarded` with `all` closes the branch (the only wire signal of closure); with `items`,
- * `closed` names the selected nodes nothing of the branch remains on. `gone` names a branch
- * that is not the Work's active one; `stale` and `draft_changed` refuse a selection the
- * branch's state no longer allows, and nothing ended.
+ * `discarded` with `all` and no `closed` means the branch closed; with `items`, `closed` names
+ * the selected nodes nothing of the branch remains on, those an earlier command took included
+ * (`settled` says which). A closed owner's bounce carries `closed: []`.
  */
-export type BranchDiscardResponse =
-  | { status: "discarded"; branchId: BranchId; closed?: string[] }
-  | { status: "gone" | "stale" | "draft_changed"; branchId: BranchId }
-  /** The Work's owner is closed (`settled` says how): nothing changed. */
-  | { status: "returned"; branchId: BranchId; settled: Settlement[] };
+export type BranchDiscardResponse = {
+  status: "discarded";
+  branchId: BranchId;
+  closed?: string[];
+} & DiscardOutcomeNotes;
 
 /** A Discard's terminal body, exactly what its 200 carries. */
 export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;

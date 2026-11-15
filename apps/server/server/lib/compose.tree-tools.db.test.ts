@@ -264,7 +264,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             branchId: row?.branchId,
             documentId: documentId as never,
             request: {
-              branchId: row?.branchId,
               itemKey: row?.itemKey,
               commandId: randomUUID(),
               ...ends,
@@ -324,18 +323,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ),
           );
 
-      // Decided on a draft that moved on since: refused, and nothing ends.
-      expect(
-        await writer.discard(CH1, { ends: "item", draftSeenAt: "2000-01-01T00:00:00.000Z" }),
-      ).toMatchObject({ body: { status: "draft_changed" } });
-      expect(await writer.item(CH1)).toMatchObject({
-        hasDraft: true,
-        tree: expect.anything(),
-      });
-
-      expect(
-        await writer.discard(CH1, { ends: "item", draftSeenAt: seen?.updatedAt }),
-      ).toMatchObject({
+      expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
         body: { status: "discarded", itemClosed: true, itemDisposition: "discarded" },
       });
       expect(await writer.item(CH1)).toBeUndefined();
