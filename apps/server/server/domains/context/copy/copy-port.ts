@@ -16,6 +16,7 @@ import {
   type CopyDestinationHandoff,
   type CopySourceHandoff,
   createContextCopyCommand,
+  receiptCommand,
 } from "./copy-command.js";
 import type { CopyCommands } from "./copy-commands.js";
 
@@ -65,7 +66,37 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
       : null;
   };
 
-  return async function copy(
+  /**
+   * A Copy into a folder the project no longer holds: nothing is copied. The answer is stored
+   * under the operation ID like every other, so a resend reads the same one.
+   */
+  async function leftOutForMissingFolder(
+    request: ContextCopyRequest,
+  ): Promise<Result<CopyContextEntriesResult, ContextError>> {
+    if (!deps.commands) {
+      return Err({
+        code: "invalid_operation",
+        uri: request.destinationUri,
+        message: "Copy is not available here",
+      });
+    }
+    const command = receiptCommand(
+      request.sources.map((source) => ({ ...source, view: source.view ?? { kind: "live" } })),
+      request.destinationUri,
+      request,
+    );
+    return deps.commands.execute(request.operationId, command, request.destinationUri, async () =>
+      Ok({
+        status: "copied",
+        entries: [],
+        settled: [
+          { rule: "left_out", items: request.sources.map((source) => source.uri), why: "purged" },
+        ],
+      }),
+    );
+  }
+
+  async function copy(
     request: ContextCopyRequest,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const { commands, commandTransaction } = deps;
@@ -139,5 +170,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           }
         : {}),
     });
-  };
+  }
+
+  return { copy, leftOutForMissingFolder };
 }

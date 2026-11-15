@@ -300,13 +300,14 @@ one source's tree contributes.
 - A client-held source sends its Yjs state vector with a document source (a folder source
   with a vector is a 400). The vector is compared with the room of the view being read, live
   or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
-  catch up, then answers `io_error` with `reason: "source_behind"` ("The source has edits the
+  catch up, then answers a 503 `io_error` with `reason: "source_behind"` ("The source has edits the
   server has not received yet"): retryable and never recorded, so the same id may be sent
-  again, and distinct from a transport failure. The browser sends the vector of every open live
-  document (`openStateVector` on the session registry) and sends the same Copy again while the
-  answer is `source_behind` (`execute-copy.ts`): typing a tab holds always reaches the server
-  (`findings/unsynced-probe.md`), so the wait ends. No draft tab has sent a vector yet, so
-  confirm the draft room's vector against one first.
+  again, and distinct from a transport failure. The browser sends the vector of every open document (`openStateVector` on the session
+  registry: the live room, or for a draft view the one open draft room of the document) and sends
+  the same Copy again, backing off from 0.5 s to 5 s, for as long as the answer is
+  `source_behind` (`execute-copy.ts`): typing a tab holds always reaches the server
+  (`findings/unsynced-probe.md`), so the wait ends. A draft view's vector has not been run against a
+  live draft tab yet: confirm it there first.
 - A document that exists only in a Work's draft is not in the live tree, so it cannot be a
   source yet (left out as purged).
 - There is no Undo command: Copy's Undo is ordinary deletion of the identities it created.

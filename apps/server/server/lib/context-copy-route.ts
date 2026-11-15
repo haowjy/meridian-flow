@@ -19,6 +19,7 @@ import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtim
 import { createError } from "nitro/h3";
 import { decodeStateVector } from "yjs";
 import {
+  type ContextCopyRequest,
   type CopySourceView,
   contextPortForProjectAuthorities,
   type ProjectContextAvailabilityPort,
@@ -422,13 +423,29 @@ export async function handleContextCopyRequest(
 
   const folder =
     destinationFolderId === null ? null : await port.resolveFolderUri(destinationFolderId);
+  const request = (
+    destinationUri: string,
+    authorizeDestination?: ContextCopyRequest["authorizeDestination"],
+  ): ContextCopyRequest => ({
+    operationId: copy.operationId,
+    sources: sources.map((source) => ({
+      uri: source.uri,
+      view: copyView(source.view, input.projectId as ProjectId),
+      expected: source.expected,
+      ...(source.copyId ? { copyId: source.copyId } : {}),
+      ...(source.stateVector ? { stateVector: source.stateVector } : {}),
+    })),
+    destinationUri,
+    ...(copy.destinationParent ? { destinationParent: copy.destinationParent } : {}),
+    ...(copy.position ? { position: copy.position } : {}),
+    ...(authorizeDestination ? { authorizeDestination } : {}),
+  });
   // A destination folder the project no longer holds: nothing is copied, and the answer says so.
-  if (folder && !folder.ok && folder.error.code === "destination_missing")
-    return {
-      status: "copied",
-      entries: [],
-      settled: [{ rule: "left_out", items: sources.map((source) => source.uri), why: "purged" }],
-    };
+  if (folder && !folder.ok && folder.error.code === "destination_missing") {
+    const left = await port.leftOutForMissingFolder(request(destinationFolderId as string));
+    if (!left.ok) contextErrorToHttp(left.error);
+    return left.value;
+  }
   if (folder && !folder.ok) contextErrorToHttp(folder.error);
   const folderUri = folder?.ok ? folder.value.uri : null;
   // A folder named by identity can live in Uploads too, and is refused like the path form.
@@ -473,20 +490,9 @@ export async function handleContextCopyRequest(
       : null;
 
   const run = () =>
-    port.copy({
-      operationId: copy.operationId,
-      sources: sources.map((source) => ({
-        uri: source.uri,
-        view: copyView(source.view, input.projectId as ProjectId),
-        expected: source.expected,
-        ...(source.copyId ? { copyId: source.copyId } : {}),
-        ...(source.stateVector ? { stateVector: source.stateVector } : {}),
-      })),
-      destinationUri,
-      ...(copy.destinationParent ? { destinationParent: copy.destinationParent } : {}),
-      ...(copy.position ? { position: copy.position } : {}),
-      ...(folderUri === null ? {} : { authorizeDestination: canCommandContextUri(deps, input) }),
-    });
+    port.copy(
+      request(destinationUri, folderUri === null ? undefined : canCommandContextUri(deps, input)),
+    );
 
   const result = editGrant ? await withEditGrants(deps.fileAccess, [editGrant], run) : await run();
   if (!result.ok) contextErrorToHttp(result.error);

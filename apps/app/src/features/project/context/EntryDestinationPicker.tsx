@@ -253,9 +253,9 @@ function OpenPicker({
       const { rows, settled } = await copyRows(
         projectId,
         plan,
-        (documentId) => registry?.openStateVector(documentId as DocumentId) ?? null,
+        (documentId, view) => registry?.openStateVector(documentId as DocumentId, view) ?? null,
       );
-      const notice = copySettledNotice(settled);
+      const notice = copySettledNotice(settled, plan);
       if (notice) {
         setError(notice);
         return;

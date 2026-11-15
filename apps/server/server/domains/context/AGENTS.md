@@ -22,7 +22,7 @@ rest of the contracts: [context contracts](.context/CONTEXT.md).
   submits one command into the destination's list. Sources and the destination folder are
   followed by node id, in Trash too; a source that is gone is left out (`settled`), a closed
   destination Work makes nothing (`returned`), and a source not yet caught up to the client
-  answers `source_behind`, which is retryable and records nothing.
+  answers a 503 `source_behind`, which is retryable and records nothing.
 - ContextFS reads the replay through a tree view; the browser reads the list itself and asks the sources query (`adapters/context-sources.ts`) for what a source is. Every write of the
   tree (ContextFS, copy, upload, the model's tree tools) is records made in `treeListStore.submit`;
   the browser has no tree routes, and no write inserts a `documents` or `tree_nodes` row itself.

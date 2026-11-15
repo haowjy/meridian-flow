@@ -3,6 +3,7 @@
  * cannot fail; the server's later `dropped` comes back as a settlement and shows on the row it
  * concerns. A Copy is a route, and its failure is a toast with Retry.
  */
+import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import type { Settlement } from "@meridian/contracts/commands";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
@@ -18,7 +19,7 @@ import {
 import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
-import { copyRows } from "./execute-copy";
+import { copyRows, type StateVectorOf } from "./execute-copy";
 import { moveRows } from "./execute-move";
 import type { MoveRow, ReadyCopy } from "./move-plan";
 import { leaveSelections } from "./selection";
@@ -36,7 +37,7 @@ export type EntryContext = {
 
 /** What a Copy needs beyond a Move: the state vector of a document's open session in this tab. */
 export type CopyContext = EntryContext & {
-  stateVectorOf: (documentId: string) => Uint8Array | null;
+  stateVectorOf: StateVectorOf;
 };
 
 /** A Copy the route refused: it has its own key, and Retry runs it again. */
@@ -117,13 +118,24 @@ function showCopyFailure(context: CopyContext, failure: CopyFailure): void {
 }
 
 /** What a Copy that left something undone says, in the writer's words; null when it left nothing. */
-export function copySettledNotice(settled: readonly Settlement[]): string | null {
+export function copySettledNotice(settled: readonly Settlement[], copy: ReadyCopy): string | null {
   const returned = settled.find((one) => one.rule === "returned");
   if (returned) return t`That Work is closed, so nothing was copied.`;
   const left = settled.find((one) => one.rule === "left_out");
   if (left?.why === "would_loop") return t`A folder can't be copied into itself.`;
-  if (left) return t`Part of it is gone for good, so it wasn't copied.`;
+  if (left) {
+    const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
+      left.items.map((item) => leftOutName(item, copy)),
+    );
+    return t`${names} is gone for good, so it wasn't copied.`;
+  }
   return null;
+}
+
+/** The writer's name for a left-out source: the selected row at that address, else the address's last segment. */
+function leftOutName(item: string, copy: ReadyCopy): string {
+  const row = copy.copies.find((one) => item.endsWith(one.place.path.replace(/^\/+/, "")));
+  return row?.name ?? decodeURIComponent(item.replace(/\/+$/, "").split("/").pop() ?? item);
 }
 
 export async function runCopy(
@@ -134,7 +146,7 @@ export async function runCopy(
   try {
     const { rows, settled } = await copyRows(context.projectId, copy, context.stateVectorOf);
     if (rows.length > 0) onCopied?.(rows);
-    const notice = copySettledNotice(settled);
+    const notice = copySettledNotice(settled, copy);
     if (notice)
       notifyFailure({
         key: entryToast(context.projectId, crypto.randomUUID()),

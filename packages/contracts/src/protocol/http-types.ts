@@ -196,7 +196,7 @@ export type CopyContextEntrySource = {
    * room is: the live room for a live view, the draft room for a draft view. A folder has no
    * room of its own, and a vector on one is a 400, as is one that does not decode. The server
    * waits about two seconds for the room to hold those updates; if it still does not, the
-   * answer is `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
+   * answer is a 503 `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
    * and the client sends the same operation ID again until the room has them.
    */
   stateVector?: string;

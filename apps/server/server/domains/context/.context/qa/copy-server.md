@@ -64,7 +64,7 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    `returned` or `left_out` answer included; another body under the id is `command_conflict`.
 7. **Source not caught up.** POST a source with `stateVector` one client edit ahead of
    the room: after a wait of about 2 s, `io_error` ("The source has edits the server has
-   not received yet") with `details.reason: "source_behind"`, `retryable: true`, and no
+   not received yet") as a 503 with `details.reason: "source_behind"`, `retryable: true`, and no
    `commands` row. Resend the same `operationId` with the room's own
    vector: it copies and the row appears. A vector that arrives within the wait (a
    client reconnecting 800 ms after the request) copies on the first send, with the

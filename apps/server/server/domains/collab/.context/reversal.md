@@ -20,7 +20,7 @@ reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or d
 in Trash) is planned per target, not refused: the reversal lands Live and open targets and
 reports each closed one as a `returned` skip with its `why` (`work_archived`, `work_deleted`,
 `chat_frozen`, `TurnInverseSkip.why`), which the card words per part. A reversal whose every
-target is closed answers `expired` with those skips. A denial for another reason refuses the
+target is closed answers `expired` with those skips. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the attempt misses and recaptures, which plans those targets as `returned` (`refusalOrMiss`; a deleted Work's refusal reads `not_found` and is not recognised). A denial for another reason refuses the
 whole reversal, and the outcome carries the policy's reason (`denial`) for the card to word: deleted
 document, or no longer editable.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the

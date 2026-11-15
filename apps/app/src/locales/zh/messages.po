@@ -709,6 +709,10 @@ msgstr ""
 msgid "{names} is back in the manuscript."
 msgstr ""
 
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "{names} is gone for good, so it wasn't copied."
+msgstr ""
+
 #: src/features/import/import-presentation.ts
 msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
 msgstr ""
@@ -4715,8 +4719,8 @@ msgid "Paragraph"
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "Part of it is gone for good, so it wasn't copied."
-msgstr ""
+#~ msgid "Part of it is gone for good, so it wasn't copied."
+#~ msgstr ""
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"

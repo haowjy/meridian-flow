@@ -39,10 +39,11 @@ export interface LiveDocumentSessionRegistry {
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   /**
-   * The Yjs state vector of the document's live session in this tab, typing the server hasn't
-   * acknowledged included; null when this tab holds no session for it.
+   * The Yjs state vector of the document's live session in this tab (or of its draft room, for
+   * `"draft"`), typing the server hasn't acknowledged included; null when this tab holds no
+   * such session, or several draft rooms for the document.
    */
-  openStateVector(documentId: DocumentId): Uint8Array | null;
+  openStateVector(documentId: DocumentId, view?: "live" | "draft"): Uint8Array | null;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,

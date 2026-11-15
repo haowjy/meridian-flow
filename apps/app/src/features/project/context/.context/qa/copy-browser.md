@@ -36,8 +36,8 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    (`sources[].stateVector`), so the server never copies less than the tab saw.
 
    Open a document, patch `WebSocket.prototype.send` to drop frames, type an edit, copy the
-   document. The server waits about 2 s and answers `source_behind`; the browser sends the same
-   Copy again under the same id and no toast shows. Restore the send and close the sockets: the
+   document. The server waits about 2 s and answers a 503 `source_behind`; the browser sends the same
+   Copy again under the same id, backing off to every 5 s, and no toast shows. Restore the send and close the sockets: the
    next send lands and the server copy holds the edit.
 6. **A hidden draft at the target name.** With the mock model and a draft-mode Work, have a
    chat create `kb://Hidden/Sheet` and `kb://Hidden/Vault/Note`. Create the live folder

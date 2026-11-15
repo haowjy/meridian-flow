@@ -77,7 +77,8 @@ export function useEntryList({
   const removal = useOptionalContextRemovalCoordinator();
   const registry = useOptionalLiveDocumentSessionRegistry();
   const stateVectorOf = useCallback(
-    (documentId: string) => registry?.openStateVector(documentId as DocumentId) ?? null,
+    (documentId: string, view: "live" | "draft") =>
+      registry?.openStateVector(documentId as DocumentId, view) ?? null,
     [registry],
   );
   const queryClient = useQueryClient();

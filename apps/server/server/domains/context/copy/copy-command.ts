@@ -205,7 +205,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       try {
         return await commands.execute(
           input.request.operationId,
-          receiptCommand(input),
+          receiptCommand(input.sources, input.destination.uri, input.request),
           input.destination.uri,
           async () => {
             claimed = true;
@@ -625,10 +625,14 @@ function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
   return { scheme: destination.scheme, workId: destination.workScopeId };
 }
 
-function receiptCommand(input: ContextCopyInput): ContextOperationCommand {
+export function receiptCommand(
+  sources: readonly Pick<CopySourceHandoff, "uri" | "view" | "expected" | "copyId">[],
+  destinationUri: string,
+  request: Pick<ContextCopyRequest, "destinationParent" | "position">,
+): ContextOperationCommand {
   return {
     kind: "copy",
-    sources: input.sources.map(
+    sources: sources.map(
       (source): CopyContextEntryCommandSource => ({
         uri: source.uri,
         view:
@@ -639,11 +643,9 @@ function receiptCommand(input: ContextCopyInput): ContextOperationCommand {
         ...(source.copyId ? { copyId: source.copyId } : {}),
       }),
     ),
-    destinationUri: input.destination.uri,
-    ...(input.request.destinationParent
-      ? { destinationParent: input.request.destinationParent }
-      : {}),
-    ...(input.request.position ? { position: input.request.position } : {}),
+    destinationUri,
+    ...(request.destinationParent ? { destinationParent: request.destinationParent } : {}),
+    ...(request.position ? { position: request.position } : {}),
   };
 }
 

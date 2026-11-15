@@ -187,8 +187,11 @@ export class DocumentSessionRegistry {
     return this.getOrCreateLiveSession(lease, state, true);
   }
 
-  openStateVector(documentId: DocumentId): Uint8Array | null {
-    const session = this.liveRooms.get(documentId)?.session;
+  openStateVector(documentId: DocumentId, view: "live" | "draft" = "live"): Uint8Array | null {
+    const session =
+      view === "draft"
+        ? this.draftRooms.roomOf(documentId)
+        : this.liveRooms.get(documentId)?.session;
     return session ? Y.encodeStateVector(session.document) : null;
   }
 

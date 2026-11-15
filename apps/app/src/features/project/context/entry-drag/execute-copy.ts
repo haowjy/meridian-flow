@@ -41,8 +41,13 @@ function ownerFields(area: Pick<MoveArea, "owner">) {
   };
 }
 
-/** The server answers `source_behind` after a short wait; typing this tab holds reaches it within seconds. */
-const SOURCE_BEHIND_RESEND_LIMIT_MS = 60_000;
+/**
+ * The server answers `source_behind` (a 503) after a short wait; typing this tab holds reaches
+ * it, so the Copy is sent again, slower each time, for as long as it takes. Temporary: Copy moves
+ * onto the command driver, which owns this wait.
+ */
+const RESEND_FIRST_MS = 500;
+const RESEND_LAST_MS = 5_000;
 
 const isSourceBehind = (error: unknown) =>
   isMeridianApiError(error) &&
@@ -54,6 +59,9 @@ const isSourceBehind = (error: unknown) =>
 /** What a Copy made, and what it settled instead (nothing made for a closed Work, a source left out). */
 export type CopiedRows = { rows: readonly EntryRef[]; settled: readonly Settlement[] };
 
+/** A document's open session's vector, in the live room or the draft room, when this tab holds one. */
+export type StateVectorOf = (documentId: string, view: "live" | "draft") => Uint8Array | null;
+
 /**
  * Sends one Copy of the plan's rows. Returns the copies' identities and what the Copy left
  * undone; an error throws the route's error. `stateVectorOf` gives a document's open session's
@@ -62,7 +70,7 @@ export type CopiedRows = { rows: readonly EntryRef[]; settled: readonly Settleme
 export async function copyRows(
   projectId: string,
   copy: ReadyCopy,
-  stateVectorOf: (documentId: string) => Uint8Array | null,
+  stateVectorOf: StateVectorOf,
 ): Promise<CopiedRows> {
   const copyIds: string[] = copy.copies.map(() => crypto.randomUUID());
   const destination = destinationOf(copy);
@@ -87,8 +95,7 @@ export async function copyRows(
     destinationParent: destination,
     ...(copy.position ? { position: copy.position } : {}),
   };
-  const deadline = Date.now() + SOURCE_BEHIND_RESEND_LIMIT_MS;
-  for (;;) {
+  for (let wait = RESEND_FIRST_MS; ; wait = Math.min(wait * 2, RESEND_LAST_MS)) {
     try {
       const { entries, settled } = await copyContextEntries(projectId, body);
       return {
@@ -98,17 +105,18 @@ export async function copyRows(
         settled: settled ?? [],
       };
     } catch (error) {
-      if (!isSourceBehind(error) || Date.now() > deadline) throw error;
+      if (!isSourceBehind(error)) throw error;
     }
+    await new Promise((resolve) => setTimeout(resolve, wait));
   }
 }
 
-/** The live document's open session says what this tab holds of it; a folder or a draft view has no room here. */
+/** The open session of the view's room says what this tab holds of the document; a folder has no room. */
 function stateVectorField(
   row: ReadyCopy["copies"][number],
-  stateVectorOf: (documentId: string) => Uint8Array | null,
+  stateVectorOf: StateVectorOf,
 ): { stateVector?: string } {
-  if (row.entry.kind !== "file" || row.view.kind !== "live") return {};
-  const vector = stateVectorOf(row.entry.id);
+  if (row.entry.kind !== "file") return {};
+  const vector = stateVectorOf(row.entry.id, row.view.kind);
   return vector ? { stateVector: btoa(String.fromCharCode(...vector)) } : {};
 }
