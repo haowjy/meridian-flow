@@ -1137,6 +1137,32 @@ describe("replay rules 9 to 13", () => {
     expect(t.at(ch)?.displayName).toBe("notes");
   });
 
+  it("a clashing name that ends in a number continues it: Notes, Notes (2), Notes (3)", () => {
+    const t = start();
+    const f = t.folder("F");
+    t.chapter("Notes", f);
+    t.chapter("Notes", f);
+    t.chapter("Notes (2)", f);
+    t.chapter("Notes (2)", f);
+    expect(t.names(f)).toEqual(["Notes", "Notes (2)", "Notes (3)", "Notes (4)"]);
+    t.valid();
+  });
+
+  it("only the numbers the numbering writes continue: a huge or zero-led one is part of the name", () => {
+    const t = start();
+    const f = t.folder("F");
+    t.chapter("Notes (9007199254740992)", f);
+    t.chapter("Notes (9007199254740992)", f);
+    t.chapter("Notes (02)", f);
+    t.chapter("Notes (02)", f);
+    expect(t.names(f)).toEqual([
+      "Notes (9007199254740992)",
+      "Notes (9007199254740992) (2)",
+      "Notes (02)",
+      "Notes (02) (2)",
+    ]);
+  });
+
   it("a create the server stamped dropped is in no view and is listed", () => {
     const t = start();
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
@@ -1177,10 +1203,10 @@ describe("numbered names after a partial Apply", () => {
     t.w.author(LIVE, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Alpha" });
     t.w.author(LIVE, CHAT, { type: "rename", node: third, name: "Notes (2)", fromName: "Beta" });
     const shown = () => [first, second, third].map((node) => t.at(node)?.displayName);
-    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (2) (2)"]);
+    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (3)"]);
     t.w.author(D, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Notes" });
     applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (2) (2)"]);
+    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (3)"]);
   });
 
   it("a move into another folder keeping its name is numbered against what is there", () => {
