@@ -71,12 +71,13 @@ export interface AgentRevisionStore {
   readSaved(owner: SaveOwner): Promise<PackageSave[]>;
   /**
    * Saves the version before `saveId` again, unless a later Save of that package exists, which
-   * leaves everything as it is. Undefined when `owner` has no such row.
+   * leaves everything as it is. `undone` is the Save that was undone, with the new row as
+   * `current`. Undefined when `owner` has no such row.
    */
   undoSave(
     owner: SaveOwner,
     saveId: string,
-  ): Promise<{ current: PackageSave; undone: boolean } | undefined>;
+  ): Promise<{ current: PackageSave; undone: PackageSave | null } | undefined>;
   /**
    * The Agent revision, only when a Save of `userId`, or of `projectId` (which the caller has
    * authorized), points at its package: what an account may bind by id.

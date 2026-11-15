@@ -1,6 +1,6 @@
 /**
- * The reader swap's rule on a running server: a file Mars reports on is an unavailable Agent
- * that no chat can bind, and the three read-only built-in Agents refuse a write, as Critic
+ * The rule on a running server: a file Mars reports an error on is left out of its package's
+ * Save (listed unavailable, so no chat can bind it), and the three read-only built-in Agents refuse a write, as Critic
  * itself and as children Muse spawns. Needs a stack on the mock provider:
  *
  *   LIVE_TEST_MODEL= MODEL_PROVIDER=mock pnpm dev
@@ -70,28 +70,47 @@ const check = async (name: string, run: () => Promise<void>) => {
 const threadId = (created: string) => /([0-9a-f-]{36})/.exec(created)?.[1] as string;
 
 try {
-  await check("a file with a removed key is listed unavailable and no chat binds it", async () => {
-    const slug = `gate-${Date.now().toString(36)}`;
-    const projectId = mf("project", "default").trim();
-    mf(
-      "doc",
-      "put",
-      `agents://agents/${slug}.md`,
-      // `=` form: the parser reads a separate value that starts with a dash as another option.
-      "--text=---\nname: Gate\npermission: read\n---\n\nBody.\n",
-    );
-    const listed = value(http("GET", `/api/agents?projectId=${projectId}`).body).agents.find(
-      (agent: { slug: string }) => agent.slug === slug,
-    );
-    assert.ok(listed?.unavailableReasons.length > 0, "Agent is not listed with reasons");
-    assert.equal(listed.level, "project");
-    const created = http("POST", "/api/threads", {
-      id: randomUUID(),
-      projectId,
-      agentSelection: listed.selection,
-    });
-    assert.ok(created.status >= 400, `thread creation was not refused: ${created.status}`);
-  });
+  await check(
+    "a file with a removed key is left out of the Save and no chat binds it",
+    async () => {
+      const slug = `gate-${Date.now().toString(36)}`;
+      const path = `agents://agents/${slug}.md`;
+      const projectId = mf("project", "default").trim();
+      mf(
+        "doc",
+        "put",
+        path,
+        // `=` form: the parser reads a separate value that starts with a dash as another option.
+        "--text=---\nname: Gate\npermission: read\n---\n\nBody.\n",
+      );
+      try {
+        const saved = http("POST", "/api/agents/save", {
+          projectId,
+          packages: [{ level: "project", folder: "" }],
+        });
+        assert.equal(saved.status, 200, "a Save is a result, never an HTTP error");
+        const [outcome] = value(saved.body).outcomes;
+        assert.equal(outcome.outcome, "saved");
+        assert.ok(
+          outcome.leftOut.includes(`agents/${slug}.md`),
+          `not left out: ${outcome.leftOut}`,
+        );
+        assert.equal(outcome.findings[0]?.severity, "error", "its error is first on the result");
+        const listed = value(http("GET", `/api/agents?projectId=${projectId}`).body).agents.find(
+          (agent: { slug: string }) => agent.slug === slug,
+        );
+        assert.ok(listed?.unavailableReasons.length > 0, "Agent is not listed with reasons");
+        const created = http("POST", "/api/threads", {
+          id: randomUUID(),
+          projectId,
+          agentSelection: listed.selection,
+        });
+        assert.ok(created.status >= 400, `thread creation was not refused: ${created.status}`);
+      } finally {
+        mf("doc", "rm", path);
+      }
+    },
+  );
 
   await check(
     "Critic's write to a manuscript is refused and the document does not exist",

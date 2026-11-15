@@ -70,6 +70,7 @@ async function fixture(
     "agents/writer.md",
     "---\nname: Writer\nmode: primary\n---\n\nOriginal writer.",
   );
+  await agentCatalog.savePackages("user-1", { packages: [{ level: "user", folder: "" }] });
   const original = (await agentCatalog.list("user-1", {})).agents.find(
     (agent) => agent.slug === "writer",
   ) as { selection: { slug: string; definitionRevisionId: string } };
@@ -503,6 +504,9 @@ describe("frozen prompt provider requests", () => {
       "skills/craft/SKILL.md",
       "---\nname: Craft\ndescription: Dialogue craft\n---\n\nUse distinctive dialogue.",
     );
+    await rig.derive.agentCatalog.savePackages(rig.thread.userId, {
+      packages: [{ level: "user", folder: "" }],
+    });
     const first = await rig.run();
     expect(rig.requests).toHaveLength(2);
     const child = await rig.repos.threads.createSubagent({
@@ -578,6 +582,9 @@ describe("frozen prompt provider requests", () => {
       "agents/writer.md",
       "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
     );
+    await rig.derive.agentCatalog.savePackages(rig.thread.userId, {
+      packages: [{ level: "user", folder: "" }],
+    });
     const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     for (let index = 0; index < 2; index += 1) {
@@ -634,6 +641,9 @@ describe("frozen prompt provider requests", () => {
       "agents/new-writer.md",
       "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
     );
+    await rig.derive.agentCatalog.savePackages(rig.thread.userId, {
+      packages: [{ level: "user", folder: "" }],
+    });
     const nextAgent = (await rig.derive.agentCatalog.list(rig.thread.userId, {})).agents.find(
       (agent) => agent.slug === "new-writer",
     );

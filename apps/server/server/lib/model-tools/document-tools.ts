@@ -52,7 +52,6 @@ import {
 } from "../../domains/runtime/index.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
-import { withLandedWidening } from "./agents-landed.js";
 import { type ReadPlacement, readBinaryFile } from "./binary-read.js";
 import {
   binaryCopySelectionMessage,
@@ -853,8 +852,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       });
     return result;
   };
-  return (input: unknown, ctx: ToolHandlerContext) =>
-    withLandedWidening(deps, ctx, input as WriteToolInput, () => write(input, ctx));
+  return (input: unknown, ctx: ToolHandlerContext) => write(input, ctx);
 }
 
 /** A failed edit the server runs again once, under the same command id. */

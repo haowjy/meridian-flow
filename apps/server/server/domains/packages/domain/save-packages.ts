@@ -1,7 +1,8 @@
 /**
  * Save: the one path from a package's files to the version new chats use, for the writer's button
- * and the AI's tool. A package is checked on its own: an Error in its files fails its Save and
- * changes nothing, and a Save of another package goes on. Also what the Agents tab says of each
+ * and the AI's tool. A package is checked on its own. An error in one Agent's or skill's file
+ * leaves that item out of what runs and the rest saves; only an error in `mars.toml`, which leaves
+ * nothing readable, fails the Save and keeps the previous saved version. Also what the Agents tab says of each
  * package (`statuses`), which is computed from the files and the latest Save, never stored.
  */
 import type {
@@ -11,16 +12,20 @@ import type {
   AgentsLevel,
   SaveOutcome,
 } from "@meridian/contracts/agents";
+import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type { AgentRevisionStore, PackageSave } from "../ports/agent-revision-store.js";
-import { compareAgents, widenedLabel } from "./agent-widening.js";
-import { checkPackage, errorsOf } from "./check-package.js";
+import { checkPackage } from "./check-package.js";
 import type { CompiledPackage } from "./compile-package.js";
+import { defaultManifest } from "./level-packages.js";
+import { MANIFEST_PATH } from "./mars.js";
+import { mergeText } from "./merge-text.js";
 import {
-  effectiveAgentsOf,
+  agentsOf,
   filesDigest,
   folderOf,
   type PackageLevel,
   type PackageLevels,
+  winners,
 } from "./package-levels.js";
 
 export interface PackageSaver {
@@ -33,23 +38,44 @@ export interface PackageSaver {
     userId: string,
     input: { projectId?: string; packages: "all" | Array<{ level: AgentsLevel; folder: string }> },
   ): Promise<SaveOutcome[]>;
-  /** Saves the version before `saveId` again; `undone` is false when a later Save exists. */
+  /**
+   * Saves the version before `saveId` again and puts the package's files back by a three-way merge
+   * (base: that Save's text, live: the files now, target: the previous save's text), so an edit
+   * made since survives. `undone` is false when a later Save exists: nothing changes.
+   */
   undoSave(
     userId: string,
     input: { projectId?: string; level: AgentsLevel; saveId: string },
   ): Promise<{ undone: boolean }>;
 }
 
+/** Warnings that say an Agent may run wider than its file reads come first on a Save's result. */
+const _isLostRestriction = (item: AgentFinding) =>
+  /^field\.(restriction-lost|execution-ignored|set-aside)$/.test(item.code);
+
 const WRITER_LEVELS = ["user", "project"] as const;
 
 /** What changed from `before` to `after`, as level-relative paths under `folder`. */
+/** The files the writer has: the manifest `splitLevel` makes for a level's own files is not one. */
+function writtenFiles(
+  files: Record<string, string> | undefined,
+  level: AgentsLevel,
+  folder: string,
+): Record<string, string> {
+  const { [MANIFEST_PATH]: manifest, ...rest } = files ?? {};
+  return folder === "" && manifest === defaultManifest(level)
+    ? rest
+    : { ...rest, ...(manifest === undefined ? {} : { [MANIFEST_PATH]: manifest }) };
+}
+
 function changesOf(
   before: Record<string, string> | undefined,
   after: Record<string, string> | undefined,
+  level: AgentsLevel,
   folder: string,
 ): AgentFileChange[] {
-  const was = before ?? {};
-  const now = after ?? {};
+  const was = writtenFiles(before, level, folder);
+  const now = writtenFiles(after, level, folder);
   return [...new Set([...Object.keys(was), ...Object.keys(now)])].sort().flatMap((path) => {
     const change = !Object.hasOwn(was, path)
       ? "added"
@@ -81,8 +107,12 @@ function packagesOf(level: PackageLevel | undefined): Map<string, CompiledPackag
 const byFolder = (a: string, b: string) =>
   a === b ? 0 : a === "" ? -1 : b === "" ? 1 : a < b ? -1 : 1;
 
-export function createPackageSaver(input: { store: AgentRevisionStore; levels: PackageLevels }) {
-  const { store, levels } = input;
+export function createPackageSaver(input: {
+  store: AgentRevisionStore;
+  levels: PackageLevels;
+  levelFiles: AgentLevelFiles;
+}) {
+  const { store, levels, levelFiles } = input;
   type Saves = Awaited<ReturnType<PackageLevels["readSaves"]>>;
 
   const savedFiles = async (save: PackageSave | undefined) =>
@@ -108,7 +138,7 @@ export function createPackageSaver(input: { store: AgentRevisionStore; levels: P
           ? "removed"
           : !saved
             ? "not-saved"
-            : check && errorsOf(check).length > 0
+            : check && check.blocking.length > 0
               ? "cant-save"
               : filesDigest(pkg) === saved.contentDigest
                 ? "saved"
@@ -119,7 +149,7 @@ export function createPackageSaver(input: { store: AgentRevisionStore; levels: P
           state,
           savedAt: saved ? saved.createdAt.toISOString() : null,
           saveId: save?.id ?? null,
-          changes: changesOf(await savedFiles(saved), pkg?.files, folder),
+          changes: changesOf(await savedFiles(saved), pkg?.files, level, folder),
           findings: (check?.findings ?? []).map(findingOf),
         });
       }
@@ -144,12 +174,12 @@ export function createPackageSaver(input: { store: AgentRevisionStore; levels: P
             })
           : packages;
 
-      /** What each level's saved Agents are now, to compare before and after a Save. */
-      const effective = new Map<AgentsLevel, ReturnType<typeof effectiveAgentsOf>>();
-      const effectiveSaved = async (level: AgentsLevel) =>
-        effective.get(level) ?? effectiveAgentsOf(await levels.saved(userId, projectId), level);
+      /** Each saved Agent name and whether it is a usable Agent (false: a name two packages bring). */
+      const namesOf = (all: PackageLevel[]) =>
+        new Map(winners(agentsOf(all)).map((entry) => [entry.slug, entry.value !== null]));
 
       const outcomes: SaveOutcome[] = [];
+      let before = namesOf(await levels.fromSaves(saves));
       for (const { level, folder } of targets) {
         const owner = levels.ownerOf(level, userId, projectId);
         if (!owner) continue;
@@ -157,39 +187,42 @@ export function createPackageSaver(input: { store: AgentRevisionStore; levels: P
         const latest = saves[level].find((item) => item.folder === folder);
         const saved = latest?.packageRevisionId ? latest : undefined;
         if (!pkg && !saved) continue;
-        const changes = changesOf(await savedFiles(saved), pkg?.files, folder);
+        const changes = changesOf(await savedFiles(saved), pkg?.files, level, folder);
         const check = pkg ? checkPackage(pkg) : undefined;
-        const errors = check ? errorsOf(check) : [];
-        const warnings = (check?.findings ?? []).filter((item) => item.severity === "warning");
-        const base = { level, folder, changes, widened: [], renamed: [] };
-        if (errors.length > 0) {
-          outcomes.push({ ...base, outcome: "failed", findings: errors.map(findingOf) });
+        const shown = (check?.findings ?? []).map(findingOf);
+        const base = { level, folder, changes, leftOut: check?.leftOut ?? [], renamed: [] };
+        if (check && check.blocking.length > 0) {
+          outcomes.push({
+            ...base,
+            outcome: "failed",
+            findings: shown.filter((item) => item.severity === "error"),
+          });
           continue;
         }
         if (pkg && saved && filesDigest(pkg) === saved.contentDigest) {
-          outcomes.push({ ...base, outcome: "unchanged", findings: warnings.map(findingOf) });
+          outcomes.push({ ...base, outcome: "unchanged", findings: shown });
           continue;
         }
-        const before = await effectiveSaved(level);
         const revision = pkg ? await levels.install(pkg) : undefined;
         const row = await store.savePackage(owner, folder, revision?.packageRevisionId ?? null);
         saves[level] = [...saves[level].filter((item) => item.folder !== folder), row];
-        const after = effectiveAgentsOf(await levels.fromSaves(saves), level);
-        effective.clear();
-        effective.set(level, after);
+        const after = namesOf(await levels.fromSaves(saves));
         outcomes.push({
           ...base,
           outcome: "saved",
           saveId: row.id,
-          findings: warnings.map(findingOf),
-          widened: compareAgents(before, after).map(widenedLabel),
-          renamed: [...before.keys()].flatMap((slug) => {
-            const names = [...after.keys()].filter((name) => name.startsWith(`${slug}__`));
-            return !after.has(slug) && names.length > 0
+          findings: shown,
+          renamed: [...before].flatMap(([slug, usable]) => {
+            // A name two packages bring stays as an unavailable item; both Agents are renamed.
+            const names = [...after.keys()].filter(
+              (name) => name.startsWith(`${slug}__`) && !before.has(name),
+            );
+            return usable && after.get(slug) === false && names.length > 0
               ? [`${slug} is now ${names.join(", ")}`]
               : [];
           }),
         });
+        before = after;
       }
       return outcomes;
     },
@@ -197,7 +230,36 @@ export function createPackageSaver(input: { store: AgentRevisionStore; levels: P
     async undoSave(userId, { projectId, level, saveId }) {
       const owner = levels.ownerOf(level, userId, projectId);
       const result = owner ? await store.undoSave(owner, saveId) : undefined;
-      return { undone: result?.undone ?? false };
+      if (!result?.undone) return { undone: false };
+      const { undone, current } = result;
+      // The files go back by the content merge Apply and Un-Apply use: an edit made since survives.
+      const folder = undone.folder;
+      if (projectId || level === "project") {
+        const live = (await levels.fromFiles(userId, projectId)).find(
+          (item) => item.level === level,
+        );
+        const was = writtenFiles(await savedFiles(undone), level, folder);
+        const target = writtenFiles(await savedFiles(current), level, folder);
+        const now = writtenFiles(packagesOf(live).get(folder)?.files, level, folder);
+        const restore: Record<string, string | null> = {};
+        for (const path of new Set([
+          ...Object.keys(was),
+          ...Object.keys(target),
+          ...Object.keys(now),
+        ])) {
+          const [b, l, t] = [was[path], now[path], target[path]];
+          if (l === t || t === b) continue;
+          if (l === b) restore[`${folder}${path}`] = t ?? null;
+          else if (l !== undefined && t !== undefined) {
+            const merged = mergeText({ base: b ?? "", live: l, target: t });
+            if (merged !== l) restore[`${folder}${path}`] = merged;
+          }
+        }
+        if (Object.keys(restore).length > 0 && projectId) {
+          await levelFiles.writeFiles({ level, userId, projectId, files: restore });
+        }
+      }
+      return { undone: true };
     },
   };
   return { ...saver, statuses };

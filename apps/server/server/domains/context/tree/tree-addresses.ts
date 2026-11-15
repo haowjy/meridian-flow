@@ -27,7 +27,7 @@ import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { sourceAuthority } from "../adapters/context-file-entry.js";
-import { LIVE_TREE, onlyRows, type TreeView } from "./tree-relations.js";
+import { LIVE_TREE, type TreeView } from "./tree-relations.js";
 
 /** A decoded canonical address resolved to storage coordinates. */
 export type DocumentCoordinates = {
@@ -71,13 +71,13 @@ export function placedNodesSql(view: TreeView): SQL {
   if (view.kind === "live") return sql`(${live})`;
   const branch = sql`${view.branchId}::uuid`;
   return sql`(${live}
-    WHERE NOT EXISTS (SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id${onlyRows(view, sql`x.id`)})
+    WHERE NOT EXISTS (SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
     UNION ALL
     SELECT b.id, b.kind, b.context_source_id, b.parent_id, b.name, b.extension,
       CASE WHEN b.extension <> '' THEN left(b.name, -(length(b.extension) + 1)) ELSE b.name END,
       b.file_type, b.rank, coalesce(lt.location_version, 0), b.deleted, b.exists_only_in_draft
     FROM branch_tree_nodes b LEFT JOIN tree_nodes lt ON lt.id = b.id
-    WHERE b.branch_id = ${branch}${onlyRows(view, sql`b.id`)})`;
+    WHERE b.branch_id = ${branch})`;
 }
 
 /** Which content documents to spell. */

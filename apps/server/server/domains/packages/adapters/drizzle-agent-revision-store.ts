@@ -177,7 +177,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         if (latest.id !== target.id) {
           return {
             current: saveOf(latest, await digestOf(latest.packageRevisionId)),
-            undone: false,
+            undone: null,
           };
         }
         const [before] = await db()
@@ -197,7 +197,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
           target.folder,
           before?.packageRevisionId ?? null,
         );
-        return { current, undone: true };
+        return { current, undone: saveOf(target, await digestOf(target.packageRevisionId)) };
       });
     },
     async readSavedRevision(userId, projectId, id) {

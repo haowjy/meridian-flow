@@ -274,7 +274,6 @@ import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/d
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
-import { type AgentsWidening, createAgentsWidening } from "./agents-widening.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
@@ -326,7 +325,6 @@ export type AppServices = {
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
-  agentsWidening: AgentsWidening;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
@@ -428,7 +426,6 @@ export type ProductionAppPorts = {
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
-  agentsWidening: AgentsWidening;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -651,13 +648,12 @@ export async function createProductionAppPorts(input: {
   });
   const agentCatalog = createBoundAgentCatalog({
     store: agentRevisions,
-    levelFiles: createAgentLevelFiles({ db, documentSync, branches: documentSync.branches }),
+    levelFiles: createAgentLevelFiles({ db, documentSync, contextPorts }),
     builtins: await readBuiltinPackages(defaultModel),
     defaultModel: () => gateway.getDefaultModel(),
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
   });
-  const agentsWidening = createAgentsWidening({ catalog: agentCatalog });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
     db,
@@ -750,7 +746,6 @@ export async function createProductionAppPorts(input: {
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     agentCatalog,
-    agentsWidening,
     accountSettings,
     workingSet,
     recentDocuments,
@@ -919,7 +914,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     shownLinks: ports.documentSync.modelEvidence(),
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
-    agentsWidening: ports.agentsWidening,
     agentCatalog: ports.agentCatalog,
   };
   const asks = createAskService({
@@ -1280,7 +1274,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: ports.agentCatalog,
-    agentsWidening: ports.agentsWidening,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
@@ -1852,7 +1845,6 @@ export function createInMemoryAppServices(): AppServices {
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog,
-    agentsWidening: createAgentsWidening({ catalog: agentCatalog }),
     eventSink: createNoopEventSink(),
     accountSettings,
     workingSet,

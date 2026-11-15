@@ -23,7 +23,7 @@ import {
   documentRow,
   entryNameStemEnd,
 } from "./context-entry-name";
-import { schemeLabel } from "./context-schemes";
+import { areaOf, schemeLabel } from "./context-schemes";
 import {
   type AnnotatedFileSuggestion,
   FileSuggestionList,
@@ -154,7 +154,7 @@ export function IdentityPlacementField({
           ...rootRows,
         ];
   const prefix = destination
-    ? `${[schemeLabel(destination.scheme), ...treeSegments(destination.folderPath)].join("/")}/`
+    ? `${placementPrefix(destination.scheme, destination.folderPath)}/`
     : "";
 
   const identityNote = deriveIdentityNote({
@@ -380,4 +380,10 @@ function suggestionForSession(
   // The suggestion carries the file's visible extension (`.json`); a prose name has none.
   const extension = tab.name.slice(entryNameStemEnd(tab.name, documentRow(tab.name)));
   return extension && !suggestion.endsWith(extension) ? `${suggestion}${extension}` : suggestion;
+}
+
+/** "Manuscript/Arc 3", "~/.agents/agents": where a placed document goes, area first. */
+function placementPrefix(scheme: ProjectContextTreeScheme, folderPath: string): string {
+  const { area, rest } = areaOf(scheme, folderPath);
+  return [area, ...treeSegments(rest)].join("/");
 }

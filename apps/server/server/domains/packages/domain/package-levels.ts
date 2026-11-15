@@ -4,9 +4,8 @@
  * builds on this, so the two sources come out in one shape and share one compile cache.
  */
 import type { AgentLevel, AgentsLevel } from "@meridian/contracts/agents";
-import type { AgentLevelFiles, AgentsBranch } from "../ports/agent-level-files.js";
+import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type { AgentRevisionStore, PackageSave, SaveOwner } from "../ports/agent-revision-store.js";
-import { capabilityOf, type EffectiveAgents } from "./agent-widening.js";
 import { type Combined, type Layered, type LevelItems, layerByName } from "./combine-agents.js";
 import {
   type AgentSourceSnapshot,
@@ -107,10 +106,10 @@ export function createPackageLevels(input: {
   };
   type Saves = Awaited<ReturnType<typeof readSaves>>;
 
-  /** The levels as the writer's files hold them now, through `branch` when given. */
-  async function fromFiles(userId: string, projectId: string | undefined, branch?: AgentsBranch) {
+  /** The levels as the writer's files hold them now. */
+  async function fromFiles(userId: string, projectId: string | undefined) {
     const read = async (level: AgentsLevel) =>
-      splitLevel(level, await input.levelFiles.read({ level, userId, projectId, branch }));
+      splitLevel(level, await input.levelFiles.read({ level, userId, projectId }));
     const [user, project] = await Promise.all([read("user"), read("project")]);
     const compileLevel = (split: typeof user) => ({
       root: split.root ? compile(split.root) : null,
@@ -203,18 +202,3 @@ export const skillsOf = (all: PackageLevel[]) =>
 
 export const winners = <T>(items: Array<Layered<T>>): Array<Combined<T>> =>
   items.filter((item) => item.hiddenBy === null);
-
-/** Every winner of `level` and the levels below it, as the widening comparison reads them. */
-export function effectiveAgentsOf(all: PackageLevel[], level: AgentsLevel): EffectiveAgents {
-  const scope = level === "user" ? all.filter((each) => each.level !== "project") : all;
-  return new Map(
-    winners(agentsOf(scope)).map((entry) => [
-      entry.slug,
-      {
-        name: entry.value?.agent.name ?? entry.slug,
-        level: entry.level,
-        capability: capabilityOf(entry.value?.agent),
-      },
-    ]),
-  );
-}

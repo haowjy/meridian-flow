@@ -12,7 +12,7 @@ import type {
   ResolvedAgentConfiguration,
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
-import type { AgentLevelFiles, AgentsBranch } from "../ports/agent-level-files.js";
+import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type {
   AgentRevision,
   AgentRevisionStore,
@@ -23,7 +23,6 @@ import {
   resolveAgentConfiguration,
   skillReference,
 } from "./agent-configuration.js";
-import type { EffectiveAgents } from "./agent-widening.js";
 import type { Combined } from "./combine-agents.js";
 import {
   type AgentSourceSnapshot,
@@ -39,7 +38,6 @@ import {
   type AgentEntry,
   agentsOf,
   createPackageLevels,
-  effectiveAgentsOf,
   type PackageLevels,
   type SkillEntry,
   skillsOf,
@@ -85,17 +83,6 @@ export interface BoundAgentCatalog extends PackageSaver {
    * hides, and every package's Save state.
    */
   files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
-  /**
-   * The Agents a write at `level` can change the meaning of: that level and the levels below it,
-   * never the writing Project's full catalog (`subagents` and `skills` resolve only inside their
-   * package, so a higher level that has a name keeps its winner whatever `level` holds). Read
-   * from the files, through `branch` as that owner's branch holds them, its drafts' text over
-   * live's: the write-time widening label.
-   */
-  effectiveAgents(
-    userId: string,
-    input: { projectId?: string; level: "user" | "project"; branch?: AgentsBranch },
-  ): Promise<EffectiveAgents>;
   /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
   builtinFile(path: string): string | undefined;
   /** The saved skills a writer can invoke with `/`: built-in, user and project, combined by name. */
@@ -189,7 +176,11 @@ export function createBoundAgentCatalog(input: {
         }
       : null;
 
-  const { statuses, ...saver } = createPackageSaver({ store, levels });
+  const { statuses, ...saver } = createPackageSaver({
+    store,
+    levels,
+    levelFiles: input.levelFiles,
+  });
 
   return {
     ...saver,
@@ -210,10 +201,6 @@ export function createBoundAgentCatalog(input: {
                   : 0,
         ),
       };
-    },
-
-    async effectiveAgents(userId, { projectId, level, branch }) {
-      return effectiveAgentsOf(await levels.fromFiles(userId, projectId, branch), level);
     },
 
     async resolvePrimary(userId, selection, projectId) {

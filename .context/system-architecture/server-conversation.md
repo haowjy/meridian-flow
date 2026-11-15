@@ -70,7 +70,7 @@ Runtime delivers pending notices at call boundaries, and the bytes stay identica
 
 Agent definitions and skills, loaded from packages.
 
-Resolves which Agent and skills a thread uses, from packages compiled into revisions that never change. An unknown name in an allow-list is refused. It also compares an Agents level read live with the same level read through a chat's branch, to say which Agents an edit makes wider.
+Resolves which Agent and skills a thread uses, from the saved version of each package (the writer's Save, or the AI's `save_agents`, checks a package's files and publishes them; a package is used only once saved), compiled into revisions that never change. An unknown name in an allow-list is refused. Save says which Agents it made wider; the write-time comparison of an Agents level read live with the same level read through a chat's branch stays until the owner decides.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/packages`

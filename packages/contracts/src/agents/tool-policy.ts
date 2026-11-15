@@ -1,11 +1,10 @@
 /**
  * Which tools an agent has, from its resolved configuration. The runtime enforces it (dispatch
- * refuses a call outside it, a child never has a tool its parent lacks) and the Agents-widening
- * comparison reads it, so a tool an Agent file gains counts as wider without a second list.
+ * refuses a call outside it, a child never has a tool its parent lacks).
  */
 import type { ResolvedAgentConfiguration } from "./execution-knobs.js";
 
-/** Every model tool Flow publishes. Authoring tool lists may name only these. */
+/** Every model tool Flow publishes by default. Authoring tool lists may name these and `OPT_IN_TOOLS`. */
 export const TOOL_CATALOG = [
   "read",
   "write",
@@ -21,6 +20,13 @@ export const TOOL_CATALOG = [
   "thread_history",
   "return_result",
 ] as const;
+
+/**
+ * Tools an Agent has only when its file turns them on (`tools: {save_agents: allow}`); the full
+ * catalog never includes them. Mars's vocabulary has no name for them, so Flow reads those rules
+ * itself (`compile-package.ts`).
+ */
+export const OPT_IN_TOOLS = ["save_agents"] as const;
 
 /** The tool names an agent is advertised and may call. */
 export type ToolPolicy = ReadonlySet<string>;

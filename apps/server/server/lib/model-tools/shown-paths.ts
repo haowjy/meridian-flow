@@ -21,7 +21,6 @@ import {
 } from "../../domains/context/tree/names-shown.js";
 import { reachPath } from "../../domains/context/tree/tree-commands.js";
 import { type ToolHandlerContext, TREE_NAMES_ROOM } from "../../domains/runtime/index.js";
-import { agentsLevelOfUri } from "../agents-widening.js";
 import type { ToolCall, ToolWiringDeps } from "./tool-context.js";
 
 /** What the model has been shown of the tree so far in this conversation. */
@@ -70,12 +69,6 @@ export function areaOfPath(path: string): { area: string; rest: string } | null 
     area: formatParsedContextUri(scheme, "", authority),
     rest: folder ? `${inside}/` : inside,
   };
-}
-
-/** The Agents level a path the model wrote is in, whatever its spelling. */
-export function agentsLevelOfPath(path: string): AgentsLevel | null {
-  const at = areaOfPath(path);
-  return at ? agentsLevelOfUri(`${at.area}${at.rest}`) : null;
 }
 
 export type Reached = {

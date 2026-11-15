@@ -8,6 +8,7 @@
  * package's own files and publishes with warnings (`checkPackage`), so no saved Agent is one an
  * Error made unavailable, unless a newer reader finds one.
  */
+import { OPT_IN_TOOLS, TOOL_CATALOG } from "@meridian/contracts/agents";
 import { canonicalizeJsonObject, sha256 } from "./helpers.js";
 import {
   type AgentFields,
@@ -112,7 +113,7 @@ export function compilePackage(
       slug,
       Object.hasOwn(problems, path)
         ? problemAgent(slug, path, problems[path], packageErrors)
-        : draftAgent(slug, path, files[path], prepared, packageErrors, skills),
+        : draftAgent(slug, path, prepared, packageErrors, skills),
     );
   }
   rejectBrokenSubagents(drafts);
@@ -278,6 +279,8 @@ interface Draft {
   warnings: PackageDiagnostic[];
   permission: "read" | "edit" | undefined;
   tools: ToolProjection | undefined;
+  /** Tools off by default that the file turns on (`OPT_IN_TOOLS`). */
+  optIn: Set<string>;
 }
 
 /** An Agent path whose file cannot be read: the Agent is in the package, unavailable. */
@@ -296,13 +299,13 @@ function problemAgent(
     warnings: [],
     permission: undefined,
     tools: undefined,
+    optIn: new Set(),
   };
 }
 
 function draftAgent(
   slug: string,
   file: string,
-  _text: string,
   prepared: Prepared,
   packageErrors: PackageDiagnostic[],
   skills: Map<string, PackageDiagnostic[]>,
@@ -321,6 +324,7 @@ function draftAgent(
     warnings: [],
     permission: undefined,
     tools: undefined,
+    optIn: new Set(),
   };
   // A change `prepare` made to the file (`field.restriction-lost` above all) is a warning too.
   for (const item of [...reading.diagnostics, ...(prepared.changes?.[file] ?? [])]) {
@@ -370,7 +374,28 @@ function draftAgent(
  * enforced would leave the Agent with more access than its file says.
  */
 function projectTools(rules: AgentFields["tools"], file: string, draft: Draft): ToolProjection {
-  const projection = projectRules(rules, "meridian-flow");
+  // Mars's vocabulary has no name for a tool that is off by default; Flow reads those rules.
+  const isOptIn = (rule: AgentFields["tools"][number]) =>
+    (OPT_IN_TOOLS as readonly string[]).includes(rule.capability);
+  rules.forEach((rule, index) => {
+    if (!isOptIn(rule)) return;
+    if (rule.pattern !== null) {
+      draft.errors.push(
+        flow(
+          file,
+          "tools-unscopable",
+          `Tool rule ${rule.capability}(${rule.pattern}) takes no pattern`,
+          "error",
+          ["tools", index],
+        ),
+      );
+    } else if (rule.action === "deny") draft.optIn.delete(rule.capability);
+    else draft.optIn.add(rule.capability);
+  });
+  const projection = projectRules(
+    rules.filter((rule) => !isOptIn(rule)),
+    "meridian-flow",
+  );
   projection.rules.forEach((projected, index) => {
     if (projected.status !== "unscopable" && projected.status !== "unknown") return;
     const { capability, pattern, action } = projected.rule;
@@ -478,7 +503,7 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),
-    ...toolsOf(draft.tools),
+    ...toolsOf(draft.tools, draft.optIn),
   };
   return { schemaVersion: 1, systemPrompt: draft.body, metadata };
 }
@@ -489,10 +514,19 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
  */
 function toolsOf(
   projection: ToolProjection | undefined,
+  optIn: ReadonlySet<string>,
 ): Pick<NormalizedAgentMetadata, "tools" | "disallowed-tools"> {
   if (!projection) return {};
+  const on = [...optIn];
+  // An opt-in tool beside no allow-list must not turn the file's default (every tool) into just it.
+  const tools =
+    projection.default === "deny"
+      ? [...projection.allow, ...projection.ask, ...on]
+      : on.length
+        ? [...TOOL_CATALOG, ...on]
+        : undefined;
   return {
-    ...(projection.default === "deny" ? { tools: [...projection.allow, ...projection.ask] } : {}),
+    ...(tools ? { tools } : {}),
     ...(projection.deny.length ? { "disallowed-tools": projection.deny } : {}),
   };
 }

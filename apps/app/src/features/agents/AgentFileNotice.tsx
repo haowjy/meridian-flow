@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
+import { Trans } from "@lingui/react/macro";
 import {
   type AgentFileStatus,
   type AgentLevel,
@@ -8,8 +9,8 @@ import {
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, EyeOff, TriangleAlert } from "lucide-react";
-import { useEffect } from "react";
+import { CircleCheck, EyeOff, FileCog, TriangleAlert } from "lucide-react";
+import { type ReactNode, useEffect } from "react";
 import { invalidateAgentReads, useAgentFiles } from "@/client/query/useAgentFiles";
 import type { OpenDocument } from "@/client/stores";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
@@ -17,6 +18,8 @@ import {
   useAccountId,
   useLiveDocumentSessionRegistry,
 } from "@/features/project/context/account-feature-context";
+import { PackageSave } from "./PackageSave";
+import { packageFolderOf, packageLabel, statusOf, usePackageSaves } from "./package-save";
 
 /** The verdict on the file at a tree path, when it is an Agent or skill file of a level. */
 export function agentFileAt(
@@ -73,7 +76,7 @@ export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[])
     : t`Your own; it hides ${below}.`;
 }
 
-/** What a row in the Agents tab says after its name: only what keeps it from use. */
+/** What a row says after its name of what keeps it from use: a built-in's, or the last word of a level's file. */
 export function agentFileMark(file: AgentFileStatus | null | undefined): string | undefined {
   if (!file) return undefined;
   if (file.unavailableReasons.length > 0) return t`Unavailable`;
@@ -86,9 +89,12 @@ export function agentFileMark(file: AgentFileStatus | null | undefined): string 
  */
 export function AgentFileStatusNotice({
   file,
+  action,
   className,
 }: {
   file: AgentFileStatus;
+  /** Its package's Save state and Save. */
+  action?: ReactNode;
   className?: string;
 }) {
   useLingui();
@@ -125,6 +131,7 @@ export function AgentFileStatusNotice({
   return (
     <DocumentNotice
       className={className}
+      action={action}
       icon={
         file.hiddenBy ? (
           <EyeOff aria-hidden className="size-4" />
@@ -150,8 +157,9 @@ export function AgentFileStatusNotice({
 }
 
 /**
- * Under an open Agent or skill file's path bar: Mars's verdict, read again each time the server
- * acknowledges the writer's edits, so the verdict follows the typing.
+ * Under an open file of an Agents level: Mars's verdict on an Agent or skill file, and its
+ * package's Save state with Save, read again each time the server acknowledges the writer's
+ * edits, so both follow the typing. Another file of a level (`mars.toml`) shows only the Save.
  */
 export function AgentFileNotice({
   projectId,
@@ -190,12 +198,26 @@ function LevelFileNotice({
   className: string;
 }) {
   const files = useAgentFiles(projectId);
-  const file = agentFileAt(files, scheme, path);
+  const file = agentFileAt(files?.files ?? null, scheme, path);
   useReadAgainOnSave(projectId, documentId);
-  if (!file) return null;
+  const saves = usePackageSaves(projectId);
+  const at = agentsLocationOf(scheme, path.replace(/^\//, ""));
+  if (!at || file === undefined) return null;
+  const pkg = { level: at.level, folder: packageFolderOf(at.path) };
+  const status = statusOf(files?.packages, pkg);
+  const save = <PackageSave projectId={projectId} pkg={pkg} status={status} look="file" />;
+  // A level's file that defines no Agent or skill says only its package's state, when it has one.
+  if (!file && !saves.shows(pkg, status)) return null;
+  const label = packageLabel(pkg);
   return (
     <div className={className} data-agent-file-notice>
-      <AgentFileStatusNotice file={file} />
+      {file ? (
+        <AgentFileStatusNotice file={file} action={save} />
+      ) : (
+        <DocumentNotice icon={<FileCog aria-hidden className="size-4" />} action={save}>
+          <Trans>Part of {label}.</Trans>
+        </DocumentNotice>
+      )}
     </div>
   );
 }
@@ -212,7 +234,7 @@ function useReadAgainOnSave(projectId: string, documentId: string) {
     let saved: boolean | null = null;
     const stop = registry.get(lease).subscribe((snapshot) => {
       const now = snapshot.serverHasLocalChanges;
-      if (saved === false && now) invalidateAgentReads(queryClient, projectId, accountId);
+      if (saved === false && now) void invalidateAgentReads(queryClient, projectId, accountId);
       saved = now;
     });
     return () => {

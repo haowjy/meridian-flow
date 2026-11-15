@@ -1,5 +1,8 @@
-/** What Mars made of each Agent and skill file at every level, for the Agents tab and an open file. */
-import { type AgentFileStatus, agentsLocationOf } from "@meridian/contracts/agents";
+/**
+ * What Mars made of each Agent and skill file at every level, and each package's Save state, for
+ * the Agents tab, an open file and the picker.
+ */
+import { type AgentFiles, agentsLocationOf } from "@meridian/contracts/agents";
 import { keepPreviousData, type QueryClient, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { listAgentFiles, readBuiltinAgentFile } from "@/client/api/agents-api";
@@ -19,7 +22,7 @@ const agentFilesKey = (projectId: string) => ["projects", projectId, "agent-file
  * Keyed on the documents in both Agents locations as the trees have them: a file made, renamed
  * or deleted asks again, and the last answer stays on screen meanwhile.
  */
-export function useAgentFiles(projectId: string): AgentFileStatus[] | null {
+export function useAgentFiles(projectId: string): AgentFiles | null {
   const accountId = useAccountId();
   const accountSignal = useAccountEpochSignal();
   const trees = useProjectTreeViews(projectId, AGENTS_SCHEMES, {});
@@ -49,14 +52,27 @@ export function useAgentFiles(projectId: string): AgentFileStatus[] | null {
   return query.data ?? null;
 }
 
-/** An Agent file's text changed on the server: the verdicts and the picker read it again. */
-export function invalidateAgentReads(
+/** An Agent file's text changed on the server, or a Save or its Undo ran: the verdicts and the picker read it again. */
+export async function invalidateAgentReads(
   queryClient: QueryClient,
   projectId: string,
   accountId: string,
-) {
-  void queryClient.invalidateQueries({ queryKey: agentFilesKey(projectId) });
-  void queryClient.invalidateQueries({ queryKey: agentCatalogQueryKey(accountId, projectId) });
+): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: agentFilesKey(projectId) }),
+    queryClient.invalidateQueries({ queryKey: agentCatalogQueryKey(accountId, projectId) }),
+    queryClient.invalidateQueries({ queryKey: agentCatalogQueryKey(accountId) }),
+  ]);
+}
+
+/** The project's latest answer of `useAgentFiles`, whatever documents it was keyed on. */
+export function latestAgentFiles(queryClient: QueryClient, projectId: string): AgentFiles | null {
+  const [latest] = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: agentFilesKey(projectId) })
+    .filter((query) => query.state.data !== undefined)
+    .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt);
+  return (latest?.state.data as AgentFiles | undefined) ?? null;
 }
 
 export function useBuiltinAgentFile(path: string | null) {

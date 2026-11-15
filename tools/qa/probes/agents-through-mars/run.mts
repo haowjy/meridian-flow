@@ -1,17 +1,19 @@
 /**
- * The rule the reader swap keeps, on the real Drizzle store and the computed catalog over a
- * scratch Postgres: anything Mars or Flow reports on an Agent's file makes that Agent
- * unavailable, and an Agent never runs with more access than its file says. Writer files are fed
- * through the level reader, as the documents would hold them. Also the built-in packages, fixing
- * a broken Agent, and a reader bump.
+ * The rule Save keeps, on the real Drizzle store and the computed catalog over a scratch Postgres:
+ * an error, Mars's or Flow's, in one Agent's or skill's file leaves that item out of the saved
+ * version and the rest saves; an error in `mars.toml` fails the Save; a warning or info saves with
+ * the finding shown; and an Agent that runs never has more access than
+ * its file says, except by a warning the Save showed. Writer files are fed through the level
+ * reader, as the documents would hold them, and used only once saved. Also the built-in packages,
+ * fixing a broken Agent, a chat keeping its revision, and a reader bump.
  *
  *   pnpm exec tsx tools/qa/probes/agents-through-mars/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a file with any Mars diagnostic, of any severity, defines nothing
- * - an Agent naming a missing, unavailable or non-invocable subagent or skill is unavailable
- * - a tool rule with a pattern, or on a capability Mars has no Flow row for, makes the Agent
- *   unavailable
+ * - an error on an Agent or skill file leaves it out; on mars.toml it fails the Save; a warning or
+ *   info does neither
+ * - an Agent naming a missing, unavailable or non-invocable subagent or skill is an error
+ * - a tool rule with a pattern, or on a capability Mars has no Flow row for, is an error
  */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -99,6 +101,20 @@ function publish(files: Record<string, string>) {
     levels.write("user", `packages/${name}/${path}`, text);
   return name;
 }
+const savePackage = async (folder: string) => {
+  const [outcome] = await catalog.savePackages(USER, {
+    packages: [{ level: "user", folder }],
+  });
+  assert.ok(outcome, "nothing to save");
+  return outcome;
+};
+/** Publishes the files and Saves them; the Save must go through. */
+const publishSaved = async (files: Record<string, string>) => {
+  const name = publish(files);
+  const outcome = await savePackage(`packages/${name}/`);
+  assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
+  return name;
+};
 const listed = async (slug: string) => {
   const page = await catalog.list(USER, {});
   const item = page.agents.find((entry) => entry.slug === slug);
@@ -142,6 +158,7 @@ try {
         "reader-sim",
         "writer-helper",
       ];
+      for (const source of builtins) await store.installSource(source);
       for (const slug of slugs) {
         const item = await listed(slug);
         assert.equal(item.level, "builtin");
@@ -243,7 +260,7 @@ try {
     },
     { name: "missing skill", files: fm("skills: [nope]\n") },
     {
-      name: "skill with a diagnostic",
+      name: "skill with a diagnostic (Mars info)",
       files: (slug) => ({
         "mars.toml": MANIFEST,
         [`agents/${slug}.md`]: agent("A", `skills: [${slug}-skill]\n`),
@@ -267,20 +284,76 @@ try {
       }),
     },
   ];
+  /**
+   * Cases Mars grades below `error` (a warning or info) and Flow adds no error to save whole;
+   * `true` when the Save shows a finding. A manifest error fails the Save. Any other error leaves
+   * its Agent out of the saved version and the rest saves.
+   */
+  const saves = new Map([
+    ["misspelled harness-override (Mars info)", false],
+    ["modelInvocable (Mars info)", false],
+    ["Flow namespace misspelled (Mars warning)", true],
+    ["manifest with a misspelled table (Mars info)", false],
+    ["skill with a diagnostic (Mars info)", false],
+  ]);
+  const fails = new Set([
+    "no mars.toml",
+    "manifest without schema = 1",
+    "[package.tools] with an action Mars cannot read (package-tools.unreadable)",
+  ]);
   for (const [index, entry] of unavailable.entries()) {
-    await check(`unavailable: ${entry.name}`, async () => {
+    const kind = saves.has(entry.name)
+      ? "saves with a finding"
+      : fails.has(entry.name)
+        ? "fails Save"
+        : "left out";
+    await check(`${kind}: ${entry.name}`, async () => {
       const slug = `u${index}`;
-      publish(entry.files(slug));
+      const name = publish(entry.files(slug));
+      const outcome = await savePackage(`packages/${name}/`);
+      const file = (await catalog.files(USER, {})).files.find(
+        (item) => item.slug === slug && item.level === "user",
+      );
+      if (saves.has(entry.name)) {
+        assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
+        // Info is silent; a warning is on the result.
+        assert.equal(outcome.findings.length > 0, saves.get(entry.name));
+        assert.deepEqual(outcome.leftOut, []);
+        assert.deepEqual(file?.unavailableReasons, []);
+        const item = await listed(slug);
+        assert.ok(item.selection, "no selection");
+        assert.equal((await catalog.resolvePrimary(USER, item.selection)).ok, true);
+        return;
+      }
+      assert.ok(file && file.unavailableReasons.length > 0, "the files show no reason");
+      if (fails.has(entry.name)) {
+        assert.equal(outcome.outcome, "failed");
+        assert.ok(
+          outcome.findings.some((item) => item.severity === "error"),
+          "failed with no error",
+        );
+        assert.equal(
+          (await store.readSaved({ userId: USER })).some(
+            (row) => row.folder === `packages/${name}/`,
+          ),
+          false,
+        );
+        assert.equal(
+          (await catalog.list(USER, {})).agents.some((item) => item.slug === slug),
+          false,
+        );
+        return;
+      }
+      assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
+      assert.ok(outcome.leftOut.includes(`agents/${slug}.md`), `not left out: ${outcome.leftOut}`);
+      assert.equal(outcome.findings[0]?.severity, "error", "left-out errors come first");
+      // Left out of what runs: listed unavailable with its reason, and no chat binds it.
       const item = await listed(slug);
       assert.ok(item.unavailableReasons.length > 0, "listed with no reason");
       assert.ok(item.selection, "no selection");
-      const result = await catalog.resolvePrimary(USER, item.selection);
-      assert.equal(result.ok, false);
-      assert.equal(result.ok === false && result.reason, "unavailable");
+      const bound = await catalog.resolvePrimary(USER, item.selection);
+      assert.equal(bound.ok, false);
       assert.equal(await store.readRevision(item.selection.definitionRevisionId), undefined);
-      const [row] =
-        await raw`select definition from agent_definition_revisions where id=${item.selection.definitionRevisionId}`;
-      assert.equal(row?.definition, null);
     });
   }
 
@@ -345,7 +418,7 @@ try {
   for (const [index, entry] of never.entries()) {
     await check(`never wider: ${entry.name}`, async () => {
       const slug = `n${index}`;
-      publish({
+      await publishSaved({
         "mars.toml": MANIFEST,
         [`agents/${slug}.md`]: agent("N", entry.frontmatter),
       });
@@ -360,7 +433,7 @@ try {
   await check(
     "never wider: [package.tools] reaches each Agent, an Agent's own key wins",
     async () => {
-      publish({
+      await publishSaved({
         "mars.toml": `${MANIFEST}\n[package.tools]\nwrite = "deny"\nread = "allow"\n`,
         "agents/pt1.md": agent("Plain"),
         "agents/pt2.md": agent("Own", "tools: {write: allow}\n"),
@@ -372,27 +445,48 @@ try {
     },
   );
 
-  await check("never wider: one bad Agent and one good one in a package", async () => {
-    publish({
-      "mars.toml": MANIFEST,
-      "agents/good1.md": agent("Good"),
-      "agents/bad1.md": agent("Bad", "permission: read\n"),
-    });
-    await resolved("good1");
-    assert.ok((await listed("bad1")).unavailableReasons.length > 0);
+  await check(
+    "one bad Agent is left out of its package's Save; the rest of the package and other packages save",
+    async () => {
+      const name = publish({
+        "mars.toml": MANIFEST,
+        "agents/good1.md": agent("Good"),
+        "agents/bad1.md": agent("Bad", "permission: read\n"),
+      });
+      const outcome = await savePackage(`packages/${name}/`);
+      assert.equal(outcome.outcome, "saved");
+      assert.deepEqual(outcome.leftOut, ["agents/bad1.md"]);
+      await resolved("good1");
+      assert.ok((await listed("bad1")).unavailableReasons.length > 0);
+    },
+  );
+
+  await check("a broken manifest fails the Save and the previous saved version stays", async () => {
+    const name = await publishSaved({ "mars.toml": MANIFEST, "agents/mf1.md": agent("Mf") });
+    levels.write(
+      "user",
+      `packages/${name}/mars.toml`,
+      '[package]\nname = "probe"\nversion = "0.1.0"\n',
+    );
+    levels.write("user", `packages/${name}/agents/mf1.md`, agent("Mf", "model: edited-model\n"));
+    const outcome = await savePackage(`packages/${name}/`);
+    assert.equal(outcome.outcome, "failed");
+    assert.equal((await resolved("mf1")).model, "fixture-model");
   });
 
-  await check("fixing a broken Agent: edit the file and the same name is available", async () => {
+  await check("fixing a broken Agent: edit the file, Save, and the name is available", async () => {
     levels.write("user", "agents/fix1.md", agent("Fix", "permission: read\n"));
-    const broken = await listed("fix1");
-    assert.ok(broken.unavailableReasons.length > 0);
-    assert.ok(broken.selection);
-    assert.equal((await catalog.resolvePrimary(USER, broken.selection)).ok, false);
+    const broken = await savePackage("");
+    assert.deepEqual(broken.leftOut, ["agents/fix1.md"]);
+    assert.ok((await listed("fix1")).unavailableReasons.length > 0);
     levels.write(
       "user",
       "agents/fix1.md",
       agent("Fix", "harness-overrides: {meridian-flow: {permission: read}}\n"),
     );
+    const fixedOutcome = await savePackage("");
+    assert.equal(fixedOutcome.outcome, "saved");
+    assert.deepEqual(fixedOutcome.leftOut, []);
     const fixed = await listed("fix1");
     assert.deepEqual(fixed.unavailableReasons, []);
     assert.ok(fixed.selection);
@@ -401,6 +495,7 @@ try {
 
   await check("a bound chat keeps its revision when the file is edited", async () => {
     levels.write("user", "agents/keep1.md", agent("Keep", "model: first-model\n"));
+    assert.equal((await savePackage("")).outcome, "saved");
     const before = await resolved("keep1");
     assert.equal(before.model, "first-model");
     const item = await listed("keep1");
@@ -412,12 +507,16 @@ try {
       true,
     );
     levels.write("user", "agents/keep1.md", agent("Keep", "model: second-model\n"));
+    // Edited, not saved: new chats still get the saved version.
+    assert.equal((await resolved("keep1")).model, "first-model");
+    assert.equal((await savePackage("")).outcome, "saved");
     assert.equal((await resolved("keep1")).model, "second-model");
     assert.equal((await store.readThreadBinding(THREAD))?.revision?.id, bound.revision.id);
-    // The picker's old selection still binds the revision it showed.
+    // A new chat binds the newest saved version by name, whatever the picker showed.
     const again = await catalog.resolvePrimary(USER, item.selection);
     assert.ok(again.ok);
-    assert.equal(again.revision.id, bound.revision.id);
+    assert.notEqual(again.revision.id, bound.revision.id);
+    assert.equal(again.configuration.model, "second-model");
   });
 
   await check(
@@ -435,6 +534,9 @@ try {
         (row) => row.slug === "b1",
       );
       assert.ok(old);
+      // The name is saved nowhere, so the picked revision binds: this account's Save holds it.
+      await store.savePackage({ userId: USER }, "packages/old-reader/", old.packageRevisionId);
+      levels.write("user", "packages/old-reader/agents/unrelated.md", agent("Unrelated"));
       const reached = await catalog.resolvePrimary(USER, {
         slug: "b1",
         definitionRevisionId: old.id,
@@ -447,25 +549,37 @@ try {
   );
 
   await check(
-    "a level owns its names: a broken Agent hides the built-in of the same name",
+    "a saved Agent of a level hides the built-in of its name, even when a later edit is left out",
     async () => {
-      levels.write("user", "agents/critic.md", agent("Critic", "permission: read\n"));
+      levels.write(
+        "user",
+        "agents/critic.md",
+        agent("Critic", "harness-overrides: {meridian-flow: {permission: read}}\n"),
+      );
+      assert.equal((await savePackage("")).outcome, "saved");
       const item = await listed("critic");
       assert.equal(item.level, "user");
       assert.deepEqual(item.shadows, ["builtin"]);
-      assert.ok(item.unavailableReasons.length > 0);
+      levels.write("user", "agents/critic.md", "---\nname: [x\n---\n");
+      assert.deepEqual((await savePackage("")).leftOut, ["agents/critic.md"]);
+      const out = await listed("critic");
+      assert.equal(out.level, "user");
+      assert.ok(out.unavailableReasons.length > 0);
       levels.remove("user", "agents/critic.md");
+      assert.equal((await savePackage("")).outcome, "saved");
       assert.equal((await listed("critic")).level, "builtin");
     },
   );
 
-  await check("a stray line above the frontmatter makes the Agent unavailable", async () => {
-    levels.write("user", "agents/critic.md", `stray\n${agent("Critic", "permission: read\n")}`);
-    const item = await listed("critic");
-    assert.equal(item.level, "user");
-    assert.deepEqual(item.shadows, ["builtin"]);
-    assert.match(item.unavailableReasons.join("\n"), /first line that is exactly/);
-    levels.remove("user", "agents/critic.md");
+  await check("a stray line above the frontmatter leaves the Agent out", async () => {
+    levels.write("user", "agents/stray.md", `stray\n${agent("Stray", "permission: read\n")}`);
+    const outcome = await savePackage("");
+    assert.deepEqual(outcome.leftOut, ["agents/stray.md"]);
+    assert.match(
+      outcome.findings.map((item) => item.message).join("\n"),
+      /first line that is exactly/,
+    );
+    levels.remove("user", "agents/stray.md");
   });
 
   await check("two packages bringing one name rename both and hold the bare name", async () => {
@@ -473,6 +587,10 @@ try {
       levels.write("user", `packages/${pkg}/mars.toml`, MANIFEST);
       levels.write("user", `packages/${pkg}/agents/twin.md`, agent("Twin"));
     }
+    const first = await savePackage("packages/pa/");
+    assert.deepEqual(first.renamed, []);
+    const second = await savePackage("packages/pb/");
+    assert.deepEqual(second.renamed, ["twin is now twin__pa, twin__pb"]);
     const bare = await listed("twin");
     assert.ok(bare.unavailableReasons.length > 0);
     assert.equal(bare.selection, null);

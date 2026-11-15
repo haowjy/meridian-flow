@@ -136,11 +136,11 @@ export function createInMemoryAgentRevisionStore(input: {
       if (index < 0) return undefined;
       const same = rows.filter((save) => save.folder === rows[index].folder);
       const latest = same[same.length - 1];
-      if (latest.id !== saveId) return { current: copy(latest), undone: false };
+      if (latest.id !== saveId) return { current: copy(latest), undone: null };
       const before = same[same.length - 2];
       return {
         current: await store.savePackage(owner, latest.folder, before?.packageRevisionId ?? null),
-        undone: true,
+        undone: copy(latest),
       };
     },
     async readSavedRevision(userId, projectId, id) {

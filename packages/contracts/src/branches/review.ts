@@ -311,11 +311,6 @@ export interface ThreadDraftListItem {
     movedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
     deleted?: true;
   } | null;
-  /**
-   * Set on a file of an Agents level that would make an Agent wider than it is live: one label
-   * per Agent, the words the AI's receipt used. Absent when nothing widens.
-   */
-  widened?: string[];
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   /**

@@ -51,7 +51,6 @@ import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery
 import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../domains/threads/index.js";
 import { threadExecutionContext } from "../../domains/threads/index.js";
-import type { AgentsWidening } from "../agents-widening.js";
 import { agentPrincipal } from "./file-access.js";
 
 export interface ToolWiringDeps {
@@ -69,8 +68,6 @@ export interface ToolWiringDeps {
   /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
-  /** What an AI write into an Agents level makes wider, for the chat card. */
-  agentsWidening: AgentsWidening;
   /** `save_agents` saves through the same path as the writer's Save. */
   agentCatalog: Pick<BoundAgentCatalog, "savePackages">;
   eventSink: EventSink;

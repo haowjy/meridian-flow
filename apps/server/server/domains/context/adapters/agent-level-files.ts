@@ -1,19 +1,19 @@
 /**
- * Reads one Agents level's package files from the documents that hold them: the level's folder
- * only, and only the documents whose content moved since the last read. A live read shows live;
- * a branch read shows a chat's branch (its tree, and a draft's text over live's).
+ * Reads one Agents level's package files from the documents that hold them, live: the level's
+ * folder only, and only the documents whose content moved since the last read.
  */
 import { agentsRootOf } from "@meridian/contracts/agents";
-import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentDrafts, documentYjsHeads } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { documentYjsHeads } from "@meridian/database/schema";
+import { inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { Branches, DraftPeerShadowAccess, MarkdownDocumentStore } from "../../collab/index.js";
+import type { MarkdownDocumentStore } from "../../collab/index.js";
 import type { AgentLevelFiles, LevelFiles } from "../../packages/ports/agent-level-files.js";
+import { contextAreaOf } from "../context/uri.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import type { ContextDocument } from "../ports/context-document-store.js";
 import { LIVE_TREE } from "../tree/tree-view.js";
+import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 
 /** Texts kept between reads; a level is a few dozen small files, so this covers many writers. */
 const CACHED_TEXTS = 2000;
@@ -26,9 +26,8 @@ interface Candidate {
 
 export function createAgentLevelFiles(deps: {
   db: Database;
-  documentSync: Pick<MarkdownDocumentStore, "readAsMarkdown"> &
-    Pick<DraftPeerShadowAccess, "readOwnerMarkdown">;
-  branches: Pick<Branches, "viewForOwner">;
+  documentSync: Pick<MarkdownDocumentStore, "readAsMarkdown">;
+  contextPorts: Pick<UnifiedContextPortFactory, "forProject">;
 }): AgentLevelFiles {
   const texts = new Map<string, { version: string; text: string }>();
 
@@ -49,41 +48,6 @@ export function createAgentLevelFiles(deps: {
     );
   }
 
-  /** Which of `ids` the branch holds an active draft of; the rest read as live. */
-  async function draftedIn(branchId: string, ids: string[]): Promise<Set<string>> {
-    if (ids.length === 0) return new Set();
-    const rows = await currentDrizzleDb(deps.db)
-      .select({ id: documentDrafts.documentId })
-      .from(documentDrafts)
-      .where(
-        and(
-          eq(documentDrafts.branchId, branchId),
-          eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "active"),
-          inArray(documentDrafts.documentId, ids),
-        ),
-      );
-    return new Set(rows.map((row) => row.id));
-  }
-
-  /** `nodes` and the folders above them that the branch has a row on, so a placed node has its path. */
-  async function withBranchFolders(branchId: string, nodes: readonly string[]): Promise<string[]> {
-    if (nodes.length === 0) return [];
-    const rows = await currentDrizzleDb(deps.db).execute<{ id: string }>(sql`
-      WITH RECURSIVE above(id, parent_id) AS (
-        SELECT b.id, b.parent_id FROM branch_tree_nodes b
-        WHERE b.branch_id = ${branchId}::uuid
-          AND b.id IN (${sql.join(
-            nodes.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})
-        UNION
-        SELECT p.id, p.parent_id FROM branch_tree_nodes p JOIN above a ON p.id = a.parent_id
-        WHERE p.branch_id = ${branchId}::uuid)
-      SELECT id::text AS id FROM above`);
-    return [...new Set([...nodes, ...[...rows].map((row) => row.id)])];
-  }
-
   async function liveText(document: ContextDocument, version: string | undefined) {
     const cached = texts.get(document.id);
     if (cached && version !== undefined && cached.version === version) return cached.text;
@@ -98,7 +62,36 @@ export function createAgentLevelFiles(deps: {
   }
 
   return {
-    async read({ level, userId, projectId, branch }): Promise<LevelFiles> {
+    async writeFiles({ level, userId, projectId, files }) {
+      const root = agentsRootOf(level);
+      const port = deps.contextPorts.forProject(projectId, userId, new Map());
+      // The writer's own Undo: a human write, so it overwrites rather than seeds.
+      const origin = { type: "human" as const, userId };
+      const base = `${root.scheme}://${root.path ? `${root.path}/` : ""}`;
+      for (const [path, text] of Object.entries(files)) {
+        const uri = `${base}${path}`;
+        if (text === null) {
+          const found = await port.stat(uri);
+          if (!found.ok || !found.value.documentId) continue;
+          const removed = await port.delete(
+            { kind: "file", nodeId: found.value.documentId },
+            contextAreaOf(base),
+            { origin },
+          );
+          if (!removed.ok) throw new Error(`Cannot remove ${path}: ${removed.error.code}`);
+          continue;
+        }
+        const written = await port.write(uri, text, { origin });
+        if (written.ok) continue;
+        if (written.error.code !== "not_found") {
+          throw new Error(`Cannot write ${path}: ${written.error.code}`);
+        }
+        const created = await port.createTrackedDocument(uri, text, { origin });
+        if (!created.ok) throw new Error(`Cannot create ${path}: ${created.error.code}`);
+      }
+    },
+
+    async read({ level, userId, projectId }): Promise<LevelFiles> {
       const root = agentsRootOf(level);
       if (level === "project" && !projectId) return { files: {}, problems: {} };
       const store = createProjectContextDocumentStore(
@@ -107,16 +100,10 @@ export function createAgentLevelFiles(deps: {
         root.scheme,
         userId,
       );
-      const branchView = branch ? await deps.branches.viewForOwner(branch.owner) : LIVE_TREE;
-      const only =
-        branch?.only && branchView.kind === "branch"
-          ? await withBranchFolders(branchView.branchId, branch.only)
-          : undefined;
-      const view = only && branchView.kind === "branch" ? { ...branchView, only } : branchView;
       const rootFolder =
         root.path === ""
           ? { kind: "found" as const, node: null }
-          : await store.resolveFolderAt(view, root.path);
+          : await store.resolveFolderAt(LIVE_TREE, root.path);
       if (rootFolder.kind !== "found") return { files: {}, problems: {} };
 
       const candidates: Candidate[] = [];
@@ -125,10 +112,10 @@ export function createAgentLevelFiles(deps: {
       ];
       for (let next = pending.pop(); next; next = pending.pop()) {
         const { folderId, prefix } = next;
-        for (const folder of await store.listFolders(view, folderId)) {
+        for (const folder of await store.listFolders(LIVE_TREE, folderId)) {
           pending.push({ folderId: folder.id, prefix: `${prefix}${folder.name}/` });
         }
-        for (const document of await store.listDocuments(view, folderId)) {
+        for (const document of await store.listDocuments(LIVE_TREE, folderId)) {
           const name = document.extension
             ? `${document.name}.${document.extension}`
             : document.name;
@@ -155,26 +142,8 @@ export function createAgentLevelFiles(deps: {
         else readable.push(only);
       }
       const versions = await versionsOf(readable.map((candidate) => candidate.document.id));
-      // A branch read shows its drafts' text over live's; a document it holds no draft of is live
-      // and shares live's per-version cache.
-      const placed = (id: string) => !only || only.includes(id);
-      const drafted =
-        branch && branchView.kind === "branch"
-          ? await draftedIn(
-              branchView.branchId,
-              readable.map((candidate) => candidate.document.id).filter(placed),
-            )
-          : new Set<string>();
       for (const { document, path } of readable) {
-        let text: string;
-        if (branch && drafted.has(document.id)) {
-          const read = await deps.documentSync.readOwnerMarkdown({
-            documentId: document.id as DocumentId,
-            owner: branch.owner,
-          });
-          if (!read.ok) throw new Error(`Cannot read ${document.name}: ${read.error.code}`);
-          text = read.value.content;
-        } else text = await liveText(document, versions.get(document.id));
+        const text = await liveText(document, versions.get(document.id));
         // What the documents hold is untrusted: Mars reads only well-formed UTF-8 text.
         if (text.includes("\0") || Buffer.from(text).toString("utf8") !== text)
           problems[path] = `${path} is not valid UTF-8 text`;

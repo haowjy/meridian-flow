@@ -12,9 +12,10 @@ import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { type GoneRow, withGone } from "@/components/app/RowWord";
-import { ListLine, ListRow } from "@/components/ui/list-row";
+import { contentInset, ICON_SLOT_PX, ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
+import { AgentFileSave } from "@/features/agents/PackageSave";
 import {
   ApplyAllQuestion,
   CommandNotice,
@@ -450,6 +451,22 @@ export function ChangesSource({
                       title={item.name}
                       detail={item.detail}
                       notice={wordOf(item.key)}
+                      below={
+                        notice?.kind === "applied" &&
+                        item.kind === "file" &&
+                        item.file.contextLocation ? (
+                          <div
+                            className="flex pb-1 empty:hidden"
+                            style={{ paddingLeft: contentInset(item.depth) + ICON_SLOT_PX }}
+                          >
+                            <AgentFileSave
+                              projectId={projectId}
+                              scheme={item.file.contextLocation.scheme}
+                              path={item.file.contextLocation.path}
+                            />
+                          </div>
+                        ) : null
+                      }
                     />
                   </li>
                 );
@@ -664,11 +681,6 @@ function ChangeRow({
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
-            {file.draft.widened?.map((label) => (
-              <p key={label} className="px-2 text-xs text-muted-foreground">
-                <Trans>Wider Agent: {label}</Trans>
-              </p>
-            ))}
             <DraftCommandStatus itemKey={file.draft.itemKey} />
           </div>
         }

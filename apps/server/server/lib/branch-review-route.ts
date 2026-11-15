@@ -53,12 +53,10 @@ import {
   isFileAccessDenied,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
-import { type Widened, widenedLabel } from "../domains/packages/domain/agent-widening.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/command-record.js";
 import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
-import { agentsPlacesOf } from "./agents-widening.js";
 import type { AppServices } from "./app.js";
 import {
   documentTarget,
@@ -76,7 +74,6 @@ type BranchRouteServices = {
     "authorize" | "authorizeAt" | "confirmEdit" | "listAccess"
   >;
   documentSync: Pick<AppServices["documentSync"], "draftReview" | "roomRemoval">;
-  agentsWidening: Pick<AppServices["agentsWidening"], "widened">;
 };
 
 export function selectBranchRouteServices(app: AppServices): BranchRouteServices {
@@ -85,7 +82,6 @@ export function selectBranchRouteServices(app: AppServices): BranchRouteServices
     works: app.workRepo,
     fileAccess: app.fileAccess,
     documentSync: app.documentSync,
-    agentsWidening: app.agentsWidening,
   };
 }
 
@@ -459,33 +455,8 @@ export async function handleOwnerDraftListRequest(
     (item) =>
       readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
   );
-  // What each item would do if the writer Applied it alone, as live plus that change (and the
-  // folders it sits in) read through the Agents catalog; an item outside Agents levels costs nothing.
-  const labelsOf = async (item: (typeof visible)[number]) => {
-    const places = listed.branchId ? agentsPlacesOf(item) : [];
-    const labels = await Promise.all(
-      places.map(async (at) =>
-        (
-          await deps.agentsWidening.widened({
-            userId: input.userId,
-            projectId: input.projectId,
-            owner,
-            level: at.level,
-            nodes: [item.documentId],
-          })
-        ).map(widenedLabel),
-      ),
-    );
-    return [...new Set(labels.flat())];
-  };
-  const labelled = await Promise.all(
-    visible.map(async (item) => ({ item, labels: await labelsOf(item) })),
-  );
   return {
-    items: labelled.map(({ item, labels }) => ({
-      ...toWireItem(item, listed.threadTitles),
-      ...(labels.length ? { widened: labels } : {}),
-    })),
+    items: visible.map((item) => toWireItem(item, listed.threadTitles)),
     branchId: listed.branchId,
     folders: listed.folders,
     frozen,

@@ -1,6 +1,7 @@
 /** Renders durable document and Work change receipts. */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { agentsLocationOf } from "@meridian/contracts/agents";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   TreeReversalLanding,
@@ -20,6 +21,8 @@ import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
+import { AgentFileSave } from "@/features/agents/PackageSave";
+import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
 import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -65,8 +68,6 @@ export type TurnEditsReceiptProps = {
   receipt: TurnReceiptChip | null;
   /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
-  /** The Agents this turn's live writes made wider, one label each: the words Changes uses. */
-  widened?: readonly string[];
 };
 
 export function TurnEditsReceipt({
@@ -75,7 +76,6 @@ export function TurnEditsReceipt({
   documents,
   receipt,
   workReceipts = [],
-  widened = [],
 }: TurnEditsReceiptProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
@@ -255,15 +255,9 @@ export function TurnEditsReceipt({
           </Button>
         ) : null}
       </div>
-      {widened.map((label) => (
-        <p
-          key={label}
-          className="px-[var(--chat-card-pad-x)] pb-1 text-muted-foreground"
-          data-turn-widened
-        >
-          <Trans>Wider Agent: {label}</Trans>
-        </p>
-      ))}
+      {projectId ? (
+        <AgentPackagesSaveLines projectId={projectId} documents={documents} drafts={drafts} />
+      ) : null}
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
           {skips.length > 0 ? (
@@ -337,6 +331,51 @@ export function TurnEditsReceipt({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The Save state of each Agent package the turn's writes landed in (a live write, an applied
+ * draft), on its own line under the header while it has one: the same chip and Save the Agents
+ * tab shows.
+ */
+function AgentPackagesSaveLines({
+  projectId,
+  documents,
+  drafts,
+}: {
+  projectId: string;
+  documents: readonly TurnEditDocument[];
+  drafts: TurnReceiptChip["drafts"] | undefined;
+}) {
+  const seen = new Set<string>();
+  const files = documents.flatMap((document) => {
+    if (document.folder) return [];
+    if (document.scope === "draft" && drafts?.[document.documentId] !== "applied") return [];
+    const parsed = parseContextUri(document.uri);
+    if (!parsed.ok) return [];
+    const { scheme, path } = parsed.value;
+    const at = agentsLocationOf(scheme, path);
+    if (!at) return [];
+    const pkg = { level: at.level, folder: packageFolderOf(at.path) };
+    const key = `${pkg.level}:${pkg.folder}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ key, scheme, path, label: packageLabel(pkg) }];
+  });
+  return files.map((file) => (
+    <div
+      key={file.key}
+      className="flex items-center px-[var(--chat-card-pad-x)] pb-1 empty:hidden"
+      data-turn-agent-package
+    >
+      <AgentFileSave
+        projectId={projectId}
+        scheme={file.scheme}
+        path={file.path}
+        before={<span className="min-w-0 truncate text-foreground">{file.label}</span>}
+      />
+    </div>
+  ));
 }
 
 /**

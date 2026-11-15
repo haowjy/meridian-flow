@@ -11,7 +11,7 @@ export const PACKAGES_DIR = "packages/";
  * A level root with no `mars.toml` is a package named for its level, so a bare `agents/x.md`
  * is available. (Once package-wide tool rules are supported, deleting the manifest drops them.)
  */
-const defaultManifest = (level: AgentsLevel): string =>
+export const defaultManifest = (level: AgentsLevel): string =>
   `[package]\nname = "${level}"\nversion = "0.0.0"\nschema = 1\n`;
 
 export interface LevelPackages {

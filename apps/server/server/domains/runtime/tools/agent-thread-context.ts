@@ -87,12 +87,9 @@ export async function resolveAgentThreadTurnContext(
     if (reasons.length) throw new Error(reasons.join(" "));
   }
 
-  const policy = withSaveAgentsWithWrite(
-    withoutSkillToolWhenNoSkills(
-      projectToolPolicy(binding.configuration, input.thread.kind),
-      binding,
-    ),
-    binding.configuration.permission,
+  const policy = withoutSkillToolWhenNoSkills(
+    projectToolPolicy(binding.configuration, input.thread.kind),
+    binding,
   );
   // return_result is unadvertised in the registry; the policy adds it for subagents.
   const report = input.toolRegistry.getRegistration("return_result")?.definition;
@@ -136,20 +133,6 @@ function withoutSkillToolWhenNoSkills(
 ): ToolPolicy {
   if (!policy.has("skill") || bindingNamesSkills(binding)) return policy;
   return new Set([...policy].filter((tool) => tool !== "skill"));
-}
-
-/**
- * `save_agents` goes with `write`: an Agent that can edit files and isn't denied `write` can save
- * them. Mars's tool vocabulary has no name for it, so an Agent file can't list it, and a tool
- * rule on `write` or `edit` governs both.
- */
-function withSaveAgentsWithWrite(
-  policy: ToolPolicy,
-  permission: ResolvedAgentConfiguration["permission"],
-): ToolPolicy {
-  return policy.has("write") && permission === "edit"
-    ? new Set([...policy, "save_agents"])
-    : policy;
 }
 
 /** A root thread needs no lineage walk; a child is `read` when any spawner is. */

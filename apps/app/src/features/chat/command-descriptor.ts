@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
+  agentsSaved,
   documentToolFailed,
   documentToolReturned,
   humanizeSkillSlug,
@@ -24,6 +25,7 @@ import {
   type LucideIcon,
   PenLine,
   Redo2,
+  Save,
   Search,
   Sparkles,
   Trash2,
@@ -255,6 +257,24 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     failureVerb: () => t`Couldn't switch Work`,
     pathlessTitle: null,
     expand: "renderer",
+  },
+  // What each package's Save did is the card after the turn (`AgentSavesReceipt`).
+  "save-agents": {
+    Icon: Save,
+    phrases: (tool) => {
+      const outcomes = agentsSaved(tool);
+      const failed = outcomes.filter((item) => item.outcome === "failed").length;
+      const complete =
+        failed === 0
+          ? t`Saved Agents`
+          : failed === outcomes.length
+            ? t`Agents not saved`
+            : t`Saved Agents, some not saved`;
+      return tenses(t`Saving Agents…`, complete);
+    },
+    failureVerb: () => t`Couldn't save Agents`,
+    pathlessTitle: null,
+    expand: "none",
   },
   unknown: {
     Icon: Wrench,

@@ -1,6 +1,6 @@
 /** Shared execution-support checks for immutable Agent selection and turn preparation. */
 
-import { TOOL_CATALOG } from "@meridian/contracts/agents";
+import { OPT_IN_TOOLS, TOOL_CATALOG } from "@meridian/contracts/agents";
 import type { Gateway } from "@meridian-flow/gateway";
 import type { CompiledAgentDefinition } from "../packages/index.js";
 
@@ -18,7 +18,7 @@ const supported = new Set([
   "tools",
   "disallowed-tools",
 ]);
-const catalog = new Set<string>(TOOL_CATALOG);
+const catalog = new Set<string>([...TOOL_CATALOG, ...OPT_IN_TOOLS]);
 export function agentExecutionUnavailableReasons(
   definition: CompiledAgentDefinition,
   gateway: Pick<Gateway, "listModels">,

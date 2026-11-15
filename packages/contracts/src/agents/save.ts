@@ -38,8 +38,10 @@ export const agentFileChangeSchema = z.object({
 
 /**
  * Computed from the package's files and its latest Save, never stored:
- * `saved` the files are the saved version; `unsaved` they differ and pass;
- * `cant-save` they differ (or a newer reader reads them differently) and have an error;
+ * `saved` the files are the saved version; `unsaved` they differ;
+ * `cant-save` the package has an error that leaves nothing readable (a broken `mars.toml`), so a
+ * Save would fail; an error in one Agent's or skill's file does not do this: the Save leaves that
+ * item out;
  * `not-saved` there is no saved version; `removed` there is a saved version and no files.
  */
 export type AgentPackageState = "saved" | "unsaved" | "cant-save" | "not-saved" | "removed";
@@ -67,17 +69,22 @@ export const agentPackageStatusSchema = z.object({
   findings: z.array(agentFindingSchema),
 }) satisfies z.ZodType<AgentPackageStatus>;
 
-/** One package's result of a Save. A failed check is a result, never a refused write. */
+/**
+ * One package's result of a Save. A Save fails only for an error that leaves nothing readable (a
+ * broken `mars.toml`): the previous saved version stays. An error in one Agent's or skill's file
+ * leaves that item out of the saved version (`leftOut`) and the rest saves. Neither is a refused
+ * write: the files are as the editor left them.
+ */
 export interface SaveOutcome {
   level: AgentsLevel;
   folder: string;
   outcome: "saved" | "failed" | "unchanged";
   saveId?: string;
   changes: AgentFileChange[];
-  /** The errors when failed, the warnings when saved. */
+  /** Errors first (a failed Save's, and each left-out item's), then warnings. */
   findings: AgentFinding[];
-  /** `critic: read → edit`: what the Save made wider. */
-  widened: string[];
+  /** Package-relative paths of Agents and skills left out because of an error; their errors come first in `findings`. */
+  leftOut: string[];
   /** `critic is now critic__a, critic__b`. */
   renamed: string[];
 }
@@ -88,7 +95,7 @@ export const saveOutcomeSchema = z.object({
   saveId: z.string().optional(),
   changes: z.array(agentFileChangeSchema),
   findings: z.array(agentFindingSchema),
-  widened: z.array(z.string()),
+  leftOut: z.array(z.string()),
   renamed: z.array(z.string()),
 }) satisfies z.ZodType<SaveOutcome>;
 

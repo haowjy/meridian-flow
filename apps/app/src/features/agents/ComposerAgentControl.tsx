@@ -11,6 +11,8 @@ import {
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
+import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
+import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { AgentPickerPanel } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
 import {
@@ -133,6 +135,12 @@ export function useComposerAgentToolbarControl(
             onSelect={(next) => {
               choose(next);
               terminalClose();
+            }}
+            projectId={props.projectId}
+            onOpenAgents={() => {
+              terminalClose();
+              useSidebarTabs.getState().reveal("agents");
+              useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
             }}
           />
         </>

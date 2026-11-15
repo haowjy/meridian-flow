@@ -61,6 +61,8 @@ type ContextTreeInput = {
   rootPath?: string;
   /** A note on a file's row, after its name. */
   meta?: TreeEnv["meta"];
+  folderEnd?: TreeEnv["folderEnd"];
+  crossedOut?: TreeEnv["crossedOut"];
 };
 
 export type ContextTree = ReturnType<typeof useContextTree>;
@@ -80,6 +82,8 @@ export function useContextTree({
   onPicked,
   rootPath = "",
   meta,
+  folderEnd,
+  crossedOut,
 }: ContextTreeInput) {
   const controller = useOptionalTreeCreation();
   if (!controller) throw new Error("ContextTreePanel requires a TreeCreationProvider");
@@ -230,6 +234,8 @@ export function useContextTree({
             activeDocumentId,
             changed,
             meta,
+            folderEnd,
+            crossedOut,
             creation: creates
               ? {
                   creating,
@@ -273,6 +279,8 @@ export function useContextTree({
       activeLocationPath,
       changed,
       meta,
+      folderEnd,
+      crossedOut,
       creating,
       createdFolder,
       onSelectFile,
@@ -387,7 +395,9 @@ export function ContextTreeBody({
 export function ContextTreePanel({
   drop,
   ...input
-}: Omit<ContextTreeInput, "rootPath" | "meta"> & { drop: SourceDrop }) {
+}: Omit<ContextTreeInput, "rootPath" | "meta" | "folderEnd" | "crossedOut"> & {
+  drop: SourceDrop;
+}) {
   const tree = useContextTree(input);
   const { scheme, here, requestCreate, importScheme, pickImport, creating } = tree;
   const actions = tree.creates ? (

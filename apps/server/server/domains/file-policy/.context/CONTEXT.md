@@ -35,10 +35,9 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
 - **Deny.** A `deny` place caps an agent at `read` with `ai_access_denied`, a `permission_denied`
   refusal that no retry or re-read helps. A person never meets it.
 - **Agents levels (`agents://`, `user://.agents/`)** are ordinary places: no term in the policy
-  names them. With no stored setting an AI's edit to an Agent or skill file lands live, widenings
-  included; a writer who wants review sets the folder to `ask` through the general setting. What
-  an edit made wider is display only (`lib/agents-widening.ts`): a label in Changes on a draft,
-  and a line on the chat card for a write that landed live. Undo is the normal receipt Undo.
+  names them. With no stored setting an AI's edit to an Agent or skill file lands live, and is
+  used by no chat until a Save; a writer who wants review sets the folder to `ask` through the
+  general setting. Undo is the normal receipt Undo.
 - **Not built yet.** Stored settings (written only by the writer's tree command, never a model tool);
   a rule for another Work's Scratch; a setting that changes
   between authorize and confirm (`confirmEdit` re-checks the level at the grant's destination, not the

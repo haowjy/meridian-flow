@@ -1,27 +1,37 @@
 /**
- * The one place Save asks whether a package's files can be published. Until Mars's `check()` is
- * released this is `compilePackage`'s findings graded by severity; `check()` replaces the body
- * and fills the two lists that are empty now (a dependency's own faults, and what waits on a
- * dependency that is not fetched yet).
+ * The one place Save asks what a package's files publish. Until Mars's `check()` is released this
+ * is `compilePackage`'s findings graded by severity; `check()` replaces the body and fills the
+ * list that is empty now (a dependency's own faults).
+ *
+ * An error in one Agent's or skill's file leaves that item out of what runs and never fails the
+ * Save. Only an error in `mars.toml` does: it leaves nothing in the package readable.
  */
+
 import { type CompiledPackage, isError, type PackageDiagnostic } from "./compile-package.js";
+import { agentPath, MANIFEST_PATH, skillPath } from "./mars.js";
 
 export interface PackageCheck {
-  /** Errors and warnings located in the package's own files. Any error fails the Save. */
+  /** Errors then warnings in the package's own files; errors first. */
   findings: PackageDiagnostic[];
+  /** Errors that leave nothing readable (`mars.toml`): the Save fails and the saved version stays. */
+  blocking: PackageDiagnostic[];
+  /** Agents and skills with an error, left out of what runs: package-relative paths. */
+  leftOut: string[];
   /** Faults in vendored dependencies: shown on their files, never failing the Save. */
   dependencyFindings: PackageDiagnostic[];
-  /** Agents whose refs wait on a dependency that is not fetched yet. */
-  notChecked: string[];
 }
 
 export function checkPackage(pkg: CompiledPackage): PackageCheck {
+  const shown = pkg.findings.filter((item) => item.severity !== "info");
   return {
-    findings: pkg.findings.filter((item) => item.severity !== "info"),
+    findings: [...shown.filter(isError), ...shown.filter((item) => !isError(item))],
+    blocking: shown.filter((item) => isError(item) && item.file === MANIFEST_PATH),
+    leftOut: [
+      ...pkg.agents.filter((agent) => !agent.definition).map((agent) => agentPath(agent.slug)),
+      ...pkg.skills
+        .filter((skill) => skill.diagnostics.some(isError))
+        .map((skill) => skillPath(skill.slug)),
+    ],
     dependencyFindings: [],
-    notChecked: [],
   };
 }
-
-export const errorsOf = (check: PackageCheck): PackageDiagnostic[] =>
-  check.findings.filter(isError);

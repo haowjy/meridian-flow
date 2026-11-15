@@ -321,6 +321,10 @@ export function SourcesBody({
   useEffect(() => {
     if (mainChatKey) follow("chat");
   }, [mainChatKey, follow]);
+  const asked = useSidebarTabs((state) => state.asked);
+  useEffect(() => {
+    if (asked) setPicked(asked.source);
+  }, [asked]);
   // A deleted document main shows is Trash's, so Trash shows, as a document shows its tree.
   const trashShown = useTrashNavigation().shown;
   useEffect(() => {
