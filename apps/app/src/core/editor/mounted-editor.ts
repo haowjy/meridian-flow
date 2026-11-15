@@ -12,7 +12,7 @@
  *   `EditorSurfaceOptions` and reaches the running editor through TipTap's own
  *   `setOptions` sync (plus `setEditable`, which that sync deliberately skips).
  */
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -36,6 +36,8 @@ type EditorMountBase = {
   /** The Work the viewer is in; a draft-only picture is signed through it. */
   viewingOwner?: string;
   schemaType: YjsTrackedSchemaType;
+  /** A code document's filetype: the language its fence is filled with. */
+  filetype?: Filetype;
   /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
   collaborationDecorations: boolean;
 };
@@ -81,7 +83,7 @@ export function editorRoomKey(identity: EditorMountIdentity): string {
 
 /** React key that owns the editor's lifetime. Equal keys keep the instance. */
 export function editorMountKey(identity: EditorMountIdentity): string {
-  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingOwner ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
+  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingOwner ?? ""}|${identity.schemaType}|${identity.filetype ?? ""}|${identity.collaborationDecorations}`;
   return identity.surface === "review"
     ? `review|${identity.roomName}|${identity.itemKey}|${shared}`
     : `live|${shared}`;
@@ -160,6 +162,7 @@ export function useMountedEditor({
       // this session may be the one in front.
       presence: caretGate.presence,
       schemaType: identity.schemaType,
+      filetype: identity.filetype,
       assetRenderContext: { projectId: identity.projectId, owner: identity.viewingOwner },
       showCollaborationDecorations: identity.collaborationDecorations,
       enableDraftInlineReview: identity.surface === "review",

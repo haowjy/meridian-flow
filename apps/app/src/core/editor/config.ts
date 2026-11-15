@@ -7,7 +7,7 @@
  * not the session lifecycle (see `document-session.ts`).
  */
 
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -86,6 +86,11 @@ export type CreateEditorExtensionsOptions = {
   /** The document's undo, owned by its session; this editor attaches while mounted. */
   history: DocumentHistory;
   schemaType?: YjsTrackedSchemaType;
+  /**
+   * A code document's filetype, which is its fence's language: the fence an empty file is
+   * filled with carries it, as the one the server writes for a created file does.
+   */
+  filetype?: Filetype;
   /**
    * This client's presence, held by whatever decides when it is on the wire —
    * normally the `DocumentSession`'s (`local-presence.ts`).
@@ -228,8 +233,8 @@ const CodeDocument = Node.create({
   // level: Ctrl+A would make paste split into paragraphs (a code-only doc keeps
   // the first) and typing replace the block, dropping its language and id.
   // Select-all becomes the text of the block instead. Tiptap's clearDocument
-  // resets the block to defaults when the whole text goes; the server sets
-  // `language` only at create, so every edit opts out of it.
+  // resets the block to defaults when the whole text goes, and a default
+  // block has a new id, so every edit opts out of it.
   addProseMirrorPlugins() {
     return [
       new Plugin({
@@ -299,6 +304,7 @@ export function createEditorExtensions({
   document,
   history,
   schemaType = "document",
+  filetype,
   presence,
   user,
   assetRenderContext,
@@ -322,6 +328,7 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({
       schemaType,
+      filetype,
       assetRenderContext,
       slashCommands,
       atReferences,
@@ -350,6 +357,7 @@ export function createEditorExtensions({
 /** Meridian's canonical editor schema without transport or shared state. */
 export function createStandaloneEditorExtensions({
   schemaType = "document",
+  filetype,
   assetRenderContext,
   slashCommands,
   atReferences,
@@ -358,6 +366,7 @@ export function createStandaloneEditorExtensions({
 }: Pick<
   CreateEditorExtensionsOptions,
   | "schemaType"
+  | "filetype"
   | "assetRenderContext"
   | "slashCommands"
   | "atReferences"
@@ -369,7 +378,7 @@ export function createStandaloneEditorExtensions({
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
       BlockIdExtension,
-      MeridianCodeBlockLowlight.configure({ lowlight }),
+      MeridianCodeBlockLowlight.configure({ lowlight, defaultLanguage: filetype ?? null }),
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
       AutoPairExtension,
@@ -450,6 +459,7 @@ export function createEditorConfig({
   document,
   history,
   schemaType,
+  filetype,
   presence,
   user,
   assetRenderContext,
@@ -482,6 +492,7 @@ export function createEditorConfig({
         document,
         history,
         schemaType: resolvedSchemaType,
+        filetype,
         presence,
         user,
         assetRenderContext,

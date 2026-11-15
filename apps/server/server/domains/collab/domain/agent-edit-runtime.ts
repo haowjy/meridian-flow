@@ -16,7 +16,7 @@ import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
-import { isCodeDocument } from "./document-schema-type.js";
+import { codeLanguageOf } from "./document-schema-type.js";
 import { createImportLinkBinder, createLinkBinder } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
@@ -58,10 +58,12 @@ export function createAgentEditRuntime(input: {
   const codec = createAgentEditCodecFactory(markupCodec);
   const model = yProsemirrorModel(schema);
   /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
-  const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> =>
-    (await isCodeDocument(input.resolveDocumentFiletype, documentId))
-      ? createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, "source"))
-      : codec;
+  const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> => {
+    const language = await codeLanguageOf(input.resolveDocumentFiletype, documentId);
+    return language === null
+      ? codec
+      : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, language));
+  };
   const liveUtilityCore = asLiveAgentEditCore(
     createAgentEditCore({
       links: createScopedDocumentLinks({
