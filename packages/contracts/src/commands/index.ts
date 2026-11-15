@@ -86,6 +86,9 @@ export type ReturnedWhy =
   | "document_removed"
   | "block_gone";
 
+/** The `returned` reasons that name a closed owner of drafts. */
+export type ClosedOwnerWhy = Extract<ReturnedWhy, "work_archived" | "work_deleted" | "chat_frozen">;
+
 /** What a stored command result may carry beyond its own fields. */
 export type StoredResult = { settled?: Settlement[] };
 

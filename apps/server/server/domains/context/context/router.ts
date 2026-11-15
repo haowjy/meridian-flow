@@ -513,7 +513,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     },
 
     /** One Copy (`copy/` reads, binds and writes; this only resolves its addresses). */
-    copy: createContextCopyPort({
+    ...createContextCopyPort({
       copy: deps.copy,
       commands: deps.copyCommands,
       commandTransaction: deps.commandTransaction,

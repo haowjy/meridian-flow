@@ -129,11 +129,15 @@ export interface ContextCopyAdapter {
   /** This adapter's context source, provisioned; the copy command locks it. */
   sourceId(): Promise<string | null>;
   /**
-   * The source subtree at `path`: the folder with every descendant in the folder's visible
-   * order (empty folders included), or the one file there. Read once; the copy works from
-   * this and never re-lists.
+   * The source subtree of node `id`: the folder with every descendant in the folder's visible
+   * order (empty folders included), or the one file. The node is found by its id wherever it
+   * stands now, in Trash too (`not_found` when it is purged or in another source); `path` only
+   * spells its address. Read once; the copy works from this and never re-lists.
    */
-  snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>>;
+  snapshotSource(source: {
+    id: string;
+    path: string;
+  }): Promise<Result<CopySourceEntry, AdapterFault>>;
   /**
    * Plan `roots` under the scheme-relative folder `dir`: allocate every name and mint every
    * identity, writing nothing and holding no lock. A selected root that carries the device's
@@ -152,6 +156,8 @@ export interface ContextCopyAdapter {
    */
   copyInto(input: {
     dir: readonly string[];
+    /** The folder the writer named by id (it may be in Trash: a copy into it stands it again), and the folders made under it. */
+    parent?: { folderId: string; createFolders: readonly string[] };
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
     position?: ContextSiblingPosition;

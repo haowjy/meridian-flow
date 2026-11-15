@@ -25,7 +25,7 @@ import { lockContextNamespaces } from "./adapters/context-fs/document-locations.
 import type { ContextPlacement } from "./adapters/context-fs/placement.js";
 import { createSourceTree } from "./adapters/context-fs/tree-writes.js";
 import { createDrizzleOwnerLookup } from "./adapters/owner-lookup.js";
-import { resolveActiveFolderUri } from "./adapters/project-context-availability.js";
+import { resolveHeldFolderUri } from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
@@ -480,7 +480,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         links: options.links,
         documentCreation: options.documentSync,
-        resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        resolveDestinationFolder: (id) => resolveHeldFolderUri(options.db, projectId, userId, id),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,
@@ -497,7 +497,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         links: options.links,
         documentCreation: options.documentSync,
-        resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        resolveDestinationFolder: (id) => resolveHeldFolderUri(options.db, projectId, userId, id),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,

@@ -1,7 +1,8 @@
 /**
- * HTTP orchestration for one Copy: parse the writer's locators, resolve their authorities,
- * ask file policy for read on each source and edit on the destination, then hand the port
- * canonical addresses. Everything that writes happens in the domain command.
+ * HTTP orchestration for one Copy: parse the writer's locators, find each source by its node id
+ * (where it stands now, or in Trash), ask file policy for read on each source and `command` on
+ * the destination, then hand the port canonical addresses. Everything that writes, and what a
+ * closed destination Work answers, happens in the domain command.
  */
 
 import { type DraftOwnerKey, draftOwnerFromKey, parseDraftOwnerKey } from "@meridian/contracts";
@@ -14,13 +15,14 @@ import type {
   CopyContextEntryView,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { decodeStateVector } from "yjs";
 import {
-  type ContextPort,
+  type ContextCopyRequest,
   type CopySourceView,
   contextPortForProjectAuthorities,
+  type ProjectContextAvailabilityPort,
   parseUnifiedContextUri,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
@@ -34,7 +36,7 @@ import { parseDestinationParent, parseSiblingPosition } from "./context-destinat
 import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import {
   type ContextLocator,
-  canEditContextUri,
+  canCommandContextUri,
   containerOf,
   locatorUri,
   type ResolvedContextLocator,
@@ -51,6 +53,7 @@ import { requireRequestId } from "./request-id.js";
 
 export interface ContextCopyRouteDeps {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
+  availability: ProjectContextAvailabilityPort;
   projectRepo: ProjectRepository;
   contextPorts: UnifiedContextPortFactory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
@@ -296,6 +299,12 @@ interface ResolvedSource {
   stateVector?: Uint8Array;
   /** The file-policy target its read is granted on. */
   target: FileTarget;
+  /**
+   * `trash`: the node is in Trash, so its read is asked as a `command` (a deleted file's `read`
+   * is not allowed). `gone`: the project holds no such node, so there is nothing to grant and the
+   * command leaves it out.
+   */
+  held: "live" | "trash" | "gone";
   workId: string | null;
 }
 
@@ -338,11 +347,34 @@ export async function handleContextCopyRequest(
             threadId: chat.chatId as ThreadId,
           },
         },
+        held: "live",
         workId: null,
       });
       continue;
     }
-    const resolved = await resolveLocator(source.locator);
+    // The node is the source wherever it stands now (or stood, in Trash), whatever path the
+    // writer saw. A node the project no longer holds keeps the writer's address: the command
+    // finds nothing there and leaves it out.
+    const held = await deps.availability.held(
+      {
+        projectId: input.projectId as ProjectId,
+        node:
+          source.expected.kind === "file"
+            ? { kind: "document", id: source.expected.nodeId as DocumentId }
+            : { kind: "folder", id: source.expected.nodeId },
+        inTrash: true,
+      },
+      { userId: input.userId },
+    );
+    const where =
+      held?.kind === "held"
+        ? await resolveLocatorUri(deps, input.projectId, held.address.uri)
+        : null;
+    const resolved =
+      where?.ok && where.value.scope !== "chat"
+        ? where.value
+        : await resolveLocator(source.locator);
+    const standing = held?.kind === "held" ? (held.inTrash ? "trash" : "live") : "gone";
     const workId = resolved.scope === "work" ? resolved.authority.workId : null;
     if (workId) workIds.add(workId);
     // The port below refuses a Work that isn't this project's (`work_missing`).
@@ -361,6 +393,7 @@ export async function handleContextCopyRequest(
         source.expected.kind === "file"
           ? documentTarget(source.expected.nodeId)
           : containerOf(resolved, input.projectId),
+      held: standing,
       workId: workId ?? (draftOwner?.kind === "work" ? draftOwner.workId : null),
     });
   }
@@ -388,8 +421,33 @@ export async function handleContextCopyRequest(
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
 
-  const folderUri =
-    destinationFolderId === null ? null : await resolveFolderUri(port, destinationFolderId);
+  const folder =
+    destinationFolderId === null ? null : await port.resolveFolderUri(destinationFolderId);
+  const request = (
+    destinationUri: string,
+    authorizeDestination?: ContextCopyRequest["authorizeDestination"],
+  ): ContextCopyRequest => ({
+    operationId: copy.operationId,
+    sources: sources.map((source) => ({
+      uri: source.uri,
+      view: copyView(source.view, input.projectId as ProjectId),
+      expected: source.expected,
+      ...(source.copyId ? { copyId: source.copyId } : {}),
+      ...(source.stateVector ? { stateVector: source.stateVector } : {}),
+    })),
+    destinationUri,
+    ...(copy.destinationParent ? { destinationParent: copy.destinationParent } : {}),
+    ...(copy.position ? { position: copy.position } : {}),
+    ...(authorizeDestination ? { authorizeDestination } : {}),
+  });
+  // A destination folder the project no longer holds: nothing is copied, and the answer says so.
+  if (folder && !folder.ok && folder.error.code === "destination_missing") {
+    const left = await port.leftOutForMissingFolder(request(destinationFolderId as string));
+    if (!left.ok) contextErrorToHttp(left.error);
+    return left.value;
+  }
+  if (folder && !folder.ok) contextErrorToHttp(folder.error);
+  const folderUri = folder?.ok ? folder.value.uri : null;
   // A folder named by identity can live in Uploads too, and is refused like the path form.
   if (folderUri !== null) {
     const parsed = parseUnifiedContextUri(folderUri);
@@ -408,7 +466,18 @@ export async function handleContextCopyRequest(
   }
 
   await Promise.all(
-    sources.map((source) => requireFileGrant(deps.fileAccess, input.userId, source.target, "read")),
+    sources.flatMap((source) =>
+      source.held === "gone"
+        ? []
+        : [
+            requireFileGrant(
+              deps.fileAccess,
+              input.userId,
+              source.target,
+              source.held === "trash" ? "command" : "read",
+            ),
+          ],
+    ),
   );
   const editGrant =
     folderUri === null
@@ -416,35 +485,18 @@ export async function handleContextCopyRequest(
           deps.fileAccess,
           input.userId,
           containerOf(resolvedDestination, input.projectId),
-          "edit",
+          "command",
         )
       : null;
 
   const run = () =>
-    port.copy({
-      operationId: copy.operationId,
-      sources: sources.map((source) => ({
-        uri: source.uri,
-        view: copyView(source.view, input.projectId as ProjectId),
-        expected: source.expected,
-        ...(source.copyId ? { copyId: source.copyId } : {}),
-        ...(source.stateVector ? { stateVector: source.stateVector } : {}),
-      })),
-      destinationUri,
-      ...(copy.destinationParent ? { destinationParent: copy.destinationParent } : {}),
-      ...(copy.position ? { position: copy.position } : {}),
-      ...(folderUri === null ? {} : { authorizeDestination: canEditContextUri(deps, input) }),
-    });
+    port.copy(
+      request(destinationUri, folderUri === null ? undefined : canCommandContextUri(deps, input)),
+    );
 
   const result = editGrant ? await withEditGrants(deps.fileAccess, [editGrant], run) : await run();
   if (!result.ok) contextErrorToHttp(result.error);
   return result.value;
-}
-
-async function resolveFolderUri(port: ContextPort, folderId: string): Promise<string> {
-  const resolved = await port.resolveFolderUri(folderId);
-  if (!resolved.ok) contextErrorToHttp(resolved.error);
-  return resolved.value.uri;
 }
 
 /** A resolved destination URI, for the file-policy recheck under the command's locks. */

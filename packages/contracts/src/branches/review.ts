@@ -227,16 +227,17 @@ export type StoredDocumentCommandResult =
   | ReverseTurnCommandResult
   | CopyCommandResult;
 
-/** A chat card's Undo or Redo: the reversal's own outcome; `reversed` when it changed something. */
+/** A chat card's Undo or Redo: always `done`; the outcome says what changed and what each target left. */
 export type ReverseTurnCommandResult = {
-  status: "reversed" | "refused";
+  status: "reversed";
   outcome: ReversalOutcome;
 };
 
-/** A Copy: the receipt the writer's client reads, which holds the created ids. */
+/** A Copy: the receipt the writer's client reads, which holds the created ids; `settled` says what it left undone. */
 export type CopyCommandResult = {
-  status: "copied" | "refused";
+  status: "copied";
   receipt: ContextOperationReceipt;
+  settled?: Settlement[];
 };
 
 /** The tool result a model's edit stores: what its result block holds, before the block's own ids. */

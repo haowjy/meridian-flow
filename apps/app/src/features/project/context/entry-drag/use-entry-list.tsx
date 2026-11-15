@@ -10,10 +10,14 @@
  * at the drop point, Move or Copy (see `drop-choice.ts`).
  */
 import type { ListTrashResponse, TrashEntry } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useOptionalContextRemovalCoordinator } from "../account-feature-context";
+import {
+  useOptionalContextRemovalCoordinator,
+  useOptionalLiveDocumentSessionRegistry,
+} from "../account-feature-context";
 import { useDocumentTrashRestore } from "../DocumentTrashRestoreProvider";
 import {
   type EntriesRoute,
@@ -71,6 +75,12 @@ export function useEntryList({
 }): EntryListController {
   const actions = useEntryActions(projectId);
   const removal = useOptionalContextRemovalCoordinator();
+  const registry = useOptionalLiveDocumentSessionRegistry();
+  const stateVectorOf = useCallback(
+    (documentId: string, view: "live" | "draft") =>
+      registry?.openStateVector(documentId as DocumentId, view) ?? null,
+    [registry],
+  );
   const queryClient = useQueryClient();
   const { restoreInto } = useDocumentTrashRestore();
   const selection = useEntrySelection();
@@ -90,10 +100,10 @@ export function useEntryList({
   );
   const runListCopy = useCallback(
     (copy: ReadyCopy) =>
-      void runCopy({ actions, projectId, removal }, copy, (rows) =>
+      void runCopy({ actions, projectId, removal, stateVectorOf }, copy, (rows) =>
         selectRows(latest.current.selection, rows),
       ),
-    [actions, projectId, removal],
+    [actions, projectId, removal, stateVectorOf],
   );
 
   const route = useMemo<EntriesRoute>(() => {

@@ -5,6 +5,7 @@
  * reads or writes is `copy-command.ts`.
  */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { CopyContextEntriesResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
@@ -15,6 +16,7 @@ import {
   type CopyDestinationHandoff,
   type CopySourceHandoff,
   createContextCopyCommand,
+  receiptCommand,
 } from "./copy-command.js";
 import type { CopyCommands } from "./copy-commands.js";
 
@@ -42,7 +44,10 @@ export interface ContextCopyPortDeps {
 
 export function createContextCopyPort(deps: ContextCopyPortDeps) {
   /** A destination this scheme can copy into, or null when it has no copy capability. */
-  const handoff = (end: CopyEnd): CopyDestinationHandoff | null => {
+  const handoff = (
+    end: CopyEnd,
+    folder: { folderId: string; createFolders?: readonly string[] } | null,
+  ): CopyDestinationHandoff | null => {
     const copy = end.adapter.copy;
     return copy
       ? {
@@ -50,12 +55,48 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           copy,
           scheme: end.adapter.name as ContextScheme,
           dir: end.path.split("/").filter(Boolean),
-          workScopeId: end.workScopeId,
+          // A port's primary Work is not the owner of a project scheme's namespace.
+          workScopeId: isWorkScopedScheme(end.adapter.name as ContextScheme)
+            ? end.workScopeId
+            : null,
+          ...(folder
+            ? { parent: { folderId: folder.folderId, createFolders: folder.createFolders ?? [] } }
+            : {}),
         }
       : null;
   };
 
-  return async function copy(
+  /**
+   * A Copy into a folder the project no longer holds: nothing is copied. The answer is stored
+   * under the operation ID like every other, so a resend reads the same one.
+   */
+  async function leftOutForMissingFolder(
+    request: ContextCopyRequest,
+  ): Promise<Result<CopyContextEntriesResult, ContextError>> {
+    if (!deps.commands) {
+      return Err({
+        code: "invalid_operation",
+        uri: request.destinationUri,
+        message: "Copy is not available here",
+      });
+    }
+    const command = receiptCommand(
+      request.sources.map((source) => ({ ...source, view: source.view ?? { kind: "live" } })),
+      request.destinationUri,
+      request,
+    );
+    return deps.commands.execute(request.operationId, command, request.destinationUri, async () =>
+      Ok({
+        status: "copied",
+        entries: [],
+        settled: [
+          { rule: "left_out", items: request.sources.map((source) => source.uri), why: "purged" },
+        ],
+      }),
+    );
+  }
+
+  async function copy(
     request: ContextCopyRequest,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const { commands, commandTransaction } = deps;
@@ -92,7 +133,9 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
 
     const destination = await deps.resolve(request.destinationUri);
     if (!destination.ok) return destination;
-    const destinationHandoff = handoff(destination.value);
+    const parent = request.destinationParent;
+    const folderParent = parent?.kind === "folder" ? parent : null;
+    const destinationHandoff = handoff(destination.value, folderParent);
     if (!destinationHandoff) {
       return Err({
         code: "invalid_operation",
@@ -101,8 +144,6 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
       });
     }
 
-    const parent = request.destinationParent;
-    const folderParent = parent?.kind === "folder" ? parent : null;
     return createContextCopyCommand(deps.copy).copy({
       environment: { commands, commandTransaction },
       request,
@@ -117,7 +158,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
                   : {}),
               });
               if (!target.ok) return target;
-              const current = handoff(target.value);
+              const current = handoff(target.value, folderParent);
               return current
                 ? Ok(current)
                 : Err({
@@ -129,5 +170,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           }
         : {}),
     });
-  };
+  }
+
+  return { copy, leftOutForMissingFolder };
 }

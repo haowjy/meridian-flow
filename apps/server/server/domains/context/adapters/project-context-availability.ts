@@ -496,6 +496,7 @@ export function createDrizzleProjectContextAvailability(
         projectId: input.projectId,
         userId: actor.userId,
         node: input.node,
+        ...(input.inTrash ? { inTrash: true } : {}),
       });
     },
 
@@ -511,43 +512,24 @@ export function createDrizzleProjectContextAvailability(
   };
 }
 
-/** Resolve an active live folder inside the caller's transaction, without a new snapshot. */
-export async function resolveActiveFolderUri(
+/**
+ * The address a folder identity holds now, followed by id: where it moved to, or the last
+ * address it held in Trash, in a closed Work too. Null once the project no longer holds it.
+ */
+export async function resolveHeldFolderUri(
   db: Database,
   projectId: string,
   userId: string,
   folderId: string,
 ): Promise<string | null> {
-  const tx = currentDrizzleDb(db) as Database;
-  const [row] = (await loadPlacedRows(tx, LIVE_TREE, [folderId])).folders;
-  if (
-    !row?.source ||
-    row.folder.deleted ||
-    row.source.deletedAt ||
-    row.sourceProject?.deletedAt ||
-    row.work?.deletedAt ||
-    row.work?.archivedAt
-  )
-    return null;
-  const ancestors = await loadIdentityFolderClosure(tx, LIVE_TREE, [folderId]);
-  const classification = classifySourceIdentity({
-    row: { ...row, node: { parentId: row.folder.parentId, deleted: false } },
-    requestProjectId: projectId,
-    actorUserId: userId,
-    foldersById: new Map(ancestors.map((folder) => [folder.id, folder])),
+  const held = await resolveHeldContextNode({
+    db,
+    projectId: projectId as ProjectId,
+    userId,
+    node: { kind: "folder", id: folderId },
+    inTrash: true,
   });
-  if (classification.kind !== "valid") return null;
-  return canonicalContextUri(
-    classification.identity.scheme,
-    [...classification.identity.parentPath, row.folder.name].join("/"),
-    sourceAuthority(
-      classification.identity.scheme,
-      row.work?.id ?? null,
-      row.work && !row.work.isNoWork ? row.work.handle : null,
-      row.ownerThreadRef,
-      row.source.scope === "chat",
-    ),
-  );
+  return held?.kind === "held" ? held.address.uri : null;
 }
 
 /** Whether this project (or the writer's own User area) holds the row's source. */
@@ -572,6 +554,8 @@ async function resolveHeldContextNode(input: {
   projectId: ProjectId;
   userId: string;
   node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
+  /** A node in Trash answers its last address (`inTrash`) instead of `unreachable`. */
+  inTrash?: boolean;
 }): Promise<HeldContextNode | null> {
   if (!isUuid(input.node.id)) return null;
   const tx = currentDrizzleDb(input.db) as Database;
@@ -593,7 +577,7 @@ async function resolveHeldContextNode(input: {
   if (!found) return null;
   // Another project holding the id is not this project's row.
   if (!heldInProject(found, input.projectId, input.userId)) return null;
-  if (found.deleted) return { kind: "unreachable" };
+  if (found.deleted && !input.inTrash) return { kind: "unreachable" };
   if (found.source.deletedAt || found.sourceProject?.deletedAt) return { kind: "unreachable" };
   const foldersById = new Map(
     (await loadIdentityFolderClosure(tx, LIVE_TREE, found.parentId ? [found.parentId] : [])).map(
@@ -618,6 +602,7 @@ async function resolveHeldContextNode(input: {
   const path = [...parentPath, found.name].join("/");
   return {
     kind: "held",
+    ...(found.deleted ? { inTrash: true as const } : {}),
     address: {
       id: input.node.id,
       scheme,

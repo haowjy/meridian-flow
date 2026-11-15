@@ -5,6 +5,7 @@
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
+import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
@@ -184,6 +185,14 @@ export class DocumentSessionRegistry {
   get(lease: LiveDocumentSessionLease): DocumentSession {
     const state = this.requireLease(lease);
     return this.getOrCreateLiveSession(lease, state, true);
+  }
+
+  openStateVector(documentId: DocumentId, view: "live" | "draft" = "live"): Uint8Array | null {
+    const session =
+      view === "draft"
+        ? this.draftRooms.roomOf(documentId)
+        : this.liveRooms.get(documentId)?.session;
+    return session ? Y.encodeStateVector(session.document) : null;
   }
 
   async restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean> {
