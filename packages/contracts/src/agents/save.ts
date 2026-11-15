@@ -63,6 +63,8 @@ export interface AgentPackageStatus {
   savedAt: string | null;
   /** The package's latest Save, for Undo; null with none. */
   saveId: string | null;
+  undoneSaveId: string | null;
+  undoable: { saveId: string; at: string; by: "writer" | "ai" } | null;
   /** Files added, changed or deleted since the saved version. */
   changes: AgentFileChange[];
   /** Errors, warnings and Info in the package's files; show them through `shownFindings`. */
@@ -74,6 +76,10 @@ export const agentPackageStatusSchema = z.object({
   state: z.enum(["saved", "unsaved", "cant-save", "not-saved", "removed"]),
   savedAt: z.string().nullable(),
   saveId: z.string().nullable(),
+  undoneSaveId: z.string().nullable(),
+  undoable: z
+    .object({ saveId: z.string(), at: z.string(), by: z.enum(["writer", "ai"]) })
+    .nullable(),
   changes: z.array(agentFileChangeSchema),
   findings: z.array(agentFindingSchema),
 }) satisfies z.ZodType<AgentPackageStatus>;
@@ -140,5 +146,8 @@ export const undoSaveRequestSchema = z.strictObject({
   saveId: z.string().refine((value): boolean => isUuid(value), "must be a canonical UUID"),
 });
 export type UndoSaveRequest = z.infer<typeof undoSaveRequestSchema>;
-/** `undone` is false when a later Save of the package exists: nothing changed. */
-export const undoSaveResponseSchema = z.object({ undone: z.boolean() });
+export const undoSaveResponseSchema = z.object({
+  undone: z.boolean(),
+  reason: z.enum(["already-undone", "later-save", "not-undoable", "not-found"]).nullable(),
+});
+export type UndoSaveResponse = z.infer<typeof undoSaveResponseSchema>;

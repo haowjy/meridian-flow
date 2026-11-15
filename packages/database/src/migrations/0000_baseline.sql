@@ -29,6 +29,8 @@ CREATE TABLE "agent_package_saves" (
 	"project_id" uuid,
 	"folder" text NOT NULL,
 	"package_revision_id" uuid,
+	"undone_save_id" uuid,
+	"saved_by" text DEFAULT 'writer' NOT NULL,
 	"seq" bigint GENERATED ALWAYS AS IDENTITY (sequence name "agent_package_saves_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "agent_package_saves_one_owner" CHECK (("agent_package_saves"."user_id" IS NULL) <> ("agent_package_saves"."project_id" IS NULL))

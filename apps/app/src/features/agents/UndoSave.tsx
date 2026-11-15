@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { useAgentFiles } from "@/client/query/useAgentFiles";
 import { RowWord } from "@/components/app/RowWord";
-import { type PackageRef, packageLabel, usePackageSaves } from "./package-save";
+import { type PackageRef, packageLabel, statusOf, usePackageSaves } from "./package-save";
 
 export function UndoSave({
   projectId,
@@ -13,20 +14,25 @@ export function UndoSave({
   saveId: string;
 }) {
   const saves = usePackageSaves(projectId);
+  const status = statusOf(useAgentFiles(projectId)?.packages, pkg);
   const state = saves.undoOf(saveId);
   const label = packageLabel(pkg);
-  if (state === "undone" || state === "nothing")
+  if (!status) return null;
+  if (status.undoable?.saveId !== saveId) {
+    if (status.saveId === saveId) return null;
+    const undone = status.undoneSaveId === saveId;
     return (
       <RowWord
         tone="done"
-        word={state === "undone" ? <Trans>Undone</Trans> : <Trans>Unchanged</Trans>}
+        word={undone ? <Trans>Undone</Trans> : <Trans>Unchanged</Trans>}
         sentence={
-          state === "undone"
+          undone
             ? t`Back to the previous saved version. Your later edits are kept.`
             : t`A later Save is in use. Nothing changed.`
         }
       />
     );
+  }
   return (
     <RowWord
       tone={state === "failed" ? "warning" : "action"}

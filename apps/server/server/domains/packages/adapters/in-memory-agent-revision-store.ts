@@ -115,10 +115,10 @@ export function createInMemoryAgentRevisionStore(input: {
         .pop();
       const { value, publish } = await decide(latest && copy(latest));
       return publish
-        ? { value, row: await store.savePackage(owner, folder, publish.packageRevisionId) }
+        ? { value, row: await store.savePackage(owner, folder, publish.packageRevisionId, publish) }
         : { value };
     },
-    async savePackage(owner, folder, packageRevisionId) {
+    async savePackage(owner, folder, packageRevisionId, metadata) {
       const digest = packageRevisionId
         ? (state().sources.get(packageRevisionId)?.digest ?? null)
         : null;
@@ -128,6 +128,11 @@ export function createInMemoryAgentRevisionStore(input: {
         packageRevisionId,
         contentDigest: digest,
         createdAt: new Date(),
+        undoneSaveId: metadata?.undoneSaveId ?? null,
+        savedBy: metadata?.savedBy ?? "writer",
+        hasPrevious: [...state().saves.values()].some(
+          (row) => row.owner === ownerKey(owner) && row.folder === folder,
+        ),
       };
       state().saves.set(save.id, { ...save, owner: ownerKey(owner) });
       return copy(save);
@@ -145,11 +150,18 @@ export function createInMemoryAgentRevisionStore(input: {
       if (index < 0) return undefined;
       const same = rows.filter((save) => save.folder === rows[index].folder);
       const latest = same[same.length - 1];
-      if (latest.id !== saveId) return { current: copy(latest), undone: null };
+      if (same.some((row) => row.undoneSaveId === saveId))
+        return { current: copy(latest), undone: null, reason: "already-undone" };
+      if (latest.id !== saveId)
+        return { current: copy(latest), undone: null, reason: "later-save" };
       const before = same[same.length - 2];
-      await restore(copy(latest), before ? copy(before) : null);
+      if (!before || latest.undoneSaveId)
+        return { current: copy(latest), undone: null, reason: "not-undoable" };
+      await restore(copy(latest), copy(before));
       return {
-        current: await store.savePackage(owner, latest.folder, before?.packageRevisionId ?? null),
+        current: await store.savePackage(owner, latest.folder, before.packageRevisionId, {
+          undoneSaveId: saveId,
+        }),
         undone: copy(latest),
       };
     },

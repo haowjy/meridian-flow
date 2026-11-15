@@ -59,7 +59,7 @@ export function PackageSave({
 }) {
   const saves = usePackageSaves(projectId);
   const word = saves.wordOf(pkg, status);
-  const saveId = saves.saveIdOf(pkg, status);
+  const saveId = status?.undoable?.saveId;
   const undo = saveId ? <UndoSave projectId={projectId} pkg={pkg} saveId={saveId} /> : null;
   const save = status ? () => void saves.save([status]) : undefined;
   const content = word ? (
