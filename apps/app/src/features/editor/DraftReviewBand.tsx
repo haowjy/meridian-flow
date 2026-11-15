@@ -187,7 +187,7 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
-      <ClosedBounceChip pressed={props.itemKey} />
+      <ClosedBounceChip surface="band" pressed={props.itemKey} />
       {finished || header.asking ? null : (
         <ReviewActions
           scope="document"

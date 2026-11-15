@@ -662,7 +662,7 @@ function ChangeRow({
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
-            <DraftCommandStatus itemKey={file.draft.itemKey} />
+            <DraftCommandStatus surface="changes" itemKey={file.draft.itemKey} />
           </div>
         }
       />
@@ -802,7 +802,7 @@ function FolderGroupRow({
               />
             ) : null}
             {keys.map((key) => (
-              <DraftCommandStatus key={key} itemKey={key} />
+              <DraftCommandStatus key={key} surface="changes" itemKey={key} />
             ))}
           </div>
         }

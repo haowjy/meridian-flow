@@ -62,7 +62,7 @@ export function useWorkBranchCommands({
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
   // No scope, no command. A closed Work is not locked here: its commands are sent, and the
-  // server's answer shows the one closed-Work bounce (`DraftCommandOwner.closedWorks`).
+  // server's answer shows the one closed-Work bounce (`DraftCommandOwner.closedBounceAt`).
   const locked = !ownerKey || !work;
   // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
@@ -72,7 +72,7 @@ export function useWorkBranchCommands({
   const treeLists = useOptionalTreeLists();
   const draftOnly = useOptionalDraftOnlyPresentations();
   return useMemo(() => {
-    const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
+    const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, surface, ...draft });
     const row = (draft: DraftReviewSelection) =>
       cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
         (item) => item.itemKey === draft.itemKey,

@@ -46,7 +46,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   // A file's own status line says it (`DraftCommandStatus`): the summary does for several shut files.
   const summaryBounce =
-    useClosedBounce(dock.ownerKey) !== undefined && dock.files.length > 1 && !expanded;
+    useClosedBounce("strip", dock.ownerKey) !== undefined && dock.files.length > 1 && !expanded;
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
 
@@ -95,7 +95,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     >
       {askingApply ? null : dock.showCommands ? (
         <>
-          {summaryBounce ? <ClosedBounceChip pressed={dock.ownerKey} /> : null}
+          {summaryBounce ? <ClosedBounceChip surface="strip" pressed={dock.ownerKey} /> : null}
           <ReviewActions
             scope={multi ? "all" : "change"}
             labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
@@ -231,7 +231,7 @@ function DockFileLine({
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
-  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
+  const status = <DraftCommandStatus surface="strip" itemKey={file.row.draft.itemKey} />;
   if (!summary && !expanded) return null;
   return (
     <div

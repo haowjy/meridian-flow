@@ -14,6 +14,10 @@ import { useDraftCommandOwner } from "@/features/project/context/account-feature
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
+import type { DraftRef } from "./review-command-types";
+
+type Surface = NonNullable<DraftRef["surface"]>;
+
 /**
  * Beside a drafted document's name when the manuscript no longer has it: Apply brings it back.
  * Nothing when it's still there.
@@ -34,18 +38,18 @@ export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem |
  * The Work chip where a command was pressed in a closed Work, for the few seconds the owner
  * remembers it; the sidebar's chip is out of sight on a phone. Nothing otherwise.
  */
-export function useClosedBounce(pressed: string) {
+export function useClosedBounce(surface: Surface, pressed: string) {
   const owner = useDraftCommandOwner();
   useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
-  return owner.closedBounce(pressed);
+  return owner.closedBounceAt(surface, pressed);
 }
 
-export function ClosedBounceChip({ pressed }: { pressed: string }) {
-  const why = useClosedBounce(pressed);
+export function ClosedBounceChip({ surface, pressed }: { surface: Surface; pressed: string }) {
+  const why = useClosedBounce(surface, pressed);
   return why ? <WorkClosedChip sentence={workClosedSentence(why)} /> : null;
 }
 
-export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
+export function DraftCommandStatus({ surface, itemKey }: { surface: Surface; itemKey: string }) {
   const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
   const content = state.stalled ? (
@@ -77,7 +81,7 @@ export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
       />
     )
   ) : null;
-  const bounced = <ClosedBounceChip pressed={itemKey} />;
+  const bounced = <ClosedBounceChip surface={surface} pressed={itemKey} />;
   if (!content) return bounced;
   return (
     <div

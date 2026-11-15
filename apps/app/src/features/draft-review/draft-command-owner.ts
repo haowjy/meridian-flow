@@ -176,14 +176,17 @@ export class DraftCommandOwner {
   snapshot = () => this.revision;
   /**
    * Works, and the owners and items pressed in them, whose closed state a command just ran into; each
-   * clears itself after a moment. One entry per key, so the sidebar's chip reads the Work and a
-   * control's own chip reads its item.
+   * clears itself after a moment. The sidebar's chip reads the Work's key; an item or owner key
+   * is prefixed with the surface that pressed, so only that surface's control shows a chip.
    */
   private readonly closedBounces = new Map<
     string,
     { why: "work_archived" | "work_deleted"; timer: ReturnType<typeof setTimeout> }
   >();
   closedBounce = (key: string) => this.closedBounces.get(key)?.why;
+  /** A control's chip reads the bounce its own surface sent, so one press shows one chip. */
+  closedBounceAt = (surface: NonNullable<DraftRef["surface"]>, key: string) =>
+    this.closedBounces.get(`${surface}:${key}`)?.why;
   /**
    * A refusal because the Work is closed shows once, as the "Work was closed" chip where the
    * press was (the item's status line or controls) and in the Work chip, instead of a failure:
@@ -192,7 +195,8 @@ export class DraftCommandOwner {
   private shown(ref: DraftRef, failure: BranchCommandFailure): BranchCommandFailure | null {
     const why = failure.serverCode;
     if (why !== "work_archived" && why !== "work_deleted") return failure;
-    const keys = [ref.itemKey, ref.ownerKey, workIdOfDraftOwnerKey(ref.ownerKey)];
+    const at = (key: string) => (ref.surface ? `${ref.surface}:${key}` : key);
+    const keys = [at(ref.itemKey), at(ref.ownerKey), workIdOfDraftOwnerKey(ref.ownerKey)];
     for (const key of keys) {
       if (!key) continue;
       clearTimeout(this.closedBounces.get(key)?.timer);
