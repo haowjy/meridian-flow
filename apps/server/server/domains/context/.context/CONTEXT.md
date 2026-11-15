@@ -42,7 +42,11 @@ out of a lineage, but may not create notes or move files into one.
 
 URI paths reject `..`, normalize slash segments, and reserve a leading `@` in
 writer-created names for authority qualifiers. Canonical filename parsing is
-owned by `@meridian/contracts/protocol`. Every tree lookup of a typed name asks
+owned by `@meridian/contracts/protocol`. A path is a list of segments: a node's name, or for a
+later twin its name, `~` and the start of its id (`Kael~b21c`, project-tree rule 14), so every
+path reaches one node. The relations and the placed nodes expose `segment`; whatever spells or
+walks a path uses it, whatever shows a title uses `name`, and `readSegment` is the one reader of a
+typed segment. Every tree lookup of a typed name asks
 `addressCandidates` (literal, then the codec's alias), and whatever holds the literal name
 answers whatever its kind: `TreeReader.resolveAddress` is the one tree walk over them,
 `matchDocumentAddress` and the client catalog's `findPath` the same order over a list. A caller

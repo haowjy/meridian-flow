@@ -280,7 +280,6 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           return current.node.kind === "document"
             ? { kind: "current", documentId: current.node.document.id }
             : null;
-        if (current.kind === "ambiguous") return null;
         const [previous] = await tx
           .select({ documentId: documentPreviousLocations.documentId })
           .from(documentPreviousLocations)

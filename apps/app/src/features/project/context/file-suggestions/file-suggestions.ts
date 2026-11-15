@@ -1,6 +1,6 @@
 /** Pure projection of the replay's trees, and ranking, for file suggestion hosts. */
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { type ProjectContextTreeScheme, readSegment } from "@meridian/contracts/protocol";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 
 export type FileSuggestionKind = "file" | "dir";
@@ -35,7 +35,7 @@ export function treeFileSuggestions(
           path: entry.path,
           name: entry.name,
           kind: entry.kind === "dir" ? "dir" : "file",
-          parents: entry.path.split("/").filter(Boolean).slice(0, -1),
+          parents: folderNames(entry.path),
         });
         if (entry.kind === "dir") walk(entry.entryId);
       }
@@ -53,8 +53,17 @@ export function fileSuggestion(scheme: ProjectContextTreeScheme, file: TreeFile)
     path: file.path,
     name: file.name,
     kind: "file",
-    parents: file.path.split("/").filter(Boolean).slice(0, -1),
+    parents: folderNames(file.path),
   };
+}
+
+/** The folders above a path as the writer reads them: a twin's `~id` is not part of a name. */
+function folderNames(path: string): string[] {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .slice(0, -1)
+    .map((segment) => readSegment(segment).name);
 }
 
 /**

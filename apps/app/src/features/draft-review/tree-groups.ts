@@ -102,7 +102,7 @@ function folderChange(work: WorkTreeChanges["work"], records: readonly TreeRecor
         ? null
         : isSourceRoot(move.parent)
           ? "top"
-          : { into: work.nodes.get(move.parent)?.displayName ?? "" },
+          : { into: work.nodes.get(move.parent)?.name ?? "" },
   };
 }
 
@@ -135,7 +135,7 @@ export function groupByChangedFolder<T extends { documentId: string }>(
     groups.set(id, {
       folder: {
         id,
-        name: work.nodes.get(id)?.displayName ?? "",
+        name: work.nodes.get(id)?.name ?? "",
         change: folderChange(work, records),
         fault: faults.get(id) ?? null,
         folders: [id],

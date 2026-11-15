@@ -1,4 +1,6 @@
 /** Proof-of-concept cases for the Yjs file-tree log: the conflicts that break trees, by name. */
+
+import { idHex } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -11,6 +13,7 @@ import {
   recordsOf,
   replayView,
   restoreDiscard,
+  segmentOf,
   sourceRoot,
   type TreeRecord,
   TreeWriter,
@@ -45,7 +48,7 @@ function sync(...writers: TreeWriter[]) {
 }
 
 function names(writer: TreeWriter, parent: string, draft: string | null = null): string[] {
-  return childrenOf(replayView(writer.doc, { draft }), parent).map((node) => node.displayName);
+  return childrenOf(replayView(writer.doc, { draft }), parent).map(segmentOf);
 }
 
 function pair() {
@@ -128,12 +131,29 @@ describe("file tree as a Yjs operation log", () => {
     );
   });
 
-  it("two creates with one name in one folder: both kept, the later one numbered", () => {
+  it("two replicas each create Kael: each shows its own plain, and after the merge both show the same twin plain", () => {
     const { a, b } = pair();
-    a.create(LIVE, W, { kind: "document", filetype: "markdown", name: "Notes", parent: ROOT });
-    b.create(LIVE, A, { kind: "document", filetype: "markdown", name: "Notes", parent: ROOT });
+    const mine = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Kael",
+      parent: ROOT,
+    }).node;
+    const theirs = b.create(LIVE, A, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Kael",
+      parent: ROOT,
+    }).node;
+    expect([names(a, ROOT), names(b, ROOT)]).toEqual([["Kael"], ["Kael"]]);
     sync(a, b);
-    expect(names(a, ROOT).sort()).toEqual(["Notes", "Notes (2)"]);
+    const merged = replayView(a.doc, LIVE);
+    const suffixed = [mine, theirs].filter((id) => merged.nodes.get(id)?.suffix !== undefined);
+    expect(suffixed).toHaveLength(1);
+    expect(names(a, ROOT).sort()).toEqual([
+      "Kael",
+      `Kael~${idHex(suffixed[0] as string).slice(0, 4)}`,
+    ]);
     expect(names(a, ROOT)).toEqual(names(b, ROOT));
   });
 
@@ -458,8 +478,9 @@ describe("file tree log: cases found in review", () => {
     }).node;
     a.restore(LIVE, W, old);
     const live = replayView(a.doc, LIVE);
-    expect(live.nodes.get(current)?.displayName).toBe("Ch1");
-    expect(live.nodes.get(old)?.displayName).toBe("Ch1 (2)");
+    expect(live.nodes.get(current)).toMatchObject({ name: "Ch1" });
+    expect(live.nodes.get(current)?.suffix).toBeUndefined();
+    expect(live.nodes.get(old)).toMatchObject({ name: "Ch1", suffix: idHex(old).slice(0, 4) });
   });
 
   it("undo of a move into a folder deleted since is refused, not a revival", () => {

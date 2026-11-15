@@ -56,8 +56,12 @@ export const treeNodes = pgTable(
       .references(() => contextSources.id, { onDelete: "cascade" }),
     /** Null for the top of a source. */
     parentId: uuid("parent_id").$type<DocumentId>(),
-    /** The name shown, numbered where a sibling shows the same, with its extension. */
+    /** The name shown, with its extension; a sibling may share it. */
     name: text("name").notNull(),
+    /** A later twin's suffix (project-tree rule 14): hex digits from its id, without the `~`. */
+    suffix: text("suffix"),
+    /** The path segment: the name, and `~` and the suffix for a later twin. Walks match it. */
+    segment: text("segment").generatedAlwaysAs(sql`name || coalesce('~' || suffix, '')`),
     /** What follows the last dot of the name, lowercased; empty for a folder. */
     extension: text("extension").notNull().default(""),
     /** The name without its extension: the link-name lookup's key, which an index can serve. */
@@ -102,7 +106,7 @@ export const treeNodes = pgTable(
       "tree_nodes_trashed_by_shape",
       sql`${table.trashedBy} IS NULL OR ${table.trashRecord} IS NOT NULL`,
     ),
-    index("tree_nodes_walk").on(table.contextSourceId, table.parentId, table.name),
+    index("tree_nodes_walk").on(table.contextSourceId, table.parentId, table.segment),
     // The link-name lookup finds a document by its name or its stem in a project's sources: the
     // name leads, since one source holds most of a project's nodes and a name is rare.
     index("tree_nodes_by_name").on(table.name, table.contextSourceId),
@@ -138,12 +142,19 @@ export const branchTreeNodes = pgTable(
       .references(() => contextSources.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").$type<DocumentId>(),
     name: text("name").notNull(),
+    suffix: text("suffix"),
+    segment: text("segment").generatedAlwaysAs(sql`name || coalesce('~' || suffix, '')`),
     extension: text("extension").notNull().default(""),
     fileType: text("file_type"),
     rank: text("rank").notNull(),
     /** Absent from this Work's view: deleted in the Work, or in Trash there. */
     deleted: boolean("deleted").notNull(),
     existsOnlyInDraft: boolean("exists_only_in_draft").notNull(),
+    /**
+     * A change the Work made, which review lists and the count counts. False for a row that
+     * differs from live only in a twin's suffix: a sibling's change moved it.
+     */
+    changed: boolean("changed").notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.branchId, table.id] }),
@@ -163,7 +174,7 @@ export const branchTreeNodes = pgTable(
       table.branchId,
       table.contextSourceId,
       table.parentId,
-      table.name,
+      table.segment,
     ),
     index("branch_tree_nodes_siblings").on(
       table.branchId,

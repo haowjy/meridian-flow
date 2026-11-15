@@ -94,7 +94,7 @@ export function TrashedDocument({
       </MainSurface>
     );
   }
-  const name = standing.kind === "in-trash" ? standing.node.displayName : "";
+  const name = standing.kind === "in-trash" ? standing.node.name : "";
   return (
     <MainSurface joined className="flex h-full min-h-0 flex-col">
       <ReadOnlyViewerFrame className="bg-transparent">

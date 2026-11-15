@@ -1,13 +1,6 @@
 import * as Y from "yjs";
 import { assertNewCommand } from "./list-index.js";
-import {
-  type Actor,
-  nameSet,
-  newId,
-  recordsOf,
-  type Settlement,
-  type TreeRecord,
-} from "./record.js";
+import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { type NotUndone, recordsInForce, undoChange } from "./undo.js";
@@ -278,21 +271,9 @@ export function applyDraft(
   });
   const overridden = new Set([...superseded, ...already].map((record) => record.id));
 
-  // A copy's `from` is what live had just before it, as the copies before it leave live. And it
-  // carries the name the writer saw: where the Work's tree, as it will read once what can land
-  // has landed, shows the node's name numbered, the clash was visible to the one applying, so
-  // the record that gave the name holds the numbered one (design, section 4) and a later change
-  // to its sibling cannot flip it back.
-  const ends = (record: TreeRecord) =>
-    leftIds.has(record.id) ||
-    (wanted.has(record.id) && !taken.has(record.id) && !overridden.has(record.id));
-  const reads = replay([...live, ...pending.filter((record) => !ends(record))], { draft });
+  // A copy's `from` is what live had just before it, as the copies before it leave live.
   const was = new Map<string, { name: string; parent: string; rank: string }>();
   const stands = (node: string) => was.get(node) ?? liveNow.nodes.get(node);
-  const lastNamed = new Map<string, string>();
-  for (const record of pending)
-    if (taken.has(record.id) && (record.type === "create" || nameSet(record) !== undefined))
-      lastNamed.set(record.node, record.id);
   const copies: TreeRecord[] = [];
   for (const record of pending) {
     if (!taken.has(record.id)) continue;
@@ -307,22 +288,6 @@ export function applyDraft(
     const before = stands(copy.node);
     if (copy.type === "move" && before) copy.from = { parent: before.parent, rank: before.rank };
     if (copy.type === "rename" && before) copy.fromName = before.name;
-    if (
-      (copy.type === "create" || copy.type === "rename" || copy.type === "move") &&
-      (copy.type === "create" || nameSet(copy) !== undefined)
-    ) {
-      const shown = reads.nodes.get(copy.node);
-      // A node keeping both its name and its folder arrives in no new place in the numbering, so
-      // baking a number onto it would move it behind the siblings that arrived since. A move
-      // into another folder does arrive in a new place there, so it is baked even with its name.
-      if (
-        lastNamed.get(copy.node) === record.id &&
-        shown &&
-        shown.name === copy.name &&
-        !(before?.name === copy.name && (copy.type !== "move" || before.parent === copy.parent))
-      )
-        copy.name = shown.displayName;
-    }
     if (copy.type === "create")
       was.set(copy.node, { name: copy.name, parent: copy.parent, rank: copy.rank });
     else if (before && copy.type === "move")

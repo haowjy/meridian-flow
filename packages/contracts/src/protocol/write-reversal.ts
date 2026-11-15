@@ -5,7 +5,6 @@ import type { FileAccessDenial } from "./file-access.js";
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
-  | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"

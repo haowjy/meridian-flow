@@ -11,8 +11,10 @@ export type ProjectedRow = {
   /** Null for the top of a source. */
   parentId: string | null;
   sourceId: string;
-  /** The name shown, numbered where a sibling shows the same. */
+  /** The name shown, which a sibling may share. */
   name: string;
+  /** A later twin's suffix (rule 14), without the `~`; null for the first to arrive. */
+  suffix: string | null;
   /** What follows the last dot of the name, lowercased; empty for a folder or a bare name. */
   extension: string;
   /** A document's type: the editor that opens it. Null for a folder. */
@@ -21,8 +23,12 @@ export type ProjectedRow = {
   deleted: boolean;
 };
 
-/** A row of a Work's view: it differs from live, or exists only in the Work. */
-export type BranchRow = ProjectedRow & { existsOnlyInDraft: boolean };
+/**
+ * A row of a Work's view: it differs from live, or exists only in the Work. `changed` is whether
+ * it is a change the Work made, which review lists and the count counts: a row that differs from
+ * live only in a twin's suffix is not one (its sibling was renamed, moved or deleted).
+ */
+export type BranchRow = ProjectedRow & { existsOnlyInDraft: boolean; changed: boolean };
 
 function extensionOf(node: TreeNode): string {
   if (node.kind === "folder") return "";
@@ -37,7 +43,8 @@ function toRow(node: TreeNode): ProjectedRow {
     kind: node.kind === "folder" ? "folder" : "document",
     parentId: isSourceRoot(node.parent) ? null : node.parent,
     sourceId: node.source,
-    name: node.displayName,
+    name: node.name,
+    suffix: node.suffix ?? null,
     extension: extensionOf(node),
     filetype: node.filetype ?? null,
     rank: node.rank,
@@ -49,7 +56,8 @@ export function projectedRows(projection: TreeProjection): Map<string, Projected
   return new Map([...projection.nodes.values()].map((node) => [node.id, toRow(node)]));
 }
 
-function same(a: ProjectedRow, b: ProjectedRow): boolean {
+/** The facts the records set agree: everything but the suffix, which the replay derives. */
+function sameFacts(a: ProjectedRow, b: ProjectedRow): boolean {
   return (
     a.kind === b.kind &&
     a.parentId === b.parentId &&
@@ -58,8 +66,17 @@ function same(a: ProjectedRow, b: ProjectedRow): boolean {
     a.extension === b.extension &&
     a.filetype === b.filetype &&
     a.rank === b.rank &&
-    a.deleted === b.deleted &&
-    (a as Partial<BranchRow>).existsOnlyInDraft === (b as Partial<BranchRow>).existsOnlyInDraft
+    a.deleted === b.deleted
+  );
+}
+
+function same(a: ProjectedRow, b: ProjectedRow): boolean {
+  const branch = (row: ProjectedRow) => row as Partial<BranchRow>;
+  return (
+    sameFacts(a, b) &&
+    a.suffix === b.suffix &&
+    branch(a).existsOnlyInDraft === branch(b).existsOnlyInDraft &&
+    branch(a).changed === branch(b).changed
   );
 }
 
@@ -89,8 +106,9 @@ export function branchRows(
   for (const row of draft.values()) {
     const base = live.get(row.id);
     if (!base || (created.has(row.id) && !row.deleted))
-      out.set(row.id, { ...row, existsOnlyInDraft: true });
-    else if (!same(base, row)) out.set(row.id, { ...row, existsOnlyInDraft: false });
+      out.set(row.id, { ...row, existsOnlyInDraft: true, changed: true });
+    else if (!same(base, row))
+      out.set(row.id, { ...row, existsOnlyInDraft: false, changed: !sameFacts(base, row) });
   }
   return out;
 }

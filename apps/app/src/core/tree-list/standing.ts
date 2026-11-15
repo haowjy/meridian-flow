@@ -83,7 +83,7 @@ function foldersAbove(projection: TreeProjection, node: TreeNode): string[] {
     at && !isSourceRoot(node.parent);
     at = isSourceRoot(at.parent) ? undefined : projection.nodes.get(at.parent)
   )
-    names.unshift(at.displayName);
+    names.unshift(at.name);
   return names;
 }
 

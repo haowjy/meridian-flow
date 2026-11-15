@@ -31,13 +31,13 @@ import {
 const ROOT = sourceRoot("manuscript");
 
 /**
- * The tree as it stands: what a writer sees, leaving out what is in Trash and the numbers on
- * names (a node an Undo restored arrives again, so which of two same-named siblings is numbered
- * can change).
+ * The tree as it stands: what a writer sees, leaving out what is in Trash, the numbers on names
+ * and twins' suffixes (a node an Undo puts back can arrive again, so which of two same-named
+ * siblings carries one can change).
  */
 const standing = (projection: TreeProjection) =>
   fingerprint(projection, false)
-    .replaceAll(/( \(\d+\))+(?=#)/g, "")
+    .replaceAll(/( \(\d+\))*(~[0-9a-f]{4,})?(?=#)/g, "")
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("~") && !line.startsWith("source:"))
     .join("\n");

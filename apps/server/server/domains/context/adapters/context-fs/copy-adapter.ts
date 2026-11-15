@@ -18,7 +18,6 @@ import type { ContextDocument, ContextFolder } from "../../ports/context-documen
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
-import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
   /** Why this placement cannot take a copy (a draft placement), or null. */
@@ -38,12 +37,10 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
       });
     }
     const folder = await store.resolveFolderAt(LIVE_TREE, clean);
-    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
     if (folder.kind === "found" && folder.node) {
       return Ok(await folderSnapshot(clean, folder.node));
     }
     const document = await store.resolveDocumentAt(LIVE_TREE, clean);
-    if (document.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
     if (document.kind === "found") return Ok(fileSnapshot(clean, document.node));
     return Err({ code: "not_found" });
   }
@@ -72,11 +69,8 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
     for (const sibling of siblings) {
       children.push(
         "folder" in sibling
-          ? await folderSnapshot(joinPath(path, sibling.folder.name), sibling.folder)
-          : fileSnapshot(
-              joinPath(path, renderFilename(sibling.document.name, sibling.document.extension)),
-              sibling.document,
-            ),
+          ? await folderSnapshot(joinPath(path, sibling.folder.segment), sibling.folder)
+          : fileSnapshot(joinPath(path, sibling.document.segment), sibling.document),
       );
     }
     return {

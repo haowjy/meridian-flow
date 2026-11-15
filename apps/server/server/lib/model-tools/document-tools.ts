@@ -26,7 +26,7 @@ import {
 import type { DocumentId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { parseDocumentFilename, readSegment } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/gateway";
 import {
   createCopyIdentityMap,
@@ -160,11 +160,6 @@ export async function resolveDocumentAddress(
         ref.error.workHandle !== undefined ||
         ref.error.unknownScheme !== undefined ||
         ref.error.slip !== undefined);
-    if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
-      return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
-        path: path,
-      });
-    }
     return writeToolError(
       command,
       contextErrorMessage(ref.error),
@@ -952,6 +947,6 @@ function isCommandResult(value: unknown): value is ModelEditHandlerResult {
 }
 
 function sourceExtension(uri: string): string {
-  const parsed = parseDocumentFilename(uri.slice(uri.lastIndexOf("/") + 1));
+  const parsed = parseDocumentFilename(readSegment(uri.slice(uri.lastIndexOf("/") + 1)).name);
   return parsed.ok ? parsed.value.extension : "";
 }

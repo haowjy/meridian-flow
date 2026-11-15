@@ -64,7 +64,7 @@ export type DocumentAddress = DocumentCoordinates & {
  * those, not this.
  */
 export function placedNodesSql(view: TreeView): SQL {
-  const live = sql`SELECT t.id, t.kind, t.context_source_id, t.parent_id, t.name, t.extension, t.stem,
+  const live = sql`SELECT t.id, t.kind, t.context_source_id, t.parent_id, t.name, t.segment, t.extension, t.stem,
       t.file_type, t.rank, t.location_version, t.trash_record IS NOT NULL AS deleted,
       false AS exists_only_in_draft
     FROM tree_nodes t`;
@@ -73,7 +73,7 @@ export function placedNodesSql(view: TreeView): SQL {
   return sql`(${live}
     WHERE NOT EXISTS (SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
     UNION ALL
-    SELECT b.id, b.kind, b.context_source_id, b.parent_id, b.name, b.extension,
+    SELECT b.id, b.kind, b.context_source_id, b.parent_id, b.name, b.segment, b.extension,
       CASE WHEN b.extension <> '' THEN left(b.name, -(length(b.extension) + 1)) ELSE b.name END,
       b.file_type, b.rank, coalesce(lt.location_version, 0), b.deleted, b.exists_only_in_draft
     FROM branch_tree_nodes b LEFT JOIN tree_nodes lt ON lt.id = b.id
@@ -116,16 +116,16 @@ export async function loadDocumentAddresses(
     file_type: string;
   }>(sql`
     WITH RECURSIVE candidates AS (
-      SELECT d.id, d.name, d.parent_id AS folder_id, d.context_source_id, d.file_type, d.deleted
+      SELECT d.id, d.segment, d.parent_id AS folder_id, d.context_source_id, d.file_type, d.deleted
       FROM ${placedNodesSql(view)} d WHERE d.kind = 'document' AND ${filter}
     ),
     up AS (
       SELECT c.id AS document_id, c.folder_id AS folder_id, ''::text AS path
       FROM candidates c
       UNION ALL
-      SELECT u.document_id, f.parent_id, f.name || '/' || u.path
+      SELECT u.document_id, f.parent_id, f.segment || '/' || u.path
       FROM up u CROSS JOIN LATERAL (
-        SELECT p.parent_id, p.name FROM ${placedNodesSql(view)} p WHERE p.id = u.folder_id OFFSET 0
+        SELECT p.parent_id, p.segment FROM ${placedNodesSql(view)} p WHERE p.id = u.folder_id OFFSET 0
       ) f
     )
     SELECT c.id::text AS id,
@@ -134,7 +134,7 @@ export async function loadDocumentAddresses(
       cs.slug AS scheme, cs.work_id::text AS work_id, w.handle AS work_handle,
       w.is_no_work AS is_no_work, cs.root_thread_id::text AS root_thread_id,
       cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref,
-      up.path || c.name AS path,
+      up.path || c.segment AS path,
       c.deleted OR cs.deleted_at IS NOT NULL OR w.deleted_at IS NOT NULL AS deleted,
       c.file_type
     FROM candidates c
@@ -196,7 +196,8 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
   if ("names" in selection) {
     const projectIds = selection.projectIds.filter(isUuid);
     if (selection.names.length === 0 || projectIds.length === 0) return null;
-    // A node's name is its full filename; the candidates are stems, so match its stem too.
+    // A node's name is its full filename (its label: a twin's suffix is not in it); the
+    // candidates are stems, so match its stem too.
     const names = sql.join(
       selection.names.map((name) => sql`${name}`),
       sql`, `,
@@ -205,7 +206,7 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
       SELECT cs.id FROM context_sources cs LEFT JOIN works w ON w.id = cs.work_id
       WHERE COALESCE(cs.project_id, w.project_id) IN (${uuidList(projectIds)}))`;
   }
-  return sql`d.context_source_id = ${selection.sourceId}::uuid AND d.name = ${selection.filename}`;
+  return sql`d.context_source_id = ${selection.sourceId}::uuid AND d.segment = ${selection.filename}`;
 }
 
 /**
@@ -273,6 +274,8 @@ export type FolderLink = {
   id: FolderId;
   parentId: FolderId | null;
   name: string;
+  /** Its path segment: the name, and a later twin's `~` suffix. */
+  segment: string;
   deleted: boolean;
 };
 
@@ -290,20 +293,21 @@ export async function loadFolderChains(
     id: string;
     parent_id: string | null;
     name: string;
+    segment: string;
     deleted: boolean;
     depth: number;
   }>(sql`
     WITH RECURSIVE chain AS (
-      SELECT f.id AS start_id, f.id, f.parent_id, f.name, f.deleted, 0 AS depth
+      SELECT f.id AS start_id, f.id, f.parent_id, f.name, f.segment, f.deleted, 0 AS depth
       FROM ${placedNodesSql(view)} f WHERE f.kind = 'folder' AND f.id IN (${uuidList(ids)})
       UNION ALL
-      SELECT c.start_id, f.id, f.parent_id, f.name, f.deleted, c.depth + 1
+      SELECT c.start_id, f.id, f.parent_id, f.name, f.segment, f.deleted, c.depth + 1
       FROM chain c CROSS JOIN LATERAL (
-        SELECT p.id, p.parent_id, p.name, p.deleted
+        SELECT p.id, p.parent_id, p.name, p.segment, p.deleted
         FROM ${placedNodesSql(view)} p WHERE p.id = c.parent_id OFFSET 0
       ) f
     )
-    SELECT start_id::text, id::text, parent_id::text, name, deleted, depth FROM chain
+    SELECT start_id::text, id::text, parent_id::text, name, segment, deleted, depth FROM chain
     ORDER BY start_id, depth`);
   for (const row of rows) {
     const chain = chains.get(row.start_id as FolderId) ?? [];
@@ -311,6 +315,7 @@ export async function loadFolderChains(
       id: row.id as FolderId,
       parentId: row.parent_id as FolderId | null,
       name: row.name,
+      segment: row.segment,
       deleted: row.deleted,
     });
     chains.set(row.start_id as FolderId, chain);
@@ -335,11 +340,11 @@ export async function loadFolderAddresses(
     id: string;
     parent_id: string | null;
     context_source_id: string;
-    name: string;
+    segment: string;
     deleted: boolean;
   }>(sql`
     SELECT n.id::text AS id, n.parent_id::text AS parent_id,
-      n.context_source_id::text AS context_source_id, n.name, n.deleted
+      n.context_source_id::text AS context_source_id, n.segment, n.deleted
     FROM ${placedNodesSql(view)} n WHERE n.kind = 'folder' AND n.id IN (${uuidList(ids)})`);
   const chains = await loadFolderChains(
     db,
@@ -352,7 +357,7 @@ export async function loadFolderAddresses(
       documentId: row.id as DocumentId,
       contextSourceId: row.context_source_id as ContextSourceId,
       folderId: row.parent_id as FolderId | null,
-      name: row.name,
+      segment: row.segment,
       fileType: "folder",
     })),
     chains,
@@ -376,7 +381,7 @@ export async function loadFolderAddresses(
 export function chainPrefix(chain: readonly FolderLink[]): string {
   return [...chain]
     .reverse()
-    .map((folder) => `${folder.name}/`)
+    .map((folder) => `${folder.segment}/`)
     .join("");
 }
 
@@ -385,8 +390,8 @@ export type NodeLocation = {
   documentId: DocumentId;
   contextSourceId: ContextSourceId;
   folderId: FolderId | null;
-  /** The filename as the view shows it. */
-  name: string;
+  /** The path segment as the view shows it: the filename, and a later twin's `~` suffix. */
+  segment: string;
   fileType: string;
 };
 
@@ -458,7 +463,7 @@ export async function spellNodeAddresses(
     if (!source?.project_id || !source.user_id || !isContextUriScheme(source.scheme)) return null;
     const chain = location.folderId === null ? [] : folderChains.get(location.folderId);
     if (!chain || chain.at(-1)?.parentId) return null;
-    const path = chainPrefix(chain) + location.name;
+    const path = chainPrefix(chain) + location.segment;
     const scheme = source.scheme;
     const workHandle = source.is_no_work ? null : source.work_handle;
     let uri: string;

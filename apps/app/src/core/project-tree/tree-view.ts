@@ -4,13 +4,10 @@
  * replay everywhere, so a rename, a move or a delete shows in the tree, the tabs, the identity
  * bar and the pickers at once.
  */
-import {
-  type CanonicalContextAuthority,
-  canonicalContextUri,
-  matchDocumentAddress,
-} from "@meridian/contracts";
+import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   type ContextSource,
+  canonicalLeaf,
   classifyFiletype,
   type DocumentFileType,
   documentFileTypeFor,
@@ -19,7 +16,9 @@ import {
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import {
+  childAtSegment,
   isSourceRoot,
+  segmentOf,
   sourceIdOf,
   sourceRoot,
   type TreeNode,
@@ -163,7 +162,7 @@ export function buildTreeView(input: {
     const cached = pathCache.get(node.id);
     if (cached !== undefined) return cached;
     const parent = isSourceRoot(node.parent) ? undefined : projection.nodes.get(node.parent);
-    const path = `${parent ? pathOf(parent) : ""}/${node.displayName}`;
+    const path = `${parent ? pathOf(parent) : ""}/${segmentOf(node)}`;
     pathCache.set(node.id, path);
     return path;
   };
@@ -181,7 +180,7 @@ export function buildTreeView(input: {
             kind: "dir",
             entryId: node.id,
             parentId: parentIdOf(node),
-            name: node.displayName,
+            name: node.name,
             path,
             uri: uriOf(path),
           }
@@ -190,7 +189,7 @@ export function buildTreeView(input: {
             entryId: node.id,
             parentId: parentIdOf(node),
             documentId: node.id,
-            name: node.displayName,
+            name: node.name,
             extension: extensionOf(node),
             ...(node.aliases ? { aliases: node.aliases } : {}),
             path,
@@ -236,16 +235,22 @@ export function buildTreeView(input: {
       return out;
     },
     findPath: (path) => {
-      const all = files();
-      const literal =
-        all.find((file) => file.path === path) ??
-        everyShown()
-          .filter((node) => node.kind === "folder" && pathOf(node) === path)
-          .map(entryOf)[0];
-      // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
-      return literal
-        ? (literal as TreeFile | TreeDirectory)
-        : matchDocumentAddress(all, path, (file) => file.path);
+      // Walked by segment, so a twin's `~id` keeps reaching it after the plain twin is renamed.
+      const segments = path.split("/").filter(Boolean);
+      let parentId = sourceId;
+      for (const [at, segment] of segments.entries()) {
+        const kids = childrenOfParent(parentId);
+        const last = at === segments.length - 1;
+        // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
+        const alias = last ? childAtSegment(kids, canonicalLeaf(segment)) : undefined;
+        const found =
+          childAtSegment(kids, segment) ?? (alias?.kind === "folder" ? undefined : alias);
+        if (!found) return null;
+        if (last) return entryOf(found) as TreeFile | TreeDirectory;
+        if (found.kind !== "folder") return null;
+        parentId = found.id;
+      }
+      return null;
     },
     findDocument,
   };

@@ -10,7 +10,7 @@ page says where each part lives and what the code decided where the design left 
 |---|---|
 | `record.ts` | Record and settlement types, `source:<id>` roots, the two arrays (`ops`, `settle`) |
 | `validate.ts` | `readStored` (every read of the list) builds the record a value stands for from its own allowed fields, or says why there is none; `writable`, which every record the package writes goes through; which fields are the server's |
-| `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`), `freeName`: numbering, from the contracts filename codec |
+| `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`), `freeName`: the writer's numbering, from the contracts filename codec |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
 | `replay.ts` | `replay`: rules 1 to 13, then one pass over the nodes for Trash, kept folders and names |
@@ -27,7 +27,7 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 1. A move that would put a folder inside itself is skipped (`skipped`, reason `cycle`).
 2. A delete takes the node and the nodes its author saw inside it that are still inside it.
 3. A node nobody deleted keeps the folders above it standing (`keptByChild`).
-4. Two shown siblings with one name both stay; the later arrival shows a number.
+4. Two shown siblings with one name both stay, and both keep the name.
 5. A drafted record takes effect at its Apply: `viewRecords` replays live, then the Work's.
 6. A drafted create whose folder was discarded shows at the top of its `source` (`rescued`).
 7. A Work's view keeps a live-deleted node standing while the Work has a pending change to it
@@ -45,6 +45,19 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 12. A rename to a type of another Yjs schema is skipped (`type-across-schemas`).
 13. A name is `normalEntryName(kind, typed)` for the node's kind, in every create, rename and
     move; nothing is refused for its name.
+14. Of shown siblings with one name, every one but the first to arrive (`arrivedAt`, then
+    creation: list order, no clock) carries a `suffix`: the shortest start, four hex digits or
+    more, of its id's hex digits (the uuid without dashes) that no other shown sibling's begins
+    with. Its path segment is `name~suffix` (`segmentOf`). A segment with a suffix reaches the
+    shown child whose id begins with it, the lowest id if two do, whatever name is in front; one
+    without reaches the child of that name with no suffix (`childAtSegment`). Arrival is set by a
+    create, a move or rename that changes the fact, a plain restore and a purge's rehoming, and
+    put back by an Undo (`setFact`, and a restore that `undoes` a delete keeps it), so an Undo
+    leaves the twins as they were.
+
+A row that differs from live only in a suffix is no change the Work made: `BranchRow.changed`
+is false, and the count and the Changes list skip it (`changedFolders`, the server's
+`treeChanges`).
 
 Rules 11 to 13 read `classifyFiletype`, `schemaType` and `normalEntryName`, which are frozen as
 the replay uses them (package `AGENTS.md`).
@@ -64,8 +77,8 @@ the replay uses them (package `AGENTS.md`).
   is not purged). The replay skips a record on any other node, Undo answers `purged` and
   appends nothing, and restoring a Discard leaves the record out and returns it.
 - **Nothing is refused for what it says.** A client's record that the replay cannot place
-  (a node that is not there, a folder inside itself, a name already taken) is skipped or numbered
-  by the rules, the same in every replay; the writer keeps it in the list. The server writes one
+  (a node that is not there, a folder inside itself, a name already taken) is skipped, or stands
+  as a twin, by the rules, the same in every replay; the writer keeps it in the list. The server writes one
   verdict, `dropped` (admission, below).
 - **`guard` closes a copy that does what an honest client never does**: a deletion, content
   outside `ops`, a struct whose position cannot be decided (a gap in a writer's own clock, a
@@ -127,9 +140,10 @@ the replay uses them (package `AGENTS.md`).
   `changed_since`. A Redo puts back what the move did, its numbered name included, even if the
   clash that numbered it has gone since. `appliedBy` keeps copies not in force, so `undoApply` reports them `already`;
   a copy of the Apply's own Undo record may bring one back in force on the way.
-- **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
-  numbers only the clashes nobody saw. A move that numbers its arrival carries the name itself,
-  not a paired `rename`.
+- **Whoever makes a record numbers a clash it can see** (`nameAmong`); the replay numbers
+  nothing, and a clash nobody saw stands as twins (rule 14). A move that numbers its arrival
+  carries the name itself, not a paired `rename`. Apply copies the drafted name as it is: the
+  twin the Work shows suffixed arrives last in live too.
 - **A repeated command is the caller's to answer.** The package throws when a command id was
   already used (`assertNewCommand`); the document command table answers a repeat first.
 - **Apply never blocks.** `applyDraft(writer, draft, by, command, only?, saw?)` lands what the

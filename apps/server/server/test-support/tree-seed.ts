@@ -14,7 +14,6 @@ import {
   childrenOf,
   LIVE,
   sourceRoot,
-  type TreeRecord,
   type TreeWriter,
   type View,
 } from "@meridian/project-tree";
@@ -68,7 +67,7 @@ function ensureDir(
   let parent = sourceRoot(sourceId);
   for (const name of dir) {
     const existing = childrenOf(writer.view(view), parent).find(
-      (node) => node.kind === "folder" && node.displayName === name,
+      (node) => node.kind === "folder" && node.name === name,
     );
     if (existing) {
       parent = existing.id;

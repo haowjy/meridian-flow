@@ -5,12 +5,13 @@
  *
  * - a document that exists only in the Work's draft (a creation);
  * - a document the Work's tree lacks while live shows it (a drafted delete);
- * - any other row: the Work shows the document differently from live (a move, rename,
- *   reorder, or a document live has in Trash that the Work keeps because it has a change on it).
+ * - any other row the Work changed: it shows the document differently from live (a move,
+ *   rename, reorder, or a document live has in Trash that the Work keeps because it has a change
+ *   on it). A row that differs only in a twin's suffix is not one (`changed` is false).
  * - an active text draft with an effect on a document the Work's tree shows: a drafted delete,
  *   or a document in no view, hides the text changes everywhere.
  *
- * A write and its undo net to no row, so they net to no item. The Work's review count adds the
+ * A write and its undo net to no changed row, so they net to no item. The Work's review count adds the
  * folders its rows change (`pendingFolders`), stored beside the documents' so a surface can name
  * each; the open browser counts the same two sets from its own replay (`changedFolders` in
  * `@meridian/project-tree`, which also writes a row for a folder whose change cannot land), and
@@ -23,7 +24,7 @@ import { type SQL, sql } from "drizzle-orm";
 function treeChanges(branches: SQL, kind: "document" | "folder"): SQL {
   return sql`SELECT b.branch_id, b.id AS document_id
     FROM branch_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
-    WHERE b.kind = ${kind} AND b.branch_id IN (${branches}) AND (
+    WHERE b.kind = ${kind} AND b.branch_id IN (${branches}) AND b.changed AND (
       (b.exists_only_in_draft AND NOT b.deleted)
       OR (NOT b.exists_only_in_draft AND b.deleted AND t.trash_record IS NULL)
       OR (NOT b.exists_only_in_draft AND NOT b.deleted))`;

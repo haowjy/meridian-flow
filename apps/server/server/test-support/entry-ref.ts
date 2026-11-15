@@ -42,9 +42,7 @@ export function moveInScope(
   const { writer, view, actor } = scope;
   let parent = scope.root;
   for (const name of dir) {
-    const existing = childrenOf(writer.view(view), parent).find(
-      (node) => node.displayName === name,
-    );
+    const existing = childrenOf(writer.view(view), parent).find((node) => node.name === name);
     parent = existing?.id ?? writer.create(view, actor, { kind: "folder", name, parent }).node;
   }
   const node = writer.view(view).nodes.get(nodeId);
@@ -62,17 +60,17 @@ export function moveInScope(
         : siblings.length;
   if (parent !== node.parent || position) writer.move(view, actor, nodeId, parent, index);
   if (leaf !== undefined) {
-    const dot = node.displayName.lastIndexOf(".");
+    const dot = node.name.lastIndexOf(".");
     const parsed =
       node.kind === "folder"
         ? null
         : storedFilename(leaf, {
-            extension: dot > 0 ? node.displayName.slice(dot + 1).toLowerCase() : "",
+            extension: dot > 0 ? node.name.slice(dot + 1).toLowerCase() : "",
             editable: node.kind === "document",
           });
     if (parsed && !parsed.ok) throw new Error(parsed.message);
     const name = parsed ? parsed.name : leaf;
-    if (name !== node.displayName)
+    if (name !== node.name)
       writer.rename(
         view,
         actor,

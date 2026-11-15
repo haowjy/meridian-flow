@@ -1,4 +1,5 @@
 /** Serialize the visible final answer into Markdown and app-free rich clipboard HTML. */
+import { readSegment } from "@meridian/contracts/protocol";
 import type { AssistantView } from "@meridian/thread-client";
 import { harden } from "rehype-harden";
 import rehypeRaw from "rehype-raw";
@@ -101,7 +102,7 @@ function prepareCopyAst(node: CopyAst, source: string): void {
       label !== undefined &&
       label.value === node.url
     ) {
-      label.value = target.uri.split("/").at(-1) || target.uri;
+      label.value = readSegment(target.uri.split("/").at(-1) ?? "").name || target.uri;
     }
     node.type = "copyLabel";
     node.data = { hName: "meridian-copy-label" };

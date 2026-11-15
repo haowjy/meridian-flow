@@ -15,7 +15,7 @@
  * tree uses): a prose document's stored name has no extension and is markdown,
  * a visible extension (`outline.json`) states its type.
  */
-import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
+import { classifyFiletype, filetypeForPath, readSegment } from "@meridian/contracts/protocol";
 import type { OpenDocument } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
@@ -34,7 +34,7 @@ export function openDocumentFromDraftGroup(group: {
   if (classification.kind !== "tracked") return null;
   // Tab names are the path basename, the stored name (tree `nameFromPath`
   // convention); the group's `documentName` is that same name.
-  const basename = path.slice(path.lastIndexOf("/") + 1);
+  const basename = readSegment(path.slice(path.lastIndexOf("/") + 1)).name;
   return {
     kind: "tracked",
     documentId: group.documentId,

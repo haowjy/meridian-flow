@@ -2,6 +2,7 @@
 
 import { agentsLocationOf } from "../agents/location.js";
 import type { ContextUriScheme } from "../context-uri.js";
+import { readSegment, withSegmentName } from "./entry-segment.js";
 import {
   classifyFiletype,
   type Filetype,
@@ -85,7 +86,7 @@ export function documentFilenameAt(
   path: string,
   options: { sourceExtension?: string } = {},
 ): DocumentFilenameResult {
-  const leaf = path.slice(path.lastIndexOf("/") + 1);
+  const leaf = readSegment(path.slice(path.lastIndexOf("/") + 1)).name;
   const location = agentsLocationOf(scheme, path);
   if (!location || location.path === "") return parseDocumentFilename(leaf, options);
   const input = leaf.trim();
@@ -124,10 +125,15 @@ export function renderFilename(name: string, extension: string): string {
   return extension ? `${name}.${extension}` : name;
 }
 
-/** The canonical spelling of a filename (`ch1.md` is `ch1`); a name the codec refuses stays literal. */
-export function canonicalLeaf(filename: string): string {
-  const parsed = parseDocumentFilename(filename);
-  return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
+/**
+ * The canonical spelling of a leaf (`ch1.md` is `ch1`, `Kael.md~b21c` is `Kael~b21c`); a name the
+ * codec refuses stays literal.
+ */
+export function canonicalLeaf(leaf: string): string {
+  return withSegmentName(leaf, (filename) => {
+    const parsed = parseDocumentFilename(filename);
+    return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
+  });
 }
 
 /**

@@ -8,6 +8,7 @@
  * stripped, so the scheme root has no `folder` param at all). Everything here
  * is pure string/array logic so it unit-tests without the shell or Lingui.
  */
+import { readSegment } from "@meridian/contracts/protocol";
 
 /** One ancestor folder of the current context location. */
 export type FolderCrumb = {
@@ -25,7 +26,7 @@ export type FolderCrumb = {
 export function folderAncestry(folder: string | null): FolderCrumb[] {
   const names = (folder ?? "").split("/").filter(Boolean);
   return names.map((name, index) => ({
-    name,
+    name: readSegment(name).name,
     path: `/${names.slice(0, index + 1).join("/")}`,
   }));
 }

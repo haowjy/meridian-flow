@@ -1,6 +1,7 @@
 /** Shared normalization and validation for writer-visible context names and paths. */
 
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
+import { readSegment, SEGMENT_SUFFIX, withSegmentName } from "./protocol/entry-segment.js";
 
 export type ContextEntryValidationReason =
   | "name/empty"
@@ -68,7 +69,7 @@ export function normalEntryName(kind: "document" | "folder", typed: string): str
   }
   return (name || UNTITLED)
     .replace(/@(?=(?:live|draft|[wcbp]\d+)$)/i, LOOK_ALIKE["@"] as string)
-    .replace(/~(?=[0-9a-f]{4,}$)/i, LOOK_ALIKE["~"] as string);
+    .replace(SEGMENT_SUFFIX, (suffix) => (LOOK_ALIKE["~"] as string) + suffix.slice(1));
 }
 
 /** A segment of a path or a name: the same name as `normalEntryName`, empty when nothing was typed. */
@@ -97,11 +98,15 @@ export function validateContextEntryPath(
     return { ok: false, reason: "path/empty-segment" };
   }
 
+  // A twin's `~id` is address syntax: only the name in front of it is a name.
   const normalized: string[] = [];
   for (const segment of segments) {
-    const result = validateContextEntryName(segment);
-    if (!result.ok) return result;
-    normalized.push(result.value);
+    const trimmed = segment.trim();
+    normalized.push(
+      readSegment(trimmed).name.trim()
+        ? withSegmentName(trimmed, (name) => normalEntryName("folder", name))
+        : normalEntryName("folder", trimmed),
+    );
   }
 
   if (options.knownRoots && !options.knownRoots.includes(normalized[0] ?? "")) {

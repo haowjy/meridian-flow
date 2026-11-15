@@ -21,11 +21,13 @@ import {
   type Actor,
   type BlobRef,
   type CreateRecord,
+  childAtSegment,
   childrenOf,
   isSourceRoot,
   LIVE,
   type MoveRecord,
   moveBetweenLists,
+  segmentOf,
   sourceRoot,
   type TreeNode,
   type TreeProjection,
@@ -81,16 +83,16 @@ const conflict = (occupantKind?: Occupant): AdapterFault => ({
 
 const occupantKindOf = (node: TreeNode): Occupant => (node.kind === "folder" ? "folder" : "file");
 
-/** The shown child of `parent` that has this stored filename, if any. */
+/** The shown child of `parent` at this path segment (a twin's `~id` reaches it), if any. */
 function childNamed(
   projection: TreeProjection,
   parent: string,
-  filename: string,
+  segment: string,
 ): TreeNode | undefined {
-  return childrenOf(projection, parent).find((node) => node.displayName === filename);
+  return childAtSegment(childrenOf(projection, parent), segment);
 }
 
-/** `id`'s address in its source: the folders' names from the source's top, its own name last. */
+/** `id`'s address in its source: the folders' segments from the source's top, its own last. */
 function pathOf(projection: TreeProjection, id: string): string[] {
   const names: string[] = [];
   for (
@@ -98,14 +100,14 @@ function pathOf(projection: TreeProjection, id: string): string[] {
     node;
     node = isSourceRoot(node.parent) ? undefined : projection.nodes.get(node.parent)
   )
-    names.unshift(node.displayName);
+    names.unshift(segmentOf(node));
   return names;
 }
 
 function extensionOf(node: TreeNode): string {
   if (node.kind === "folder") return "";
-  const dot = node.displayName.lastIndexOf(".");
-  return dot > 0 ? node.displayName.slice(dot + 1).toLowerCase() : "";
+  const dot = node.name.lastIndexOf(".");
+  return dot > 0 ? node.name.slice(dot + 1).toLowerCase() : "";
 }
 
 /**
@@ -177,7 +179,7 @@ function typeConversion(
     return {
       code: "invalid_operation",
       reason: "file_type_conversion",
-      message: `Cannot rename storage-backed file ${node.displayName} to ${filename} because tracked documents require a Yjs schema`,
+      message: `Cannot rename storage-backed file ${node.name} to ${filename} because tracked documents require a Yjs schema`,
     };
   }
   const was = classifyFiletype((node.filetype ?? "markdown") as Filetype);
@@ -186,13 +188,13 @@ function typeConversion(
     return {
       code: "invalid_operation",
       reason: "file_type_conversion",
-      message: `Cannot rename tracked document ${node.displayName} to ${filename} because binary and custom files use a different storage model`,
+      message: `Cannot rename tracked document ${node.name} to ${filename} because binary and custom files use a different storage model`,
     };
   if (was.kind === "tracked" && now.schemaType !== was.schemaType)
     return {
       code: "invalid_operation",
       reason: "document_type_conversion",
-      message: `Cannot rename ${node.displayName} to ${filename} because changing the Yjs schema from ${was.schemaType} to ${now.schemaType} requires an explicit conversion`,
+      message: `Cannot rename ${node.name} to ${filename} because changing the Yjs schema from ${was.schemaType} to ${now.schemaType} requires an explicit conversion`,
     };
   return null;
 }
@@ -405,7 +407,7 @@ export function createSourceTree(deps: {
           id: created.node,
           record: created.id,
           folders,
-          name: shown.nodes.get(created.node)?.displayName ?? input.filename,
+          name: shown.nodes.get(created.node)?.name ?? input.filename,
           path: pathOf(shown, created.node),
         });
       });
@@ -470,7 +472,7 @@ export function createSourceTree(deps: {
         const projection = writer.view(LIVE);
 
         // The name the node lands under: the writer's typed one through the name codec, else its own.
-        let filename = node.displayName;
+        let filename = node.name;
         let filetype: Filetype | null = null;
         if (input.leaf !== undefined) {
           const parsed = storedFilename(input.leaf, {
@@ -493,7 +495,7 @@ export function createSourceTree(deps: {
             ...dest,
             parent: parent.value,
             index: indexAt(projection, parent.value, input.position),
-            ...(filename !== node.displayName ? { name: filename } : {}),
+            ...(filename !== node.name ? { name: filename } : {}),
             ...(filetype && filetype !== node.filetype ? { filetype } : {}),
           },
           target.actor,

@@ -262,10 +262,3 @@ function draftPlacement(
 function branchOwnerOf(placement: BranchPlacement): BranchCommandOwner {
   return { owner: placement.owner, threadId: placement.threadId, userId: placement.userId };
 }
-
-/** What a path two of a Work's files share answers, to a create and to a read alike. */
-export const AMBIGUOUS_PATH_FAULT: AdapterFault = {
-  code: "invalid_operation",
-  reason: "ambiguous_path",
-  message: "Two of this Work's drafts share this path. Review the drafts to keep one.",
-};
