@@ -6,6 +6,7 @@ import { draftOwnerKey } from "@meridian/contracts/branches";
 import {
   type AccessChangedWhy,
   accessChangedClose,
+  encodeReadOnlyWsMessage,
   parseYjsRoomName,
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
@@ -105,7 +106,9 @@ type YjsAdmissionTarget =
  * What the person may do in the room (file-access §7). An `edit` connection
  * holds its grant for the session and every frame confirms it.
  */
-type YjsRoomAccess = { level: "read" } | { level: "edit"; grant: FileGrant<"edit"> };
+type YjsRoomAccess =
+  | { level: "read"; why?: AccessChangedWhy }
+  | { level: "edit"; grant: FileGrant<"edit"> };
 
 type YjsConnectionAdmission =
   | {
@@ -329,7 +332,7 @@ async function findRoomAccess(
   if (!isFileAccessDenied(edit))
     return { access: { level: "edit", grant: edit }, facts: edit.facts };
   if (edit.level !== "read" || !edit.facts) return null;
-  return { access: { level: "read" }, facts: edit.facts };
+  return { access: { level: "read", why: closedOwnerWhy(edit.facts) }, facts: edit.facts };
 }
 
 async function classifyYjsConnectionAdmission(input: {
@@ -776,6 +779,9 @@ export function createHocuspocus(
         if (context.tree) connection.sendStateless(JSON.stringify({ list: context.tree.listId }));
         return;
       }
+      // The authenticated scope says `readonly`; this says why, so the client never has to guess.
+      if (context.access?.level === "read" && context.access.why)
+        connection.sendStateless(encodeReadOnlyWsMessage(context.access.why));
       // This hook's refusal also closes the connection Hocuspocus has already made.
       const closing = {
         closeTransport(close: RoomClose) {

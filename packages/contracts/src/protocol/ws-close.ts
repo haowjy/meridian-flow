@@ -57,7 +57,8 @@ export function listChangedId(event: { code: number; reason: string }): string |
 }
 
 /** Why a room closed because its owner closed: the Work was archived or deleted, or its chat is in Trash. */
-export type AccessChangedWhy = "work_archived" | "work_deleted" | "chat_frozen";
+export const ACCESS_CHANGED_WHYS = ["work_archived", "work_deleted", "chat_frozen"] as const;
+export type AccessChangedWhy = (typeof ACCESS_CHANGED_WHYS)[number];
 
 /** The 4409 close; `why` names a closed owner, and is left out for any other change of access. */
 export function accessChangedClose(why?: AccessChangedWhy) {
@@ -78,7 +79,5 @@ export function accessChangedWhy(event: {
 }): AccessChangedWhy | undefined {
   if (!isAccessChangedClose(event)) return undefined;
   const why = event.reason.slice(WS_CLOSE.ACCESS_CHANGED.reason.length + 1);
-  return why === "work_archived" || why === "work_deleted" || why === "chat_frozen"
-    ? why
-    : undefined;
+  return ACCESS_CHANGED_WHYS.find((known) => known === why);
 }

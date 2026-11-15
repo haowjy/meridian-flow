@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type { DocumentId } from "../runtime/index.js";
+import { ACCESS_CHANGED_WHYS, type AccessChangedWhy } from "./ws-close.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
 export const YJS_DRAFT_ROOM_PREFIX = "draft:";
@@ -85,8 +86,18 @@ export interface ChangeEventWsMessage {
   truncated: boolean;
 }
 
+/**
+ * Sent after a room admits a connection read-only because its owner is closed: Hocuspocus's
+ * authenticated scope says `readonly` but not why. The same reasons a 4409 close names.
+ */
+export interface ReadOnlyWsMessage {
+  type: "read_only";
+  why: AccessChangedWhy;
+}
+
 type YjsStatelessMessageByType = {
   change_event: ChangeEventWsMessage;
+  read_only: ReadOnlyWsMessage;
 };
 
 export type YjsStatelessMessage = YjsStatelessMessageByType[keyof YjsStatelessMessageByType];
@@ -133,6 +144,15 @@ export function encodeChangeEventWsMessage(message: Omit<ChangeEventWsMessage, "
   return JSON.stringify(changeEventWsMessageSchema.parse({ type: "change_event", ...message }));
 }
 
+export function encodeReadOnlyWsMessage(why: AccessChangedWhy): string {
+  return JSON.stringify({ type: "read_only", why } satisfies ReadOnlyWsMessage);
+}
+
+const readOnlyWsMessageSchema: z.ZodType<ReadOnlyWsMessage> = z.object({
+  type: z.literal("read_only"),
+  why: z.enum(ACCESS_CHANGED_WHYS),
+});
+
 /** Parses the extensible stateless Yjs channel and rejects malformed payloads. */
 export function parseYjsStatelessMessage(payload: string): YjsStatelessMessage | null {
   let value: unknown;
@@ -141,8 +161,10 @@ export function parseYjsStatelessMessage(payload: string): YjsStatelessMessage |
   } catch {
     return null;
   }
-  const result = changeEventWsMessageSchema.safeParse(value);
-  return result.success ? result.data : null;
+  const change = changeEventWsMessageSchema.safeParse(value);
+  if (change.success) return change.data;
+  const readOnly = readOnlyWsMessageSchema.safeParse(value);
+  return readOnly.success ? readOnly.data : null;
 }
 
 export function yjsWsPath(): string {
