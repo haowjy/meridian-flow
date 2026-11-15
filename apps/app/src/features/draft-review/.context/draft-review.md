@@ -159,6 +159,12 @@ delivery the queue retries with the same id. An Apply goes on the Undo stack onl
 item landed, and a press of its step that reached the server is spent: `already` or nothing
 taken back never falls through to the next older step.
 
+A Discard never refuses either, and its answer is read per item the same way (`discardAnswer`
+in `draft-command-owner.ts`): an item it took, or one an earlier Discard took (`already`, quiet),
+leaves review, a created document's tab closing either way; an item an Apply took first keeps
+its row with its own `overtaken_applied` line and the Apply's id. The command is `done`, with
+its Undo, when it took any item, and `settled` when it took none.
+
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
 Retry. Transient disconnects keep acknowledgement barriers pending. Each click has two
 independent duties:
@@ -325,10 +331,9 @@ While frozen:
   archived Work's path);
 - single changes are locked and Apply is hidden;
 - Discard draft, and the chat strip's Discard, is the server's whole-item Discard
-  (`ends: "item"`), move or delete included. The item stays in review, `discarding`, until the answer, so a refusal shows
-  on it. It carries the row's `updatedAt` as `draftSeenAt`, so a chat restored on another
-  device and written to since answers `newerThanSeen`: it still discards, and Undo brings the
-  text back. A created document's Discard in a live chat sends no fence.
+  (`ends: "item"`), move or delete included. The item stays in review, `discarding`, until the
+  answer, so a return shows on it. A chat restored on another device and written to since
+  still discards, and Undo brings the text back.
 
 A local revert checks its room's access when it writes. A room the server already admits
 read-only refuses it (`read_only`) and the list re-reads, so a stale `frozen: false` never

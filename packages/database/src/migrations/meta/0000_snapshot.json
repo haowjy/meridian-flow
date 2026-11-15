@@ -5361,6 +5361,12 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "draft_branch_id": {
+          "name": "draft_branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -5444,6 +5450,10 @@
         "document_edit_parts_origin_valid": {
           "name": "document_edit_parts_origin_valid",
           "value": "\"document_edit_parts\".\"origin\"->>'kind' IN ('pending','live')"
+        },
+        "document_edit_parts_draft_branch_valid": {
+          "name": "document_edit_parts_draft_branch_valid",
+          "value": "(\"document_edit_parts\".\"origin\"->>'kind' = 'pending') = (\"document_edit_parts\".\"draft_branch_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false

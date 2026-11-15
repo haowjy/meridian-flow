@@ -156,9 +156,6 @@ export function createWorkBranchReviewService(input: {
                     documentId: item.documentId,
                     origin: item.origin,
                     ends: command.ends,
-                    ...(command.draftSeenAt !== undefined
-                      ? { draftSeenAt: command.draftSeenAt }
-                      : {}),
                   },
                 ],
               },
@@ -193,10 +190,8 @@ export function createWorkBranchReviewService(input: {
   };
 }
 
-const notesOf = (ended: DiscardResult) => ({
-  ...(ended.settled.length > 0 ? { settled: ended.settled } : {}),
-  ...(ended.newerThanSeen ? { newerThanSeen: true as const } : {}),
-});
+const notesOf = (ended: DiscardResult) =>
+  ended.settled.length > 0 ? { settled: ended.settled } : {};
 
 export function reviewContextLocation(uri: string | null): ThreadDraftListItem["contextLocation"] {
   if (!uri) return null;

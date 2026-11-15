@@ -112,7 +112,9 @@ A reversal's result names a document in Trash by where it last stood.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
-the Work its draft row's branch belongs to, and the card's lineage and Undo
+the Work of the branch its part was drafted in (`document_edit_parts.draft_branch_id`,
+recorded with the part, so a draft purged from Trash keeps its target and reads `discarded`),
+and the card's lineage and Undo
 authorize it at that Work's draft destination (`turnEditDestination`), where
 `survivingDraft` admits it while the draft is active. Its lineage address is the
 location it was deleted at. Live-scoped targets authorize live.

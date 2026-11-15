@@ -468,7 +468,7 @@ export function branchTreeCommands(
             branchId: branchId as BranchId,
             documentId,
             userId,
-            request: { branchId, itemKey, commandId: randomUUID(), ends: options.ends ?? "item" },
+            request: { itemKey, commandId: randomUUID(), ends: options.ends ?? "item" },
           })
         ).body,
       );

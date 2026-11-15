@@ -161,6 +161,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     // document is in no view until the window passes.
     const workProjection = createTestWorkProjectionMutation(db);
     const discard = createDrizzleBranchDiscard(db, {
+      coordinator: {} as never,
       close: draftClose,
       branches: createBranches({
         store: createDrizzleBranchStore(db),

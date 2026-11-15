@@ -486,13 +486,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
   );
   const discardStore = createDrizzleBranchDiscard(deps.db, {
+    coordinator: draftCoordinator,
     close: deps.draftClose,
     branches: workBranches,
     workProjection: deps.workProjectionMutation,
     treeLists: deps.treeLists,
   });
   const discard = createBranchDiscard({
-    branches: workBranches,
     store: discardStore,
     holdRetirement: deps.draftClose.holdRetirement,
   });

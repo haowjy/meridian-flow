@@ -19,7 +19,7 @@
 import type { CommandId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { commands, documentDrafts } from "@meridian/database/schema";
+import { commands, documentDrafts, observationFrontiers } from "@meridian/database/schema";
 import { discardedBy } from "@meridian/project-tree";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -73,35 +73,53 @@ export function createDrizzleDiscardPurge(
         const doomed = (await closedDrafts(ids))
           .filter((draft) => !created.has(draft.documentId))
           .map((draft) => draft.id);
-        if (doomed.length > 0)
+        if (doomed.length > 0) {
           await tx.delete(documentDrafts).where(inArray(documentDrafts.id, doomed));
+          // A frontier has no draft foreign key; its room key is the only ownership.
+          await tx.delete(observationFrontiers).where(
+            inArray(
+              observationFrontiers.roomKey,
+              doomed.map((id) => `draft:${id}`),
+            ),
+          );
+        }
         await tx.delete(commands).where(inArray(commands.id, [...ids] as CommandId[]));
       },
     );
   }
 
+  /** One batch of the oldest due entries, each branch's in a transaction; how many it took. */
+  async function purgeBatch(now: Date): Promise<number> {
+    const due = await currentDrizzleDb(db)
+      .select({
+        id: commands.id,
+        branchId: sql<string | null>`${commands.outcome} #>> '{result,branchId}'`,
+      })
+      .from(commands)
+      .where(
+        and(
+          inArray(commands.kind, [...ENTRY_KINDS]),
+          lte(commands.createdAt, deletionPurgeCutoff(now)),
+        ),
+      )
+      .orderBy(commands.createdAt)
+      .limit(DISCARD_PURGE_BATCH_LIMIT);
+    const byBranch = new Map<string | null, string[]>();
+    for (const { id, branchId } of due)
+      byBranch.set(branchId, [...(byBranch.get(branchId) ?? []), id]);
+    for (const [branchId, ids] of byBranch) await purgeBranch(branchId, ids);
+    return due.length;
+  }
+
   return {
-    /** Purges the entries older than the retention; the number of command rows it removed. */
+    /** Purges every entry older than the retention, batch by batch; the command rows it removed. */
     async purge(now: Date = new Date()): Promise<number> {
-      const due = await currentDrizzleDb(db)
-        .select({
-          id: commands.id,
-          branchId: sql<string | null>`${commands.outcome} #>> '{result,branchId}'`,
-        })
-        .from(commands)
-        .where(
-          and(
-            inArray(commands.kind, [...ENTRY_KINDS]),
-            lte(commands.createdAt, deletionPurgeCutoff(now)),
-          ),
-        )
-        .orderBy(commands.createdAt)
-        .limit(DISCARD_PURGE_BATCH_LIMIT);
-      const byBranch = new Map<string | null, string[]>();
-      for (const { id, branchId } of due)
-        byBranch.set(branchId, [...(byBranch.get(branchId) ?? []), id]);
-      for (const [branchId, ids] of byBranch) await purgeBranch(branchId, ids);
-      return due.length;
+      let purged = 0;
+      for (;;) {
+        const taken = await purgeBatch(now);
+        purged += taken;
+        if (taken < DISCARD_PURGE_BATCH_LIMIT) return purged;
+      }
     },
   };
 }

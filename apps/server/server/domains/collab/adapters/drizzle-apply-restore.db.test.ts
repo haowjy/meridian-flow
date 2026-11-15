@@ -133,8 +133,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       }),
     });
     const discardKernel = createBranchDiscard({
-      branches: workBranches,
       store: createDrizzleBranchDiscard(db, {
+        coordinator: coordinator,
         close: draftClose,
         branches: workBranches,
         workProjection: projection,

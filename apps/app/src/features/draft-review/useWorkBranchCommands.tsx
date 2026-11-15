@@ -124,6 +124,9 @@ export function useWorkBranchCommands({
           row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
         ),
       );
+    /** A Discard's item left review, taken here or before: all but one an Apply took first. */
+    const leftReview = (answer: CommandOutcome, itemKey: string) =>
+      (answer.kind === "done" || answer.kind === "settled") && !owner.state(itemKey).failure;
     const blocked = (): CommandStart => ({
       sent: false,
       outcome: Promise.resolve({ kind: "blocked" }),
@@ -530,16 +533,14 @@ export function useWorkBranchCommands({
       if (target.kind === "draft") {
         if (!item) return none(blocked());
         const commandId = crypto.randomUUID();
-        const outcome = owner
-          .discardOnServer(ref(draft), item, frozen, commandId)
-          .then((answer) => {
-            if (answer.kind === "done")
-              patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-                rows.filter((listed) => listed.itemKey !== item.itemKey),
-              );
-            refresh([draft.documentId]);
-            return answer;
-          });
+        const outcome = owner.discardOnServer(ref(draft), item, commandId).then((answer) => {
+          if (leftReview(answer, item.itemKey))
+            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+              rows.filter((listed) => listed.itemKey !== item.itemKey),
+            );
+          refresh([draft.documentId]);
+          return answer;
+        });
         return {
           start: { sent: true, outcome },
           part: {
@@ -642,28 +643,20 @@ export function useWorkBranchCommands({
             ? { all: true, refs: [...refs, ...folderRefs] }
             : {
                 items: [
-                  ...input.drafts.map((draft) => {
-                    const item = row(draft);
-                    return {
-                      ref: ref(draft),
-                      ends: "item" as const,
-                      // A frozen owner's Discard names the drafts the writer saw.
-                      ...(frozen && item
-                        ? { draftSeenAt: item.hasDraft ? item.updatedAt : null }
-                        : {}),
-                    };
-                  }),
+                  ...input.drafts.map((draft) => ({ ref: ref(draft), ends: "item" as const })),
                   ...folderRefs.map((folderRef) => ({ ref: folderRef, ends: "item" as const })),
                 ],
               },
         })
         .then((answer) => {
-          if (answer.kind === "done") {
-            const ended = new Set(input.drafts.map((draft) => draft.itemKey));
-            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-              rows.filter((listed) => !ended.has(listed.itemKey)),
-            );
-          }
+          const ended = new Set(
+            input.drafts.flatMap((draft) =>
+              leftReview(answer, draft.itemKey) ? [draft.itemKey] : [],
+            ),
+          );
+          patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+            rows.filter((listed) => !ended.has(listed.itemKey)),
+          );
           refresh(documentIds);
           return answer;
         });

@@ -9,6 +9,7 @@ import {
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
+  documentDrafts,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
@@ -90,6 +91,10 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       aliases: p.aliases,
       targets: p.targets ?? [],
       origin: p.origin,
+      draftBranchId:
+        p.origin.kind === "pending"
+          ? sql`(select ${documentDrafts.branchId} from ${documentDrafts} where ${documentDrafts.id} = ${p.origin.draftId})`
+          : null,
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {

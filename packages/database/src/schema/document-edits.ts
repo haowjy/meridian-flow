@@ -91,6 +91,11 @@ export const documentEditParts = pgTable(
     frontier: jsonb("frontier").$type<Record<string, number>>().notNull(),
     aliases: jsonb("aliases").$type<Alias[]>().notNull().default(sql`'[]'::jsonb`),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
+    /**
+     * A drafted part's branch, as its draft row named it when the part was written; null for a
+     * live part. No foreign key: the turn's card finds its owner here after the draft is purged.
+     */
+    draftBranchId: uuid("draft_branch_id").$type<BranchId>(),
   },
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
@@ -102,6 +107,10 @@ export const documentEditParts = pgTable(
       .where(sql`${t.origin}->>'kind' = 'live'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
+    check(
+      "document_edit_parts_draft_branch_valid",
+      sql`(${t.origin}->>'kind' = 'pending') = (${t.draftBranchId} IS NOT NULL)`,
+    ),
   ],
 );
 

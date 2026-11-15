@@ -17,8 +17,6 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
     case "draft_not_found":
     case "not_found":
       return msg`This draft is no longer here. It may have been applied or discarded already.`;
-    case "stale":
-      return msg`This document changed since you opened the review. The review now shows the latest, so look again before you apply.`;
     case "overtaken_discarded":
       return msg`This was discarded before Apply reached it. Restore it to apply it.`;
     case "overtaken_applied":
@@ -48,7 +46,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "stale" || serverCode === "unsynced";
+  return serverCode === "unsynced";
 }
 
 /**

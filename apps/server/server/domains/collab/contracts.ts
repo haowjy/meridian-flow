@@ -530,9 +530,8 @@ export type DraftReviewApi = {
   discardItem(input: {
     /** The item as the route resolved it; a document the branch holds nothing on has no row to resolve. */
     item: Pick<DraftReviewItem, "branchId" | "itemKey" | "documentId" | "origin">;
-    /** What ends, and the text draft the writer saw (`DraftDiscardRequest`). */
+    /** What ends (`DraftDiscardRequest`). */
     ends: DiscardItem["ends"];
-    draftSeenAt?: DiscardItem["draftSeenAt"];
     userId: UserId;
     envelope: CommandEnvelope;
   }): Promise<CommandOutcome>;

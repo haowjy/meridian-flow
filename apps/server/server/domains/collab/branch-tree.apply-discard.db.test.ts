@@ -122,8 +122,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       answeredWithoutLanding: () => {},
     });
     const discard = createBranchDiscard({
-      branches: workBranches,
       store: createDrizzleBranchDiscard(db, {
+        coordinator: {} as never,
         close: draftClose,
         branches: workBranches,
         workProjection,

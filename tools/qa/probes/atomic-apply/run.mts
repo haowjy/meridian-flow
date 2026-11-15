@@ -569,6 +569,7 @@ try {
     const a = await fixture(["The big black cat sat."], ["The cat sat."]);
     const click = a.click();
     const discard = createDrizzleBranchDiscard(h.db, {
+      coordinator: h.coordinator,
       workProjection: h.projection,
       branches: h.branches,
       close: draftClose,

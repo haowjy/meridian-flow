@@ -317,10 +317,7 @@ export interface ThreadDraftListItem {
   } | null;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
-  /**
-   * The text draft's last committed write (content-free folds keep it), which a whole-item
-   * Discard sends back as `draftSeenAt`. Meaningless when `hasDraft` is false.
-   */
+  /** The text draft's last committed write (content-free folds keep it). Meaningless when `hasDraft` is false. */
   updatedAt: string;
 }
 
@@ -397,11 +394,9 @@ export type DraftItemSettlement = {
 /**
  * What a Discard answers, item or selection: it never refuses. `settled` says what became of an
  * item this command did not take: `already` (a Discard took it), `overtaken` (an Apply did), or
- * `returned` (the owner is closed, nothing changed). `newerThanSeen`: an item's text draft had
- * moved on since the writer saw it (`draftSeenAt`); it was discarded all the same, and Undo
- * brings it back.
+ * `returned` (the owner is closed, nothing changed).
  */
-export type DiscardOutcomeNotes = { settled?: Settlement[]; newerThanSeen?: true };
+export type DiscardOutcomeNotes = { settled?: Settlement[] };
 
 export type DraftDiscardResponse = {
   status: "discarded";
@@ -414,14 +409,13 @@ export type DraftDiscardResponse = {
  * One item's Discard on the server. `tree` ends only the branch's move or delete: a live chat's
  * Discard, whose text the writer reverts in the room. `item` ends everything the branch holds
  * on the document: a still-hidden creation, or a frozen owner's draft, whose room refuses the
- * writer's text. `draftSeenAt` is the item's `updatedAt` the writer decided on (null: no text
- * draft); when sent, a draft that moved on is discarded and the answer says `newerThanSeen`.
+ * writer's text. The URL names the branch.
  */
 export type DraftDiscardRequest = {
-  branchId: BranchId;
   itemKey: DraftItemKey;
   commandId: CommandId;
-} & ({ ends: "tree" } | { ends: "item"; draftSeenAt?: string | null });
+  ends: "tree" | "item";
+};
 
 /**
  * `POST …/branches/:branchId/discard`, one server command either way. `all`: Discard all, every
@@ -440,7 +434,6 @@ export const BranchDiscardRequestSchema = z.union([
         z.strictObject({
           node: z.string().min(1),
           ends: z.enum(["tree", "item"]),
-          draftSeenAt: z.string().nullable().optional(),
         }),
       )
       .min(1),

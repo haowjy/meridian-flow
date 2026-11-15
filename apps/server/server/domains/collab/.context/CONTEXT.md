@@ -65,19 +65,20 @@ and immutable origin draft, so human typing history need not be scanned. Edited-
 The per-document HTTP Discard says what it ends. `tree` ends only the branch's move or
 delete: a live chat's Discard, whose text the writer reverts in the room. `item` ends
 everything the branch holds on the document: a creation only the Work shows (always ended
-whole), or a frozen lineage's draft, whose room drops the writer's text. An `item`
-Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decided on;
-the kernel compares it under the draft's row lock and answers `newerThanSeen` when the
-draft moved on (a chat restored elsewhere, then written to); the Discard still takes it, and
-Undo brings it back. `updated_at` and not `revision` is the check because content-free folds
-keep it. The answer's `itemClosed` is what the kernel ended. Its command row is claimed first
+whole), or a frozen lineage's draft, whose room drops the writer's text. The URL names the
+branch; the body names the item and what ends. A draft that moved on since the writer saw it is
+discarded all the same, and Undo brings it back. The answer's `itemClosed` is what the kernel
+ended. Its command row is claimed first
 in the kernel's transaction and holds the answer when it commits, and so is the bounce on an
 archived or deleted Work or a chat in Trash (`settled: [returned]`, nothing ended). A Discard
 never refuses: an item with no pending record and no changed text draft is answered from
 `settlementOf` (`already discarded` when a Discard, or nothing, settled it; `overtaken` by the
 Apply that did, which wins when the halves differ), and the others in the selection still
-discard. A draft counts as holding text when `has_effect` is set or its judgement lags its
-revision. No cut is sent: a Discard takes the records the Work holds when it runs, and Undo
+discard. A branch that is no longer active takes nothing, and its selected items are answered by
+the same reader; only Discard all on a closed branch answers one `already`. Whether a draft holds
+text is decided under its row lock from the draft itself (`draftHoldsText`, the projection's own
+judgement): `has_effect` stands in only when its watermark is the draft's revision, so a
+projection lagging an Apply never makes a Discard close text that is live. No cut is sent: a Discard takes the records the Work holds when it runs, and Undo
 brings them back. The tree half of every Discard is the
 package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
 (`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
@@ -362,7 +363,8 @@ whatever the revision. A sweep (the `draft-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
 crash inside the debounce converges without another key. Review readers
 (`isEdited` and the Works badge) may lag a key by that second;
-the draft editor and Undo read the replica and receipts, never `has_effect`.
+the draft editor and Undo read the replica and receipts, never `has_effect`, and a Discard
+trusts it only at a matching watermark.
 Tests that assert membership right after a write read through
 `test-support/converged-review.ts`, which flushes the job first.
 
@@ -718,9 +720,8 @@ the extractor bumps its version, and no second post-write writer exists.
 ## Selective disposition and response retirement
 
 Discard takes a selection: the whole branch, or items each naming a document,
-its origin, what it ends, and optionally `draftSeenAt`. What the kernel ended
-decides the answer, and every answer is `discarded` with its `settled` lines and
-`newerThanSeen` (`work-branch-review-service.ts`).
+its origin and what it ends. What the kernel ended decides the answer, and every answer is
+`discarded` with its `settled` lines (`work-branch-review-service.ts`).
 
 A draft write never regenerates durable rows from a raw state-vector diff, which
 would reintroduce cumulative tombstones. An unresolved sync dependency is an

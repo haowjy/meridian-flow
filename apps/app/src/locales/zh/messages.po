@@ -6810,8 +6810,8 @@ msgid "This document can't be edited now, so this change can't be reversed."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
-msgstr ""
+#~ msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
+#~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "This document couldn't be created where you put it."

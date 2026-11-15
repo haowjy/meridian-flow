@@ -264,7 +264,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             branchId: row?.branchId,
             documentId: documentId as never,
             request: {
-              branchId: row?.branchId,
               itemKey: row?.itemKey,
               commandId: randomUUID(),
               ...ends,
@@ -324,16 +323,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ),
           );
 
-      // Decided on a draft that moved on since: discarded all the same, and the answer says so.
-      expect(
-        await writer.discard(CH1, { ends: "item", draftSeenAt: "2000-01-01T00:00:00.000Z" }),
-      ).toMatchObject({
-        body: {
-          status: "discarded",
-          itemClosed: true,
-          itemDisposition: "discarded",
-          newerThanSeen: true,
-        },
+      expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
+        body: { status: "discarded", itemClosed: true, itemDisposition: "discarded" },
       });
       expect(await writer.item(CH1)).toBeUndefined();
       expect(await textDrafts()).toEqual([{ status: "closed" }]);

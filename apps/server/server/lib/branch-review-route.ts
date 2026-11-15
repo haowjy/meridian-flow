@@ -14,7 +14,6 @@ import {
   draftOwnerFromKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
-import type { AgentsLevel } from "@meridian/contracts/agents";
 import type {
   ApplyClickAnswer,
   ApplyClickResult,
@@ -105,14 +104,25 @@ async function requireProjectOwned(
   }
 }
 
-/** The branch the URL names: this writer's project, whatever its status or owner's state; a purged Work's branch is gone. */
+/** The branch the URL names: this writer's project, whatever its status or owner's state. */
 async function requireBranchIdentity(
   deps: Pick<BranchRouteServices, "projects" | "documentSync">,
   input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
 ): Promise<BranchAccess> {
+  const access = await branchIdentityOrGone(deps, input);
+  if (!access) throw createError({ statusCode: 404, message: "Branch not found" });
+  return access;
+}
+
+/** `requireBranchIdentity`, or null when the branch is gone (its Work was purged). */
+async function branchIdentityOrGone(
+  deps: Pick<BranchRouteServices, "projects" | "documentSync">,
+  input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
+): Promise<BranchAccess | null> {
   await requireProjectOwned(deps, input);
   const found = await deps.documentSync.draftReview.branchOwner(input.branchId);
-  if (!found || found.branch.projectId !== input.projectId)
+  if (!found) return null;
+  if (found.branch.projectId !== input.projectId)
     throw createError({ statusCode: 404, message: "Branch not found" });
   return { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle };
 }
@@ -249,14 +259,11 @@ const UndoDiscardBody = z.strictObject({
   commandId: CommandIdSchema,
   discardCommandId: CommandIdSchema,
 });
-const DiscardBody = z.discriminatedUnion("ends", [
-  z.strictObject({ ...Base, ends: z.literal("tree") }),
-  z.strictObject({
-    ...Base,
-    ends: z.literal("item"),
-    draftSeenAt: z.iso.datetime().nullable().optional(),
-  }),
-]);
+const DiscardBody = z.strictObject({
+  itemKey: Base.itemKey,
+  commandId: Base.commandId,
+  ends: z.enum(["tree", "item"]),
+});
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
   const parsed = schema.safeParse(body ?? {});
@@ -555,14 +562,14 @@ async function pendingTreeChange(
 /** Resolves a command's item for a URL document, or null when it is not that document's item. */
 async function commandItem(
   deps: BranchRouteServices,
-  input: { documentId: DocumentId; request: { branchId: string; itemKey: string } },
+  input: { branchId: BranchId; documentId: DocumentId; request: { itemKey: string } },
 ): Promise<DraftReviewItem | null> {
   const resolved = await deps.documentSync.draftReview.resolveItem({
     itemKey: input.request.itemKey,
   });
   return resolved &&
     resolved.documentId === input.documentId &&
-    resolved.branchId === input.request.branchId
+    resolved.branchId === input.branchId
     ? resolved.item
     : null;
 }
@@ -787,21 +794,19 @@ export async function handleApplyClickRequest(
 }
 
 /** A branch-level command: the project's branch, the parsed body and the command's envelope. */
-async function branchCommand<Request extends { commandId: string }, Answer>(
+async function branchCommand<Request extends { commandId: string }, Answer, Access = BranchAccess>(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
   command: {
     kind: CommandKind;
     what: string;
     schema: z.ZodType<Request>;
-    run(call: {
-      request: Request;
-      envelope: CommandEnvelope;
-      access: BranchAccess;
-    }): Promise<Answer>;
+    /** Resolves the branch; the default answers a missing one with 404. */
+    identity?: (deps: BranchRouteServices, input: CommandScope) => Promise<Access>;
+    run(call: { request: Request; envelope: CommandEnvelope; access: Access }): Promise<Answer>;
   },
 ): Promise<Answer> {
-  const access = await requireBranchIdentity(deps, input);
+  const access = await (command.identity ?? (requireBranchIdentity as never))(deps, input);
   const request = parseBody(command.schema, input.request, command.what);
   return command.run({
     request,
@@ -927,6 +932,9 @@ export function handleUndoDiscardRequest(
     kind: "undo_discard",
     what: "Undo of a Discard",
     schema: UndoDiscardBody,
+    // A screen left open across its Work's purge names a branch that is gone: the adapter
+    // answers it `left_out purged`, as it does a purge that lands inside the command.
+    identity: branchIdentityOrGone,
     run: async ({ request, envelope, access }) => {
       const commandId = request.commandId as CommandId;
       const lookup = async () =>
@@ -940,12 +948,14 @@ export function handleUndoDiscardRequest(
       const refused = async (): Promise<UndoDiscardAnswer> =>
         (await lookup()) ?? Promise.reject(createError({ statusCode: 404, message: "Not found" }));
       const grants: FileGrant<"edit" | "command">[] = [];
-      for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofDiscard({
-        discardCommandId: request.discardCommandId as CommandId,
-        accountId: input.userId,
-        branchId: input.branchId,
-      })) {
-        const grant = await documentGrant(deps, input, documentId, access.owner);
+      for (const documentId of access
+        ? await deps.documentSync.draftReview.commandDocuments.ofDiscard({
+            discardCommandId: request.discardCommandId as CommandId,
+            accountId: input.userId,
+            branchId: input.branchId,
+          })
+        : []) {
+        const grant = await documentGrant(deps, input, documentId, access?.owner ?? null);
         if (unseen(grant)) continue;
         if (isFileAccessDenied(grant)) return refused();
         grants.push(grant);
@@ -979,12 +989,10 @@ export async function handleDiscardWorkDraftRequest(
   const envelope = envelopeOf(input, {
     commandId: request.commandId,
     kind: "discard",
-    branchId: request.branchId,
+    branchId: input.branchId,
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  if (request.branchId !== input.branchId)
-    throw createError({ statusCode: 400, message: "Invalid Discard request" });
   return commandIngress(deps, input, envelope, async ({ owner }) => {
     // An item the branch holds nothing on has no row to resolve or authorize: the kernel says what
     // became of it.
@@ -1000,9 +1008,6 @@ export async function handleDiscardWorkDraftRequest(
             origin: "edited",
           },
           ends: request.ends,
-          ...(request.ends === "item" && request.draftSeenAt !== undefined
-            ? { draftSeenAt: request.draftSeenAt }
-            : {}),
           userId: input.userId,
           envelope,
         }),
@@ -1061,7 +1066,6 @@ export async function handleDiscardBranchRequest(
           documentId: entry.node as DocumentId,
           origin: byNode.get(entry.node)?.origin ?? "edited",
           ends: entry.ends,
-          ...(entry.draftSeenAt !== undefined ? { draftSeenAt: entry.draftSeenAt } : {}),
         })),
       }),
     };
