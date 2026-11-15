@@ -1,5 +1,7 @@
 /** Application-defined WebSocket close contracts shared by clients and server transports. */
 
+import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
+
 export const WS_CLOSE = {
   AUTH_FAILED: { code: 4401, reason: "auth_failed" },
   AUTH_ERROR: { code: 1011, reason: "auth_error" },
@@ -37,7 +39,7 @@ export const WS_CLOSE = {
   /**
    * The room's file access changed (a Work archived, unarchived, deleted or
    * restored). Not terminal: reconnect and take the new authenticated scope. A close
-   * because a Work or chat closed names it: `access-changed:<AccessChangedWhy>`.
+   * because a Work or chat closed names it: `access-changed:<ClosedOwnerWhy>`.
    */
   ACCESS_CHANGED: { code: 4409, reason: "access-changed" },
 } as const;
@@ -56,12 +58,8 @@ export function listChangedId(event: { code: number; reason: string }): string |
     : undefined;
 }
 
-/** Why a room closed because its owner closed: the Work was archived or deleted, or its chat is in Trash. */
-export const ACCESS_CHANGED_WHYS = ["work_archived", "work_deleted", "chat_frozen"] as const;
-export type AccessChangedWhy = (typeof ACCESS_CHANGED_WHYS)[number];
-
 /** The 4409 close; `why` names a closed owner, and is left out for any other change of access. */
-export function accessChangedClose(why?: AccessChangedWhy) {
+export function accessChangedClose(why?: ClosedOwnerWhy) {
   const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
   return { code, reason: why ? `${reason}:${why}` : reason };
 }
@@ -76,8 +74,8 @@ export function isAccessChangedClose(event: { code?: number; reason: string }): 
 export function accessChangedWhy(event: {
   code?: number;
   reason: string;
-}): AccessChangedWhy | undefined {
+}): ClosedOwnerWhy | undefined {
   if (!isAccessChangedClose(event)) return undefined;
   const why = event.reason.slice(WS_CLOSE.ACCESS_CHANGED.reason.length + 1);
-  return ACCESS_CHANGED_WHYS.find((known) => known === why);
+  return CLOSED_OWNER_WHYS.find((known) => known === why);
 }

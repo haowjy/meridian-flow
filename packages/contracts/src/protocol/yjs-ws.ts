@@ -4,8 +4,8 @@
  */
 
 import { z } from "zod";
+import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId } from "../runtime/index.js";
-import { ACCESS_CHANGED_WHYS, type AccessChangedWhy } from "./ws-close.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
 export const YJS_DRAFT_ROOM_PREFIX = "draft:";
@@ -87,12 +87,12 @@ export interface ChangeEventWsMessage {
 }
 
 /**
- * Sent after a room admits a connection read-only because its owner is closed: Hocuspocus's
- * authenticated scope says `readonly` but not why. The same reasons a 4409 close names.
+ * Sent after a room admits a connection read-only. Hocuspocus's authenticated scope says `readonly` but
+ * not why; `why` names a closed owner, the same reasons a 4409 close names, and is left out otherwise.
  */
 export interface ReadOnlyWsMessage {
   type: "read_only";
-  why: AccessChangedWhy;
+  why?: ClosedOwnerWhy;
 }
 
 type YjsStatelessMessageByType = {
@@ -144,13 +144,13 @@ export function encodeChangeEventWsMessage(message: Omit<ChangeEventWsMessage, "
   return JSON.stringify(changeEventWsMessageSchema.parse({ type: "change_event", ...message }));
 }
 
-export function encodeReadOnlyWsMessage(why: AccessChangedWhy): string {
+export function encodeReadOnlyWsMessage(why?: ClosedOwnerWhy): string {
   return JSON.stringify({ type: "read_only", why } satisfies ReadOnlyWsMessage);
 }
 
 const readOnlyWsMessageSchema: z.ZodType<ReadOnlyWsMessage> = z.object({
   type: z.literal("read_only"),
-  why: z.enum(ACCESS_CHANGED_WHYS),
+  why: z.enum(CLOSED_OWNER_WHYS).optional(),
 });
 
 /** Parses the extensible stateless Yjs channel and rejects malformed payloads. */

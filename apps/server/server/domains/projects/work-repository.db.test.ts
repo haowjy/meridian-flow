@@ -8,8 +8,8 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { CommandId } from "@meridian/contracts";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
-import type { AccessChangedWhy } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { LIVE } from "@meridian/project-tree";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -116,7 +116,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Each lifecycle change re-admits open rooms at the new access level.
       const heard: FileAccessChange[] = [];
       const stopHearing = fileAccessChanges.subscribe((change) => heard.push(change));
-      const announced = (closed?: AccessChangedWhy) =>
+      const announced = (closed?: ClosedOwnerWhy) =>
         expect(heard.splice(0)).toEqual([{ workId: work.id, closed }]);
       await works.archive(work.id);
       announced("work_archived");

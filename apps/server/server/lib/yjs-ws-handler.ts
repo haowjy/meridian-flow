@@ -3,8 +3,8 @@ import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
 import { isSchemaRepairUpdate } from "@meridian/agent-edit";
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import { draftOwnerKey } from "@meridian/contracts/branches";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
-  type AccessChangedWhy,
   accessChangedClose,
   encodeReadOnlyWsMessage,
   parseYjsRoomName,
@@ -107,7 +107,7 @@ type YjsAdmissionTarget =
  * holds its grant for the session and every frame confirms it.
  */
 type YjsRoomAccess =
-  | { level: "read"; why?: AccessChangedWhy }
+  | { level: "read"; why?: ClosedOwnerWhy }
   | { level: "edit"; grant: FileGrant<"edit"> };
 
 type YjsConnectionAdmission =
@@ -428,7 +428,7 @@ async function classifyYjsConnectionAdmission(input: {
 }
 
 /** Why the file's owner is closed, if it is: the 4409 reason a writer typing into it is told. */
-function closedOwnerWhy(facts: FileFacts | null | undefined): AccessChangedWhy | undefined {
+function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | undefined {
   const owner = facts?.branchOwner ?? facts?.ownerWork;
   if (!owner) return undefined;
   if ("frozen" in owner && owner.owner.kind === "lineage") {
@@ -779,8 +779,8 @@ export function createHocuspocus(
         if (context.tree) connection.sendStateless(JSON.stringify({ list: context.tree.listId }));
         return;
       }
-      // The authenticated scope says `readonly`; this says why, so the client never has to guess.
-      if (context.access?.level === "read" && context.access.why)
+      // The authenticated scope says `readonly`; this says why (for a closed owner), so the client never has to guess.
+      if (context.access?.level === "read")
         connection.sendStateless(encodeReadOnlyWsMessage(context.access.why));
       // This hook's refusal also closes the connection Hocuspocus has already made.
       const closing = {
