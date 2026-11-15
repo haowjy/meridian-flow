@@ -40,6 +40,15 @@ export default defineConfig({
   experimental: { asyncContext: true },
   rolldownConfig: {
     plugins: [bundleWorkerEntries],
+    output: {
+      // Rolldown puts its helpers (`__exportAll`, `__toESM`) in a chunk shared by the same entries
+      // as the app code; here that chunk also held html-markdown.ts, which imports the unified
+      // libs, which import the helpers back. Node ran the libs first and died at import with
+      // "__exportAll is not a function". A chunk that holds the helpers must import no lib, so
+      // anything shared between entries that imports libs gets a chunk of its own. A new cycle of
+      // this kind fails `pnpm smoke:prod-boot`.
+      codeSplitting: { groups: [{ test: /html-markdown\.ts$/, name: "html-markdown" }] },
+    },
     watch: {
       // pnpm store files are hardlinked across worktrees, so an install in a
       // sibling worktree changes their ctime (inotify IN_ATTRIB) and would

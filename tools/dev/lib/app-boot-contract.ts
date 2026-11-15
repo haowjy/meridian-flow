@@ -1,13 +1,19 @@
 /** Exact public-route contract exercised by the app dev-boot smoke. */
 
-export const APP_BOOT_ROUTES = [
+export type BootRoute = {
+  readonly path: string;
+  readonly status: number;
+  readonly bodyMarker?: string;
+};
+
+export const APP_BOOT_ROUTES: readonly BootRoute[] = [
   { path: "/", status: 307 },
   {
     path: "/login",
     status: 200,
     bodyMarker: "Get the story out of your head and onto the page.",
   },
-] as const;
+];
 
 export function routeContractFailure(input: {
   readonly path: string;

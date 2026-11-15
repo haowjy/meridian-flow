@@ -3,7 +3,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import net from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { APP_BOOT_ROUTES, routeContractFailure } from "./app-boot-contract";
+import { APP_BOOT_ROUTES, type BootRoute, routeContractFailure } from "./app-boot-contract";
 
 const HOST = "127.0.0.1";
 const READY_TIMEOUT_MS = 90_000;
@@ -141,6 +141,7 @@ export async function runAppBootSmoke(options: {
   readonly successMessage: string;
   readonly requiredOutputMarker?: string;
   readonly detachedProcessGroup?: boolean;
+  readonly routes?: readonly BootRoute[];
 }): Promise<void> {
   const log = new RingLog();
   const child = spawn(options.command, options.args, {
@@ -167,7 +168,7 @@ export async function runAppBootSmoke(options: {
     }
 
     const failures: string[] = [];
-    for (const route of APP_BOOT_ROUTES) {
+    for (const route of options.routes ?? APP_BOOT_ROUTES) {
       assertChildAlive(child, options.serverName, `before checking ${route.path}`);
       const result = await fetchStatus(`${origin}${route.path}`);
       if (!result.ok) {
@@ -180,7 +181,7 @@ export async function runAppBootSmoke(options: {
         expectedStatus: route.status,
         actualStatus: result.status,
         body: result.body,
-        bodyMarker: "bodyMarker" in route ? route.bodyMarker : undefined,
+        bodyMarker: route.bodyMarker,
       });
       if (failure) failures.push(`${failure}\n${result.body.slice(0, 800)}`);
       else console.log(`  ${route.path} -> ${result.status}`);
