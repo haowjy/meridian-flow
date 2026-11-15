@@ -74,6 +74,8 @@ export function useWorkMetadataController(
     }
     const goal = draft.trim();
     setClosed(null);
+    // The last save's outcome is stale the moment this one starts.
+    setAnnouncement("");
     end("retried");
     setEditing(false);
     focusDisplay();
@@ -83,8 +85,11 @@ export function useWorkMetadataController(
       (cause: unknown) => {
         setDraft(goal);
         setEditing(true);
-        if (cause instanceof WorkReturnedError) setClosed(workClosedSentence(cause.why));
-        else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
+        if (cause instanceof WorkReturnedError) {
+          const sentence = workClosedSentence(cause.why);
+          setClosed(sentence);
+          setAnnouncement(sentence);
+        } else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
       },
     );
     return true;
