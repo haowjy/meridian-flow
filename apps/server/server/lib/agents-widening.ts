@@ -12,11 +12,13 @@ import { createHash } from "node:crypto";
 import type { CommandId, DraftOwner, ProjectId, UserId } from "@meridian/contracts";
 import { type AgentsLevel, agentsLocationOf } from "@meridian/contracts/agents";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import type { CollabBranches } from "../domains/collab/index.js";
 import {
   compareAgents,
   newAgentLabel,
   newAgents,
+  type Widened,
   widenedLabel,
 } from "../domains/packages/domain/agent-widening.js";
 import type { BoundAgentCatalog } from "../domains/packages/index.js";
@@ -31,18 +33,22 @@ export type AgentsCheck =
   | { status: "unchanged"; created: string[] };
 
 export interface AgentsWidening {
-  /** The Agents of `level` that `owner`'s branch would make wider than live, one label each. */
-  labels(input: {
+  /** The Agents of `level` that `owner`'s branch would make wider than live. */
+  widened(input: {
     userId: string;
     projectId: string;
     owner: DraftOwner;
     level: AgentsLevel;
-  }): Promise<string[]>;
-  /** The check's outcome for the chat's write at `level`; `callId` makes the Apply a single command. */
+  }): Promise<Widened[]>;
+  /**
+   * The check's outcome for the chat's write at `levels`; `callId` makes the Apply a single
+   * command. A write that touches two levels (a move between a project's Agents and the
+   * account's) is judged on both and applies in one Apply, or waits in both.
+   */
   settle(input: {
     thread: { id: string; userId: string; projectId: string };
     owner: DraftOwner;
-    level: AgentsLevel;
+    levels: AgentsLevel[];
     callId: string;
     /** Whether the place lets the server Apply a write that widens nothing. */
     apply: boolean;
@@ -55,12 +61,25 @@ function applyCommandId(callId: string): CommandId {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}` as CommandId;
 }
 
+/** Where in an Agents level a canonical URI is, if anywhere. */
+export function agentsLocationOfUri(uri: string | null) {
+  const parsed = uri ? parseUnifiedContextUri(uri) : null;
+  return parsed?.ok ? agentsLocationOf(parsed.value.scheme, parsed.value.path) : null;
+}
+
 /** The Agents level a canonical URI is a file of, if any. */
 export function agentsLevelOfUri(uri: string | null): AgentsLevel | null {
-  const parsed = uri ? parseUnifiedContextUri(uri) : null;
-  return parsed?.ok
-    ? (agentsLocationOf(parsed.value.scheme, parsed.value.path)?.level ?? null)
-    : null;
+  return agentsLocationOfUri(uri)?.level ?? null;
+}
+
+/**
+ * The places of an Agents level a pending item touches: where the branch puts it and, for a
+ * move, where live has it (a file moved out of a level changes the level too).
+ */
+export function agentsPlacesOf(
+  item: Pick<DraftReviewItem, "path" | "tree">,
+): Array<NonNullable<ReturnType<typeof agentsLocationOfUri>>> {
+  return [item.path, item.tree?.movedFrom ?? null].flatMap((uri) => agentsLocationOfUri(uri) ?? []);
 }
 
 export function createAgentsWidening(deps: {
@@ -81,43 +100,63 @@ export function createAgentsWidening(deps: {
       branch: { owner },
     });
     return {
-      widened: compareAgents(before, after).map(widenedLabel),
+      widened: compareAgents(before, after),
       created: newAgents(before, after).map(newAgentLabel),
     };
   }
 
   return {
-    async labels({ userId, projectId, owner, level }) {
+    async widened({ userId, projectId, owner, level }) {
       return (await compare(userId, { projectId, level }, owner)).widened;
     },
-    async settle({ thread, owner, level, callId, apply }) {
-      const scope = { projectId: thread.projectId, level };
-      const check = () => compare(thread.userId, scope, owner);
+    async settle({ thread, owner, levels, callId, apply }) {
+      const check = async () => {
+        const each = await Promise.all(
+          levels.map((level) =>
+            compare(thread.userId, { projectId: thread.projectId, level }, owner),
+          ),
+        );
+        return {
+          // A write that touches two levels reads each from the same branch, so both can name one Agent.
+          labels: [...new Set(each.flatMap((now) => now.widened.map(widenedLabel)))],
+          created: [...new Set(each.flatMap((now) => now.created))],
+        };
+      };
       if (!apply) {
         const now = await check();
-        return { status: "waiting", labels: now.widened, created: now.created };
+        return { status: "waiting", ...now };
       }
-      const levelOwner: AgentsLevelOwner =
-        level === "project"
-          ? { level, projectId: thread.projectId }
-          : { level, userId: thread.userId };
-      // Under the level's lock the comparison sees every earlier auto-Apply's effect, so two
-      // writes that are safe alone and widen together cannot both land.
-      return deps.holdLevel(levelOwner, async (): Promise<AgentsCheck> => {
+      // Under the levels' locks the comparison sees every earlier auto-Apply's effect, so two
+      // writes that are safe alone and widen together cannot both land. Locks are taken in one
+      // order (user, then project) so two writes that touch both levels cannot wait on each other.
+      const owners = [...new Set(levels)]
+        .sort()
+        .map(
+          (level): AgentsLevelOwner =>
+            level === "project"
+              ? { level, projectId: thread.projectId }
+              : { level, userId: thread.userId },
+        );
+      const held = (rest: AgentsLevelOwner[]): Promise<AgentsCheck> => {
+        const [next, ...later] = rest;
+        return next ? deps.holdLevel(next, () => held(later)) : applyIfSafe();
+      };
+      const applyIfSafe = async (): Promise<AgentsCheck> => {
         const now = await check();
-        if (now.widened.length > 0)
-          return { status: "waiting", labels: now.widened, created: now.created };
+        if (now.labels.length > 0) return { status: "waiting", ...now };
         const result = await deps.draftReview.autoApply({
           owner,
           accountId: thread.userId as UserId,
           projectId: thread.projectId as ProjectId,
           commandId: applyCommandId(`${thread.id}:${callId}`),
-          select: (item) => agentsLevelOfUri(item.path) === level,
+          select: (item) => agentsPlacesOf(item).some((place) => levels.includes(place.level)),
         });
-        return result.status === "applied"
-          ? { status: "applied", created: now.created }
-          : { status: "unchanged", created: now.created };
-      });
+        return {
+          status: result.status === "applied" ? "applied" : "unchanged",
+          created: now.created,
+        };
+      };
+      return held(owners);
     },
   };
 }

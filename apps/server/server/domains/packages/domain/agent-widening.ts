@@ -10,6 +10,7 @@
 import {
   type AgentLevel,
   type AgentPermission,
+  agentsFileOf,
   DEFAULT_AGENT_PERMISSION,
   projectToolPolicy,
 } from "@meridian/contracts/agents";
@@ -20,6 +21,8 @@ export type AgentCapability = {
   permission: AgentPermission;
   tools: ReadonlySet<string>;
   subagents: ReadonlySet<string>;
+  /** The skills it loads or may use: what ties a skill file to the Agents it can widen. */
+  skills: ReadonlySet<string>;
 } | null;
 
 /** The Agent a name resolves to at one level set, whatever its state. */
@@ -40,6 +43,7 @@ const READ_ONLY_BASELINE: NonNullable<AgentCapability> = {
   permission: "read",
   tools: new Set(["read", "ls", "grep", "skill", "return_result"]),
   subagents: new Set(),
+  skills: new Set(),
 };
 
 export function capabilityOf(
@@ -51,6 +55,7 @@ export function capabilityOf(
     permission: meta.permission ?? DEFAULT_AGENT_PERMISSION,
     tools: projectToolPolicy(meta, "subagent"),
     subagents: new Set(meta.subagents ?? []),
+    skills: new Set([...(meta.skills?.load ?? []), ...(meta.skills?.available ?? [])]),
   };
 }
 
@@ -70,6 +75,8 @@ export interface Widened {
   tools: string[];
   /** Agents it may now spawn that it could not. */
   subagents: string[];
+  /** The skills it loads or may use after the change. */
+  skills: string[];
 }
 
 /**
@@ -97,9 +104,25 @@ export function compareAgents(before: EffectiveAgents, after: EffectiveAgents): 
       after: now.capability.permission,
       tools,
       subagents,
+      skills: [...now.capability.skills],
     });
   }
   return widened.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/**
+ * The widened Agents a file of the level can be the reason for: an Agent's own file for that
+ * Agent, a skill's file for the Agents that load or may use it, any other file (a manifest, a
+ * prompt) for all of them. `file` is relative to the level's root. A file of one pending change
+ * can widen an Agent only together with another (a skill and the Agent that loads it), so each
+ * such file carries the Agent's label.
+ */
+export function widenedByFile(widened: Widened[], file: string): Widened[] {
+  const defined = agentsFileOf(file);
+  if (defined?.kind === "agent") return widened.filter((entry) => entry.slug === defined.slug);
+  if (defined?.kind === "skill")
+    return widened.filter((entry) => entry.skills.includes(defined.slug));
+  return widened;
 }
 
 /** An Agent no level held before: what a receipt says when it appears. */

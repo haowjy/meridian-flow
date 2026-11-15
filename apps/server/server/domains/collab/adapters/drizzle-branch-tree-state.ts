@@ -65,6 +65,29 @@ export async function branchFolderRevisions(
   return [...rows];
 }
 
+/** The branch's folder rows with the address each has in the branch's view. */
+export async function branchFolderPlaces(
+  db: Database,
+  tree: Pick<TreeReader, "findFolderById">,
+  branchId: BranchId,
+): Promise<Array<{ id: string; revision: string; uri: string | null }>> {
+  if (!isUuid(branchId)) return [];
+  const rows = await currentDrizzleDb(db).execute<{
+    id: string;
+    revision: string;
+    scheme: string;
+  }>(sql`
+    SELECT b.id::text AS id, ${REVISION} AS revision, cs.slug AS scheme
+    FROM branch_tree_nodes b JOIN context_sources cs ON cs.id = b.context_source_id
+    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder'`);
+  return Promise.all(
+    [...rows].map(async ({ scheme, ...row }) => {
+      const folder = await tree.findFolderById({ kind: "branch", branchId }, row.id);
+      return { ...row, uri: folder ? `${scheme}://${folder.path}` : null };
+    }),
+  );
+}
+
 export function createDrizzleBranchTreeState(
   db: Database,
   tree: Pick<TreeReader, "identityStatus">,

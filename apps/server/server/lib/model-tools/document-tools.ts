@@ -3,7 +3,6 @@
  * the file policy grants the call, and collab reads or writes under that grant. `skills://` paths go to the skill files.
  */
 
-import { randomUUID } from "node:crypto";
 import type {
   AgentEditResultV1,
   DocumentCommandName,
@@ -22,7 +21,6 @@ import {
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
-import type { AgentsLevel } from "@meridian/contracts/agents";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/gateway";
 import {
@@ -31,7 +29,6 @@ import {
   remapCopiedBlocks,
 } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
-import { contextPortForThread } from "../../domains/context/index.js";
 import {
   appliesAfterCheck,
   type FileDestination,
@@ -50,7 +47,12 @@ import {
 import { agentsLevelOfUri } from "../agents-widening.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
-import { type AgentsCheckTarget, checkAgentsWrite, draftContext } from "./agents-check.js";
+import {
+  type AgentsCheckTarget,
+  checkAgentsWrite,
+  draftContext,
+  markAgentsWrite,
+} from "./agents-check.js";
 import { type ReadPlacement, readBinaryFile } from "./binary-read.js";
 import {
   binaryCopySelectionMessage,
@@ -92,6 +94,7 @@ import {
   type WriteToolErrorOutput,
   writeToolError,
 } from "./tool-context.js";
+import { movesAcrossAgents, prepareMoveAsCopyAndDelete } from "./tree-agents-move.js";
 import { runTreeToolCommand } from "./tree-commands.js";
 import { runTreeInverse } from "./tree-inverse.js";
 
@@ -255,8 +258,7 @@ async function writeUnderGrant(
   const grant = given ?? (await documentGrant(deps, principal, parsed.command, address, "edit"));
   if (isToolError(grant)) return grant;
   if (grant.facts.agentsLevel && grant.destination.kind === "draft") {
-    checked.level = grant.facts.agentsLevel;
-    checked.apply = appliesAfterCheck(principal, grant.facts);
+    markAgentsWrite(checked, grant.facts.agentsLevel, appliesAfterCheck(principal, grant.facts));
   }
   let written: WriteOutcome;
   try {
@@ -432,9 +434,20 @@ export function createReadHandler(deps: ToolWiringDeps) {
   };
 }
 
+/**
+ * One write of a call that is several (a move between lists that touches an Agents level is a
+ * copy and a delete): it does what it reads before changing anything and leaves what changes
+ * things in `effect`, for the caller to run as part of the call's one command. The levels it
+ * touched go to `checked`, shared by the call's writes and checked once at the end.
+ */
+type CallStep = {
+  checked: AgentsCheckTarget;
+  effect?: () => Promise<unknown>;
+  refreshed?: () => DocumentId | undefined;
+};
+
 export function createWriteHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, handlerCtx: ToolHandlerContext) => {
-    const ctx = handlerCtx;
+  const write = async (input: unknown, ctx: ToolHandlerContext, step?: CallStep) => {
     const edit = ctx.modelEdit;
     if (!edit) throw new Error("A write is a document command: the executor keys it");
     const written = input as WriteToolInput;
@@ -442,14 +455,52 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(written.command, call.output.message);
-    const settle = effectSettler(deps, ctx, edit);
+    const settle = step
+      ? async (effect: () => Promise<unknown>) => {
+          step.effect = effect;
+        }
+      : effectSettler(deps, ctx, edit);
+    if (!step && written.command === "move" && movesAcrossAgents(written)) {
+      const whole: AgentsCheckTarget = {};
+      const move = await prepareMoveAsCopyAndDelete(
+        written,
+        async (each) => {
+          const prepared: CallStep = { checked: whole };
+          const refused = await write(each, ctx, prepared);
+          return refused === undefined
+            ? {
+                effect: prepared.effect as () => Promise<unknown>,
+                refreshed: prepared.refreshed ?? (() => undefined),
+              }
+            : { refused };
+        },
+        async (from) => {
+          const reached = await reachShown(call, ctx, "move", from);
+          if (isToolError(reached)) return { refused: reached };
+          const ref = await call.context.port.stat(reached.path);
+          if (!ref.ok || ref.value.kind !== "tracked") return null;
+          const read = await call.context.port.read(reached.path);
+          return read.ok
+            ? read.value.content
+            : { refused: writeToolError("move", `Can't read ${from}.`) };
+        },
+      );
+      if ("refused" in move) return move.refused;
+      const result = await settle(move.run);
+      for (const refreshed of move.refreshed) {
+        const documentId = refreshed();
+        if (documentId)
+          await deps.documentSync.refreshDocumentProjection({ documentId, threadId: ctx.threadId });
+      }
+      return checkAgentsWrite(deps, call, ctx, whole, result);
+    }
     if (
       written.command === "move" ||
       written.command === "delete" ||
       written.command === "restore" ||
       (written.command === "create" && written.path.endsWith("/"))
     )
-      return runTreeToolCommand(deps, call, written, ctx, settle);
+      return runTreeToolCommand(deps, call, written, ctx, settle, step?.checked);
     const { context, principal } = call;
     const isInverse =
       written.command === "undo" || written.command === "redo" || written.command === "revert";
@@ -536,7 +587,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     let refresh: DocumentId | undefined;
-    const checked: AgentsCheckTarget = {};
+    const checked: AgentsCheckTarget = step?.checked ?? {};
     // A create in an Agents level lands in the chat's branch, whatever the chat's mode: the
     // check, not the place, decides whether it then applies (the grant's destination, B8).
     const createsInAgents = creates && agentsLevelOfUri(parsed.path) !== null;
@@ -688,6 +739,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       };
     };
     const result = await settle(effect);
+    if (step) {
+      step.refreshed = () => refresh;
+      return result;
+    }
     // The projection catches up once the edit is durable, whoever stored it.
     if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
       await deps.documentSync.refreshDocumentProjection({
@@ -697,6 +752,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     // The check reads the branch, which holds the write once the projection has caught up.
     return checkAgentsWrite(deps, call, ctx, checked, result);
   };
+  return (input: unknown, ctx: ToolHandlerContext) => write(input, ctx);
 }
 
 /**

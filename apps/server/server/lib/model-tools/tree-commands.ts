@@ -24,7 +24,12 @@ import {
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { agentsLevelOfUri } from "../agents-widening.js";
 import { threadContainerTarget } from "../file-targets.js";
-import { type AgentsCheckTarget, checkAgentsWrite, draftContext } from "./agents-check.js";
+import {
+  type AgentsCheckTarget,
+  checkAgentsWrite,
+  draftContext,
+  markAgentsWrite,
+} from "./agents-check.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, namesEvidence, shownNamesOf } from "./shown-paths.js";
 import {
@@ -94,6 +99,8 @@ export async function runTreeToolCommand(
   ctx: ToolHandlerContext,
   /** Runs the part that changes things as the call's command. */
   settle: (effect: () => Promise<unknown>) => Promise<unknown>,
+  /** Where the check's target is collected when the call's caller checks several writes at once. */
+  checked: AgentsCheckTarget = {},
 ) {
   const command = commandOf(input);
   if (isToolError(command)) return command;
@@ -115,17 +122,19 @@ export async function runTreeToolCommand(
     command.from.some((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary));
   const grants: FileGrant<"edit">[] = [];
   let draftArea: string | undefined;
-  const checked: AgentsCheckTarget = {};
   for (const area of areas as string[]) {
-    const path = paths.find((candidate) => areaOfPath(candidate)?.area === area) as string;
+    const inArea = paths.filter((candidate) => areaOfPath(candidate)?.area === area);
+    const path = inArea[0] as string;
     const target = await threadContainerTarget(deps.works, call.context.resolution, path);
     if (!target) continue;
     let granted = await deps.fileAccess.authorize(call.principal, target, "edit");
     if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);
     // A change to an Agents level lands in the chat's branch whatever the chat's mode; the
-    // check then decides whether it applies (the same rule `writeUnderGrant` follows).
-    // A move between lists isn't checked yet: it keeps its place's own destination.
-    const level = crossing ? null : agentsLevelOfUri(uriOfWritten(path));
+    // check then decides whether it applies (the same rule `writeUnderGrant` follows). A move
+    // between lists that touches a level never gets here: it is a copy and a delete.
+    // Any path of the area may be the one in the level: a move from `user://notes/` into
+    // `user://.agents/` names both in one area.
+    const level = inArea.map((each) => agentsLevelOfUri(uriOfWritten(each))).find(Boolean) ?? null;
     if (level) {
       if (granted.destination.kind === "live") {
         const drafted = await deps.fileAccess.authorizeAt(
@@ -141,8 +150,11 @@ export async function runTreeToolCommand(
         if (isFileAccessDenied(drafted)) return fileAccessDeniedError(input.command, drafted, path);
         granted = drafted;
       }
-      checked.level ??= level;
-      checked.apply = appliesAfterCheck(call.principal, { ...granted.facts, agentsLevel: level });
+      markAgentsWrite(
+        checked,
+        level,
+        appliesAfterCheck(call.principal, { ...granted.facts, agentsLevel: level }),
+      );
     }
     grants.push(granted);
     if (granted.destination.kind === "draft") draftArea ??= area;
@@ -173,7 +185,7 @@ export async function runTreeToolCommand(
   };
   // An Agents level drafts whatever the chat's mode, so its port places writes in the branch.
   const port = drafted
-    ? checked.level
+    ? checked.levels
       ? draftContext(deps, call).port
       : call.context.port
     : contextPortForThread(deps.contextPorts, call.context.resolution, {
@@ -257,7 +269,7 @@ export async function runTreeToolCommand(
         ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
         ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
         // An Agents change says on its own receipt line whether it waits or applied.
-        ...(drafted && firstDrafted && !checked.level && result.made.length > 0
+        ...(drafted && firstDrafted && !checked.levels && result.made.length > 0
           ? { firstDrafted: true as const }
           : {}),
         ...(result.concurrent.length > 0 ? { concurrent: result.concurrent } : {}),

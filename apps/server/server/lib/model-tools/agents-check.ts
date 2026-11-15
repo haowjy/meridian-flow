@@ -10,8 +10,18 @@ import type { ModelEditHandlerResult, ToolHandlerContext } from "../../domains/r
 import type { AgentsCheck } from "../agents-widening.js";
 import type { ResolvedModelContextPort, ToolCall, ToolWiringDeps } from "./tool-context.js";
 
-/** What a write to an Agents level learned while it was granted: the check runs once it lands. */
-export type AgentsCheckTarget = { level?: AgentsLevel; apply?: boolean };
+/**
+ * What a write to an Agents level learned while it was granted: the check runs once it lands.
+ * A move between a project's Agents and the account's touches two levels; the server Applies only
+ * when every grant says it may.
+ */
+export type AgentsCheckTarget = { levels?: AgentsLevel[]; apply?: boolean };
+
+/** Notes that the write touches `level`, whose place says whether the server may Apply it. */
+export function markAgentsWrite(checked: AgentsCheckTarget, level: AgentsLevel, applies: boolean) {
+  checked.levels = [...new Set([...(checked.levels ?? []), level])];
+  checked.apply = (checked.apply ?? true) && applies;
+}
 
 /** The context port whose writes all land in the chat's branch, as a create in an Agents level must. */
 export function draftContext(deps: ToolWiringDeps, call: ToolCall): ResolvedModelContextPort {
@@ -78,13 +88,13 @@ export async function checkAgentsWrite<R>(
   checked: AgentsCheckTarget,
   result: R,
 ): Promise<R> {
-  if (!checked.level || !isCommandResult(result) || result.modelEdit.status !== "done")
+  if (!checked.levels || !isCommandResult(result) || result.modelEdit.status !== "done")
     return result;
   const thread = call.context.resolution.thread;
   const check = await deps.agentsWidening.settle({
     thread: { id: thread.id, userId: thread.userId, projectId: thread.projectId },
     owner: call.execution.branchOwner,
-    level: checked.level,
+    levels: checked.levels,
     callId: ctx.toolCallId ?? randomUUID(),
     apply: checked.apply === true,
   });

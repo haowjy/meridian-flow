@@ -19,6 +19,8 @@ export type AutoApplyResult =
 
 export function createBranchAutoApply(input: {
   items(owner: DraftOwner): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
+  /** The folders the branch has a row on, with the address each has in the branch's view. */
+  folders(branchId: BranchId): Promise<Array<{ id: string; revision: string; uri: string | null }>>;
   /** A private copy of a draft's committed replica, destroyed by the caller. */
   copyDraft(draftId: string): Promise<{ doc: Y.Doc }>;
   apply(input: {
@@ -33,7 +35,8 @@ export function createBranchAutoApply(input: {
     projectId: ProjectId;
     /** The id the Apply command keeps; a resend answers the first outcome. */
     commandId: CommandId;
-    select(item: DraftReviewItem): boolean;
+    /** Whether a pending item, or a folder the branch has a row on, is part of what applies. */
+    select(item: Pick<DraftReviewItem, "path" | "tree">): boolean;
   }): Promise<AutoApplyResult> {
     const { branchId, items } = await input.items(command.owner);
     if (!branchId) return { status: "nothing" };
@@ -53,6 +56,10 @@ export function createBranchAutoApply(input: {
       if (text || tree)
         cuts.push({ node: item.documentId, ...(tree ? { tree } : {}), ...(text ? { text } : {}) });
     }
+    // A folder the selected files sit in, or one made alone, applies in the same cut.
+    for (const folder of await input.folders(branchId))
+      if (command.select({ path: folder.uri, tree: null }))
+        cuts.push({ node: folder.id, tree: { revision: folder.revision } });
     if (cuts.length === 0) return { status: "nothing" };
     const request: ApplyItemsClick = { commandId: command.commandId, items: cuts };
     const envelope: CommandEnvelope = {

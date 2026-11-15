@@ -54,6 +54,7 @@ import {
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
 import {
+  branchFolderPlaces,
   branchFolderRevisions,
   createDrizzleBranchTreeState,
 } from "./adapters/drizzle-branch-tree-state.js";
@@ -550,6 +551,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           ? { branchId: branch.id, items: await reviewItems.all(branch.id) }
           : { branchId: null, items: [] };
       },
+      folders: (branchId) => branchFolderPlaces(deps.db, treeReader, branchId),
       copyDraft: (draftId) => draftCoordinator.copyDraft(draftId),
       apply: applyCommands.apply,
     }),

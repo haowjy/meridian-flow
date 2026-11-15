@@ -53,11 +53,16 @@ import {
   isFileAccessDenied,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
+import {
+  type Widened,
+  widenedByFile,
+  widenedLabel,
+} from "../domains/packages/domain/agent-widening.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/command-record.js";
 import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
-import { agentsLevelOfUri } from "./agents-widening.js";
+import { agentsPlacesOf } from "./agents-widening.js";
 import type { AppServices } from "./app.js";
 import {
   documentTarget,
@@ -75,7 +80,7 @@ type BranchRouteServices = {
     "authorize" | "authorizeAt" | "confirmEdit" | "listAccess"
   >;
   documentSync: Pick<AppServices["documentSync"], "draftReview" | "roomRemoval">;
-  agentsWidening: Pick<AppServices["agentsWidening"], "labels">;
+  agentsWidening: Pick<AppServices["agentsWidening"], "widened">;
 };
 
 export function selectBranchRouteServices(app: AppServices): BranchRouteServices {
@@ -458,13 +463,14 @@ export async function handleOwnerDraftListRequest(
     (item) =>
       readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
   );
-  // One comparison per Agents level the listed items touch, not one per item.
-  const levels = new Set(visible.flatMap((item) => agentsLevelOfUri(item.path) ?? []));
-  const widened = new Map<AgentsLevel, string[]>();
+  // One comparison per Agents level the listed items touch, not one per item; each item then
+  // carries the Agents its own file can widen.
+  const levels = new Set(visible.flatMap((item) => agentsPlacesOf(item).map((at) => at.level)));
+  const widened = new Map<AgentsLevel, Widened[]>();
   for (const level of listed.branchId ? levels : [])
     widened.set(
       level,
-      await deps.agentsWidening.labels({
+      await deps.agentsWidening.widened({
         userId: input.userId,
         projectId: input.projectId,
         owner,
@@ -473,10 +479,16 @@ export async function handleOwnerDraftListRequest(
     );
   return {
     items: visible.map((item) => {
-      const labels = widened.get(agentsLevelOfUri(item.path) as AgentsLevel);
+      const labels = [
+        ...new Set(
+          agentsPlacesOf(item).flatMap((at) =>
+            widenedByFile(widened.get(at.level) ?? [], at.path).map(widenedLabel),
+          ),
+        ),
+      ];
       return {
         ...toWireItem(item, listed.threadTitles),
-        ...(labels?.length ? { widened: labels } : {}),
+        ...(labels.length ? { widened: labels } : {}),
       };
     }),
     branchId: listed.branchId,
