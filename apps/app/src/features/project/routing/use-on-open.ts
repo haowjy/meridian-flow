@@ -1,12 +1,28 @@
 import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
+/** A navigation that moves main as a side effect of a mode switch, and the entry it settled on. */
+let switching = 0;
+let switchedTo: number | undefined;
+
+/**
+ * Runs `navigate` as the sidebar's own navigation (the Write | Chat switch): main follows, but the
+ * writer pressed it to see the sidebar change, so it is not an open.
+ */
+export function withoutOpen<T>(navigate: () => Promise<T>): Promise<T> {
+  switching += 1;
+  return navigate().finally(() => {
+    switching -= 1;
+    switchedTo = (window.history.state as { __TSR_index?: number } | null)?.__TSR_index;
+  });
+}
+
 /**
  * Runs `onOpen` each time the writer goes somewhere, so what lies over main (the phone's sheet,
  * a narrow window's sidebar) folds to show where they went. Arriving is not an open. The history
  * position, not the entry's key: an address repair (a rename, a stripped param) replaces the
- * entry in place. Settings (`?settings=`) is an overlay above everything, not a place: opening or
- * closing it is not an open.
+ * entry in place. Settings (`?settings=`) is an overlay above everything, not a place, and a
+ * mode switch (`withoutOpen`) is the sidebar's own navigation: neither is an open.
  */
 export function useOnOpen(onOpen: () => void) {
   const position = useRouterState({ select: (state) => state.location.state.__TSR_index });
@@ -20,6 +36,7 @@ export function useOnOpen(onOpen: () => void) {
     const was = seen.current;
     seen.current = { position, settings };
     if (was.position === position || was.settings !== settings) return;
-    latest.current();
+    if (position === switchedTo) switchedTo = undefined;
+    else if (switching === 0) latest.current();
   }, [position, settings]);
 }

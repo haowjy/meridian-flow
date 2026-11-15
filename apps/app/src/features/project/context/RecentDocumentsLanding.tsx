@@ -55,16 +55,11 @@ type RecentDocumentsLandingProps = {
   onNewDocument?: () => void;
 };
 
-/** Main's Recents: main's surface, so the focus main gives lands on its first row. */
-export function RecentDocumentsLanding(props: RecentDocumentsLandingProps) {
-  return (
-    <MainSurface joined className="flex min-h-0 flex-1 flex-col">
-      <RecentDocuments {...props} />
-    </MainSurface>
-  );
-}
-
-function RecentDocuments({
+/**
+ * Main's Recents. Once it has loaded it is main's surface, so the focus main gives lands on its
+ * first control: the first row, or New document when nothing was opened yet.
+ */
+export function RecentDocumentsLanding({
   projectId,
   editorWorkId = null,
   onNewDocument,
@@ -89,7 +84,10 @@ function RecentDocuments({
   // first-run state stands alone rather than sitting under it.
   if (recent.status === "empty" && !settling) {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
+      <MainSurface
+        joined
+        className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center"
+      >
         <div className="absolute inset-x-6 top-4 flex flex-col items-center">
           {discardNotice}
           {holdsRemovedNotice ? (
@@ -97,12 +95,12 @@ function RecentDocuments({
           ) : null}
         </div>
         <LandingEmpty onNewDocument={onNewDocument} />
-      </div>
+      </MainSurface>
     );
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <MainSurface joined={!loading} className="min-h-0 flex-1 overflow-y-auto">
       <div className={cn(editorColumnChrome, "pb-24")}>
         <div className="flex h-16 flex-col justify-center">
           {discardNotice}
@@ -171,7 +169,7 @@ function RecentDocuments({
           </>
         )}
       </div>
-    </div>
+    </MainSurface>
   );
 }
 
