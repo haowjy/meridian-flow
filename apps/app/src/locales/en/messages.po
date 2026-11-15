@@ -680,6 +680,18 @@ msgid "{minutes}m"
 msgstr "{minutes}m"
 
 #: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Copy # file to…} other {Copy # files to…}}"
+msgstr "{n, plural, one {Copy # file to…} other {Copy # files to…}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Copy # folder to…} other {Copy # folders to…}}"
+msgstr "{n, plural, one {Copy # folder to…} other {Copy # folders to…}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "{n, plural, one {Copy # item to…} other {Copy # items to…}}"
+msgstr "{n, plural, one {Copy # item to…} other {Copy # items to…}}"
+
+#: src/features/project/context/ContextEntryActions.tsx
 msgid "{n, plural, one {Delete # file} other {Delete # files}}"
 msgstr "{n, plural, one {Delete # file} other {Delete # files}}"
 
