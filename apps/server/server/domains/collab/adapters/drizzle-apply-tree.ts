@@ -1,17 +1,14 @@
 /**
- * Tree half of Apply: the drafted records of one or several nodes become live copies in the
- * lists that hold them (`applyDraft`), in the click's transaction, and the command keeps what
- * Un-Apply needs of each list (`apply_command_trees`). Text Apply is the caller's.
+ * Tree half of Apply: the drafted records of the click's items become live copies in the lists
+ * that hold them (`applyDraft`), in the click's transaction, and the command keeps what Un-Apply
+ * needs of each list (`apply_command_trees`). It reports facts, per item, read from the lists
+ * under their keys; the caller (`drizzle-apply-click.ts`) decides every answer and the text half.
  *
  * Lock order, as `collab/.context/CONTEXT.md` has it: the caller holds the Work and the branch;
- * the lists' keys come next, then the documents', and only then the writes (`submit`, the closed
- * drafts' resync) that touch the rows derivation locks under those document keys.
+ * the lists' keys come next (`lockItems`), then the documents', and only then the writes.
  */
 
 import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
-import { draftItemKey } from "@meridian/contracts";
-import type { AppliedReviewItem, TreeSaw } from "@meridian/contracts/branches";
-import type { LeftOutWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import {
   applyCommandTrees,
@@ -22,6 +19,8 @@ import {
 import {
   applyDraft,
   covers,
+  deletesCovering,
+  type LeftRecord,
   LIVE,
   pendingRecords,
   recordsOfItem,
@@ -33,30 +32,43 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import { LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
-import { ApplyClickUnsynced } from "../domain/apply-click.js";
-import type { BranchDocumentTree } from "../domain/ports/branch-tree-state.js";
+import { type IdentityStatus, LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
+import { ApplyClickUnsynced, type TreeCut } from "../domain/apply-click.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
-import type { DraftClose } from "./drizzle-draft-close.js";
-import { lastSettlementOf } from "./drizzle-settlement-of.js";
+import { cutOf } from "./drizzle-settlement-of.js";
 
-export type TreeApplyOutcome = {
-  applied: AppliedReviewItem[];
-  /** What came back instead of landing, per item (`already`, `overtaken`, `left_out`), and what was restored. */
-  settled: Settlement[];
-  /** Items whose tree half did not resolve (left out or overtaken): their text stays pending too. */
-  held: ReadonlySet<string>;
-  /** Documents this command deleted: their text has nowhere to merge, and their drafts closed. */
-  deleted: ReadonlySet<string>;
-};
-
-/** One node of an Apply, as the click read it. */
+/** One item of an Apply as the tree half reads it. */
 export type TreeApplyItem = {
   node: string;
+  /** The list that holds the node; null when none does (purged). */
+  list: TreeList | null;
   /** The click includes the node's tree records. */
   tree: boolean;
-  /** The review item, for a document. */
-  item: BranchDocumentTree | null;
+  /** Its text half will land if the document stands in live: a restore may bring it back for it. */
+  textOpen: boolean;
+};
+
+/** What the tree half did for one item, read after its records and restores are in. */
+export type TreeItemFacts = {
+  /** A document, not a folder: it has a live address and text. */
+  document: boolean;
+  /** The tree half ran: the click asked for the item's records, or it has a pending create. */
+  ran: boolean;
+  /** The item's records this command chose (`recordsOfItem`), and the fate of each. */
+  records: TreeRecord[];
+  left: LeftRecord[];
+  superseded: TreeRecord[];
+  /** A landed move or rename of it brought it back from Trash. */
+  lifted: boolean;
+  /** This command restored it so its text could land. */
+  restored: boolean;
+  /** A delete this command appended covers it in live. */
+  deletedHere: boolean;
+  /** It stands in live (not in Trash, not only in the draft). */
+  standsInLive: boolean;
+  /** Where live had it before and after, for a document. */
+  before?: IdentityStatus;
+  after?: IdentityStatus;
 };
 
 const sameList = (a: TreeList, b: TreeList) =>
@@ -69,177 +81,176 @@ export function createApplyTreeOperations(input: {
   db: Database;
   treeLists: Pick<TreeListStore, "lock" | "submit">;
   tree: Pick<TreeReader, "identityStatus">;
-  close: Pick<DraftClose, "closeDrafts">;
   arrivals?: Pick<DocumentArrivals, "settle">;
   onCommitted(documentId: DocumentId): Promise<void>;
 }) {
   /**
-   * Applies what the Work has pending on each item: its own records, the drafted creates they
-   * stand on, and the earlier records of the same facts, as one command. It never refuses: an
-   * item with nothing pending is `already` (an Apply took the records) or `overtaken` (a Discard
-   * did), and a record that cannot land stays pending and is `left_out` with why. `saw` is each
-   * list's state vector at the press; records admitted after it are left out too. A document
-   * live has in Trash comes back before its records land.
+   * The lists that hold the nodes, their keys, then the nodes' document keys in id order: every
+   * read that decides a write comes after this.
+   */
+  async function lockItems(nodes: readonly string[]): Promise<Map<string, TreeList | null>> {
+    const listOf = new Map<string, TreeList | null>();
+    const lists: TreeList[] = [];
+    for (const node of nodes) {
+      const found = await treeListOfNode(input.db, node);
+      const list = found && (lists.find((other) => sameList(other, found)) ?? found);
+      if (list && !lists.includes(list)) lists.push(list);
+      listOf.set(node, list);
+    }
+    if (lists.length) await input.treeLists.lock(lists);
+    const tx = currentDrizzleDb(input.db);
+    for (const node of [...nodes].sort()) await lockDocumentMutation(tx, node as DocumentId);
+    return listOf;
+  }
+
+  /**
+   * Lands what the Work has pending on each item whose tree half runs: its own records, the
+   * delete that covers it, the drafted creates they stand on and the earlier records of the same
+   * facts, as one `applyDraft` per list, limited to `saw`. A document whose text will land and
+   * that live has in Trash comes back: before the copies when its records hold no delete, after
+   * them when they held one that did not land and nothing of this command deleted it.
    */
   async function apply(click: {
     branchId: BranchId;
     userId: UserId;
     commandId: CommandId;
-    saw: TreeSaw | undefined;
+    saw: TreeCut | undefined;
     items: readonly TreeApplyItem[];
-  }): Promise<TreeApplyOutcome> {
+  }): Promise<Map<string, TreeItemFacts>> {
     const { branchId, items } = click;
-    // Every item's document is held under the lists' keys, in id order: the text half of the
-    // command writes under them too.
-    const lockItems = async () => {
-      const tx = currentDrizzleDb(input.db);
-      for (const node of items.map((it) => it.node).sort())
-        await lockDocumentMutation(tx, node as DocumentId);
-    };
-    // A deleted document comes back whenever the click lands records on it, except a delete the
-    // writer's own view showed (a document deleted by this click is not restored by it).
-    const restoring = (it: TreeApplyItem) =>
-      it.item?.deletedLive === true && it.item.change !== "deleting";
-    const landing = (it: TreeApplyItem) => it.tree || it.item?.isNew === true;
-    const active = items.filter((it) => landing(it) || restoring(it));
-    if (active.length === 0) {
-      await lockItems();
-      return { applied: [], settled: [], held: new Set(), deleted: new Set() };
-    }
-
     const lists: TreeList[] = [];
-    const listOf = new Map<string, TreeList>();
-    const held = new Set<string>();
-    const settled: Settlement[] = [];
-    for (const it of active) {
-      const list = await treeListOfNode(input.db, it.node);
-      if (!list) {
-        // No list holds the node: it was purged.
-        held.add(it.node);
-        settled.push({ rule: "left_out", items: [it.node], why: "purged" });
-        continue;
-      }
-      const known = lists.find((other) => sameList(other, list)) ?? list;
-      if (known === list) lists.push(list);
-      listOf.set(it.node, known);
-    }
-    const here = active.filter((it) => listOf.has(it.node));
-    if (here.length === 0) {
-      await lockItems();
-      return { applied: [], settled, held, deleted: new Set() };
-    }
+    for (const { list } of items) if (list && !lists.includes(list)) lists.push(list);
+    const facts = new Map<string, TreeItemFacts>();
+    const blank = (): TreeItemFacts => ({
+      document: true,
+      ran: false,
+      records: [],
+      left: [],
+      superseded: [],
+      lifted: false,
+      restored: false,
+      deletedHere: false,
+      standsInLive: false,
+    });
+    for (const it of items) facts.set(it.node, blank());
+    if (lists.length === 0) return facts;
+    const placed = items.flatMap((it) => (it.list ? [it.node as DocumentId] : []));
+    const before = await input.tree.identityStatus(LIVE_TREE, placed);
     const actor = `user:${click.userId}`;
-    // The lists' keys, then the documents', before anything writes: the lists' rows and the
-    // closed drafts' resync below are written under both.
-    await input.treeLists.lock(lists);
-    const tx = currentDrizzleDb(input.db);
-    await lockItems();
-    // Where each document is in live now, to say where the Apply moved it.
-    const documents = here.flatMap((it) => (it.item ? [it.node as DocumentId] : []));
-    const before = await input.tree.identityStatus(LIVE_TREE, documents);
 
-    const { result } = await input.treeLists.submit({
+    const { result: perList } = await input.treeLists.submit({
       lists,
       make: (writers) => {
-        const landed = new Set<string>();
-        const restoredNodes = new Set<string>();
-        const perList: {
+        const rows: {
           scope: "project" | "account";
           mark: Uint8Array;
           created: string[];
           restored: string[];
           nodes: string[];
         }[] = [];
-        for (const [at, { writer }] of writers.entries()) {
+        for (const [at, end] of writers.entries()) {
+          const { writer } = end;
           const list = lists[at] as TreeList;
-          const encoded = list.kind === "project" ? click.saw?.project : click.saw?.account;
-          const saw = encoded ? new Uint8Array(Buffer.from(encoded, "base64")) : undefined;
+          const saw = cutOf(click.saw, list.kind, end);
           // A press that saw records this copy lacks is not yet a cut of it: wait for the sync.
           if (saw && !covers(writer.doc, saw)) throw new ApplyClickUnsynced();
           const pending = pendingRecords(writer.doc, branchId);
           const draft = writer.view({ draft: branchId });
-          const settlementOf = lastSettlementOf(writer.doc, branchId);
-          const mine = here.filter((it) => listOf.get(it.node) === list);
-          const chosen = new Map<string, TreeRecord[]>();
+          const mine = items.filter((it) => it.list === list);
           for (const it of mine) {
-            if (!landing(it)) continue;
-            const records = recordsOfItem(draft, pending, it.node);
-            if (records.length > 0) {
-              chosen.set(it.node, records);
-              continue;
-            }
-            const last = settlementOf(it.node);
-            if (last?.kind === "applied")
-              settled.push({ rule: "already", state: "applied", item: it.node });
-            else if (last) {
-              held.add(it.node);
-              settled.push({
-                rule: "overtaken",
-                state: "discarded",
-                by: last.command as CommandId,
-                item: it.node,
-              });
-            } else {
-              held.add(it.node);
-              settled.push({ rule: "left_out", items: [it.node], why: "purged" });
-            }
+            const one = facts.get(it.node) as TreeItemFacts;
+            one.document =
+              (draft.nodes.get(it.node) ?? writer.view(LIVE).nodes.get(it.node))?.kind !== "folder";
+            one.ran =
+              it.tree ||
+              pending.some((record) => record.type === "create" && record.node === it.node);
+            if (one.ran) one.records = recordsOfItem(draft, pending, it.node);
           }
-          // The restores come first and are the command's: Un-Apply takes them back with the copies.
+          const holdsDelete = (it: TreeApplyItem) =>
+            (facts.get(it.node) as TreeItemFacts).records.some(
+              (record) => record.type === "delete",
+            );
+          const trashed = (node: string) => writer.view(LIVE).nodes.get(node)?.trashed === true;
+          // The restores this command makes are its own: Un-Apply takes them back with the copies.
           const restored: string[] = [];
-          const restoredHere: string[] = [];
+          const restore = (it: TreeApplyItem) => {
+            restored.push(writer.restore(LIVE, actor, it.node).id);
+            (facts.get(it.node) as TreeItemFacts).restored = true;
+          };
+          // No delete of this command can land on these, and the Work's view the copies are
+          // checked against then has them standing.
+          const isDocument = (it: TreeApplyItem) => (facts.get(it.node) as TreeItemFacts).document;
+          for (const it of mine)
+            if (isDocument(it) && it.textOpen && !holdsDelete(it) && trashed(it.node)) restore(it);
+          const chosen = mine.flatMap((it) => (facts.get(it.node) as TreeItemFacts).records);
+          const applied = chosen.length
+            ? applyDraft(
+                writer,
+                branchId,
+                actor,
+                click.commandId,
+                [...new Set(chosen.map((record) => record.id))],
+                saw,
+              )
+            : null;
+          const deletes = new Set(
+            (applied?.copies ?? []).flatMap((copy) => (copy.type === "delete" ? [copy.id] : [])),
+          );
+          const live = writer.view(LIVE);
           for (const it of mine) {
-            if (!restoring(it) || held.has(it.node)) continue;
-            if (writer.view(LIVE).nodes.get(it.node)?.trashed === true) {
-              restored.push(writer.restore(LIVE, actor, it.node).id);
-              restoredHere.push(it.node);
-              restoredNodes.add(it.node);
-            }
+            const one = facts.get(it.node) as TreeItemFacts;
+            const ids = new Set(one.records.map((record) => record.id));
+            one.left = (applied?.left ?? []).filter(({ record }) => ids.has(record.id));
+            one.superseded = (applied?.superseded ?? []).filter((record) => ids.has(record.id));
+            one.lifted = (applied?.lifted ?? []).some(({ node }) => node === it.node);
+            // Coverage at each folder on the way up, past a nearer delete that is not this command's.
+            one.deletedHere =
+              deletes.size > 0 &&
+              deletesCovering(live, it.node).some((entry) => deletes.has(entry.id));
           }
-          const applied =
-            chosen.size === 0
-              ? null
-              : applyDraft(
-                  writer,
-                  branchId,
-                  actor,
-                  click.commandId,
-                  [...chosen.values()].flatMap((records) => records.map((record) => record.id)),
-                  saw,
-                );
-          if (applied) {
-            for (const { node } of applied.lifted) restoredNodes.add(node);
-            const live = writer.view(LIVE);
-            for (const node of chosen.keys())
-              if (recordsOfItem(live, applied.copies, node).length > 0) landed.add(node);
-            // What stayed pending, and why: a node with nothing landed holds its text back.
-            const byWhy = new Map<LeftOutWhy, Set<string>>();
-            for (const { record, why } of applied.left) {
-              if (!landed.has(record.node) && chosen.has(record.node)) held.add(record.node);
-              byWhy.set(why, (byWhy.get(why) ?? new Set()).add(record.node));
-            }
-            for (const [why, nodes] of byWhy)
-              settled.push({ rule: "left_out", items: [...nodes], why });
+          // A document whose own delete did not land: before the copies it was not known whether it would.
+          for (const it of mine) {
+            const one = facts.get(it.node) as TreeItemFacts;
+            if (
+              isDocument(it) &&
+              it.textOpen &&
+              holdsDelete(it) &&
+              !one.deletedHere &&
+              trashed(it.node)
+            )
+              restore(it);
+          }
+          const final = writer.view(LIVE);
+          for (const it of mine) {
+            const node = final.nodes.get(it.node);
+            (facts.get(it.node) as TreeItemFacts).standsInLive =
+              node !== undefined && !node.trashed;
           }
           if (!applied && restored.length === 0) continue;
-          perList.push({
+          const copies = applied?.copies ?? [];
+          rows.push({
             scope: list.kind,
             mark: Y.encodeStateVector(writer.doc),
-            created: (applied?.copies ?? []).flatMap((copy) =>
-              copy.type === "create" ? [copy.node] : [],
-            ),
+            created: copies.flatMap((copy) => (copy.type === "create" ? [copy.node] : [])),
             restored,
             nodes: [
-              ...new Set([...restoredHere, ...(applied?.copies ?? []).map((copy) => copy.node)]),
+              ...new Set([
+                ...mine.flatMap((it) =>
+                  (facts.get(it.node) as TreeItemFacts).restored ? [it.node] : [],
+                ),
+                ...copies.map((copy) => copy.node),
+              ]),
             ],
           });
         }
-        return { landed, restoredNodes, perList };
+        return rows;
       },
     });
 
-    if (result.perList.length > 0)
+    const tx = currentDrizzleDb(input.db);
+    if (perList.length > 0)
       await tx.insert(applyCommandTrees).values(
-        result.perList.map((row) => ({
+        perList.map((row) => ({
           commandId: click.commandId,
           branchId,
           scope: row.scope,
@@ -251,50 +262,26 @@ export function createApplyTreeOperations(input: {
           nodes: row.nodes,
         })),
       );
-
+    const documents = placed.filter((node) => (facts.get(node) as TreeItemFacts).document);
     const after = await input.tree.identityStatus(LIVE_TREE, documents);
-    const applied: AppliedReviewItem[] = [];
-    for (const it of here) {
-      if (held.has(it.node) || !(result.landed.has(it.node) || result.restoredNodes.has(it.node)))
-        continue;
-      const status = after.get(it.node as DocumentId);
-      const to = status?.kind === "visible" ? status.address.uri : null;
-      const wasAt = before.get(it.node as DocumentId);
-      const renamed =
-        it.item?.uri && to && it.item.uri !== to
-          ? { code: "renamed" as const, wanted: it.item.uri, path: to }
-          : undefined;
-      applied.push({
-        itemKey: draftItemKey(branchId, it.node as DocumentId),
-        ...(result.landed.has(it.node)
-          ? { transition: { from: wasAt?.kind === "visible" ? wasAt.address.uri : null, to } }
-          : {}),
-        ...(renamed ? { renamed } : {}),
-      });
+    for (const node of documents) {
+      const one = facts.get(node) as TreeItemFacts;
+      const was = before.get(node);
+      const is = after.get(node);
+      if (was) one.before = was;
+      if (is) one.after = is;
     }
-    for (const documentId of result.restoredNodes) settled.push({ rule: "restored", documentId });
-
-    const deleting = here.flatMap((it) =>
-      it.item?.change === "deleting" && result.landed.has(it.node) ? [it.node as DocumentId] : [],
-    );
-    if (deleting.length > 0) {
-      // Their live rooms stay open: a document in Trash still takes text until it is purged.
-      await input.close.closeDrafts(
-        tx,
-        { documentIds: deleting, branchId },
-        "document_discarded",
-        click.commandId,
-      );
+    if (perList.length > 0) {
+      await input.arrivals?.settle(documents);
+      for (const documentId of documents)
+        deferUntilDrizzleCommit(() => input.onCommitted(documentId));
     }
-    await input.arrivals?.settle(documents);
-    for (const documentId of documents)
-      deferUntilDrizzleCommit(() => input.onCommitted(documentId));
-    return { applied, settled, held, deleted: new Set<string>(deleting) };
+    return facts;
   }
 
   /**
-   * The journal rows each created document has once the command's text is in: Un-Apply refuses
-   * as `gone` when one has more (`textWrittenSince`).
+   * The journal rows each created document has once the command's text is in: Un-Apply leaves
+   * a created document with more (`has_text`, from `textWrittenSince`).
    */
   async function recordCreatedHeads(commandId: CommandId): Promise<void> {
     const tx = currentDrizzleDb(input.db);
@@ -312,7 +299,7 @@ export function createApplyTreeOperations(input: {
     }
   }
 
-  return { apply, recordCreatedHeads };
+  return { lockItems, apply, recordCreatedHeads };
 }
 
 type Tx = ReturnType<typeof currentDrizzleDb>;

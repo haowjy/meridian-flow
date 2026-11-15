@@ -1,7 +1,7 @@
 /** Command-scoped receipt and base-effect reads for durable Un-Apply. */
 import { applySpanPatches, type SpanPatch } from "@meridian/agent-edit/diff";
 import type { InversePart } from "@meridian/agent-edit/integration";
-import type { DocumentId, EditOrigin } from "@meridian/contracts";
+import { type DocumentId, type EditOrigin, parseDraftItemKey } from "@meridian/contracts";
 import type { ApplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
@@ -132,9 +132,10 @@ async function treeHalfLostWithBranch(
     row?.outcome.status === "never"
       ? undefined
       : (row?.outcome.result as ApplyClickResult | undefined);
-  return (result?.applied ?? []).flatMap((item) =>
-    item.transition ? [item.itemKey.slice(item.itemKey.lastIndexOf(":") + 1)] : [],
-  );
+  return (result?.applied ?? []).flatMap((item) => {
+    const documentId = item.transition && parseDraftItemKey(item.itemKey)?.documentId;
+    return documentId ? [documentId] : [];
+  });
 }
 
 /**

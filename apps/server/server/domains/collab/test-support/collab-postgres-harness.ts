@@ -492,6 +492,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     branches: workBranches,
     reviewItems,
     folderIds: (branchId) => branchFolderIds(db, branchId),
+    // No tree lists in this fixture: a list read without a cut.
+    treeCut: async () => ({}),
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({

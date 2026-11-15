@@ -41,10 +41,15 @@ export type ApplyClick = {
 };
 
 /**
- * What each tree list held when the writer pressed: the list's Yjs state vector (base64), by
- * list. Records admitted after it are ones the writer had not seen; they stay pending.
+ * The cut the review rows were drawn from: for each list the Work's records are in, the list's
+ * journal id and its Yjs state vector (base64) as the draft list read them. Records admitted
+ * after it are ones the writer had not seen; they stay pending. A cut of another list (one
+ * rebuilt under a new id) is no cut, and a scope left out is the server's own cut.
  */
-export type TreeSaw = { project?: string; account?: string };
+export type TreeSaw = {
+  project?: { list: string; vector: string };
+  account?: { list: string; vector: string };
+};
 
 export type ApplyRenamedNote = {
   code: "renamed";
@@ -62,18 +67,44 @@ export type AppliedReviewItem = {
 };
 
 /**
- * Every item lands or comes back in `settled` (`already`, `overtaken`, `left_out`; each names its
- * `item`). `applied` holds the items that landed; it is empty when none did.
+ * What became of one half of an item. `landed`: this command changed live for it, and Un-Apply
+ * takes that back. `settled` beside `landed: true` names what stayed out of it or came with it
+ * (`left_out`, `restored`). With `landed: false` it says why, and is never empty. A note's own
+ * `item` or `items` always names the entry's node.
+ */
+export type ApplyHalfResult =
+  | { landed: true; settled?: Settlement[] }
+  | { landed: false; settled: Settlement[] };
+
+/** One item of an Apply: a document or a folder, with each of its two halves answered on its own. */
+export type ApplyItemResult = {
+  node: string;
+  /** Present when the tree half ran: the click asked for the item's tree records, or the item has a pending create. */
+  tree?: ApplyHalfResult & {
+    /** Where live had the document before and after this command, when its tree half landed. */
+    transition?: { from: string | null; to: string | null };
+    renamed?: ApplyRenamedNote;
+  };
+  /** Present when the click carried a text cut for the item. */
+  text?: ApplyHalfResult;
+};
+
+/**
+ * Every item an Apply was sent comes back once in `items`, in the click's order, with each half
+ * landed or settled. Records that land without being asked for (a prerequisite create, the
+ * prefix a selection the Work's tree can't keep falls back to) belong to no entry; Un-Apply
+ * takes them back with the rest.
  */
 export type ApplyClickResult = {
   status: "applied";
   commandId: CommandId;
-  /** Every item whose tree or text this click applied, dependency-first. */
+  items: ApplyItemResult[];
+  /**
+   * The items with a landed half, derived from `items`. Kept for tabs opened before `items`
+   * (one release) and for Un-Apply's read of stored answers; the app reads `items`.
+   */
   applied: AppliedReviewItem[];
   overrode?: number;
-  /** A frozen text cut committed, including a cut whose live update was already contained. */
-  textEffect?: true;
-  settled?: Settlement[];
 };
 
 export type ApplyClickAnswer = ApplyClickResult | { status: "conflict"; commandId: CommandId };
@@ -81,12 +112,11 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
 
 /**
  * Take back one Apply command: the surviving text groups of every document it applied, and
- * everything it settled in the tree (a restore it made included), in one command. The tree half
- * is allowed only while nothing else has changed the list since (`gone`), and refuses as
- * `superseded` when a record it would bring back no longer fits; either refuses the whole
- * command. A text group whose reversal would change a word that holds writing made after the
- * Apply stays applied and is named in `skippedGroupIds`; when every group stays, the tree half
- * still comes back and the answer is `unapplied` with no `reversedGroupIds`.
+ * everything it settled in the tree (a restore it made included), in one command, fact by fact.
+ * A tree fact something changed since stays (`left_out changed_since`), as does a created
+ * document with text written since (`has_text`); a text group whose reversal would change a
+ * word that holds writing made after the Apply stays applied and is named in `skippedGroupIds`.
+ * It took something back when `reversedGroupIds` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
@@ -101,7 +131,12 @@ export type UnapplyClickResult = {
   draftHalfWaits: boolean;
   reversedGroupIds: string[];
   skippedGroupIds: string[];
-  /** `already` (everything was taken back before), `left_out` (what could not come back, and why). */
+  /** The nodes with a tree fact this command took back (a restore it undid included). */
+  treeUndone: string[];
+  /**
+   * `left_out` (what could not come back, one line per reason), or `already` (nothing was taken
+   * back and nothing was left: everything was taken back before).
+   */
   settled?: Settlement[];
 };
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
@@ -336,6 +371,11 @@ export interface ThreadDraftListResponse {
    * Always false for a Work, whose archive state the Work itself carries.
    */
   frozen: boolean;
+  /**
+   * The cut the items were read at: each list's vector, read before the rows. An Apply pressed on
+   * these rows sends it, so what lands is what the rows showed.
+   */
+  saw: TreeSaw;
 }
 
 /** SQL-only addressed lookup; no text room is loaded or created. */

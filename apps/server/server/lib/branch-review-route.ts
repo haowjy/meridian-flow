@@ -39,9 +39,14 @@ import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contrac
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import * as Y from "yjs";
 import { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
-import { ApplyClickMalformed, ApplyClickUnsynced } from "../domains/collab/domain/apply-click.js";
+import {
+  ApplyClickMalformed,
+  ApplyClickUnsynced,
+  type TreeCut,
+} from "../domains/collab/domain/apply-click.js";
 import type { DiscardSelection } from "../domains/collab/domain/branch-discard.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-branch-pending-store.js";
@@ -171,10 +176,38 @@ const BaseViewDeltaBody = z.array(
     blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
   }),
 );
-const SawBody = z.strictObject({
-  project: z.base64().optional(),
-  account: z.base64().optional(),
+/** A state vector, decoded here once: one that isn't is a 400, and nothing downstream decodes. */
+const VectorBody = z.base64().transform((value, context) => {
+  const bytes = new Uint8Array(Buffer.from(value, "base64"));
+  try {
+    Y.decodeStateVector(bytes);
+    return bytes;
+  } catch {
+    context.addIssue({ code: "custom", message: "Invalid state vector" });
+    return z.NEVER;
+  }
 });
+const ScopeCutBody = z.strictObject({ list: z.string().min(1).max(128), vector: VectorBody });
+const SawBody = z.strictObject({
+  project: ScopeCutBody.optional(),
+  account: ScopeCutBody.optional(),
+});
+/**
+ * `tree: true`, or a tab opened before B3: `tree: { revision }`, read as `true`. With `restore`
+ * (ignored), accepted for one release after B3 deploys; remove both then.
+ */
+const TreeBody = z
+  .union([
+    z.literal(true),
+    z.strictObject({
+      revision: z
+        .string()
+        .regex(/^[0-9a-f]{32}$/)
+        .nullable(),
+    }),
+  ])
+  .transform(() => true as const);
+const OldRestoreBody = z.literal(true).optional();
 const ApplyClickBody = z
   .strictObject({
     draftId: z.string().min(1).max(128).optional(),
@@ -182,7 +215,8 @@ const ApplyClickBody = z
     snapshot: z.string().min(1).optional(),
     baseViewDelta: BaseViewDeltaBody,
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
-    tree: z.literal(true).optional(),
+    tree: TreeBody.optional(),
+    restore: OldRestoreBody,
     saw: SawBody.optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
@@ -207,7 +241,7 @@ const ApplyItemsBody = z.strictObject({
       z
         .strictObject({
           node: z.string().uuid(),
-          tree: z.literal(true).optional(),
+          tree: TreeBody.optional(),
           text: ApplyTextBody.optional(),
         })
         .refine((item) => item.tree !== undefined || item.text !== undefined),
@@ -215,8 +249,11 @@ const ApplyItemsBody = z.strictObject({
     .min(1)
     .max(2000)
     .refine((items) => new Set(items.map((item) => item.node)).size === items.length),
+  restore: OldRestoreBody,
   saw: SawBody.optional(),
 });
+/** An Apply as the route parsed it: the items, and the press's cut decoded. */
+type ParsedApply = Omit<ApplyItemsClick, "saw"> & { saw?: TreeCut };
 const UndoDiscardBody = z.strictObject({
   commandId: CommandIdSchema,
   discardCommandId: CommandIdSchema,
@@ -438,6 +475,7 @@ export async function handleOwnerDraftListRequest(
     branchId: listed.branchId,
     folders: listed.folders,
     frozen,
+    saw: listed.saw,
   };
 }
 
@@ -592,7 +630,7 @@ async function commandIngress(
  * a 400: a text cut needs its room (`draftId`, `snapshot`) and a click needs a text cut or a
  * tree cut.
  */
-function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyItemsClick {
+function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ParsedApply {
   const textCut =
     click.snapshot !== undefined || click.groupIds.length > 0 || click.baseViewDelta.length > 0;
   if (
@@ -632,7 +670,7 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyIt
 async function applyItems(
   deps: BranchRouteServices,
   input: CommandScope,
-  request: ApplyItemsClick,
+  request: ParsedApply,
   envelope: CommandEnvelope,
   /** Set on the one re-run after a live delete overtook this click's admission. */
   overtaken = false,
@@ -715,7 +753,12 @@ async function applyItems(
   }
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
     callDraftReview(
-      deps.documentSync.draftReview.apply({ branchId: input.branchId, request, envelope }),
+      deps.documentSync.draftReview.apply({
+        branchId: input.branchId,
+        request: { commandId: request.commandId, items: request.items },
+        ...(request.saw ? { saw: request.saw } : {}),
+        envelope,
+      }),
     ),
   );
   if (result.ok) return result.value;
@@ -787,17 +830,18 @@ export function handleApplyItemsRequest(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
 ): Promise<ApplyClickAnswer> {
-  const request = parseBody(ApplyItemsBody, input.request, "Apply") as ApplyItemsClick;
+  const { restore: _ignored, ...request } = parseBody(ApplyItemsBody, input.request, "Apply");
   return applyItems(
     deps,
     input,
-    request,
+    request as ParsedApply,
     envelopeOf(input, {
       commandId: request.commandId,
       kind: "apply",
       branchId: input.branchId,
       selectors: {},
-      body: request,
+      // As sent: the decoded cut is not what the digest of a resend reads.
+      body: input.request,
     }),
   );
 }

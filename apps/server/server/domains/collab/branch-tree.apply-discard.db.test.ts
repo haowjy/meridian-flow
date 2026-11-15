@@ -47,7 +47,7 @@ import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
 import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
-import { createApplyClickService } from "./domain/apply-click.js";
+import { createApplyClickService, type TreeCut } from "./domain/apply-click.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranches } from "./domain/branches.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
@@ -216,7 +216,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     async function applyNodes(
       nodes: readonly string[],
       commandId: string,
-      saw?: { project?: string; account?: string },
+      saw?: TreeCut,
       tree = true,
     ) {
       return apply.apply(
@@ -302,7 +302,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect(second).toMatchObject({
         status: "applied",
         applied: [],
-        settled: [{ rule: "already", state: "applied", item: a }],
+        items: [
+          {
+            node: a,
+            tree: { landed: false, settled: [{ rule: "already", state: "applied", item: a }] },
+          },
+        ],
       });
       expect(await liveRow(a)).toMatchObject({ name: "first" });
     });
@@ -316,7 +321,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       const answer = await click(a);
       expect(answer).toMatchObject({
         status: "applied",
-        settled: [{ rule: "restored", documentId: a }],
+        items: [
+          { node: a, tree: { landed: true, settled: [{ rule: "restored", documentId: a }] } },
+        ],
       });
       expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
     });
@@ -829,7 +836,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const commandId = randomUUID();
         expect(await applyNodes([a], commandId)).toMatchObject({
           status: "applied",
-          settled: [{ rule: "restored", documentId: a }],
+          items: [
+            { node: a, tree: { landed: true, settled: [{ rule: "restored", documentId: a }] } },
+          ],
         });
         expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
 

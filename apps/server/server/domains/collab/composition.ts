@@ -53,6 +53,7 @@ import {
   createDrizzleWorkBranchDisposal,
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
+import { treeCutOf } from "./adapters/drizzle-branch-tree-lists.js";
 import {
   branchFolderIds,
   createDrizzleBranchTreeState,
@@ -570,6 +571,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
     folderIds: (branchId) => branchFolderIds(deps.db, branchId),
+    treeCut: (branchId) => treeCutOf(deps.db, deps.treeLists, branchId),
     pending: workBranchPendingStore,
   });
   const draftPeers = scopeDraftPeer(

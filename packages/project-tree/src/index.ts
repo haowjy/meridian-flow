@@ -10,11 +10,14 @@ export {
 export {
   type ApplyResult,
   appliedCreates,
+  appliedStanding,
   applyDraft,
   covers,
   type DiscardedBy,
   discardDraft,
   discardedBy,
+  type LeftRecord,
+  recordsAdmittedAfter,
   restoreDiscard,
   undoApply,
 } from "./apply.js";
@@ -48,6 +51,7 @@ export {
 export {
   type DroppedRecord,
   deleteCovering,
+  deletesCovering,
   type LabelBefore,
   type NodeSetters,
   type PlaceBefore,

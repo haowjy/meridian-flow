@@ -1,11 +1,12 @@
 /**
  * Atomic Apply: Work lock, command claim, committed live effect and prefix-authored base.
- * One executor for any selection of nodes, folders included: the tree cuts run first, in the
- * lists that hold the drafted records: the package's `applyDraft` appends live copies and settles
- * the drafted ones, in this transaction (`drizzle-apply-tree.ts`); then each document's text
- * merges at the result. A document live has in Trash comes back only when the click carries the
- * writer's `restore`. The command keeps both halves (`apply_command_trees`,
- * `apply_command_effects`), and Un-Apply takes back all of it, across every document.
+ * One executor for any selection of nodes, folders included. Under the Work, branch, list and
+ * document keys it reads what settled each item (`settlementOf`), lands the tree cuts in the
+ * lists that hold the drafted records (`drizzle-apply-tree.ts`), then merges each document's
+ * text at the result. Each half of an item is answered on its own evidence: the text lands
+ * wherever its draft is open and its document stands in live, whatever the tree half did. The
+ * command keeps both halves (`apply_command_trees`, `apply_command_effects`), and Un-Apply takes
+ * back all of it, across every document.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -32,10 +33,16 @@ import {
   draftItemKey,
   type UserId,
 } from "@meridian/contracts";
-import type { ApplyClickResult, UnapplyClickResult } from "@meridian/contracts/branches";
+import type {
+  AppliedReviewItem,
+  ApplyClickResult,
+  ApplyHalfResult,
+  ApplyItemResult,
+  UnapplyClickResult,
+} from "@meridian/contracts/branches";
 import type { LeftOutWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
-import { applyCommandEffects, branches, commands, documentDrafts } from "@meridian/database/schema";
+import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
 import { appliedCreates, undoApply } from "@meridian/project-tree";
 import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -57,16 +64,29 @@ import type {
 import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import type { DraftBase } from "../domain/draft-runtime.js";
-import type { BranchTreeStateReader } from "../domain/ports/branch-tree-state.js";
+import type {
+  BranchDocumentTree,
+  BranchTreeStateReader,
+} from "../domain/ports/branch-tree-state.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
-import { createApplyTreeOperations, textWrittenSince } from "./drizzle-apply-tree.js";
+import {
+  createApplyTreeOperations,
+  type TreeItemFacts,
+  textWrittenSince,
+} from "./drizzle-apply-tree.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { type ReopenDrafts, reverseBaseHalf } from "./drizzle-reopen-drafts.js";
+import {
+  type ItemSettlement,
+  noteOf,
+  type Settled,
+  settlementOf,
+} from "./drizzle-settlement-of.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
 
 const applyTiming = new AsyncLocalStorage<{
@@ -81,31 +101,59 @@ export function measureApplyAppend(detail: { holdMs: number }): void {
 }
 
 /**
- * What became of a text draft an Apply meant to write in, or null while it is open. A Discard or a
- * restore's swap closed it: `overtaken` `discarded`; an Apply's delete of the document, or a
- * removal: `removed`; a purge deleted it, or closed it with no command: `left_out` `purged`.
+ * The tree half's answer from its record fates: landed when any of the item's records did, with a
+ * `left_out` line per reason the rest stayed; with nothing pending, what settled the records.
  */
-async function closedDraftSettlement(
-  tx: ReturnType<typeof currentDrizzleDb>,
+function treeResult(
   node: string,
-  draftId: string,
-): Promise<Settlement | null> {
-  const [draft] = await tx
-    .select({
-      status: documentDrafts.status,
-      cause: documentDrafts.closedCause,
-      by: documentDrafts.closedBy,
-      byKind: commands.kind,
-    })
-    .from(documentDrafts)
-    .leftJoin(commands, eq(commands.id, documentDrafts.closedBy))
-    .where(eq(documentDrafts.id, draftId));
-  if (!draft) return { rule: "left_out", items: [node], why: "purged" };
-  if (draft.status === "active") return null;
-  if (!draft.by) return { rule: "left_out", items: [node], why: "purged" };
-  const state =
-    draft.cause === "document_removed" || draft.byKind === "apply" ? "removed" : "discarded";
-  return { rule: "overtaken", state, by: draft.by as CommandId, item: node };
+  one: TreeItemFacts,
+  last: Settled | null,
+  wanted: BranchDocumentTree | undefined,
+): NonNullable<ApplyItemResult["tree"]> {
+  const left = new Set(one.left.map(({ record }) => record.id));
+  const superseded = new Set(one.superseded.map((record) => record.id));
+  const landed = one.records.some((record) => !left.has(record.id) && !superseded.has(record.id));
+  const notes: Settlement[] = [...new Set(one.left.map(({ why }) => why))].map((why) => ({
+    rule: "left_out",
+    items: [node],
+    why,
+  }));
+  if (!landed)
+    return {
+      landed: false,
+      settled: notes.length
+        ? notes
+        : one.records.length
+          ? [{ rule: "already", state: "applied", item: node }]
+          : [noteOf(last, node, "applied")],
+    };
+  if (one.lifted) notes.push({ rule: "restored", documentId: node });
+  if (!one.document) return { landed: true, ...(notes.length ? { settled: notes } : {}) };
+  const from = one.before?.kind === "visible" ? one.before.address.uri : null;
+  const to = one.after?.kind === "visible" ? one.after.address.uri : null;
+  return {
+    landed: true,
+    ...(notes.length ? { settled: notes } : {}),
+    transition: { from, to },
+    ...(wanted?.uri && to && wanted.uri !== to
+      ? { renamed: { code: "renamed" as const, wanted: wanted.uri, path: to } }
+      : {}),
+  };
+}
+
+/** The items with a landed half, in the shape tabs opened before `items` read. */
+function appliedOf(branchId: BranchId, results: readonly ApplyItemResult[]): AppliedReviewItem[] {
+  return results.flatMap((result) => {
+    const { tree } = result;
+    if (!tree?.landed && !result.text?.landed) return [];
+    return [
+      {
+        itemKey: draftItemKey(branchId, result.node as DocumentId),
+        ...(tree?.landed && tree.transition ? { transition: tree.transition } : {}),
+        ...(tree?.landed && tree.renamed ? { renamed: tree.renamed } : {}),
+      },
+    ];
+  });
 }
 
 export function createDrizzleApplyClick(
@@ -136,7 +184,7 @@ export function createDrizzleApplyClick(
       boundaryMs?: number;
       holdMs?: number;
     }): void;
-    /** An Apply that answered and landed nothing: why, per item, for the log. */
+    /** An Apply that landed nothing, after its commit: why, per item, for the log. */
     answeredWithoutLanding(input: { commandId: string; settled: Settlement[] }): void;
   },
 ): ApplyCommandStore {
@@ -144,7 +192,6 @@ export function createDrizzleApplyClick(
     db,
     treeLists: deps.treeLists,
     tree: deps.tree,
-    close: deps.close,
     arrivals: deps.arrivals,
     onCommitted: deps.onCommitted,
   });
@@ -366,7 +413,7 @@ export function createDrizzleApplyClick(
                 await lockDocumentMutation(tx, id as DocumentId);
               const restored = new Set<string>();
               const left: { node: string; why: LeftOutWhy }[] = [];
-              let undoneCount = 0;
+              const treeUndone = new Set<string>();
               if (lists.length > 0) {
                 const written = await textWrittenSince(
                   db,
@@ -381,9 +428,10 @@ export function createDrizzleApplyClick(
                         writtenSince: written,
                         restoredByApply: tree.restored,
                       });
-                      undoneCount += result.undone.length;
-                      for (const record of result.undone)
+                      for (const record of result.undone) {
+                        treeUndone.add(record.node);
                         if (record.type === "restore") restored.add(record.node);
+                      }
                       // A change already taken back is the answer `already`, not a loss.
                       for (const { record, why } of result.left)
                         if (why !== "already")
@@ -602,7 +650,7 @@ export function createDrizzleApplyClick(
               // Everything this Apply did was taken back before, or it left nothing to take back.
               if (
                 settled.length === 0 &&
-                undoneCount === 0 &&
+                treeUndone.size === 0 &&
                 reversedGroupIds.length === 0 &&
                 skippedGroupIds.length === 0
               )
@@ -616,6 +664,7 @@ export function createDrizzleApplyClick(
                 ),
                 reversedGroupIds,
                 skippedGroupIds,
+                treeUndone: [...treeUndone],
                 ...(settled.length ? { settled } : {}),
               };
             },
@@ -650,40 +699,103 @@ export function createDrizzleApplyClick(
                 // records or open drafts, and each item below says what became of it.
                 await deps.branches.lockActive(branchId);
                 const nodes = items.map((item) => item.node);
-                const reviewItems = new Map(
+                // Read before the locks, for the `renamed` note's wanted path only: nothing in it
+                // decides a write.
+                const wanted = new Map(
                   (await deps.branchTree.read(branchId, [], nodes as DocumentId[])).map((item) => [
                     item.documentId as string,
                     item,
                   ]),
                 );
-                const { applied, settled, held, deleted } = await treeHalf.apply({
+                const listOf = await treeHalf.lockItems(nodes);
+                const draftOf = (item: PreparedApplyItem) =>
+                  item.text?.base.snapshot.draftId ?? item.closedDraftId;
+                const settlements = await settlementOf(
+                  db,
+                  deps,
+                  branchId,
+                  items.map((item) => {
+                    const draftId = draftOf(item);
+                    return {
+                      node: item.node,
+                      list: listOf.get(item.node) ?? null,
+                      ...(draftId ? { draftId } : {}),
+                    };
+                  }),
+                  saw,
+                );
+                const settled = (node: string) => settlements.get(node) as ItemSettlement;
+                // A text half is open when its cut compiled and its draft is still the open row of
+                // this branch; otherwise its note is fixed now.
+                const textNote = new Map<string, Settlement>();
+                for (const item of items) {
+                  const text = settled(item.node).text;
+                  if (!text) continue;
+                  if (item.text && text.open && text.branchId === branchId) continue;
+                  textNote.set(
+                    item.node,
+                    text.open
+                      ? { rule: "left_out", items: [item.node], why: "changed_since" }
+                      : noteOf(text.last, item.node, "applied"),
+                  );
+                }
+                const facts = await treeHalf.apply({
                   branchId,
                   userId,
                   commandId,
                   saw,
                   items: items.map((item) => ({
                     node: item.node,
+                    list: listOf.get(item.node) ?? null,
                     tree: item.tree,
-                    item: reviewItems.get(item.node) ?? null,
+                    textOpen: Boolean(draftOf(item)) && !textNote.has(item.node),
                   })),
                 });
-                // The text half, after the tree half, in id order: every document's key is
-                // held (`treeHalf.apply`). A delete this command made takes the document out of
-                // live: its text has nowhere to merge.
-                const tx = currentDrizzleDb(db);
+                const fact = (node: string) => facts.get(node) as TreeItemFacts;
+                const deleted = items.flatMap((item) =>
+                  fact(item.node).deletedHere ? [item.node as DocumentId] : [],
+                );
+                // Only a delete this command committed closes a draft, under its id. Their live
+                // rooms stay open: a document in Trash still takes text until it is purged.
+                if (deleted.length > 0)
+                  await deps.close.closeDrafts(
+                    currentDrizzleDb(db),
+                    { documentIds: deleted, branchId },
+                    "document_discarded",
+                    commandId,
+                  );
+
+                // The text half, in id order, every document's key held.
+                const texts = new Map<string, ApplyHalfResult>();
                 let ordinal = 0;
                 let overrode = 0;
-                let textEffect = false;
                 for (const item of [...items].sort((a, b) => a.node.localeCompare(b.node))) {
-                  const draftId = item.text?.base.snapshot.draftId ?? item.closedDraftId;
-                  if (!draftId || held.has(item.node)) continue;
-                  if (deleted.has(item.node)) continue;
-                  // Held under the Work and document keys, so the draft cannot close from here on.
-                  const gone = await closedDraftSettlement(tx, item.node, draftId);
-                  if (gone || !item.text) {
-                    settled.push(
-                      gone ?? { rule: "left_out", items: [item.node], why: "changed_since" },
-                    );
+                  if (!draftOf(item)) continue;
+                  const note = textNote.get(item.node);
+                  const one = fact(item.node);
+                  if (note || !item.text) {
+                    texts.set(item.node, {
+                      landed: false,
+                      settled: [
+                        note ?? { rule: "left_out", items: [item.node], why: "changed_since" },
+                      ],
+                    });
+                    continue;
+                  }
+                  // As the writer asked: the document this command deleted has nowhere for text.
+                  if (one.deletedHere) {
+                    texts.set(item.node, {
+                      landed: false,
+                      settled: [{ rule: "already", state: "removed", item: item.node }],
+                    });
+                    continue;
+                  }
+                  // Its create did not land: the text stays pending with the draft that holds it.
+                  if (!one.standsInLive) {
+                    texts.set(item.node, {
+                      landed: false,
+                      settled: [{ rule: "left_out", items: [item.node], why: "needs" }],
+                    });
                     continue;
                   }
                   const wrote = await applyText(
@@ -694,20 +806,48 @@ export function createDrizzleApplyClick(
                   );
                   ordinal += item.text.click.groups.length;
                   overrode += wrote.overrode;
-                  textEffect = true;
-                  const itemKey = draftItemKey(branchId, item.node as DocumentId);
-                  if (!applied.some((entry) => entry.itemKey === itemKey))
-                    applied.push({ itemKey });
+                  texts.set(
+                    item.node,
+                    one.restored
+                      ? { landed: true, settled: [{ rule: "restored", documentId: item.node }] }
+                      : { landed: true },
+                  );
                 }
-                if (applied.length === 0)
-                  deps.answeredWithoutLanding({ commandId, settled: [...settled] });
+
+                const results = items.map((item): ApplyItemResult => {
+                  const one = fact(item.node);
+                  const text = texts.get(item.node);
+                  return {
+                    node: item.node,
+                    ...(one.ran || (item.tree && !listOf.get(item.node))
+                      ? {
+                          tree: treeResult(
+                            item.node,
+                            one,
+                            settled(item.node).tree.last,
+                            wanted.get(item.node),
+                          ),
+                        }
+                      : {}),
+                    ...(text ? { text } : {}),
+                  };
+                });
+                const applied = appliedOf(branchId, results);
+                if (applied.length === 0) {
+                  const notes = results.flatMap((result) => [
+                    ...(result.tree?.settled ?? []),
+                    ...(result.text?.settled ?? []),
+                  ]);
+                  deferUntilDrizzleCommit(() =>
+                    deps.answeredWithoutLanding({ commandId, settled: notes }),
+                  );
+                }
                 return {
                   status: "applied",
                   commandId,
+                  items: results,
                   applied,
-                  ...(textEffect ? { textEffect: true as const } : {}),
                   ...(overrode ? { overrode } : {}),
-                  ...(settled.length ? { settled } : {}),
                 };
               },
               { requireActive: false, seam: true },

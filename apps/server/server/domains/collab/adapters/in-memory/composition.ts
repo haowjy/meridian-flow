@@ -292,8 +292,22 @@ function createInMemoryBranchStub(): CollabBranches {
   });
   return {
     draftReview: {
+      // No branches here: every item's records and drafts are as good as purged.
       async apply({ request }) {
-        return { status: "applied", commandId: request.commandId, applied: [] };
+        const purged = (node: string) => ({
+          landed: false as const,
+          settled: [{ rule: "left_out" as const, items: [node], why: "purged" as const }],
+        });
+        return {
+          status: "applied",
+          commandId: request.commandId,
+          items: request.items.map((item) => ({
+            node: item.node,
+            ...(item.tree ? { tree: purged(item.node) } : {}),
+            ...(item.text ? { text: purged(item.node) } : {}),
+          })),
+          applied: [],
+        };
       },
       async unapplyClick({ request, branchId }) {
         return {
@@ -303,6 +317,7 @@ function createInMemoryBranchStub(): CollabBranches {
           draftHalfWaits: false,
           reversedGroupIds: [],
           skippedGroupIds: [],
+          treeUndone: [],
         };
       },
       commandDocuments: {
@@ -323,7 +338,7 @@ function createInMemoryBranchStub(): CollabBranches {
         return [];
       },
       async listItems() {
-        return { branchId: null, items: [], folders: [], threadTitles: new Map() };
+        return { branchId: null, items: [], folders: [], threadTitles: new Map(), saw: {} };
       },
       async pendingDocumentCount() {
         return 0;

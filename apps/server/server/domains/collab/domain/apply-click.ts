@@ -17,7 +17,6 @@ import type {
   ApplyClickAnswer,
   ApplyClickResult,
   ApplyTextCut,
-  TreeSaw,
   UnapplyClickAnswer,
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
@@ -32,6 +31,14 @@ import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
 export type ApplyCommand = Parameters<CollabBranches["draftReview"]["apply"]>[0];
+/**
+ * A press's cut as the route decoded it: per list, the list's journal id and the state vector
+ * the draft list read. A scope left out is the server's own cut.
+ */
+export type TreeCut = {
+  project?: { list: string; vector: Uint8Array };
+  account?: { list: string; vector: Uint8Array };
+};
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
 /** What an Un-Apply takes back: the Apply's text effects on each document it wrote, and its tree half. */
 export type PreparedUnapply = {
@@ -98,12 +105,13 @@ export interface ApplyCommandStore {
   }): Promise<DraftBase | null>;
   /**
    * Applies the command's cuts in one transaction: the tree cuts first (the moves, deletes and
-   * creations), then each item's text cut at the result. What cannot land comes back settled.
+   * creations), then each item's text cut at the result. Every item comes back once, each half
+   * landed or settled on its own evidence.
    */
   apply(
     command: ApplyCommand,
     items: readonly PreparedApplyItem[],
-    saw: TreeSaw | undefined,
+    saw: TreeCut | undefined,
   ): Promise<ApplyClickAnswer>;
   /** What the Apply left to take back; null when it left nothing (taken back before, or not this account's). */
   loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
@@ -231,7 +239,7 @@ export function createApplyClickService(input: {
     if (first) return first;
     await testHook("apply.beforeCompile");
     try {
-      const { items, saw } = command.request;
+      const { items } = command.request;
       const prepared: PreparedApplyItem[] = [];
       for (const item of items) {
         const tree = item.tree === true;
@@ -266,7 +274,7 @@ export function createApplyClickService(input: {
         }
         prepared.push({ node: item.node, tree, text: { base, click } });
       }
-      return await input.store.apply(command, prepared, saw);
+      return await input.store.apply(command, prepared, command.saw);
     } catch (cause) {
       // A twin that already stored its answer wins over a refusal to start (LA-1).
       if (
