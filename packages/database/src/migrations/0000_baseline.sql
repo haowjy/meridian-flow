@@ -275,7 +275,6 @@ CREATE TABLE "threads" (
 	"title" text DEFAULT '' NOT NULL,
 	"ref" text,
 	"kind" text DEFAULT 'primary' NOT NULL,
-	"status" text DEFAULT 'idle' NOT NULL,
 	"initial_prompt_bake_id" uuid,
 	"parent_thread_id" uuid,
 	"root_thread_id" uuid NOT NULL,
@@ -302,7 +301,6 @@ CREATE TABLE "threads" (
 	CONSTRAINT "threads_next_seq_nonneg" CHECK ("threads"."next_seq" >= 0),
 	CONSTRAINT "threads_ai_write_mode_valid" CHECK ("threads"."ai_write_mode" IN ('direct', 'draft')),
 	CONSTRAINT "threads_kind_valid" CHECK ("threads"."kind" IN ('primary', 'subagent')),
-	CONSTRAINT "threads_status_valid" CHECK ("threads"."status" IN ('idle', 'archived')),
 	CONSTRAINT "threads_origin_type_valid" CHECK ("threads"."origin_type" IS NULL OR "threads"."origin_type" IN ('spawn', 'handoff', 'fork')),
 	CONSTRAINT "threads_spawn_origin_subagent" CHECK ("threads"."origin_type" != 'spawn' OR "threads"."kind" = 'subagent'),
 	CONSTRAINT "threads_spawn_origin_required_fields" CHECK ("threads"."origin_type" != 'spawn' OR ("threads"."kind" = 'subagent' AND "threads"."parent_thread_id" IS NOT NULL AND "threads"."origin_turn_id" IS NOT NULL AND "threads"."spawn_status" IS NOT NULL)),
@@ -1182,7 +1180,7 @@ CREATE INDEX "thread_works_work_idx" ON "thread_works" USING btree ("work_id");-
 CREATE UNIQUE INDEX "thread_works_primary_unique" ON "thread_works" USING btree ("thread_id") WHERE "thread_works"."is_primary" = true;--> statement-breakpoint
 CREATE UNIQUE INDEX "threads_project_ref" ON "threads" USING btree ("project_id","ref") WHERE "threads"."ref" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "threads_project_updated_active" ON "threads" USING btree ("project_id","updated_at" DESC NULLS LAST) WHERE "threads"."deleted_at" IS NULL;--> statement-breakpoint
-CREATE INDEX "threads_project_activity_primary_active" ON "threads" USING btree ("project_id","last_activity_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "threads"."kind" = 'primary' AND "threads"."deleted_at" IS NULL AND "threads"."status" <> 'archived';--> statement-breakpoint
+CREATE INDEX "threads_project_activity_primary_active" ON "threads" USING btree ("project_id","last_activity_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "threads"."kind" = 'primary' AND "threads"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "threads_created_by_active" ON "threads" USING btree ("created_by_user_id") WHERE "threads"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "threads_parent_created_active" ON "threads" USING btree ("parent_thread_id","created_at" DESC NULLS LAST) WHERE "threads"."parent_thread_id" IS NOT NULL AND "threads"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "threads_lineage_derivations" ON "threads" USING btree ("root_thread_id") WHERE "threads"."origin_type" IN ('fork', 'handoff');--> statement-breakpoint

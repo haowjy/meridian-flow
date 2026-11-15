@@ -417,7 +417,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
     ]);
     return {
       work: modelWork(work),
-      recentThreads: threads.map(({ title, updatedAt, status }) => ({ title, updatedAt, status })),
+      recentThreads: threads.map(({ title, updatedAt }) => ({ title, updatedAt })),
       drafts,
     } satisfies WorkShowResult;
   },

@@ -39,7 +39,7 @@ follow it. A close, a Discard, a removal or a vanished document closes its tab t
 coordinator's `tabs` port (`forget`; a draft-only page's own Close closes it once main's address has
 left, so main's page is not drawn without it); a deleted chat, one `useMissingChatFallback` finds
 missing, or one deleted elsewhere (`useDropGoneChatTabs`, which also moves main off it to a new chat: the project's chat list holds
-primary chats only and learns of a delete elsewhere only by refetch; a delete's `project-chats-hint` names the removed chat ids and closes those tabs without a request; the owner-gate probe runs only at mount and on a hint marked `recheckTabs` (a deleted Work, a reconnect), one batch at a time, so a subagent's or archived
+primary chats only and learns of a delete elsewhere only by refetch; a delete's `project-chats-hint` names the removed chat ids and closes those tabs without a request; the owner-gate probe runs only at mount and on a hint marked `recheckTabs` (a deleted Work, a reconnect), one batch at a time, so a subagent's
 chat is never judged by it), drops its chat tab (`dropMainTabChat`). The commands read the lane the
 strip draws (`useLiveTabs`). `MainTabStrip` draws the mode's lane in main's band:
 documents in Write, chats in Chat, with the inset sheet's folder-tab look and a per-kind chip (a
@@ -87,7 +87,7 @@ in either pane, nulls the chat slot (`openNewChat` arrives at the composer; the 
 chat writes it). `fitsBeside` is "the item's kind differs from main's mode". The picker
 (`side/SidePicker.tsx`) offers only the other kind. Beside a document: New chat,
 then the scoped Work's chats (pinned first) and Other chats, grouped by `useChatGroups` as the
-sidebar's Chats list is; archived chats are left out, search included. Beside a chat:
+sidebar's Chats list is. Beside a chat:
 `DocumentChoices`, one list also drawn inline in the side's empty pane: the documents open in
 main's tabs, Recently opened, then the file explorer (`SideExplorer`: the project's areas through
 `useProjectMenuSource`, stepping into folders with `DrillInMenu`'s drill model). Only documents

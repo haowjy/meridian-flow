@@ -73,7 +73,6 @@ if (!RUN) {
         createdByUserId: USER,
         title: "",
         kind: "primary",
-        status: "idle",
       });
       await firstDb.insert(schema.works).values({
         id: WORK,
@@ -245,7 +244,6 @@ if (!RUN) {
         createdByUserId: USER,
         title: "",
         kind: "primary",
-        status: "idle",
       });
       await firstDb.insert(schema.threadWorks).values({
         threadId: ROLLBACK_THREAD,

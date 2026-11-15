@@ -58,7 +58,6 @@ export const threads = pgTable(
     title: text("title").notNull().default(""),
     ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
-    status: text("status").notNull().default("idle"),
     initialPromptBakeId: uuid("initial_prompt_bake_id")
       .$type<PromptBakeId>()
       .references((): PgColumn => promptBakes.id),
@@ -101,9 +100,7 @@ export const threads = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     index("threads_project_activity_primary_active")
       .on(table.projectId, table.lastActivityAt.desc(), table.id.desc())
-      .where(
-        sql`${table.kind} = 'primary' AND ${table.deletedAt} IS NULL AND ${table.status} <> 'archived'`,
-      ),
+      .where(sql`${table.kind} = 'primary' AND ${table.deletedAt} IS NULL`),
     index("threads_created_by_active")
       .on(table.createdByUserId)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -126,8 +123,6 @@ export const threads = pgTable(
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
     check("threads_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
-    // Lifecycle only. Run state is derived from the lease, never stored here.
-    check("threads_status_valid", sql`${table.status} IN ('idle', 'archived')`),
     check(
       "threads_origin_type_valid",
       sql`${table.originType} IS NULL OR ${table.originType} IN ('spawn', 'handoff', 'fork')`,
