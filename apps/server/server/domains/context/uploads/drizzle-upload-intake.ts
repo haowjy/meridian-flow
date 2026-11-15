@@ -4,7 +4,7 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { Filetype, UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { projects, threads, uploadIntakes } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createChatContextDocumentStore } from "../context-source-provisioning.js";
 import type { ProjectHintPort } from "../ports/project-hints.js";
@@ -76,7 +76,6 @@ function mapRow(row: IntakeRow, chatRef: string | null): UploadReservation {
     canonicalUri: row.finalPath && row.ownerThreadId ? uploadUri(chatRef, row.finalPath) : null,
     fileType: row.fileType as Filetype | null,
     state: row.state as UploadReservation["state"],
-    consumed: row.consumedAt !== null,
     owner: row.ownerThreadId
       ? { kind: "chat", chatId: row.ownerThreadId, chatRef }
       : { kind: "source" },
@@ -299,62 +298,6 @@ export function createDrizzleUploadIntakeRepository(
         .returning();
       if (!row) throw new Error("Upload reservation unavailable during finalize");
       return placedOf(claimedOf(mapRow(row, await chatRefOf(row.ownerThreadId))));
-    },
-    async lockForDelete(input, actorUserId, scope) {
-      const identity = and(
-        eq(uploadIntakes.projectId, scope.projectId as never),
-        eq(uploadIntakes.ownerThreadId, scope.chatId as never),
-        eq(uploadIntakes.documentId, input.documentId as never),
-        sql`exists (
-          select 1 from projects
-          where projects.id = ${uploadIntakes.projectId}
-            and projects.user_id = ${actorUserId}
-            and projects.deleted_at is null
-        )`,
-      );
-      const owner = await readIntakeOwner(db, identity);
-      if (owner) await lockChat(db, owner.projectId, owner.chatId);
-      const [row] = await currentDrizzleDb(db)
-        .select()
-        .from(uploadIntakes)
-        .where(identity)
-        .for("update")
-        .limit(1);
-      if (!row) return { kind: "refused", result: { kind: "identity_mismatch" } };
-      if (row.state === "deleted") {
-        return {
-          kind: "refused",
-          result: { kind: "already_deleted" },
-          reservation: mapRow(row, null),
-        };
-      }
-      if (row.consumedAt) return { kind: "refused", result: { kind: "already_used" } };
-      return { kind: "claimed", reservation: mapRow(row, await chatRefOf(row.ownerThreadId)) };
-    },
-    async markDeleted(projectId, intakeId) {
-      await currentDrizzleDb(db)
-        .update(uploadIntakes)
-        .set({ state: "deleted", updatedAt: new Date() })
-        .where(
-          and(
-            eq(uploadIntakes.projectId, projectId as never),
-            eq(uploadIntakes.intakeId, intakeId),
-          ),
-        );
-    },
-    async consume(documentIds, chatId) {
-      if (documentIds.length === 0) return;
-      await currentDrizzleDb(db)
-        .update(uploadIntakes)
-        .set({ consumedAt: new Date(), updatedAt: new Date() })
-        .where(
-          and(
-            inArray(uploadIntakes.documentId, [...documentIds] as never[]),
-            eq(uploadIntakes.ownerThreadId, chatId as never),
-            eq(uploadIntakes.state, "finalized"),
-            isNull(uploadIntakes.consumedAt),
-          ),
-        );
     },
     async listAbandoned(cutoff, limit) {
       return currentDrizzleDb(db)

@@ -31,6 +31,21 @@ runner image, so it pulls nothing from a registry. Migration checks and the two 
 Do not cache `.nx` outputs across Actions runs. The pnpm dependency cache is
 independent. Local target caches include the shared configuration inputs below.
 
+## Locale catalogs
+
+Missing compiled messages can show raw message IDs instead of copy in the app,
+so the check covers both source catalogs and compiled runtime catalogs.
+
+`pnpm check:i18n` extracts and compiles catalogs in a temporary directory outside
+this checkout, then compares them with the working files. It seeds translations
+from the app's configured catalogs and formats compiled output through Biome's
+stdin interface. The check never writes live catalogs: writing and restoring them
+would trigger dev-server reloads and could overwrite an edit made during the run.
+Concurrent edits can report drift; rerun the check after finishing the edit.
+
+To update catalogs, use the explicit `lingui:extract` and `lingui:compile`
+commands in the [locale guide](../../apps/app/src/locales/README.md).
+
 ## Staged typechecking
 
 `pnpm typecheck:staged` selects work from the Git index. `pnpm typecheck`,

@@ -761,6 +761,7 @@ export function deleteCovering(projection: TreeProjection, id: string): TrashEnt
  * The records that are one node's item in a view: those made on it, and the delete in force that
  * covers it from a folder above (`deleteCovering`). A delete whose recorded cascade names the node
  * is not among them once the node has left the folder: the cascade is what its author saw.
+ * Applying an item adds what these records stand on, and nothing else (`prerequisites`).
  */
 export function recordsOfItem(
   projection: TreeProjection,

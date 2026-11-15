@@ -44,7 +44,7 @@ export interface MediaResolverPort {
     reason: "unavailable_or_over_budget";
   }): void;
   /**
-   * The runtime treats `ref` as opaque. A part with a `chatCopy` is the chat's own picture and
+   * The runtime treats `ref` as opaque. A part with a `chatCopy` is a file the chat was sent and
    * reads from that copy, with no placement or grant check. Null: the file is gone or the thread
    * may not read it.
    */

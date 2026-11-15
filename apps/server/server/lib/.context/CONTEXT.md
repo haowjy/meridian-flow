@@ -147,9 +147,7 @@ Domain failures go through `contextErrorToHttp`, which types every code;
 `stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
 final, and app code on other routes branches on the untyped `HttpResponseError`. A move or delete is requested by entry id; a conflict goes straight through
-`contextErrorToHttp`. Deleting an upload through the delete route is refused (400):
-uploads are removed from their chat (`deleteChatUpload`), and the sidebar hides delete for
-them. If immutable destination
+`contextErrorToHttp`. An upload is deleted through the tree like a document. If immutable destination
 Work/lineage authority retired before intake, the identity move remains
 `destination_missing` even if a folder later relocates. The model moves a document through the port with its typed destination; `./mf` has no
 move command.

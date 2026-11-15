@@ -327,7 +327,7 @@ async function harness(
     registrations,
     transactionOwner,
     recordedTurns,
-    referenceReader: createReferenceReader(deps),
+    referenceReader: createReferenceReader(deps, { admit: async () => null }),
   };
 }
 

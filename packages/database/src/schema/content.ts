@@ -272,7 +272,6 @@ export const uploadIntakes = pgTable(
     // The length the writer declared; finish refuses an object of any other.
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     state: text("state").notNull().default("reserved"),
-    consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -281,7 +280,7 @@ export const uploadIntakes = pgTable(
     unique("upload_intakes_document_unique").on(table.documentId),
     check(
       "upload_intakes_state_valid",
-      sql`${table.state} IN ('reserved', 'object_stored', 'finalized', 'deleted')`,
+      sql`${table.state} IN ('reserved', 'object_stored', 'finalized')`,
     ),
     index("upload_intakes_owner_thread")
       .on(table.ownerThreadId)

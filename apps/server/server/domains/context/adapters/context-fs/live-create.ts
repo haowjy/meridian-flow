@@ -22,7 +22,7 @@ import type { ContextScheme, ContextWriteOptions } from "../../ports/context-por
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import type { BoundWrites } from "./bound-writes.js";
 import { type CreateTarget, resolveCreateTarget } from "./create-target.js";
-import { actorOf, type SourceTree } from "./tree-writes.js";
+import { actorOf, type MadeFolder, type SourceTree } from "./tree-writes.js";
 
 class DocumentCreationFault extends Error {
   constructor(readonly fault: AdapterFault) {
@@ -70,11 +70,17 @@ export class LiveCreate {
     target: CreateTarget,
     content: BoundWrite | null,
     extra: { options?: ContextWriteOptions; into?: string } = {},
-  ): Promise<Result<{ documentId: string; record: string; markdown: string }, AdapterFault>> {
+  ): Promise<
+    Result<
+      { documentId: string; record: string; folders: MadeFolder[]; markdown: string },
+      AdapterFault
+    >
+  > {
     const { options } = extra;
     let refusal: AdapterFault | null = null;
     let createdId: string | null = null;
     let createdRecord: string | null = null;
+    let createdFolders: MadeFolder[] = [];
     try {
       const created = await this.deps.documentCreation.createDocumentAtomically({
         persistIdentity: async () => {
@@ -101,6 +107,7 @@ export class LiveCreate {
           );
           createdId = made.value.id;
           createdRecord = made.value.record;
+          createdFolders = made.value.folders;
           return made.value.id as DocumentId;
         },
         initializeContent: async (documentId) => {
@@ -127,7 +134,12 @@ export class LiveCreate {
       if (!created.created) return Err(refusal ?? { code: "conflict", occupantKind: "file" });
       if (createdId === null || createdRecord === null)
         throw new Error("A created document reported no identity");
-      return Ok({ documentId: createdId, record: createdRecord, markdown: created.value });
+      return Ok({
+        documentId: createdId,
+        record: createdRecord,
+        folders: createdFolders,
+        markdown: created.value,
+      });
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
       throw error;

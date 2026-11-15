@@ -174,7 +174,7 @@ export function apiProjectContextSourcesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/sources`;
 }
 
-/** A chat's uploads with when each was attached and whether it was used: `ChatUploadsResult`. */
+/** A chat's uploads with when each was attached: `ChatUploadsResult`. */
 export function apiProjectContextChatUploadsPath(projectId: string, chatId: string): string {
   return `${apiProjectPath(projectId)}/context/chat-uploads?chatId=${encodeURIComponent(chatId)}`;
 }

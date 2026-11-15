@@ -428,6 +428,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri,
+    resolveLastDocumentUri: resolveDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
     flushLivePull: draftPulls.flushLivePull,
     notices: createReversalNoticePort({

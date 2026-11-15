@@ -157,6 +157,7 @@ function livePlacement(
         await options?.recordCreate?.({
           documentId: created.value.documentId as DocumentId,
           record: created.value.record,
+          folders: created.value.folders,
         });
         return Ok({ documentId: created.value.documentId, created: true });
       });
@@ -234,6 +235,7 @@ function draftPlacement(
         await options?.recordCreate?.({
           documentId,
           record: created.value.record,
+          folders: created.value.folders,
           draftBranchId: branch.id,
         });
         return Ok({ documentId, created: true });

@@ -184,7 +184,6 @@ import {
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
-  createHostEffectOutbox,
   createInMemoryInbox,
   createInMemoryRunClaim,
   createInMemoryRunStarter,
@@ -282,7 +281,6 @@ import { createModelToolRegistrations, createReferenceReader } from "./model-too
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { createChatMedia } from "./runtime-host/chat-media.js";
-import { createHostEffects } from "./runtime-host/host-effects.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -345,7 +343,6 @@ export type AppServices = {
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
-    deliverHostEffects(signal?: AbortSignal): Promise<number>;
     purgeDocuments(): Promise<number>;
     expireAsks(): Promise<number>;
   };
@@ -891,6 +888,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const permissionGrants = createDrizzlePermissionGrantStore(ports.db);
+  const chatMedia = createChatMedia({
+    identities: ports.uploadIdentity,
+    objects: ports.objectStore,
+  });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -1000,12 +1001,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
-  const hostEffects = createHostEffectOutbox({
-    db: ports.db,
-    host: createHostEffects({ db: ports.db, uploadIntake: ports.uploadIntake }),
-    eventSink: ports.eventSink,
-    backgroundTasks: ports.backgroundTasks,
-  });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
     async scanWakes() {
@@ -1023,7 +1018,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
-    deliverHostEffects: hostEffects.deliver,
     purgeDocuments: () => ports.documentTrash.purge(),
     expireAsks: () => asks.expireDue(),
   };
@@ -1050,24 +1044,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     records: admissionRecords,
     requireWritableThread: (threadId) =>
       requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
-    async uploadsUsed(documentIds, threadId) {
-      const chat = await topChats.resolveTopPrimaryChat(threadId as ThreadId);
-      if (chat && documentIds.length > 0) {
-        await hostEffects.record(threadId, "uploads.used", {
-          documentIds: [...documentIds],
-          chatId: chat.chatId,
-        });
-      }
-    },
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
-    chatMedia: createChatMedia({
-      identities: ports.uploadIdentity,
-      objects: ports.objectStore,
-      eventSink: ports.eventSink,
-    }),
+    chatMedia,
     runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
@@ -1168,7 +1149,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     askRequests: asks,
     reports: { publish: reportPublisher.publish },
     gateway: ports.gateway,
-    referenceReader: createReferenceReader(coreToolDeps),
+    referenceReader: createReferenceReader(coreToolDeps, chatMedia),
     documentEvidence: ports.documentSync.modelEvidence(),
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
@@ -1416,9 +1397,6 @@ export function createInMemoryAppServices(): AppServices {
       return 0;
     },
     async purgeWorks() {
-      return 0;
-    },
-    async deliverHostEffects() {
       return 0;
     },
     async purgeDocuments() {
@@ -1932,10 +1910,6 @@ export function createInMemoryAppServices(): AppServices {
       async sweepAbandoned() {
         return 0;
       },
-      async deleteDraft() {
-        return { kind: "identity_mismatch" };
-      },
-      async consume() {},
     },
     chatUploads: {
       async list() {
