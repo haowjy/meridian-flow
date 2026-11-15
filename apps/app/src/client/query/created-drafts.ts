@@ -9,7 +9,7 @@ import { createdDraftId, draftItemKey, parseDraftItemKey } from "@meridian/contr
 import type { DraftMetadataResponse, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { draftRoomName } from "@meridian/contracts/protocol";
-import { pendingCreates, pendingRecords } from "@meridian/project-tree";
+import { pendingCreates, pendingRecords, replayView } from "@meridian/project-tree";
 import { useCallback, useMemo } from "react";
 import type * as Y from "yjs";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
@@ -35,9 +35,7 @@ export function useCreatedDrafts(
     const known = new Set(listed?.map((row) => row.documentId));
     return [project.snapshot, account.snapshot].flatMap((snapshot) =>
       snapshot
-        ? [...createdDocuments(snapshot.doc, branchId)].filter(
-            (documentId) => !known.has(documentId),
-          )
+        ? createdDocuments(snapshot.doc, branchId).filter((documentId) => !known.has(documentId))
         : [],
     );
   }, [branchId, listed, project.snapshot, account.snapshot]);
@@ -81,8 +79,12 @@ export function useCreatedDrafts(
 
 const NONE: readonly ThreadDraftListItem[] = [];
 
-function createdDocuments(doc: Y.Doc, branchId: string): Set<string> {
-  return pendingCreates(pendingRecords(doc, branchId), "document");
+/** The documents the Work's pending creates make and its view still shows: an Undo trashes one. */
+function createdDocuments(doc: Y.Doc, branchId: string): string[] {
+  const created = pendingCreates(pendingRecords(doc, branchId), "document");
+  if (created.size === 0) return [];
+  const { nodes } = replayView(doc, { draft: branchId });
+  return [...created].filter((id) => nodes.get(id)?.trashed === false);
 }
 
 /**
@@ -104,7 +106,7 @@ export function useCreatesDraft(projectId: string): (itemKey: string) => boolean
         const handle = lists.acquire(ref);
         try {
           const doc = handle.session.getSnapshot().doc;
-          return createdDocuments(doc, item.branchId).has(item.documentId);
+          return createdDocuments(doc, item.branchId).includes(item.documentId);
         } finally {
           handle.release();
         }
