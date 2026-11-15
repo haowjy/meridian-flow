@@ -364,6 +364,7 @@ function planInverse(
   index: Lineage,
   part: InversePart,
   direction: "invert" | "reapply",
+  place = false,
 ): InversePlan {
   const forward = direction === "invert";
   const pairs = (list: readonly EditRange[]) =>
@@ -494,14 +495,10 @@ function planInverse(
     restoring,
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
-    placements: planPlacements(
-      index,
-      restoring,
-      ownRoots,
-      isNewer,
-      seam,
-      (item) => leavingChar(item) >= 0,
-    ),
+    // Only an inverse being computed needs places; classifying reads `acts` and `blocked`.
+    placements: place
+      ? planPlacements(index, restoring, ownRoots, seam, (item) => leavingChar(item) >= 0)
+      : [],
   };
 }
 type Seam = (
@@ -517,7 +514,6 @@ function planPlacements(
   index: Lineage,
   restoring: readonly Key[],
   ownRoots: ReadonlySet<Key>,
-  isNewer: (k: Key) => boolean,
   seam: Seam,
   leaving: (item: Y.Item) => boolean,
 ): RestorePlacement[] {
@@ -529,7 +525,7 @@ function planPlacements(
     if (home && !index.isVisible(key(home.id))) continue;
     pieces.set(item, [...(pieces.get(item) ?? []), k]);
   }
-  const sites: { anchor: Y.Item; items: Y.Item[]; crossed: Y.Item[] }[] = [];
+  const sites: { anchor: Y.Item; items: Y.Item[] }[] = [];
   const seen = new Set<Y.Item>();
   for (const item of pieces.keys()) {
     if (seen.has(item)) continue;
@@ -561,31 +557,30 @@ function planPlacements(
     if (!right.found || !right.outside || left.found) continue;
     // Marks alone have no place to fix; moving them would only change what they cover.
     if (!items.some((piece) => piece.countable)) continue;
-    sites.push({ anchor: right.found, items, crossed: [...left.within, ...right.crossed] });
+    // The leaving text replaced this run only if it was inserted at it: its origins (the left
+    // neighbour at insertion, which never changes) lead back to the run through nothing but marks
+    // and the part's own items. Adjacency now proves nothing; later deletions made it.
+    const runRoots = new Set(
+      items.flatMap((piece) => (pieces.get(piece) ?? []).map((k) => index.root(k))),
+    );
+    let at = find(index.doc, index.root(key(right.found.id)))?.origin ?? null,
+      replaced = false;
+    while (at) {
+      const origin = findItem(index.doc, at);
+      if (!origin) break;
+      const root = index.root(key(at));
+      if (origin.countable && runRoots.has(root)) {
+        replaced = true;
+        break;
+      }
+      if (!(origin.content instanceof Y.ContentFormat) && !ownRoots.has(root)) break;
+      at = at.clock > origin.id.clock ? Y.createID(at.client, at.clock - 1) : origin.origin;
+    }
+    if (!replaced) continue;
+    sites.push({ anchor: right.found, items });
   }
   const out: RestorePlacement[] = [];
   for (const site of sites) {
-    // Deleted text the part could see, that a card can still bring back, keeps its place after the
-    // run. A tombstone can hold the run's characters and such text together, so judge by character.
-    const moving = new Set(site.items.flatMap((item) => pieces.get(item) ?? []));
-    const returnable = [...site.items, ...site.crossed].some((item) => {
-      if (!item.deleted || !(item.content instanceof Y.ContentString)) return false;
-      let started = !pieces.has(item);
-      for (let n = 0; n < item.length; n++) {
-        const k = key({ client: item.id.client, clock: item.id.clock + n });
-        if (moving.has(k)) started = true;
-        else if (
-          started &&
-          index.owners.has(k) &&
-          !ownRoots.has(index.root(k)) &&
-          !isNewer(k) &&
-          index.effective(k) === k
-        )
-          return true;
-      }
-      return false;
-    });
-    if (returnable) continue;
     const parent = site.anchor.parent as Y.XmlText;
     const wanted = new Set<Y.Item>([...site.items, site.anchor]);
     const order = new Map<Y.Item, number>(),
@@ -869,7 +864,7 @@ function computePreparedInverse(
         continue;
       }
       index.hydrate();
-      const plan = planInverse(index, part, direction);
+      const plan = planInverse(index, part, direction, true);
       const placed = new Set(plan.placements.flatMap((placement) => clocks(placement.ranges)));
       const stack = {
         insertions: deleteSet(plan.removing),
