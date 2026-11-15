@@ -34,5 +34,13 @@ press or drop beside a fence is not a dead end: its facing edge takes the caret 
 no prose is on the other side. An adjacent object of the same type takes a restored
 node selection; the ring shows it. A newly created object may open ready to edit,
 while an existing one shows its state. A structural drop must resolve inside a cell
-rather than manufacture a column. `typeBesideObjectTransaction` inserts beside a
-selected object.
+rather than manufacture a column. `typeBesideObjectTransaction` prepares the writable destination beside a
+selected object; the text-input handler inserts the committed text there.
+
+Physical keypresses and cancelable, non-composing native `insertText` input use the
+same ProseMirror text-input handler chain. Composition prepares that destination at
+`compositionstart`, then leaves provisional text and commit to the browser. This must
+happen before ProseMirror's own compositionstart handler: it deletes a non-inline
+selection when restarting composition, which would remove a selected block or empty
+a selected table's cells. Waiting for `beforeinput` is too late. Ordinary text and
+partial cell selections keep their existing input paths.
