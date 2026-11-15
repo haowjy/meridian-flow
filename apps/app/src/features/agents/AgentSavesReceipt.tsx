@@ -9,7 +9,8 @@ import { type AgentFinding, type SaveOutcome, shownFindings } from "@meridian/co
 import { useAgentFiles } from "@/client/query/useAgentFiles";
 import { Button } from "@/components/ui/button";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
-import { changeLine, FindingList, heldBack, heldSummary, useOpenAgentFile } from "./PackageSave";
+import { useOpenAgentFile } from "./agent-file-document";
+import { changeLine, FindingList, heldBack, heldSummary } from "./PackageSave";
 import { packageLabel, statusOf, usePackageSaves } from "./package-save";
 
 export function AgentSavesReceipt({ outcomes }: { outcomes: readonly SaveOutcome[] }) {
