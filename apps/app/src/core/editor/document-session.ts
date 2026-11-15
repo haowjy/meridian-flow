@@ -616,6 +616,10 @@ export class DocumentSession {
    * Another session replaces this room: stop offering anything to the server and other tabs. The
    * document stays readable until its editors have gone and it is destroyed.
    */
+  get replaced(): boolean {
+    return this.inert;
+  }
+
   makeInert(): Promise<void> {
     this.inert = true;
     this.localPeers?.stop();
