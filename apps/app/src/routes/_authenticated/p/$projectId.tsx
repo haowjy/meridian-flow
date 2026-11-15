@@ -1,10 +1,10 @@
 /** Authorized project identity and persistent shell lifetime for readable child destinations. */
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
+import { awaitPendingProjectCreation } from "@/client/query/project-commands";
 import { loadProjectEntry } from "@/client/query/project-route-data";
 import {
-  readPendingProjectCreation,
   useProjectCreationState,
   useSettleConfirmedCreation,
 } from "@/client/query/useProjectCreation";
@@ -17,18 +17,30 @@ import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
-  // A creation this tab started owns the destination until it confirms: the
-  // shell renders from the creation record while the POST is in flight.
-  loader: async ({ params }) =>
-    readPendingProjectCreation(params.projectId)
-      ? { projectId: params.projectId, project: null, data: null }
-      : { projectId: params.projectId, ...(await loadProjectEntry(params.projectId)) },
+  // A creation this account has not had confirmed owns the destination: the shell renders from
+  // its record while the POST is in flight. The server renders without the journal, so a project
+  // it cannot find is left for the client to decide (`unresolved`).
+  loader: async ({ params }) => {
+    const { projectId } = params;
+    if (await awaitPendingProjectCreation(projectId))
+      return { projectId, project: null, data: null, unresolved: false };
+    try {
+      return { projectId, ...(await loadProjectEntry(projectId)), unresolved: false };
+    } catch (cause) {
+      if (typeof window !== "undefined" || !isNotFound(cause)) throw cause;
+      return { projectId, project: null, data: null, unresolved: true };
+    }
+  },
   pendingMs: 0,
   pendingMinMs: 0,
   pendingComponent: PendingProject,
   errorComponent: ProjectLoadError,
   component: ProjectRoute,
 });
+
+function isNotFound(cause: unknown): boolean {
+  return typeof cause === "object" && cause !== null && "status" in cause && cause.status === 404;
+}
 
 function PendingProject() {
   return (
@@ -63,6 +75,12 @@ function ProjectRoute() {
   const { user } = AuthenticatedRoute.useLoaderData();
   const creation = useProjectCreationState(projectId);
   useSettleConfirmedCreation(projectId, loaderData.data !== null);
+  // The server could not find this project; the client's loader knows whether it is an unsent create.
+  const router = useRouter();
+  const unresolved = loaderData.unresolved;
+  useEffect(() => {
+    if (unresolved) void router.invalidate();
+  }, [unresolved, router]);
   const project = useProject(projectId, loaderData.project ?? creation.project);
   // A project being created has no route data yet; the creation stands in.
   if (!project || (!loaderData.data && creation.status === "none")) return <PendingProject />;

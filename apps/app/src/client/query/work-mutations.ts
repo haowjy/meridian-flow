@@ -102,7 +102,7 @@ async function runWorkCommand<Op extends WorkOperation>(
   }
   const record = await submitCommand(driver, {
     kind: workKindOf(operation),
-    lanes: workLanes(operation, projectId, workId),
+    lanes: workLanes(projectId, workId),
     body: { projectId, variables },
   });
   if (!record) return new DeviceRefusedError();

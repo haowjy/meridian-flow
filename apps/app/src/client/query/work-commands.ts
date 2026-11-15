@@ -17,6 +17,7 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
+import { projectLane } from "./project-commands";
 import { convergeWorkProjection } from "./work-projection-cache";
 import { observeWorksReads, refreshWorksSnapshot } from "./works-projection-acquisition";
 
@@ -161,14 +162,14 @@ const workCommands = {
 export const workCommandSpecs: { [Op in WorkOperation]: WorkCommandSpec<Op> } = workCommands;
 
 /**
- * What a Work command waits behind. Every one waits for its Work's earlier commands; the
- * lifecycle moves (archive, unarchive, delete, restore) also take their project's turn, as they
- * did before the driver, so they run one at a time per project.
+ * What a Work command waits behind: its Work's earlier commands, and its project's, so the
+ * project's commands go one at a time and none reaches the server before the project's own create
+ * (`project:<id>`, shared with `project_create`).
  */
-export const workLanes = (operation: WorkOperation, projectId: string, workId: string): string[] =>
-  operation === "create" || operation === "update"
-    ? [`work:${workId}`]
-    : [`work:${workId}`, `project-works:${projectId}`];
+export const workLanes = (projectId: string, workId: string): string[] => [
+  `work:${workId}`,
+  projectLane(projectId),
+];
 
 /** The kind a Work operation is stored and delivered as. */
 export const workKindOf = (operation: WorkOperation): string => KINDS[operation];

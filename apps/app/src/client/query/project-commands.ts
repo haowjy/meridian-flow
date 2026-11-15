@@ -76,6 +76,17 @@ export function pendingProject(
 /** The driver this tab runs, for the loader and the read gate, which run outside React. */
 let bound: CommandDriver | null = null;
 
+/** Settles once the bound driver has read its journal; replaced when the driver is unbound. */
+let journalOpen = deferred();
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 /** The create of this project the server has not taken yet, if this account has one. */
 export function readPendingProjectCreation(projectId: string): ProjectCreation | undefined {
   for (const record of bound?.getSnapshot().records ?? []) {
@@ -83,6 +94,19 @@ export function readPendingProjectCreation(projectId: string): ProjectCreation |
     if (creation?.projectId === projectId && creation.state !== "done") return creation;
   }
   return undefined;
+}
+
+/**
+ * For the route loader: the project's unsent create, read once the journal has opened (it is
+ * local and quick), so a reload shows the project as pending the way the first load did. The
+ * server has no journal: there the answer is "unknown" (`undefined`).
+ */
+export async function awaitPendingProjectCreation(
+  projectId: string,
+): Promise<ProjectCreation | undefined> {
+  if (typeof window === "undefined") return undefined;
+  await journalOpen.promise;
+  return readPendingProjectCreation(projectId);
 }
 
 /** The project's create, in whatever state the driver holds it. */
@@ -124,10 +148,15 @@ export function projectDomain(client: QueryClient): CommandDomain {
   };
   return {
     kinds,
-    bind: (driver) => {
+    bind: (driver, opened = Promise.resolve()) => {
       bound = driver;
+      const open = journalOpen;
+      // A journal that cannot be read leaves no creations to find, and the loader goes on.
+      void opened.then(open.resolve, open.resolve);
       return () => {
-        if (bound === driver) bound = null;
+        if (bound !== driver) return;
+        bound = null;
+        journalOpen = deferred();
       };
     },
   };

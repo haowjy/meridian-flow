@@ -36,6 +36,6 @@ stateDiagram-v2
 - **Every tab runs `onSettled` once per record it sees settle**, so it must be safe to run twice.
 - **Not sent yet.** `notSent` is true while a record has been unanswered for 10 s, or the
   browser is offline with one waiting. It is the app's only marker of an unsent change.
-- The Work kinds (`work_create` ... `work_restore`) are the first instances: `apps/app/src/client/query/work-commands.ts`. `project_create` is the second (`project-commands.ts`): its record is the unsent project, and the loader and the read gate read it through `readPendingProjectCreation`.
+- The Work kinds (`work_create` ... `work_restore`) are the first instances: `apps/app/src/client/query/work-commands.ts`. `project_create` is the second (`project-commands.ts`): its record is the unsent project, and every Work command also queues on its lane `project:<id>`, and the loader and the read gate read it through `readPendingProjectCreation`.
 
 Pattern: [a command that may have landed](../../../.context/state-machines/command-that-may-have-landed.md).
