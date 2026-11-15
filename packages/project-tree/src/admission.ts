@@ -1,6 +1,7 @@
 import * as Y from "yjs";
-import { isSourceRoot, recordsOf, sourceIdOf, type TreeRecord } from "./record.js";
+import { isSourceRoot, recordsOf, type TreeRecord } from "./record.js";
 import { replay, type TreeProjection } from "./replay.js";
+import { walkSources } from "./sources.js";
 import { readStored, SERVER_BASE, SERVER_FIELDS } from "./validate.js";
 import { droppedRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
@@ -213,44 +214,6 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
     }
     return view.nodes.get(node)?.parent;
   };
-  // Where the update's own records put each node so far: live ones in every view, a Work's in its.
-  const placed = new Map<string | null, Map<string, string>>();
-  const placedIn = (draft: string | null) => {
-    const map = placed.get(draft) ?? new Map<string, string>();
-    placed.set(draft, map);
-    return map;
-  };
-  const parentOf = (draft: string | null, node: string) =>
-    (draft === null ? undefined : placedIn(draft).get(node)) ??
-    placedIn(null).get(node) ??
-    baseParent(draft, node);
-  // The source a place is in, or undefined when its folder is not in the view (rule 6 then puts
-  // a create at the top of its own source).
-  const sourceOf = (draft: string | null, place: string): string | undefined => {
-    const seen = new Set<string>();
-    for (let at: string | undefined = place; at !== undefined; at = parentOf(draft, at)) {
-      if (isSourceRoot(at)) return sourceIdOf(at);
-      if (seen.has(at)) return undefined;
-      seen.add(at);
-    }
-    return undefined;
-  };
-  const inClosed = (draft: string | null, place: string, fallback?: string) => {
-    if (!closing) return false;
-    const source = sourceOf(draft, place) ?? fallback;
-    return source !== undefined && connection.closedSources.has(source);
-  };
-  // Whether a move would put a folder inside itself, which the replay skips (rule 1).
-  const intoItself = (draft: string | null, node: string, parent: string) => {
-    const seen = new Set<string>();
-    for (let at: string | undefined = parent; at !== undefined && !isSourceRoot(at); ) {
-      if (at === node || seen.has(at)) return true;
-      seen.add(at);
-      at = parentOf(draft, at);
-    }
-    return false;
-  };
-
   let droppedBefore: Set<string> | undefined;
   const droppedNode = (node: string) => {
     if (isSourceRoot(node)) return false;
@@ -261,33 +224,16 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
   };
   const dropped = new Set<string>();
   const out: string[] = [];
-  for (const record of added) {
-    if (record.type === "purge") continue;
-    const draftClosed = record.draft !== null && !connection.drafts.has(record.draft);
-    let closed: boolean;
-    switch (record.type) {
-      case "create":
-        closed =
-          draftClosed ||
-          droppedNode(record.parent) ||
-          inClosed(record.draft, record.parent, record.source);
-        placedIn(record.draft).set(record.node, record.parent);
-        if (closed) dropped.add(record.node);
-        break;
-      case "move":
-        closed =
-          draftClosed ||
-          droppedNode(record.node) ||
-          inClosed(record.draft, record.node) ||
-          inClosed(record.draft, record.parent);
-        if (!closed && closing && !intoItself(record.draft, record.node, record.parent))
-          placedIn(record.draft).set(record.node, record.parent);
-        break;
-      default:
-        closed = draftClosed || droppedNode(record.node) || inClosed(record.draft, record.node);
-    }
-    if (closed) out.push(record.id);
-  }
+  walkSources(added, baseParent, (record, changes) => {
+    const closed =
+      (record.draft !== null && !connection.drafts.has(record.draft)) ||
+      droppedNode(record.type === "create" ? record.parent : record.node) ||
+      (closing && changes().some((source) => connection.closedSources.has(source)));
+    if (!closed) return true;
+    out.push(record.id);
+    if (record.type === "create") dropped.add(record.node);
+    return false;
+  });
   return out;
 }
 

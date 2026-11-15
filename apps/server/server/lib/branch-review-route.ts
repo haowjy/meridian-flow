@@ -670,8 +670,6 @@ async function applyItems(
   input: CommandScope,
   request: ParsedApply,
   envelope: CommandEnvelope,
-  /** Set on the one re-run after a live delete overtook this click's admission. */
-  overtaken = false,
 ): Promise<ApplyClickAnswer> {
   const access = await requireBranchIdentity(deps, input);
   const { commandId } = envelope;
@@ -693,17 +691,13 @@ async function applyItems(
       }),
     })),
   );
-  const deletedLive = resolved.some(({ found }) => found?.item.deletedLive);
-  // A live delete that committed after the items resolved, at authorization or at the grants'
-  // confirmation: nothing was claimed, so the click runs once more, resolves the item as
-  // deleted and authorizes its restore. A document whose room was removed gets no grant and the
-  // command settles it (`left_out purged`). Every other denial is about who is acting: a 404.
+  // The `command` grant ignores lifecycle, a live delete included. A document whose room was
+  // removed gets no grant and the command settles it (`left_out purged`). Every other denial is
+  // about who is acting: a 404.
   const denied = async (
     denial: FileAccessDenied | undefined,
     node: DocumentId,
   ): Promise<ApplyClickAnswer | null> => {
-    if (denial?.facts?.deleted && !deletedLive && !overtaken)
-      return applyItems(deps, input, request, envelope, true);
     if (
       denial?.facts?.deleted &&
       denial.facts.ownerAccountId === input.userId &&
@@ -849,8 +843,8 @@ export function handleApplyItemsRequest(
  * every document the command's own record names (`commandDocuments`). With a draft `owner` (Undo
  * of a Discard), the document is written in that owner's draft: through the draft itself, else
  * through the restore seam at the draft's destination, where a creation only the Work shows has
- * its identity once its draft closed. Else, and as the last resort, its live grant, or the
- * restore grant when live has deleted it.
+ * its identity once its draft closed. Else its live grant: `command` passes a document live has
+ * deleted.
  */
 async function documentGrant(
   deps: BranchRouteServices,
@@ -874,9 +868,7 @@ async function documentGrant(
     );
     if (!isFileAccessDenied(restored)) return restored;
   }
-  const live = await deps.fileAccess.authorize(principal, documentTarget(documentId), "command");
-  if (!isFileAccessDenied(live) || !live.facts?.deleted) return live;
-  return deps.fileAccess.authorize(principal, { kind: "restore", documentId }, "command");
+  return deps.fileAccess.authorize(principal, documentTarget(documentId), "command");
 }
 
 /**

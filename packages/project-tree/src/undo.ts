@@ -1,4 +1,4 @@
-import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
+import { type Actor, isSourceRoot, type TreeRecord, type TreeRecordInput } from "./record.js";
 import { placeIn, type Setter, type TreeProjection } from "./replay.js";
 import { descendantsOf, nameAmong } from "./shape.js";
 import { LIVE, lastOfFamily, type View, viewRecords } from "./view.js";
@@ -125,14 +125,29 @@ export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
  * in Trash needs no answer: the node stands in it, and rule 3 keeps the folder standing.
  * A drafted change an Apply landed is taken back in live, where its copy now stands: the
  * opposite record's `draft` says which view it went to. A change that was undone and redone is
- * taken back by undoing the Redo (`redoneAs`).
+ * taken back by undoing the Redo (`redoneAs`). With `admits`, the opposite record is appended
+ * only when it says yes; otherwise nothing is, and the answer is `held`.
  */
 export function undoChange(
   writer: TreeWriter,
   asked: View,
   actor: Actor,
   recordId: string,
-): TreeRecord | NotUndone {
+): TreeRecord | NotUndone;
+export function undoChange(
+  writer: TreeWriter,
+  asked: View,
+  actor: Actor,
+  recordId: string,
+  admits: (record: TreeRecord) => boolean,
+): TreeRecord | NotUndone | "held";
+export function undoChange(
+  writer: TreeWriter,
+  asked: View,
+  actor: Actor,
+  recordId: string,
+  admits?: (record: TreeRecord) => boolean,
+): TreeRecord | NotUndone | "held" {
   const named = lastOfFamily(writer.doc, asked, recordId);
   if (named === "unknown") return named;
   if (!named) return "already";
@@ -145,11 +160,17 @@ export function undoChange(
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "purged";
   const extra = { undoes: record.carries ?? record.id };
+  const put = (at: View, by: Actor, input: TreeRecordInput, also: Partial<TreeRecord>) => {
+    const opposite = writer.prepare(at, by, input, also);
+    if (admits && !admits(opposite)) return "held" as const;
+    writer.append(opposite);
+    return opposite;
+  };
   switch (record.type) {
     case "create":
       if (node.trashed) return "already";
       // Only the node the create made: what others put in a folder since stands, and keeps it standing.
-      return writer.author(view, actor, { type: "delete", node: record.node, cascade: [] }, extra);
+      return put(view, actor, { type: "delete", node: record.node, cascade: [] }, extra);
     case "move": {
       if (record.undoes !== undefined) {
         // An Undo's own move taken back is a redo: the original move again, unless the node was moved since.
@@ -163,7 +184,7 @@ export function undoChange(
         if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
         // Back at the place the original went to, under the name that place shows free.
         const arrives = nameAmong(projection, parent, node.kind, node.name, node.id);
-        return writer.author(
+        return put(
           view,
           actor,
           {
@@ -190,7 +211,7 @@ export function undoChange(
           : lastSetBy(projection.setters.get(record.node)?.label, record);
       if (!placed && !named) return "changed_since";
       if (!placed && named)
-        return writer.author(
+        return put(
           view,
           actor,
           { type: "rename", node: record.node, name: named.before.name, fromName: node.name },
@@ -199,7 +220,7 @@ export function undoChange(
       const { parent, rank } = (placed as NonNullable<typeof placed>).before;
       const back = projection.nodes.get(parent);
       if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
-      return writer.author(
+      return put(
         view,
         actor,
         {
@@ -219,7 +240,7 @@ export function undoChange(
         // a type change does not say the type it changed from, so it is not redone.
         if (record.filetype !== undefined || movedAfter(writer, view, record))
           return "changed_since";
-        return writer.author(
+        return put(
           view,
           actor,
           { type: "rename", node: record.node, name: record.fromName, fromName: node.name },
@@ -231,7 +252,7 @@ export function undoChange(
       // A rename that changed the type takes the type back with the name, or it is not undone.
       if (record.filetype !== undefined && last.before.filetype === undefined)
         return "changed_since";
-      return writer.author(
+      return put(
         view,
         actor,
         {
@@ -247,11 +268,11 @@ export function undoChange(
     case "delete": {
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.
       if (!standsIn(projection, record)) return "already";
-      return writer.author(view, actor, { type: "restore", node: record.node }, extra);
+      return put(view, actor, { type: "restore", node: record.node }, extra);
     }
     case "restore":
       if (node.trashed) return "already";
-      return writer.author(
+      return put(
         view,
         actor,
         { type: "delete", node: record.node, cascade: liftedBy(writer, view, projection, record) },

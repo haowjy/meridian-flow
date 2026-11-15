@@ -132,7 +132,11 @@ the replay uses them (package `AGENTS.md`).
   not a paired `rename`.
 - **A repeated command is the caller's to answer.** The package throws when a command id was
   already used (`assertNewCommand`); the document command table answers a repeat first.
-- **Apply never blocks.** `applyDraft(writer, draft, by, command, only?, saw?)` lands what the
+- **Which sources a record changes** is one walk, `walkSources` (`sources.ts`): a create's
+  destination, a move's node and destination, any other record's node (a delete's cascade and a
+  restore's lift stay in that source), each where the records before it put things. Admission's
+  `closedSources` check and the server's owner set (`sourcesTouched`) both read it.
+- **Apply never blocks.** `applyDraft(writer, draft, by, command, only?, saw?, closed?)` lands what the
   replay can place. A partial selection takes only what it stands on (`prerequisites`): the
   drafted creates of the nodes it needs and of the Work-created folders above where each record
   acts, each such folder's last drafted delete or restore before the record, and earlier records
@@ -140,14 +144,17 @@ the replay uses them (package `AGENTS.md`).
   the Work's tree showed, it widens to the drafted prefix it stands on, and
   returns `{ command, copies, left, superseded, lifted }`: `left` is each record it did not
   land with `would_loop` or `purged`, `lifted` the copies that lifted a delete (rule 9).
-  `covers(doc, saw)` says whether a copy holds the state the writer saw.
+  `covers(doc, saw)` says whether a copy holds the state the writer saw. With `closed(source)`, a
+  record whose effect would change a closed source stays pending (`left` with `closed` and the
+  source), and the plan is made again without it.
 - **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { writtenSince,
   restoredByApply })` writes each landed copy's opposite record through `undoChange` (a create's
   opposite is a delete that keeps what others put inside standing), then puts back to pending the
   records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored
   Discard's record is itself a copy, so its id is not its live copy's `carries`. It answers
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
-  `purged`, `already`, `has_text`). A move that also set a name is two facts: `undoChange` takes
+  `purged`, `already`, `has_text`, or `closed` with the source when its opposite would change a
+  source `closed` names: then nothing is appended for it). A move that also set a name is two facts: `undoChange` takes
   back whichever it still holds (a move without the name, or a rename whose undo puts no delete
   back), and `left` names the one that stays (`fact`). `undoChange` answers
   `changed_since | purged | already | unknown`.

@@ -10,6 +10,7 @@ import {
 } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
+import { parentIn, walkSources } from "./sources.js";
 import { type NotUndone, recordsInForce, undoChange } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
@@ -24,9 +25,11 @@ export type LeftWhy =
   /** It was admitted after the press, so the writer had not seen it. */
   | "after_press"
   /** It stands on a record that did not land, or landing it would change what the Work's tree showed. */
-  | "needs";
+  | "needs"
+  /** It would change a source the caller closed (`source`): an archived Work's notes. */
+  | "closed";
 
-export type LeftRecord = { record: TreeRecord; why: LeftWhy };
+export type LeftRecord = { record: TreeRecord; why: LeftWhy; source?: string };
 
 export type ApplyResult = {
   /** The command that made it: Undo of this Apply names it. */
@@ -214,6 +217,8 @@ export function applyDraft(
   command: string,
   only?: readonly string[],
   saw?: Uint8Array,
+  /** The sources no record may change now: a record that would stays pending (`closed`). */
+  closed?: (source: string) => boolean,
 ): ApplyResult {
   const { doc } = writer;
   assertNewCommand(doc, command);
@@ -228,112 +233,138 @@ export function applyDraft(
   if (saw)
     for (const id of recordsAdmittedAfter(doc, saw))
       if (pendingIds.has(id) && !roots.has(id)) roots.set(id, "after_press");
-  const leftIds = dependents(pending, [...roots.keys()]);
   const wanted = only ? prerequisites(pending, only) : new Set(pendingIds);
-  const candidates = pending.filter((record) => wanted.has(record.id) && !leftIds.has(record.id));
-  const chosenOf = (records: readonly TreeRecord[]) => new Set(records.map((record) => record.id));
-
-  // What lands is what the Work's tree showed: the selection, when that keeps it. Else the
-  // drafted records up to the last one chosen, and when even those don't, the largest prefix of
-  // them that does (the empty one always does), so nothing is ever turned away whole.
-  const pool = (() => {
-    if (candidates.length === 0) return [];
-    if (keepsView(live, pending, chosenOf(candidates), leftIds)) return candidates;
-    const last = pending.indexOf(candidates[candidates.length - 1] as TreeRecord);
-    return pending.slice(0, last + 1).filter((record) => !leftIds.has(record.id));
-  })();
-  const holds = (count: number) =>
-    keepsView(live, pending, chosenOf(pool.slice(0, count)), leftIds);
-  let count = pool.length;
-  if (count > 0 && pool !== candidates && !holds(count)) {
-    let good = 0;
-    let bad = count;
-    while (bad - good > 1) {
-      const mid = (good + bad) >> 1;
-      if (holds(mid)) good = mid;
-      else bad = mid;
-    }
-    count = good;
-  }
   const liveNow = writer.view(LIVE);
-  // A create of a node live already has standing (a restored Discard of a create applied before)
-  // has nothing to make: it is settled superseded with no copy, so no Undo takes the node back.
-  const already = pool
-    .slice(0, count)
-    .filter(
-      (record) => record.type === "create" && liveNow.nodes.get(record.node)?.trashed === false,
-    );
-  const taken = chosenOf(pool.slice(0, count).filter((record) => !already.includes(record)));
-  // A record that cannot land and that a later landing record on the same fact overrides is
-  // settled as superseded: left pending, it would come back later and undo that later choice.
-  const superseded = pending.filter((record) => {
-    if (!leftIds.has(record.id) || taken.size === 0) return false;
-    const overriding = new Set(
-      pending
-        .slice(pending.indexOf(record) + 1)
-        .filter((later) => taken.has(later.id))
-        .flatMap(factsOf),
-    );
-    return factsOf(record).every((fact) => overriding.has(fact));
-  });
-  const overridden = new Set([...superseded, ...already].map((record) => record.id));
+  // Which records land, and their copies, for the roots known so far. A copy that would change a
+  // closed source makes its record a root too, and the plan is made again, until none does: what
+  // commits never touches a closed source.
+  const closedBy = new Map<string, string>();
+  const plan = () => {
+    const leftIds = dependents(pending, [...roots.keys()]);
+    const candidates = pending.filter((record) => wanted.has(record.id) && !leftIds.has(record.id));
+    const chosenOf = (records: readonly TreeRecord[]) =>
+      new Set(records.map((record) => record.id));
 
-  // A copy's `from` is what live had just before it, as the copies before it leave live. And it
-  // carries the name the writer saw: where the Work's tree, as it will read once what can land
-  // has landed, shows the node's name numbered, the clash was visible to the one applying, so
-  // the record that gave the name holds the numbered one (design, section 4) and a later change
-  // to its sibling cannot flip it back.
-  const ends = (record: TreeRecord) =>
-    leftIds.has(record.id) ||
-    (wanted.has(record.id) && !taken.has(record.id) && !overridden.has(record.id));
-  const reads = replay([...live, ...pending.filter((record) => !ends(record))], { draft });
-  const was = new Map<string, { name: string; parent: string; rank: string }>();
-  const stands = (node: string) => was.get(node) ?? liveNow.nodes.get(node);
-  const lastNamed = new Map<string, string>();
-  for (const record of pending)
-    if (taken.has(record.id) && (record.type === "create" || nameSet(record) !== undefined))
-      lastNamed.set(record.node, record.id);
-  const copies: TreeRecord[] = [];
-  for (const record of pending) {
-    if (!taken.has(record.id)) continue;
-    const copy = {
-      ...record,
-      id: newId(),
-      draft: null,
-      carries: record.carries ?? record.id,
-      appliedBy,
-      fromDraft: draft,
-    } as TreeRecord;
-    const before = stands(copy.node);
-    if (copy.type === "move" && before) copy.from = { parent: before.parent, rank: before.rank };
-    if (copy.type === "rename" && before) copy.fromName = before.name;
-    if (
-      (copy.type === "create" || copy.type === "rename" || copy.type === "move") &&
-      (copy.type === "create" || nameSet(copy) !== undefined)
-    ) {
-      const shown = reads.nodes.get(copy.node);
-      // A node keeping both its name and its folder arrives in no new place in the numbering, so
-      // baking a number onto it would move it behind the siblings that arrived since. A move
-      // into another folder does arrive in a new place there, so it is baked even with its name.
-      if (
-        lastNamed.get(copy.node) === record.id &&
-        shown &&
-        shown.name === copy.name &&
-        !(before?.name === copy.name && (copy.type !== "move" || before.parent === copy.parent))
-      )
-        copy.name = shown.displayName;
+    // What lands is what the Work's tree showed: the selection, when that keeps it. Else the
+    // drafted records up to the last one chosen, and when even those don't, the largest prefix of
+    // them that does (the empty one always does), so nothing is ever turned away whole.
+    const pool = (() => {
+      if (candidates.length === 0) return [];
+      if (keepsView(live, pending, chosenOf(candidates), leftIds)) return candidates;
+      const last = pending.indexOf(candidates[candidates.length - 1] as TreeRecord);
+      return pending.slice(0, last + 1).filter((record) => !leftIds.has(record.id));
+    })();
+    const holds = (count: number) =>
+      keepsView(live, pending, chosenOf(pool.slice(0, count)), leftIds);
+    let count = pool.length;
+    if (count > 0 && pool !== candidates && !holds(count)) {
+      let good = 0;
+      let bad = count;
+      while (bad - good > 1) {
+        const mid = (good + bad) >> 1;
+        if (holds(mid)) good = mid;
+        else bad = mid;
+      }
+      count = good;
     }
-    if (copy.type === "create")
-      was.set(copy.node, { name: copy.name, parent: copy.parent, rank: copy.rank });
-    else if (before && copy.type === "move")
-      was.set(copy.node, {
-        name: copy.name ?? before.name,
-        parent: copy.parent,
-        rank: copy.rank,
-      });
-    else if (before && copy.type === "rename") was.set(copy.node, { ...before, name: copy.name });
-    copies.push(writable(copy));
+    // A create of a node live already has standing (a restored Discard of a create applied before)
+    // has nothing to make: it is settled superseded with no copy, so no Undo takes the node back.
+    const already = pool
+      .slice(0, count)
+      .filter(
+        (record) => record.type === "create" && liveNow.nodes.get(record.node)?.trashed === false,
+      );
+    const taken = chosenOf(pool.slice(0, count).filter((record) => !already.includes(record)));
+    // A record that cannot land and that a later landing record on the same fact overrides is
+    // settled as superseded: left pending, it would come back later and undo that later choice.
+    const superseded = pending.filter((record) => {
+      if (!leftIds.has(record.id) || taken.size === 0) return false;
+      const overriding = new Set(
+        pending
+          .slice(pending.indexOf(record) + 1)
+          .filter((later) => taken.has(later.id))
+          .flatMap(factsOf),
+      );
+      return factsOf(record).every((fact) => overriding.has(fact));
+    });
+    const overridden = new Set([...superseded, ...already].map((record) => record.id));
+
+    // A copy's `from` is what live had just before it, as the copies before it leave live. And it
+    // carries the name the writer saw: where the Work's tree, as it will read once what can land
+    // has landed, shows the node's name numbered, the clash was visible to the one applying, so
+    // the record that gave the name holds the numbered one (design, section 4) and a later change
+    // to its sibling cannot flip it back.
+    const ends = (record: TreeRecord) =>
+      leftIds.has(record.id) ||
+      (wanted.has(record.id) && !taken.has(record.id) && !overridden.has(record.id));
+    const reads = replay([...live, ...pending.filter((record) => !ends(record))], { draft });
+    const was = new Map<string, { name: string; parent: string; rank: string }>();
+    const stands = (node: string) => was.get(node) ?? liveNow.nodes.get(node);
+    const lastNamed = new Map<string, string>();
+    for (const record of pending)
+      if (taken.has(record.id) && (record.type === "create" || nameSet(record) !== undefined))
+        lastNamed.set(record.node, record.id);
+    const copies: TreeRecord[] = [];
+    const ofCopy = new Map<string, string>();
+    for (const record of pending) {
+      if (!taken.has(record.id)) continue;
+      const copy = {
+        ...record,
+        id: newId(),
+        draft: null,
+        carries: record.carries ?? record.id,
+        appliedBy,
+        fromDraft: draft,
+      } as TreeRecord;
+      const before = stands(copy.node);
+      if (copy.type === "move" && before) copy.from = { parent: before.parent, rank: before.rank };
+      if (copy.type === "rename" && before) copy.fromName = before.name;
+      if (
+        (copy.type === "create" || copy.type === "rename" || copy.type === "move") &&
+        (copy.type === "create" || nameSet(copy) !== undefined)
+      ) {
+        const shown = reads.nodes.get(copy.node);
+        // A node keeping both its name and its folder arrives in no new place in the numbering, so
+        // baking a number onto it would move it behind the siblings that arrived since. A move
+        // into another folder does arrive in a new place there, so it is baked even with its name.
+        if (
+          lastNamed.get(copy.node) === record.id &&
+          shown &&
+          shown.name === copy.name &&
+          !(before?.name === copy.name && (copy.type !== "move" || before.parent === copy.parent))
+        )
+          copy.name = shown.displayName;
+      }
+      if (copy.type === "create")
+        was.set(copy.node, { name: copy.name, parent: copy.parent, rank: copy.rank });
+      else if (before && copy.type === "move")
+        was.set(copy.node, {
+          name: copy.name ?? before.name,
+          parent: copy.parent,
+          rank: copy.rank,
+        });
+      else if (before && copy.type === "rename") was.set(copy.node, { ...before, name: copy.name });
+      copies.push(writable(copy));
+      ofCopy.set(copy.id, record.id);
+    }
+    return { taken, superseded, already, overridden, copies, ofCopy };
+  };
+  let landing = plan();
+  while (closed) {
+    let found = false;
+    walkSources(landing.copies, parentIn(liveNow), (copy, changes) => {
+      const source = changes().find(closed);
+      if (source === undefined) return true;
+      const id = landing.ofCopy.get(copy.id) as string;
+      closedBy.set(id, source);
+      roots.set(id, "closed");
+      found = true;
+      return false;
+    });
+    if (!found) break;
+    landing = plan();
   }
+  const { taken, superseded, already, overridden, copies } = landing;
   // Rule 9: a landed move or rename of a node live has in Trash brings it back. The copy that
   // did is the first to touch the node: found by reading live before and after the copies.
   const lifted: ApplyResult["lifted"] = [];
@@ -360,7 +391,13 @@ export function applyDraft(
     copies,
     left: pending.flatMap((record) =>
       wanted.has(record.id) && !taken.has(record.id) && !overridden.has(record.id)
-        ? [{ record, why: roots.get(record.id) ?? ("needs" as const) }]
+        ? [
+            {
+              record,
+              why: roots.get(record.id) ?? ("needs" as const),
+              ...(closedBy.has(record.id) ? { source: closedBy.get(record.id) } : {}),
+            },
+          ]
         : [],
     ),
     superseded: [...superseded, ...already],
@@ -432,6 +469,19 @@ export function appliedNodes(
   return [...new Set([...restored, ...copies].map((record) => record.node))];
 }
 
+/** The live records an Apply command made: the restores it made first (`restoredByApply`), then its copies. */
+export function madeBy(
+  doc: Y.Doc,
+  applied: string,
+  restoredByApply: readonly string[],
+): TreeRecord[] {
+  const restores = new Set(restoredByApply);
+  return [
+    ...listRecords(doc).filter((record) => restores.has(record.id)),
+    ...appliedBy(doc, applied).copies,
+  ];
+}
+
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
 export function appliedCreates(writer: TreeWriter, applied: string): string[] {
   return appliedBy(writer.doc, applied).copies.flatMap((copy) =>
@@ -440,7 +490,7 @@ export function appliedCreates(writer: TreeWriter, applied: string): string[] {
 }
 
 /** Why a fact an Apply landed is not taken back; the document or record stays as it stands. */
-export type UndoLeftWhy = NotUndone | "has_text";
+export type UndoLeftWhy = NotUndone | "has_text" | "closed";
 
 export type UndoApplyResult = {
   /** The opposite records made: the copies' first, newest first, then the restores'. */
@@ -449,7 +499,13 @@ export type UndoApplyResult = {
    * The live copies not taken back, each with why. `fact` is set when the copy was a move that
    * also set a name and only the other of the two went back.
    */
-  left: Array<{ record: TreeRecord; why: UndoLeftWhy; fact?: "name" | "place" }>;
+  left: Array<{
+    record: TreeRecord;
+    why: UndoLeftWhy;
+    fact?: "name" | "place";
+    /** For `closed`: the source its opposite record would have changed. */
+    source?: string;
+  }>;
 };
 
 /**
@@ -471,26 +527,38 @@ export function undoApply(
   options: {
     writtenSince?: ReadonlySet<string>;
     restoredByApply?: readonly string[];
-    /** Nodes whose copies stay as they are: their file's owner takes no write now. */
-    held?: ReadonlySet<string>;
+    /** The sources no record may change now: a copy whose opposite would stays (`closed`). */
+    closed?: (source: string) => boolean;
   } = {},
 ): UndoApplyResult {
   assertNewCommand(writer.doc, command);
-  const { settled, copies } = appliedBy(writer.doc, applied);
-  const restores = new Set(options.restoredByApply);
-  const made = [...listRecords(writer.doc).filter((record) => restores.has(record.id)), ...copies];
+  const { settled } = appliedBy(writer.doc, applied);
+  const made = madeBy(writer.doc, applied, options.restoredByApply ?? []);
   const undone: TreeRecord[] = [];
   const left: UndoApplyResult["left"] = [];
   // The roots (`carries ?? id`) of the copies taken back, at least in part.
   const reversed = new Set<string>();
   writer.transact(() => {
     for (const copy of made.reverse()) {
-      if (options.held?.has(copy.node)) continue;
       if (copy.type === "create" && options.writtenSince?.has(copy.node)) {
         left.push({ record: copy, why: "has_text" });
         continue;
       }
-      const back = undoChange(writer, LIVE, by, copy.id);
+      const { closed } = options;
+      let source: string | undefined;
+      const back = closed
+        ? undoChange(writer, LIVE, by, copy.id, (opposite) => {
+            walkSources([opposite], parentIn(writer.view(LIVE)), (_, changes) => {
+              source = changes().find(closed);
+              return true;
+            });
+            return source === undefined;
+          })
+        : undoChange(writer, LIVE, by, copy.id);
+      if (back === "held") {
+        left.push({ record: copy, why: "closed", source });
+        continue;
+      }
       if (typeof back === "string") {
         left.push({ record: copy, why: back });
         continue;

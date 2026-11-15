@@ -121,7 +121,11 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * A tree fact something changed since stays (`left_out changed_since`), as does a created
  * document with text written since (`has_text`); a text group whose reversal would change a
  * word that holds writing made after the Apply stays applied and is named in `skippedGroupIds`.
- * It took something back when `reversedGroupIds` or `treeUndone` is not empty.
+ * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in
+ * Trash) is taken back: a `returned` line per owner and reason names those nodes in `items`, and a
+ * held document's text groups are in neither list. So the groups still applied before the press
+ * are `reversedGroupIds`, `skippedGroupIds`, and the groups of the documents a `returned` line
+ * names. It took something back when `reversedGroupIds` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
@@ -139,8 +143,9 @@ export type UnapplyClickResult = {
   /** The nodes with a tree fact this command took back (a restore it undid included). */
   treeUndone: string[];
   /**
-   * `left_out` (what could not come back, one line per reason), or `already` (nothing was taken
-   * back and nothing was left: everything was taken back before).
+   * `left_out` (what could not come back, one line per reason), `returned` (what stayed for a
+   * closed owner, with `items`), or `already` (nothing was taken back and nothing was left:
+   * everything was taken back before).
    */
   settled?: Settlement[];
 };

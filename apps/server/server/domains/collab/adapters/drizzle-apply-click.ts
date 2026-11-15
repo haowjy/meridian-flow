@@ -34,10 +34,19 @@ import type {
   ApplyItemResult,
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
-import type { ClosedOwnerWhy, LeftOutWhy, Settlement } from "@meridian/contracts/commands";
+import type { LeftOutWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
-import { appliedCreates, listRecords, undoApply } from "@meridian/project-tree";
+import {
+  appliedCreates,
+  LIVE,
+  listRecords,
+  madeBy,
+  pendingRecords,
+  sourcesTouched,
+  type TreeWriter,
+  undoApply,
+} from "@meridian/project-tree";
 import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -82,7 +91,7 @@ import {
   settlementOf,
 } from "./drizzle-settlement-of.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
-import { closedFileOwner, fileOwnersOf, ownersToLock, returnedFor } from "./file-owners.js";
+import { type ClosedSource, returnedFor, withTreeOwners } from "./tree-owners.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -95,26 +104,43 @@ export function measureApplyAppend(detail: { holdMs: number }): void {
   timing?.measured({ commandId: timing.commandId, holdMs: detail.holdMs });
 }
 
+/** Why the item's tree half did not all land when a record of it would change a closed owner's notes. */
+function treeReturned(
+  one: TreeItemFacts,
+  closed: (source: string) => ClosedSource | null,
+): ClosedSource | null {
+  for (const { why, source } of one.left)
+    if (why === "closed" && source !== undefined) {
+      const found = closed(source);
+      if (found) return found;
+    }
+  return null;
+}
+
 /**
  * The tree half's answer from its record fates: landed when any of the item's records did, with a
- * `left_out` line per reason the rest stayed; with nothing pending, what settled the records.
+ * `left_out` line per reason the rest stayed, or the `returned` line of a record that would change
+ * a closed owner's notes; with nothing pending, what settled the records.
  */
 function treeResult(
   node: string,
   one: TreeItemFacts,
   last: Settled | null,
   wanted: BranchDocumentTree | undefined,
+  closed: (source: string) => ClosedSource | null,
 ): NonNullable<ApplyItemResult["tree"]> {
   const left = new Set(one.left.map(({ record }) => record.id));
   const superseded = new Set(one.superseded.map((record) => record.id));
   const landed =
     one.restore !== null ||
     one.records.some((record) => !left.has(record.id) && !superseded.has(record.id));
-  const notes: Settlement[] = [...new Set(one.left.map(({ why }) => why))].map((why) => ({
-    rule: "left_out",
-    items: [node],
-    why,
-  }));
+  const returned = treeReturned(one, closed);
+  const notes: Settlement[] = [
+    ...(returned ? [returnedFor(returned)] : []),
+    ...[...new Set(one.left.flatMap(({ why }) => (why === "closed" ? [] : [why])))].map(
+      (why): Settlement => ({ rule: "left_out", items: [node], why }),
+    ),
+  ];
   if (!landed)
     return {
       landed: false,
@@ -364,341 +390,397 @@ export function createDrizzleApplyClick(
       const by = `user:${command.envelope.accountId}`;
       const lives: Y.Doc[] = [];
       try {
-        // Each document's file has an owner of its own, which the branch's does not stand for.
-        const fileOwners = await fileOwnersOf(db, [
-          ...prepared.texts.map((text) => text.documentId),
-          ...prepared.trees.flatMap((tree) => tree.nodes),
-        ]);
-        return await runDocumentCommand(db, command.envelope, () =>
-          deps.workProjection.mutate(
-            { branches: [prepared.branchId], ...ownersToLock(fileOwners) },
-            async (locked): Promise<UnapplyClickResult> => {
-              const tx = currentDrizzleDb(db);
-              // A document whose file's owner is closed stays as the Apply left it.
-              const held = new Map<string, ClosedOwnerWhy>();
-              for (const [node, owner] of fileOwners) {
-                const why = closedFileOwner(owner, locked);
-                if (why) held.set(node, why);
+        // Where each document whose text the Apply wrote stands in live, by list.
+        const placesOfTexts = (ends: readonly { writer: TreeWriter }[]) => {
+          const out = new Map<string, string>();
+          for (const { writer } of ends)
+            for (const text of prepared.texts) {
+              const node = writer.view(LIVE).nodes.get(text.documentId);
+              if (node) out.set(text.documentId, node.source);
+            }
+          return out;
+        };
+        // Every source taking back the Apply's records could change, and where its texts'
+        // documents are: their owners are locked with the branch's, and judged under the locks.
+        const sources = async () => {
+          const lists = await treeListsOfBranch(db, prepared.branchId);
+          if (lists.length === 0) return new Set<string>();
+          return deps.treeLists.read({
+            lists,
+            view: (ends) => {
+              const out = new Set<string>(placesOfTexts(ends).values());
+              for (const [at, { writer }] of ends.entries()) {
+                const tree = prepared.trees.find((one) => one.scope === lists[at]?.kind);
+                if (!tree) continue;
+                const made = madeBy(writer.doc, applyCommandId, tree.restored);
+                for (const source of sourcesTouched(writer.view(LIVE), made)) out.add(source);
               }
-              // The drafts this Apply's delete closed come back before anything reads a base
-              // (`reopenDrafts`). The Work's current branch is made only for them: an Un-Apply
-              // with nothing to reopen must not create one.
-              const closedByApply = await deps.reopen.closedBy(applyCommandId, prepared.branchId);
-              const found = closedByApply.length
-                ? await deps.branches.ownerOf(prepared.branchId)
-                : null;
-              // Only the Work is locked so far, as `ensureActiveForWrite` requires.
-              if (found?.owner) approveBranchWriteJoin();
-              const target =
-                found?.owner &&
-                (await deps.branches.ensureActiveForWrite(
-                  {
-                    owner: found.owner,
-                    projectId: command.envelope.projectId,
-                    threadId: null,
-                    userId: command.envelope.accountId as UserId,
-                  },
-                  { requireActive: false },
-                ));
-              // A closed branch still lets the tree half land; the lock only orders it with a Discard's close.
-              if (!target) await deps.branches.lockActive(prepared.branchId);
-              // The lists' keys, then the documents': the text of every document the Apply
-              // created is asked about, and the tree rows are written, under both.
-              const pairs = (await treeListsOfBranch(db, prepared.branchId)).flatMap((list) => {
-                const tree = prepared.trees.find((candidate) => candidate.scope === list.kind);
-                return tree ? [{ list, tree }] : [];
-              });
-              const lists = pairs.map(({ list }) => list);
-              await deps.treeLists.lock(lists);
-              const created = lists.length
-                ? await deps.treeLists.read({
-                    lists,
-                    view: (ends) =>
-                      ends.flatMap(({ writer }) => appliedCreates(writer, applyCommandId)),
-                  })
-                : [];
-              const documentIds = new Set<string>(created);
-              for (const text of prepared.texts) documentIds.add(text.documentId);
-              for (const draft of closedByApply) documentIds.add(draft.documentId);
-              for (const id of [...documentIds].sort())
-                await lockDocumentMutation(tx, id as DocumentId);
-              const backFromDelete = new Set<string>();
-              const left: { node: string; why: LeftOutWhy }[] = [];
-              const treeUndone = new Set<string>();
-              const alreadyUndone = new Set<string>();
-              if (lists.length > 0) {
-                const written = await textWrittenSince(
-                  db,
-                  Object.assign({}, ...prepared.trees.map((tree) => tree.createdHeads)),
-                );
-                await deps.treeLists.submit({
-                  lists,
-                  make: (ends) => {
-                    for (const [at, { writer }] of ends.entries()) {
-                      const { tree } = pairs[at] as (typeof pairs)[number];
-                      const result = undoApply(writer, applyCommandId, by, commandId, {
-                        writtenSince: written,
-                        restoredByApply: tree.restored,
-                        held: new Set(held.keys()),
-                      });
-                      const records = new Map(
-                        listRecords(writer.doc).map((record) => [record.id, record]),
-                      );
-                      for (const record of result.undone) {
-                        treeUndone.add(record.node);
-                        if (record.type !== "restore") continue;
-                        // A delete taken back puts every document it covered where it was before
-                        // the Apply, a folder's cascade included.
-                        const taken = record.undoes ? records.get(record.undoes) : undefined;
-                        for (const node of [
-                          record.node,
-                          ...(taken?.type === "delete" ? taken.cascade : []),
-                        ])
-                          backFromDelete.add(node);
-                      }
-                      // A change something else already took back (a card's Undo) is `already`,
-                      // not a loss.
-                      for (const { record, why } of result.left)
-                        if (why === "already") alreadyUndone.add(record.node);
-                        else
-                          left.push({ node: record.node, why: why === "unknown" ? "purged" : why });
-                    }
-                  },
+              return out;
+            },
+          });
+        };
+        return await withTreeOwners(db, sources, (owners) =>
+          runDocumentCommand(db, command.envelope, () =>
+            deps.workProjection.mutate(
+              { branches: [prepared.branchId], works: owners.works, lineages: owners.lineages },
+              async (locked): Promise<UnapplyClickResult> => {
+                const tx = currentDrizzleDb(db);
+                const closed = owners.judge(locked);
+                // What stays as the Apply left it, because taking it back would change a closed
+                // owner's notes: a tree record's node, and a document in such notes, with why.
+                const held = new Map<string, ClosedSource>();
+                const textHeld = new Set<string>();
+                // The drafts this Apply's delete closed come back before anything reads a base
+                // (`reopenDrafts`). The Work's current branch is made only for them: an Un-Apply
+                // with nothing to reopen must not create one.
+                const closedByApply = await deps.reopen.closedBy(applyCommandId, prepared.branchId);
+                const found = closedByApply.length
+                  ? await deps.branches.ownerOf(prepared.branchId)
+                  : null;
+                // Only the Work is locked so far, as `ensureActiveForWrite` requires.
+                if (found?.owner) approveBranchWriteJoin();
+                const target =
+                  found?.owner &&
+                  (await deps.branches.ensureActiveForWrite(
+                    {
+                      owner: found.owner,
+                      projectId: command.envelope.projectId,
+                      threadId: null,
+                      userId: command.envelope.accountId as UserId,
+                    },
+                    { requireActive: false },
+                  ));
+                // A closed branch still lets the tree half land; the lock only orders it with a Discard's close.
+                if (!target) await deps.branches.lockActive(prepared.branchId);
+                // The lists' keys, then the documents': the text of every document the Apply
+                // created is asked about, and the tree rows are written, under both.
+                const pairs = (await treeListsOfBranch(db, prepared.branchId)).flatMap((list) => {
+                  const tree = prepared.trees.find((candidate) => candidate.scope === list.kind);
+                  return tree ? [{ list, tree }] : [];
                 });
-              }
-              // Only a draft whose closing delete the tree half took back reopens: a document the
-              // writer restored by hand and deleted again stays in Trash with its draft closed.
-              if (target && found?.owner)
-                await deps.reopen.reopen({
-                  drafts: closedByApply.filter((draft) => backFromDelete.has(draft.documentId)),
-                  target: target.id,
-                  commandId,
-                  owner: found.owner,
-                });
-
-              // What each document's text would give back, read before any text is written.
-              const stillActive = await tx
-                .select({ ordinal: applyCommandEffects.ordinal })
-                .from(applyCommandEffects)
-                .where(
-                  and(
-                    eq(applyCommandEffects.commandId, applyCommandId),
-                    isNull(applyCommandEffects.unappliedBy),
-                  ),
-                );
-              const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
-              const plans: {
-                documentId: DocumentId;
-                /** Null: the draft is closed (its Un-Apply waits for a reopen) or purged. */
-                currentBase: DraftBase | null;
-                draftGone: boolean;
-                snapshot: JournalSnapshot;
-                live: Y.Doc;
-                inverse: ReturnType<typeof computeInverse>;
-                reversed: PreparedUnapply["texts"][number]["effects"];
-                skipped: PreparedUnapply["texts"][number]["effects"];
-              }[] = [];
-              for (const text of prepared.texts) {
-                if (held.has(text.documentId)) continue;
-                const [draft] = await tx
-                  .select({ status: documentDrafts.status })
-                  .from(documentDrafts)
-                  .where(eq(documentDrafts.id, text.draftId));
-                const currentBase =
-                  draft?.status === "active" ? await deps.coordinator.loadBase(text.draftId) : null;
-                const effects = text.effects.filter((effect) => activeOrdinals.has(effect.ordinal));
-                if (!effects.length) continue;
-                const snapshot = await deps.live.read(text.documentId);
-                const live = storedDocument(snapshot);
-                lives.push(live);
-                const history = await loadUnapplyHistory(
-                  db,
-                  text.documentId,
-                  effects.flatMap((effect) =>
-                    effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
-                  ),
-                );
-                const bySeq = new Map<number, InversePart>();
-                for (const part of history) {
-                  const value = part.origin;
-                  if (value?.kind === "live") bySeq.set(value.seq, part);
-                }
-                const targeted = effects.flatMap((effect) => {
-                  if (effect.liveUpdateSeq === null) return [];
-                  const part = bySeq.get(effect.liveUpdateSeq);
-                  return part ? [{ effect, part }] : [];
-                });
-                const inverse = computeInverse(
-                  live,
-                  history,
-                  // Latest group first: a group's live update builds on the earlier groups' items, so the
-                  // earlier group is intact only once the later one is out.
-                  [...targeted]
-                    .reverse()
-                    .map(({ part }) => ({ part, direction: "invert" as const })),
-                  // A group whose inverse would cut or join a word holding later writing stays applied.
-                  {
-                    actionId: commandId,
-                    allocateClient: allocateDocumentClient,
-                    keepLaterWords: true,
-                  },
-                );
-                const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
-                const reversed = effects.filter(
-                  (effect) =>
-                    effect.liveUpdateSeq === null ||
-                    targeted.some(
-                      ({ effect: candidate, part }) =>
-                        candidate.ordinal === effect.ordinal && reversedEditIds.has(part.editId),
-                    ),
-                );
-                plans.push({
-                  documentId: text.documentId,
-                  currentBase,
-                  draftGone: !draft,
-                  snapshot,
-                  live,
-                  inverse,
-                  reversed,
-                  skipped: effects.filter((effect) => !reversed.includes(effect)),
-                });
-              }
-              let unappliedSeq: string | undefined;
-              for (const plan of plans) {
-                if (!plan.reversed.length) continue;
-                const { documentId, live, snapshot, inverse, currentBase } = plan;
-                const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
-                for (const edit of inverse.edits) {
-                  for (const part of edit.parts) {
-                    const provenance = captureMutationUpdates(live, () => {
-                      live.transact(() => {
-                        Y.applyUpdate(live, part.update);
-                        appendInverseRestorationFacts(live, part.aliases);
-                      });
-                    });
-                    const update = provenance.length
-                      ? Y.mergeUpdates([part.update, ...provenance])
-                      : part.update;
-                    const seq = await deps.live.append(
-                      documentId,
-                      update,
-                      { seq: 0, origin: "system" },
-                      snapshot.authority,
-                    );
-                    receipts.push({ ...part, update, origin: { kind: "live", seq } });
+                const lists = pairs.map(({ list }) => list);
+                const branchLists = await treeListsOfBranch(db, prepared.branchId);
+                // The texts' documents are read where the lists have them, under the lists' keys.
+                await deps.treeLists.lock(prepared.texts.length ? branchLists : lists);
+                if (prepared.texts.length)
+                  for (const [documentId, source] of await deps.treeLists.read({
+                    lists: branchLists,
+                    view: placesOfTexts,
+                  })) {
+                    const found = closed(source);
+                    if (!found) continue;
+                    held.set(documentId, found);
+                    textHeld.add(documentId);
                   }
-                }
-                if (receipts.length)
-                  await recordDocumentEdit(tx, {
-                    documentId,
-                    actor: "human",
-                    actorUserId: command.envelope.accountId,
-                    kind: "undo",
-                    actionId: commandId,
-                    commandId,
-                    receipts,
-                  });
-
-                if (currentBase) {
-                  const groupIds = new Set(plan.reversed.map((effect) => effect.groupId));
-                  let reversal: ReturnType<typeof reverseBaseHalf> | undefined;
-                  const write = deps.coordinator.prepareAppend(currentBase, [], {
-                    work: "any",
-                    authorServerRows(prefix) {
-                      reversal = reverseBaseHalf(prefix, [
-                        {
-                          applyCommandId,
-                          groupIds,
-                          merges: plan.reversed.filter((effect) => effect.liveUpdateSeq !== null),
-                        },
-                      ]);
-                      return reversal.rows;
+                const created = lists.length
+                  ? await deps.treeLists.read({
+                      lists,
+                      view: (ends) =>
+                        ends.flatMap(({ writer }) => appliedCreates(writer, applyCommandId)),
+                    })
+                  : [];
+                const documentIds = new Set<string>(created);
+                for (const text of prepared.texts) documentIds.add(text.documentId);
+                for (const draft of closedByApply) documentIds.add(draft.documentId);
+                for (const id of [...documentIds].sort())
+                  await lockDocumentMutation(tx, id as DocumentId);
+                const backFromDelete = new Set<string>();
+                const left: { node: string; why: LeftOutWhy }[] = [];
+                const treeUndone = new Set<string>();
+                const alreadyUndone = new Set<string>();
+                if (lists.length > 0) {
+                  const written = await textWrittenSince(
+                    db,
+                    Object.assign({}, ...prepared.trees.map((tree) => tree.createdHeads)),
+                  );
+                  await deps.treeLists.submit({
+                    lists,
+                    make: (ends) => {
+                      for (const [at, { writer }] of ends.entries()) {
+                        const { tree } = pairs[at] as (typeof pairs)[number];
+                        const result = undoApply(writer, applyCommandId, by, commandId, {
+                          writtenSince: written,
+                          restoredByApply: tree.restored,
+                          closed: (source) => closed(source) !== null,
+                        });
+                        const records = new Map(
+                          listRecords(writer.doc).map((record) => [record.id, record]),
+                        );
+                        for (const record of result.undone) {
+                          treeUndone.add(record.node);
+                          if (record.type !== "restore") continue;
+                          // A delete taken back puts every document it covered where it was before
+                          // the Apply, a folder's cascade included.
+                          const taken = record.undoes ? records.get(record.undoes) : undefined;
+                          for (const node of [
+                            record.node,
+                            ...(taken?.type === "delete" ? taken.cascade : []),
+                          ])
+                            backFromDelete.add(node);
+                        }
+                        // A change something else already took back (a card's Undo) is `already`,
+                        // not a loss.
+                        for (const { record, why, source } of result.left)
+                          if (why === "closed") {
+                            const found = source === undefined ? null : closed(source);
+                            if (found) held.set(record.node, found);
+                          } else if (why === "already") alreadyUndone.add(record.node);
+                          else
+                            left.push({
+                              node: record.node,
+                              why: why === "unknown" ? "purged" : why,
+                            });
+                      }
                     },
                   });
-                  try {
-                    await write.persist();
-                    write.transfer();
-                  } finally {
-                    write.dispose();
-                  }
-                  deps.merged({
-                    commandId,
-                    kind: "unapply",
-                    rules: reversal?.rules ?? {},
-                    overrode: reversal?.overrode ?? 0,
-                  });
                 }
-                unappliedSeq ??= (
-                  await tx.execute<{ seq: string }>(
-                    sql`select nextval('apply_command_effects_unapplied_seq')::text as seq`,
-                  )
-                )[0]?.seq;
-                await tx
-                  .update(applyCommandEffects)
-                  .set({
-                    unappliedBy: commandId,
-                    unappliedSeq: Number(unappliedSeq),
-                    // A closed draft's half waits for its reopen (`reopenDrafts`).
-                    draftReversed: currentBase !== null || plan.draftGone,
-                  })
+                // Only a draft whose closing delete the tree half took back reopens: a document the
+                // writer restored by hand and deleted again stays in Trash with its draft closed.
+                if (target && found?.owner)
+                  await deps.reopen.reopen({
+                    drafts: closedByApply.filter((draft) => backFromDelete.has(draft.documentId)),
+                    target: target.id,
+                    commandId,
+                    owner: found.owner,
+                  });
+
+                // What each document's text would give back, read before any text is written.
+                const stillActive = await tx
+                  .select({ ordinal: applyCommandEffects.ordinal })
+                  .from(applyCommandEffects)
                   .where(
                     and(
                       eq(applyCommandEffects.commandId, applyCommandId),
-                      inArray(
-                        applyCommandEffects.ordinal,
-                        plan.reversed.map((effect) => effect.ordinal),
-                      ),
                       isNull(applyCommandEffects.unappliedBy),
                     ),
                   );
-                deferUntilDrizzleCommit(async () => {
-                  await deps.liveCoordinator.deliver(documentId);
-                  await deps.onCommitted(documentId);
-                });
-              }
-              const reversedGroupIds = plans.flatMap((plan) =>
-                plan.reversed.map((effect) => effect.groupId),
-              );
-              const skippedGroupIds = plans.flatMap((plan) =>
-                plan.skipped.map((effect) => effect.groupId),
-              );
-              const settled: Settlement[] = [];
-              const byWhy = new Map<LeftOutWhy, Set<string>>();
-              for (const { node, why } of left)
-                byWhy.set(why, (byWhy.get(why) ?? new Set()).add(node));
-              // The Work's purge took the rows that said what the tree half was.
-              if (prepared.treeLost.length)
-                byWhy.set(
-                  "purged",
-                  new Set([...(byWhy.get("purged") ?? []), ...prepared.treeLost]),
+                const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
+                const plans: {
+                  documentId: DocumentId;
+                  /** Null: the draft is closed (its Un-Apply waits for a reopen) or purged. */
+                  currentBase: DraftBase | null;
+                  draftGone: boolean;
+                  snapshot: JournalSnapshot;
+                  live: Y.Doc;
+                  inverse: ReturnType<typeof computeInverse>;
+                  reversed: PreparedUnapply["texts"][number]["effects"];
+                  skipped: PreparedUnapply["texts"][number]["effects"];
+                }[] = [];
+                for (const text of prepared.texts) {
+                  if (textHeld.has(text.documentId)) continue;
+                  const [draft] = await tx
+                    .select({ status: documentDrafts.status })
+                    .from(documentDrafts)
+                    .where(eq(documentDrafts.id, text.draftId));
+                  const currentBase =
+                    draft?.status === "active"
+                      ? await deps.coordinator.loadBase(text.draftId)
+                      : null;
+                  const effects = text.effects.filter((effect) =>
+                    activeOrdinals.has(effect.ordinal),
+                  );
+                  if (!effects.length) continue;
+                  const snapshot = await deps.live.read(text.documentId);
+                  const live = storedDocument(snapshot);
+                  lives.push(live);
+                  const history = await loadUnapplyHistory(
+                    db,
+                    text.documentId,
+                    effects.flatMap((effect) =>
+                      effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
+                    ),
+                  );
+                  const bySeq = new Map<number, InversePart>();
+                  for (const part of history) {
+                    const value = part.origin;
+                    if (value?.kind === "live") bySeq.set(value.seq, part);
+                  }
+                  const targeted = effects.flatMap((effect) => {
+                    if (effect.liveUpdateSeq === null) return [];
+                    const part = bySeq.get(effect.liveUpdateSeq);
+                    return part ? [{ effect, part }] : [];
+                  });
+                  const inverse = computeInverse(
+                    live,
+                    history,
+                    // Latest group first: a group's live update builds on the earlier groups' items, so the
+                    // earlier group is intact only once the later one is out.
+                    [...targeted]
+                      .reverse()
+                      .map(({ part }) => ({ part, direction: "invert" as const })),
+                    // A group whose inverse would cut or join a word holding later writing stays applied.
+                    {
+                      actionId: commandId,
+                      allocateClient: allocateDocumentClient,
+                      keepLaterWords: true,
+                    },
+                  );
+                  const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
+                  const reversed = effects.filter(
+                    (effect) =>
+                      effect.liveUpdateSeq === null ||
+                      targeted.some(
+                        ({ effect: candidate, part }) =>
+                          candidate.ordinal === effect.ordinal && reversedEditIds.has(part.editId),
+                      ),
+                  );
+                  plans.push({
+                    documentId: text.documentId,
+                    currentBase,
+                    draftGone: !draft,
+                    snapshot,
+                    live,
+                    inverse,
+                    reversed,
+                    skipped: effects.filter((effect) => !reversed.includes(effect)),
+                  });
+                }
+                let unappliedSeq: string | undefined;
+                for (const plan of plans) {
+                  if (!plan.reversed.length) continue;
+                  const { documentId, live, snapshot, inverse, currentBase } = plan;
+                  const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
+                  for (const edit of inverse.edits) {
+                    for (const part of edit.parts) {
+                      const provenance = captureMutationUpdates(live, () => {
+                        live.transact(() => {
+                          Y.applyUpdate(live, part.update);
+                          appendInverseRestorationFacts(live, part.aliases);
+                        });
+                      });
+                      const update = provenance.length
+                        ? Y.mergeUpdates([part.update, ...provenance])
+                        : part.update;
+                      const seq = await deps.live.append(
+                        documentId,
+                        update,
+                        { seq: 0, origin: "system" },
+                        snapshot.authority,
+                      );
+                      receipts.push({ ...part, update, origin: { kind: "live", seq } });
+                    }
+                  }
+                  if (receipts.length)
+                    await recordDocumentEdit(tx, {
+                      documentId,
+                      actor: "human",
+                      actorUserId: command.envelope.accountId,
+                      kind: "undo",
+                      actionId: commandId,
+                      commandId,
+                      receipts,
+                    });
+
+                  if (currentBase) {
+                    const groupIds = new Set(plan.reversed.map((effect) => effect.groupId));
+                    let reversal: ReturnType<typeof reverseBaseHalf> | undefined;
+                    const write = deps.coordinator.prepareAppend(currentBase, [], {
+                      work: "any",
+                      authorServerRows(prefix) {
+                        reversal = reverseBaseHalf(prefix, [
+                          {
+                            applyCommandId,
+                            groupIds,
+                            merges: plan.reversed.filter((effect) => effect.liveUpdateSeq !== null),
+                          },
+                        ]);
+                        return reversal.rows;
+                      },
+                    });
+                    try {
+                      await write.persist();
+                      write.transfer();
+                    } finally {
+                      write.dispose();
+                    }
+                    deps.merged({
+                      commandId,
+                      kind: "unapply",
+                      rules: reversal?.rules ?? {},
+                      overrode: reversal?.overrode ?? 0,
+                    });
+                  }
+                  unappliedSeq ??= (
+                    await tx.execute<{ seq: string }>(
+                      sql`select nextval('apply_command_effects_unapplied_seq')::text as seq`,
+                    )
+                  )[0]?.seq;
+                  await tx
+                    .update(applyCommandEffects)
+                    .set({
+                      unappliedBy: commandId,
+                      unappliedSeq: Number(unappliedSeq),
+                      // A closed draft's half waits for its reopen (`reopenDrafts`).
+                      draftReversed: currentBase !== null || plan.draftGone,
+                    })
+                    .where(
+                      and(
+                        eq(applyCommandEffects.commandId, applyCommandId),
+                        inArray(
+                          applyCommandEffects.ordinal,
+                          plan.reversed.map((effect) => effect.ordinal),
+                        ),
+                        isNull(applyCommandEffects.unappliedBy),
+                      ),
+                    );
+                  deferUntilDrizzleCommit(async () => {
+                    await deps.liveCoordinator.deliver(documentId);
+                    await deps.onCommitted(documentId);
+                  });
+                }
+                const reversedGroupIds = plans.flatMap((plan) =>
+                  plan.reversed.map((effect) => effect.groupId),
                 );
-              for (const [why, nodes] of byWhy)
-                settled.push({ rule: "left_out", items: [...nodes], why });
-              for (const node of alreadyUndone)
-                settled.push({ rule: "already", state: "unapplied", item: node });
-              for (const why of new Set(held.values())) settled.push(...returnedFor(why));
-              // Everything this Apply did was taken back before, or it left nothing to take back.
-              if (
-                settled.length === 0 &&
-                treeUndone.size === 0 &&
-                reversedGroupIds.length === 0 &&
-                skippedGroupIds.length === 0
-              )
-                settled.push({ rule: "already", state: "unapplied" });
-              return {
-                status: "unapplied",
-                commandId,
-                branchId: (target ? target.id : prepared.branchId) as BranchId,
-                draftHalfWaits: plans.some(
-                  (plan) => plan.reversed.length > 0 && !plan.currentBase && !plan.draftGone,
-                ),
-                reversedGroupIds,
-                skippedGroupIds,
-                treeUndone: [...treeUndone],
-                ...(settled.length ? { settled } : {}),
-              };
-            },
-            { requireActive: false, seam: true },
+                const skippedGroupIds = plans.flatMap((plan) =>
+                  plan.skipped.map((effect) => effect.groupId),
+                );
+                const settled: Settlement[] = [];
+                const byWhy = new Map<LeftOutWhy, Set<string>>();
+                for (const { node, why } of left)
+                  byWhy.set(why, (byWhy.get(why) ?? new Set()).add(node));
+                // The Work's purge took the rows that said what the tree half was.
+                if (prepared.treeLost.length)
+                  byWhy.set(
+                    "purged",
+                    new Set([...(byWhy.get("purged") ?? []), ...prepared.treeLost]),
+                  );
+                for (const [why, nodes] of byWhy)
+                  settled.push({ rule: "left_out", items: [...nodes], why });
+                for (const node of alreadyUndone)
+                  settled.push({ rule: "already", state: "unapplied", item: node });
+                // One `returned` line per owner and reason, naming the nodes it held.
+                const heldBy = new Map<string, { closed: ClosedSource; nodes: string[] }>();
+                for (const [node, found] of held) {
+                  const key = `${found.why}:${found.owner ?? ""}`;
+                  const line = heldBy.get(key) ?? { closed: found, nodes: [] };
+                  line.nodes.push(node);
+                  heldBy.set(key, line);
+                }
+                for (const { closed: found, nodes } of heldBy.values())
+                  settled.push(returnedFor(found, nodes));
+                // Everything this Apply did was taken back before, or it left nothing to take back.
+                if (
+                  settled.length === 0 &&
+                  treeUndone.size === 0 &&
+                  reversedGroupIds.length === 0 &&
+                  skippedGroupIds.length === 0
+                )
+                  settled.push({ rule: "already", state: "unapplied" });
+                return {
+                  status: "unapplied",
+                  commandId,
+                  branchId: (target ? target.id : prepared.branchId) as BranchId,
+                  draftHalfWaits: plans.some(
+                    (plan) => plan.reversed.length > 0 && !plan.currentBase && !plan.draftGone,
+                  ),
+                  reversedGroupIds,
+                  skippedGroupIds,
+                  treeUndone: [...treeUndone],
+                  ...(settled.length ? { settled } : {}),
+                };
+              },
+              { requireActive: false, seam: true },
+            ),
           ),
         );
       } finally {
@@ -706,7 +788,7 @@ export function createDrizzleApplyClick(
       }
     },
     measured: deps.measured,
-    async apply(command, asked, saw) {
+    async apply(command, items, saw) {
       const { branchId, envelope } = command;
       const { commandId } = envelope;
       const userId = envelope.accountId as UserId;
@@ -714,198 +796,220 @@ export function createDrizzleApplyClick(
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
       try {
-        return await applyTiming.run({ commandId, measured: deps.measured }, () =>
-          runDocumentCommand(db, envelope, async (): Promise<ApplyClickResult> => {
-            // The command awaits post-commit delivery too; stop the boundary clock at
-            // root commit, before room recovery and document projections run.
-            deferUntilDrizzleCommit(() => {
-              committedAt = performance.now();
-            });
-            // Each item's file has an owner of its own, which the branch's does not stand for.
-            const fileOwners = await fileOwnersOf(
-              db,
-              asked.map((item) => item.node),
-            );
-            // The branch's owner enters the boundary after the claim, as Discard's does.
-            const answer = await deps.workProjection.mutate(
-              { branches: [branchId], ...ownersToLock(fileOwners) },
-              async (locked): Promise<ApplyClickResult> => {
-                // Orders this command with a Discard all's close; a closed branch has no pending
-                // records or open drafts, and each item below says what became of it.
-                await deps.branches.lockActive(branchId);
-                // An item whose file's owner is closed bounces on its own halves; the rest land.
-                const bounced = new Map<string, Settlement[]>();
-                for (const item of asked) {
-                  const why = closedFileOwner(fileOwners.get(item.node), locked);
-                  if (why) bounced.set(item.node, returnedFor(why));
+        // Every source the branch's pending records could change, and where each item's document
+        // is: their owners are locked with the branch's, and judged under the locks.
+        const sources = async () => {
+          const lists = await treeListsOfBranch(db, branchId);
+          if (lists.length === 0) return new Set<string>();
+          return deps.treeLists.read({
+            lists,
+            view: (ends) => {
+              const out = new Set<string>();
+              for (const { writer } of ends) {
+                const live = writer.view(LIVE);
+                for (const source of sourcesTouched(live, pendingRecords(writer.doc, branchId)))
+                  out.add(source);
+                for (const item of items) {
+                  const node = live.nodes.get(item.node);
+                  if (node) out.add(node.source);
                 }
-                const items = asked.filter((item) => !bounced.has(item.node));
-                const nodes = items.map((item) => item.node);
-                // Read before the locks, for the `renamed` note's wanted path only: nothing in it
-                // decides a write.
-                const wanted = new Map(
-                  (await deps.branchTree.read(branchId, [], nodes as DocumentId[])).map((item) => [
-                    item.documentId as string,
-                    item,
-                  ]),
-                );
-                const listOf = await treeHalf.lockItems(nodes);
-                const draftOf = (item: PreparedApplyItem) =>
-                  item.text?.base.snapshot.draftId ?? item.closedDraftId;
-                const settlements = await settlementOf(
-                  db,
-                  deps,
-                  branchId,
-                  items.map((item) => {
-                    const draftId = draftOf(item);
-                    return {
+              }
+              return out;
+            },
+          });
+        };
+        return await applyTiming.run({ commandId, measured: deps.measured }, () =>
+          withTreeOwners(db, sources, (owners) =>
+            runDocumentCommand(db, envelope, async (): Promise<ApplyClickResult> => {
+              // The command awaits post-commit delivery too; stop the boundary clock at
+              // root commit, before room recovery and document projections run.
+              deferUntilDrizzleCommit(() => {
+                committedAt = performance.now();
+              });
+              // The branch's owner enters the boundary after the claim, as Discard's does; the owners
+              // of the notes the tree effect changes are locked with it.
+              const answer = await deps.workProjection.mutate(
+                { branches: [branchId], works: owners.works, lineages: owners.lineages },
+                async (locked): Promise<ApplyClickResult> => {
+                  // Orders this command with a Discard all's close; a closed branch has no pending
+                  // records or open drafts, and each item below says what became of it.
+                  await deps.branches.lockActive(branchId);
+                  const closed = owners.judge(locked);
+                  const nodes = items.map((item) => item.node);
+                  // Read before the locks, for the `renamed` note's wanted path only: nothing in it
+                  // decides a write.
+                  const wanted = new Map(
+                    (await deps.branchTree.read(branchId, [], nodes as DocumentId[])).map(
+                      (item) => [item.documentId as string, item],
+                    ),
+                  );
+                  const listOf = await treeHalf.lockItems(nodes);
+                  const draftOf = (item: PreparedApplyItem) =>
+                    item.text?.base.snapshot.draftId ?? item.closedDraftId;
+                  const settlements = await settlementOf(
+                    db,
+                    deps,
+                    branchId,
+                    items.map((item) => {
+                      const draftId = draftOf(item);
+                      return {
+                        node: item.node,
+                        list: listOf.get(item.node) ?? null,
+                        ...(draftId ? { draftId } : {}),
+                      };
+                    }),
+                    saw,
+                  );
+                  const settled = (node: string) => settlements.get(node) as ItemSettlement;
+                  // A text half is open when its cut compiled and its draft is still the open row of
+                  // this branch; otherwise its note is fixed now.
+                  const textNote = new Map<string, Settlement>();
+                  for (const item of items) {
+                    const text = settled(item.node).text;
+                    if (!text) continue;
+                    if (item.text && text.open && text.branchId === branchId) continue;
+                    textNote.set(
+                      item.node,
+                      text.open
+                        ? { rule: "left_out", items: [item.node], why: "changed_since" }
+                        : noteOf(text.last, item.node, "applied"),
+                    );
+                  }
+                  const facts = await treeHalf.apply({
+                    branchId,
+                    userId,
+                    commandId,
+                    saw,
+                    items: items.map((item) => ({
                       node: item.node,
                       list: listOf.get(item.node) ?? null,
-                      ...(draftId ? { draftId } : {}),
-                    };
-                  }),
-                  saw,
-                );
-                const settled = (node: string) => settlements.get(node) as ItemSettlement;
-                // A text half is open when its cut compiled and its draft is still the open row of
-                // this branch; otherwise its note is fixed now.
-                const textNote = new Map<string, Settlement>();
-                for (const item of items) {
-                  const text = settled(item.node).text;
-                  if (!text) continue;
-                  if (item.text && text.open && text.branchId === branchId) continue;
-                  textNote.set(
-                    item.node,
-                    text.open
-                      ? { rule: "left_out", items: [item.node], why: "changed_since" }
-                      : noteOf(text.last, item.node, "applied"),
+                      tree: item.tree,
+                      textOpen: Boolean(draftOf(item)) && !textNote.has(item.node),
+                    })),
+                    closed,
+                  });
+                  const fact = (node: string) => facts.get(node) as TreeItemFacts;
+                  const deleted = items.flatMap((item) =>
+                    fact(item.node).deletedHere ? [item.node as DocumentId] : [],
                   );
-                }
-                const facts = await treeHalf.apply({
-                  branchId,
-                  userId,
-                  commandId,
-                  saw,
-                  items: items.map((item) => ({
-                    node: item.node,
-                    list: listOf.get(item.node) ?? null,
-                    tree: item.tree,
-                    textOpen: Boolean(draftOf(item)) && !textNote.has(item.node),
-                  })),
-                });
-                const fact = (node: string) => facts.get(node) as TreeItemFacts;
-                const deleted = items.flatMap((item) =>
-                  fact(item.node).deletedHere ? [item.node as DocumentId] : [],
-                );
-                // Only a delete this command committed closes a draft, under its id. Their live
-                // rooms stay open: a document in Trash still takes text until it is purged.
-                if (deleted.length > 0)
-                  await deps.close.closeDrafts(
-                    currentDrizzleDb(db),
-                    { documentIds: deleted, branchId },
-                    "document_discarded",
-                    commandId,
-                  );
+                  // Only a delete this command committed closes a draft, under its id. Their live
+                  // rooms stay open: a document in Trash still takes text until it is purged.
+                  if (deleted.length > 0)
+                    await deps.close.closeDrafts(
+                      currentDrizzleDb(db),
+                      { documentIds: deleted, branchId },
+                      "document_discarded",
+                      commandId,
+                    );
 
-                // The text half, in id order, every document's key held.
-                const texts = new Map<string, ApplyHalfResult>();
-                let ordinal = 0;
-                let overrode = 0;
-                for (const item of [...items].sort((a, b) => a.node.localeCompare(b.node))) {
-                  if (!draftOf(item)) continue;
-                  const note = textNote.get(item.node);
-                  const one = fact(item.node);
-                  if (note || !item.text) {
-                    texts.set(item.node, {
-                      landed: false,
-                      settled: [
-                        note ?? { rule: "left_out", items: [item.node], why: "changed_since" },
-                      ],
-                    });
-                    continue;
+                  // The text half, in id order, every document's key held.
+                  const texts = new Map<string, ApplyHalfResult>();
+                  let ordinal = 0;
+                  let overrode = 0;
+                  for (const item of [...items].sort((a, b) => a.node.localeCompare(b.node))) {
+                    if (!draftOf(item)) continue;
+                    const note = textNote.get(item.node);
+                    const one = fact(item.node);
+                    // A record that would change a closed owner's notes didn't commit: the item's
+                    // halves say so, and stay pending.
+                    const returned = treeReturned(one, closed);
+                    if (one.textClosed) {
+                      texts.set(item.node, {
+                        landed: false,
+                        settled: [returnedFor(one.textClosed)],
+                      });
+                      continue;
+                    }
+                    if (note || !item.text) {
+                      texts.set(item.node, {
+                        landed: false,
+                        settled: [
+                          note ?? { rule: "left_out", items: [item.node], why: "changed_since" },
+                        ],
+                      });
+                      continue;
+                    }
+                    // As the writer asked: the document this command deleted has nowhere for text.
+                    if (one.deletedHere) {
+                      texts.set(item.node, {
+                        landed: false,
+                        settled: [{ rule: "already", state: "removed", item: item.node }],
+                      });
+                      continue;
+                    }
+                    // Its create did not land: the text stays pending with the draft that holds it.
+                    if (!one.standsInLive) {
+                      texts.set(item.node, {
+                        landed: false,
+                        settled: [
+                          returned
+                            ? returnedFor(returned)
+                            : { rule: "left_out", items: [item.node], why: "needs" },
+                        ],
+                      });
+                      continue;
+                    }
+                    const wrote = await applyText(
+                      command,
+                      item.node as DocumentId,
+                      item.text,
+                      ordinal,
+                    );
+                    ordinal += item.text.click.groups.length;
+                    overrode += wrote.overrode;
+                    texts.set(
+                      item.node,
+                      one.restore
+                        ? { landed: true, settled: [{ rule: "restored", documentId: item.node }] }
+                        : { landed: true },
+                    );
                   }
-                  // As the writer asked: the document this command deleted has nowhere for text.
-                  if (one.deletedHere) {
-                    texts.set(item.node, {
-                      landed: false,
-                      settled: [{ rule: "already", state: "removed", item: item.node }],
-                    });
-                    continue;
-                  }
-                  // Its create did not land: the text stays pending with the draft that holds it.
-                  if (!one.standsInLive) {
-                    texts.set(item.node, {
-                      landed: false,
-                      settled: [{ rule: "left_out", items: [item.node], why: "needs" }],
-                    });
-                    continue;
-                  }
-                  const wrote = await applyText(
-                    command,
-                    item.node as DocumentId,
-                    item.text,
-                    ordinal,
-                  );
-                  ordinal += item.text.click.groups.length;
-                  overrode += wrote.overrode;
-                  texts.set(
-                    item.node,
-                    one.restore
-                      ? { landed: true, settled: [{ rule: "restored", documentId: item.node }] }
-                      : { landed: true },
-                  );
-                }
 
-                const results = asked.map((item): ApplyItemResult => {
-                  const returned = bounced.get(item.node);
-                  if (returned)
+                  const results = items.map((item): ApplyItemResult => {
+                    const one = fact(item.node);
+                    const text = texts.get(item.node);
                     return {
                       node: item.node,
-                      tree: { landed: false, settled: returned },
-                      ...(item.text ? { text: { landed: false, settled: returned } } : {}),
+                      // A restore is a tree fact of this command too: Un-Apply takes it back, and a
+                      // name taken meanwhile gives the document a new path to report.
+                      ...(one.ran || one.restore || (item.tree && !listOf.get(item.node))
+                        ? {
+                            tree: treeResult(
+                              item.node,
+                              one,
+                              settled(item.node).tree.last,
+                              wanted.get(item.node),
+                              closed,
+                            ),
+                          }
+                        : {}),
+                      ...(text ? { text } : {}),
                     };
-                  const one = fact(item.node);
-                  const text = texts.get(item.node);
+                  });
+                  const applied = appliedOf(branchId, results);
+                  if (applied.length === 0) {
+                    const notes = results.flatMap((result) => [
+                      ...(result.tree?.settled ?? []),
+                      ...(result.text?.settled ?? []),
+                    ]);
+                    deferUntilDrizzleCommit(() =>
+                      deps.answeredWithoutLanding({ commandId, settled: notes }),
+                    );
+                  }
                   return {
-                    node: item.node,
-                    // A restore is a tree fact of this command too: Un-Apply takes it back, and a
-                    // name taken meanwhile gives the document a new path to report.
-                    ...(one.ran || one.restore || (item.tree && !listOf.get(item.node))
-                      ? {
-                          tree: treeResult(
-                            item.node,
-                            one,
-                            settled(item.node).tree.last,
-                            wanted.get(item.node),
-                          ),
-                        }
-                      : {}),
-                    ...(text ? { text } : {}),
+                    status: "applied",
+                    commandId,
+                    items: results,
+                    applied,
+                    ...(overrode ? { overrode } : {}),
                   };
-                });
-                const applied = appliedOf(branchId, results);
-                if (applied.length === 0) {
-                  const notes = results.flatMap((result) => [
-                    ...(result.tree?.settled ?? []),
-                    ...(result.text?.settled ?? []),
-                  ]);
-                  deferUntilDrizzleCommit(() =>
-                    deps.answeredWithoutLanding({ commandId, settled: notes }),
-                  );
-                }
-                return {
-                  status: "applied",
-                  commandId,
-                  items: results,
-                  applied,
-                  ...(overrode ? { overrode } : {}),
-                };
-              },
-              { requireActive: false, seam: true },
-            );
-            if (answer.applied.length > 0) await treeHalf.recordCreatedHeads(commandId);
-            return answer;
-          }),
+                },
+                { requireActive: false, seam: true },
+              );
+              if (answer.applied.length > 0) await treeHalf.recordCreatedHeads(commandId);
+              return answer;
+            }),
+          ),
         );
       } finally {
         deps.measured({

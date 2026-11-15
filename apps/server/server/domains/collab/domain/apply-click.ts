@@ -68,8 +68,6 @@ export type PreparedUnapply = {
     createdHeads: Record<string, { live: number; draft: number }>;
     /** The live restore records the Apply made in this list. */
     restored: string[];
-    /** The nodes whose records the Apply copied into live in this list. */
-    nodes: string[];
   }[];
 };
 export type CompiledClick = {
