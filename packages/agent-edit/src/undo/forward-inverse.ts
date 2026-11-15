@@ -355,12 +355,15 @@ function planInverse(
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
-  const seams = readSeams(index, {
-    frontier: part.frontier,
-    own: new Set(index.rootsFor(part.effect)),
-    returning: returning.map((pair) => pair.original),
-    leaving: removingSet,
-  });
+  // Read only for a run the stranded rule would keep out, or an inverse being executed.
+  let seams: ReturnType<typeof readSeams> | undefined;
+  const seam = () =>
+    (seams ??= readSeams(index, {
+      frontier: part.frontier,
+      own: new Set(index.rootsFor(part.effect)),
+      returning: returning.map((pair) => pair.original),
+      leaving: removingSet,
+    }));
   // A replacement is a deleted run with the part's insertion beside it. Bringing the deleted run back
   // alone doubles the text only when that insertion is gone and someone wrote there after the part
   // (a replacement by the writer or a pull); a plain deletion of the insertion leaves the gap empty.
@@ -395,7 +398,7 @@ function planInverse(
         newer ||= origin.clock >= (part.frontier[origin.client] ?? 0);
       }
     }
-    const stranded = paired && !standing && newer && !seams.leavingStands(item);
+    const stranded = paired && !standing && newer && !seam().leavingStands(item);
     strandedItems.set(item, stranded);
     return stranded;
   };
@@ -442,7 +445,7 @@ function planInverse(
     restoring,
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
-    place: () => seams.placements(restoring),
+    place: () => seam().placements(restoring),
   };
 }
 function itemsRightOf(item: Y.Item): Y.Item[] {
