@@ -20,7 +20,7 @@ export function useReferenceBrowserCatalog(
   /** A No Work chat's lineage: its Scratch joins the Work's in the browser. */
   rootThreadId?: string | null,
   /** The chat whose uploads the picker offers: a subagent's top chat. */
-  chatId?: string | null,
+  chatThreadId?: string | null,
 ): ReferenceBrowserCatalog | null {
   const accountId = useAccountId();
   const projectPending = useIsProjectPendingCreation(projectId);
@@ -38,9 +38,9 @@ export function useReferenceBrowserCatalog(
         sourceFor(trees.sources, "kb", {}),
         sourceFor(trees.sources, "user", {}),
         sourceFor(trees.sources, "scratch", { workId, rootThreadId }),
-        sourceFor(trees.sources, "uploads", { chatId }),
+        sourceFor(trees.sources, "uploads", { chatThreadId }),
       ].flatMap((source) => (source ? [source.id] : [])),
-    [trees.sources, workId, rootThreadId, chatId],
+    [trees.sources, workId, rootThreadId, chatThreadId],
   );
   const workRows = useMemo<readonly ReferenceWork[]>(
     () =>

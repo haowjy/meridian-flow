@@ -37,7 +37,7 @@ const ROOT = sourceRoot("manuscript");
  */
 const standing = (projection: TreeProjection) =>
   fingerprint(projection, false)
-    .replaceAll(/ \(\d+\)(?=#)/g, "")
+    .replaceAll(/( \(\d+\))+(?=#)/g, "")
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("~") && !line.startsWith("source:"))
     .join("\n");

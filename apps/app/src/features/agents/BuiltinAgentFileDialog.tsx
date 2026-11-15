@@ -3,7 +3,8 @@ import type { AgentFileStatus } from "@meridian/contracts/agents";
 import { useState } from "react";
 import { useBuiltinAgentFile } from "@/client/query/useAgentFiles";
 import { AgentFileDialog } from "./AgentFileDialog";
-import { AgentFileStatusNotice } from "./AgentFileNotice";
+import { TroubleChip } from "./AgentFileState";
+import { fileTrouble } from "./findings";
 
 /**
  * A built-in Agent or skill opens here, read-only: it is no document, so it has no main address,
@@ -20,6 +21,7 @@ export function BuiltinAgentFileDialog({
   const [shown, setShown] = useState(file);
   if (file && file !== shown) setShown(file);
   const text = useBuiltinAgentFile(shown?.path ?? null);
+  const trouble = shown ? fileTrouble(shown, undefined) : null;
   return (
     <AgentFileDialog
       open={file !== null}
@@ -28,7 +30,7 @@ export function BuiltinAgentFileDialog({
       description={
         shown?.kind === "skill" ? t`Built-in skill, read-only` : t`Built-in Agent, read-only`
       }
-      notice={shown ? <AgentFileStatusNotice file={shown} className="mx-4 mt-3" /> : null}
+      titleExtra={shown && trouble ? <TroubleChip file={shown} trouble={trouble} /> : null}
       text={text}
     />
   );

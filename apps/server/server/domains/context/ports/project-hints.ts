@@ -1,11 +1,12 @@
 /** What a project's subscribers are woken with. Every hint is lossy and truth-free: it says "ask again". */
 import type {
+  AgentFilesHint,
   ContextSourcesHint,
   DraftOwnerHint,
   ProjectChatsHint,
 } from "@meridian/contracts/protocol";
 
-export type ProjectHint = DraftOwnerHint | ProjectChatsHint | ContextSourcesHint;
+export type ProjectHint = DraftOwnerHint | ProjectChatsHint | ContextSourcesHint | AgentFilesHint;
 
 export interface ProjectWakePort {
   publish(hint: ProjectHint): void | Promise<void>;

@@ -168,7 +168,7 @@ export function useChromeLayer(
     // (a lightbox over an image has no source pane to toggle), and reopening
     // the layer for that would spend a step of the walk home and take every
     // layer inside it down.
-    return chrome.registerKeymap({ id: layerId, scope: "layer", layer, reach: "chrome", bindings });
+    return chrome.registerKeymap({ id: layerId, scope: "layer", layer, route: "chrome", bindings });
   }, [chrome, layer, layerId, keyNames]);
 
   const onEscapeKeyDown = useCallback(

@@ -19,7 +19,7 @@ export function useFileSuggestions(
   const views = useProjectTreeViews(projectId, keyedSchemes, {
     workId,
     rootThreadId,
-    chatId: chatThreadId,
+    chatThreadId,
   });
   return useMemo(
     () =>

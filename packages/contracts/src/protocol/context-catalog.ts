@@ -117,5 +117,15 @@ export type ProjectChatsHint = {
   recheckTabs?: true;
 };
 
+/**
+ * The text of an Agent or skill file in the project's `.agents/` or the writer's `~/.agents/`
+ * changed, from any client or the AI: what Mars reads of the files is stale. Truth-free.
+ */
+export type AgentFilesHint = { type: "agent-files-hint"; projectId: ProjectId };
+
 /** What a project's subscription receives. */
-export type CatalogChannelMessage = DraftOwnerHint | ProjectChatsHint | ContextSourcesHint;
+export type CatalogChannelMessage =
+  | DraftOwnerHint
+  | ProjectChatsHint
+  | ContextSourcesHint
+  | AgentFilesHint;

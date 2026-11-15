@@ -18,6 +18,7 @@ import {
   projectResults,
   promptBakes,
   threads,
+  threadWorks,
   treeNodes,
   turns,
   uploadIntakes,
@@ -260,6 +261,12 @@ export function createDrizzleWorkPurger(deps: {
             purgedRoots.length ? inArray(branches.originRootThreadId, purgedRoots) : undefined,
           ),
         );
+      // A chat that moved to another Work keeps this Work's membership as non-primary history.
+      // Its readers (the Work's chat list, the Work switcher's recent summary) filter by this Work,
+      // which is gone after this. A primary membership still blocks the delete: those chats went above.
+      await activeDb
+        .delete(threadWorks)
+        .where(and(eq(threadWorks.workId, workId), eq(threadWorks.isPrimary, false)));
       const deleted = await activeDb
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
@@ -311,7 +318,20 @@ export function createDrizzleWorkPurger(deps: {
         after = candidates.at(-1);
         if (!after) break;
         for (const candidate of candidates) {
-          const result = await purge(candidate.id, cutoff);
+          // One Work's purge is its own unit: a Work that fails every pass stays, logged each pass,
+          // and does not stop the Works deleted after it.
+          let result: Awaited<ReturnType<typeof purge>>;
+          try {
+            result = await purge(candidate.id, cutoff);
+          } catch (error) {
+            emitEvent(deps.eventSink, {
+              level: "error",
+              source: "projects.work-purge",
+              name: "purge.failed",
+              payload: { workId: candidate.id, error },
+            });
+            continue;
+          }
           if (!result.purged) continue;
           count += 1;
           await objects.keys([...result.objectKeys, ...(await chatMediaKeys(result.threadIds))]);

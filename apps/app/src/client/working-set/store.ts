@@ -2,6 +2,7 @@
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
+  type ContextOwner,
   type ProjectContextTreeScheme,
   parseWorkingSetRouteList,
   type WorkingSetRoute,
@@ -51,13 +52,13 @@ export function buildWorkingSetRoute(
   documentId: DocumentId,
   scheme: ProjectContextTreeScheme,
   path: string,
-  owner: { workId?: string | null; rootThreadId?: string | null; chatId?: string | null },
+  owner: ContextOwner,
 ): WorkingSetRoute | null {
   if (path.length === 0) return null;
   if (scheme === "uploads") {
     // A chat's upload is held by its chat; an Editor target names none.
-    if (!owner.chatId) return null;
-    return { documentId, scheme, path, chatId: owner.chatId };
+    if (!owner.chatThreadId) return null;
+    return { documentId, scheme, path, chatId: owner.chatThreadId };
   }
   if (isWorkScopedScheme(scheme)) {
     if (owner.rootThreadId) return { documentId, scheme, path, rootThreadId: owner.rootThreadId };

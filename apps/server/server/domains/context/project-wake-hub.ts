@@ -11,19 +11,28 @@ type Subscriber = {
 
 export type ProjectWakeHub = ProjectWakePort & {
   subscribe(input: Subscriber): () => void;
+  /** Wakes every project this user has open, with the hint each of those projects gets. */
+  publishToUser(userId: string, hintFor: (projectId: string) => ProjectHint): void;
 };
 
 export function createProjectWakeHub(): ProjectWakeHub {
   const subscribers = new Set<Subscriber>();
+  const send = (subscriber: Subscriber, hint: ProjectHint) => {
+    try {
+      subscriber.listener(hint);
+    } catch {
+      // Hints contain no truth and are repaired by focus/poll acquisition.
+    }
+  };
   return {
     publish(hint) {
       for (const subscriber of subscribers) {
-        if (hint.projectId !== subscriber.projectId) continue;
-        try {
-          subscriber.listener(hint);
-        } catch {
-          // Hints contain no truth and are repaired by focus/poll acquisition.
-        }
+        if (hint.projectId === subscriber.projectId) send(subscriber, hint);
+      }
+    },
+    publishToUser(userId, hintFor) {
+      for (const subscriber of subscribers) {
+        if (subscriber.userId === userId) send(subscriber, hintFor(subscriber.projectId));
       }
     },
     subscribe(input) {

@@ -17,6 +17,7 @@ import {
   readTurnEditTargets,
   readTurnFolderTargets,
   readTurnTreeTargets,
+  receiptBranchExists,
 } from "./drizzle-turn-edit-targets.js";
 
 export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineageDocumentStore {
@@ -118,6 +119,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
             eq(treeEditReceipts.turnId, turnId),
             // What the reply wrote: a Redo repeats it, and an Undo is the card's, not the reply's.
             eq(treeEditReceipts.kind, "write"),
+            receiptBranchExists,
           ),
         )
         .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);

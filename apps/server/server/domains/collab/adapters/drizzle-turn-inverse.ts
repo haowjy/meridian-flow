@@ -81,7 +81,7 @@ type Dependencies = {
   onDraftCommitted(draftId: string): void;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   /** Where a document in Trash last stood, which names it while a Redo brings it back. */
-  resolveLastDocumentUri(documentId: string): Promise<string | null>;
+  resolveLastDocumentUri(documentId: string, branchId?: BranchId): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
@@ -644,7 +644,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // bug, not live routing.
     if (!principal) return null;
     const restoring = new Set(
-      treeDocuments.flatMap((d) => (d.restore && !d.branchId ? [d.documentId] : [])),
+      treeDocuments.flatMap((d) => (d.restore ? [`${d.documentId}:${d.branchId ?? "live"}`] : [])),
     );
     const requirements = new Map<
       string,
@@ -652,10 +652,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     >();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
-      // A document this command restores is in Trash when it is admitted, where no draft
-      // outlives it: its text, live or drafted, is admitted as the restore, which a Redo runs
-      // first.
-      if (restoring.has(documentId)) {
+      // The text of a document this command restores is admitted as that restore, which a Redo
+      // runs first: the document is in Trash, or the draft gone from the Work's tree, until
+      // then. A live restore also takes the document's drafted text.
+      const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
+      if (restoring.has(`${documentId}:live`)) {
         requirements.set(`${documentId}:live:restore`, {
           documentId,
           branchId: null,
@@ -663,7 +664,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         });
         continue;
       }
-      const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
+      if (restoring.has(`${documentId}:${branchId ?? "live"}`)) continue;
       requirements.set(`${documentId}:${branchId ?? "live"}:content`, {
         documentId,
         branchId,
@@ -676,7 +677,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       requirements.set(`${documentId}:${branchId ?? "live"}:${restore ? "restore" : "content"}`, {
         documentId: documentId as DocumentId,
         branchId,
-        restore: restore && branchId === null,
+        restore,
       });
     const admittedRequirements = [...requirements.values()];
     const branchIds = [
@@ -704,7 +705,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const grant = await input.fileAccess.authorizeAt(
         principal,
         holder
-          ? { kind: "draft", documentId: requirement.documentId, owner: holder.owner }
+          ? {
+              kind: "draft",
+              documentId: requirement.documentId,
+              owner: holder.owner,
+              ...(requirement.restore ? { restore: true } : {}),
+            }
           : requirement.restore
             ? { kind: "restore", documentId: requirement.documentId }
             : { kind: "document", documentId: requirement.documentId },
@@ -905,6 +911,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (kind !== "revert" && !query.model && query.turnId)
         await input.notices.record({
           docId: document.documentId,
+          branchId: [...landed]
+            .map((draftId) =>
+              draftId ? document.drafts.get(draftId)?.documentDraft.branchId : undefined,
+            )
+            .find(Boolean),
           threadId: query.threadId,
           direction: kind,
           turnId: query.turnId,
