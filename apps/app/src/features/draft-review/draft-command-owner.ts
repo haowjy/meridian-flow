@@ -138,9 +138,10 @@ function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | nul
  * names why (`work_archived`, `work_deleted`, `chat_frozen`), else the answer's status.
  */
 function discardCode(result: DiscardCommandResult): string {
-  if (result.status !== "returned") return result.status;
-  const returned = result.settled.find((one) => one.rule === "returned");
-  return returned?.rule === "returned" ? returned.why : "returned";
+  const settled = "settled" in result ? result.settled : undefined;
+  const returned = settled?.find((one) => one.rule === "returned");
+  if (returned?.rule === "returned") return returned.why;
+  return result.status;
 }
 /** The server's word for an unapplied click, as the surfaces' refusal copy keys it. */
 function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>): string {
