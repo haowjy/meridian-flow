@@ -27,18 +27,22 @@ export function findingSentence(finding: AgentFinding): string {
       if (key)
         return t`${key} isn't a key Flow knows, so it has no effect. Check the spelling, or remove it.`;
       break;
-    case "flow.skill-missing":
-      if (name) return t`No skill is named ${name} in this package.`;
+    case "skill-ref.missing":
+    case "skill-ref.provider":
+    case "skill-ref.external": {
+      const skill = /references skill `([^`]+)`/.exec(finding.message)?.[1];
+      if (skill) return t`No skill is named ${skill} in this package.`;
       break;
+    }
     case "flow.subagent-missing":
       if (name) return t`No Agent named ${name} is in this package.`;
       break;
     case "flow.subagent-unavailable":
       if (name) return t`Its subagent ${name} is unavailable.`;
       break;
-    case "flow.name-shared": {
-      const others = finding.message.split(": ").slice(1).join(": ");
-      if (name && others) return t`${others} is also named ${name}. Both work under that name.`;
+    case "definition.duplicate-name": {
+      const clash = /name `([^`]+)` is also the name of `([^`]+)`/.exec(finding.message);
+      if (clash) return t`${clash[2]} is also named ${clash[1]}. Give one of them another name.`;
       break;
     }
     case "toml.invalid": {

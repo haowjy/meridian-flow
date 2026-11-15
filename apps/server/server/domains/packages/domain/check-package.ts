@@ -1,11 +1,12 @@
 /**
- * The one place Save asks what a package's files publish. Until Mars's `check()` is released this
- * is `compilePackage`'s findings graded by severity; `check()` replaces the body and fills the
- * list that is empty now (a dependency's own faults).
+ * The one place Save asks what a package's files publish: Mars's `check()` verdict, which
+ * `compilePackage` reads once per package and carries on each item's findings, ordered and graded
+ * for Save. Flow's own findings join them (`flow.*`).
  *
  * An error in one Agent's or skill's file leaves that item out of what runs and never fails the
- * Save. Only an error in `mars.toml` does: it leaves nothing in the package readable. Errors come
- * first, then warnings that say an Agent may run wider than its file reads.
+ * Save. Only an error in `mars.toml` does: it leaves nothing in the package readable, and a
+ * dependency Mars can't find or read is one (Save has none to fetch yet). Errors come first, then
+ * warnings that say an Agent may run wider than its file reads.
  */
 
 import { type CompiledPackage, isError, type PackageDiagnostic } from "./compile-package.js";
@@ -18,8 +19,6 @@ export interface PackageCheck {
   blocking: PackageDiagnostic[];
   /** Agents and skills with an error, left out of what runs: package-relative paths. */
   leftOut: string[];
-  /** Faults in vendored dependencies: shown on their files, never failing the Save. */
-  dependencyFindings: PackageDiagnostic[];
 }
 
 /** A warning that an Agent may run wider than its file reads: the writer sees these first. */
@@ -42,6 +41,5 @@ export function checkPackage(pkg: CompiledPackage): PackageCheck {
         .filter((skill) => skill.diagnostics.some(isError))
         .map((skill) => skillPath(skill.slug)),
     ],
-    dependencyFindings: [],
   };
 }

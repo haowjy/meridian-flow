@@ -7,6 +7,8 @@
  */
 import {
   type AgentFields,
+  type Check,
+  check,
   type DefinitionRead,
   type Diagnostic,
   type ManifestRead,
@@ -28,7 +30,7 @@ export { rewriteBlock };
  * part of a revision's key, and without a bump the same bytes are never read twice, so the
  * change never reaches a stored Agent.
  */
-export const GRAMMAR_VERSION = `mars-${version()}+flow-5`;
+export const GRAMMAR_VERSION = `mars-${version()}+flow-6`;
 
 const AGENT_PATH = /^agents\/([^/]+)\.md$/;
 const SKILL_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
@@ -39,15 +41,20 @@ export const skillPath = (slug: string): `skills/${string}/SKILL.md` => `skills/
 export const agentSlugOf = (path: string): string | undefined => AGENT_PATH.exec(path)?.[1];
 export const skillSlugOf = (path: string): string | undefined => SKILL_PATH.exec(path)?.[1];
 
-export type { AgentFields, Diagnostic, Prepared, SkillFields, ToolProjection };
+export type { AgentFields, Check, Diagnostic, Prepared, SkillFields, ToolProjection };
 export { project as projectRules };
 
 const encoder = new TextEncoder();
+const treeOf = (files: Record<string, string>) =>
+  new Map(Object.entries(files).map(([path, text]) => [path, encoder.encode(text)]));
 export const readPackage = (files: Record<string, string>): Prepared =>
-  prepare({
-    files: new Map(Object.entries(files).map(([path, text]) => [path, encoder.encode(text)])),
-    context: "package",
-  });
+  prepare({ files: treeOf(files), context: "package" });
+/**
+ * Mars's verdict on a package's files. No dependency is passed because Flow vendors none yet: a
+ * package that declares one comes back with it in `missing_dependencies`.
+ */
+export const checkFiles = (files: Record<string, string>): Check =>
+  check({ files: treeOf(files), context: "package", dependencies: {} });
 
 export const readManifest = (text: string): ManifestRead => read(MANIFEST_PATH, text);
 export const readAgent = (slug: string, text: string): DefinitionRead<AgentFields> =>
