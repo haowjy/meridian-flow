@@ -3,6 +3,7 @@
  * the file policy grants the call, and collab reads or writes under that grant. `skills://` paths go to the skill files.
  */
 
+import { randomUUID } from "node:crypto";
 import type {
   AgentEditResultV1,
   DocumentCommandName,
@@ -21,6 +22,7 @@ import {
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
+import type { AgentsLevel } from "@meridian/contracts/agents";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/gateway";
 import {
@@ -29,7 +31,9 @@ import {
   remapCopiedBlocks,
 } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
+import { contextPortForThread } from "../../domains/context/index.js";
 import {
+  appliesAfterCheck,
   type FileDestination,
   FileEditRefusedError,
   type FileGrant,
@@ -43,6 +47,7 @@ import {
   refuseSkillWrite,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
+import { type AgentsCheck, agentsLevelOfUri } from "../agents-widening.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
 import { type ReadPlacement, readBinaryFile } from "./binary-read.js";
@@ -227,6 +232,57 @@ function withDestination(
   };
 }
 
+/** What a write to an Agents level learned while it was granted: the check runs once it lands. */
+type AgentsCheckTarget = { level?: AgentsLevel; apply?: boolean };
+
+/** The context port whose writes all land in the chat's branch, as a create in an Agents level must. */
+function draftContext(deps: ToolWiringDeps, call: ToolCall): ResolvedModelContextPort {
+  return {
+    resolution: call.context.resolution,
+    port: contextPortForThread(deps.contextPorts, call.context.resolution, {
+      destination: {
+        kind: "draft",
+        owner: call.execution.branchOwner,
+        ownerHandle: call.execution.scope.workHandle,
+      },
+    }),
+  };
+}
+
+/** The receipt says what the check did, in the words Changes uses for the same Agents. */
+function withAgentsCheck(
+  result: ModelEditHandlerResult,
+  check: AgentsCheck,
+): ModelEditHandlerResult {
+  const lines = [
+    ...check.created,
+    ...(check.status === "waiting" && check.labels.length > 0
+      ? [`Waiting for review: ${check.labels.join("; ")}`]
+      : []),
+  ];
+  if (lines.length === 0 || result.modelEdit.status === "never") return result;
+  const note = lines.join("\n");
+  const stored = result.modelEdit.result.toolResult;
+  const body = stored.result;
+  return {
+    ...result,
+    modelEdit: {
+      ...result.modelEdit,
+      result: {
+        ...result.modelEdit.result,
+        toolResult: {
+          ...stored,
+          content: [...stored.content, { type: "text", text: note }],
+          result:
+            typeof body === "object" && body !== null && !Array.isArray(body)
+              ? { ...body, message: [body.message, note].filter(Boolean).join("\n") }
+              : body,
+        },
+      },
+    },
+  };
+}
+
 /**
  * The write itself: the edit grant on the document, then the pool call that
  * carries it. A seam that refuses the grant under its locks reports the same
@@ -240,6 +296,7 @@ async function writeUnderGrant(
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
   uploadsChat: string | null | undefined,
+  checked: AgentsCheckTarget,
   given?: FileGrant<"edit">,
 ): Promise<
   | (WriteOutcome & { isError: false; evidence: ResultEvidence })
@@ -247,6 +304,10 @@ async function writeUnderGrant(
 > {
   const grant = given ?? (await documentGrant(deps, principal, parsed.command, address, "edit"));
   if (isToolError(grant)) return grant;
+  if (grant.facts.agentsLevel && grant.destination.kind === "draft") {
+    checked.level = grant.facts.agentsLevel;
+    checked.apply = appliesAfterCheck(principal, grant.facts);
+  }
   let written: WriteOutcome;
   try {
     // The write runs under its own lock, inside the command's transaction.
@@ -525,6 +586,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     let refresh: DocumentId | undefined;
+    const checked: AgentsCheckTarget = {};
+    // A create in an Agents level lands in the chat's branch, whatever the chat's mode: the
+    // check, not the place, decides whether it then applies (the grant's destination, B8).
+    const createsInAgents = creates && agentsLevelOfUri(parsed.path) !== null;
     const effect = async () => {
       // What the tree took back of this call's `count`, said before the text engine's own line.
       let treeUndone: string[] = [];
@@ -550,40 +615,45 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       const address =
         existing ??
         (await inContainer(deps, principal, engine.command, target, () =>
-          resolveDocumentAddress(context, engine.command, engine.path, {
-            origin: {
-              type: "agent",
-              agentSlug: ctx.agentSlug,
-              threadId: ctx.threadId,
-              turnId: ctx.turnId,
+          resolveDocumentAddress(
+            createsInAgents ? draftContext(deps, call) : context,
+            engine.command,
+            engine.path,
+            {
+              origin: {
+                type: "agent",
+                agentSlug: ctx.agentSlug,
+                threadId: ctx.threadId,
+                turnId: ctx.turnId,
+              },
+              ...(engine.command === "copy" && copied
+                ? {
+                    metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
+                    sourceExtension: sourceExtension(copied.copiedFrom.uri),
+                  }
+                : {}),
+              ...(creates
+                ? {
+                    recordCreate: async ({ documentId, record, draftBranchId }) => {
+                      await deps.documentSync.treeHistory().recordAgentTreeChange({
+                        subject: documentId,
+                        nodes: [{ nodeId: documentId, beforeAt: null, afterAt: engine.path }],
+                        records: [{ record, node: documentId }],
+                        threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
+                        ...(ctx.turnId
+                          ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
+                          : {}),
+                        ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+                        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+                        op: "create",
+                        ...(draftBranchId ? { draftBranchId } : {}),
+                        shownAt: engine.path,
+                      });
+                    },
+                  }
+                : {}),
             },
-            ...(engine.command === "copy" && copied
-              ? {
-                  metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
-                  sourceExtension: sourceExtension(copied.copiedFrom.uri),
-                }
-              : {}),
-            ...(creates
-              ? {
-                  recordCreate: async ({ documentId, record, draftBranchId }) => {
-                    await deps.documentSync.treeHistory().recordAgentTreeChange({
-                      subject: documentId,
-                      nodes: [{ nodeId: documentId, beforeAt: null, afterAt: engine.path }],
-                      records: [{ record, node: documentId }],
-                      threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
-                      ...(ctx.turnId
-                        ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
-                        : {}),
-                      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-                      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-                      op: "create",
-                      ...(draftBranchId ? { draftBranchId } : {}),
-                      shownAt: engine.path,
-                    });
-                  },
-                }
-              : {}),
-          }),
+          ),
         ));
       if (isToolError(address)) return address;
 
@@ -622,6 +692,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         copied,
         ctx,
         context.resolution.uploadsOwner?.chatRef,
+        checked,
       );
       // A reversed move left the document somewhere else: the result names where it is now. A
       // reversed creation removed the document, so its text half must not claim an empty document
@@ -665,7 +736,18 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         },
       };
     };
-    const result = await settle(effect);
+    let result = await settle(effect);
+    if (checked.level && isCommandResult(result) && result.modelEdit.status === "done") {
+      const thread = context.resolution.thread;
+      const check = await deps.agentsWidening.settle({
+        thread: { id: thread.id, userId: thread.userId, projectId: thread.projectId },
+        owner: call.execution.branchOwner,
+        level: checked.level,
+        callId: ctx.toolCallId ?? randomUUID(),
+        apply: checked.apply === true,
+      });
+      result = withAgentsCheck(result, check);
+    }
     // The projection catches up once the edit is durable, whoever stored it.
     if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
       await deps.documentSync.refreshDocumentProjection({

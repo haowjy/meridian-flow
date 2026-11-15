@@ -116,6 +116,8 @@ export function scopeDraftPeer(
     flushDraftLivePull: access.flushDraftLivePull,
     readStoredGrepTexts: access.readStoredGrepTexts,
     readStoredWordCounts: access.readStoredWordCounts,
+    readOwnerMarkdown: (command) =>
+      scopes.within(by(command), () => access.readOwnerMarkdown(command)),
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>

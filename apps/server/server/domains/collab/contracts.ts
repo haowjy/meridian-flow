@@ -612,6 +612,14 @@ export type DraftPeerShadowAccess = {
   ): Promise<Map<DocumentId, string>>;
   /** Words per document whose derived outputs are current; the others are absent. */
   readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
+  /**
+   * A document's markdown as an owner's branch holds it: the owner's draft when it has one, else
+   * live. Needs no reading chat, so a review list and a check read the same text.
+   */
+  readOwnerMarkdown(input: {
+    documentId: DocumentId;
+    owner: DraftOwner;
+  }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   readEffectiveMarkdown(
     input: {
       documentId: DocumentId;

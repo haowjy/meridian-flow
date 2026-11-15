@@ -269,11 +269,13 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
+import { lockAgentsLevel } from "../shared/agents-level-lock.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
+import { type AgentsWidening, createAgentsWidening } from "./agents-widening.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
@@ -325,6 +327,7 @@ export type AppServices = {
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  agentsWidening: AgentsWidening;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
@@ -426,6 +429,7 @@ export type ProductionAppPorts = {
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  agentsWidening: AgentsWidening;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -654,6 +658,11 @@ export async function createProductionAppPorts(input: {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
   });
+  const agentsWidening = createAgentsWidening({
+    catalog: agentCatalog,
+    lockLevel: (owner) => lockAgentsLevel(db, owner),
+    draftReview: documentSync.draftReview,
+  });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
     db,
@@ -746,6 +755,7 @@ export async function createProductionAppPorts(input: {
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     agentCatalog,
+    agentsWidening,
     accountSettings,
     workingSet,
     recentDocuments,
@@ -914,6 +924,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     shownLinks: ports.documentSync.modelEvidence(),
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
+    agentsWidening: ports.agentsWidening,
   };
   const asks = createAskService({
     repos: ports.threadRepos,
@@ -1272,6 +1283,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: ports.agentCatalog,
+    agentsWidening: ports.agentsWidening,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
@@ -1507,6 +1519,14 @@ export function createInMemoryAppServices(): AppServices {
     registerUnregistered: async () => unsupported(),
   };
 
+  const agentCatalog = createBoundAgentCatalog({
+    store: agentRevisions,
+    levelFiles: noLevelFiles,
+    builtins: [],
+    defaultModel: () => "mock-model",
+    unavailableReasons: (definition, model) =>
+      agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
+  });
   return {
     gateway: {
       async *stream(request) {
@@ -1834,13 +1854,11 @@ export function createInMemoryAppServices(): AppServices {
     asks,
     billing: billingDomain.service,
     agentRevisions,
-    agentCatalog: createBoundAgentCatalog({
-      store: agentRevisions,
-      levelFiles: noLevelFiles,
-      builtins: [],
-      defaultModel: () => "mock-model",
-      unavailableReasons: (definition, model) =>
-        agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
+    agentCatalog,
+    agentsWidening: createAgentsWidening({
+      catalog: agentCatalog,
+      lockLevel: async () => {},
+      draftReview: documentSync.draftReview,
     }),
     eventSink: createNoopEventSink(),
     accountSettings,

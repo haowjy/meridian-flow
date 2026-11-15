@@ -3,10 +3,9 @@ import type { DraftOwner } from "@meridian/contracts";
 import type { AgentsLevel } from "@meridian/contracts/agents";
 import type { SkillFiles } from "../domain/types.js";
 
-/** A chat's branch: who owns it, and the chat that reads through it. */
+/** A branch a level is read through: its owner's drafts over live. */
 export interface AgentsBranch {
   owner: DraftOwner;
-  threadId: string;
 }
 
 export interface LevelFiles {
@@ -24,7 +23,7 @@ export interface AgentLevelFiles {
     level: AgentsLevel;
     userId: string;
     projectId?: string;
-    /** Reads the level as this chat's branch holds it: its tree, and a draft's text over live's. */
+    /** Reads the level as this owner's branch holds it: its tree, and a draft's text over live's. */
     branch?: AgentsBranch;
   }): Promise<LevelFiles>;
 }

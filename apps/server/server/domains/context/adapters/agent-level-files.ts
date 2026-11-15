@@ -4,7 +4,7 @@
  * a branch read shows a chat's branch (its tree, and a draft's text over live's).
  */
 import { agentsRootOf } from "@meridian/contracts/agents";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
@@ -31,7 +31,7 @@ interface Candidate {
 export function createAgentLevelFiles(deps: {
   db: Database;
   documentSync: Pick<MarkdownDocumentStore, "readAsMarkdown"> &
-    Pick<DraftPeerShadowAccess, "readEffectiveMarkdown">;
+    Pick<DraftPeerShadowAccess, "readOwnerMarkdown">;
   branches: Pick<Branches, "viewForOwner">;
 }): AgentLevelFiles {
   const texts = new Map<string, { version: string; text: string }>();
@@ -60,10 +60,8 @@ export function createAgentLevelFiles(deps: {
   ): Promise<string> {
     // A branch read is the chat's own view (its draft, else live), never cached by live's heads.
     if (branch) {
-      const read = await deps.documentSync.readEffectiveMarkdown({
+      const read = await deps.documentSync.readOwnerMarkdown({
         documentId: document.id as DocumentId,
-        threadId: branch.threadId as ThreadId,
-        destination: "draft",
         owner: branch.owner,
       });
       if (!read.ok) throw new Error(`Cannot read ${document.name}: ${read.error.code}`);

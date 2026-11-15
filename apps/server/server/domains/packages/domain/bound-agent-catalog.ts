@@ -84,7 +84,7 @@ export interface BoundAgentCatalog {
    * The Agents a write at `level` can change the meaning of: that level and the levels below it,
    * never the writing Project's full catalog (`subagents` and `skills` resolve only inside their
    * package, so a higher level that has a name keeps its winner whatever `level` holds). `branch`
-   * reads the files as that chat's branch holds them, its drafts' text over live's.
+   * reads the files as that owner's branch holds them, its drafts' text over live's.
    */
   effectiveAgents(
     userId: string,

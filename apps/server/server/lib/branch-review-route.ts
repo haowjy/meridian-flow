@@ -13,6 +13,7 @@ import {
   draftOwnerFromKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
+import type { AgentsLevel } from "@meridian/contracts/agents";
 import type {
   ApplyClickAnswer,
   ApplyClickResult,
@@ -56,6 +57,7 @@ import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-l
 import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/command-record.js";
 import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
+import { agentsLevelOfUri } from "./agents-widening.js";
 import type { AppServices } from "./app.js";
 import {
   documentTarget,
@@ -73,6 +75,7 @@ type BranchRouteServices = {
     "authorize" | "authorizeAt" | "confirmEdit" | "listAccess"
   >;
   documentSync: Pick<AppServices["documentSync"], "draftReview" | "roomRemoval">;
+  agentsWidening: Pick<AppServices["agentsWidening"], "labels">;
 };
 
 export function selectBranchRouteServices(app: AppServices): BranchRouteServices {
@@ -81,6 +84,7 @@ export function selectBranchRouteServices(app: AppServices): BranchRouteServices
     works: app.workRepo,
     fileAccess: app.fileAccess,
     documentSync: app.documentSync,
+    agentsWidening: app.agentsWidening,
   };
 }
 
@@ -450,13 +454,31 @@ export async function handleOwnerDraftListRequest(
   const frozen =
     listed.branchId !== null &&
     (await deps.documentSync.draftReview.branchOwner(listed.branchId))?.lifecycle === "frozen";
+  const visible = listed.items.filter(
+    (item) =>
+      readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
+  );
+  // One comparison per Agents level the listed items touch, not one per item.
+  const levels = new Set(visible.flatMap((item) => agentsLevelOfUri(item.path) ?? []));
+  const widened = new Map<AgentsLevel, string[]>();
+  for (const level of listed.branchId ? levels : [])
+    widened.set(
+      level,
+      await deps.agentsWidening.labels({
+        userId: input.userId,
+        projectId: input.projectId,
+        owner,
+        level,
+      }),
+    );
   return {
-    items: listed.items
-      .filter(
-        (item) =>
-          readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
-      )
-      .map((item) => toWireItem(item, listed.threadTitles)),
+    items: visible.map((item) => {
+      const labels = widened.get(agentsLevelOfUri(item.path) as AgentsLevel);
+      return {
+        ...toWireItem(item, listed.threadTitles),
+        ...(labels?.length ? { widened: labels } : {}),
+      };
+    }),
     branchId: listed.branchId,
     folders: listed.folders,
     frozen,
