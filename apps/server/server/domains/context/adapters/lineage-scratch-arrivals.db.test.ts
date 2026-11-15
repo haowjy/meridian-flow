@@ -170,7 +170,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         upload,
       );
       await expect(createDrizzleChatUploads(db).list(p, root)).resolves.toEqual({
-        uploads: [{ documentId: upload, attachedAt: "2026-01-01T00:00:00.000Z", used: true }],
+        uploads: [{ documentId: upload, attachedAt: "2026-01-01T00:00:00.000Z" }],
       });
       const [scratch] = await sources.ownedBy(p as never, { kind: "lineage", rootThreadId: root });
       expect((await sources.liveDocuments(scratch?.id as never)).map((file) => file.id)).toContain(

@@ -169,7 +169,7 @@
     "apps/server/server/domains/context/promotion/promotion-service.test.ts": 4,
     "apps/server/server/domains/context/tree/retention.db.test.ts": 3,
     "apps/server/server/domains/context/uploads/draft-upload-verifier.test.ts": 1,
-    "apps/server/server/domains/context/uploads/upload-intake.db.test.ts": 12,
+    "apps/server/server/domains/context/uploads/upload-intake.db.test.ts": 9,
     "apps/server/server/domains/context/uploads/upload-intake.test.ts": 2,
     "apps/server/server/domains/export/domain/project-export.test.ts": 7,
     "apps/server/server/domains/file-intake/image-preview.test.ts": 3,
