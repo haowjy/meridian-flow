@@ -1,6 +1,7 @@
 /**
  * Every drag over the editor, in one plugin: one caret, one `dragover`, one
- * `drop`, one plan per event. It also routes the click on inert space, since a
+ * `drop`, one plan per event. A paste at the caret takes the same inline rule
+ * as a drop (`insertionPos`). It also routes the click on inert space, since a
  * press and a drop ask the same question of the same walk. (A block moved by
  * its handle is not a drag in this sense: it draws and lands its own seam.)
  *
@@ -22,13 +23,14 @@
  */
 
 import { Extension } from "@tiptap/core";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
 import { clearDragHint, showDragHint } from "./drag-hint-store";
 import { dragPayloadKind } from "./drag-payload";
 import { DropCaretView } from "./drop-caret";
 import type { DropDoor } from "./drop-plan";
+import { insertionPos } from "./inline-snap";
 import { type Landing, landingAt } from "./point-landing";
 import { pressOnInertTarget } from "./press";
 import { claimRepress, installSelectionDrag } from "./selection-drag";
@@ -170,6 +172,19 @@ export const LandingExtension = Extension.create<LandingOptions>({
             const dropped = droppedSlicePlan(view, event, slice, landingOf(view, event));
             if (dropped.kind === "accept") dropped.commit?.(view);
             return true;
+          },
+
+          // A paste lands at the caret by ProseMirror's own insert, under the
+          // same rule as a drop: a picture or a chip pasted inside a chip or a
+          // code span goes beside it. Moving the caret is all this does; the
+          // insert reads the selection after this returns.
+          handlePaste(view, _event, slice) {
+            const { selection, doc } = view.state;
+            if (!selection.empty || !view.editable) return false;
+            const pos = insertionPos(doc, selection.from, slice.content);
+            if (pos !== selection.from)
+              view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, pos)));
+            return false;
           },
         },
       }),

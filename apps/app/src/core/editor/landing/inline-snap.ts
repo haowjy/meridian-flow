@@ -4,7 +4,7 @@
  * file), a word. Pure over the document and, for an atom, the `Geometry` port.
  */
 
-import type { Mark, Node as PMNode } from "@tiptap/pm/model";
+import type { Fragment, Mark, Node as PMNode } from "@tiptap/pm/model";
 
 import { chipLinkTarget } from "../links/link-chip";
 
@@ -75,6 +75,35 @@ export function snapOutOfCode(doc: PMNode, pos: number): number {
 /** Inside a link chip the landing is the chip's nearer edge. */
 export function snapOutOfChip(doc: PMNode, pos: number): number {
   return snapOutOf(doc, pos, chipLink);
+}
+
+/**
+ * The nearer edge of a code span or a link chip `pos` is inside: where a unit
+ * of its own (a picture, a chip) stands so it doesn't split one in two.
+ */
+export function snapOutOfUnits(doc: PMNode, pos: number): number {
+  return snapOutOfChip(doc, snapOutOfCode(doc, pos));
+}
+
+/**
+ * Where `content` inserted at `pos` lands. Text joins the run it is put into,
+ * so pasting a word inside a chip edits the chip's label; content carrying a
+ * unit of its own (a picture, a chip) goes beside the chip or code span.
+ */
+export function insertionPos(doc: PMNode, pos: number, content: Fragment): number {
+  return carriesUnit(content) ? snapOutOfUnits(doc, pos) : pos;
+}
+
+function carriesUnit(content: Fragment): boolean {
+  let found = false;
+  content.descendants((node) => {
+    if (found) return false;
+    found =
+      (node.isInline && !node.isText && !node.type.spec.linebreakReplacement) ||
+      (node.isText && chipLink(node) !== null);
+    return !found;
+  });
+  return found;
 }
 
 /** A pointer over an inline atom (a mention chip) chooses its nearer side. */

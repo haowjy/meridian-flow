@@ -20,6 +20,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import { sliceForDestination } from "../extensions/meridian-extensions";
 import { landSlice } from "../extensions/nesting";
 import type { DropDoor, DropPlan } from "./drop-plan";
+import { insertionPos } from "./inline-snap";
 import { isTable, isTableCell, type Landing } from "./point-landing";
 import { crossesTextblocks, removeRange } from "./range-removal";
 
@@ -141,7 +142,8 @@ function slicePlan(
   // caret draws that position.
   const pos =
     landing.kind === "inline"
-      ? (dropPoint(state.doc, landing.pos, slice) ?? landing.pos)
+      ? (dropPoint(state.doc, insertionPos(state.doc, landing.pos, slice.content), slice) ??
+        landing.pos)
       : landing.pos;
   const built = sliceDropTransaction(state, pos, slice, source);
   if (!built) return { kind: "refuse" };

@@ -14,6 +14,7 @@ import {
   resolveAnchorIn,
   resolveNodeHold,
 } from "../anchors";
+import { snapOutOfUnits } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
 
 import { objectSurfaceKind } from "../objects";
@@ -28,12 +29,7 @@ import {
   sendIngressMessage,
   uploadEntry,
 } from "./image-ingress-runtime";
-import {
-  acceptsInlineImage,
-  imageAltFromFilename,
-  inlineImagePos,
-  isImageFile,
-} from "./image-workflow";
+import { acceptsInlineImage, imageAltFromFilename, isImageFile } from "./image-workflow";
 import { measureImageFile } from "./measure-image";
 import {
   PENDING_IMAGE_SRC,
@@ -241,7 +237,7 @@ function insertPendingImageNode(
   if (!imageType || !paragraphType) return null;
 
   const clamped = Math.max(0, Math.min(at.pos, state.doc.content.size));
-  const target = at.kind === "inline" ? inlineImagePos(state.doc, clamped) : clamped;
+  const target = at.kind === "inline" ? snapOutOfUnits(state.doc, clamped) : clamped;
   const image = imageType.create({
     src: PENDING_IMAGE_SRC,
     alt,
