@@ -71,6 +71,7 @@ stateDiagram-v2
   The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
   refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
   either view: the press asks the server's Un-Apply, and a refusal (the tree changed since) is
-  skipped the same way; on the Changes tab a press takes the latest step of any source.
+  skipped the same way; on the Changes tab a press takes the latest step of any source. The
+  applied rows in Changes carry the same step's Undo (`undoApply`).
 
 A wrong edit here shows one tree in the sidebar while actions write into another.

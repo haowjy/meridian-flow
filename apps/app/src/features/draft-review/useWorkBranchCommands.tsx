@@ -19,7 +19,12 @@ import {
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
-import { pushUndoStep, shownSourceOf } from "@/core/project-tree/tree-undo";
+import {
+  type ApplyStep,
+  pushUndoStep,
+  shownSourceOf,
+  undoApply,
+} from "@/core/project-tree/tree-undo";
 import {
   useDraftCommandOwner,
   useOptionalContextRemovalCoordinator,
@@ -29,7 +34,13 @@ import {
 import { draftTreeVersion } from "@/features/project/tree-version";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
-import type { AppliedFact, DiscardPart, DiscardUndo, NoticeSurface } from "./draft-notices";
+import type {
+  AppliedFact,
+  AppliedUndo,
+  DiscardPart,
+  DiscardUndo,
+  NoticeSurface,
+} from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
 
@@ -132,6 +143,7 @@ export function useWorkBranchCommands({
         item: ThreadDraftListItem | undefined;
         outcome: Extract<CommandOutcome, { kind: "done" }>;
       }[],
+      step: AppliedUndo | null,
     ) => {
       if (surface === "band" || done.length === 0) return;
       const held = notices.appliedFacts(ownerKey)?.facts ?? [];
@@ -142,8 +154,7 @@ export function useWorkBranchCommands({
           done.flatMap(({ outcome }) => outcome.applied ?? []).map((fact) => [fact.itemKey, fact]),
         ).values(),
       ];
-      const facts: AppliedFact[] = [
-        ...held,
+      const fresh: AppliedFact[] = [
         ...done.flatMap(({ item, outcome }) => {
           const name = titleOf(item);
           return outcome.restored && name && item
@@ -179,14 +190,15 @@ export function useWorkBranchCommands({
       ];
       // Every document the writer applied says so on its row, a plain Apply as much as one that
       // moved it.
-      const told = new Set(facts.map((fact) => fact.documentId));
+      const told = new Set(fresh.map((fact) => fact.documentId));
       for (const { item } of done) {
         const name = titleOf(item);
         if (item && name && !told.has(item.documentId)) {
           told.add(item.documentId);
-          facts.push({ documentId: item.documentId, kind: "applied", name });
+          fresh.push({ documentId: item.documentId, kind: "applied", name });
         }
       }
+      const facts = [...held, ...fresh.map((fact) => (step ? { ...fact, step } : fact))];
       if (facts.length)
         notices.showApplied({ projectId, ownerKey, surface: noticeSurface(draft), facts });
     };
@@ -200,8 +212,8 @@ export function useWorkBranchCommands({
       branchId: string,
       nodes: readonly string[],
       name: string,
-    ) => {
-      if (surface === "band" || !treeLists) return;
+    ): AppliedUndo | null => {
+      if (surface === "band" || !treeLists) return null;
       const handle = treeLists.acquire({ kind: "project", projectId });
       const session = handle.session;
       // The Work's tree shows every node the Apply took, before it and after.
@@ -214,30 +226,38 @@ export function useWorkBranchCommands({
       const documentIds = nodes.filter((node) => shown.nodes.get(node)?.kind !== "folder");
       // A resend after a lost answer names the same Un-Apply: the server answers it once.
       const unapplyId = crypto.randomUUID();
-      pushUndoStep(session, {
+      const unapplyOnServer = async (): Promise<Awaited<ReturnType<ApplyStep["unapply"]>>> => {
+        try {
+          const answer = await unapplyCommand(projectId, branchId, {
+            commandId: unapplyId,
+            applyCommandId: commandId,
+          });
+          if (answer.status === "conflict") return { answer: "failed" };
+          refresh(documentIds);
+          if (answer.status !== "unapplied") return { answer: "skipped" };
+          for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
+          return { answer: "unapplied", textLeft: answer.skippedGroupIds.length };
+        } catch {
+          return { answer: "failed" };
+        }
+      };
+      const step: ApplyStep = {
         kind: "apply",
         sources: [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
         name,
         nodes,
         unapply: async () => {
-          try {
-            const answer = await unapplyCommand(projectId, branchId, {
-              commandId: unapplyId,
-              applyCommandId: commandId,
-            });
-            if (answer.status === "conflict") return { answer: "failed" };
-            refresh(documentIds);
-            if (answer.status !== "unapplied") return { answer: "skipped" };
-            // What the Apply's notice said is no longer so.
-            if (notices.appliedFacts(ownerKey)) endNotice();
-            for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
-            return { answer: "unapplied", textLeft: answer.skippedGroupIds.length };
-          } catch {
-            return { answer: "failed" };
-          }
+          const said = await unapplyOnServer();
+          // The press says what became of it on the rows (`TreeNotice`): the Apply's own words,
+          // and its Undo, give way.
+          if (notices.appliedFacts(ownerKey)) endNotice();
+          return said;
         },
-      });
+      };
+      pushUndoStep(session, step);
       handle.release();
+      // The applied rows' Undo is this step, the one Ctrl+Z takes.
+      return { undo: () => void undoApply(session, step), count: nodes.length };
     };
     const applyOne = (draft: DraftReviewSelection, target: ChangeTarget): CommandStart => {
       endNotice();
@@ -255,14 +275,16 @@ export function useWorkBranchCommands({
       void started.outcome.then((outcome) => {
         if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
         if (outcome.kind === "done") {
-          applied(draft, [{ item, outcome }]);
-          if (outcome.commandId && item)
-            rememberApply(
-              outcome.commandId,
-              item.branchId,
-              [draft.documentId],
-              titleOf(item) ?? t`Untitled document`,
-            );
+          const step =
+            outcome.commandId && item
+              ? rememberApply(
+                  outcome.commandId,
+                  item.branchId,
+                  [draft.documentId],
+                  titleOf(item) ?? t`Untitled document`,
+                )
+              : null;
+          applied(draft, [{ item, outcome }], step);
         }
         if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending)
           refresh([draft.documentId]);
@@ -349,19 +371,27 @@ export function useWorkBranchCommands({
       );
       void Promise.all([outcomes, Promise.all(started.outcomes), started.answer]).then(
         ([settled, _all, answer]) => {
+          const taken = [...members.map(({ draft }) => draft.documentId), ...folders];
+          const only = members.length === 1 && folders.length === 0 ? titleOf(first?.item) : null;
+          const count = taken.length;
+          const step =
+            answer?.status === "applied"
+              ? rememberApply(
+                  answer.commandId,
+                  branchId,
+                  taken,
+                  name ?? only ?? t`${count} changes`,
+                )
+              : null;
           if (first)
             applied(
               first.draft,
               settled.flatMap((outcome, index) =>
                 outcome.kind === "done" ? [{ item: members[index]?.item, outcome }] : [],
               ),
+              step,
             );
           if (folders.length > 0) refresh([]);
-          if (answer?.status !== "applied") return;
-          const taken = [...members.map(({ draft }) => draft.documentId), ...folders];
-          const only = members.length === 1 && folders.length === 0 ? titleOf(first?.item) : null;
-          const count = taken.length;
-          rememberApply(answer.commandId, branchId, taken, name ?? only ?? t`${count} changes`);
         },
       );
       return outcomes;

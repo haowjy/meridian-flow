@@ -263,33 +263,12 @@ export async function undoStep(
   actor: string,
   pendingText?: ReadonlySet<string>,
 ): Promise<boolean> {
+  if (step.kind === "apply") return undoApply(session, step);
   const stack = stackOf(session);
   const at = stack.indexOf(step);
   if (at < 0) return false;
   stack.splice(at, 1);
   show(session, null);
-  if (step.kind === "apply") {
-    const { answer, textLeft = 0 } = await step.unapply();
-    if (answer === "failed") stack.splice(Math.min(at, stack.length), 0, step);
-    show(
-      session,
-      saidOf(
-        answer === "failed"
-          ? { kind: "failed", skipped: [], name: step.name, step }
-          : answer === "skipped"
-            ? { kind: "nothing", skipped: [{ kind: "apply", name: step.name, nodes: step.nodes }] }
-            : {
-                kind: "undone",
-                skipped: [],
-                nodes: step.nodes,
-                ...(textLeft > 0
-                  ? { partial: { name: step.name, nodes: step.nodes, textLeft } }
-                  : {}),
-              },
-      ),
-    );
-    return answer === "unapplied";
-  }
   step.ended?.();
   const view = step.draft === null ? LIVE : { draft: step.draft };
   const name = step.nodes.flatMap((node) => step.was.get(node)?.name ?? []).at(0) ?? "";
@@ -301,6 +280,38 @@ export async function undoStep(
       : saidOf({ kind: "nothing", skipped: [{ kind: "tree", name, nodes: step.nodes }] }),
   );
   return undone;
+}
+
+/**
+ * An applied row's Undo: the server's Un-Apply of `step`, if it is still on the stack, as Ctrl+Z
+ * would take it, said on its rows as a press says it.
+ */
+export async function undoApply(session: TreeListSession, step: ApplyStep): Promise<boolean> {
+  const stack = stackOf(session);
+  const at = stack.indexOf(step);
+  if (at < 0) return false;
+  stack.splice(at, 1);
+  show(session, null);
+  const { answer, textLeft = 0 } = await step.unapply();
+  if (answer === "failed") stack.splice(Math.min(at, stack.length), 0, step);
+  show(
+    session,
+    saidOf(
+      answer === "failed"
+        ? { kind: "failed", skipped: [], name: step.name, step }
+        : answer === "skipped"
+          ? { kind: "nothing", skipped: [{ kind: "apply", name: step.name, nodes: step.nodes }] }
+          : {
+              kind: "undone",
+              skipped: [],
+              nodes: step.nodes,
+              ...(textLeft > 0
+                ? { partial: { name: step.name, nodes: step.nodes, textLeft } }
+                : {}),
+            },
+    ),
+  );
+  return answer === "unapplied";
 }
 
 /**

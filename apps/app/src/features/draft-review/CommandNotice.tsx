@@ -277,15 +277,32 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         const renamed = facts.some((fact) => fact.kind === "renamed");
         const [first] = facts;
         const name = first ? (first.kind === "also" ? first.to : first.name) : "";
+        const said = facts.map(factSentence).join(" ");
+        const step = facts.find((fact) => fact.step)?.step;
+        if (step) {
+          const count = step.count;
+          return (
+            <RowWord
+              label={t`Undo applying ${name}`}
+              word={<Trans>Undo</Trans>}
+              sentence={`${said} ${
+                count > 1
+                  ? t`Undo takes back the whole Apply, all ${count} changes.`
+                  : t`Undo takes them back out.`
+              }`}
+              onAction={step.undo}
+              // The pressed ✓ or Apply all left with its row: the first row the Apply took has
+              // the focus, as a delete's Undo does.
+              focus={{ take: () => takeOnce(notice.id) }}
+            />
+          );
+        }
         return (
           <RowWord
             tone="done"
             label={renamed ? t`${name}, renamed` : t`${name}, applied`}
             word={renamed ? <Trans>Renamed</Trans> : <Trans>Applied</Trans>}
-            sentence={facts.map(factSentence).join(" ")}
-            // The pressed ✓ or Apply all left with its row: the first row the Apply took has
-            // the focus, as a delete's Undo does.
-            focus={{ take: () => takeOnce(notice.id) }}
+            sentence={said}
           />
         );
       },
