@@ -12,7 +12,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { upsertProjectInList } from "./project-list-cache";
-import { projectQueryKeys } from "./project-query-keys";
+import { projectIdOfQueryKey, projectQueryKeys } from "./project-query-keys";
 
 export const PROJECT_CREATE_KIND = "project_create";
 
@@ -169,9 +169,10 @@ export function projectDomain(client: QueryClient): CommandDomain {
         // A function-valued `enabled` that turns true does not make TanStack fetch: the reads
         // this project's create held back start now.
         void client.refetchQueries({
-          queryKey: ["projects", creation.projectId],
           type: "active",
-          predicate: (query) => query.state.data === undefined,
+          predicate: (query) =>
+            projectIdOfQueryKey(query.queryKey) === creation.projectId &&
+            query.state.data === undefined,
         });
       },
     },
