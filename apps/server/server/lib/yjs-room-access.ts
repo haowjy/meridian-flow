@@ -1,3 +1,5 @@
+import type { AccessChangedWhy } from "@meridian/contracts/protocol";
+
 /**
  * Live Yjs connections by the owners (Works and lineages, keyed by `draftOwnerKey`) their file access depends on (file-access
  * §7). A Work's archive, unarchive, delete or restore reaches exactly the rooms
@@ -6,7 +8,7 @@
  */
 
 /** One admitted connection; `revoke` closes it so the client reconnects. */
-export type YjsRoomRegistration = { revoke(): void };
+export type YjsRoomRegistration = { revoke(why?: AccessChangedWhy): void };
 
 export type YjsRoomAccessIndex = ReturnType<typeof createYjsRoomAccessIndex>;
 
@@ -35,10 +37,10 @@ export function createYjsRoomAccessIndex() {
     },
     unregister,
     /** Closes every connection whose access this owner decides. */
-    revokeOwner(ownerKey: string): void {
+    revokeOwner(ownerKey: string, why?: AccessChangedWhy): void {
       for (const registration of [...(byOwner.get(ownerKey) ?? [])]) {
         unregister(registration);
-        registration.revoke();
+        registration.revoke(why);
       }
     },
   };
