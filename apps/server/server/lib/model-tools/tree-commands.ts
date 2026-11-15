@@ -28,6 +28,7 @@ import {
   type AgentsCheckTarget,
   checkAgentsWrite,
   draftContext,
+  markAgentsNodes,
   markAgentsWrite,
 } from "./agents-check.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
@@ -204,6 +205,7 @@ export async function runTreeToolCommand(
         },
         afterWrite: async (result, scope) => {
           if (!result.ok || result.made.length === 0) return;
+          if (checked.levels) markAgentsNodes(checked, result.touched.map((touched) => touched.node));
           const recorded = await history.recordAgentTreeChange({
             subject: result.subject,
             nodes: result.touched.map((touched) => ({

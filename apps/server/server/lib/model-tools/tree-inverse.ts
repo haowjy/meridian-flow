@@ -21,7 +21,12 @@ import {
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { agentsLevelOfUri } from "../agents-widening.js";
 import { threadContainerTarget } from "../file-targets.js";
-import { type AgentsCheckTarget, draftContext, markAgentsWrite } from "./agents-check.js";
+import {
+  type AgentsCheckTarget,
+  draftContext,
+  markAgentsNodes,
+  markAgentsWrite,
+} from "./agents-check.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, namesEvidence, shownNamesOf } from "./shown-paths.js";
 import {
@@ -214,6 +219,7 @@ async function reverseReceipt(
       level,
       appliesAfterCheck(call.principal, { ...grant.facts, agentsLevel: level }),
     );
+    markAgentsNodes(checked, [nodeId]);
   }
   if (receipt.across) {
     // The other end of a move between lists: its own container, its own grant.

@@ -6,8 +6,8 @@
 import { agentsRootOf } from "@meridian/contracts/agents";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentYjsHeads } from "@meridian/database/schema";
-import { inArray } from "drizzle-orm";
+import { documentDrafts, documentYjsHeads } from "@meridian/database/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { Branches, DraftPeerShadowAccess, MarkdownDocumentStore } from "../../collab/index.js";
 import type {
@@ -53,20 +53,24 @@ export function createAgentLevelFiles(deps: {
     );
   }
 
-  async function textOf(
-    document: ContextDocument,
-    version: string | undefined,
-    branch: AgentsBranch | undefined,
-  ): Promise<string> {
-    // A branch read is the chat's own view (its draft, else live), never cached by live's heads.
-    if (branch) {
-      const read = await deps.documentSync.readOwnerMarkdown({
-        documentId: document.id as DocumentId,
-        owner: branch.owner,
-      });
-      if (!read.ok) throw new Error(`Cannot read ${document.name}: ${read.error.code}`);
-      return read.value.content;
-    }
+  /** Which of `ids` the branch holds an active draft of; the rest read as live. */
+  async function draftedIn(branchId: string, ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const rows = await currentDrizzleDb(deps.db)
+      .select({ id: documentDrafts.documentId })
+      .from(documentDrafts)
+      .where(
+        and(
+          eq(documentDrafts.branchId, branchId),
+          eq(documentDrafts.kind, "work_draft"),
+          eq(documentDrafts.status, "active"),
+          inArray(documentDrafts.documentId, ids),
+        ),
+      );
+    return new Set(rows.map((row) => row.id));
+  }
+
+  async function liveText(document: ContextDocument, version: string | undefined) {
     const cached = texts.get(document.id);
     if (cached && version !== undefined && cached.version === version) return cached.text;
     const read = await deps.documentSync.readAsMarkdown(document.id);
@@ -89,7 +93,11 @@ export function createAgentLevelFiles(deps: {
         root.scheme,
         userId,
       );
-      const view = branch ? await deps.branches.viewForOwner(branch.owner) : LIVE_TREE;
+      const branchView = branch ? await deps.branches.viewForOwner(branch.owner) : LIVE_TREE;
+      const view =
+        branch?.frozen && branchView.kind === "branch"
+          ? { ...branchView, only: branch.frozen.nodes }
+          : branchView;
       const rootFolder =
         root.path === ""
           ? { kind: "found" as const, node: null }
@@ -132,8 +140,27 @@ export function createAgentLevelFiles(deps: {
         else readable.push(only);
       }
       const versions = await versionsOf(readable.map((candidate) => candidate.document.id));
+      // A branch read shows its drafts' text over live's; a document it holds no draft of is live
+      // and shares live's per-version cache. A frozen read has exactly the click's texts.
+      const drafted =
+        branch && !branch.frozen && branchView.kind === "branch"
+          ? await draftedIn(
+              branchView.branchId,
+              readable.map((candidate) => candidate.document.id),
+            )
+          : new Set<string>();
       for (const { document, path } of readable) {
-        const text = await textOf(document, versions.get(document.id), branch);
+        const frozen = branch?.frozen?.texts[document.id];
+        let text: string;
+        if (frozen !== undefined) text = frozen;
+        else if (branch && drafted.has(document.id)) {
+          const read = await deps.documentSync.readOwnerMarkdown({
+            documentId: document.id as DocumentId,
+            owner: branch.owner,
+          });
+          if (!read.ok) throw new Error(`Cannot read ${document.name}: ${read.error.code}`);
+          text = read.value.content;
+        } else text = await liveText(document, versions.get(document.id));
         if (text.includes("\0")) problems[path] = `${path} is not plain text`;
         else files[path] = text;
       }

@@ -58,6 +58,7 @@ import {
   type AgentsCheckTarget,
   checkAgentsWrite,
   draftContext,
+  markAgentsNodes,
   markAgentsWrite,
 } from "./agents-check.js";
 import { type ReadPlacement, readBinaryFile } from "./binary-read.js";
@@ -391,6 +392,7 @@ async function writeUnderGrant(
   }
   if (grant.facts.agentsLevel && grant.destination.kind === "draft") {
     markAgentsWrite(checked, grant.facts.agentsLevel, appliesAfterCheck(principal, grant.facts));
+    markAgentsNodes(checked, [address.documentId]);
   }
   let written: WriteOutcome;
   try {

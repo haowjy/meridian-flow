@@ -3,9 +3,18 @@ import type { DraftOwner } from "@meridian/contracts";
 import type { AgentsLevel } from "@meridian/contracts/agents";
 import type { SkillFiles } from "../domain/types.js";
 
-/** A branch a level is read through: its owner's drafts over live. */
+/**
+ * A branch a level is read through: its owner's drafts over live. With `frozen`, only the drafts
+ * a frozen Apply click carries count: live plus exactly that click.
+ */
 export interface AgentsBranch {
   owner: DraftOwner;
+  frozen?: {
+    /** Ids of the nodes whose branch rows the click carries. */
+    nodes: readonly string[];
+    /** The text of each frozen draft by document id; a node without one reads as live. */
+    texts: Readonly<Record<string, string>>;
+  };
 }
 
 export interface LevelFiles {

@@ -1,17 +1,20 @@
 /**
  * The check on an AI's write into an Agents level. The write already landed in the chat's branch
- * (an Agents place is an `ask` place for the AI, `appliesAfterCheck`); this step compares the
- * level's Agents read live with the same level read through the branch, and either Applies the
- * branch's Agents files with the writer's own Apply or leaves them pending, labelled.
+ * (an Agents place is an `ask` place for the AI, `appliesAfterCheck`). This step freezes the click
+ * that would Apply what the write produced, as a writer's click is frozen (draft ids, snapshots,
+ * tree revisions), compares the level's Agents live with live plus exactly that click, and either
+ * dispatches that same click or leaves the items pending, labelled. A write that lands after the
+ * freeze is not in the click and gets its own check; nothing else in the branch is touched.
  *
- * The decisive comparison runs again inside the Apply, under the level's advisory lock: two AI
- * writes that are each safe alone (a skill and the Agent that loads it) cannot both pass when
- * together they widen. A writer's own typing and Apply never take the lock and are never gated.
+ * The freeze, comparison and Apply run under the level's advisory lock: two AI writes that are
+ * each safe alone (a skill and the Agent that loads it) cannot both pass when together they
+ * widen. A writer's own typing and Apply never take the lock and are never gated.
  */
 import { createHash } from "node:crypto";
 import type { CommandId, DraftOwner, ProjectId, UserId } from "@meridian/contracts";
 import { type AgentsLevel, agentsLocationOf } from "@meridian/contracts/agents";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import type { FrozenCut } from "../domains/collab/domain/branch-auto-apply.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import type { CollabBranches } from "../domains/collab/index.js";
 import {
@@ -22,13 +25,16 @@ import {
   widenedLabel,
 } from "../domains/packages/domain/agent-widening.js";
 import type { BoundAgentCatalog } from "../domains/packages/index.js";
-import type { AgentsLevelOwner } from "../shared/agents-level-lock.js";
+import type { AgentsLevelLocks, AgentsLevelOwner } from "../shared/agents-level-lock.js";
 
 export type AgentsCheck =
   /** The write applied to live; `created` names the Agents it introduced. */
   | { status: "applied"; created: string[] }
-  /** The write stays a draft for the writer, with one label per widened Agent. */
-  | { status: "waiting"; labels: string[]; created: string[] }
+  /**
+   * The write stays a draft for the writer, with one label per widened Agent, or `note` saying
+   * why when there is none (the Apply did not take it, or another check held the level).
+   */
+  | { status: "waiting"; labels: string[]; created: string[]; note?: string }
   /** Nothing in the branch needed applying. */
   | { status: "unchanged"; created: string[] };
 
@@ -50,6 +56,8 @@ export interface AgentsWidening {
     owner: DraftOwner;
     levels: AgentsLevel[];
     callId: string;
+    /** Ids of the tree nodes (documents and folders) the call wrote: its candidate items. */
+    nodes: readonly string[];
     /** Whether the place lets the server Apply a write that widens nothing. */
     apply: boolean;
   }): Promise<AgentsCheck>;
@@ -84,20 +92,20 @@ export function agentsPlacesOf(
 
 export function createAgentsWidening(deps: {
   catalog: Pick<BoundAgentCatalog, "effectiveAgents">;
-  /** Runs `operation` holding the level's lock (`withAgentsLevelLock`). */
-  holdLevel<T>(owner: AgentsLevelOwner, operation: () => Promise<T>): Promise<T>;
-  draftReview: Pick<CollabBranches["draftReview"], "autoApply">;
+  locks: AgentsLevelLocks;
+  draftReview: Pick<CollabBranches["draftReview"], "freezeApply">;
 }): AgentsWidening {
-  /** Live against the branch, per `compareAgents`; the only comparison there is. */
+  /** Live against a branch read, per `compareAgents`; the only comparison there is. */
   async function compare(
     userId: string,
     scope: { projectId: string; level: AgentsLevel },
     owner: DraftOwner,
+    frozen?: FrozenCut,
   ) {
     const before = await deps.catalog.effectiveAgents(userId, scope);
     const after = await deps.catalog.effectiveAgents(userId, {
       ...scope,
-      branch: { owner },
+      branch: { owner, ...(frozen ? { frozen } : {}) },
     });
     return {
       widened: compareAgents(before, after),
@@ -106,29 +114,12 @@ export function createAgentsWidening(deps: {
   }
 
   return {
+    // What Changes would label if the writer Applied the whole branch; the check never uses it.
     async widened({ userId, projectId, owner, level }) {
       return (await compare(userId, { projectId, level }, owner)).widened;
     },
-    async settle({ thread, owner, levels, callId, apply }) {
-      const check = async () => {
-        const each = await Promise.all(
-          levels.map((level) =>
-            compare(thread.userId, { projectId: thread.projectId, level }, owner),
-          ),
-        );
-        return {
-          // A write that touches two levels reads each from the same branch, so both can name one Agent.
-          labels: [...new Set(each.flatMap((now) => now.widened.map(widenedLabel)))],
-          created: [...new Set(each.flatMap((now) => now.created))],
-        };
-      };
-      if (!apply) {
-        const now = await check();
-        return { status: "waiting", ...now };
-      }
-      // Under the levels' locks the comparison sees every earlier auto-Apply's effect, so two
-      // writes that are safe alone and widen together cannot both land. Locks are taken in one
-      // order (user, then project) so two writes that touch both levels cannot wait on each other.
+    async settle({ thread, owner, levels, nodes, callId, apply }) {
+      const written = new Set(nodes);
       const owners = [...new Set(levels)]
         .sort()
         .map(
@@ -137,26 +128,46 @@ export function createAgentsWidening(deps: {
               ? { level, projectId: thread.projectId }
               : { level, userId: thread.userId },
         );
-      const held = (rest: AgentsLevelOwner[]): Promise<AgentsCheck> => {
-        const [next, ...later] = rest;
-        return next ? deps.holdLevel(next, () => held(later)) : applyIfSafe();
-      };
-      const applyIfSafe = async (): Promise<AgentsCheck> => {
-        const now = await check();
-        if (now.labels.length > 0) return { status: "waiting", ...now };
-        const result = await deps.draftReview.autoApply({
+      /** Freezes what this write produced, checks live plus exactly that, and applies it if it may. */
+      const checkAndApply = async (): Promise<AgentsCheck> => {
+        const frozen = await deps.draftReview.freezeApply({
           owner,
           accountId: thread.userId as UserId,
           projectId: thread.projectId as ProjectId,
           commandId: applyCommandId(`${thread.id}:${callId}`),
-          select: (item) => agentsPlacesOf(item).some((place) => levels.includes(place.level)),
+          select: (item) =>
+            written.has(item.documentId) &&
+            agentsPlacesOf(item).some((place) => levels.includes(place.level)),
         });
-        return {
-          status: result.status === "applied" ? "applied" : "unchanged",
-          created: now.created,
-        };
+        if (!frozen) return { status: "unchanged", created: [] };
+        const each = await Promise.all(
+          levels.map((level) =>
+            compare(thread.userId, { projectId: thread.projectId, level }, owner, frozen.cut),
+          ),
+        );
+        // A write that touches two levels reads each from the same click, so both can name one Agent.
+        const labels = [...new Set(each.flatMap((now) => now.widened.map(widenedLabel)))];
+        const created = [...new Set(each.flatMap((now) => now.created))];
+        if (!apply || labels.length > 0) return { status: "waiting", labels, created };
+        return (await frozen.apply()) === "applied"
+          ? { status: "applied", created }
+          : {
+              status: "waiting",
+              labels,
+              created,
+              note: "the Apply did not take it, so it stays in Changes",
+            };
       };
-      return held(owners);
+      if (!apply) return checkAndApply();
+      const held = await deps.locks.hold(owners, checkAndApply);
+      return held.held
+        ? held.value
+        : {
+            status: "waiting",
+            labels: [],
+            created: [],
+            note: "another Agents change was being checked",
+          };
     },
   };
 }

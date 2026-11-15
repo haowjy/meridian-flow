@@ -15,12 +15,22 @@ import type { ResolvedModelContextPort, ToolCall, ToolWiringDeps } from "./tool-
  * A move between a project's Agents and the account's touches two levels; the server Applies only
  * when every grant says it may.
  */
-export type AgentsCheckTarget = { levels?: AgentsLevel[]; apply?: boolean };
+export type AgentsCheckTarget = {
+  levels?: AgentsLevel[];
+  apply?: boolean;
+  /** Ids of the tree nodes the call wrote: the only items the check may Apply. */
+  nodes?: string[];
+};
 
 /** Notes that the write touches `level`, whose place says whether the server may Apply it. */
 export function markAgentsWrite(checked: AgentsCheckTarget, level: AgentsLevel, applies: boolean) {
   checked.levels = [...new Set([...(checked.levels ?? []), level])];
   checked.apply = (checked.apply ?? true) && applies;
+}
+
+/** Notes the nodes (documents and folders) a write to an Agents level changed. */
+export function markAgentsNodes(checked: AgentsCheckTarget, nodes: readonly string[]) {
+  checked.nodes = [...new Set([...(checked.nodes ?? []), ...nodes])];
 }
 
 /** The context port whose writes all land in the chat's branch, as a create in an Agents level must. */
@@ -48,6 +58,7 @@ function withAgentsCheck(
     ...(check.status === "waiting" && check.labels.length > 0
       ? [`Waiting for review: ${check.labels.join("; ")}`]
       : []),
+    ...(check.status === "waiting" && check.note ? [`Waiting for review: ${check.note}.`] : []),
   ];
   if (lines.length === 0 || result.modelEdit.status === "never") return result;
   const note = lines.join("\n");
@@ -95,6 +106,7 @@ export async function checkAgentsWrite<R>(
     thread: { id: thread.id, userId: thread.userId, projectId: thread.projectId },
     owner: call.execution.branchOwner,
     levels: checked.levels,
+    nodes: checked.nodes ?? [],
     callId: ctx.toolCallId ?? randomUUID(),
     apply: checked.apply === true,
   });

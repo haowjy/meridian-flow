@@ -49,8 +49,8 @@ export function createBranchAutoApply(input: {
     projectId: ProjectId;
     /** The id the Apply command keeps; a resend answers the first outcome. */
     commandId: CommandId;
-    /** Whether a pending item, or a folder the branch has a row on, is part of what applies. */
-    select(item: Pick<DraftReviewItem, "path" | "tree">): boolean;
+    /** Whether a pending item is part of what applies. */
+    select(item: Pick<DraftReviewItem, "documentId" | "path" | "tree">): boolean;
   }): Promise<FrozenApply | null> {
     const { branchId, items } = await input.items(command.owner);
     if (!branchId) return null;
@@ -75,9 +75,14 @@ export function createBranchAutoApply(input: {
       if (text || tree)
         cuts.push({ node: item.documentId, ...(tree ? { tree } : {}), ...(text ? { text } : {}) });
     }
-    // A folder the selected files sit in, or one made alone, applies in the same cut.
+    // A folder the selected files sit in, or one the selection names, applies in the same cut.
+    const inside = (folder: string) =>
+      selected.some((item) => item.path?.startsWith(`${folder.replace(/\/$/, "")}/`));
     for (const folder of await input.folders(branchId))
-      if (command.select({ path: folder.uri, tree: null }))
+      if (
+        command.select({ documentId: folder.id, path: folder.uri, tree: null }) ||
+        (folder.uri && inside(folder.uri))
+      )
         cuts.push({ node: folder.id, tree: { revision: folder.revision } });
     if (cuts.length === 0) return null;
     // An item live has in Trash is Applied as a restore, which the writer's click says it knew.
