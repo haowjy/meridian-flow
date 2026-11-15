@@ -6788,6 +6788,10 @@ msgstr "Undid change to Work {0}."
 msgid "Undo"
 msgstr "Undo"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo applying {name}"
+msgstr "Undo applying {name}"
+
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo delete of {name}"
@@ -6844,6 +6848,14 @@ msgstr "Undo switch to auto-apply"
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Undo switch to draft mode"
 msgstr "Undo switch to draft mode"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the whole Apply, all {count} changes."
+msgstr "Undo takes back the whole Apply, all {count} changes."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes them back out."
+msgstr "Undo takes them back out."
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undoing Apply"
