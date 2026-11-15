@@ -96,14 +96,17 @@ function folderChange(
 ): FolderChange {
   if (records.some((record) => record.type === "create")) return { kind: "new" };
   if (records.at(-1)?.type === "delete") return { kind: "deleted" };
-  const move = records.filter((record) => record.type === "move").at(-1);
-  // The name and place the Work's tree shows against live's. An Undo or Redo carries what its
-  // author's copy showed, not what it does, so only a move that undoes nothing says where it goes.
+  // The name and place the Work's tree shows against live's. An Undo carries what its author's
+  // copy showed, and sets nothing itself, so after one the trees say what changed.
   const node = records[0]?.node;
   const shown = node === undefined ? undefined : work.nodes.get(node);
   const before = node === undefined ? undefined : live.nodes.get(node);
+  const lastUndo = records.findLastIndex((record) => record.undoes !== undefined);
+  const move = records.findLast(
+    (record, at) => record.type === "move" && record.undoes === undefined && at > lastUndo,
+  );
   const was =
-    records.some((record) => record.type === "rename") &&
+    (lastUndo >= 0 || records.some((record) => record.type === "rename")) &&
     before &&
     shown &&
     before.displayName !== shown.displayName
@@ -111,13 +114,11 @@ function folderChange(
       : null;
   // Where the Work sends it, which is not where it stands when the move cannot land.
   const into =
-    move?.type !== "move"
-      ? undefined
-      : move.undoes === undefined
-        ? move.parent
-        : shown && shown.parent !== before?.parent
-          ? shown.parent
-          : undefined;
+    move?.type === "move"
+      ? move.parent
+      : shown && shown.parent !== before?.parent
+        ? shown.parent
+        : undefined;
   return {
     kind: "changed",
     was,

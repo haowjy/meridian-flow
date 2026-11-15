@@ -46,14 +46,8 @@ export {
   type TreeRecordInput,
 } from "./record.js";
 export {
-  type Change,
   type DroppedRecord,
   deleteCovering,
-  type Holder,
-  type LabelSays,
-  type NodeHistory,
-  type NodeSetters,
-  type PlaceSays,
   placeIn,
   recordsOfItem,
   replay,

@@ -80,8 +80,8 @@ the replay uses them (package `AGENTS.md`).
   source (a move counts its destination's source too) or of a node made inside a dropped one.
   A node's source is where it stands at the record's place in the update: the server's list
   before it, then the update's own moves and creates in order (a move rule 1 would skip, or one
-  stamped, doesn't count). An Undo or Redo of a move goes where the replay of the list, update
-  included, leaves the node (`Change.parent`), not to the place it carries. So a folder moved out of a closed Work and then written into keeps
+  stamped, doesn't count). An Undo of any type goes where the replay of the list, update
+  included, has the node at it (`Change.parent`), not to the place it carries. So a folder moved out of a closed Work and then written into keeps
   its chapter, and an honest catch-up gets the same stamps however it is cut into parts. With no
   closed source nothing is replayed for it. The server's arrival order is the only true order of
   "raced the close", so this one verdict is the server's. The server's own records (Apply, a
@@ -93,40 +93,56 @@ the replay uses them (package `AGENTS.md`).
   `{ drafts, closedSources }`.
 - **Parts of one client's offline history** arrive in causal order and are admitted in order
   (the room queues a connection's messages); an honest client's parts are never a fault.
+- **A record is in force unless a later record in force undoes it** (`standingOf`;
+  `projection.inForce`). An Undo names the root (`carries ?? id`) of the record it takes back in
+  `undoes`, and takes out every record of that root. So a change with any Undo in force is out,
+  and an Undo of an Undo brings it back only while no other Undo of it is in force. Every kind of
+  record follows this one rule. The replay applies it as each Undo arrives, over that change's
+  chain (the records whose `Change.base` has one root: the change, its copies, the Undos about
+  them), and an Undo the replay skips is in no chain.
 - **A node's name and place are what the moves and renames in force say.** The replay keeps, per
   node, the moves and renames in force on its name (with type) and on its place, in list order
-  (`history`), and the node shows what the last of each says, or what its create said. A move or
-  rename is in force unless the last record about it is an Undo: an Undo names the record it takes
-  back (`undoes`), an Undo of an Undo is a Redo, and following `undoes` down reaches the change
-  they are all about (`Change.base`); an odd number of steps from it says out, an even number in,
-  and the last in the list decides. An Undo or Redo of a move or rename sets nothing itself: the
-  name, parent and rank it carries are what its author's copy showed, and the replay does not read
-  them. So two copies out of step settle on one tree: a stale Undo leaves a rename or move its
-  author never saw, a second Undo of one change changes nothing, and a Redo of either brings the
-  change back. A Redo puts back what the change said, its numbered name included, at the change's
-  own place in the list; for who shows a number (rule 4) it counts as arriving at the Redo. An
-  Undo or Redo that would leave the node under a folder that is gone or inside it is skipped whole,
-  and nothing it is about changes.
-- **One function says what an Undo or Redo of a move or rename does** (`withTurned`: a fact's
-  changes in force with one change out or back in). The replay applies it; `undoChange` calls it on
-  the projection's lists to decide which facts get another holder and what the node will then
-  show, which its record carries. It answers `already` when the change is already where the press
-  wants it, `changed_since` when a later change in force holds every fact it sets or the place it
-  would go back to is inside the node now, and writes nothing then. `undoFacts` is the same,
-  saying which fact of a move that also set a name stays (`kept`), for `undoApply`'s `left`.
-- **Creates, deletes and restores keep the older rule**: a record is in force while no later record
-  in force undoes its root, because Trash counts each delete of a node and a restore lifts deletes
-  outside any Undo chain (a plain restore, rule 9). `undoChange` on them takes back the last
-  record in force of the chain that undid and redid them (`redoneAs`). Undo of a delete is allowed
-  while that delete is a Trash entry in force. The opposite record of a
+  (`history`), and the node shows what the last of each says, or what its create said; a
+  server read of "who renamed or moved this" takes the last of each list. An Undo of a move or
+  rename sets nothing itself: at its place in the list it puts the changes it flips out of the
+  node's lists or back in at their own places (`withTurned`), and the node shows what they then
+  say. The name, parent and rank it carries are what its author's copy showed, and nothing reads
+  them to decide. So two copies out of step settle on one tree: a stale Undo leaves a rename or
+  move its author never saw, and a second Undo of one change changes nothing. An Undo that would
+  leave the node under a folder that is gone or inside it is skipped whole (rule 1), and nothing
+  it is about changes. A turn changes only that node's lists: what the node did earlier in the
+  list is not replayed again, so another node's move is never skipped because of it. Rule 4's
+  arrival is where the node's parent or shown name last changed by a change in force: an Undo
+  gives back the arrival it had, and a change back in force arrives at its own place.
+- **Readers of an Undo ask what it turned, not its type.** `projection.changes` has every record
+  the replay took by its id; `Change.base` is the change at the bottom of its chain of `undoes`,
+  whose `sets` say which facts it sets, and on an Undo `Change.parent` is where the replay has the
+  node at it. Admission reads `Change.parent` for any Undo; Apply's `factsIn` gives an Undo its
+  base change's facts; the review row reads the Work's tree against live after one.
+- **`undoChange` on a move or rename, or on an Undo about one**, works out what taking it out does
+  to the change it is about (`base`): out of force, back in, or neither, when another Undo of it
+  is in force. Then it puts those changes out or back on the node's `history` (`withTurned`, as
+  the replay does) to see what the node would show. It answers `already` for a record not in force,
+  `changed_since` when a later change in force holds every fact that would turn, or the place it
+  would go back to is inside the node now, and writes nothing then. When nothing would turn because
+  another Undo keeps the change out, it writes the record all the same: Un-Apply of an applied
+  stale Undo has to take that copy out, so a later Undo of the other Undo doesn't find the change
+  still taken out by the Apply. The record is a move when the place turns, a rename when only the
+  name does (the replay's Trash reads that: a rename leaves the deletes a move lifted lifted), and
+  otherwise of the base change's type. `undoFacts` is the same, saying which fact of a move that
+  also set a name stays (`kept`), for `undoApply`'s `left`.
+- **Creates, deletes and restores** follow the same in-force rule, but Trash keeps its own
+  record-order account: it counts each delete of a node, and a restore lifts deletes outside any
+  Undo chain (a plain restore, rule 9). `undoChange` on them takes back the last record in force
+  of the chain that undid and redid them (`redoneAs`). Undo of a delete is allowed while that
+  delete is a Trash entry in force. The opposite record of a
   restore puts back the deletes that restore lifted, under their own ids, with what each took (the
   replay keeps what each restore lifted): the entry is the original delete again, so its Undo and
   `restoreEntry` reach it, and a restore that takes that Undo back lifts them again. That
   opposite delete is not itself a Trash entry, so the projection's `standingDeletes` also holds
   its root id while it stands for something it put back: an entry, or a member of a folder's
   cascade (a restore of one chapter out of a deleted folder), until a restore lifts that again.
-  A Redo of a Redo's Undo, and so on round, works every time. Making Trash follow the rule moves
-  and renames follow is a design of its own.
+  Making Trash follow the in-force rule is a design of its own.
 - **Undo writes where the change stands.** `undoChange` takes the view the caller acts in; when the
   record in force there is live (a drafted change an Apply landed), the opposite record goes to
   live. Its `draft` says which. No caller retries in another view.
@@ -137,16 +153,18 @@ the replay uses them (package `AGENTS.md`).
   (`from`) all match by the root. If none is in the view (still discarded, applied away,
   superseded), Undo answers `unknown`. Undo of an Apply and `restoreEntry` use the same match.
   `restores`, `restoredBy`, `appliedBy` and `fromDraft` say who and from where, not which record.
-- **`projection.inForce` is the one reading of which records are in force**, each kind by its
-  rule above, worked out by the replay. `undoChange` answers `already` for a record that is not,
+- **`projection.inForce` is the one reading of which records are in force**, worked out by
+  the replay. `undoChange` answers `already` for a record that is not,
   and `appliedNodes(doc, command, restoredByApply)` is the one reader of what of an Apply still
   stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
   ids `undoApply` takes back) is in force. An Apply that only brought a document back from Trash
   lists it until Un-Apply or a card's Undo takes the restore back. A tab can tell the Apply's tree
   half has ended (a card's Undo of the drafted change took the copy back). `appliedBy` keeps
-  copies not in force, so `undoApply` reports them `already`; a copy of the Apply's own Undo record
-  may bring one back in force on the way. Apply's numbering never bakes a number into a copy of an
-  Undo or Redo, and after one it reads what live has from a replay, not the copy's fields.
+  copies not in force, so `undoApply` reports them `already`. One Undo takes out every copy of a
+  record: when a record applied, Un-Applied and applied again has its first copy back in force (an
+  Undo of the Un-Apply's Undo), Un-Apply of the second Apply takes out both. Apply's
+  numbering never bakes a number into a copy of an Undo, and after one it reads what live has
+  from a replay, not the copy's fields.
 - **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
   numbers only the clashes nobody saw. A move that numbers its arrival carries the name itself,
   not a paired `rename`.

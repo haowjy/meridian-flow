@@ -251,12 +251,13 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
     return false;
   };
 
-  // An Undo or Redo of a move sets nothing itself: the node goes where the changes in force put
-  // it, which a copy that had not seen an earlier move did not know. The replay of the list as it
-  // now stands says where, at the record's place; one it skipped moves nothing.
+  // Where a record puts its node, when it may move it: a move's parent, and for an Undo of any
+  // type where the replay of the list as it now stands has the node at it (`Change.parent`): an
+  // Undo sets nothing itself, and a copy that had not seen an earlier move did not know where the
+  // node goes. One the replay skipped moves nothing.
   const after = new Map<string | null, TreeProjection>();
-  const destination = (record: TreeRecord & { type: "move" }) => {
-    if (record.undoes === undefined) return record.parent;
+  const destination = (record: TreeRecord) => {
+    if (record.undoes === undefined) return record.type === "move" ? record.parent : undefined;
     let view = after.get(record.draft);
     if (!view) {
       view = replay(viewRecords(doc, { draft: record.draft }), { draft: record.draft });
@@ -288,7 +289,7 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
         placedIn(record.draft).set(record.node, record.parent);
         if (closed) dropped.add(record.node);
         break;
-      case "move": {
+      default: {
         const to = closing ? destination(record) : undefined;
         closed =
           draftClosed ||
@@ -297,10 +298,7 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
           (to !== undefined && inClosed(record.draft, to));
         if (!closed && to !== undefined && !intoItself(record.draft, record.node, to))
           placedIn(record.draft).set(record.node, to);
-        break;
       }
-      default:
-        closed = draftClosed || droppedNode(record.node) || inClosed(record.draft, record.node);
     }
     if (closed) out.push(record.id);
   }

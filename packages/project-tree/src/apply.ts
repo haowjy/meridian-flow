@@ -54,17 +54,38 @@ function needs(record: TreeRecord): string[] {
   return [record.node];
 }
 
-/** The facts a record sets: a later record of a same fact overrides an earlier one. */
-function factsOf(record: TreeRecord): string[] {
-  if (record.type === "rename") return [`name:${record.node}`];
-  if (record.type === "move")
-    return [`place:${record.node}`, ...(record.name === undefined ? [] : [`name:${record.node}`])];
-  if (record.type === "delete" || record.type === "restore") return [`presence:${record.node}`];
-  return [`create:${record.node}`];
+type Facts = (record: TreeRecord) => string[];
+
+/**
+ * The facts a record sets, read against the list's `records`: a later record on a same fact
+ * overrides an earlier one. An Undo about a move or rename sets that change's facts, whatever its
+ * own type: the change at the bottom of its chain of `undoes` (the replay's `Change.base`).
+ */
+function factsIn(records: readonly TreeRecord[]): Facts {
+  const byRoot = new Map<string, TreeRecord>();
+  for (const record of records) {
+    const root = record.carries ?? record.id;
+    if (!byRoot.has(root)) byRoot.set(root, record);
+  }
+  return (record) => {
+    let base = record;
+    for (let up = record.undoes; up !== undefined && base !== byRoot.get(up); ) {
+      const next = byRoot.get(up);
+      if (!next) break;
+      base = next;
+      up = next.undoes;
+    }
+    const sets = base.type === "move" || base.type === "rename" ? base : record;
+    if (sets.type === "rename") return [`name:${sets.node}`];
+    if (sets.type === "move")
+      return [`place:${sets.node}`, ...(sets.name === undefined ? [] : [`name:${sets.node}`])];
+    if (sets.type === "delete" || sets.type === "restore") return [`presence:${sets.node}`];
+    return [`create:${sets.node}`];
+  };
 }
-const sharesFact = (a: TreeRecord, b: TreeRecord) => {
-  const facts = factsOf(b);
-  return factsOf(a).some((fact) => facts.includes(fact));
+const sharesFact = (facts: Facts, a: TreeRecord, b: TreeRecord) => {
+  const of = facts(b);
+  return facts(a).some((fact) => of.includes(fact));
 };
 
 /**
@@ -76,9 +97,10 @@ const sharesFact = (a: TreeRecord, b: TreeRecord) => {
  * second rename brings the first, or the draft would read the first after it). A folder's delete
  * or restore after the record, or of a folder it no longer stands in, stays pending.
  */
-export function prerequisites(
+function prerequisites(
   pending: readonly TreeRecord[],
   only: readonly string[],
+  facts: Facts,
 ): Set<string> {
   const created = new Map<string, string>();
   for (const record of pending) if (record.type === "create") created.set(record.node, record.id);
@@ -106,7 +128,7 @@ export function prerequisites(
       );
       if (presence) stack.push(presence.id);
     }
-    for (const earlier of before) if (sharesFact(earlier, record)) stack.push(earlier.id);
+    for (const earlier of before) if (sharesFact(facts, earlier, record)) stack.push(earlier.id);
   }
   return out;
 }
@@ -236,7 +258,8 @@ export function applyDraft(
     for (const id of recordsAdmittedAfter(doc, saw))
       if (pendingIds.has(id) && !roots.has(id)) roots.set(id, "after_press");
   const leftIds = dependents(pending, [...roots.keys()]);
-  const wanted = only ? prerequisites(pending, only) : new Set(pendingIds);
+  const facts = factsIn(listRecords(doc));
+  const wanted = only ? prerequisites(pending, only, facts) : new Set(pendingIds);
   const candidates = pending.filter((record) => wanted.has(record.id) && !leftIds.has(record.id));
   const chosenOf = (records: readonly TreeRecord[]) => new Set(records.map((record) => record.id));
 
@@ -279,9 +302,9 @@ export function applyDraft(
       pending
         .slice(pending.indexOf(record) + 1)
         .filter((later) => taken.has(later.id))
-        .flatMap(factsOf),
+        .flatMap(facts),
     );
-    return factsOf(record).every((fact) => overriding.has(fact));
+    return facts(record).every((fact) => overriding.has(fact));
   });
   const overridden = new Set([...superseded, ...already].map((record) => record.id));
 
@@ -296,7 +319,8 @@ export function applyDraft(
   const reads = replay([...live, ...pending.filter((record) => !ends(record))], { draft });
   const was = new Map<string, { name: string; parent: string; rank: string }>();
   const turned = new Set<string>();
-  // After a copy of an Undo or Redo, what live has is what the changes in force say: replayed.
+  // After a copy of an Undo, what live has of its node is what the records in force say: replayed
+  // when the next copy of that node needs it, since a copy's `from` is live just before it.
   const stands = (node: string) => {
     if (turned.delete(node)) {
       const now = replay([...live, ...copies]).nodes.get(node);
@@ -522,6 +546,7 @@ export function undoApply(
     // they carry. One it lost a fact to (settled `superseded`) returns only if a record that
     // overrode it did.
     const all = listRecords(writer.doc);
+    const facts = factsIn(all);
     const position = new Map(all.map((record, at) => [record.id, at]));
     const byId = new Map(all.map((record) => [record.id, record]));
     const rootOf = (id: string) => byId.get(id)?.carries ?? id;
@@ -537,7 +562,7 @@ export function undoApply(
           return (
             record &&
             (position.get(other) ?? 0) > (position.get(id) ?? 0) &&
-            sharesFact(lost, record)
+            sharesFact(facts, lost, record)
           );
         })
         ? [id]
