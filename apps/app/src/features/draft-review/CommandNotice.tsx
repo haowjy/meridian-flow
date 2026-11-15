@@ -213,6 +213,8 @@ export function DraftNoticeLine({
     );
   }
   const first = notice.appliedFirst.length;
+  const named = "name" in subject ? subject.name : "";
+  const said = typeof sentence === "function" ? sentence(named) : sentence;
   return (
     <ActionNotice
       data-command-notice={failed ? "undo-failed" : "discarded"}
@@ -220,8 +222,8 @@ export function DraftNoticeLine({
         first === 0
           ? sentence
           : typeof sentence === "function"
-            ? (name: string) => `${sentence(name)} ${appliedFirstSentence(first)}`
-            : `${sentence} ${appliedFirstSentence(first)}`
+            ? (name: string) => `${sentence(name)} ${appliedFirstLine(first)}`
+            : `${sentence} ${appliedFirstLine(first)}`
       }
       name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: onUndo, pending: notice.status === "undoing" }}
@@ -229,7 +231,8 @@ export function DraftNoticeLine({
       failure={
         failed
           ? {
-              message: t`Undo didn't go through. Try again.`,
+              // Away from the rows, the line still says which Undo failed.
+              message: `${said} ${t`Undo didn't go through. Try again.`}`,
               onRetry: onUndo,
               onDismiss: notice.dismiss,
             }
@@ -272,6 +275,14 @@ function appliedFirstSentence(count: number): string {
   return plural(count, {
     one: "Applied before your Discard reached it, so it stays applied.",
     other: "# changes were applied before your Discard reached them, so they stay applied.",
+  });
+}
+
+/** The same said on a notice's line, beside what the Discard took: it names how many. */
+function appliedFirstLine(count: number): string {
+  return plural(count, {
+    one: "# change was applied before your Discard reached it.",
+    other: "# changes were applied before your Discard reached them.",
   });
 }
 

@@ -1075,7 +1075,8 @@ export class DraftCommandOwner {
    * An item's Discard when its branch moves or deletes the document: the move or delete (its
    * tree line), discarded on the server as `commandId`, and unless only the line was chosen, the
    * chosen text, here. Its Undo takes back both: the text's `handle` and the server's command.
-   * Null when the chosen text couldn't be written: the move or delete stays with it.
+   * `tree` is the server's answer alone, which says what the command took. Null when the chosen
+   * text couldn't be written: the move or delete stays with it.
    */
   discardItem(
     ref: DraftRef,
@@ -1083,15 +1084,21 @@ export class DraftCommandOwner {
     target: GroupsTarget | { kind: "tree" },
     history: Editor | "notice" | null,
     commandId: string,
-  ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
+  ): {
+    handle: DiscardUndo | null;
+    outcome: Promise<CommandOutcome>;
+    tree: Promise<CommandOutcome>;
+  } | null {
     if (!this.active || !item.tree) return null;
     const text =
       item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
     if (item.hasDraft && target.kind !== "tree" && !text) return null;
+    const tree = this.discardTree(ref, item, commandId);
     return {
       handle: text?.handle ?? null,
-      outcome: Promise.all([this.discardTree(ref, item, commandId), text?.outcome]).then(
-        ([tree, discarded]) => (tree.kind === "done" && discarded ? discarded : tree),
+      tree,
+      outcome: Promise.all([tree, text?.outcome]).then(([answer, discarded]) =>
+        answer.kind === "done" && discarded ? discarded : answer,
       ),
     };
   }

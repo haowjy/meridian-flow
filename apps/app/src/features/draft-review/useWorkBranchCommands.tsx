@@ -441,27 +441,6 @@ export function useWorkBranchCommands({
       }),
       end: () => {},
     });
-    /** One share for a Discard that is a room's text and a server command together. */
-    const bothUndo = (text: DiscardUndo | null, server: DiscardUndo): DiscardUndo =>
-      text
-        ? {
-            undo: async () => {
-              const shares = [text.undo(), server.undo()];
-              const [own, theirs] = await Promise.all(shares);
-              const answers = [own?.answer, theirs?.answer];
-              return {
-                answer: answers.includes("failed")
-                  ? "failed"
-                  : answers.includes("ok")
-                    ? "ok"
-                    : "gone",
-                landed: Promise.all([own?.landed, theirs?.landed]).then(() => undefined),
-                ...(theirs?.leftOut ? { leftOut: theirs.leftOut } : {}),
-              };
-            },
-            end: () => text.end(),
-          }
-        : server;
     const start = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
@@ -478,21 +457,20 @@ export function useWorkBranchCommands({
       // on the page, which shows the refusal.
       const leaves =
         target.kind === "draft" && (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
-      const { start, part } = dispatchDiscard(draft, target);
+      const { start, parts } = dispatchDiscard(draft, target);
       // A change card's chip stays on the card pressed; a whole draft's is the band's.
       const bounceSurface: NoticeSurface =
         surface === "band" && target.kind === "groups"
           ? { kind: "card", documentId: draft.documentId }
           : noticeSurface(draft);
       void start.outcome.then((outcome) => bounced([outcome], bounceSurface, [draft.documentId]));
-      const shown = part
-        ? notices.showDiscard({
-            projectId,
-            ownerKey,
-            surface: noticeSurface(draft),
-            parts: [part],
-          })
-        : null;
+      const shown = notices.showDiscard({
+        projectId,
+        ownerKey,
+        surface: noticeSurface(draft),
+        bounceSurface,
+        parts,
+      });
       if (leaves && removal)
         void start.outcome.then((outcome) => {
           if (outcome.kind !== "done") return;
@@ -508,7 +486,7 @@ export function useWorkBranchCommands({
     ): Promise<CommandOutcome[]> => {
       endNotice();
       const started = items.map(({ draft, target }) => dispatchDiscard(draft, target));
-      const parts = started.flatMap(({ part }) => (part ? [part] : []));
+      const parts = started.flatMap(({ parts }) => parts);
       const [first] = items;
       const outcomes = Promise.all(started.map(({ start }) => start.outcome));
       if (first) {
@@ -532,22 +510,16 @@ export function useWorkBranchCommands({
     const dispatchDiscard = (
       draft: DraftReviewSelection,
       target: ChangeTarget,
-    ): { start: CommandStart; part: DiscardPart | null } => {
-      const none = (start: CommandStart) => ({ start, part: null });
+    ): { start: CommandStart; parts: DiscardPart[] } => {
+      const none = (start: CommandStart) => ({ start, parts: [] });
       if (locked) return none(blocked());
       const item = row(draft);
       const history = reviewEditor ? reviewEditor(draft) : "notice";
       const name = titleOf(item) ?? t`Untitled document`;
       const scope = target.kind === "draft" ? ("draft" as const) : ("change" as const);
-      /** The notice's share; it leaves the notice when the Discard itself was refused. */
-      const share = (
-        handle: DiscardUndo,
-        outcome: Promise<CommandOutcome>,
-        ownText: boolean,
-      ): DiscardPart => {
-        void outcome.then((answer) => {
-          if (!ownText) answeredShare(handle, answer);
-        });
+      /** A server command's share of the notice: its answer says what of it stays. */
+      const share = (handle: DiscardUndo, outcome: Promise<CommandOutcome>): DiscardPart => {
+        void outcome.then((answer) => answeredShare(handle, answer));
         return { documentId: draft.documentId, name, scope, handle };
       };
       // A whole draft ends on the server, everything it holds.
@@ -564,13 +536,15 @@ export function useWorkBranchCommands({
         });
         return {
           start: { sent: true, outcome },
-          part: {
-            ...share(serverUndo(item.branchId, commandId, [draft.documentId]), outcome, false),
-            restore: commandId,
-            review: reviewOf(item),
-            // A view following the Undo opens the draft once the server lists it again.
-            undone: () => relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey),
-          },
+          parts: [
+            {
+              ...share(serverUndo(item.branchId, commandId, [draft.documentId]), outcome),
+              restore: commandId,
+              review: reviewOf(item),
+              // A view following the Undo opens the draft once the server lists it again.
+              undone: () => relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey),
+            },
+          ],
         };
       }
       // A move or delete is discarded on the server, with the item's chosen text, as one command.
@@ -585,13 +559,17 @@ export function useWorkBranchCommands({
           refresh([draft.documentId]);
           return answer;
         });
-        const handle = bothUndo(
-          discarded.handle,
-          serverUndo(item.branchId, commandId, [draft.documentId]),
-        );
+        // Two shares of one Undo: the room's text, and the server's command, which its answer
+        // narrows like any other (an Apply that took the item first leaves only the text).
+        const server: DiscardPart = {
+          ...share(serverUndo(item.branchId, commandId, [draft.documentId]), discarded.tree),
+          restore: commandId,
+        };
         return {
           start: { sent: true, outcome },
-          part: { ...share(handle, outcome, discarded.handle !== null), restore: commandId },
+          parts: discarded.handle
+            ? [{ documentId: draft.documentId, name, scope, handle: discarded.handle }, server]
+            : [server],
         };
       }
       const discarded = owner.discard(ref(draft), target, history);
@@ -601,28 +579,35 @@ export function useWorkBranchCommands({
       if (!discarded.handle) return none(start);
       return {
         start,
-        part: {
-          documentId: draft.documentId,
-          name,
-          scope,
-          handle: discarded.handle,
-          ...(item ? { review: reviewOf(item) } : {}),
-          // The row comes back with the prose. The list is read again only once the server lists
-          // the draft: a read before then drops the row, and a page opened on it would close.
-          undone: async (landed) => {
-            if (!item) {
+        parts: [
+          {
+            documentId: draft.documentId,
+            name,
+            scope,
+            handle: discarded.handle,
+            ...(item ? { review: reviewOf(item) } : {}),
+            // The row comes back with the prose. The list is read again only once the server lists
+            // the draft: a read before then drops the row, and a page opened on it would close.
+            undone: async (landed) => {
+              if (!item) {
+                refresh([draft.documentId]);
+                return landed.then(() => false);
+              }
+              patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+                rows.some((listed) => listed.itemKey === item.itemKey) ? rows : [...rows, item],
+              );
+              await landed;
+              const listed = await relistedOwnerDraft(
+                queryClient,
+                projectId,
+                ownerKey,
+                item.itemKey,
+              );
               refresh([draft.documentId]);
-              return landed.then(() => false);
-            }
-            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-              rows.some((listed) => listed.itemKey === item.itemKey) ? rows : [...rows, item],
-            );
-            await landed;
-            const listed = await relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey);
-            refresh([draft.documentId]);
-            return listed;
+              return listed;
+            },
           },
-        },
+        ],
       };
     };
     /**
