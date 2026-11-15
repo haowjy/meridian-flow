@@ -1,4 +1,4 @@
-import { isSourceRoot } from "./record.js";
+import { isSourceRoot, type TreeRecord } from "./record.js";
 import type { TreeNode, TreeProjection } from "./replay.js";
 
 /**
@@ -63,15 +63,33 @@ function same(a: ProjectedRow, b: ProjectedRow): boolean {
   );
 }
 
-/** What a Work's tree shows differently from live: each node that differs or exists only in the Work. */
+/** The nodes a Work's pending records create, in list order; `kind` keeps one kind of them. */
+export function pendingCreates(
+  pending: readonly TreeRecord[],
+  kind?: "document" | "folder",
+): Set<string> {
+  return new Set(
+    pending.flatMap((r) => (r.type === "create" && (!kind || r.kind === kind) ? [r.node] : [])),
+  );
+}
+
+/**
+ * What a Work's tree shows differently from live: each node that differs or exists only in the
+ * Work. A node exists only in the Work when live has no row for it or the Work's pending records
+ * create it and the Work still shows it: Un-Apply puts a create back to pending while live keeps
+ * the node in Trash, and an Undo of that create leaves it in Trash in both, which is no change.
+ */
 export function branchRows(
   live: ReadonlyMap<string, ProjectedRow>,
   draft: ReadonlyMap<string, ProjectedRow>,
+  pending: readonly TreeRecord[],
 ): Map<string, BranchRow> {
+  const created = pendingCreates(pending);
   const out = new Map<string, BranchRow>();
   for (const row of draft.values()) {
     const base = live.get(row.id);
-    if (!base) out.set(row.id, { ...row, existsOnlyInDraft: true });
+    if (!base || (created.has(row.id) && !row.deleted))
+      out.set(row.id, { ...row, existsOnlyInDraft: true });
     else if (!same(base, row)) out.set(row.id, { ...row, existsOnlyInDraft: false });
   }
   return out;
