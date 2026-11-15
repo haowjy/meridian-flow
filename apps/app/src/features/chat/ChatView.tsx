@@ -558,6 +558,8 @@ export function ChatView({
     canOpen: openThread !== null,
   });
   const inheritedView = inherited.view;
+  // A fork or the composer shows a pick at once, before the server has it.
+  const projectedModel = useThreadModel(threadId, activeThread?.modelOverride ?? null);
   const forkTurn = useCommittedEvent((originTurnId: string) => {
     if (!activeThread || !openThread) return;
     const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
@@ -575,7 +577,7 @@ export function ChatView({
         originTurnId,
         agent: null,
         agentName: activeThread.agentName,
-        modelOverride: activeThread.modelOverride,
+        modelOverride: projectedModel,
       },
       {
         ...deps,
@@ -645,7 +647,7 @@ export function ChatView({
     if (handoffCutoff) handoffTurn(handoffCutoff, choice);
   });
   const setThreadModel = useSetThreadModel(threadId);
-  const modelOverride = useThreadModel(threadId, activeThread?.modelOverride ?? null);
+  const modelOverride = projectedModel;
   const agentName = activeThread?.agentName ?? null;
   const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
   // Busy only while the server has yet to accept the chat's first send; a chat with nothing to

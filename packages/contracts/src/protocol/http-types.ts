@@ -515,7 +515,7 @@ export const handoffThreadRequestSchema = z.strictObject({
   originTurnId: z.uuid(),
   agentSelection: agentSelectionSchema,
   /** The model the new chat runs on instead of its Agent's. */
-  modelOverride: z.string().nullish(),
+  modelOverride: z.string().min(1).nullish(),
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 

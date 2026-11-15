@@ -190,10 +190,22 @@ function turnGatewayParams(
   thread: Pick<Thread, "modelOverride">,
   agentParams: Pick<GenerateRequest, "model" | "reasoning">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
+  return { ...agentParams, model: threadModelId(gateway, thread, agentParams.model) };
+}
+
+/**
+ * The model a chat's turn runs on: its override while the gateway lists it, else its Agent's.
+ * Every reader of a chat's model goes through here, so none of them ignores the override.
+ */
+export function threadModelId(
+  gateway: Pick<Gateway, "listModels"> | undefined,
+  thread: Pick<Thread, "modelOverride">,
+  agentModel: string | undefined,
+): string | undefined {
   const override = thread.modelOverride;
   return override && gateway?.listModels().some((model) => model.id === override)
-    ? { ...agentParams, model: override }
-    : agentParams;
+    ? override
+    : agentModel;
 }
 
 function modelOf(

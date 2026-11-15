@@ -1,6 +1,7 @@
 # features/agents — Agent selection
 
-New-chat Send reserves the selected Agent (default General) with its display
+New-chat Send reserves the selected Agent (default: the Agent of the newest chat started in the
+project, `AgentCatalog.lastStartedSlug`, else General) and the model it runs on with its display
 snapshot on the local thread before persist, and catalog updates can't replace
 that choice. The server remains the authority for admission of retained
 revisions.
@@ -8,10 +9,11 @@ revisions.
 | Surface | Behavior |
 |---|---|
 | New-chat composer | Interactive picker until creation is reserved. |
-| Started chat | The same picker with the bound Agent current. Picking another hands off to it from the last complete turn, a writer message included, so during a running reply the cut is the message it answers. Picking the bound Agent changes nothing (the picker under a turn hands off to it instead). Busy while the server has yet to accept the first send. |
+| Started chat | The same picker opened on "This chat": the bound Agent, its definition and the model it runs on. Picking another Agent (under "Hand off to") hands off to it from the last complete turn, a writer message included, so during a running reply the cut is the message it answers; a model picked with it goes to the new chat. Changing the bound Agent's model sets this chat's override (`thread_set_model`); re-picking what is already in use sends nothing. The picker under a turn hands off, the bound Agent included. Busy while the server has yet to accept the first send. |
 | Chat with nothing to hand off from (no complete turn, a subagent's) | Readonly bound-Agent status. |
 | Results provenance | Inert attribution from the producing conversation's retained definition, inside the producing-thread link. |
-| Picker | Saved versions only (the catalog lists nothing else). A closing line, "2 unsaved Agent changes", counts the packages not `saved` and opens the Agents tab, so a new Agent missing from the list has its reason. |
+| Picker | Names on the left, the pointed-at Agent's detail on the right (description, file, "Runs on" collapsed). Saved versions only; an Agent that can't be used keeps its place, struck through, and its detail says why with Open file; an Agent only other Agents call (`primary: false`) is left out. Its height follows the Agent count alone (7–8 rows) and each side scrolls inside it, so nothing moves while pointing. The list is one Tab stop; arrows move between rows, Right enters the detail, Left returns. A touch's first tap on a row points, a second picks, and the detail offers "Use X" / "Hand off to X". "Manage Agents" at its foot opens the Agents tab. |
+| Model override | A chat can run its Agent on another model, for that chat only (`threads.model_override`, resolved per turn by `threadModelId`; an override the gateway doesn't list falls back to the Agent's model). The chip shows the other model's name only when one is set (struck through when it falls back); choosing the Agent's own model ("its own") clears it. A pick shows at once from the command journal (`useThreadModel`) until a snapshot read after it settles. |
 | Agents tab (sidebar) | `.agents/` and `~/.agents/` as trees, built-ins as rows that open read-only. Each package's heading (a level's own files) or folder row (`packages/<name>/`) ends, when there is something to save, with the count of files changed since the last save (an icon and the number, so a 264px row keeps its name; it remains available while a failed Save or Undo result shows) and Save, and a package-level problem (a broken `mars.toml`) as a "1 problem" chip: said there once, never copied onto its files. A removed import, which has no row, gets a line under its level. "Save all" in the tab's heading once two or more packages are not `saved`. A file row ends with the first that applies (`fileTrouble`): Unavailable (no good save in use; the name is struck through), Not in use (its edit has an Error or can't run, and its last good save is used), Unsaved, Hidden. A closed folder says what it holds out of use: "2 unavailable", else "1 not in use" (`outOfUseWord`, the one count every level says, over `fileTrouble`); a package row with its problem chip shows only the chip, and beside Save the count shrinks to a dot and the number (the words in its tooltip and accessible name), so the name keeps the room. |
 | Open file of a level | `AgentFileState` at the end of the toolbar row, before Live (the identity row's slot), so the page never moves: a chip for what keeps the file from use or its notes, opening each finding in Flow's words, then its package's state (`Unsaved`, which opens the changed files) and Save, or the Save's result in place ("4 unavailable · Undo"). A package-level problem names the package there ("cw-skills can't be saved: 1 problem", a long name truncated), so a good file of a broken package never reads as broken. A file with nothing to say shows nothing. |
 | Applied draft, the AI's write | The Changes row an Apply took, and the chat's edits receipt, show the package's state and Save for each Agents package they landed in. |
@@ -21,7 +23,7 @@ revisions.
 
 - Two reads: the catalog (`GET /api/agents`, saved versions only, winners, with a selection)
   feeds the picker; `GET /api/agents/files` gives every level's file with its verdict and each
-  package's Save state, and feeds the tab, the notice, the Save chips and the picker's count.
+  package's Save state, and feeds the tab, the notice and the Save chips.
   Built-ins are no documents: their text comes from `GET /api/agents/saved-file?level=builtin` and opens in
   a dialog, as an upload does, with the same state chip as an open file (`TroubleChip`).
 - `useAgentFiles` keys on the documents both Agents trees list, so a file made, renamed or
@@ -34,7 +36,8 @@ revisions.
   New file, starts with `agentFileTemplate`, written into its local copy as typing would be
   (`writeFirstAgentText`). The name goes through Mars's own emitter (`rewriteBlock`, the browser
   build), so `123` and `[critic]` are quoted. The template must read with no Mars finding.
-- The picker marks a level (Project, Yours, Built-in) only on a name that hides another.
+- The picker shows no level (Project, Yours, Built-in); rows that share a name add their file
+  name as a quiet meta, and the detail shows the file's address.
 - Copy spells the levels `.agents/` and `~/.agents/`; `agents://` and `user://.agents` never
   reach the screen. `areaOf` (`context-schemes.ts`) names a path of the writer's level
   `~/.agents/...` wherever a location is printed.

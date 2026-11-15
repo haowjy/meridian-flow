@@ -3,10 +3,11 @@ import { Trans } from "@lingui/react/macro";
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { agentsRootOf } from "@meridian/contracts/agents";
 import { Check, Settings2 } from "lucide-react";
-import { type CSSProperties, type RefObject, useState } from "react";
+import { type CSSProperties, type Ref, type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
+import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
 import { Picker, PickerSection } from "@/components/ui/picker";
@@ -66,6 +67,10 @@ export function AgentPickerPanel({
   focusRefs,
 }: AgentPickerPanelProps) {
   const [pointed, setPointed] = useState<string | null>(null);
+  // A touch has no hover: its first tap on a row shows the row's detail, a second tap picks it.
+  const touch = useRef(false);
+  const detailRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
   const agents = catalog.filter((agent) => agent.primary);
   if (status.status !== "ready" || agents.length === 0)
@@ -102,12 +107,21 @@ export function AgentPickerPanel({
   // Header and footer lines plus the rows: the one height, whatever is pointed at.
   const height = (rows + 1) * ROW_PX + 24;
 
+  const choose = (agent: AgentCatalogItem, model: string | null) => {
+    if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), model });
+  };
   const row = (agent: AgentCatalogItem) => {
     const isCurrent = agent.slug === current.slug;
     return (
       <li
         key={agent.slug}
-        onPointerEnter={() => setPointed(agent.slug)}
+        data-agent={agent.slug}
+        onPointerDown={(event) => {
+          touch.current = event.pointerType === "touch";
+        }}
+        onPointerEnter={(event) => {
+          if (event.pointerType !== "touch") setPointed(agent.slug);
+        }}
         onFocus={() => setPointed(agent.slug)}
       >
         <ListRow
@@ -121,8 +135,12 @@ export function AgentPickerPanel({
                 ? focusRefs.first
                 : undefined
           }
+          // One Tab stop for the list: the row whose detail shows. Arrows move between rows.
+          controlProps={{ tabIndex: agent.slug === shown.slug ? 0 : -1 }}
           onOpen={() => {
-            if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), model: null });
+            if (touch.current && agent.slug !== shown.slug) return setPointed(agent.slug);
+            // The current Agent keeps the model it runs on here.
+            choose(agent, isCurrent ? current.model : null);
           }}
           title={agent.name}
           meta={sameName.has(agent.name) ? fileName(agent) : undefined}
@@ -140,7 +158,20 @@ export function AgentPickerPanel({
       >
         {/* Stacked on a phone, the list and the detail each need their own rows: twice the height. */}
         <div className="flex h-[calc(var(--agents-height)*2)] max-h-full min-h-0 flex-col gap-1 @[28rem]/agents:h-(--agents-height) @[28rem]/agents:flex-row">
-          <div className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-52 @[28rem]/agents:flex-none @[28rem]/agents:border-r @[28rem]/agents:border-border-subtle @[28rem]/agents:pr-1">
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the list's arrow keys; the rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
+          <div
+            ref={listRef}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" && event.target instanceof HTMLElement) {
+                if (!event.target.closest("li[data-agent]")) return;
+                event.preventDefault();
+                detailRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+                return;
+              }
+              handleListKeys(event);
+            }}
+            className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-52 @[28rem]/agents:flex-none @[28rem]/agents:border-r @[28rem]/agents:border-border-subtle @[28rem]/agents:pr-1"
+          >
             {own ? (
               <section aria-label={t`This chat`} className="shrink-0">
                 <h3 className={dropdownGroupLabelClass}>
@@ -177,11 +208,27 @@ export function AgentPickerPanel({
           </div>
           <AgentDetail
             key={shown.slug}
+            ref={detailRef}
+            onBack={() =>
+              listRef.current
+                ?.querySelector<HTMLElement>(
+                  `li[data-agent="${CSS.escape(shown.slug)}"] [data-list-item]`,
+                )
+                ?.focus()
+            }
+            useLabel={
+              started && shown !== own
+                ? t`Hand off to ${shown.name}`
+                : shown.slug === current.slug
+                  ? null
+                  : t`Use ${shown.name}`
+            }
+            onUse={() => choose(shown, null)}
             agent={shown}
             thisChat={started && shown === own ? started.threadId : null}
             model={shown.slug === current.slug ? current.model : null}
             models={models}
-            onChoose={(model) => onChoose({ agent: creationAgentOf(shown), model })}
+            onChoose={(model) => choose(shown, model)}
             onOpenFile={() => {
               if (!shown.path || shown.level === "builtin") return;
               onClose();
@@ -195,6 +242,10 @@ export function AgentPickerPanel({
 }
 
 function AgentDetail({
+  ref,
+  onBack,
+  useLabel,
+  onUse,
   agent,
   thisChat,
   model,
@@ -202,6 +253,12 @@ function AgentDetail({
   onChoose,
   onOpenFile,
 }: {
+  ref: Ref<HTMLDivElement>;
+  /** Left arrow: back to the Agent's row. */
+  onBack: () => void;
+  /** Picks this Agent on its own model; null when it is already the one picked. */
+  useLabel: string | null;
+  onUse: () => void;
   agent: AgentCatalogItem;
   /** The chat's id when this is the Agent the chat runs. */
   thisChat: string | null;
@@ -215,7 +272,19 @@ function AgentDetail({
   const runsOn = model ?? agent.model;
   const usable = pickable(agent);
   return (
-    <div className="app-scroll flex min-h-0 flex-1 flex-col gap-2 border-t border-border-subtle px-2 pt-2 @[28rem]/agents:border-t-0 @[28rem]/agents:pt-1.5">
+    // biome-ignore lint/a11y/noStaticElementInteractions: routes arrow keys between the detail's controls. slop-lint: allow suppression the reason is stated in this comment
+    <div
+      ref={ref}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          onBack();
+          return;
+        }
+        handleListKeys(event);
+      }}
+      className="app-scroll flex min-h-0 flex-1 flex-col gap-2 border-t border-border-subtle px-2 pt-2 @[28rem]/agents:border-t-0 @[28rem]/agents:pt-1.5"
+    >
       <div className="flex flex-col gap-0.5">
         <p className="text-sm font-medium">{agent.name}</p>
         {agent.description ? (
@@ -226,6 +295,16 @@ function AgentDetail({
         ) : null}
       </div>
       {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
+      {useLabel && usable ? (
+        // Touch picks here, having no hover to point with; a mouse or the keyboard picks the row.
+        <button
+          type="button"
+          className="hidden self-start rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground [@media(hover:none)]:inline-flex coarse:inline-flex"
+          onClick={onUse}
+        >
+          {useLabel}
+        </button>
+      ) : null}
       {!usable ? (
         <div id={`agent-unusable-${agent.slug}`} className="flex flex-col gap-1 text-sm">
           <p className="text-muted-foreground">

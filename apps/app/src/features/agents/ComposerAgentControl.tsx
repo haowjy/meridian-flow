@@ -12,6 +12,7 @@ import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
+import { cn } from "@/lib/utils";
 import { type AgentChoice, AgentPickerPanel, modelName } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
 import {
@@ -75,7 +76,15 @@ export function useComposerAgentToolbarControl(
         ? props.modelOverride
         : null;
   const modelLabel = model ? modelName(models, model) : null;
-  const value = modelLabel ? t`${name} on ${modelLabel}` : name;
+  // An override the deployment can't run: replies fall back to the Agent's own model.
+  const fallsBack = Boolean(
+    model && models?.some((option) => option.id === model && !option.available),
+  );
+  const value = !modelLabel
+    ? name
+    : fallsBack
+      ? t`${name}; ${modelLabel} isn't available, so it runs on its own model`
+      : t`${name} on ${modelLabel}`;
   const item = { ariaLabel: t`Agent: ${value}`, label: t`Agent`, value };
   if (props.mode === "readonly")
     return {
@@ -97,15 +106,16 @@ export function useComposerAgentToolbarControl(
   const pageId =
     catalog.status === "error"
       ? "error"
-      : catalog.status === "ready" && agents.length > 0
+      : catalog.status === "ready" && agents.some((agent) => agent.primary)
         ? "ready"
         : catalog.status === "empty" || catalog.status === "ready"
           ? "empty"
           : "loading";
   const choose = (next: AgentChoice) => {
+    const same = next.agent.selection.slug === selectedAgent?.selection.slug;
+    if (same && next.model === model) return;
     if (props.mode === "interactive") props.onChoose(next);
-    else if (next.agent.selection.slug === selectedAgent?.selection.slug)
-      props.onModelChange(next.model);
+    else if (same) props.onModelChange(next.model);
     else props.onHandoff?.(next);
   };
   return {
@@ -122,7 +132,14 @@ export function useComposerAgentToolbarControl(
       >
         {name}
         {modelLabel ? (
-          <span className="ml-1.5 font-normal text-jade-text">{modelLabel}</span>
+          <span
+            className={cn(
+              "ml-1.5 font-normal",
+              fallsBack ? "text-muted-foreground line-through" : "text-jade-text",
+            )}
+          >
+            {modelLabel}
+          </span>
         ) : null}
       </ComposerCurrentValueTrigger>
     ),
