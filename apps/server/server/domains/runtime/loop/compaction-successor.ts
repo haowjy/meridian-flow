@@ -272,11 +272,20 @@ export async function prepareCompactionSuccessor(args: {
     });
     // The successor's bake and its first request read the newest save; the binding row itself is
     // replaced in the boundary's transaction (`completeCompactionCurrent`), so a retry repeats both.
-    const refreshedBinding = await deps.agentCatalog.refreshBinding(
-      thread.userId,
-      thread.projectId,
-      thread.id,
-    );
+    // A failed catalog read keeps the current binding: it never fails the compaction or the reply.
+    const refreshedBinding = await deps.agentCatalog
+      .refreshBinding(thread.userId, thread.projectId, thread)
+      .catch((error: unknown) => {
+        if (input.signal?.aborted) throw error;
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.compaction",
+          name: "binding_refresh.failed",
+          correlation: { threadId: input.threadId, turnId: placeholder.id },
+          payload: unknownToEventPayload(error),
+        });
+        return undefined;
+      });
     const successorDeps = refreshedBinding
       ? {
           ...deps,

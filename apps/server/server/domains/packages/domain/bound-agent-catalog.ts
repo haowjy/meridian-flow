@@ -51,6 +51,9 @@ export type {
   AgentCatalogItem as BoundAgentCatalogItem,
   AgentSelection,
 } from "@meridian/contracts/agents";
+
+type SavedLevels = Awaited<ReturnType<PackageLevels["saved"]>>;
+
 export class AgentSelectionError extends Error {
   constructor(public readonly agentRef: string) {
     super(`Agent not found or unavailable: ${agentRef}`);
@@ -85,24 +88,28 @@ export interface BoundAgentCatalog extends PackageSaver {
    */
   files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
   /**
-   * The binding a chat moves onto when it compacts: the newest saved Agent of its name, with each
-   * skill the chat invoked pinned again to the saved version (one no longer saved keeps its pin).
-   * Undefined to keep the binding: the Agent is gone, its newest save can't run, or the chat is
-   * already on it. Reads only; the caller writes it with `replaceThreadBinding`.
+   * The binding a top-level chat moves onto when it compacts: the newest saved Agent of its name,
+   * and each skill the chat invoked pinned again to its newest save, whether or not the Agent
+   * moved (a skill no longer saved keeps its pin). A thread with a parent, or with stored spawn
+   * overrides, keeps its binding: its configuration came from the resolver that spawned it, with
+   * the parent's overrides, and this resolver would rebuild it without them. Undefined to keep the
+   * binding: not a top-level chat, the Agent is gone or its newest save can't run and no skill
+   * moved, or nothing changed. Writes no binding; the caller writes the result with
+   * `replaceThreadBinding`.
    */
   refreshBinding(
     userId: string,
     projectId: string | undefined,
-    threadId: string,
+    thread: { id: string; parentThreadId: string | null },
   ): Promise<(AgentRevisionBinding & { revision: AgentRevision }) | undefined>;
   /**
-   * The Agent file a chat is bound to, as saved, and whether a newer save would take over at the
-   * chat's next compaction. Undefined for a chat with no Agent file (a generic subagent).
+   * The Agent file a chat is bound to, as saved, and whether a newer save of the Agent or of an
+   * invoked skill would take over at the chat's next compaction. Undefined for a chat with no Agent file (a generic subagent).
    */
   boundAgent(
     userId: string,
     projectId: string | undefined,
-    threadId: string,
+    thread: { id: string; parentThreadId: string | null },
   ): Promise<{ name: string; text: string; stale: boolean } | undefined>;
   /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
   builtinFile(path: string): string | undefined;
@@ -203,6 +210,59 @@ export function createBoundAgentCatalog(input: {
     levelFiles: input.levelFiles,
   });
 
+  const primaryIn = async (
+    saved: SavedLevels,
+    userId: string,
+    selection: AgentSelection,
+    projectId: string | undefined,
+  ): ReturnType<BoundAgentCatalog["resolvePrimary"]> => {
+    const current = winners(agentsOf(saved)).find((entry) => entry.slug === selection.slug)?.value;
+    const newest = current ? await rowOf(current.package, current.agent.slug) : undefined;
+    // The name is no longer saved (removed or renamed) or its newest version cannot run: the
+    // version the picker showed still can, so a chat is not refused over a later Save.
+    const builtin = builtinShown.get(selection.definitionRevisionId);
+    const shown = async () =>
+      builtin
+        ? rowOf(builtin.package, builtin.slug)
+        : store.readSavedRevision(userId, projectId, selection.definitionRevisionId);
+    const runs = (candidate: CatalogRevision | undefined) =>
+      Boolean(candidate?.definition) && reasonsOf(candidate as CatalogRevision).length === 0;
+    let row = newest;
+    if (!runs(row)) {
+      const fallback = await shown();
+      row = runs(fallback) ? fallback : (row ?? fallback);
+    }
+    if (!row) return { ok: false, reason: "not-found", details: [] };
+    const reasons = reasonsOf(row);
+    if (!row.definition || reasons.length) {
+      return { ok: false, reason: "unavailable", details: reasons };
+    }
+    const revision = availableRevision(row);
+    if (!revision) return { ok: false, reason: "not-found", details: [] };
+    try {
+      const configuration = await resolveAgentConfiguration({
+        revision,
+        store,
+        defaultModel: input.defaultModel(),
+      });
+      return { ok: true, revision, configuration };
+    } catch (error) {
+      if (!(error instanceof AgentConfigurationError)) throw error;
+      return { ok: false, reason: "unavailable", details: [error.message] };
+    }
+  };
+
+  const skillIn = async (saved: SavedLevels, slug: string) => {
+    const winner = winners(skillsOf(saved)).find((entry) => entry.slug === slug);
+    const skill = winner && listingOf(winner);
+    if (!winner?.value || !skill?.userInvocable) return undefined;
+    const { packageRevisionId } = await install(winner.value.package);
+    return {
+      skill,
+      reference: skillReference(packageRevisionId, winner.value.package.files, winner.value.slug),
+    };
+  };
+
   const catalog: BoundAgentCatalog = {
     ...saver,
 
@@ -225,42 +285,7 @@ export function createBoundAgentCatalog(input: {
     },
 
     async resolvePrimary(userId, selection, projectId) {
-      const current = winners(agentsOf(await levels.saved(userId, projectId))).find(
-        (entry) => entry.slug === selection.slug,
-      )?.value;
-      const newest = current ? await rowOf(current.package, current.agent.slug) : undefined;
-      // The name is no longer saved (removed or renamed) or its newest version cannot run: the
-      // version the picker showed still can, so a chat is not refused over a later Save.
-      const builtin = builtinShown.get(selection.definitionRevisionId);
-      const shown = async () =>
-        builtin
-          ? rowOf(builtin.package, builtin.slug)
-          : store.readSavedRevision(userId, projectId, selection.definitionRevisionId);
-      const runs = (candidate: CatalogRevision | undefined) =>
-        Boolean(candidate?.definition) && reasonsOf(candidate as CatalogRevision).length === 0;
-      let row = newest;
-      if (!runs(row)) {
-        const fallback = await shown();
-        row = runs(fallback) ? fallback : (row ?? fallback);
-      }
-      if (!row) return { ok: false, reason: "not-found", details: [] };
-      const reasons = reasonsOf(row);
-      if (!row.definition || reasons.length) {
-        return { ok: false, reason: "unavailable", details: reasons };
-      }
-      const revision = availableRevision(row);
-      if (!revision) return { ok: false, reason: "not-found", details: [] };
-      try {
-        const configuration = await resolveAgentConfiguration({
-          revision,
-          store,
-          defaultModel: input.defaultModel(),
-        });
-        return { ok: true, revision, configuration };
-      } catch (error) {
-        if (!(error instanceof AgentConfigurationError)) throw error;
-        return { ok: false, reason: "unavailable", details: [error.message] };
-      }
+      return primaryIn(await levels.saved(userId, projectId), userId, selection, projectId);
     },
 
     async files(userId, { projectId }) {
@@ -372,20 +397,11 @@ export function createBoundAgentCatalog(input: {
     },
 
     async resolveSkill(userId, { projectId, slug }) {
-      const winner = winners(skillsOf(await levels.saved(userId, projectId))).find(
-        (entry) => entry.slug === slug,
-      );
-      const skill = winner && listingOf(winner);
-      if (!winner?.value || !skill?.userInvocable) return undefined;
-      const { packageRevisionId } = await install(winner.value.package);
-      return {
-        skill,
-        reference: skillReference(packageRevisionId, winner.value.package.files, winner.value.slug),
-      };
+      return skillIn(await levels.saved(userId, projectId), slug);
     },
 
-    async boundAgent(userId, projectId, threadId) {
-      const bound = await store.readThreadBinding(threadId);
+    async boundAgent(userId, projectId, thread) {
+      const bound = await store.readThreadBinding(thread.id);
       if (!bound?.revision) return undefined;
       const { revision } = bound;
       const source = await store.readSource(revision.packageRevisionId);
@@ -394,29 +410,43 @@ export function createBoundAgentCatalog(input: {
       return {
         name: revision.definition.metadata.name ?? revision.slug,
         text,
-        stale: (await catalog.refreshBinding(userId, projectId, threadId)) !== undefined,
+        stale: (await catalog.refreshBinding(userId, projectId, thread)) !== undefined,
       };
     },
 
-    async refreshBinding(userId, projectId, threadId) {
-      const bound = await store.readThreadBinding(threadId);
-      if (!bound?.revision) return undefined;
+    async refreshBinding(userId, projectId, thread) {
+      const bound = await store.readThreadBinding(thread.id);
+      if (
+        !bound?.revision ||
+        thread.parentThreadId !== null ||
+        bound.invocationOverlay?.overrides
+      ) {
+        return undefined;
+      }
+      const saved = await levels.saved(userId, projectId);
       // The bound version is the fallback, so an Agent that is gone or whose newest save can't
       // run resolves to what the chat already has.
-      const newest = await catalog.resolvePrimary(
+      const newest = await primaryIn(
+        saved,
         userId,
         { slug: bound.revision.slug, definitionRevisionId: bound.revision.id },
         projectId,
       );
-      if (!newest.ok || newest.revision.id === bound.revision.id) return undefined;
+      const moved = newest.ok && newest.revision.id !== bound.revision.id ? newest : undefined;
       const pins: Record<string, RetainedSkillReference> = {};
       for (const slug of Object.keys(bound.invokedSkills)) {
-        const skill = await catalog.resolveSkill(userId, { projectId, slug });
-        if (skill) pins[slug] = skill.reference;
+        const skill = await skillIn(saved, slug);
+        if (
+          skill &&
+          skill.reference.packageRevisionId !== bound.invokedSkills[slug]?.packageRevisionId
+        ) {
+          pins[slug] = skill.reference;
+        }
       }
+      if (!moved && Object.keys(pins).length === 0) return undefined;
       return {
-        revision: newest.revision,
-        configuration: newest.configuration,
+        revision: moved?.revision ?? bound.revision,
+        configuration: moved?.configuration ?? bound.configuration,
         invocationOverlay: bound.invocationOverlay,
         invokedSkills: { ...bound.invokedSkills, ...pins },
       };

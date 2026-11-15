@@ -89,8 +89,9 @@ export function useBuiltinAgentFile(path: string | null) {
 /** The Agent file a chat is bound to; read when the view opens, so its stale mark is current. */
 export function useThreadAgent(threadId: string | null) {
   const accountSignal = useAccountEpochSignal();
+  const accountId = useAccountId();
   return useQuery({
-    queryKey: ["thread-agent", threadId],
+    queryKey: ["thread-agent", accountId, threadId],
     queryFn: ({ signal }) =>
       readThreadAgent(AbortSignal.any([accountSignal, signal]), threadId ?? ""),
     enabled: threadId !== null,

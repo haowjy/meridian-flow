@@ -2438,8 +2438,8 @@ msgid "Couldn't load the preview."
 msgstr ""
 
 #: src/features/agents/ThreadAgentDefinition.tsx
-msgid "Couldn't load this definition."
-msgstr ""
+#~ msgid "Couldn't load this definition."
+#~ msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Couldn't load this document."
@@ -2449,7 +2449,7 @@ msgstr ""
 msgid "Couldn't load this draft."
 msgstr ""
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -4124,8 +4124,7 @@ msgstr ""
 msgid "Loading Works…"
 msgstr ""
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
-#: src/features/agents/ThreadAgentDefinition.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx

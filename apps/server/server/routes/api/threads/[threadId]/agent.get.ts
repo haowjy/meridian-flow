@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
     getRouterParam(event, "threadId") ?? "",
     user.userId,
   );
-  const agent = await app.agentCatalog.boundAgent(user.userId, thread.projectId, thread.id);
+  const agent = await app.agentCatalog.boundAgent(user.userId, thread.projectId, thread);
   if (!agent) throw createError({ statusCode: 404, message: "This chat has no Agent file" });
   return agent;
 });

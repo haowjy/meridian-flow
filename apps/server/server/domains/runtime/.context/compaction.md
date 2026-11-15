@@ -18,7 +18,8 @@ transitions around the unlocked provider call:
    arrivals. Reference reads belong to C; B does not exist until successor
    commit.
 3. Successor commit joins paid-summary settlement, the binding refresh (when the
-   chat's Agent has a newer save, see [request assembly](request-assembly.md)),
+   top-level chat's Agent or an invoked skill has a newer save, see
+   [request assembly](request-assembly.md); a failed catalog read keeps the binding),
    `beginPromptEpoch`, adoption,
    notice consumption, and B's reservation. A moved leaf repeats successor
    preparation only, never the summary call.
