@@ -120,6 +120,8 @@ export type CollabTransport = {
     schemaVersion: CollabSchemaVersion;
     status: "active";
   } | null>;
+  /** Whether the draft was ever made, closed or not: a created document's draft is named before it is. */
+  draftExists(draftId: string): Promise<boolean>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {

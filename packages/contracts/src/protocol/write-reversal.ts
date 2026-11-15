@@ -8,8 +8,6 @@ export type WriteErrorStatus =
   | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
-  | "gone"
-  | "path_changed"
   | "partial_failure"
   | "work_archived"
   | "binary_file"

@@ -62,7 +62,7 @@ export {
   modelResult,
 } from "./tool/model-result.js";
 export { readStaticMarkdown } from "./tool/read-static.js";
-export { removedFile, survivingDraftNotice } from "./tool/removal-copy.js";
+export { removedFile, removerName, survivingDraftNotice } from "./tool/removal-copy.js";
 export {
   agentEditResultSummary,
   readCall,

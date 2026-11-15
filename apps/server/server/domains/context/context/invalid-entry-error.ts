@@ -9,9 +9,6 @@ export function invalidEntryError(
   return {
     code: "invalid_uri",
     uri,
-    reason:
-      validation.reason === "name/reserved-authority-qualifier"
-        ? `File and folder names cannot begin with "@" or "~" (${validation.segment ?? "unknown"})`
-        : `Invalid context path (${validation.reason})`,
+    reason: `Invalid context path (${validation.reason})`,
   };
 }

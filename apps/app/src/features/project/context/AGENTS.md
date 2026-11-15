@@ -8,9 +8,10 @@ stay chat resources, not documents main opens.
   `TreeView` per source). Every tree action appends a record to the browser's copy through
   `TreeActions` (`useEntryActions` picks the project's list or the account's): there is no
   request, operation id or retry in the UI, and a number on a name is the list's to add.
-- Context entries use one interaction boundary, which owns action dispatch. A refusal is a
-  `refused` settlement the replay puts on the row (`TreeFailure`); `dismissFailure` puts it
-  away. Shells own geometry, creation entry points, navigation and the notice surface.
+- Context entries use one interaction boundary, which owns action dispatch. Nothing refuses a
+  tree action; a change the server bounced (its Work was closed) says so on its row through the
+  tree's notice words (`use-tree-notice-words.tsx`). Shells own geometry, creation entry points,
+  navigation and the notice surface.
 - A row changes folders only through `moveRows` (`entry-drag/execute-move.ts`), for Move…
   and drops alike, with the one refusal `moveRefusal` in `move-plan.ts`. Order sends an index
   among the destination's children, never a rank. Don't place entries anywhere else. Two

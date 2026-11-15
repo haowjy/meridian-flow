@@ -30,7 +30,6 @@ import { type ContextTree, ContextTreeBody, useContextTree } from "../../context
 import { validateContextEntryName } from "../../context/context-entry-name";
 import { EntryNameField } from "../../context/EntryNameField";
 import { useEntryActions } from "../../context/entry-drag/entry-actions";
-import { treeActionMessage } from "../../context/tree-action-message";
 import { type SourceDrop, SourcePane } from "./SourcePane";
 
 type NewKind = "agent" | "skill";
@@ -264,7 +263,6 @@ function NewLevelFileRow({
     onCommit: (typed) => {
       const name = typed.trim();
       const made = makeLevelFile(list, view, tree.rootPath, newFilePath(kind, name));
-      if (!made.ok) throw new Error(treeActionMessage(made.reason, "file"));
       const file = newFilePath(kind, name);
       void writeFirstAgentText(
         registry,
@@ -291,9 +289,7 @@ function makeLevelFile(
   view: TreeView,
   rootPath: string,
   at: { folders: string[]; leaf: string },
-):
-  | { ok: true; node: string; path: string }
-  | { ok: false; reason: Parameters<typeof treeActionMessage>[0] } {
+): { node: string; path: string } {
   let parentId = view.root.entryId;
   let path = "";
   for (const folder of [...rootPath.split("/").filter(Boolean), ...at.folders]) {
@@ -304,11 +300,9 @@ function makeLevelFile(
       continue;
     }
     const made = list.create({ parentId, kind: "folder", name: folder });
-    if (!made.ok) return made;
     parentId = made.node;
     path = `${path}/${made.name}`;
   }
   const made = list.create({ parentId, kind: "document", name: at.leaf, filetype: "source" });
-  if (!made.ok) return made;
-  return { ok: true, node: made.node, path: `${path}/${made.name}` };
+  return { node: made.node, path: `${path}/${made.name}` };
 }

@@ -162,8 +162,7 @@ export function useIdentityCommit({
       if (!parentId) throw new Error("Destination folder is unavailable");
 
       const moved = parentId !== file.parentId;
-      const asked = moved ? actions.move(file.entryId, parentId) : { ok: true as const };
-      if (!asked.ok) throw new Error(asked.reason);
+      if (moved) actions.move(file.entryId, parentId);
       const stored = storedFilename(plan.desired.name, file);
       const renamed =
         plan.desired.name !== file.name || file.provisionalName
@@ -172,8 +171,7 @@ export function useIdentityCommit({
               plan.desired.name,
               (stored.ok ? stored.filename.filetype : null) ?? undefined,
             )
-          : { ok: true as const, name: file.name };
-      if (!renamed.ok) throw new Error(renamed.reason);
+          : { name: file.name };
       onCommitted(
         document.documentId,
         {

@@ -9,13 +9,14 @@ the browser (`apps/app/src/core/tree-list`) and by the server's room tests.
   cap, `MAX_RECORDS` in `project-tree`; `splitSyncFrame`), so no honest client meets that cap on
   one update. A limit an honest client can reach is never a whole refusal. The server sends
   whole: a browser has no limit on an update.
-- The state follows the code of the socket's close: `4210` (the server refused the copy whole)
-  replaces the copy, the new one syncs under a new Yjs client id, and the records it lacks are
-  appended again in one update. `4401` and `4403` are `denied`; any other close reconnects.
-  The server's close names the record it refused (`list-rebuild:<record id>`): that record is
-  dropped (`onRejected`) and the rest go again in one update. A refusal that names none,
-  repeated more than three times in a minute, drops them all, so a copy never rebuilds forever.
-- The records a rebuild carries live in the `ListCopy` (`carried`, `settleCarried`), stored
-  durably by the browser's copy: the connection forgets them once the rebuilt copy holds them.
+- The state follows the code of the socket's close: `4212` (the server found the copy does what
+  an honest client never does) loads a fresh copy and appends the old copy's unsent records once,
+  those `clientMayWrite` accepts (the rest go to `onDropped`); a second `4212` before the server
+  took them is `broken`, and nothing connects again. `4213` (the copy is of another list) loads an
+  empty copy and carries nothing. `4401` and `4403` are `denied`; any other close reconnects.
+- The socket's URL carries `?list=<id>` (`ListCopy.listId`); a copy with none learns it from the
+  room's stateless `{"list": id}` message.
+- The records a recovery carries live in the `ListCopy` (`carried`, `settleCarried`), stored
+  durably by the browser's copy: the connection forgets them once the fresh copy holds them.
 
 Depth: [.context/CONTEXT.md](.context/CONTEXT.md).

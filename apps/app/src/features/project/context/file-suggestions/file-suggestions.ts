@@ -1,4 +1,5 @@
 /** Pure projection of the replay's trees, and ranking, for file suggestion hosts. */
+import { normalEntryName } from "@meridian/contracts/context-entry-validation";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 
@@ -86,9 +87,12 @@ export function matchFileSuggestions(
   entries: readonly FileSuggestion[],
   query: string,
 ): FileSuggestion[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const trimmed = query.trim();
+  const pathQuery = trimmed.toLocaleLowerCase();
+  // A name holds what the writer typed as it is stored (`1/2` as `1∕2`); a path keeps its `/`.
+  const nameQuery = trimmed ? normalEntryName("folder", trimmed).toLocaleLowerCase() : "";
   return entries
-    .map((entry, order) => ({ entry, order, rank: matchRank(entry, normalizedQuery) }))
+    .map((entry, order) => ({ entry, order, rank: matchRank(entry, nameQuery, pathQuery) }))
     .filter((match) => match.rank !== null)
     .sort(
       (a, b) =>
@@ -99,12 +103,14 @@ export function matchFileSuggestions(
     .map(({ entry }) => entry);
 }
 
-function matchRank(entry: FileSuggestion, query: string): number | null {
+function matchRank(entry: FileSuggestion, nameQuery: string, pathQuery: string): number | null {
   const name = entry.name.toLocaleLowerCase();
-  if (name.startsWith(query)) return 0;
-  if (nameBoundaryIndexes(name).some((index) => name.startsWith(query, index))) return 1;
+  const at = (index: number) =>
+    name.startsWith(nameQuery, index) || name.startsWith(pathQuery, index);
+  if (at(0)) return 0;
+  if (nameBoundaryIndexes(name).some(at)) return 1;
   // Not the scheme: "man" would otherwise match every Manuscript file.
-  return entry.path.toLocaleLowerCase().includes(query) ? 2 : null;
+  return entry.path.toLocaleLowerCase().includes(pathQuery) ? 2 : null;
 }
 
 function nameBoundaryIndexes(name: string): number[] {

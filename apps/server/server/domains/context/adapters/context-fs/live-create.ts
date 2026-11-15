@@ -69,7 +69,7 @@ export class LiveCreate {
   async atomically(
     target: CreateTarget,
     content: BoundWrite | null,
-    extra: { options?: ContextWriteOptions } = {},
+    extra: { options?: ContextWriteOptions; into?: string } = {},
   ): Promise<Result<{ documentId: string; record: string; markdown: string }, AdapterFault>> {
     const { options } = extra;
     let refusal: AdapterFault | null = null;
@@ -85,6 +85,7 @@ export class LiveCreate {
               filename: renderFilename(target.name, target.extension),
               kind: "document",
               filetype: target.filetype,
+              ...(extra.into ? { into: extra.into } : {}),
               ...(options?.documentId ? { id: options.documentId } : {}),
               ...(options?.metadata ? { metadata: options.metadata } : {}),
             },

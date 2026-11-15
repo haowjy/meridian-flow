@@ -70,7 +70,12 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       name: "Uploads",
       slug: "uploads",
     });
-    await treeSeeder(db).document(uploadsSource, "pic.png", { id: upload });
+    await treeSeeder(db).file(
+      uploadsSource,
+      "pic.png",
+      { storageKey: "pic.png", mime: "image/png", size: 1 },
+      { id: upload },
+    );
     await db.insert(uploadIntakes).values({
       projectId: p,
       intakeId: "intake",

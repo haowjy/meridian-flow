@@ -28,7 +28,6 @@ import { PassageNotice } from "@/features/editor/PassageNotice";
 import { cn } from "@/lib/utils";
 import { DocumentReviewProvider } from "../DocumentReview";
 import { MobileDocumentReview } from "../mobile/MobileDocumentReview";
-import { MobileRefusalNotice } from "../mobile/MobileRefusalNotice";
 import { PanePlaceContext } from "../pane-place";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest } from "../routing/project-route";
@@ -450,7 +449,6 @@ function PhoneEditor({
           className="shrink-0 px-2 pt-2"
         />
       ) : null}
-      <MobileRefusalNotice projectId={projectId} document={document} className="shrink-0 px-4" />
       <AgentFileNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <LiveDraftNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <div className="relative min-h-0 flex-1">

@@ -49,11 +49,10 @@ Whoever makes a record names it as its own copy shows it: a create, a rename, an
 name that is taken record the numbered name (a move is a `move` and a `rename` in one update;
 a move record has no name). The replay numbers only a clash nobody could see.
 
-A refusal comes back as a `refused` settlement on the record and shows on the row as its
-failure mark with the repair the writer asked for (`tree-failures.ts`). A tree action that cannot
-be appended returns a `TreeActionResult` with a reason the writer can act on
-(`tree-action-message.ts` words it): a name the list cannot hold, a folder or node no longer
-there, a read-only or denied list, a list still loading.
+The only verdict the server writes is `dropped` on a change to a Work that was closed (a create,
+rename, move or delete in its draft or its Scratch): it comes back as a settlement on the record,
+every replay leaves the record out, and the row says so (`core/project-tree/tree-bounces.ts`,
+the tree's notice words). A tree action returns what it made and is never refused.
 
 The close of `AccountFeatureLifetime` releases the lists with the rest of the account's state.
 ## Visible Editor ownership
@@ -104,8 +103,7 @@ serialized from the document's frozen Yjs, and composes `ReadOnlyViewerFrame` wi
 it never uses the live path-based read. Stable-ID navigation confirms a deleted document through
 that endpoint before opening it. Every restore is a `restore` record appended to the list
 (`DocumentTrashRestoreProvider`); the entry leaves the Trash snapshot at once, the replay owns the
-document's return to the live tree, and a restore the server refuses puts the entry back with
-the server's reason.
+document's return to the live tree.
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative

@@ -15,6 +15,7 @@ import {
   branches,
   branchTreeNodes,
   contextSources,
+  documentDrafts,
   documents,
   documentYjsHeads,
   documentYjsUpdates,
@@ -26,6 +27,7 @@ import {
 } from "@meridian/database/schema";
 import {
   branchRows,
+  CopyFault,
   LIVE,
   type ProjectedRow,
   projectedRows,
@@ -44,7 +46,6 @@ import {
 import { runWithEditConfirmation } from "../../../shared/edit-confirmation.js";
 import { setTestHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
-import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { initializeHead } from "../../collab/adapters/drizzle-document-authority-head.js";
 import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import {
@@ -139,6 +140,15 @@ describe("the tree list store (postgres)", () => {
     (await db.select().from(documentYjsUpdates).where(eq(documentYjsUpdates.documentId, LIST)))
       .length;
 
+  /** The list as a fresh replay of the journal reads it. */
+  async function journalReplay() {
+    const doc = new Y.Doc({ gc: false });
+    const snapshot = await journal.read(LIST);
+    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
+    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
+    return replayView(doc, LIVE);
+  }
+
   /** The rows a fresh replay of the journal gives, for live and the Work. */
   async function replayedRows() {
     const doc = new Y.Doc({ gc: false });
@@ -219,7 +229,7 @@ describe("the tree list store (postgres)", () => {
     const c = client();
     const send = async () => {
       const result = await store.admit({ list, accountId: ACCOUNT, update: c.send() });
-      expect(result).toMatchObject({ ok: true });
+      expect(result.committed).not.toBeNull();
     };
     const folder = c.writer.create(LIVE, actor, {
       kind: "folder",
@@ -283,96 +293,60 @@ describe("the tree list store (postgres)", () => {
       return { store, honest, folder };
     }
 
-    it("stores nothing and leaves the list admitting", async () => {
+    it("turns away a copy the guard faults, storing nothing, and leaves the list admitting", async () => {
       const { store, honest, folder } = await seededList();
-      const stranger = client();
-      Y.applyUpdate(stranger.doc, Y.encodeStateAsUpdate(honest.doc));
-      stranger.send();
-      stranger.writer.create(LIVE, `user:${STRANGER}`, {
-        kind: "document",
-        filetype: "markdown",
-        name: "forged",
-        parent: folder.node,
-      });
-      const forged = stranger.send();
-
-      const reused = client();
-      Y.applyUpdate(reused.doc, Y.encodeStateAsUpdate(honest.doc));
-      const taken = reused.writer.author(LIVE, actor, {
-        type: "create",
-        node: crypto.randomUUID(),
-        kind: "document",
-        name: "x",
-        filetype: "markdown",
-        parent: folder.node,
-        source: MANUSCRIPT,
-        rank: "a1",
-      });
-      expect(await store.admit({ list, accountId: ACCOUNT, update: reused.send() })).toMatchObject({
-        ok: true,
-      });
-      const again = client();
-      Y.applyUpdate(again.doc, Y.encodeStateAsUpdate(honest.doc));
-      again.writer.author(
-        LIVE,
-        actor,
-        { type: "rename", node: folder.node, name: "Renamed", fromName: "Part" },
-        { id: taken.id },
-      );
-      const reusedId = again.send();
-
-      // A create naming a document some other row already has.
-      const owned = crypto.randomUUID();
-      await treeSeeder(db).document(UNFILED, "elsewhere", { id: owned });
-      const takeover = client();
-      Y.applyUpdate(takeover.doc, Y.encodeStateAsUpdate(honest.doc));
-      takeover.writer.create(LIVE, actor, {
-        kind: "document",
-        filetype: "markdown",
-        name: "stolen",
-        parent: folder.node,
-        node: owned,
-      });
-      const stolen = takeover.send();
-
-      // A deletion from the list.
+      // A deletion from the list, and bytes that are no update.
       const deleting = client();
       Y.applyUpdate(deleting.doc, Y.encodeStateAsUpdate(honest.doc));
       deleting.doc.getArray("ops").delete(0);
       const deletion = Y.encodeStateAsUpdate(deleting.doc, Y.encodeStateVector(honest.doc));
-
       const before = { updates: await updateCount(), rows: await storedRows() };
-      for (const update of [forged, reusedId, stolen, deletion, new Uint8Array([1, 2, 3])]) {
-        const result = await store.admit({ list, accountId: ACCOUNT, update });
-        expect(result.ok).toBe(false);
-      }
-      // A stranger's connection is read-only.
-      expect((await store.admit({ list, accountId: STRANGER, update: honest.send() })).ok).toBe(
-        false,
-      );
+      for (const update of [deletion, new Uint8Array([1, 2, 3])])
+        await expect(store.admit({ list, accountId: ACCOUNT, update })).rejects.toThrow(CopyFault);
+      // An account that does not own the list has nothing to admit to.
+      await expect(
+        store.admit({ list, accountId: STRANGER, update: honest.send() }),
+      ).rejects.toThrow();
       expect({ updates: await updateCount(), rows: await storedRows() }).toEqual(before);
 
       honest.writer.rename(LIVE, actor, folder.node, "Part One");
-      expect(await store.admit({ list, accountId: ACCOUNT, update: honest.send() })).toMatchObject({
-        ok: true,
-      });
+      expect(
+        (await store.admit({ list, accountId: ACCOUNT, update: honest.send() })).committed,
+      ).not.toBeNull();
       await expectRowsEqualReplay();
     });
 
-    it("admits a record into a Work that is not the account's, settles it refused and keeps the create in Unfiled", async () => {
-      const { store, honest } = await seededList();
-      honest.writer.create({ draft: crypto.randomUUID() }, actor, {
+    it("stamps a create raced into a closed Work dropped: no row, no draft, and it stays dropped when the Work comes back", async () => {
+      const { store, honest, folder } = await seededList();
+      await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
+      const raced = honest.writer.create({ draft: BRANCH }, actor, {
         kind: "document",
-        name: "orphan",
-        parent: sourceRoot(MANUSCRIPT),
         filetype: "markdown",
+        name: "raced",
+        parent: sourceRoot(MANUSCRIPT),
       });
-      expect(await store.admit({ list, accountId: ACCOUNT, update: honest.send() })).toMatchObject({
-        ok: true,
+      const inside = honest.writer.create({ draft: BRANCH }, actor, {
+        kind: "document",
+        filetype: "markdown",
+        name: "also raced",
+        parent: folder.node,
       });
-      const kept = (await storedRows()).live.find((row) => row.name === "orphan");
-      expect(kept?.sourceId).toBe(UNFILED);
-      await expectRowsEqualReplay();
+      await store.admit({ list, accountId: ACCOUNT, update: honest.send() });
+      const settled = await journalReplay();
+      expect(settled.dropped.map((each) => [each.record.node, each.reason])).toEqual([
+        [raced.node, "Work was closed"],
+        [inside.node, "Work was closed"],
+      ]);
+      expect(await db.select().from(documents).where(eq(documents.id, raced.node))).toEqual([]);
+      expect(
+        await db.select().from(branchTreeNodes).where(eq(branchTreeNodes.id, raced.node)),
+      ).toEqual([]);
+      expect(await db.select().from(documentDrafts)).toEqual([]);
+      await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
+      honest.writer.rename(LIVE, actor, folder.node, "Part Three");
+      await store.admit({ list, accountId: ACCOUNT, update: honest.send() });
+      expect((await journalReplay()).dropped).toHaveLength(2);
+      expect(await db.select().from(documents).where(eq(documents.id, raced.node))).toEqual([]);
     });
   });
 
@@ -421,7 +395,8 @@ describe("the tree list store (postgres)", () => {
         "C",
       ]);
       c.writer.create(LIVE, actor, { kind: "folder", name: "E", parent: sourceRoot(MANUSCRIPT) });
-      await admit(behind);
+      // The client's copy holds D, which the failed transaction did not store: it sends all.
+      await behind.admit({ list, accountId: ACCOUNT, update: Y.encodeStateAsUpdate(c.doc) });
       expect(reads).toBe(2);
       await expectRowsEqualReplay();
     });
@@ -531,9 +506,9 @@ describe("the tree list store (postgres)", () => {
         name: "After",
         parent: sourceRoot(MANUSCRIPT),
       });
-      expect(await newStore().admit({ list, accountId: ACCOUNT, update: c.send() })).toMatchObject({
-        ok: true,
-      });
+      expect(
+        (await newStore().admit({ list, accountId: ACCOUNT, update: c.send() })).committed,
+      ).not.toBeNull();
       await expectRowsEqualReplay();
     });
 
@@ -558,15 +533,12 @@ describe("the tree list store (postgres)", () => {
           filetype: "markdown",
           node: taken,
         });
-        expect(await newStore().admit({ list, accountId: ACCOUNT, update: c.send() })).toEqual({
-          ok: false,
-          reason: "a node id already in use",
-          record: expect.any(String),
-        });
+        // The record is in the list (a ghost its writer sees), with no row and no claim.
+        await newStore().admit({ list, accountId: ACCOUNT, update: c.send() });
       }
-      expect(await updateCount()).toBe(0);
       expect(await db.select().from(documents)).toEqual([]);
       expect(await db.select().from(treeNodeIds)).toEqual([]);
+      expect(await db.select().from(treeNodes)).toEqual([]);
 
       // A document row that had a list's id would still take no head with it, and no document
       // adopts a list's head.
@@ -576,6 +548,29 @@ describe("the tree list store (postgres)", () => {
         await db.select().from(documentYjsHeads).where(eq(documentYjsHeads.documentId, LIST)),
       ).toHaveLength(1);
       await expect(initializeHead(db, LIST as never)).rejects.toThrow("tree_list");
+
+      // An id that is no uuid gets no row, and a sync after a record of one still writes the rest.
+      const store = newStore();
+      const c = client();
+      for (const node of ["not-a-uuid"])
+        c.writer.create(LIVE, actor, {
+          kind: "document",
+          filetype: "markdown",
+          name: "stolen",
+          parent: sourceRoot(MANUSCRIPT),
+          node,
+        });
+      const fine = c.writer.create(LIVE, actor, {
+        kind: "folder",
+        name: "Fine",
+        parent: sourceRoot(MANUSCRIPT),
+      });
+      await store.admit({ list, accountId: ACCOUNT, update: c.send() });
+      c.writer.rename(LIVE, actor, fine.node, "Fine too");
+      await store.admit({ list, accountId: ACCOUNT, update: c.send() });
+      const names = (await storedRows()).live.map((row) => [row.id, row.name]);
+      expect(names).toContainEqual([fine.node, "Fine too"]);
+      expect(names.some(([id]) => id === "not-a-uuid")).toBe(false);
     });
 
     it("keeps a node id with the one list that claimed it, when two lists admit it at once", async () => {
@@ -624,10 +619,7 @@ describe("the tree list store (postgres)", () => {
         ]);
         remove();
 
-        expect(results.filter((result) => result.ok)).toHaveLength(1);
-        expect(results.find((result) => !result.ok)).toMatchObject({
-          reason: "a node id already in use",
-        });
+        expect(results).toHaveLength(2);
         const [claim] = await db.select().from(treeNodeIds).where(eq(treeNodeIds.id, node));
         const rows = await db.select().from(treeNodes).where(eq(treeNodes.id, node));
         expect(rows.map((row) => row.listId)).toEqual([claim?.listId]);
@@ -760,9 +752,9 @@ describe("the tree list store (postgres)", () => {
       expect({ updates: await updateCount(), rows: await storedRows() }).toEqual(before);
 
       c.writer.create(LIVE, actor, { kind: "folder", name: "After", parent: sourceRoot(UNFILED) });
-      expect(await store.admit({ list, accountId: ACCOUNT, update: c.send() })).toMatchObject({
-        ok: true,
-      });
+      expect(
+        (await store.admit({ list, accountId: ACCOUNT, update: c.send() })).committed,
+      ).not.toBeNull();
       await expectRowsEqualReplay();
     });
   });

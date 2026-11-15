@@ -89,7 +89,11 @@ export const filetypeSchema = z.enum(
 const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition | undefined>> =
   FILETYPE_DISPOSITIONS;
 
-/** Classify registered and persisted filetype metadata without throwing. */
+/**
+ * Classify registered and persisted filetype metadata without throwing. The project tree's replay
+ * reads `kind` and `schemaType` (rules 11 and 12), so what this answers for a type is frozen: a
+ * change needs a migration of the list.
+ */
 export function classifyFiletype(filetype: string | null | undefined): FiletypeClassification {
   if (!filetype) return { kind: "unknown" };
   return Object.hasOwn(dispositionsByPersistedValue, filetype)

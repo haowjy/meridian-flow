@@ -35,6 +35,12 @@ import type {
 /** The router resolves destination inheritance once; direct adapter callers may supply raw input. */
 export type ContextEnsureTrackedOptions = ContextWriteOptions & {
   parsedFilename?: ParsedDocumentFilename;
+  /**
+   * The folder node the path's folders mean, as the names the model was shown resolved them: the
+   * document goes in it, standing or in Trash (where it brings the folder back), instead of in
+   * the folder those names find now.
+   */
+  into?: string;
   /** Keeps a newly created document's receipt in the same transaction as its tree placement. */
   recordCreate?: (created: {
     documentId: import("@meridian/contracts").DocumentId;

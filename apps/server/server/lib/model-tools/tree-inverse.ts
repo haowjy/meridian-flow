@@ -131,8 +131,7 @@ export async function runTreeInverse(
   const shown = await shownNamesOf(ctx);
   const threadId = ctx.threadId as ThreadId;
   const reached = await call.context.port.readTree(parts.area, {
-    read: (scope) =>
-      reachPath(scope, parts.area, shown, parts.rest, input.command, { allowGone: true }),
+    read: (scope) => reachPath(scope, parts.area, shown, parts.rest, { deleted: true }),
   });
   const treeHistory = deps.documentSync.treeHistory();
   let node: { id: string; kind: string } | undefined;

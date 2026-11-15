@@ -92,9 +92,9 @@ async function existingTracked(
   deps: CreatePlacementDeps,
   target: TreeWriteTarget,
   path: string,
-  where: { dir: readonly string[]; filename: string },
+  where: { dir: readonly string[]; filename: string; into?: string | undefined },
 ): Promise<Result<{ documentId: string } | null, AdapterFault>> {
-  const existing = await deps.tree.find(target, where.dir, where.filename);
+  const existing = await deps.tree.find(target, where.dir, where.filename, where.into);
   if (!existing) return Ok(null);
   if (existing.kind === "file") return Err(binaryTrackedWriteFault(path));
   if (existing.kind === "folder") return Err({ code: "conflict", occupantKind: "folder" });
@@ -145,10 +145,14 @@ function livePlacement(
         const existing = await existingTracked(deps, target, path, {
           dir,
           filename: renderFilename(name, extension),
+          into: options?.into,
         });
         if (!existing.ok) return existing;
         if (existing.value) return Ok({ documentId: existing.value.documentId, created: false });
-        const created = await deps.liveCreate.atomically(resolved.value, null, { options });
+        const created = await deps.liveCreate.atomically(resolved.value, null, {
+          ...(options ? { options } : {}),
+          ...(options?.into ? { into: options.into } : {}),
+        });
         if (!created.ok) return created;
         await options?.recordCreate?.({
           documentId: created.value.documentId as DocumentId,
@@ -209,7 +213,11 @@ function draftPlacement(
           actor: actorOf(options?.origin),
         };
         const filename = renderFilename(name, extension);
-        const existing = await existingTracked(deps, target, path, { dir, filename });
+        const existing = await existingTracked(deps, target, path, {
+          dir,
+          filename,
+          into: options?.into,
+        });
         if (!existing.ok) return existing;
         if (existing.value) return Ok({ documentId: existing.value.documentId, created: false });
         const created = await tree.create(target, {
@@ -217,6 +225,7 @@ function draftPlacement(
           filename,
           kind: "document",
           filetype,
+          ...(options?.into ? { into: options.into } : {}),
           ...(options?.metadata ? { metadata: options.metadata } : {}),
         });
         if (!created.ok) return created;

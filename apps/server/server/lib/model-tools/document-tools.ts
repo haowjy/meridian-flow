@@ -85,6 +85,7 @@ import { readDocument } from "./read-document.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   areaOfPath,
+  goneMessage,
   namesEvidence,
   printedNames,
   type Reached,
@@ -122,6 +123,8 @@ export async function resolveDocumentAddress(
     recordCreate?: NonNullable<
       import("../../domains/context/ports/context-adapter.js").ContextEnsureTrackedOptions["recordCreate"]
     >;
+    /** The folder node a create goes in, as the names shown resolved its folders. */
+    into?: string;
   } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
@@ -135,6 +138,7 @@ export async function resolveDocumentAddress(
       ...(options.origin ? { origin: options.origin } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
       ...(options.recordCreate ? { recordCreate: options.recordCreate } : {}),
+      ...(options.into ? { into: options.into } : {}),
     };
     const ensured = await port.ensureTrackedDocument(
       basePath,
@@ -490,10 +494,14 @@ export async function readTrackedDocument(
   const { path, format, version, ...selection } = input;
   const call = await resolveToolCall(deps, ctx, version);
   if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
-  const reached = await reachShown(call, ctx, "read", path, {
+  const reached = await reachShown(deps, call, ctx, path, {
     ...(version ? { version } : {}),
   });
-  if (isToolError(reached)) return { ...reached, revision: null };
+  if (reached.gone)
+    return {
+      ...writeToolError("read", goneMessage(path, reached.gone), "document_not_found", { path }),
+      revision: null,
+    };
   const wrongKind = reached.node ? wrongKindMessage(reached.path, reached.node, "read") : null;
   if (wrongKind)
     return { ...writeToolError("read", wrongKind, "document_not_found", { path }), revision: null };
@@ -618,7 +626,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             : { refused };
         },
         async (from) => {
-          const reached = await reachShown(call, ctx, "move", from);
+          const reached = await reachShown(deps, call, ctx, from);
           if (isToolError(reached)) return { refused: reached };
           const ref = await call.context.port.stat(reached.path);
           if (!ref.ok || ref.value.kind !== "tracked") return null;
@@ -651,11 +659,16 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     let parsed = written;
     if (!isInverse) {
       // The path the model wrote is the node it was shown: a create only looks up its folders.
-      const first = await reachShown(call, ctx, written.command, written.path, {
+      const first = await reachShown(deps, call, ctx, written.path, {
         folderOf: creates,
-        allowGone: !creates,
+        deleted: !creates,
       });
-      if (isToolError(first)) return first;
+      if (first.gone)
+        return writeToolError(
+          written.command,
+          goneMessage(written.path, first.gone),
+          "document_not_found",
+        );
       const removed = await removedAnswer(deps, principal, written, ctx, first);
       if (removed) return settle(async () => removed);
       reached = first;
@@ -754,11 +767,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           engine = { ...written, count: tree.count } as typeof written;
         }
         // The node the model was shown, deleted or not: a removed document is answered below.
-        const first = await reachShown(call, ctx, written.command, written.path, {
-          allowGone: true,
-        });
+        const first = await reachShown(deps, call, ctx, written.path, { deleted: true });
         // A reversed creation took the document and its text steps with it.
-        if (isToolError(first)) return tree?.kind === "then_text" ? tree.answer : first;
+        if (tree?.kind === "then_text" && !first.node) return tree.answer;
+        if (first.gone)
+          return writeToolError(
+            written.command,
+            goneMessage(written.path, first.gone),
+            "document_not_found",
+          );
         const removed = await removedAnswer(deps, principal, written, ctx, first);
         if (removed) return tree?.kind === "then_text" ? tree.answer : removed;
         reached = first;
@@ -784,6 +801,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                     sourceExtension: sourceExtension(copied.copiedFrom.uri),
                   }
                 : {}),
+              ...(creates && reached?.node?.kind === "folder" ? { into: reached.node.id } : {}),
               ...(creates
                 ? {
                     recordCreate: async ({ documentId, record, draftBranchId }) => {
@@ -862,6 +880,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       }
       if (outcome.isError)
         return { isError: true, output: outcome.output, evidence: outcome.evidence };
+      // A create into a folder deleted since brought it back: said as a move into one is.
+      if (creates && reached?.kept)
+        outcome = {
+          ...outcome,
+          result: {
+            ...outcome.result,
+            message: [`kept: ${reached.kept}`, outcome.result.message].filter(Boolean).join("\n"),
+          },
+        };
       if (treeUndone.length > 0)
         outcome = {
           ...outcome,

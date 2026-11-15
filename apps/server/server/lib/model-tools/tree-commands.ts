@@ -80,11 +80,7 @@ function refusalOf(input: TreeToolInput, result: Extract<TreeResult, { ok: false
     output: modelResult({
       command: input.command,
       status: result.status,
-      payload: {
-        path: result.path,
-        message: result.message,
-        ...(result.refusal ? { refusal: result.refusal } : {}),
-      },
+      payload: { path: result.path, message: result.message },
     }),
   };
 }
@@ -239,13 +235,7 @@ export async function runTreeToolCommand(
     const done = run.value;
     if (!done.ok) return writeToolError(input.command, contextErrorMessage(done.error));
     const result = done.value;
-    if (!result.ok)
-      return {
-        ...refusalOf(input, result),
-        ...(result.status === "path_changed"
-          ? { evidence: { shown: [], ...namesEvidence(result.delta) } }
-          : {}),
-      };
+    if (!result.ok) return refusalOf(input, result);
 
     // A delete is never refused for its Works: they keep their drafts of what it took.
     const survivingWorks =
@@ -271,7 +261,8 @@ export async function runTreeToolCommand(
         ...(result.deleted !== undefined ? { deleted: result.deleted } : {}),
         ...(result.kept ? { kept: result.kept } : {}),
         ...(result.placedAtEnd ? { placedAtEnd: result.placedAtEnd } : {}),
-        ...(result.alreadyDeleted ? { alreadyDeleted: true as const } : {}),
+        ...(result.already ? { already: result.already } : {}),
+        ...(result.leftOut ? { leftOut: result.leftOut } : {}),
         ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
         ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
         // An Agents change says on its own receipt line whether it waits or applied.

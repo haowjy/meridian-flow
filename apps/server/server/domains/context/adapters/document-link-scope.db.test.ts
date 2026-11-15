@@ -158,6 +158,7 @@ if (!RUN) {
         .insert(branches)
         .values({ id: BRANCH, projectId: PROJECT, originWorkId: WORK, createdBy: USER });
       const seed = treeSeeder(db);
+      const PNG = { storageKey: "img.png", mime: "image/png", size: 1 };
       const trash = async (sourceId: string, ...ids: string[]) =>
         seed.store.submit({
           lists: [await treeListOfSource(db, sourceId)],
@@ -173,16 +174,16 @@ if (!RUN) {
       // Documents that exist only in the Work's draft.
       await seed.document(SOURCE, "drafted", { id: DRAFTED, view: { draft: BRANCH } });
       await seed.document(SOURCE, "staged", { id: STAGED, view: { draft: BRANCH } });
-      await seed.document(SOURCE, "part1/map.png", { id: MAP, filetype: "image" });
+      await seed.file(SOURCE, "part1/map.png", PNG, { id: MAP });
       // A deleted picture alone at its path, and one whose path a live picture took.
-      await seed.document(SOURCE, "seal.png", { id: SEAL, filetype: "image" });
-      await seed.document(SOURCE, "crest.png", { id: OLD_CREST, filetype: "image" });
+      await seed.file(SOURCE, "seal.png", PNG, { id: SEAL });
+      await seed.file(SOURCE, "crest.png", PNG, { id: OLD_CREST });
       await trash(SOURCE, DELETED, SEAL, OLD_CREST);
-      await seed.document(SOURCE, "crest.png", { id: CREST, filetype: "image" });
+      await seed.file(SOURCE, "crest.png", PNG, { id: CREST });
       // A discarded branch's picture: in no view, so never a live or deleted image.
       await db.insert(documents).values({ id: WRECK, projectId: PROJECT });
       await seed.document(OTHER_SOURCE, "foreign", { id: FOREIGN });
-      await seed.document(RETIRED_SOURCE, "sketch.png", { id: RETIRED_IMAGE, filetype: "image" });
+      await seed.file(RETIRED_SOURCE, "sketch.png", PNG, { id: RETIRED_IMAGE });
       await db.insert(linkAheadRefs).values([
         {
           aheadId: SETTLED_AHEAD,

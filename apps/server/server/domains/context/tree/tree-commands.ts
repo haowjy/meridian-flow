@@ -10,6 +10,7 @@ import { canonicalLeaf, type Filetype, storedFilename } from "@meridian/contract
 import {
   type Actor,
   childrenOf,
+  deleteCovering,
   descendantsOf,
   isSourceRoot,
   LIVE,
@@ -51,15 +52,16 @@ export type TreeCommand =
 /** One record the call made, for the receipt: the node it acts on and the record's id. */
 export type MadeRecord = { record: string; node: string };
 
+/** A call that names nothing, or has nothing to make: the one refusal left. */
 export type Refused = {
   ok: false;
-  status: "gone" | "path_changed" | "invalid_write" | "document_not_found";
-  /** The typed cause beside the status, in the shape the text side uses for a change not made. */
-  refusal?: "target_gone" | "would_loop" | "path_changed" | "already_at_destination";
+  status: "invalid_write" | "document_not_found";
   path: string;
   message: string;
   delta: ShownDelta;
 };
+
+export type LeftOut = { path: string; why: "would_loop" | "purged" };
 
 export type Done = {
   ok: true;
@@ -77,7 +79,10 @@ export type Done = {
   /** Text after `kept:`. */
   kept?: string;
   placedAtEnd?: string;
-  alreadyDeleted?: true;
+  /** The call's end was already true: nothing was made. */
+  already?: "deleted" | "at_destination" | "live";
+  /** Nodes the call left alone: moving a folder into itself, or a node deleted for good. */
+  leftOut?: LeftOut[];
   deletedInLive?: true;
   /** Changes by others to the nodes the call named, by author. */
   concurrent: Array<{ author: string; lines: string[] }>;
@@ -99,11 +104,6 @@ export type TouchedNode = {
 };
 
 export type TreeResult = Refused | Done;
-
-function lastWhere<T>(items: readonly T[], test: (item: T) => boolean): T | undefined {
-  for (let at = items.length - 1; at >= 0; at -= 1) if (test(items[at] as T)) return items[at];
-  return undefined;
-}
 
 /** The words for who: every person is `the user` in v1, an agent is `agent`. */
 export function labelOf(actor: Actor): string {
@@ -156,77 +156,48 @@ function noteConcurrent(cx: Context, actor: Actor | undefined, line: string) {
 
 /** Who deleted a node in Trash: the author of the delete in force that took it. */
 function deleterOf(cx: Context, projection: TreeProjection, node: TreeNode): Actor | undefined {
-  const entry = lastWhere(
-    projection.trash,
-    (candidate) => candidate.node === node.id || candidate.cascade.includes(node.id),
-  );
+  const entry = deleteCovering(projection, node.id);
   return actorOfRecord(cx, entry?.from ?? entry?.id);
 }
 
-const refuse = (
-  status: Refused["status"],
-  path: string,
-  message: string,
-  extra: Partial<Pick<Refused, "refusal" | "delta">> = {},
-): Refused => ({
+const refuse = (status: Refused["status"], path: string, message: string): Refused => ({
   ok: false,
   status,
   path,
   message,
-  delta: extra.delta ?? { whole: [], names: [] },
-  ...(extra.refusal ? { refusal: extra.refusal } : {}),
+  delta: { whole: [], names: [] },
 });
 
-/** A refusal for a resolution that is not a node. */
+/** A call that made nothing and says why: the call's end was already true, or it left nodes out. */
+function nothingDone(
+  subject: string,
+  shownAt: string,
+  facts: Pick<Done, "already" | "leftOut" | "notMoved">,
+): Done {
+  return {
+    ok: true,
+    subject,
+    made: [],
+    shownAt,
+    landedAt: shownAt,
+    ...facts,
+    concurrent: [],
+    taken: [],
+    arrived: [],
+    touched: [],
+    delta: { whole: [], names: [] },
+  };
+}
+
+/** A refusal for a resolution that names no node. */
 function unresolved(
   cx: Context,
   projection: TreeProjection,
-  verb: string,
   written: string,
-  resolution: Exclude<Resolution, { kind: "node" }>,
+  resolution: Exclude<Resolution, { kind: "node" | "purged" }>,
 ): Refused {
   const path = uriOfPath(cx, written);
   switch (resolution.kind) {
-    case "path_changed": {
-      const kind = resolution.now.kind === "folder" ? "folder" : "document";
-      const there = resolution.was
-        ? `The one you were shown is now ${nodeUri(cx, projection, resolution.was)}.`
-        : "The one you were shown is not in this version of the tree.";
-      return refuse(
-        "path_changed",
-        path,
-        `Nothing done: ${path} now names a different ${kind}. ${there} Use the path of the one you mean.`,
-        {
-          refusal: "path_changed",
-          // Every name the message states: the old name now means the new node, the old node is where it is.
-          delta: {
-            whole: [],
-            names: [
-              [resolution.folder, resolution.name, resolution.now.id],
-              ...(resolution.was
-                ? [
-                    [
-                      resolution.was.parent,
-                      resolution.was.displayName,
-                      resolution.was.trashed ? null : resolution.was.id,
-                    ] as [string, string, string | null],
-                  ]
-                : []),
-            ],
-          },
-        },
-      );
-    }
-    case "gone":
-      return refuse(
-        "gone",
-        path,
-        `Not ${verb}: ${labelOf(deleterOf(cx, projection, resolution.node) ?? "")} deleted it after you last listed it. \`restore\` brings it back.`.replace(
-          "unattributed deleted",
-          "it was deleted",
-        ),
-        { refusal: "target_gone" },
-      );
     case "not_a_folder":
       return refuse(
         "document_not_found",
@@ -234,11 +205,8 @@ function unresolved(
         `${uriOf(cx.area, pathNames(projection, resolution.node.id), false)} is a document, not a folder.`,
       );
     case "missing":
-      return refuse(
-        "document_not_found",
-        path,
-        "File not found. Read the project to find the right path.",
-      );
+    case "other_version":
+      return refuse("document_not_found", path, "File not found.");
   }
 }
 
@@ -322,7 +290,7 @@ function ensureFolders(
 type Destination = {
   parent: string;
   missing: readonly string[];
-  /** Folders along the path that are in Trash: the move is made and they stand. */
+  /** Folders along the path that are in Trash: the call is made and they stand. */
   trashed: TreeNode[];
   through: Array<{ folder: string; name: string; node: string }>;
 };
@@ -332,24 +300,22 @@ function destinationParent(
   cx: Context,
   to: Located,
   folders: readonly string[],
-): { ok: true; destination: Destination } | { ok: false; refused: Refused } {
+):
+  | { kind: "found"; destination: Destination }
+  | { kind: "refused"; refused: Refused }
+  | { kind: "purged"; node: TreeNode } {
   const projection = cx.scope.writer.view(cx.scope.view);
   if (folders.length === 0)
     return {
-      ok: true,
+      kind: "found",
       destination: { parent: to.root, missing: [], trashed: [], through: [] },
     };
-  const found = resolveShown(
-    projection,
-    cx.shown,
-    to.root,
-    { segments: folders, folder: true },
-    { through: true },
-  );
+  const found = resolveShown(projection, cx.shown, to.root, { segments: folders, folder: true });
+  if (found.kind === "purged") return { kind: "purged", node: found.node };
   if (found.kind === "node") {
     if (found.node.kind !== "folder")
       return {
-        ok: false,
+        kind: "refused",
         refused: refuse(
           "invalid_write",
           uriOf(to.area, folders, true),
@@ -357,7 +323,7 @@ function destinationParent(
         ),
       };
     return {
-      ok: true,
+      kind: "found",
       destination: {
         parent: found.node.id,
         missing: [],
@@ -368,7 +334,7 @@ function destinationParent(
   }
   if (found.kind === "missing")
     return {
-      ok: true,
+      kind: "found",
       destination: {
         parent: found.along.at(-1)?.node ?? to.root,
         missing: folders.slice(found.at),
@@ -377,8 +343,8 @@ function destinationParent(
       },
     };
   return {
-    ok: false,
-    refused: unresolved(cx, projection, "moved", uriOf(to.area, folders, true), found),
+    kind: "refused",
+    refused: unresolved(cx, projection, uriOf(to.area, folders, true), found),
   };
 }
 
@@ -440,15 +406,17 @@ function loops(projection: TreeProjection, node: TreeNode, parent: string): bool
   );
 }
 
-/** The sentence's cause when the model's own path does not put the folder inside itself. */
-function loopCause(
+/**
+ * Says in `concurrent` who put the destination inside `node`, when the model's own path does not:
+ * the folder directly under `node` on the way down to the destination is what someone moved in.
+ */
+function noteLoopCause(
   cx: Context,
   projection: TreeProjection,
   node: TreeNode,
   through: Array<{ folder: string; name: string; node: string }>,
   written: Located,
-): string {
-  // The folder directly under `node` on the way down to the destination is what someone moved in.
+) {
   const chain: string[] = [];
   const target = through.at(-1)?.node;
   for (let at = target; at && at !== node.id; at = projection.nodes.get(at)?.parent)
@@ -456,17 +424,27 @@ function loopCause(
   const inside = chain[0] ? projection.nodes.get(chain[0]) : undefined;
   const along = through.findIndex((step) => step.node === inside?.id);
   // The model wrote the path through `node` itself: nobody else is the cause.
-  if (!inside || through.some((step) => step.node === node.id) || along < 0) return "";
-  const who = actorOfRecord(cx, projection.setters.get(inside.id)?.place?.id);
-  if (who === undefined || who === cx.scope.actor) return "";
+  if (!inside || through.some((step) => step.node === node.id) || along < 0) return;
   const named = uriOf(written.area, written.segments.slice(0, along + 1), true);
-  return `: ${labelOf(who)} moved ${named} into it after you last listed it.`;
+  noteConcurrent(
+    cx,
+    actorOfRecord(cx, projection.setters.get(inside.id)?.place?.id),
+    `moved: ${named} into ${nodeUri(cx, projection, node)}`,
+  );
 }
 
+/** A move that made nothing: the node, and what is true of it. `notMoved` is the several-move line. */
+type Skipped = {
+  node?: string;
+  notMoved?: string;
+  already?: "at_destination";
+  leftOut?: LeftOut;
+};
+
 /**
- * One node moved, renamed or placed. Everything that can refuse is decided before the first
- * record is made, so a refused item stores nothing (and neither does a call whose items all refuse:
- * `SourceTree.run` drops what a refused result made).
+ * One node moved, renamed or placed. Everything that can stop it is decided before the first
+ * record is made, so a move that does nothing stores nothing (and neither does a call whose
+ * items all do nothing: `SourceTree.run` drops what a call without records made).
  */
 function moveOne(
   cx: Context,
@@ -478,40 +456,34 @@ function moveOne(
   emptied: Array<{ folder: string; name: string }>,
   viaMany: boolean,
 ):
-  | { done: Done; fail?: undefined }
-  | { fail: Refused; done?: undefined }
-  | { skip: string; fail?: undefined; done?: undefined } {
+  | { done: Done; fail?: undefined; skip?: undefined }
+  | { fail: Refused; done?: undefined; skip?: undefined }
+  | { skip: Skipped; fail?: undefined; done?: undefined } {
   const { scope } = cx;
   const projection = scope.writer.view(scope.view);
   const source = pathFrom(cx, from);
   const found = resolveShown(projection, cx.shown, source.root, source);
+  const fromUri = uriOfPath(cx, from);
+  if (found.kind === "purged")
+    return {
+      skip: { node: found.node.id, leftOut: { path: fromUri, why: "purged" } },
+    };
   if (found.kind !== "node") {
-    const refused = unresolved(cx, projection, "moved", from, found);
-    return viaMany
-      ? {
-          skip: `${uriOfPath(cx, from)} (${found.kind === "gone" ? `deleted by ${labelOf(deleterOf(cx, projection, found.node) ?? "")}` : refused.status === "path_changed" ? "its name now means another document" : "not found"})`,
-        }
-      : { fail: refused };
+    const refused = unresolved(cx, projection, from, found);
+    return viaMany ? { skip: { notMoved: `${fromUri} (not found)` } } : { fail: refused };
   }
   const node = found.node;
-  const fromUri = uriOfPath(cx, from);
   const parent = destinationParent(cx, to, to.segments.slice(0, -1));
-  if (!parent.ok)
-    return viaMany ? { skip: `${fromUri} (${parent.refused.status})` } : { fail: parent.refused };
+  if (parent.kind === "purged")
+    return { skip: { node: node.id, leftOut: { path: fromUri, why: "purged" } } };
+  if (parent.kind === "refused")
+    return viaMany
+      ? { skip: { notMoved: `${fromUri} (${parent.refused.status})` } }
+      : { fail: parent.refused };
   const destination = parent.destination;
   if (loops(projection, node, destination.parent)) {
-    const cause = loopCause(cx, projection, node, destination.through, to);
-    const into = nodeUri(cx, projection, node);
-    return viaMany
-      ? { skip: `${fromUri} (would put it inside itself)` }
-      : {
-          fail: refuse(
-            "invalid_write",
-            toUri,
-            `Not moved: it would put ${into} inside itself${cause || "."}`,
-            { refusal: "would_loop" },
-          ),
-        };
+    noteLoopCause(cx, projection, node, destination.through, to);
+    return { skip: { node: node.id, leftOut: { path: fromUri, why: "would_loop" } } };
   }
 
   const toLeaf = to.segments.at(-1);
@@ -533,29 +505,31 @@ function moveOne(
       });
       if (!parsed.ok)
         return viaMany
-          ? { skip: `${fromUri} (${parsed.message})` }
+          ? { skip: { notMoved: `${fromUri} (${parsed.message})` } }
           : { fail: refuse("invalid_write", toUri, parsed.message) };
       name = parsed.name;
       filetype = parsed.filename.filetype;
     }
   }
   const sameParent = destination.missing.length === 0 && node.parent === destination.parent;
-  if (sameParent && name === undefined && !position)
-    return viaMany
-      ? { skip: `${fromUri} (already there)` }
-      : {
-          fail: refuse("invalid_write", toUri, `The document is already at ${toUri}.`, {
-            refusal: "already_at_destination",
-          }),
-        };
+  if (sameParent && name === undefined && !position && !node.trashed)
+    return {
+      skip: { node: node.id, already: "at_destination", notMoved: `${fromUri} (already there)` },
+    };
 
   // Decided: the records follow.
   noteChanges(cx, projection, node, source, fromUri);
+  if (node.trashed)
+    noteConcurrent(
+      cx,
+      deleterOf(cx, projection, node),
+      `deleted: ${fromUri}; this move brought it back`,
+    );
   const folder = makeDestination(cx, destination, filled);
   const { index, atEnd } = indexFor(cx, folder, node.id, position);
   const oldParent = node.parent;
   const oldName = node.displayName;
-  if (!sameParent || position) {
+  if (!sameParent || position || node.trashed) {
     const record = scope.writer.move(scope.view, scope.actor, node.id, folder, index);
     remember(cx, record.id, node.id);
   }
@@ -604,22 +578,31 @@ export type PathReach =
       node: { id: string; kind: TreeNode["kind"]; entries: number };
       uri: string;
       delta: ShownDelta;
+      /** A destination's folders that were in Trash and stand again for the call, and who deleted them. */
+      kept?: string;
     }
-  | { kind: "unresolved" }
-  | { kind: "refused"; refused: Refused };
+  /** The path names a node this view can't act on: in Trash (`by` deleted it), purged, or of the other version. */
+  | { kind: "gone"; why: "deleted" | "purged" | "other_version"; by?: Actor }
+  | { kind: "unresolved" };
 
 /**
  * Resolves a path through the names shown, for the tools that read or write inside a document:
- * the node it meant and where it is now, a refusal when the name now means another node or the
- * node was deleted, or nothing when neither the map nor the tree holds the path.
+ * the live node it meant and where it is now; `gone` when the node it names is not available
+ * here, so no caller looks the path up again and reaches whatever holds that name now; or nothing
+ * when neither the map nor the tree holds a node for it. Only a name the model was shown means a
+ * node in Trash: an unshown name means a standing node or nothing.
+ *
+ * A `destination` (the folder a create goes into) never answers `gone`: a folder the model was
+ * shown that someone deleted since stands again around what the call makes (rule 3), and a purged
+ * one or one of the other version falls to the tree, where the call makes a fresh folder.
  */
 export function reachPath(
   scope: Pick<TreeScope, "writer" | "view" | "root">,
   area: string,
   shown: NamesShown,
   path: string,
-  verb: string,
-  options: { allowGone?: boolean } = {},
+  /** Undo names what was deleted by its old path: a node in Trash is the one it means. */
+  options: { deleted?: boolean; destination?: boolean } = {},
 ): PathReach {
   const cx: Context = {
     scope: { ...scope, actor: "" },
@@ -631,31 +614,15 @@ export function reachPath(
     concurrent: new Map(),
   };
   const projection = scope.writer.view(scope.view);
-  // A write or an Undo names what was deleted by its old path: the shown node is the one it
-  // means, the leaf even when a folder above it was the one deleted.
-  const resolved = resolveShown(
-    projection,
-    shown,
-    scope.root,
-    pathFrom(cx, path),
-    options.allowGone ? { through: true } : {},
-  );
-  const found: Resolution =
-    options.allowGone && resolved.kind === "gone"
-      ? { kind: "node", node: resolved.node, along: [], parent: resolved.node.parent, trashed: [] }
-      : resolved;
-  if (found.kind === "missing" || found.kind === "not_a_folder") return { kind: "unresolved" };
-  if (found.kind !== "node")
-    return {
-      kind: "refused",
-      refused: unresolved(
-        cx,
-        projection,
-        verb,
-        path.includes("://") ? path : `${area}${path}`,
-        found,
-      ),
-    };
+  const found = resolveShown(projection, shown, scope.root, pathFrom(cx, path));
+  if (found.kind === "purged" || found.kind === "other_version")
+    return options.destination ? { kind: "unresolved" } : { kind: "gone", why: found.kind };
+  if (found.kind !== "node") return { kind: "unresolved" };
+  if (!options.deleted && !options.destination && found.trashed.length > 0) {
+    const by = deleterOf(cx, projection, found.node);
+    return { kind: "gone", why: "deleted", ...(by ? { by } : {}) };
+  }
+  const kept = options.destination ? keptTrashed(cx, projection, found.trashed) : undefined;
   return {
     kind: "node",
     node: {
@@ -665,6 +632,7 @@ export function reachPath(
     },
     uri: nodeUri(cx, projection, found.node),
     delta: printedDelta(projection, [found.node.id]),
+    ...(kept ? { kept } : {}),
   };
 }
 
@@ -690,13 +658,10 @@ function keptStanding(
 
 /** The folder a several-move went into, now that the call has made it. */
 function destinationNode(cx: Context, to: Located): string | undefined {
-  const found = resolveShown(
-    cx.scope.writer.view(cx.scope.view),
-    cx.shown,
-    to.root,
-    { segments: to.segments, folder: true },
-    { through: true },
-  );
+  const found = resolveShown(cx.scope.writer.view(cx.scope.view), cx.shown, to.root, {
+    segments: to.segments,
+    folder: true,
+  });
   return found.kind === "node" ? found.node.id : undefined;
 }
 
@@ -756,14 +721,19 @@ export function runTreeCommand(
       if (leaf === undefined)
         return refuse("invalid_write", command.path, "A folder needs a name.");
       const found = resolveShown(projection, shown, path.root, path);
-      if (found.kind === "node")
-        return refuse(
-          "invalid_write",
-          command.path,
-          `${nodeUri(cx, projection, found.node)} already exists.`,
-        );
+      // A folder that stands there is what the call asked for; a document there is kept and the
+      // new folder is numbered beside it by the replay.
+      if (found.kind === "node" && found.node.kind === "folder" && !found.node.trashed)
+        return finish(nothingDone(found.node.id, command.path, { already: "live", notMoved: [] }));
       const parent = destinationParent(cx, path, path.segments.slice(0, -1));
-      if (!parent.ok) return parent.refused;
+      if (parent.kind === "purged")
+        return finish(
+          nothingDone(parent.node.id, command.path, {
+            leftOut: [{ path: uriOfPath(cx, command.path), why: "purged" }],
+            notMoved: [],
+          }),
+        );
+      if (parent.kind === "refused") return parent.refused;
       const folder = makeDestination(cx, parent.destination, filled);
       const last = ensureFolders(cx, folder, [leaf], filled);
       const after = scope.writer.view(scope.view);
@@ -799,7 +769,7 @@ export function runTreeCommand(
           isFolderPath(command.path) &&
           (!fromPath.folder ||
             (() => {
-              const there = resolveShown(projection, shown, to.root, to, { through: true });
+              const there = resolveShown(projection, shown, to.root, to);
               const self = resolveShown(projection, shown, fromPath.root, fromPath);
               // The folder named is another folder: the same path with a position is a reorder.
               return (
@@ -822,15 +792,31 @@ export function runTreeCommand(
           emptied,
           false,
         );
-        if ("skip" in moved) return refuse("invalid_write", toUri, `Nothing moved: ${moved.skip}`);
+        if (moved.skip)
+          return finish(
+            nothingDone(moved.skip.node as string, command.path, {
+              ...(moved.skip.already ? { already: moved.skip.already } : {}),
+              ...(moved.skip.leftOut ? { leftOut: [moved.skip.leftOut] } : {}),
+              notMoved: [],
+            }),
+          );
         if (moved.fail) return moved.fail;
         return finish({ ...moved.done, delta: changeDelta(emptied, filled) });
       }
       // Several into one folder: each on its own, what could be moved is moved.
       const folder = destinationParent(cx, to, to.segments);
-      if (!folder.ok) return folder.refused;
+      if (folder.kind === "purged")
+        return finish(
+          nothingDone(folder.node.id, command.path, {
+            leftOut: command.from.map((from) => ({ path: uriOfPath(cx, from), why: "purged" })),
+            notMoved: [],
+          }),
+        );
+      if (folder.kind === "refused") return folder.refused;
       const notMoved: string[] = [];
+      const leftOut: LeftOut[] = [];
       const arrived: string[] = [];
+      let nothingToMake: string | undefined;
       let made = 0;
       for (const from of command.from) {
         const fromPath = pathFrom(cx, from);
@@ -850,14 +836,25 @@ export function runTreeCommand(
           emptied,
           true,
         );
-        if ("skip" in result) notMoved.push(result.skip);
-        else if (result.done) {
+        if (result.skip) {
+          if (result.skip.notMoved) notMoved.push(result.skip.notMoved);
+          if (result.skip.leftOut) leftOut.push(result.skip.leftOut);
+          nothingToMake ??= result.skip.node;
+        } else if (result.done) {
           made += 1;
           arrived.push(...result.done.arrived);
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
-      if (made === 0)
-        return refuse("invalid_write", toUri, `Nothing moved: ${notMoved.join("; ")}`);
+      if (made === 0) {
+        // Everything was already there or left out: the call is done. Anything else named nothing.
+        if (nothingToMake !== undefined && notMoved.length + leftOut.length === command.from.length)
+          return finish(nothingDone(nothingToMake, command.path, { notMoved, leftOut }));
+        return refuse(
+          "invalid_write",
+          toUri,
+          `Nothing moved: ${[...notMoved, ...leftOut.map((left) => left.path)].join("; ")}`,
+        );
+      }
       const kept = keptTrashed(cx, projection, folder.destination.trashed);
       return finish({
         ok: true,
@@ -867,6 +864,7 @@ export function runTreeCommand(
         landedAt: uriOf(to.area, to.segments, true),
         moved: { made, of: command.from.length },
         notMoved,
+        ...(leftOut.length > 0 ? { leftOut } : {}),
         ...(kept ? { kept } : {}),
         concurrent: [],
         taken: [],
@@ -879,23 +877,18 @@ export function runTreeCommand(
     case "delete": {
       const path = pathFrom(cx, command.path);
       const found = resolveShown(projection, shown, path.root, path);
-      if (found.kind === "gone") {
-        return finish({
-          ok: true,
-          subject: found.node.id,
-          made: [],
-          shownAt: command.path,
-          landedAt: command.path,
-          alreadyDeleted: true,
-          notMoved: [],
-          concurrent: [],
-          taken: [],
-          arrived: [],
-          touched: [],
-          delta: { whole: [], names: [] },
-        });
-      }
-      if (found.kind !== "node") return unresolved(cx, projection, "deleted", command.path, found);
+      if (found.kind === "purged")
+        return finish(
+          nothingDone(found.node.id, command.path, {
+            leftOut: [{ path: uriOfPath(cx, command.path), why: "purged" }],
+            notMoved: [],
+          }),
+        );
+      if (found.kind !== "node") return unresolved(cx, projection, command.path, found);
+      if (found.node.trashed)
+        return finish(
+          nothingDone(found.node.id, command.path, { already: "deleted", notMoved: [] }),
+        );
       const node = found.node;
       const writtenUri = uriOfPath(cx, command.path);
       noteChanges(cx, projection, node, path, writtenUri);
@@ -974,7 +967,7 @@ export function runTreeCommand(
       if (!target) {
         const live = resolveShown(projection, shown, path.root, path);
         return live.kind === "node"
-          ? refuse("invalid_write", command.path, `${command.path} is not in Trash.`)
+          ? finish(nothingDone(live.node.id, command.path, { already: "live", notMoved: [] }))
           : refuse("document_not_found", command.path, "Nothing in Trash had that path.");
       }
       const node = target;
@@ -988,8 +981,8 @@ export function runTreeCommand(
       const record = entry
         ? scope.writer.restoreEntry(scope.view, scope.actor, entry.from ?? entry.id)
         : scope.writer.restore(scope.view, scope.actor, node.id);
-      if (record === "unknown")
-        return refuse("invalid_write", command.path, "That delete is not in this view.");
+      // The entry came from this view's Trash, so its delete is in force.
+      if (record === "unknown") throw new Error(`restore: no delete in force for ${node.id}`);
       remember(cx, record.id, node.id);
       const after = scope.writer.view(scope.view);
       const landedNode = after.nodes.get(node.id) as TreeNode;
@@ -1023,7 +1016,7 @@ export function runTreeCommand(
 
 export type UndoneTree = {
   /** Records the package refused to take back: something changed that fact since. */
-  outcomes: Array<"superseded" | "unknown">;
+  outcomes: Array<"changed_since" | "purged" | "already" | "unknown">;
   made: MadeRecord[];
   /** Whether any opposite record is in live (a drafted change an Apply landed is taken back there). */
   inLive: boolean;

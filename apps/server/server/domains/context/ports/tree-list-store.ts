@@ -46,22 +46,15 @@ export type CommittedTreeUpdate = {
   seq: number;
 };
 
-/** Why `admit` refused an account that cannot write the list now: not a fault of the update. */
-export const NO_WRITE_ACCESS = "no write access";
-
-export type AdmitResult =
-  | { ok: true; committed: CommittedTreeUpdate | null }
-  | { ok: false; reason: string; record?: string };
-
-/** What an account may do in a list's room: write, or only read. */
-export type TreeListAccess = { listId: string; level: "edit" | "read" };
+/** What `admit` stored; null when the list already held every item. */
+export type AdmitResult = { committed: CommittedTreeUpdate | null };
 
 export interface TreeListStore {
   /**
-   * The journal id of the list and what the account may do in its room, or null when the list is
-   * not the account's: the project (or account) decides, never a document.
+   * The journal id of the list, or null when the list is not the account's: the project (or
+   * account) decides, never a document.
    */
-  open(input: { list: TreeList; accountId: string }): Promise<TreeListAccess | null>;
+  open(input: { list: TreeList; accountId: string }): Promise<{ listId: string } | null>;
   /**
    * The list's state past journal row `afterSeq` as one update, and the row it reaches: the
    * rows after it, or the whole state when `afterSeq` is 0 or behind a checkpoint. Read
@@ -72,9 +65,10 @@ export interface TreeListStore {
     afterSeq: number;
   }): Promise<{ seq: number; update: Uint8Array }>;
   /**
-   * Admits a client's Yjs update for the connection of `accountId`: checks it, appends the
-   * server's verdicts, journals it and writes the rows it changes. A refused whole update stores
-   * nothing, and names the record that earned the refusal when one did. `committed` is null when the list already held every item.
+   * Admits a client's Yjs update for the connection of `accountId`: the guard, then the stamp
+   * `dropped` on each create raced into a closed Work, then the journal row and the rows it
+   * changes. Rejects with the package's `CopyFault` when the update does something an honest
+   * client's copy never does; nothing is stored. A create whose node id is another's has no row.
    */
   admit(input: { list: TreeList; accountId: string; update: Uint8Array }): Promise<AdmitResult>;
   /**

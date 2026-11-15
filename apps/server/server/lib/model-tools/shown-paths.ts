@@ -1,12 +1,13 @@
 /**
  * Every path the model writes is resolved through the names it was shown (tree-tools.md, "Which
  * tree a stale path is resolved against"): a name that was renamed or moved since reaches the node
- * the model meant, a name that now means another node reaches nothing, and what the call's path
- * showed is recorded with its result. This is the one place the tools that read or write inside a
+ * the model meant, and what the call's path showed is recorded with its result. This is the one place the tools that read or write inside a
  * document do it; the tree commands resolve inside their own command.
  */
-import { modelResult, splitDocumentFile } from "@meridian/agent-edit/integration";
+import { removerName, splitDocumentFile } from "@meridian/agent-edit/integration";
 import { formatParsedContextUri } from "@meridian/contracts/context-uri";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
+import { parseActor } from "../../domains/context/adapters/context-fs/tree-writes.js";
 import { parseUnifiedContextUri } from "../../domains/context/index.js";
 import {
   addDelta,
@@ -18,12 +19,8 @@ import {
   type ShownDelta,
 } from "../../domains/context/tree/names-shown.js";
 import { reachPath } from "../../domains/context/tree/tree-commands.js";
-import {
-  type ResultEvidence,
-  type ToolHandlerContext,
-  TREE_NAMES_ROOM,
-} from "../../domains/runtime/index.js";
-import type { ToolCall, WriteToolErrorOutput } from "./tool-context.js";
+import { type ToolHandlerContext, TREE_NAMES_ROOM } from "../../domains/runtime/index.js";
+import type { ToolCall, ToolWiringDeps } from "./tool-context.js";
 
 /** What the model has been shown of the tree so far in this conversation. */
 export async function shownNamesOf(
@@ -78,21 +75,54 @@ export type Reached = {
   delta?: ShownDelta;
   /** The node the path reached, when the names shown or the tree hold it. */
   node?: { id: string; kind: "folder" | "document" | "file"; entries: number };
+  /**
+   * A create's folders that were in Trash and stand again around what it makes, with who deleted
+   * them (`folderOf`).
+   */
+  kept?: string;
+  /**
+   * The node the path names is not available here (in Trash, purged, or of the other version):
+   * the tool answers with `goneMessage` and never looks `path` up again, which could reach
+   * another node that holds the name now.
+   */
+  gone?: Gone;
 };
 
+/** Why a path's node is not available, and who deleted it: "you" when it was this chat. */
+export type Gone = {
+  why: "deleted" | "purged" | "other_version";
+  by?: NonNullable<DocumentRemovalRecord["actor"]> | "you";
+};
+
+/** What a tool says for a path whose node is not available (`Reached.gone`). */
+export function goneMessage(path: string, gone: Gone): string {
+  if (gone.why === "deleted") {
+    const by = gone.by === "you" ? "you" : removerName(gone.by ?? null);
+    return `${path} is in Trash${by ? `: deleted by ${by}` : ""}. Restore it to use it.`;
+  }
+  if (gone.why === "purged") return `${path} was emptied from Trash and is gone for good.`;
+  return `${path} names something in the other version of the tree, not this one.`;
+}
+
 /**
- * The path as it is now for the node the model meant (`#fragment` kept), or a refusal that says
- * why nothing was done. A path neither the names shown nor the tree holds comes back as written:
- * the tool reports it as it always did. `create` resolves the folder it goes into, not the
- * name it makes.
+ * The path as it is now for the node the model meant (`#fragment` kept). A path neither the names
+ * shown nor the tree hold a node for comes back as written: the tool reports it as it always did.
+ * One whose node is not available comes back `gone`. `create` resolves the folder it goes into,
+ * not the name it makes, and that folder is never `gone`: one the model was shown that someone
+ * deleted since is `node`, and the create goes into it, which brings it back.
  */
 export async function reachShown(
+  deps: Pick<ToolWiringDeps, "documentRemovals">,
   call: ToolCall,
-  ctx: Pick<ToolHandlerContext, "shownNames">,
-  command: Parameters<typeof modelResult>[0]["command"] | "ls",
+  ctx: Pick<ToolHandlerContext, "shownNames" | "threadId">,
   path: string,
-  options: { version?: "draft" | "live"; folderOf?: boolean; allowGone?: boolean } = {},
-): Promise<Reached | (WriteToolErrorOutput & { evidence?: ResultEvidence })> {
+  options: {
+    version?: "draft" | "live";
+    folderOf?: boolean;
+    /** A write names a node in Trash by the path it was shown: that node is the one it means. */
+    deleted?: boolean;
+  } = {},
+): Promise<Reached> {
   const { filePath, fragment } = splitDocumentFile(path);
   const parts = areaOfPath(filePath);
   if (!parts) return { path };
@@ -105,32 +135,27 @@ export async function reachShown(
   const reached = await call.context.port.readTree(parts.area, {
     ...(options.version ? { version: options.version } : {}),
     read: (scope) =>
-      reachPath(scope, parts.area, shown, looked, command, {
-        ...(options.allowGone ? { allowGone: true } : {}),
+      reachPath(scope, parts.area, shown, looked, {
+        destination: options.folderOf === true,
+        ...(options.deleted ? { deleted: true } : {}),
       }),
   });
   if (!reached.ok || reached.value.kind === "unresolved") return { path };
+  if (reached.value.kind === "gone") {
+    const { why, by } = reached.value;
+    if (!by) return { path, gone: { why } };
+    const who = parseActor(by);
+    if (who?.kind === "agent" && who.chatId === ctx.threadId)
+      return { path, gone: { why, by: "you" } };
+    const actor = (await deps.documentRemovals.actors([by]))(by);
+    return { path, gone: { why, ...(actor ? { by: actor } : {}) } };
+  }
   const value = reached.value;
-  if (value.kind === "refused")
-    return {
-      isError: true,
-      output: modelResult({
-        command: command === "ls" ? "unknown" : command,
-        status: value.refused.status,
-        payload: {
-          path: value.refused.path,
-          message: value.refused.message,
-          ...(value.refused.refusal ? { refusal: value.refused.refusal } : {}),
-        },
-      }),
-      ...(value.refused.status === "path_changed"
-        ? { evidence: { shown: [], ...namesEvidence(value.refused.delta) } }
-        : {}),
-    };
   return {
     path: `${value.uri}${leaf}${fragment === undefined ? "" : `#${fragment}`}`,
     delta: value.delta,
     node: value.node,
+    ...(value.kept ? { kept: value.kept } : {}),
   };
 }
 
