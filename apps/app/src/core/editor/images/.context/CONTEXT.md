@@ -24,8 +24,20 @@ A pasted web picture becomes a link first; import replaces that link only after
 the bytes belong to the project. Refusal leaves the link and creates no hidden
 asset. Raw `asset:` sources and arbitrary browser URLs don't enter the document.
 
-All source allow-listing and signed URL resolution sits in `browserPictureSource`
+All source allow-listing and signed URL resolution sits in `inlinePictureSource`
 and the asset render state.
+
+**Remote pictures never load on their own.** A web address (`http(s)://`, `//`) that an
+image, figure or Markdown image holds renders `RemoteImagePlaceholder`: the address and a
+Load image button. The click asks `/api/image-proxy` (server fetch through the
+public-address dispatcher; refusals carry a typed reason the placeholder words) and then
+draws from the proxy URL, for the rest of the tab (`remote-image.ts`, nothing stored). The
+page's `img-src` policy (`apps/app/src/server/content-security-policy.ts`) allows only
+Flow's origin, the object store's signed-URL origin, `data:` and `blob:`, so an `<img>` that
+bypasses the placeholder is refused by the browser. A new `<img>` fed from a document's
+source goes through the placeholder or the asset render state, never a bare address. The
+clipboard HTML of a remote picture carries no `src` (`renderHTML` uses `inlinePictureSource`),
+because the serializer would fetch it.
 
 ## Size, cap and states
 

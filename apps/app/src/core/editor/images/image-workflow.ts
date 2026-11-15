@@ -195,21 +195,17 @@ export function assetDocumentIdFromSrc(src: string): string | null {
   return src.startsWith("asset:") && src.length > 6 ? src.slice(6) : null;
 }
 
-/**
- * The web URL families a picture may be fetched from as written: an absolute
- * http(s) URL, a protocol-relative one, or an image `data:` URL.
- */
-const BROWSER_PICTURE_SOURCE = /^(?:https?:\/\/|\/\/|data:image\/)/i;
+const INLINE_PICTURE_SOURCE = /^data:image\//i;
 
 /**
- * A picture source the browser may fetch as written, or null. A positive
- * allowlist: an `asset:` upload or a document address names a document that
- * only a signed URL draws, and anything else (`/map.png`, `../map.png`, a
- * malformed scheme) would be fetched from the app's own origin. Put in an
- * `<img src>` (a node view, clipboard or drag HTML) none of those is a picture.
+ * A picture source the browser may draw as written, or null: an image `data:` URL, which
+ * fetches nothing. An `asset:` upload or a document address names a document that only a signed
+ * URL draws, and anything else (`/map.png`, `../map.png`, a malformed scheme) would be fetched
+ * from the app's own origin. A web address is `remotePictureSource`'s: it shows a placeholder
+ * until the writer loads it.
  */
-export function browserPictureSource(src: string): string | null {
-  return BROWSER_PICTURE_SOURCE.test(src) ? src : null;
+export function inlinePictureSource(src: string): string | null {
+  return INLINE_PICTURE_SOURCE.test(src) ? src : null;
 }
 
 export function signedUrlRefreshDelayMs(signedUrlExpiresAt: string, nowMs = Date.now()): number {

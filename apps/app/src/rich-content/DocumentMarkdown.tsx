@@ -12,7 +12,13 @@ import {
   useState,
 } from "react";
 
-import { browserPictureSource } from "@/core/editor/images";
+import {
+  inlinePictureSource,
+  proxiedImageSrc,
+  RemoteImagePlaceholder,
+  remotePictureSource,
+  useRemoteImageLoaded,
+} from "@/core/editor/images";
 import { classifyLinkTarget } from "@/core/editor/links";
 import { DocumentCodeBlock } from "./DocumentCodeBlock";
 import { nodeAtPath } from "./markdown-parse-session";
@@ -276,18 +282,8 @@ function renderDocumentNode(
       return (
         <DocumentCodeBlock node={node} throttle={node === openCode} diagrams={node !== openCode} />
       );
-    case "image": {
-      const src = browserPictureSource(String(node.attrs.src));
-      if (!src) return node.attrs.alt ?? "";
-      return (
-        <img
-          src={src}
-          alt={node.attrs.alt ?? ""}
-          title={node.attrs.title ?? undefined}
-          style={node.attrs.width ? { width: node.attrs.width } : undefined}
-        />
-      );
-    }
+    case "image":
+      return <MarkdownImage node={node} />;
     case "table":
       return (
         <div className="tableWrapper">
@@ -319,6 +315,25 @@ function renderDocumentNode(
     default:
       throw new Error(`Unsupported Markdown node: ${node.type.name}`);
   }
+}
+
+/** A Markdown image: drawn as written only for an image `data:` URL; a web address waits for the writer's click. */
+function MarkdownImage({ node }: { node: PMNode }) {
+  const source = String(node.attrs.src);
+  const remote = remotePictureSource(source);
+  const loaded = useRemoteImageLoaded(remote);
+  const src = inlinePictureSource(source) ?? (remote && loaded ? proxiedImageSrc(remote) : null);
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={node.attrs.alt ?? ""}
+        title={node.attrs.title ?? undefined}
+        style={node.attrs.width ? { width: node.attrs.width } : undefined}
+      />
+    );
+  }
+  return remote ? <RemoteImagePlaceholder address={remote} /> : (node.attrs.alt ?? "");
 }
 
 /** One top-level quote or list (or plain block): the unit that re-renders when its own blocks change. */
