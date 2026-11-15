@@ -17,7 +17,7 @@ there the successor's bake and first request read the newest saved Agent
 (`agentCatalog.refreshBinding`, computed in preparation), and the binding row is
 replaced in the compaction's transaction just before `beginPromptEpoch`. No
 other boundary refreshes it, and compaction writes no notice line. Only a
-top-level chat refreshes (no parent, no stored spawn overrides): a subagent's
+top-level chat refreshes (no parent): a subagent's
 configuration was built with its parent's overrides and is never rebuilt. An
 automatic compaction in the middle of a long reply continues that reply as the
 successor (`continuingTask`), so the rest of the reply runs on the new

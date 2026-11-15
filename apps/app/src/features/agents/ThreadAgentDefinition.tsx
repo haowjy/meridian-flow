@@ -24,15 +24,13 @@ export function ThreadAgentDefinition({ threadId }: { threadId: string }) {
       <AgentFileDialog
         open={open}
         onClose={() => setOpen(false)}
-        title={
-          <>
-            {agent.data?.name ?? t`Agent definition`}
-            {agent.data?.stale ? (
-              <Chip kind="label">
-                <Trans>A newer version is saved</Trans>
-              </Chip>
-            ) : null}
-          </>
+        title={agent.data?.name ?? t`Agent definition`}
+        titleExtra={
+          agent.data?.stale ? (
+            <Chip kind="label" className="shrink-0">
+              <Trans>A newer version is saved</Trans>
+            </Chip>
+          ) : null
         }
         description={t`The Agent definition this chat runs, read-only.`}
         text={{ isError: agent.isError, data: agent.data?.text }}

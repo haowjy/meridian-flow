@@ -90,9 +90,8 @@ export interface BoundAgentCatalog extends PackageSaver {
   /**
    * The binding a top-level chat moves onto when it compacts: the newest saved Agent of its name,
    * and each skill the chat invoked pinned again to its newest save, whether or not the Agent
-   * moved (a skill no longer saved keeps its pin). A thread with a parent, or with stored spawn
-   * overrides, keeps its binding: its configuration came from the resolver that spawned it, with
-   * the parent's overrides, and this resolver would rebuild it without them. Undefined to keep the
+   * moved (a skill no longer saved keeps its pin). A thread with a parent keeps its
+   * binding: its configuration came from the resolver that spawned it, with the parent's overrides, and this resolver would rebuild it without them. Undefined to keep the
    * binding: not a top-level chat, the Agent is gone or its newest save can't run and no skill
    * moved, or nothing changed. Writes no binding; the caller writes the result with
    * `replaceThreadBinding`.
@@ -416,13 +415,7 @@ export function createBoundAgentCatalog(input: {
 
     async refreshBinding(userId, projectId, thread) {
       const bound = await store.readThreadBinding(thread.id);
-      if (
-        !bound?.revision ||
-        thread.parentThreadId !== null ||
-        bound.invocationOverlay?.overrides
-      ) {
-        return undefined;
-      }
+      if (!bound?.revision || thread.parentThreadId !== null) return undefined;
       const saved = await levels.saved(userId, projectId);
       // The bound version is the fallback, so an Agent that is gone or whose newest save can't
       // run resolves to what the chat already has.

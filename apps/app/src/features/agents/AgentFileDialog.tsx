@@ -10,19 +10,27 @@ export function AgentFileDialog({
   open,
   onClose,
   title,
+  titleExtra,
   description,
   notice,
   text,
 }: {
   open: boolean;
   onClose: () => void;
-  title: ReactNode;
+  title: string;
+  titleExtra?: ReactNode;
   description: string;
   notice?: ReactNode;
   text: { isError: boolean; data: string | undefined };
 }) {
   return (
-    <ViewerDialog open={open} onClose={onClose} title={title} description={description}>
+    <ViewerDialog
+      open={open}
+      onClose={onClose}
+      title={title}
+      titleExtra={titleExtra}
+      description={description}
+    >
       {notice}
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
         {text.isError ? (

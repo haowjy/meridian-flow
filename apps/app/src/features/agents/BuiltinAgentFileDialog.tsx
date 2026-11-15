@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { AgentFileStatus } from "@meridian/contracts/agents";
+import { useState } from "react";
 import { useBuiltinAgentFile } from "@/client/query/useAgentFiles";
 import { AgentFileDialog } from "./AgentFileDialog";
 import { AgentFileStatusNotice } from "./AgentFileNotice";
@@ -15,16 +16,19 @@ export function BuiltinAgentFileDialog({
   file: AgentFileStatus | null;
   onClose: () => void;
 }) {
-  const text = useBuiltinAgentFile(file?.path ?? null);
+  // The dialog fades out after `file` clears; it keeps showing the last file until it is gone.
+  const [shown, setShown] = useState(file);
+  if (file && file !== shown) setShown(file);
+  const text = useBuiltinAgentFile(shown?.path ?? null);
   return (
     <AgentFileDialog
       open={file !== null}
       onClose={onClose}
-      title={file?.slug ?? ""}
+      title={shown?.slug ?? ""}
       description={
-        file?.kind === "skill" ? t`Built-in skill, read-only` : t`Built-in Agent, read-only`
+        shown?.kind === "skill" ? t`Built-in skill, read-only` : t`Built-in Agent, read-only`
       }
-      notice={file ? <AgentFileStatusNotice file={file} className="mx-4 mt-3" /> : null}
+      notice={shown ? <AgentFileStatusNotice file={shown} className="mx-4 mt-3" /> : null}
       text={text}
     />
   );
