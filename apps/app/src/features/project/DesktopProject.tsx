@@ -12,11 +12,14 @@
 
 import { t } from "@lingui/core/macro";
 import { FileQuestion, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { DismissableLayer } from "radix-ui/internal";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useLiveTabs } from "@/client/project-shell/live-tabs";
 import { mainTabKey } from "@/client/project-shell/main-tabs";
 import type { OpenDocument } from "@/client/stores";
+import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
+import { focusMain } from "@/features/editor/focus-on-open";
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
@@ -41,6 +44,7 @@ import type { ReviewScopedProjectProps } from "./ProjectView";
 import { useChatNavigation } from "./routing/chat-navigation";
 import { useTrashNavigation } from "./routing/ProjectNavigationContext";
 import { isProjectRouteMasked, ProjectRouteBoundary } from "./routing/ProjectRouteBoundary";
+import { useOnOpen } from "./routing/use-on-open";
 import { useOpenInMain } from "./routing/use-open-document-in-editor";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import { MainHeader } from "./shell/MainHeader";
@@ -59,9 +63,7 @@ import {
 } from "./side/SideView";
 import { useMainItem } from "./views";
 
-/** Minimum width (px) the main content column may shrink to on desktop. */
-const MAIN_MIN_WIDTH = 360;
-/** Below sidebar (264) + side panel (360) + main's minimum, the side panel folds so main is never crushed. */
+/** Below sidebar (264) + side panel (360) + 360 for main, the side panel folds so main keeps its room. */
 const COMPACT_DESKTOP_QUERY = "(max-width: 983px)";
 const NARROW_DESKTOP_QUERY = "(max-width: 767px)";
 
@@ -79,6 +81,15 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
   const sideToggle: PaneHeaderRailToggle = { open: panels.side.open };
   const sideOpen = panels.side.open;
+  const sidebarOver = narrowHold.narrow && panels["rail-l"].open;
+  const { foldSidebar } = narrowHold;
+  // Any open goes to main, so a sidebar lying over main folds to show it, as the phone's drawer
+  // closes, and the focus follows to what opened.
+  useOnOpen(() => {
+    if (!sidebarOver) return;
+    foldSidebar();
+    focusMain();
+  });
   // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
@@ -239,15 +250,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       key: "sidebar",
       slot: panels["rail-l"].open ? "rail-l" : null,
       children: (
-        <LeftSidebar
-          projectId={projectId}
-          projectTitle={props.projectTitle}
-          titleEdit={props.titleEdit}
-          editorWorkId={props.editorWorkId}
-          chatThreadId={chatOnScreen}
-          contextLive={props.contextLive}
-          activeDocument={mainTab}
-        />
+        <SidebarOver over={sidebarOver} onFold={foldSidebar}>
+          <LeftSidebar
+            projectId={projectId}
+            projectTitle={props.projectTitle}
+            titleEdit={props.titleEdit}
+            editorWorkId={props.editorWorkId}
+            chatThreadId={chatOnScreen}
+            contextLive={props.contextLive}
+            activeDocument={mainTab}
+          />
+        </SidebarOver>
       ),
     },
     ...documentHosts,
@@ -336,7 +349,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         hosts={hosts}
         onSetSlotWidth={setSlotWidth}
         onSetSlotOpen={setSlotOpenHere}
-        mainMinWidth={MAIN_MIN_WIDTH}
+        sidebarOver={sidebarOver}
       />
     </TreeCreationProvider>
   );
@@ -365,13 +378,66 @@ function SideEmpty({ projectId }: { projectId: string }) {
 }
 
 /**
+ * The sidebar lying over main dismisses as the phone's drawer does: Escape (not one a field
+ * inside handles itself) returns the focus to the sidebar toggle, and a press on the page beside
+ * it, or Tab out onto it, leaves the focus there. Only the page counts: a dialog or menu over it
+ * is a layer above the sidebar, and the toggle is its own control. Focus the app moves onto the
+ * page in answer to a press in the sidebar (a new chat's composer after Chat) is not the writer
+ * leaving. The layer is always mounted, so the sidebar is never remounted (`SlotGrid`); beside
+ * main it has no `onDismiss` and does nothing.
+ */
+function SidebarOver({
+  over,
+  onFold,
+  children,
+}: {
+  over: boolean;
+  onFold: () => void;
+  children: ReactNode;
+}) {
+  const tabbed = useRef(false);
+  return (
+    <DismissableLayer.Root
+      className="contents"
+      onKeyDownCapture={(event) => {
+        tabbed.current = event.key === "Tab";
+      }}
+      onPointerDownCapture={() => {
+        tabbed.current = false;
+      }}
+      onFocusOutside={(event) => {
+        if (!tabbed.current) event.preventDefault();
+      }}
+      onDismiss={over ? onFold : undefined}
+      onEscapeKeyDown={(event) => {
+        if (!over) return;
+        ignoreFieldEscape(event);
+        if (event.defaultPrevented) return;
+        document.querySelector<HTMLElement>('[data-panel-toggle="left"]')?.focus();
+      }}
+      onInteractOutside={(event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const onPage =
+          target?.closest("[data-stable-layout-grid]") &&
+          !target.closest('[data-panel-toggle="left"]');
+        if (!onPage) event.preventDefault();
+      }}
+    >
+      {children}
+    </DismissableLayer.Root>
+  );
+}
+
+/**
  * A window too narrow for a panel holds it closed while it stays narrow, without writing prefs,
  * so the writer's own choice returns when the window widens. Opening a panel by hand releases
  * its hold until the window narrows again; in a window too narrow for both, it holds the other
- * one closed instead, so main keeps its minimum.
+ * one closed instead, so main keeps its room. A window too narrow for the sidebar beside main
+ * (`narrow`) lays a sidebar opened by hand over main, and an open folds it again.
  */
 function useNarrowWindowHold() {
   const [held, setHeld] = useState<readonly PanelSlotId[]>(NO_HELD_PANELS);
+  const [narrow, setNarrow] = useState(false);
   useEffect(() => {
     const compact = window.matchMedia(COMPACT_DESKTOP_QUERY);
     const narrow = window.matchMedia(NARROW_DESKTOP_QUERY);
@@ -380,6 +446,7 @@ function useNarrowWindowHold() {
       if (compact.matches) next.push("side");
       if (narrow.matches) next.push("rail-l");
       setHeld(next.length === 0 ? NO_HELD_PANELS : next);
+      setNarrow(narrow.matches);
     };
     compact.addEventListener("change", apply);
     narrow.addEventListener("change", apply);
@@ -398,5 +465,8 @@ function useNarrowWindowHold() {
       return next.length === 0 ? NO_HELD_PANELS : next;
     });
   }, []);
-  return { held, openByHand };
+  const foldSidebar = useCallback(() => {
+    setHeld((current) => (current.includes("rail-l") ? current : [...current, "rail-l"]));
+  }, []);
+  return { held, narrow, openByHand, foldSidebar };
 }

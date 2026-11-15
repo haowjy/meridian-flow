@@ -1,4 +1,53 @@
 - Mermaid is the only diagram provider because it already covers timeline, mindmap,
-  flowchart, sequence and ER families; surface those to writers before adding a second
-  row. KaTeX math for LitRPG stat blocks isn't a diagram provider: inline math is a
+  flowchart, sequence and ER families; offer those choices in the diagram insertion
+  UI before registering another provider. KaTeX math for LitRPG stat blocks isn't a diagram provider: inline math is a
   mark or an inline node, not a fence the page draws instead of showing.
+
+## Native selection and composition
+
+Remaining native-input failures:
+
+1. A selected diagram before empty prose can restart Chromium composition,
+   leaving provisional `ni` beside committed `你`. A trace places native focus
+   inside the rendered SVG after the first input, before ProseMirror reads the
+   DOM. A whole selected table whose last cell ends in a rendered diagram also
+   restarts composition, but its input-event trace still shows focus in the typed
+   text; whether these share a cause is unproved. To reproduce, place a rendered
+   Mermaid diagram before an empty paragraph, or in the last table cell; select
+   the diagram or whole table, then compose `ni` → `你`. Expected: exactly `你`
+   after the diagram, or in the paragraph after the whole table. Actual: `ni你`.
+2. A diagram-only or figure-only document can lose its native range after
+   mouseup while ProseMirror keeps a NodeSelection. Chromium then emits no input
+   events. Create a document containing only that object, click its body, release
+   the mouse, then type. The range can disappear and nothing is inserted. Whether
+   this shares the composition-restart cause above is unproved. Fix the missing
+   browser input target without per-object event patches.
+3. An inline image alone in its paragraph can restart composition even when a
+   plain caret is already after it. This reproduces without ProseMirror in static
+   contenteditable HTML: an inline-block wrapper containing a block-level image
+   box triggers Chromium's restart. An inline-level image box fixes that reduction,
+   but the app's hovered chrome introduces another trigger not yet isolated. Fix
+   the image/chrome box structure rather than filtering provisional text. Native
+   selection projection alone does not fix this case. Insert an inline image beside
+   one character, delete that character, click the image and press Right to place
+   a caret after it. Compose `ni` → `你`: expected `你`, actual `ni你`. Repeat with
+   the pointer over and away from the image to distinguish hover chrome.
+
+Reproduce with real selection plus Chromium `Input.imeSetComposition` updates and
+commit. This does not verify Android InputConnection or an operating-system IME.
+
+- Native range preparation has two accepted no-movement limits in Chromium/Linux:
+  select a whole table that is last in its document, then Shift+PageDown or
+  Ctrl+Shift+Right. The selection narrows to the head cell's text; no text changes.
+  CellSelection covers all selected cells, but its native endpoints cover only
+  that cell. The [selection representation task](../../.context/TODO.md#cell-selection-restoration)
+  tracks this mismatch alongside peer restoration; a shared fix is not yet proved.
+  Do not add a key-specific edge guard or a delayed selection rollback.
+
+- A whole selected table at the end of a document can leave provisional `n` when
+  composing `n` → `ni` → committed `你` into a newly created trailing paragraph.
+  Chromium emits two composition starts and leaves `n你`; starting with `ni`
+  instead was exact. A table with an existing following paragraph is exact with
+  either sequence. The failure also reproduces with native projection and the
+  native key route disabled in the same build. Investigate destination creation
+  during composition; its relation to the other restart cases is unproved.

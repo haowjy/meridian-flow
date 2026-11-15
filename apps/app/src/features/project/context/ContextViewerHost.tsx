@@ -4,17 +4,18 @@
  * Fetches the active file through `useProjectContextRead` (the signed-URL
  * read route), chooses the matching viewer body for its kind, and composes the
  * shared `ReadOnlyViewerFrame`. Every host's own chrome names the file: the
- * main's title chip, the side header, the phone's top bar. Only
- * images, PDFs and binaries land here from the side; a text file mounts the
- * editor.
+ * main's title chip, the side header, the phone's top bar, the upload dialog's
+ * title. From a pane only images, PDFs and binaries land here, since a text file
+ * mounts the editor; a chat's upload, text included, always opens here.
  */
 
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle } from "lucide-react";
 import { documentDownloadUrl } from "@/client/api/figures-api";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
-import type { OpenDocument } from "@/client/stores";
+import type { ServerOpenDocument } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
@@ -24,11 +25,31 @@ import { TextViewer } from "./viewers/TextViewer";
 
 export type ContextViewerHostProps = {
   projectId: string;
-  document: Extract<OpenDocument, { kind: "viewer" }>;
+  /** A viewer tab, or a chat's text upload, which opens read-only here and never in the editor. */
+  document: ServerOpenDocument;
+  /** Main's file: once read, it is main's surface (`MainSurface`). */
+  inMain?: boolean;
 };
 
-export function ContextViewerHost({ projectId, document }: ContextViewerHostProps) {
+export function ContextViewerHost({ projectId, document, inMain = false }: ContextViewerHostProps) {
   const read = useProjectContextRead(projectId, document.documentId);
+  return (
+    <MainSurface
+      joined={inMain && read.status !== "loading"}
+      className="flex h-full min-h-0 flex-col"
+    >
+      <ViewerContent document={document} read={read} />
+    </MainSurface>
+  );
+}
+
+function ViewerContent({
+  document,
+  read,
+}: {
+  document: ContextViewerHostProps["document"];
+  read: ReturnType<typeof useProjectContextRead>;
+}) {
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame>

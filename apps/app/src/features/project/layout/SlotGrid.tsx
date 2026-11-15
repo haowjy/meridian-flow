@@ -3,7 +3,8 @@
  *
  * Every host is a direct child of one grid container for as long as it is mounted, keyed by what
  * it holds. Moving a host between slots changes only its wrapper's grid-area (or parks it
- * offscreen), so a host is never portaled, reparented or remounted by a move. Slot chrome
+ * offscreen), so a host is never portaled, reparented or remounted by a move. A host wraps its
+ * children unconditionally: a wrapper that comes and goes with a condition remounts them. Slot chrome
  * (background, rounding, shadows, borders) is owned by the slot's `className`; this wrapper
  * handles only base layout and the parked state.
  *

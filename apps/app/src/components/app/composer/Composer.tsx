@@ -34,8 +34,10 @@ import { referenceDropDoor } from "@/core/editor/extensions/reference-drop";
 import { LandingExtension } from "@/core/editor/landing/LandingExtension";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { uploads } from "@/core/uploads/upload-store";
+import { joinMain } from "@/features/editor/focus-on-open";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
+import { useOptionalPanePlace } from "@/features/project/pane-place";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import { ComposerSkillAtom } from "./ComposerSkillAtom";
@@ -381,6 +383,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     },
   });
   useLiveReferences(editor, initialDraft, referenceCatalog);
+  // Main's chat: its composer is main's place to type (`focusMain`).
+  const inMain = useOptionalPanePlace() === "main";
+  useEffect(() => {
+    if (inMain && editor && !editor.isDestroyed) return joinMain(editor.view.dom, { text: true });
+  }, [editor, inMain]);
   useLayoutEffect(() => {
     if (editor && initialDraft) restoreComposerSelection(editor, initialDraft.selection);
   }, [editor, initialDraft]);

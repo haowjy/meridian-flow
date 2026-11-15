@@ -65,16 +65,16 @@ export function useLinkableDocuments({
   projectId,
   workId,
   rootThreadId,
-  chatId,
+  chatThreadId,
 }: {
   projectId: string | null;
   workId: string | null;
   rootThreadId?: string | null;
-  chatId?: string | null;
+  chatThreadId?: string | null;
 }): LinkableDocumentIndex {
   const resolutionEpoch = useLinkResolutionEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const scopes = linkableScopes({ projectId, workId, rootThreadId, chatId });
+  const scopes = linkableScopes({ projectId, workId, rootThreadId, chatThreadId });
   const scopedWorkId = scopes?.workId ?? null;
   const scopedRootThreadId = scopes?.rootThreadId ?? null;
   // A surface owns only some sources (an Editor document has no chat, so no uploads): an unowned
@@ -84,7 +84,7 @@ export function useLinkableDocuments({
     // A No Work chat's lineage Scratch replaces the Work's.
     workId: scopedRootThreadId ? null : scopedWorkId,
     rootThreadId: scopedRootThreadId,
-    chatId: scopes?.chatId ?? null,
+    chatThreadId: scopes?.chatThreadId ?? null,
   });
 
   return useMemo(() => {

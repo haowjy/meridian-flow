@@ -10,7 +10,7 @@ import {
 } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { type NotUndone, undoChange } from "./undo.js";
+import { type NotUndone, recordsInForce, undoChange } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
@@ -283,9 +283,10 @@ export function applyDraft(
   // has landed, shows the node's name numbered, the clash was visible to the one applying, so
   // the record that gave the name holds the numbered one (design, section 4) and a later change
   // to its sibling cannot flip it back.
-  const reads = replay([...live, ...pending.filter((record) => !leftIds.has(record.id))], {
-    draft,
-  });
+  const ends = (record: TreeRecord) =>
+    leftIds.has(record.id) ||
+    (wanted.has(record.id) && !taken.has(record.id) && !overridden.has(record.id));
+  const reads = replay([...live, ...pending.filter((record) => !ends(record))], { draft });
   const was = new Map<string, { name: string; parent: string; rank: string }>();
   const stands = (node: string) => was.get(node) ?? liveNow.nodes.get(node);
   const lastNamed = new Map<string, string>();
@@ -311,7 +312,15 @@ export function applyDraft(
       (copy.type === "create" || nameSet(copy) !== undefined)
     ) {
       const shown = reads.nodes.get(copy.node);
-      if (lastNamed.get(copy.node) === record.id && shown && shown.name === copy.name)
+      // A node keeping both its name and its folder arrives in no new place in the numbering, so
+      // baking a number onto it would move it behind the siblings that arrived since. A move
+      // into another folder does arrive in a new place there, so it is baked even with its name.
+      if (
+        lastNamed.get(copy.node) === record.id &&
+        shown &&
+        shown.name === copy.name &&
+        !(before?.name === copy.name && (copy.type !== "move" || before.parent === copy.parent))
+      )
         copy.name = shown.displayName;
     }
     if (copy.type === "create")
@@ -377,10 +386,14 @@ export function discardDraft(
 /** Why a restored record would have nothing to act on: what it stands on is gone. */
 const GONE: ReadonlySet<SkipReason> = new Set(["purged", "missing-node", "missing-parent"]);
 
-/** What an Apply command settled, and the live copies it appended that are still in force. */
-function appliedBy(writer: TreeWriter, applied: string) {
-  const settled = settledBy(writer, applied, "applied", "superseded");
-  const all = new Map(listRecords(writer.doc).map((record) => [record.id, record]));
+/**
+ * What an Apply command settled, and the live copies it appended: the last copy of each record it
+ * applied. A copy a later record undid is among them: `undoApply` tries it and `undoChange` answers
+ * `already`, and a copy of the Apply's own Undo record may bring it back in force on the way.
+ */
+function appliedBy(doc: Y.Doc, applied: string) {
+  const settled = settledBy(doc, applied, "applied", "superseded");
+  const all = new Map(listRecords(doc).map((record) => [record.id, record]));
   const landed = new Set(
     settled.flatMap(([id, to]) => {
       const record = all.get(id);
@@ -389,18 +402,39 @@ function appliedBy(writer: TreeWriter, applied: string) {
   );
   // An original applied, undone and applied again has a copy for each: this command's is the last.
   const last = new Map<string, TreeRecord>();
-  for (const record of viewRecords(writer.doc, LIVE))
+  for (const record of viewRecords(doc, LIVE))
     if (record.carries !== undefined && landed.has(record.carries))
       last.set(record.carries, record);
-  const copies = viewRecords(writer.doc, LIVE).filter(
+  const copies = viewRecords(doc, LIVE).filter(
     (record) => record.carries !== undefined && last.get(record.carries) === record,
   );
   return { settled, copies };
 }
 
+/**
+ * The nodes of an Apply command that still stand in live: each node whose copy is in force
+ * (`recordsInForce`), and each whose `restore` the Apply made (`restoredByApply`, the ids
+ * `undoApply` takes back) is in force too. Empty once Un-Apply, or an Undo of each change, took
+ * them all back; the tab reads it to tell whether the Apply's tree half has ended. A pure function
+ * of the list, the same in every client.
+ */
+export function appliedNodes(
+  doc: Y.Doc,
+  applied: string,
+  restoredByApply: readonly string[],
+): string[] {
+  const standing = recordsInForce(viewRecords(doc, LIVE));
+  const restores = new Set(restoredByApply);
+  const copies = appliedBy(doc, applied).copies.filter((copy) => standing.has(copy.id));
+  const restored = listRecords(doc).filter(
+    (record) => restores.has(record.id) && standing.has(record.id),
+  );
+  return [...new Set([...restored, ...copies].map((record) => record.node))];
+}
+
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
 export function appliedCreates(writer: TreeWriter, applied: string): string[] {
-  return appliedBy(writer, applied).copies.flatMap((copy) =>
+  return appliedBy(writer.doc, applied).copies.flatMap((copy) =>
     copy.type === "create" ? [copy.node] : [],
   );
 }
@@ -440,7 +474,7 @@ export function undoApply(
   } = {},
 ): UndoApplyResult {
   assertNewCommand(writer.doc, command);
-  const { settled, copies } = appliedBy(writer, applied);
+  const { settled, copies } = appliedBy(writer.doc, applied);
   const restores = new Set(options.restoredByApply);
   const made = [...listRecords(writer.doc).filter((record) => restores.has(record.id)), ...copies];
   const undone: TreeRecord[] = [];
@@ -590,8 +624,8 @@ export function restoreDiscard(
 }
 
 /** The records a command settled with one of these, and nothing since has settled again. */
-function settledBy(writer: TreeWriter, command: string, ...to: Settlement[]) {
-  return [...lastSettlements(writer.doc)]
+function settledBy(doc: Y.Doc, command: string, ...to: Settlement[]) {
+  return [...lastSettlements(doc)]
     .filter(([, settle]) => settle.command === command && to.includes(settle.to))
     .map(([id, settle]) => [id, settle.to] as const);
 }

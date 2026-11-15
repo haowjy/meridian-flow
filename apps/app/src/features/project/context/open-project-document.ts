@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type {
@@ -11,7 +12,9 @@ import type { ProjectStandings } from "./project-standings";
  *
  * Doors that already render a tree row carry its identity; id-only doors read it from the replay
  * of the project's list, waiting for the list only while it has not been read. Both commit main's
- * address before the destination acquires its live session. Every door opens the document in main.
+ * address before the destination acquires its live session. Every door opens the document in main,
+ * except a chat's upload, which opens in the upload viewer. An open that finds nothing to show says
+ * so in a failure toast, so no door handles a refusal itself.
  */
 
 import {
@@ -31,7 +34,8 @@ import {
   useState,
 } from "react";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
-import { isEditorScheme, type OpenDocument } from "@/client/stores";
+import { isEditorScheme, type OpenDocument, type ServerOpenDocument } from "@/client/stores";
+import { notifyFailure } from "@/components/app/failure-toast";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import {
   type OpenContextRoute,
@@ -167,11 +171,8 @@ export class ProjectDocumentLiveOpener {
   }
 }
 
-export type KnownDocumentIdentity = {
+export type KnownDocumentIdentity = ContextOwner & {
   scheme: ProjectContextTreeScheme;
-  workId?: string | null;
-  rootThreadId?: string;
-  chatId?: string;
   file: TreeFile;
 };
 
@@ -183,6 +184,13 @@ export type OpenProjectDocumentRequest = {
   focus?: true;
   /** Takes the place of the current history entry (main leaving a document the writer removed). */
   replace?: true;
+  /**
+   * Offers a document that opens in a pane to the side, once this open knows what it is: true when
+   * the side took it. A chat's upload never reaches it, since no pane holds one.
+   */
+  placeBeside?: () => boolean;
+  /** The caller goes elsewhere when this open is refused, so the opener says nothing of it. */
+  fallsBack?: true;
   signal?: AbortSignal;
 };
 
@@ -190,7 +198,7 @@ export type OpenDocumentOutcome =
   | { kind: "committed"; documentId: string }
   | { kind: "trashed"; documentId: string }
   | { kind: "cancelled" }
-  | { kind: "refused"; reason: "gone" | "lookup-failed" };
+  | { kind: "refused"; reason: "gone" | "lookup-failed"; name?: string };
 export type OpenProjectDocument = (
   request: OpenProjectDocumentRequest,
 ) => Promise<OpenDocumentOutcome>;
@@ -203,7 +211,9 @@ type NavigationAdapterDependencies = {
   /** Where the replay of the list shows a document, or null while it shows none. */
   locate(documentId: string): KnownDocumentIdentity | null;
   /** Shows a chat's upload, which belongs to no main address, in its viewer. */
-  viewUpload(tab: Extract<OpenDocument, { kind: "viewer" }>): void;
+  viewUpload(tab: ServerOpenDocument): void;
+  /** Says that an open found nothing to show, with what tries it again. */
+  refused(outcome: Extract<OpenDocumentOutcome, { kind: "refused" }>, retry: () => void): void;
 };
 
 type CommitResult = { kind: "applied" } | { kind: "cancelled" } | { kind: "failed" };
@@ -223,9 +233,27 @@ export class ProjectDocumentNavigationAdapter {
     this.current = null;
   }
 
-  async open(
+  /** Every refusal is said here, so no door that opens through this has to. */
+  async open(projectId: string, request: OpenProjectDocumentRequest): Promise<OpenDocumentOutcome> {
+    let outcome: OpenDocumentOutcome;
+    try {
+      outcome = await this.run(projectId, request);
+    } catch (error) {
+      // A door drops the promise: an open that threw would otherwise end in silence.
+      reportError(error);
+      outcome = { kind: "refused", reason: "lookup-failed" };
+    }
+    if (outcome.kind === "refused" && !request.fallsBack)
+      // A later Retry is a new open: replacing would drop whatever page the writer is on by then.
+      this.dependencies.refused(outcome, () => {
+        void this.open(projectId, { ...request, replace: undefined, signal: undefined });
+      });
+    return outcome;
+  }
+
+  private async run(
     projectId: string,
-    { documentId, known, workId, focus, replace, signal }: OpenProjectDocumentRequest,
+    { documentId, known, workId, focus, replace, placeBeside, signal }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
     const navigationIsCurrent = this.dependencies.captureNavigation?.();
     const token = ++this.attempt;
@@ -253,17 +281,15 @@ export class ProjectDocumentNavigationAdapter {
       const { identity } = identified;
 
       if (!isEditorScheme(identity.scheme)) {
-        const tab = openDocumentFromFile(
-          identity.scheme,
-          identity.file,
-          identity.chatId ? { chatThreadId: identity.chatId } : {},
-        );
-        if (tab.kind !== "viewer") return { kind: "refused", reason: "lookup-failed" };
         if (!isCurrent()) return { kind: "cancelled" };
-        this.dependencies.viewUpload(tab);
+        this.dependencies.viewUpload(
+          openDocumentFromFile(identity.scheme, identity.file, identity),
+        );
         return { kind: "committed", documentId };
       }
 
+      if (!isCurrent()) return { kind: "cancelled" };
+      if (placeBeside?.()) return { kind: "committed", documentId };
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
       const committed = await this.commitFile({
@@ -272,13 +298,13 @@ export class ProjectDocumentNavigationAdapter {
         file: identity.file,
         workId: identity.workId ?? workId,
         rootThreadId: identity.rootThreadId,
-        chatId: identity.chatId,
         focus,
         replace,
         isCurrent,
         canCommit,
       });
-      if (committed.kind === "failed") return { kind: "refused", reason: "lookup-failed" };
+      if (committed.kind === "failed")
+        return { kind: "refused", reason: "lookup-failed", name: identity.file.name };
       return committed.kind === "applied"
         ? { kind: "committed", documentId }
         : { kind: "cancelled" };
@@ -384,7 +410,6 @@ export class ProjectDocumentNavigationAdapter {
     file: TreeFile;
     workId: string | undefined;
     rootThreadId?: string;
-    chatId?: string;
     focus?: true;
     replace?: true;
     isCurrent: () => boolean;
@@ -446,7 +471,7 @@ export function ProjectDocumentNavigationProvider({
   const treesRef = useRef(trees);
   treesRef.current = trees;
   const openContextRoute = useOpenContextRoute();
-  const [upload, setUpload] = useState<Extract<OpenDocument, { kind: "viewer" }> | null>(null);
+  const [upload, setUpload] = useState<ServerOpenDocument | null>(null);
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({
       projectId,
@@ -461,6 +486,12 @@ export function ProjectDocumentNavigationProvider({
           return { scheme: place.source.scheme, file: place.file, ...ownerOfSource(place.source) };
         },
         viewUpload: setUpload,
+        refused: (outcome, retry) =>
+          notifyFailure({
+            key: `open-document:${projectId}`,
+            title: refusalTitle(outcome),
+            ...(outcome.reason === "lookup-failed" ? { onRetry: retry } : {}),
+          }),
       }),
     }),
     [openContextRoute, openTrash, standings, projectId, captureNavigation],
@@ -477,6 +508,11 @@ export function ProjectDocumentNavigationProvider({
       onClose: () => setUpload(null),
     }),
   );
+}
+
+function refusalTitle({ reason, name }: Extract<OpenDocumentOutcome, { kind: "refused" }>) {
+  if (reason === "gone") return t`That document is no longer available.`;
+  return name ? t`Couldn't open ${name}.` : t`Couldn't open this document.`;
 }
 
 export function useOpenProjectDocument(projectId: string | undefined): OpenProjectDocument {

@@ -647,11 +647,20 @@ export function ChatView({
         ? {
             mode: "handoff",
             projectId,
+            threadId,
             bound: { name: agentName, definitionRevisionId: agentRevisionId },
             onHandoff: handoffCutoff ? handoffFromLatest : null,
           }
         : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME },
-    [agentName, agentRevisionId, handoffCutoff, handoffFromLatest, pendingCreation, projectId],
+    [
+      agentName,
+      agentRevisionId,
+      handoffCutoff,
+      handoffFromLatest,
+      pendingCreation,
+      projectId,
+      threadId,
+    ],
   );
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);

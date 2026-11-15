@@ -1,9 +1,10 @@
 /** The sources the account can read: the roots of the project's tree list, and the account's own (`user://`). */
 import type { ContextSource, ContextSourcesResult } from "@meridian/contracts/protocol";
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { getAccountContextSources, getProjectContextSources } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 
 /**
  * A source ended while this browser was offline is learned on reconnect, whatever the age of the
@@ -18,7 +19,8 @@ const FRESHNESS = {
 function useProjectContextSourcesResult(projectId: string) {
   return useQuery<ContextSourcesResult>({
     queryKey: projectQueryKeys.contextSources(projectId),
-    queryFn: projectId ? ({ signal }) => getProjectContextSources(projectId, signal) : skipToken,
+    queryFn: ({ signal }) => getProjectContextSources(projectId, signal),
+    enabled: projectReadEnabled(Boolean(projectId)),
     ...FRESHNESS,
   });
 }
@@ -26,7 +28,8 @@ function useProjectContextSourcesResult(projectId: string) {
 function useAccountContextSourcesResult(enabled = true) {
   return useQuery<ContextSourcesResult>({
     queryKey: projectQueryKeys.accountContextSources(),
-    queryFn: enabled ? ({ signal }) => getAccountContextSources(signal) : skipToken,
+    queryFn: ({ signal }) => getAccountContextSources(signal),
+    enabled,
     ...FRESHNESS,
   });
 }

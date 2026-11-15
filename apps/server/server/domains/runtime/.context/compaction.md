@@ -17,7 +17,10 @@ transitions around the unlocked provider call:
 2. The summary phase prepares a provisional completed C, then prepares late
    arrivals. Reference reads belong to C; B does not exist until successor
    commit.
-3. Successor commit joins paid-summary settlement, `beginPromptEpoch`, adoption,
+3. Successor commit joins paid-summary settlement, the binding refresh (when the
+   top-level chat's Agent or an invoked skill has a newer save, see
+   [request assembly](request-assembly.md); a failed catalog read keeps the binding),
+   `beginPromptEpoch`, adoption,
    notice consumption, and B's reservation. A moved leaf repeats successor
    preparation only, never the summary call.
 

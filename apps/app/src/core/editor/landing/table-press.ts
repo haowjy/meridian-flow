@@ -1,28 +1,9 @@
-/**
- * The press router for a table cell's INERT interior.
- *
- * A press on a cell's own surface — the padding beside a fence, the seam
- * between two blocks, the space around a rendered object, an opaque-only
- * cell's margins — has no text under it, and the browser's answer to such a
- * press is a hunt for the nearest editable position, which beside a border is
- * the NEIGHBOURING cell. The
- * landing walk is started from the pressed cell, so the answer never leaves
- * it; this plugin is the router that gives `landing/press.ts` the press and the
- * cell. A `td` that is not a document cell (a foreign one in a node view) is
- * declined.
- *
- * It claims nothing else. A press on writer text, on a block's own DOM, or on
- * an object's body keeps its native owner (ProseMirror's caret machinery,
- * ObjectPhysics's press selection). The claim test is the event target being
- * the cell element ITSELF: only the cell's padding and its between-block
- * seams render as the cell's own DOM, so target identity is what separates
- * inert from alive.
- */
-
 import type { Editor } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 import type { EditorView } from "@tiptap/pm/view";
 
+import { objectTextSelectionTransaction } from "../objects/object-selection";
 import { type Child, isTableCell } from "./point-landing";
 import { pressSelection } from "./press";
 import { viewGeometry } from "./view-geometry";
@@ -48,7 +29,7 @@ function cellContainerAtDOM(view: EditorView, dom: Element): Child | null {
  * drag's mousemove listeners are armed before this claim runs — so sweeping
  * a selection out of a padding press still becomes a `CellSelection`.
  */
-export function cellInteriorPressPlugin(editor: Editor): Plugin {
+export function tablePressPlugin(editor: Editor): Plugin {
   return new Plugin({
     props: {
       handleDOMEvents: {
@@ -56,10 +37,20 @@ export function cellInteriorPressPlugin(editor: Editor): Plugin {
           // Primary presses only: the context-claim ladder owns the rest.
           if (event.button !== 0 || event.defaultPrevented || !view.editable) return false;
           const target = event.target;
-          if (!(target instanceof Element) || !target.matches("td, th")) return false;
-          if (!view.dom.contains(target)) return false;
-          const cell = cellContainerAtDOM(view, target);
-          if (!cell) return false;
+          // Only the cell's own DOM is inert padding; descendants keep their owner.
+          const cell =
+            target instanceof Element && target.matches("td, th") && view.dom.contains(target)
+              ? cellContainerAtDOM(view, target)
+              : null;
+          if (!cell) {
+            // Tables already claimed grid extensions. Only native fallthrough
+            // restores the range hidden by the typing caret projection.
+            if (event.shiftKey && view.state.selection instanceof CellSelection) {
+              const transaction = objectTextSelectionTransaction(view.state, 1);
+              if (transaction) view.dispatch(transaction);
+            }
+            return false;
+          }
           const selection = pressSelection(
             view.state,
             { x: event.clientX, y: event.clientY },

@@ -1040,6 +1040,10 @@ msgstr "A file path in this selection is too long to import."
 msgid "A folder named {name} already exists in this location."
 msgstr "A folder named {name} already exists in this location."
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "A newer version is saved"
+msgstr "A newer version is saved"
+
 #: src/core/editor/file-drop/file-drop-door.ts
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
@@ -1160,6 +1164,10 @@ msgstr "Adding {name} to {area}"
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
 msgstr "Agent"
+
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "Agent definition"
+msgstr "Agent definition"
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "Agent name"
@@ -1934,6 +1942,7 @@ msgstr "Clear the goal"
 msgid "Clear the status"
 msgstr "Clear the status"
 
+#: src/components/app/ViewerDialog.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
 #: src/features/editor/EditorView.tsx
@@ -2429,6 +2438,10 @@ msgstr "Couldn't load the conversation this fork continues."
 msgid "Couldn't load the preview."
 msgstr "Couldn't load the preview."
 
+#: src/features/agents/ThreadAgentDefinition.tsx
+#~ msgid "Couldn't load this definition."
+#~ msgstr "Couldn't load this definition."
+
 #: src/features/project/context/TrashedDocument.tsx
 msgid "Couldn't load this document."
 msgstr "Couldn't load this document."
@@ -2437,7 +2450,7 @@ msgstr "Couldn't load this document."
 msgid "Couldn't load this draft."
 msgstr "Couldn't load this draft."
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -2493,12 +2506,17 @@ msgstr "Couldn't move"
 #~ msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 #~ msgstr "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 
+#: src/features/project/context/open-project-document.ts
+msgid "Couldn't open {name}."
+msgstr "Couldn't open {name}."
+
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
 
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/DocumentHost.tsx
+#: src/features/project/context/open-project-document.ts
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
@@ -4112,7 +4130,7 @@ msgstr "Loading Work…"
 msgid "Loading Works…"
 msgstr "Loading Works…"
 
-#: src/features/agents/BuiltinAgentFileDialog.tsx
+#: src/features/agents/AgentFileDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -5414,8 +5432,8 @@ msgid "Restored {count} items from Trash just now. Undo puts them back in Trash.
 msgstr "Restored {count} items from Trash just now. Undo puts them back in Trash."
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Restored {name}, but couldn't open it. Try again from the file list."
-msgstr "Restored {name}, but couldn't open it. Try again from the file list."
+#~ msgid "Restored {name}, but couldn't open it. Try again from the file list."
+#~ msgstr "Restored {name}, but couldn't open it. Try again from the file list."
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -6279,6 +6297,10 @@ msgstr "That document couldn't be found."
 msgid "That document is no longer available, so this change can't be reversed."
 msgstr "That document is no longer available, so this change can't be reversed."
 
+#: src/features/project/context/open-project-document.ts
+msgid "That document is no longer available."
+msgstr "That document is no longer available."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That file is binary."
 msgstr "That file is binary."
@@ -6352,6 +6374,10 @@ msgstr "That's more files than one import can hold. Import fewer at a time."
 #: src/features/import/reason-copy.ts
 msgid "That's more than one import can hold. Import less at a time."
 msgstr "That's more than one import can hold. Import less at a time."
+
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "The Agent definition this chat runs, read-only."
+msgstr "The Agent definition this chat runs, read-only."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI can't view this file."
@@ -7472,6 +7498,10 @@ msgstr "Versions"
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "View projects"
 msgstr "View projects"
+
+#: src/features/agents/ThreadAgentDefinition.tsx
+msgid "View this chat's Agent definition"
+msgstr "View this chat's Agent definition"
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "Viewing chat resources is not available yet. These files remain available to your chats and AI tools."

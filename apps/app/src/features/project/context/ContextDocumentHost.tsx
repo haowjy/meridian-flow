@@ -28,6 +28,7 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { useHostDocumentPaint } from "../DocumentReview";
 import {
   useContextRemovalCoordinator,
@@ -52,8 +53,8 @@ export type ContextDocumentHostProps = {
   readOnly?: boolean;
   presentation?: DocumentPresentation;
   onCloseDraftOnly?: () => void;
-  /** Main's document: a page load puts the caret in it (`focusOnLoad`). */
-  loadFocus?: boolean;
+  /** Main's document: the focus main gives goes to its editor or its failure (`joinMain`). */
+  inMain?: boolean;
 };
 
 export function ContextDocumentHost({
@@ -63,7 +64,7 @@ export function ContextDocumentHost({
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
   onCloseDraftOnly,
-  loadFocus = false,
+  inMain = false,
 }: ContextDocumentHostProps) {
   const removal = useContextRemovalCoordinator();
   const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
@@ -136,7 +137,7 @@ export function ContextDocumentHost({
         >
           {failed ? (
             <div className="grid h-full place-items-center">
-              <div className="space-y-3 text-center">
+              <MainSurface joined={inMain && active} className="space-y-3 text-center">
                 <InlineErrorRow
                   message={
                     failureReason === "not-visible" ? (
@@ -154,7 +155,7 @@ export function ContextDocumentHost({
                     <Trans>Retry</Trans>
                   </Button>
                 ) : null}
-              </div>
+              </MainSurface>
             </div>
           ) : null}
           {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
@@ -189,7 +190,7 @@ export function ContextDocumentHost({
                 projectId={projectId}
                 documentId={document.documentId}
                 focusKey={document.documentId}
-                loadFocus={loadFocus}
+                inMain={inMain}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to

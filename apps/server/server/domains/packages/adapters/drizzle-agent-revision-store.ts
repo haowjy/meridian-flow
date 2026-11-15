@@ -276,6 +276,18 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         isDeepStrictEqual(binding.invocationOverlay, invocationOverlay)
       );
     },
+    async replaceThreadBinding(threadId, revisionId, configuration, skillPins) {
+      const rows = await db()
+        .update(threadAgentBindings)
+        .set({
+          definitionRevisionId: revisionId,
+          configuration,
+          invokedSkills: sql`${threadAgentBindings.invokedSkills} || ${JSON.stringify(skillPins)}::jsonb`,
+        })
+        .where(eq(threadAgentBindings.threadId, threadId))
+        .returning({ threadId: threadAgentBindings.threadId });
+      return rows.length === 1;
+    },
     async readThreadBinding(threadId) {
       const [row] = await db()
         .select({

@@ -1,5 +1,5 @@
-import type { OpenDocument } from "@/client/stores";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import type { ServerOpenDocument } from "@/client/stores";
+import { ViewerDialog } from "@/components/app/ViewerDialog";
 import { ContextViewerHost } from "./ContextViewerHost";
 
 /**
@@ -13,24 +13,21 @@ export function UploadViewerDialog({
   onClose,
 }: {
   projectId: string;
-  document: Extract<OpenDocument, { kind: "viewer" }> | null;
+  document: ServerOpenDocument | null;
   onClose: () => void;
 }) {
   return (
-    <Dialog open={document !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex h-[min(48rem,calc(100dvh-2rem))] max-w-[min(56rem,calc(100vw-2rem))] gap-0 flex-col overflow-hidden rounded-lg p-0">
-        {document ? (
-          <>
-            <DialogTitle className="truncate border-b border-border-subtle py-3 pr-12 pl-4 text-sm font-medium">
-              {document.name}
-            </DialogTitle>
-            <DialogDescription className="sr-only">{document.path}</DialogDescription>
-            <div className="min-h-0 flex-1">
-              <ContextViewerHost projectId={projectId} document={document} />
-            </div>
-          </>
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <ViewerDialog
+      open={document !== null}
+      onClose={onClose}
+      title={document?.name ?? ""}
+      description={document?.path ?? ""}
+    >
+      {document ? (
+        <div className="min-h-0 flex-1">
+          <ContextViewerHost projectId={projectId} document={document} />
+        </div>
+      ) : null}
+    </ViewerDialog>
   );
 }

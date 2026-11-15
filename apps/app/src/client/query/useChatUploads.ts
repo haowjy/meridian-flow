@@ -5,7 +5,7 @@
  * chat's id. When each file was attached comes from the
  * chat's uploads query, which a chat that is still being created answers with nothing.
  */
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { getChatUploadFacts } from "@/client/api/projects-api";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/core/completion";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 import { useProjectContextSources } from "./useContextSources";
 import { useProjectTreeView } from "./useProjectTree";
 
@@ -36,13 +37,14 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
   const accountId = useAccountId();
   const { tree, isComplete, isError } = useProjectTreeView(projectId, "uploads", {
     enabled: Boolean(chatId),
-    chatId,
+    chatThreadId: chatId,
   });
   const sources = useProjectContextSources(projectId);
   const files = useMemo(() => tree?.files() ?? [], [tree]);
   const facts = useQuery({
     queryKey: projectQueryKeys.chatUploads(projectId, chatId ?? "", files.length),
-    queryFn: chatId ? ({ signal }) => getChatUploadFacts(projectId, chatId, signal) : skipToken,
+    queryFn: ({ signal }) => getChatUploadFacts(projectId, chatId ?? "", signal),
+    enabled: projectReadEnabled(Boolean(chatId)),
     staleTime: 5_000,
     refetchOnWindowFocus: true,
   });
