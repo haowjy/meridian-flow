@@ -182,14 +182,18 @@ export function ContextTreePanel({
   );
 
   // A created file opens once its row shows in the tree, in the version it was made in.
-  const openCreated = useOpenCreatedDocument(projectId);
+  const openCreated = useOpenCreatedDocument();
   useEffect(() => {
     if (!pendingOpenPath || !tree) return;
     const entry = tree.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
     setPendingOpenPath(null);
     void openCreated(
-      entry.documentId,
+      {
+        documentId: entry.documentId,
+        contextLocation: { scheme, path: entry.path },
+        documentName: entry.name,
+      },
       async () => onSelectFile(scheme, entry, { focus: true }),
       onPicked,
     );

@@ -127,6 +127,22 @@ export function extractSchemaRepairEvidence(
   return evidence;
 }
 
+/** Every word `document` holds, one line per block; null when it holds none. */
+export function documentText(document: Y.Doc): string | null {
+  const all = new Map(
+    [...Y.decodeStateVector(Y.encodeStateVector(document))].map(([client, clock]) => [
+      client,
+      [{ clock: 0, len: clock }],
+    ]),
+  );
+  const { text } = textInRanges(
+    document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+    { clients: all },
+    true,
+  );
+  return text || null;
+}
+
 /**
  * The words this browser typed into `document` that the server never acknowledged: the text
  * `unacknowledged` inserted and nothing has deleted since. Null when it holds no words (a format

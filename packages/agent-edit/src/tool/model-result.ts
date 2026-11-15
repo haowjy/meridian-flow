@@ -14,8 +14,6 @@ export type WriteErrorStatus =
   | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
-  | "gone"
-  | "path_changed"
   | "partial_failure"
   | "work_archived"
   | "binary_file"
@@ -108,8 +106,6 @@ export interface AgentEditModelPayload {
    * part of it the writer changed; `removal` says who removed the document, when it was.
    */
   returned?: { why: ReturnedWhy; removal?: DocumentRemovalRecord };
-  /** Why a tree command was refused, beside its status. */
-  refusal?: "target_gone" | "would_loop" | "path_changed" | "already_at_destination";
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -169,7 +165,10 @@ export interface AgentEditTreeFacts {
   /** A folder stands holding what was not deleted, or what a restore needed. */
   kept?: string;
   placedAtEnd?: string;
-  alreadyDeleted?: true;
+  /** The call's end was already true, so nothing was made. */
+  already?: "deleted" | "at_destination" | "live";
+  /** Nodes the call left alone, each with the one reason. */
+  leftOut?: Array<{ path: string; why: "would_loop" | "purged" }>;
   /** A drafted change to a node live deleted: it waits until it is restored. */
   deletedInLive?: true;
   /** The Works whose drafts of a deleted document survive it. */
@@ -257,8 +256,6 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "ambiguous_path":
     case "invalid_write":
     case "document_not_found":
-    case "gone":
-    case "path_changed":
     case "partial_failure":
     case "work_archived":
     case "binary_file":

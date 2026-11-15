@@ -4,9 +4,7 @@
  * its banner and single document row are the review. Focus and stepping walk the visible text
  * changes (`changes`) alone; a tree line has no place in the text.
  */
-import { useQuery } from "@tanstack/react-query";
-import { projectReadEnabled } from "@/client/query/project-read-gate";
-import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
+import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useChangeItems, useDraftCommandState } from "./draft-changes";
 import { treeChange, treeLineOf } from "./tree-line";
@@ -26,10 +24,7 @@ export function useOpenReviewChanges(
       }
     : null;
   const command = useDraftCommandState(draft?.itemKey ?? "");
-  const listed = useQuery({
-    ...ownerDraftsQueryOptions(controller.projectId, controller.ownerKey),
-    enabled: projectReadEnabled(Boolean(draft)),
-  });
+  const listed = useOwnerDraftList(controller.projectId, controller.ownerKey, Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
   const read = useRoomReview(draft);

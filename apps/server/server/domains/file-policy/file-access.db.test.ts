@@ -124,7 +124,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: u,
         title: "Thread",
         kind: "primary",
-        status: "idle",
       });
       await database.current.insert(turns).values({
         id: turn,

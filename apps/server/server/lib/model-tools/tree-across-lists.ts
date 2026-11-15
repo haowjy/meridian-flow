@@ -166,15 +166,15 @@ export async function runMoveAcrossLists(
     for (const from of command.from) {
       const source = areaOfPath(from) as NonNullable<ReturnType<typeof areaOfPath>>;
       const found = await call.context.port.readTree(source.area, {
-        read: (scope) => reachPath(scope, source.area, shown, source.rest, "move"),
+        read: (scope) => reachPath(scope, source.area, shown, source.rest),
       });
       const reached = found.ok ? found.value : undefined;
       if (reached?.kind !== "node" || reached.node.kind === "folder") {
         const why =
-          reached?.kind === "refused"
-            ? reached.refused.status
-            : reached?.kind === "node"
-              ? "a folder"
+          reached?.kind === "node"
+            ? "a folder"
+            : reached?.kind === "gone" && reached.why === "deleted"
+              ? "in Trash"
               : "not found";
         if (!command.many) return writeToolError("move", `Nothing moved: ${from} (${why}).`);
         notMoved.push(`${from} (${why})`);

@@ -14,12 +14,14 @@ import {
   documents,
   treeNodeIds,
   treeNodes,
+  works,
 } from "@meridian/database/schema";
 import {
   type BranchRow,
   branchRows,
   type CreateRecord,
   changedRows,
+  deleteCovering,
   LIVE,
   listRecords,
   type ProjectedRow,
@@ -68,7 +70,7 @@ function shownRows(projection: TreeProjection): Map<string, ProjectedRow> {
   return rows;
 }
 
-/** The delete that put each trashed node in Trash, the first in force that took it, and who made it. */
+/** The delete covering each trashed node (`deleteCovering`), and who made it. */
 function trashRecords(
   projection: TreeProjection,
   actors: ReadonlyMap<string, string>,
@@ -76,7 +78,7 @@ function trashRecords(
   const out = new Map<string, { record: string; by: string | null }>();
   for (const entry of projection.trash)
     for (const id of [entry.node, ...entry.cascade])
-      if (!out.has(id))
+      if (deleteCovering(projection, id) === entry)
         out.set(id, { record: entry.id, by: actors.get(entry.from ?? entry.id) ?? null });
   return out;
 }
@@ -234,6 +236,65 @@ export async function claimNodeIds(
 }
 
 /**
+ * Claims the node ids a client's creates name, each on its own: an id that is not a uuid, or that
+ * a document, a list's journal or another list already has, is a failed claim. No row is made for
+ * it and the rest of the update stands: the node shows in its writer's own tree and opens
+ * nothing, and nobody else's document is touched. Returns the node ids that failed.
+ */
+export async function claimNodeIdsEach(
+  tx: DrizzleDb,
+  listId: string,
+  records: readonly TreeRecord[],
+): Promise<Set<string>> {
+  const ids = [
+    ...new Set(records.flatMap((record) => (record.type === "create" ? [record.node] : []))),
+  ];
+  const failed = new Set(ids.filter((id) => !isUuid(id)));
+  for (const batch of chunks(ids.filter(isUuid))) {
+    const list = sql.join(
+      batch.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    const used = await tx.execute<{ id: string }>(sql`
+      SELECT id::text AS id FROM documents WHERE id IN (${list})
+      UNION ALL SELECT document_id::text FROM document_yjs_heads WHERE kind = 'tree_list' AND document_id IN (${list})`);
+    for (const row of used) failed.add(row.id);
+    const open = batch.filter((id) => !failed.has(id));
+    if (open.length === 0) continue;
+    const won = await tx
+      .insert(treeNodeIds)
+      .values(open.map((id) => ({ id: id as DocumentId, listId: listId as DocumentId })))
+      .onConflictDoNothing({ target: treeNodeIds.id })
+      .returning({ id: treeNodeIds.id });
+    const held = new Set(won.map((row) => row.id as string));
+    for (const id of open) if (!held.has(id)) failed.add(id);
+  }
+  return failed;
+}
+
+/**
+ * Takes out of `next` the rows this list has no claim on: a node whose id another list or a
+ * document holds (a failed claim) never gets a row, so it can't overwrite one. Only rows the
+ * list had no row for are asked, so a sync costs what it adds.
+ */
+async function dropUnowned(
+  tx: DrizzleDb,
+  listId: string,
+  prev: ReadonlyMap<string, unknown>,
+  next: Map<string, unknown>,
+): Promise<void> {
+  const fresh = [...next.keys()].filter((id) => !prev.has(id));
+  const owned = new Set<string>();
+  for (const batch of chunks(fresh.filter(isUuid)))
+    for (const row of await tx
+      .select({ id: treeNodeIds.id })
+      .from(treeNodeIds)
+      .where(and(eq(treeNodeIds.listId, listId), inArray(treeNodeIds.id, batch))))
+      owned.add(row.id as string);
+  for (const id of fresh) if (!owned.has(id)) next.delete(id);
+}
+
+/**
  * Moves the claims of nodes that arrived from another list to this one, with their documents'
  * project (an account's list is its personal project's). The list they left has written its
  * rows already, so no row stands on the old claim.
@@ -289,10 +350,11 @@ async function insertDocumentRows(
 async function writeLive(
   tx: DrizzleDb,
   listId: string,
-  next: ReadonlyMap<string, ProjectedRow>,
+  next: Map<string, ProjectedRow>,
   trash: ReadonlyMap<string, { record: string; by: string | null }>,
 ): Promise<string[]> {
   const prev = await loadLive(tx, listId);
+  await dropUnowned(tx, listId, prev, next);
   // The delete in force of each node the replay shows in Trash.
   const trashed = (id: string) => (next.get(id)?.deleted ? (trash.get(id) ?? null) : null);
   const trashOf = (id: string) => trashed(id)?.record ?? null;
@@ -390,8 +452,9 @@ async function writeBranch(
   listId: string,
   branchId: string,
   prev: ReadonlyMap<string, BranchRow>,
-  next: ReadonlyMap<string, BranchRow>,
+  next: Map<string, BranchRow>,
 ): Promise<string[]> {
+  await dropUnowned(tx, listId, prev, next);
   const { upserts, gone } = changedRows(prev, next);
   for (const batch of chunks(upserts))
     await tx
@@ -433,19 +496,28 @@ async function writeBranch(
 }
 
 /**
- * Nodes under a source whose row is gone (a purged Work's) have no row: a source's end is its
- * row's, and an ended source's nodes are not shown. Drops them from the views' rows.
+ * Nodes under a source that is not this list's (a client named another project's source, or one
+ * that is gone) or whose row is gone (a purged Work's) have no row: a source's end is its row's,
+ * and an ended source's nodes are not shown. Drops them from the views' rows.
  */
-async function dropEndedSources(
+async function dropForeignSources(
   tx: DrizzleDb,
+  list: TreeList,
   views: readonly Map<string, ProjectedRow>[],
 ): Promise<void> {
   const sources = new Set(views.flatMap((rows) => [...rows.values()].map((row) => row.sourceId)));
   if (sources.size === 0) return;
+  const projectId = await projectOfList(tx, list);
   const present = await tx
     .select({ id: contextSources.id })
     .from(contextSources)
-    .where(inArray(contextSources.id, [...sources]));
+    .leftJoin(works, eq(works.id, contextSources.workId))
+    .where(
+      and(
+        inArray(contextSources.id, [...sources]),
+        sql`(${contextSources.projectId} = ${projectId}::uuid OR ${works.projectId} = ${projectId}::uuid)`,
+      ),
+    );
   const kept = new Set(present.map((row) => row.id as string));
   for (const rows of views)
     for (const [id, row] of rows) if (!kept.has(row.sourceId)) rows.delete(id);
@@ -498,7 +570,7 @@ export async function syncRows(
   for (const branchId of kept)
     if (text.has(branchId) || pendingRecords(doc, branchId).length > 0)
       drafted.set(branchId, shownRows(replayView(doc, { draft: branchId }, text.get(branchId))));
-  await dropEndedSources(tx, [liveRows, ...drafted.values()]);
+  await dropForeignSources(tx, list, [liveRows, ...drafted.values()]);
   const next = new Map(
     [...drafted].map(([branchId, rows]) => [branchId, branchRows(liveRows, rows)] as const),
   );

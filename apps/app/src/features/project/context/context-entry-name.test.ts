@@ -2,13 +2,13 @@
  * Context entry name behavior.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - rename-field selection and codec error propagation
+ * - rename-field selection, and no document name refused (`storedDocumentName`)
  */
 import { describe, expect, it } from "vitest";
 
 import {
   entryNameStemEnd,
-  invalidContextEntryNameReason,
+  storedDocumentName,
   validateContextEntryName,
 } from "./context-entry-name";
 
@@ -95,11 +95,10 @@ describe("validateContextEntryName", () => {
     ).toBeNull();
   });
 
-  it("shows the codec's invalid_name message on the field", () => {
-    expect(validateContextEntryName("data.json.md", [])).toMatchObject({
-      level: "error",
-      message: expect.stringContaining("would show as `data.json`"),
-    });
-    expect(invalidContextEntryNameReason("data.json.md")).toContain("would show as `data.json`");
+  it("refuses no document name: one with no stem is Untitled, one that reads as another type stays whole", () => {
+    expect(validateContextEntryName(".md", [])).toBeNull();
+    expect(storedDocumentName(".md")).toMatchObject({ ok: true, name: "Untitled" });
+    expect(validateContextEntryName("data.json.md", [])).toBeNull();
+    expect(storedDocumentName("data.json.md")).toMatchObject({ ok: true, name: "data.json.md" });
   });
 });

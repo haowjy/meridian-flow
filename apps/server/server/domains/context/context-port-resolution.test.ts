@@ -46,7 +46,6 @@ function thread(): Thread {
     effectiveAiWriteMode: "direct",
     userId: "user-1",
     kind: "primary",
-    status: "idle",
     title: "Custom project thread",
     ref: null,
     initialPromptBakeId: null,

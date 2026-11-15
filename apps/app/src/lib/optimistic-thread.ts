@@ -21,7 +21,6 @@ export function makeOptimisticThread(input: {
     effectiveAiWriteMode: input.aiWriteMode,
     userId: OPTIMISTIC_OWNER_ID,
     kind: "primary",
-    status: "idle",
     title: input.title,
     ref: null,
     initialPromptBakeId: null,

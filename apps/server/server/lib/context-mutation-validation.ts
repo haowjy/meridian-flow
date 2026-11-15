@@ -8,14 +8,10 @@ import {
 import { createError } from "nitro/h3";
 
 function validationError(field: string, error: ContextEntryValidationError): never {
-  const message =
-    error.reason === "name/reserved-authority-qualifier"
-      ? `Invalid \`${field}\`: names beginning with '@' or '~' are reserved for authority qualifiers`
-      : `Invalid \`${field}\`: ${error.reason}`;
   throw createError({
     statusCode: 400,
-    message,
-    data: { field, reason: error.reason, segment: error.segment, character: error.character },
+    message: `Invalid \`${field}\`: ${error.reason}`,
+    data: { field, reason: error.reason, segment: error.segment },
   });
 }
 

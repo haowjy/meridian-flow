@@ -112,7 +112,7 @@ describe("parseContextUri", () => {
         'Names cannot start with "~". Use scratch://@c19/idea, or a name without "~".',
       ],
       ["scratch://~", 'Names cannot start with "~".'],
-      ["scratch://~~ideas", 'Names cannot start with "~".'],
+      ["scratch://~~ideas", 'Names cannot start with "~". Use scratch://～ideas.'],
     ] as const;
 
     for (const [uri, reason] of refusals) {

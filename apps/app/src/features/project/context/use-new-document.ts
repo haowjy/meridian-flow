@@ -9,13 +9,12 @@ import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
 } from "../routing/ProjectNavigationContext";
-import { treeActionMessage } from "./tree-action-message";
 
 /**
  * New document: an Untitled document in Unfiled, opened in main with the caret. The writer mints
- * the node's id and appends its `create` at once, so the document shows in the tree. On Live it
- * opens before the server has heard of it, and its text room connects once the create is
- * admitted; on Draft it opens on the Work's draft of it once the server has made that.
+ * the node's id and appends its `create` at once, so the document shows in the tree, and it opens
+ * before the server has heard of it: on Live its text room, on Draft the Work's draft of it
+ * (`useOpenCreatedDocument`), connects once the create is admitted.
  */
 export function useNewDocument(
   projectId: string,
@@ -24,7 +23,7 @@ export function useNewDocument(
   const captureNavigation = useCaptureProjectNavigation();
   const actions = useTreeActions({ kind: "project", projectId });
   const version = useTreeVersion();
-  const openCreated = useOpenCreatedDocument(projectId);
+  const openCreated = useOpenCreatedDocument();
   const { session } = useTreeList({ kind: "project", projectId });
   const unfiled = useProjectContextSources(projectId);
   const unfiledId = unfiled ? sourceFor(unfiled, "unfiled", {})?.id : undefined;
@@ -39,12 +38,15 @@ export function useNewDocument(
       provisional: true,
       kind: "document",
     });
-    if (!made.ok) throw new Error(treeActionMessage(made.reason, "file"));
     // The replay's name for the node, at the top of Unfiled: its address.
     const name =
       session?.replay(version.view, version.pendingText).nodes.get(documentId)?.displayName ??
       made.name;
-    await openCreated(documentId, async () => {
+    const document = {
+      documentId,
+      contextLocation: { scheme: "unfiled" as const, path: `/${name}` },
+    };
+    await openCreated(document, async () => {
       const result = await open(
         { scheme: "unfiled", path: name, documentId },
         {
@@ -56,7 +58,7 @@ export function useNewDocument(
       if (result.kind === "failed") throw result.error;
     });
   }, [actions, open, openCreated, captureNavigation, session, unfiledId, version]);
-  return open && unfiledId
+  return open && unfiledId && version.ended !== "deleted"
     ? () => void create().catch((error: unknown) => reportError(error))
     : undefined;
 }

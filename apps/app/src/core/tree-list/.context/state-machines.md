@@ -13,13 +13,13 @@ nothing is replayed.
 stateDiagram-v2
   [*] --> waiting: the session opens
   waiting --> synced: the server's list has arrived and ours has gone
-  waiting --> readOnly: the same, for an account that may not write
   synced --> offline: the socket closes
-  readOnly --> offline: the socket closes
   offline --> synced: it reconnects and levels
-  synced --> rebuilding: the server closed with 4210 (list-rebuild)
-  offline --> rebuilding: the same, on reconnecting
-  rebuilding --> synced: the rebuilt copy has the server's list and our records again
+  synced --> waiting: the server closed with 4212 (copy-broken): a fresh copy is loaded, once
+  offline --> waiting: the same, on reconnecting
+  synced --> waiting: the server closed with 4213 (list-changed): load from nothing
+  waiting --> broken: 4212 again before the server took the records the fresh copy appended
+  broken --> [*]
   waiting --> denied: the socket closed with 4401 or 4403
   synced --> denied: the same, after an access change (4409) and the reconnect it forces
   offline --> denied: the same
@@ -28,18 +28,25 @@ stateDiagram-v2
 
 - `waiting` lasts until the first sync of this session, however much the stored copy holds: a
   copy that has not caught up is not proof that a node is absent.
-- `rebuilding` throws the copy away: the snapshot's `doc` becomes a new document under a new Yjs
-  client id. The records the old copy held that the server had not admitted are appended again.
-- `readOnly` is `read-only` in the code: synced, and the account may not write, so the copy's own
+- A close with `4212` means the server found something in the copy an honest client never writes.
+  The same bytes would be sent again, so nothing reconnects: the snapshot's `doc` becomes a fresh
+  document under a new Yjs client id, and the records the old copy held that the server lacks are
+  appended once, those `clientMayWrite` accepts. The ones it does not are reported as one
+  failure toast (`AccountFeatureLifetime`) and kept nowhere else. If the fresh copy breaks again before the server has taken what
+  was appended, the session is `broken` and nothing connects again; the copy and the writer's
   records stay on the device.
-- The state follows the code of the socket's close, which the server sends itself. `4210` rebuilds;
-  `4401` and `4403` are `denied` and final; any other close (a drop, a restart, `4409` after
-  an access change, `1013` after a server error) is `offline`, and the provider reconnects.
-  Access that ended is then refused on the reconnect.
-- A rebuild stores the records it carries in the next stored database before the old one goes,
-  so an owner that closes mid-rebuild leaves them to the next owner, which appends again
-  whatever the server lacks. The server's close names the record it refused;
-  that one is given up on (the snapshot's `rejected`) and the rest go in one update.
+- A close with `4213` means the stored copy is of another list (a reset database, a recreated
+  account list). It is replaced by an empty one and carries nothing: its records name nodes
+  that are gone.
+- The socket's URL carries `?list=<the id the copy is of>`; a copy that has none learns it from
+  the room's first stateless message.
+- The state follows the code of the socket's close, which the server sends itself. `4401` and
+  `4403` are `denied` and final; any other close (a drop, a restart, `4409` after an access
+  change, `1013` after a server error) is `offline`, and the provider reconnects. Access that
+  ended is then refused on the reconnect.
+- A replacement stores the records it carries in the next stored database before the old one
+  goes, so an owner that closes mid-recovery leaves them to the next owner, which appends
+  whatever the server lacks.
 
 ## Connection owner
 
