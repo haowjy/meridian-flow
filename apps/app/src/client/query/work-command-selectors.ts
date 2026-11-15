@@ -91,17 +91,6 @@ export function useWorkDeleteWindows(projectId: string): readonly WorkDeleteWind
         )
       )
         continue;
-      // Purged: a restore the server answered "not found" has nothing left to undo.
-      if (
-        records.some(
-          (record) =>
-            record.workId === workId &&
-            record.operation === "restore" &&
-            record.since >= openedAt &&
-            record.code === "work_not_found",
-        )
-      )
-        continue;
       // Restored elsewhere: the Work is back, so there is nothing to undo.
       if (
         remove?.state !== "sending" &&

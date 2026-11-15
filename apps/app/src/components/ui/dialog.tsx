@@ -68,7 +68,7 @@ function DialogContent({
         )}
         {...focus}
         onEscapeKeyDown={(event) => {
-          keepEscapeForField(event);
+          ignoreFieldEscape(event);
           onEscapeKeyDown?.(event);
         }}
         {...props}
@@ -87,14 +87,15 @@ function DialogContent({
 }
 
 /**
- * Escape in an inline edit field cancels the edit and nothing else. Radix hears Escape on the
- * document before the field's own handler runs, so the dialog is told to leave it alone here.
+ * A field that handles Escape itself (an inline edit cancels on it) marks itself
+ * `data-handles-escape`. A dialog or takeover ignores Escape from inside such an element, because
+ * Radix hears Escape on the document before the field's own handler could stop it.
  */
-export function keepEscapeForField(event: {
+export function ignoreFieldEscape(event: {
   target: EventTarget | null;
   preventDefault: () => void;
 }) {
-  if (event.target instanceof Element && event.target.closest(".inline-edit-field"))
+  if (event.target instanceof Element && event.target.closest("[data-handles-escape]"))
     event.preventDefault();
 }
 

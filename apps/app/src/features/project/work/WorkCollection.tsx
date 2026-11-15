@@ -3,11 +3,10 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Plus } from "lucide-react";
 import type { ReactNode } from "react";
-import { useMemo } from "react";
-import { useWorks } from "@/client/query/useWorks";
+import { useMemo, useRef } from "react";
+import { type AddressableWork, useWorks } from "@/client/query/useWorks";
 import { useRestoringWorkIds, useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-mutations";
-import { ActionNotice } from "@/components/app/ActionNotice";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowWord, withGone } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
@@ -64,14 +63,27 @@ export function WorkCollection({
   const failures = useWorkCommandFailures(projectId, WORK_ROW_OPERATIONS);
   const toggleArchive = useWorkArchiveToggle(projectId);
   const archiveFocus = useArchiveFocusFollow(works);
+  // A purged Work leaves the server's list, but a restore that found it gone keeps its row, with
+  // the sentence, until the writer dismisses it.
+  const seen = useRef(new Map<string, AddressableWork>());
+  for (const work of [...(works ?? []), ...deleted]) seen.current.set(work.id, work);
+  const withGone = useMemo(() => {
+    const present = new Set<string>([...(works ?? []), ...deleted].map((work) => work.id));
+    const gone = [...failures.values()].flatMap((failure) =>
+      failure.operation === "restore" && !present.has(failure.workId)
+        ? (seen.current.get(failure.workId) ?? [])
+        : [],
+    );
+    return gone.length ? [...deleted, ...gone] : deleted;
+  }, [works, deleted, failures]);
   const entries = useMemo(
     () =>
       workListEntries(
-        { works: works ?? [], deleted, creations, restoring },
+        { works: works ?? [], deleted: withGone, creations, restoring },
         deletion.windows,
         failures,
       ),
-    [works, deleted, creations, restoring, deletion.windows, failures],
+    [works, withGone, creations, restoring, deletion.windows, failures],
   );
   // Focus follows an Archive, or its retry, to the tab the Work moves to.
   const retry = ({ operation, workId, retry }: WorkRowFailure) =>

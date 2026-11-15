@@ -15,7 +15,7 @@ import {
   DialogPortal,
   DialogTitle,
   focusContentOnOpen,
-  keepEscapeForField,
+  ignoreFieldEscape,
   useOpenerFocus,
 } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
@@ -47,7 +47,7 @@ export function PhoneTakeover({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         {...focus}
-        onEscapeKeyDown={keepEscapeForField}
+        onEscapeKeyDown={ignoreFieldEscape}
         className="fixed inset-0 z-50 flex flex-col bg-background outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
       >
         {/* Solid background, no backdrop-filter: iOS repaints a blurred header badly. */}
