@@ -8,7 +8,7 @@ import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, Work, WorkHandle } from "@meridian/contracts/works";
 import { chatOwner } from "../../shared/draft-owner.js";
-import type { BranchOwnerRef } from "../file-policy/index.js";
+import type { FileDestination } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type {
   ThreadRepository,
@@ -27,8 +27,6 @@ export interface ThreadContextResolution {
   primaryWork: Work | null;
   workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
-  /** Who owns the drafts the chat writes: its Work, or its lineage with no Work; null in auto-apply. */
-  primaryBranchOwner: BranchOwnerRef | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
   /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
@@ -77,10 +75,6 @@ export async function resolveThreadContext(
     primaryWork,
     workAuthorities,
     primaryWorkAuthority,
-    primaryBranchOwner:
-      primaryWork && thread.aiWriteMode === "draft"
-        ? { owner: chatOwner(thread, primaryWork), handle: primaryWork.handle }
-        : null,
   };
 }
 
@@ -89,26 +83,25 @@ export function contextPortForThread(
   resolution: ThreadContextResolution,
   options: {
     version?: DocumentVersion;
-    /** Write live whatever the chat's mode, as a binary copy does. */
-    liveWrites?: boolean;
+    /** Where every write lands, as a person's or an Undo does; see `ThreadContextView`. */
+    destination?: FileDestination;
   } = {},
 ): ContextPort {
-  if (!resolution.primaryWorkAuthority) {
-    throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
-  }
+  const authority = resolution.primaryWorkAuthority;
+  if (!authority) throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
+  const owner = { id: authority.workId, isNoWork: authority.workHandle === null };
   return contextPorts.forWork(
-    resolution.primaryWorkAuthority,
+    authority,
     resolution.thread.projectId,
     resolution.thread.userId,
     resolution.workAuthorities,
     {
-      scratchOwner: scratchOwnerFor(resolution.thread, {
-        id: resolution.primaryWorkAuthority.workId,
-        isNoWork: resolution.primaryWorkAuthority.workHandle === null,
-      }),
+      scratchOwner: scratchOwnerFor(resolution.thread, owner),
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
-      branchOwner: options.liveWrites ? null : resolution.primaryBranchOwner,
+      branchOwner: { owner: chatOwner(resolution.thread, owner), handle: authority.workHandle },
+      writeMode: resolution.thread.aiWriteMode,
+      ...(options.destination ? { destination: options.destination } : {}),
       ...(options.version ? { version: options.version } : {}),
     },
   );

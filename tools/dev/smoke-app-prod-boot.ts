@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * App production boot smoke — builds the production Nitro artifact, starts it
  * through @meridian/app's validated production entry point, and asserts the

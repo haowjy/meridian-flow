@@ -19,7 +19,7 @@ import {
   sortLsEntries,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
-import { containerReadonly, withBranchOwner } from "./file-access.js";
+import { containerReadonly, liveListing } from "./file-access.js";
 import {
   areaOfPath,
   goneMessage,
@@ -37,16 +37,6 @@ import {
   type ToolWiringDeps,
   toolError,
 } from "./tool-context.js";
-
-export async function listingCall(
-  deps: ToolWiringDeps,
-  ctx: ToolHandlerContext,
-  version: LsToolInput["version"],
-): Promise<ToolCall | ToolErrorOutput> {
-  const call = await resolveToolCall(deps, ctx, version);
-  if (isToolError(call) || version !== "live") return call;
-  return { ...call, principal: withBranchOwner(call.principal, null) };
-}
 
 /** `ls scratch://@` and `ls uploads://@` list owners, each a distinct container of its own. */
 function isOwnerListing(path: string): boolean {
@@ -68,7 +58,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
       const skills = await listSkillDir(deps, ctx.threadId, path);
       return { uri: skills.uri, entries: sortLsEntries(skills.entries) };
     }
-    const call = await listingCall(deps, ctx, version);
+    const call = await resolveToolCall(deps, ctx, version);
     if (isToolError(call)) return call;
     const { context, principal } = call;
     // The folder as the model meant it: a renamed or moved folder is found, and a path that is
@@ -92,17 +82,20 @@ export function createLsHandler(deps: ToolWiringDeps) {
       return contextToolError(result.error);
     }
     const listed = result.value.entries;
-    const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(listed));
+    const at = liveListing(version);
+    const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(listed), {
+      ...(at ? { destination: at } : {}),
+    });
     // Ordinary folders share their container; source and lineage discovery list distinct owners.
     const folderReadonly =
       path && !isOwnerListing(path)
-        ? await containerReadonly(deps, principal, context, path)
+        ? await containerReadonly(deps, principal, context, path, at)
         : undefined;
     const entries = await Promise.all(
       listed.map(async (entry): Promise<LsEntry[]> => {
         if (entry.kind === "directory") {
           const readonly =
-            folderReadonly ?? (await containerReadonly(deps, principal, context, entry.uri));
+            folderReadonly ?? (await containerReadonly(deps, principal, context, entry.uri, at));
           return [
             {
               uri: entry.uri,

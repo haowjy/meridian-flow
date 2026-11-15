@@ -14,9 +14,15 @@ import {
   type ShownLinkShowing,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
-import { listingCall } from "./listing-tools.js";
+import { liveListing } from "./file-access.js";
 import { areaOfPath, namesEvidence, printedNames } from "./shown-paths.js";
-import { contextToolError, isToolError, type ToolWiringDeps, toolError } from "./tool-context.js";
+import {
+  contextToolError,
+  isToolError,
+  resolveToolCall,
+  type ToolWiringDeps,
+  toolError,
+} from "./tool-context.js";
 
 const DEFAULT_HEAD_LIMIT = 50;
 /** How long a scan may run before it returns what it has; under the tool timeout. */
@@ -46,7 +52,7 @@ export function createGrepHandler(deps: ToolWiringDeps) {
         message: `Invalid glob: ${addressGlob.error}`,
       });
 
-    const call = await listingCall(deps, ctx, version);
+    const call = await resolveToolCall(deps, ctx, version);
     if (isToolError(call)) return call;
     const { context, principal } = call;
     const result = await context.port.grep({
@@ -57,10 +63,13 @@ export function createGrepHandler(deps: ToolWiringDeps) {
       headLimit,
       signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(SCAN_BUDGET_MS)]),
       readable: async (ids) => {
-        const access = await deps.fileAccess.listAccess(principal, ids as DocumentId[]);
+        const at = liveListing(version);
+        const access = await deps.fileAccess.listAccess(principal, ids as DocumentId[], {
+          ...(at ? { destination: at } : {}),
+        });
         return new Map(
-          [...access].flatMap(([id, { level }]) =>
-            level === "none" ? [] : [[id, level] as const],
+          [...access].flatMap(([id, { level, destination }]) =>
+            level === "none" ? [] : [[id, { level, destination }] as const],
           ),
         );
       },

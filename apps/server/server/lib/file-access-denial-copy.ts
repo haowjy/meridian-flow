@@ -24,6 +24,10 @@ export function isPermissionDenial(denial: FileAccessDenied): denial is Permissi
 
 const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this change wasn't made.";
 
+/** A place whose AI access is deny: it reads, and a write is not retried. */
+const AI_ACCESS_DENIED_MESSAGE =
+  "This place is set to deny AI changes, so this change wasn't made. You can read it.";
+
 const CHAT_FROZEN_MESSAGE =
   "The chat that owns these drafts is in the trash, so they are frozen and this change wasn't made. Ask the user to restore the chat.";
 
@@ -59,6 +63,8 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
       return CHAT_FROZEN_MESSAGE;
     case "uploads_read_only":
       return UPLOADS_READ_ONLY_MESSAGE;
+    case "ai_access_denied":
+      return AI_ACCESS_DENIED_MESSAGE;
     case "agent_read_only":
       return denial.facts?.scheme === "scratch"
         ? AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE

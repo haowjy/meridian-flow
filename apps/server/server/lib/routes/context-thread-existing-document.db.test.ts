@@ -173,7 +173,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     async function seedExisting(fixture: Fixture, path: string) {
       const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
       if (!resolution) throw new Error("thread did not resolve");
-      const port = contextPortForThread(fixture.contextPorts, resolution, { liveWrites: true });
+      const port = contextPortForThread(fixture.contextPorts, resolution, {
+        destination: { kind: "live" },
+      });
       const created = await settlesWithin(
         `seed ${path}`,
         port.createTrackedDocument(`manuscript://${path}`, `Existing ${path}.\n`),

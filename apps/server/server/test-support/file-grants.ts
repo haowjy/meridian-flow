@@ -29,6 +29,7 @@ export function testFileGrant(
             agent: {
               chain: [],
               branchOwner: { owner: destination.owner, handle: destination.ownerHandle },
+              writeMode: "draft" as const,
             },
           }
         : {}),

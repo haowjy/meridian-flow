@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /** Detached cleanup of exactly one parent's managed DB run; stale GC is the fallback. */
 import {
   dropDatabaseForUrl,

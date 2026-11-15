@@ -337,7 +337,7 @@ async function main(): Promise<void> {
         store.startWindow(
           session.sessionName,
           WATCH_WINDOW,
-          `exec node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/dev/dev-idle-watch.ts ${session.sessionName} ${idleMinutes}`,
+          `exec bun tools/dev/dev-idle-watch.ts ${session.sessionName} ${idleMinutes}`,
         ),
         "failed to start the idle watcher",
       );

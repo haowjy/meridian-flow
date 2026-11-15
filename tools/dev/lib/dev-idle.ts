@@ -12,8 +12,8 @@
  * `@last-active` on the stack's own session, so the mark dies with the session
  * and a session nobody watches reads as unwatched, never as idle.
  *
- * Loaded by `dev-idle-watch.ts` under plain `node` (type stripping): erasable
- * syntax only, `.ts` import specifiers.
+ * Loaded by `dev-idle-watch.ts`, which lives as long as the stack: keep this module's
+ * imports to `node:` built-ins.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
