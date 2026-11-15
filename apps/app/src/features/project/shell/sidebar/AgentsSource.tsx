@@ -23,7 +23,7 @@ import { useInlineEdit } from "@/components/ui/use-inline-edit";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { agentFileAt, agentFileMark } from "@/features/agents/AgentFileNotice";
-import { agentFileTemplate, writeFirstText } from "@/features/agents/agent-file-template";
+import { writeFirstAgentText } from "@/features/agents/agent-file-template";
 import { BuiltinAgentFileDialog } from "@/features/agents/BuiltinAgentFileDialog";
 import { useLiveDocumentSessionRegistry } from "../../context/account-feature-context";
 import { type ContextTree, ContextTreeBody, useContextTree } from "../../context/ContextTreePanel";
@@ -265,10 +265,8 @@ function NewLevelFileRow({
       const name = typed.trim();
       const made = makeLevelFile(list, view, tree.rootPath, newFilePath(kind, name));
       if (!made.ok) throw new Error(treeActionMessage(made.reason, "file"));
-      const template = agentFileTemplate(
-        [...newFilePath(kind, name).folders, newFilePath(kind, name).leaf].join("/"),
-      );
-      if (template) void writeFirstText(registry, projectId, made.node, template);
+      const file = newFilePath(kind, name);
+      void writeFirstAgentText(registry, projectId, made.node, [...file.folders, file.leaf].join("/"));
       tree.openWhenListed(made.path);
       onDone();
     },

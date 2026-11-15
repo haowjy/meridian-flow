@@ -37,15 +37,33 @@ class SkillUnavailableError extends Error {
   }
 }
 
+/**
+ * The skills a writer can invoke in the thread: the current catalog's, and every skill the thread
+ * already invoked, as it was pinned (a pinned skill stays invocable after its file is gone, and
+ * its pinned version wins over the current one).
+ */
 export async function resolveThreadUserInvocableSkills(input: {
   thread: Thread;
   agentCatalog: Pick<BoundAgentCatalog, "userSkills">;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
 }): Promise<AvailableSkillListing[]> {
   if (input.thread.kind !== "primary") return [];
   const skills = await input.agentCatalog.userSkills(input.thread.userId, {
     projectId: input.thread.projectId,
   });
-  return skills.map(({ slug, name, description }) => ({ slug, name, description }));
+  const offered = new Map<string, AvailableSkillListing>(
+    skills.map(({ slug, name, description }) => [slug, { slug, name, description }]),
+  );
+  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
+  for (const [slug, reference] of Object.entries(binding?.invokedSkills ?? {})) {
+    const { name, description } = await listingFromBoundReference(
+      input.agentRevisions,
+      reference,
+      slug,
+    );
+    offered.set(slug, { slug, name, description });
+  }
+  return [...offered.values()];
 }
 
 export async function resolveThreadModelAvailableSkills(input: {
@@ -166,7 +184,10 @@ export async function loadUserSkillBody(input: {
       input.slug
     ];
     if (pinned) {
-      return { ...(await listingFromBoundReference(input.agentRevisions, pinned)), readable: true };
+      return {
+        ...(await listingFromBoundReference(input.agentRevisions, pinned, input.slug)),
+        readable: true,
+      };
     }
     const found = await input.agentCatalog.resolveSkill(input.thread.userId, {
       projectId: input.thread.projectId,
@@ -187,8 +208,9 @@ export async function loadUserSkillBody(input: {
 async function listingFromBoundReference(
   store: Pick<AgentRevisionStore, "readSource">,
   reference: RetainedSkillReference,
+  /** The name the skill was invoked by, which a package clash makes differ from its file's. */
+  slug = skillSlugFromPath(reference.path),
 ): Promise<SkillListing> {
-  const slug = skillSlugFromPath(reference.path);
   const source = await store.readSource(reference.packageRevisionId);
   const entry = source?.files[reference.path];
   if (!source || typeof entry !== "string") {

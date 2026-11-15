@@ -14,7 +14,7 @@ import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
-import { agentFileTemplate, writeFirstText } from "@/features/agents/agent-file-template";
+import { writeFirstAgentText } from "@/features/agents/agent-file-template";
 import { useLiveDocumentSessionRegistry } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
@@ -82,8 +82,7 @@ export function useCreateEntryForm({
       if (!made.ok) throw new Error(treeActionMessage(made.reason, what));
       const path = joinContextEntryPath(parent, made.name);
       const location = kind === "file" ? agentsLocationOf(scheme, path.slice(1)) : null;
-      const template = location && agentFileTemplate(location.path);
-      if (template) void writeFirstText(registry, projectId, made.node, template);
+      if (location) void writeFirstAgentText(registry, projectId, made.node, location.path);
       onCreated?.(path);
     },
     [actions, registry, projectId, scheme, kind, parentId, parent, onCreated],

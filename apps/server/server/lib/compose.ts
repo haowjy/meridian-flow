@@ -1094,6 +1094,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       const available = await resolveThreadUserInvocableSkills({
         thread,
         agentCatalog: ports.agentCatalog,
+        agentRevisions: ports.agentRevisions,
       });
       const missing = unavailableActivatedSkillSlugs(available, slugs);
       if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
