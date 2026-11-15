@@ -5,7 +5,7 @@ import {
   type GenerateRequest,
   PDF_PAGE_TOKENS,
   type TokenizerFamily,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 
 const TOKEN_BYTES_PER_TOKEN = 3;
 const encoder = new TextEncoder();

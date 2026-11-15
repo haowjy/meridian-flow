@@ -4,6 +4,6 @@
  * Barrel: re-exports runtime ID aliases and shared usage accounting DTOs.
  */
 
-export { assertValidUsage, type Usage } from "@meridian-flow/gateway/shapes";
+export { assertValidUsage, type Usage } from "@meridian-flow/runtime/gateway/shapes";
 export * from "./ids.js";
 export * from "./summary-outcome.js";

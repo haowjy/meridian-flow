@@ -11,7 +11,7 @@ import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type { Thread } from "@meridian/contracts/threads";
-import type { GenerateResult } from "@meridian-flow/gateway";
+import type { GenerateResult } from "@meridian-flow/runtime/gateway";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import {
   type ComputedModelCost,

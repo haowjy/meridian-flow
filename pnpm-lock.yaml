@@ -6,7 +6,7 @@ settings:
 
 catalogs:
   default:
-    '@meridian-flow/gateway':
+    '@meridian-flow/runtime':
       specifier: ^0.1.0
       version: 0.1.0
     '@types/node':
@@ -440,12 +440,12 @@ importers:
       '@hocuspocus/server':
         specifier: 4.3.0
         version: 4.3.0(srvx@0.11.17)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
-      '@meridian-flow/gateway':
-        specifier: 'catalog:'
-        version: 0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)
       '@meridian-flow/mars-schema':
         specifier: 0.34.1
         version: 0.34.1
+      '@meridian-flow/runtime':
+        specifier: 'catalog:'
+        version: 0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -726,7 +726,7 @@ importers:
       '@ag-ui/core':
         specifier: 0.0.57
         version: 0.0.57
-      '@meridian-flow/gateway':
+      '@meridian-flow/runtime':
         specifier: 'catalog:'
         version: 0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)
       '@noble/hashes':
@@ -2239,12 +2239,12 @@ packages:
       rolldown:
         optional: true
 
-  '@meridian-flow/gateway@0.1.0':
-    resolution: {integrity: sha512-L3xsw4G9rtFG8atcDz3tX7LYpvCjCY6hmtZwp0KVQVCtls3xzytNi7q2Oi91sKZgfMF80ZQyWW4w3UY2mIoDtQ==}
-    engines: {node: '>=20'}
-
   '@meridian-flow/mars-schema@0.34.1':
     resolution: {integrity: sha512-/5bJ7TjK9TtWAp04iRvDJ8ioG+w1bM28LYlWaxGSJpxtn0nv7bDN6z0UOU2UPez7RmgzdBB1WsFnHHGgeabGvw==}
+
+  '@meridian-flow/runtime@0.1.0':
+    resolution: {integrity: sha512-YrsSvUji7jOMPWXh9LyUbU9SUzWXijlr5s1zLdNSHoC4ZWs/bVi3Pg0Yk4+TtDzXsybFbs3/ilNgaiwJSk2wzw==}
+    engines: {node: '>=20'}
 
   '@mermaid-js/parser@1.2.0':
     resolution: {integrity: sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==}
@@ -8082,7 +8082,9 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  '@meridian-flow/gateway@0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)':
+  '@meridian-flow/mars-schema@0.34.1': {}
+
+  '@meridian-flow/runtime@0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/sdk': 0.106.0(zod@4.4.3)
       '@google/genai': 3.3.0
@@ -8098,8 +8100,6 @@ snapshots:
       - supports-color
       - utf-8-validate
       - ws
-
-  '@meridian-flow/mars-schema@0.34.1': {}
 
   '@mermaid-js/parser@1.2.0':
     dependencies:

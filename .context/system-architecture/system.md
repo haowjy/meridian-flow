@@ -116,7 +116,7 @@ Called through one gateway, with no fallback between providers. With no provider
 
 - Kind: external
 - Paths: `apps/server/server/lib/gateway/registry.ts`
-- Docs: [gateway wiring CONTEXT](../../apps/server/server/lib/gateway/.context/CONTEXT.md), [gateway package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/.context/CONTEXT.md), [runtime CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
+- Docs: [gateway wiring CONTEXT](../../apps/server/server/lib/gateway/.context/CONTEXT.md), [gateway package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/src/gateway/.context/CONTEXT.md), [runtime CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
 
 ## workos
 

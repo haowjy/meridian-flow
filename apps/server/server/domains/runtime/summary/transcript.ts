@@ -5,7 +5,7 @@ import {
   type TokenizerFamily,
   ToolCallPairing,
   type ToolUsePart,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import type { ProjectedActiveHistory } from "../loop/compaction/index.js";

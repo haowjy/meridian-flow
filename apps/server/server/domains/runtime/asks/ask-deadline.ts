@@ -13,7 +13,7 @@
 import {
   DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
   DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 
 const ASK_IDLE_CACHE_BUFFER_SECONDS = 60;
 const ASK_HARD_LIMIT_CACHE_BUFFER_SECONDS = 5 * 60;

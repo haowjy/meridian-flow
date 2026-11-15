@@ -7,7 +7,7 @@ import {
   type MockModelScriptState,
   parseMockModelScript,
 } from "@meridian/contracts/protocol";
-import type { MockScriptQueue } from "@meridian-flow/gateway/mock";
+import type { MockScriptQueue } from "@meridian-flow/runtime/gateway/mock";
 import { createError } from "nitro/h3";
 
 function requireQueue(queue: MockScriptQueue | null): MockScriptQueue {
