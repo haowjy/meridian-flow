@@ -5,6 +5,7 @@ import { isToolNotRunResult } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
+  documentToolReturned,
   sourcePath,
   stringInput,
   toolCommand,
@@ -524,7 +525,15 @@ function fileGivenLine(file: ReadFile): string {
 function DocumentFailureText({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   return (
-    <div className="text-compact text-destructive">{documentToolFailureCopy(tool, names)}</div>
+    <div
+      className={
+        documentToolReturned(tool)
+          ? "text-compact text-muted-foreground"
+          : "text-compact text-destructive"
+      }
+    >
+      {documentToolFailureCopy(tool, names)}
+    </div>
   );
 }
 
