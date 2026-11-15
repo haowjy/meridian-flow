@@ -138,6 +138,7 @@ export function CommandDriverProvider({
       stopWaiting();
       unbind();
       driver.stop();
+      watchDelivery(() => false);
     };
   }, [driver, domain, accountId, router]);
   return <CommandDriverContext.Provider value={driver}>{children}</CommandDriverContext.Provider>;

@@ -11,20 +11,25 @@ stateDiagram-v2
   current --> must_reload: own protocol is below the server's minimum
   current --> must_reload: a lazy chunk fails to load (vite:preloadError)
   update_available --> must_reload: a lazy chunk fails to load
-  current --> must_reload: a room refuses this client's schema (4407)
-  current --> must_reload: the server answers a command's resolve with a 4xx
-  must_reload --> [*]: reload, once the writer has paused
+  current --> must_reload: a room refuses this client's schema (4406)
+  update_available --> must_reload: a room refuses this client's schema (4406)
+  current --> must_reload: the server answers a command's resolve with 400
+  update_available --> must_reload: the server answers a command's resolve with 400
+  must_reload --> [*]: reload, once the writer has paused (at once after a chunk failure)
 ```
 
 - **Fed by every API answer.** `installReleaseWatch` wraps `fetch` for same-origin `/api/`
-  requests: it sends `x-meridian-protocol` and reads `x-meridian-release` and the server's
-  `current;min=<minimum>`. The thread socket's `connected` frame carries the same two
-  (`serverVersion` is the release id). The server never refuses on any of it.
+  requests and reads `x-meridian-release` and the server's `current;min=<minimum>`. The thread
+  socket's `connected` frame carries the same two (`serverVersion` is the release id). The server
+  never refuses on any of it. The tab sends no protocol of its own yet: nothing server-side reads
+  one. A release id of `dev` or `0.0.0` (an older server) is no information.
 - **The word is the button.** `update-available` and `must-reload` both show "Reload to update"
   ("Update" on a phone); the press reloads at once.
 - **`must-reload` holds sends.** `sendsHeld()` is the command driver's `held` port: records wait
   in the journal and go out from the new code. The tab reloads when no keystroke or press for 3 s
-  (1.5 s when hidden), no IME composition is open and the driver has no request mid-send.
+  (1.5 s when hidden), no IME composition is open and the driver has no request mid-send. A
+  failed chunk skips the 3 s wait (the screen cannot render, nothing is being typed there) and the
+  import is left to throw, never resolved to undefined.
 - **One reload per release pair.** A `sessionStorage` key of own release and the server's
   release is written before the reload, so a stale bundle served again cannot loop. With the key
   present the hold lifts and the word stays a button.

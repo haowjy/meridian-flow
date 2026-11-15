@@ -23,7 +23,7 @@ import { APP_SSR_NO_EXTERNAL } from "./src/server/ssr-no-external";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repoLogsDir = path.join(repoRoot, "logs");
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, repoRoot, "");
   for (const [key, value] of Object.entries(env)) {
     if (process.env[key] === undefined) {
@@ -97,7 +97,9 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    define: { __MERIDIAN_RELEASE__: JSON.stringify(resolveReleaseId()) },
+    define: {
+      __MERIDIAN_RELEASE__: JSON.stringify(resolveReleaseId({ dev: command === "serve" })),
+    },
     envDir: repoRoot,
     build: {
       rollupOptions: {

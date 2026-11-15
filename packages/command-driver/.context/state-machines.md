@@ -37,7 +37,7 @@ stateDiagram-v2
   is resent slowly (30 s to 5 min) and logged. After a reload a `sent` record is looked up
   (`GET /api/commands/:id`) before it is sent again.
 - **Any other 4xx calls `resolve`**, which answers what an earlier attempt did, or stores `never`.
-  If `resolve` itself answers a 4xx, the server cannot read what this code sends: the driver
+  If `resolve` itself answers 400 (a body the server cannot parse; a 409 is a reused id, which a reload does not fix), the server cannot read what this code sends: the driver
   tells the app (`unreadable`), which treats the tab as stale, and the record keeps its slow
   retry until the reload.
 - **The app can hold delivery** (`held`): while a reload is on its way no request leaves and

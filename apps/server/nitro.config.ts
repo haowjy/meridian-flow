@@ -32,7 +32,11 @@ const bundleWorkerEntries = {
 
 export default defineConfig({
   scanDirs: ["server"],
-  replace: { __MERIDIAN_RELEASE__: JSON.stringify(resolveReleaseId()) },
+  replace: {
+    __MERIDIAN_RELEASE__: JSON.stringify(
+      resolveReleaseId({ dev: process.env.NODE_ENV === "development" }),
+    ),
+  },
   experimental: { asyncContext: true },
   rolldownConfig: {
     plugins: [bundleWorkerEntries],

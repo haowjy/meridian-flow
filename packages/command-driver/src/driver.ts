@@ -526,13 +526,7 @@ export class CommandDriver {
     const outcome = (resolved.body as Partial<CommandResolveResponse> | null)?.outcome;
     if (resolved.status === 200 && outcome)
       return this.settle(record, outcomeOf(outcome, answer.code));
-    if (
-      resolved.status >= 400 &&
-      resolved.status < 500 &&
-      resolved.status !== 408 &&
-      resolved.status !== 429
-    )
-      this.ports.unreadable();
+    if (resolved.status === 400) this.ports.unreadable();
     this.later(record, `resolve_http_${resolved.status}`, true);
   }
 

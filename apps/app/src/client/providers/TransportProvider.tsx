@@ -7,7 +7,6 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { PROTOCOL_VERSION } from "@meridian/contracts/release";
 import type { ConnectionState, ThreadTransport } from "@meridian/thread-client";
 import { ThreadSocketClient } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
@@ -35,8 +34,7 @@ export function TransportProvider({ children }: { children: ReactNode }) {
       new ThreadSocketClient({
         failureLog,
         url: buildThreadsWsUrl,
-        // The socket's hello: browsers can't set headers on a WebSocket, so the protocol rides the URL.
-        webSocketFactory: (url) => new WebSocket(`${url}?protocol=${PROTOCOL_VERSION}`),
+        webSocketFactory: (url) => new WebSocket(url),
         onServer: ({ release, protocol }) => observeServer({ release, protocol }),
         connectivity: connectivityHints,
         observer: DEBUG_FEATURE_ALLOWED

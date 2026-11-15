@@ -122,7 +122,7 @@ export type DriverPorts = {
   online(): boolean;
   /** The app asks that no new request leave (a reload is on its way); records wait in the journal. */
   held(): boolean;
-  /** The server answered a command's resolve with a 4xx: it cannot read what this code sends. */
+  /** The server answered a command's resolve with 400, the answer to a body it cannot parse: it cannot read what this code sends. */
   unreadable(): void;
   /** The server's lookup and resolve routes for a command id. */
   routes: { lookup(sendId: string): string; resolve(sendId: string): string };

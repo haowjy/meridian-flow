@@ -7,7 +7,8 @@
  * - `must-reload`: the server can no longer understand this tab (its protocol is below the
  *   server's minimum), or the tab learned it is stale some other way: a lazy chunk that is gone,
  *   a document room that needs a newer schema, a command the server cannot read. New sends are
- *   held in the driver's journal and the tab reloads by itself once the writer has paused.
+ *   held in the driver's journal and the tab reloads by itself once the writer has paused. A gone
+ *   chunk means the screen asked for cannot render, so it reloads without the pause.
  */
 import {
   PROTOCOL_HEADER,
@@ -15,6 +16,7 @@ import {
   parseServerProtocol,
   RELEASE_HEADER,
   type ServerProtocol,
+  UNNAMED_RELEASES,
 } from "@meridian/contracts/release";
 
 declare const __MERIDIAN_RELEASE__: string;
@@ -52,15 +54,22 @@ export function observeServer(seen: {
   release: string | null | undefined;
   protocol: ServerProtocol | null | undefined;
 }): void {
-  if (seen.release) serverRelease = seen.release;
+  const release = seen.release && !UNNAMED_RELEASES.includes(seen.release) ? seen.release : null;
+  if (release) serverRelease = release;
   if (seen.protocol && PROTOCOL_VERSION < seen.protocol.minimum) setPhase("must-reload");
-  else if (seen.release && seen.release !== OWN_RELEASE && phase === "current")
-    setPhase("update-available");
+  else if (release && release !== OWN_RELEASE && phase === "current") setPhase("update-available");
 }
 
 /** This tab's code is the problem and a reload is the only fix. */
 export function requireReload(): void {
   setPhase("must-reload");
+}
+
+/** The screen the writer asked for cannot render: nothing is being typed there, so reload without waiting for a pause. */
+function requireReloadAtOnce(): void {
+  urgent = true;
+  setPhase("must-reload");
+  maybeReload();
 }
 
 /**
@@ -93,6 +102,7 @@ export function reloadNow(): void {
 let watching = false;
 let lastActivity = Date.now();
 let composing = false;
+let urgent = false;
 let busy: () => boolean = () => false;
 let checkTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -109,8 +119,8 @@ function startReloading(): void {
 
 function maybeReload(): void {
   const hidden = document.visibilityState === "hidden";
-  const quiet = Date.now() - lastActivity >= (hidden ? HIDDEN_IDLE_MS : IDLE_MS);
-  if (composing || !quiet || busy()) return;
+  const quiet = urgent || Date.now() - lastActivity >= (hidden ? HIDDEN_IDLE_MS : IDLE_MS);
+  if (reloadGuardUsed() || composing || !quiet || busy()) return;
   try {
     sessionStorage.setItem(guardKey(), "1");
   } catch {
@@ -120,7 +130,7 @@ function maybeReload(): void {
   reloadNow();
 }
 
-/** Browser only; once. Reads the release headers off every API answer and sends this tab's protocol. */
+/** Browser only; once. Reads the release headers off every API answer. */
 export function installReleaseWatch(): void {
   if (watching) return;
   watching = true;
@@ -129,9 +139,7 @@ export function installReleaseWatch(): void {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin || !url.pathname.startsWith("/api/"))
       return original(input, init);
-    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : []));
-    headers.set(PROTOCOL_HEADER, String(PROTOCOL_VERSION));
-    const response = await original(input, { ...init, headers });
+    const response = await original(input, init);
     observeServer({
       release: response.headers.get(RELEASE_HEADER),
       protocol: parseServerProtocol(response.headers.get(PROTOCOL_HEADER)),
@@ -139,11 +147,9 @@ export function installReleaseWatch(): void {
     return response;
   };
 
-  // The release changed under a tab whose route code is split into files the deploy removed.
-  window.addEventListener("vite:preloadError", (event) => {
-    event.preventDefault();
-    requireReload();
-  });
+  // The release changed under a tab whose route code is split into files the deploy removed. The
+  // import is left to throw: `preventDefault` would resolve it to undefined and break the render.
+  window.addEventListener("vite:preloadError", requireReloadAtOnce);
 
   const touch = () => {
     lastActivity = Date.now();

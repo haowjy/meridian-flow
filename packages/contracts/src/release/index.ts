@@ -8,7 +8,13 @@ import { z } from "zod";
 /** Response header: the release id the server was built as. */
 export const RELEASE_HEADER = "x-meridian-release";
 
-/** Request header: the protocol version the sending tab's code speaks. Response header: `current;min=<minimum>`. */
+/**
+ * What a stack that was not built as a release calls itself (`tools/release/release-id.mjs` stamps
+ * it on dev builds; an older server's socket frame says "0.0.0"). It tells a tab nothing about a deploy.
+ */
+export const UNNAMED_RELEASES: readonly string[] = ["dev", "0.0.0"];
+
+/** Response header: `current;min=<minimum>`, the protocol the server speaks and the oldest it still understands. */
 export const PROTOCOL_HEADER = "x-meridian-protocol";
 
 /** The wire contract this code speaks. Bump on a contract change an older tab would misread. */
