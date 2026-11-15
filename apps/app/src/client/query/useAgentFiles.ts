@@ -2,10 +2,10 @@
  * What Mars made of each Agent and skill file at every level, and each package's Save state, for
  * the Agents tab, an open file and the picker.
  */
-import { type AgentFiles, agentsLocationOf } from "@meridian/contracts/agents";
+import { type AgentFiles, type AgentLevel, agentsLocationOf } from "@meridian/contracts/agents";
 import { keepPreviousData, type QueryClient, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { listAgentFiles, readBuiltinAgentFile, readThreadAgent } from "@/client/api/agents-api";
+import { listAgentFiles, readSavedAgentFile, readThreadAgent } from "@/client/api/agents-api";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -75,13 +75,23 @@ export function latestAgentFiles(queryClient: QueryClient, projectId: string): A
   return (latest?.state.data as AgentFiles | undefined) ?? null;
 }
 
-export function useBuiltinAgentFile(path: string | null) {
+/**
+ * A file's text as its package's latest Save holds it, or a built-in's. `saveId` names that Save
+ * (null for a built-in): a Save is immutable, so one answer per Save lasts.
+ */
+export function useSavedAgentFile(
+  file: { projectId?: string; level: AgentLevel; path: string; saveId: string | null } | null,
+) {
   const accountSignal = useAccountEpochSignal();
+  const accountId = useAccountId();
   return useQuery({
-    queryKey: ["agent-builtin", path],
+    queryKey: ["agent-saved-file", accountId, file],
     queryFn: ({ signal }) =>
-      readBuiltinAgentFile(AbortSignal.any([accountSignal, signal]), path ?? ""),
-    enabled: path !== null,
+      readSavedAgentFile(
+        AbortSignal.any([accountSignal, signal]),
+        file ?? { level: "builtin", path: "" },
+      ),
+    enabled: file !== null,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

@@ -143,10 +143,15 @@ msgstr ""
 #~ msgid "{0, plural, one {# edit not in use} other {# edits not in use}}"
 #~ msgstr ""
 
+#. placeholder {0}: changes.length
+#: src/features/agents/PackageChanges.tsx
+msgid "{0, plural, one {# file changed since the last save} other {# files changed since the last save}}"
+msgstr ""
+
 #. placeholder {0}: status.changes.length
 #: src/features/agents/PackageSave.tsx
-msgid "{0, plural, one {# file differs from the version new chats use.} other {# files differ from the version new chats use.}}"
-msgstr ""
+#~ msgid "{0, plural, one {# file differs from the version new chats use.} other {# files differ from the version new chats use.}}"
+#~ msgstr ""
 
 #. placeholder {0}: local.missing?.length ?? 0
 #: src/features/import/import-presentation.ts
@@ -166,6 +171,11 @@ msgstr ""
 #. placeholder {0}: result.outsideLinks.count
 #: src/features/export/ExportProjectDialog.tsx
 msgid "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
+msgstr ""
+
+#. placeholder {0}: changes.length
+#: src/features/agents/PackageChanges.tsx
+msgid "{0, plural, one {# new file, never saved} other {# new files, never saved}}"
 msgstr ""
 
 #. placeholder {0}: items.length
@@ -257,6 +267,11 @@ msgstr ""
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
 #~ msgid "{0, plural, one {Restored # item.} other {Restored # items.}}"
 #~ msgstr ""
+
+#. placeholder {0}: block.rows.length
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "{0, plural, one {Show # unchanged line} other {Show # unchanged lines}}"
+msgstr ""
 
 #. placeholder {0}: skipped.length
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
@@ -1236,6 +1251,14 @@ msgstr ""
 msgid "Add usage"
 msgstr ""
 
+#: src/features/agents/PackageChanges.tsx
+msgid "added"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Added"
+msgstr ""
+
 #. placeholder {0}: renamed[0]
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Added as {0}."
@@ -1247,6 +1270,10 @@ msgstr ""
 
 #: src/features/editor/ManuscriptStateNotice.tsx
 msgid "Added as {renamed}"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Added: "
 msgstr ""
 
 #: src/features/import/import-presentation.ts
@@ -1815,6 +1842,14 @@ msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Change work for this chat, currently {name}"
+msgstr ""
+
+#: src/features/agents/PackageChanges.tsx
+msgid "changed"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Changed"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2541,6 +2576,7 @@ msgid "Couldn't load this draft."
 msgstr ""
 
 #: src/features/agents/AgentFileDialog.tsx
+#: src/features/agents/SavedDiffDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -2920,6 +2956,10 @@ msgstr ""
 msgid "Creating project…"
 msgstr ""
 
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "CRLF line ending"
+msgstr ""
+
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 #~ msgid "Current block type"
 #~ msgstr ""
@@ -2980,6 +3020,11 @@ msgstr ""
 msgid "Delete Work"
 msgstr ""
 
+#: src/features/agents/PackageChanges.tsx
+msgid "deleted"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
@@ -3473,6 +3518,10 @@ msgstr ""
 
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Empty"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Empty file"
 msgstr ""
 
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
@@ -4105,6 +4154,10 @@ msgstr ""
 msgid "Let's work on it"
 msgstr "我们开始吧"
 
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "LF line ending"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
 msgstr ""
@@ -4238,6 +4291,7 @@ msgid "Loading Works…"
 msgstr ""
 
 #: src/features/agents/AgentFileDialog.tsx
+#: src/features/agents/SavedDiffDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -4586,6 +4640,7 @@ msgstr ""
 msgid "New chats can't start it:"
 msgstr ""
 
+#: src/features/agents/PackageChanges.tsx
 #: src/features/agents/PackageSave.tsx
 msgid "New chats can't use {label} until it is saved."
 msgstr ""
@@ -4600,6 +4655,10 @@ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "New chats use the last good save of {name} until these are fixed and it is saved again."
+msgstr ""
+
+#: src/features/agents/PackageChanges.tsx
+msgid "New chats use the saved version until you save."
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -4707,6 +4766,10 @@ msgstr ""
 msgid "No column has been resized yet."
 msgstr ""
 
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "No differences: this file matches its saved version."
+msgstr ""
+
 #: src/features/project/side/DocumentChoices.tsx
 msgid "No documents match “{search}”."
 msgstr ""
@@ -4747,6 +4810,10 @@ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No model"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "No newline at end of file"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -4979,6 +5046,10 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "now"
 msgstr "刚刚"
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Now"
+msgstr ""
 
 #. placeholder {0}: placeOf(only.uri)
 #: src/features/draft-review/CommandNotice.tsx
@@ -5471,6 +5542,10 @@ msgstr ""
 msgid "Remove reference"
 msgstr ""
 
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Removed: "
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
@@ -5800,6 +5875,7 @@ msgid "Save name and location"
 msgstr ""
 
 #: src/features/agents/PackageSave.tsx
+#: src/features/agents/SavedDiffDialog.tsx
 msgid "Saved"
 msgstr ""
 
@@ -7556,6 +7632,10 @@ msgstr ""
 #~ msgid "Undone: {label} is back to its previous saved version."
 #~ msgstr ""
 
+#: src/features/agents/PackageChanges.tsx
+msgid "Undone. Back to the previous saved version, with its text merged into your files. What you changed since is kept."
+msgstr ""
+
 #: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
@@ -7760,6 +7840,10 @@ msgstr "你正在研究什么？"
 
 #: src/features/home/NewProjectView.tsx
 msgid "What are you writing?"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "What changed in this file since it was last saved, read-only"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx

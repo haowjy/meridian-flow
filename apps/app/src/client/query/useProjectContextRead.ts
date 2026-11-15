@@ -31,10 +31,15 @@ export type ContextReadStatus = {
   refetch: () => Promise<ContextReadResponse | null>;
 };
 
-export function useProjectContextRead(projectId: string, documentId: string): ContextReadStatus {
+/** `documentId` null reads nothing: the status stays `loading`. */
+export function useProjectContextRead(
+  projectId: string,
+  documentId: string | null,
+): ContextReadStatus {
   const result = useQuery({
     queryKey: ["projects", projectId, "context", "read", documentId] as const,
-    queryFn: () => getProjectDocumentRead(projectId, documentId),
+    queryFn: () => getProjectDocumentRead(projectId, documentId ?? ""),
+    enabled: documentId !== null,
     // Signed URLs are short-lived. Re-fetch on focus / remount, never cache hot.
     staleTime: 0,
     gcTime: 60_000,
