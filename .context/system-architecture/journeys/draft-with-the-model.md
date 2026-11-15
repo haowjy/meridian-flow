@@ -82,7 +82,7 @@ Sees: after Apply, the live page has the model's text. After Discard, the draft 
 
 ## Undo
 
-Does: presses Undo on the reply's receipt, the card that lists every document the reply wrote. Redo puts it back.
+Does: presses Undo on the reply's receipt, the card that lists every document the reply wrote. There is no Redo: to get it back, ask the model to write it again.
 
 Sees: what the reply wrote is reversed, wherever it now is. The receipt stays.
 

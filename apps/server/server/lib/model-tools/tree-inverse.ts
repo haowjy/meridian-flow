@@ -1,5 +1,5 @@
 /**
- * `undo`, `redo` and `revert` of the model's own tree changes. A node has one history in a chat:
+ * `undo` and `revert` of the model's own tree changes. A node has one history in a chat:
  * its tree receipts and its text edits, ordered by the write ordinal both take from the node's
  * counter, with what was undone left out. Undo takes the newest of them (`count` of them), so a
  * move is reached after a later text edit has been undone, and a text edit made after a move is
@@ -27,7 +27,7 @@ import {
 import { reverseAcrossLists } from "./tree-across-lists.js";
 
 type InverseInput = {
-  command: "undo" | "redo" | "revert";
+  command: "undo" | "revert";
   path: string;
   edit?: string;
   count?: number;
@@ -50,8 +50,6 @@ type Chosen = { receipts: TreeReceipt[]; text: number };
 
 /**
  * The steps this call takes, newest first across both kinds, or null when none is the tree's.
- * Redo takes only the tree receipts undone after the text engine's newest undo: the text side
- * does not say what comes after its first candidate.
  */
 function choose(
   input: InverseInput,
@@ -62,11 +60,6 @@ function choose(
     const handle = input.edit === undefined ? undefined : parseEditHandle(input.edit);
     const picked = history.all.find((receipt) => receipt.wId === handle && receipt.kind !== "undo");
     return picked ? { receipts: [picked], text: 0 } : null;
-  }
-  if (input.command === "redo") {
-    const after = history.text.redo ?? 0;
-    const receipts = history.redo.filter((receipt) => receipt.wId > after).slice(0, count);
-    return receipts.length > 0 ? { receipts, text: 0 } : null;
   }
   const units = undoUnits(history);
   const taken = units.slice(0, count);
@@ -206,7 +199,7 @@ async function reverseReceipt(
         destination: { kind: "live" },
       });
   let handle: string | undefined;
-  const kind = input.command === "redo" ? "redo" : "undo";
+  const kind = "undo";
   const places = { area: parts.area, roots: new Map<string, string>(), locate: () => null };
 
   const run = await runWithEditGrants(deps.fileAccess, grant ? [grant] : [], () =>
@@ -256,13 +249,7 @@ async function reverseReceipt(
   const done = run.value.value;
   const landed = done.made.length;
   const status =
-    landed === 0
-      ? input.command === "redo"
-        ? "cant_redo_changed"
-        : "cant_undo_changed"
-      : done.outcomes.length > 0
-        ? "partial"
-        : "reversed";
+    landed === 0 ? "cant_undo_changed" : done.outcomes.length > 0 ? "partial" : "reversed";
   const payload = {
     path: done.landedAt,
     ...(handle ? { write: { id: handle } } : {}),

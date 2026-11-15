@@ -67,7 +67,7 @@ export function harness(
       command: Parameters<typeof rawCore.write>[0],
       writeContext: Parameters<typeof rawCore.write>[1] = {},
     ) {
-      if ((command.command === "undo" || command.command === "redo") && !writeContext.actor) {
+      if (command.command === "undo" && !writeContext.actor) {
         return rawCore.write(command, {
           ...writeContext,
           actor: {

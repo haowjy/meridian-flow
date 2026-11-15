@@ -642,13 +642,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     /** Waits for every draft-effect judgement the test's writes scheduled. */
     settleDraftEffects: () => draftEffects.flush(),
-    reverseTurn: (direction: "undo" | "redo") =>
-      collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction,
-        actor: { type: "user", userId: USER_ID },
-      }),
     liveMarkdown: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,

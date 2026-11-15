@@ -5545,13 +5545,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "consumes": {
-          "name": "consumes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5686,7 +5679,7 @@
         },
         "document_edits_kind_valid": {
           "name": "document_edits_kind_valid",
-          "value": "\"document_edits\".\"kind\" IN ('write','undo','redo','revert')"
+          "value": "\"document_edits\".\"kind\" IN ('write','undo','revert')"
         }
       },
       "isRLSEnabled": false

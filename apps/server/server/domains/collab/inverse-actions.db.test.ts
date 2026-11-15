@@ -2,7 +2,7 @@
  * Shared effective-action history across card and model selectors.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - strict newest-first model history alongside user-owned Undo and Redo (kb/wiki/architecture/collaboration/agent-editing-and-reversal.md#reversal-is-a-forward-edit)
+ * - strict newest-first model history alongside the writer's card Undo (kb/wiki/architecture/collaboration/agent-editing-and-reversal.md#reversal-is-a-forward-edit)
  */
 import { randomUUID } from "node:crypto";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
@@ -32,7 +32,7 @@ afterAll(() => closeDatabase(db));
 it.each([
   "live",
   "draft",
-] as const)("Undo after the writer replaced the model's text restores what the writer left of the original and Redo leaves it (%s)", async (destination) => {
+] as const)("Undo after the writer replaced the model's text restores what the writer left of the original, and the card says it partly undid (%s)", async (destination) => {
   const { harness, view, context, responseId } = await fixture();
   try {
     await harness.seedWriterDocument("red\n\nblue\n\nblack", responseId);
@@ -125,27 +125,17 @@ it.each([
     }
     const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
     expect(await text()).toBe("gold\n\npink\n\nwhite\n");
-    expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
-      status: "success",
-      result: { message: expect.stringContaining("undone: e2") },
-    });
-    expect(await text()).toBe("gold\n\npink\n\nblack\n");
-    expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
-      status: "success",
-    });
-    expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,
         turnId: currentTurn,
-        direction: "undo",
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "partial", acceptedParts: 1 });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, currentTurn)).toMatchObject({
-      state: "live-reversed",
-      control: "redo",
+      state: "partly",
+      control: "view_change",
     });
   } finally {
     await harness.dispose();

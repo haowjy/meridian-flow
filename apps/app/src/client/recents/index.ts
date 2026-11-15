@@ -6,21 +6,13 @@ import {
   type AccountRecentItem,
   DeviceAccountRecentsStore,
   type RecentAddress,
-  type RecentIdentityUpdate,
   type RecentOpening,
   type RecentRemoval,
   type ServerRecentRow,
 } from "./store";
 
 export { ACCOUNT_RECENTS_CAP, readableRecentPath } from "./store";
-export type {
-  AccountRecentItem,
-  RecentAddress,
-  RecentIdentityUpdate,
-  RecentOpening,
-  RecentRemoval,
-  ServerRecentRow,
-};
+export type { AccountRecentItem, RecentAddress, RecentOpening, RecentRemoval, ServerRecentRow };
 
 export type AccountRecentsSnapshot = {
   bound: boolean;
@@ -104,11 +96,8 @@ export function applyServerRecentList(
   if (browserStore()?.applyServerList(accountId, projectId, rows, bindEpoch)) publish();
 }
 
-export function applyRecentAvailability(
-  accountId: string,
-  input: { removed: readonly RecentRemoval[]; updates: readonly RecentIdentityUpdate[] },
-): void {
-  if (browserStore()?.applyAvailability(accountId, input)) publish();
+export function removeAccountRecents(accountId: string, removed: readonly RecentRemoval[]): void {
+  if (browserStore()?.remove(accountId, removed)) publish();
 }
 
 export function patchAccountRecentsFromDocuments(

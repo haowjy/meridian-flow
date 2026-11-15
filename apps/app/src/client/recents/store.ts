@@ -46,14 +46,7 @@ export type ServerRecentRow = {
 
 export type RecentRemoval = { documentId: string; projectId: string };
 
-export type RecentIdentityUpdate = {
-  documentId: string;
-  name: string;
-  scheme: ProjectContextTreeScheme;
-  path: string;
-};
-
-type Removal = { documentId: string; projectId: string; item?: AccountRecentItem };
+type Removal = { documentId: string; projectId: string };
 
 type PersistedRecents = {
   schemaVersion: typeof SCHEMA_VERSION;
@@ -152,14 +145,7 @@ function parsePersisted(raw: string | null): PersistedRecents | null {
         const removal = entry as Partial<Removal>;
         if (typeof removal.documentId !== "string" || typeof removal.projectId !== "string")
           return [];
-        const item = parseItem(removal.item);
-        return [
-          {
-            documentId: removal.documentId,
-            projectId: removal.projectId,
-            ...(item ? { item } : {}),
-          },
-        ];
+        return [{ documentId: removal.documentId, projectId: removal.projectId }];
       })
     : [];
   return {
@@ -296,55 +282,20 @@ export class DeviceAccountRecentsStore {
     return true;
   }
 
-  applyAvailability(
-    accountId: string,
-    input: { removed: readonly RecentRemoval[]; updates: readonly RecentIdentityUpdate[] },
-  ): boolean {
+  remove(accountId: string, removed: readonly RecentRemoval[]): boolean {
     const state = this.bound(accountId);
     if (!state) return false;
-    const removedIds = new Set(input.removed.map((entry) => entry.documentId));
-    const updates = new Map(input.updates.map((update) => [update.documentId, update]));
-    // Availability batches include other consumers' documents. Only remember
-    // rows removed from this record, or unrelated ids can evict a real removal.
-    const dropped: Removal[] = [];
-    let changed = false;
-    const kept: AccountRecentItem[] = [];
-    for (const item of state.items) {
-      if (removedIds.has(item.documentId)) {
-        dropped.push({ documentId: item.documentId, projectId: item.projectId, item });
-        changed = true;
-        continue;
-      }
-      const update = updates.get(item.documentId);
-      if (!update) {
-        kept.push(item);
-        continue;
-      }
-      const address = documentAddress(update.scheme, update.path);
-      if (!address) {
-        changed = true;
-        dropped.push({ documentId: item.documentId, projectId: item.projectId, item });
-        continue;
-      }
-      if (item.name === update.name && sameAddress(item.address, address)) {
-        kept.push(item);
-        continue;
-      }
-      changed = true;
-      kept.push({ ...item, name: update.name, address });
-    }
-    for (const removal of [...state.removed]) {
-      const update = updates.get(removal.documentId);
-      if (!removal.item || !update || removal.projectId !== removal.item.projectId) continue;
-      const address = documentAddress(update.scheme, update.path);
-      if (!address) continue;
-      kept.push({ ...removal.item, name: update.name, address });
-      state.removed = state.removed.filter((entry) => entry !== removal);
-      changed = true;
-    }
-    if (!changed) return false;
-    if (dropped.length > 0) state.removed = rememberRemovals(state.removed, dropped);
-    state.items = capItems(kept);
+    const removedIds = new Set(removed.map((entry) => entry.documentId));
+    // A batch can name documents this record never held. Only remember rows removed from it,
+    // or unrelated ids can evict a real removal.
+    const dropped = state.items.flatMap((item) =>
+      removedIds.has(item.documentId)
+        ? [{ documentId: item.documentId, projectId: item.projectId }]
+        : [],
+    );
+    if (dropped.length === 0) return false;
+    state.removed = rememberRemovals(state.removed, dropped);
+    state.items = state.items.filter((item) => !removedIds.has(item.documentId));
     this.persist();
     return true;
   }

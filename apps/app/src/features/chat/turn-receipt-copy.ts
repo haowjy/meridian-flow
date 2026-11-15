@@ -5,18 +5,12 @@ import type {
   TreeReversalFault,
   TurnInverseSkip,
 } from "@meridian/contracts/protocol";
-import type { ReversalDirection } from "@/client/api/reverse-api";
 import { documentLocationName, type OwnerNames } from "./document-display-name";
 
 type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
 
-/**
- * A reversal the writer asked for and did not get, plus the direction they asked in: the
- * direction the receipt carries can flip under a refusal, and the copy has to name the command
- * pressed. A tree fault keeps the location it met, when the server reported one.
- */
+/** An Undo the writer asked for and did not get. A tree fault keeps the location it met, when the server reported one. */
 export type ReversalRefusal = {
-  direction: ReversalDirection;
   status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
   at?: string | null;
   /** The file policy's reason, when the status is `permission_denied`. */
@@ -43,8 +37,6 @@ export function treeFaultLocation(
 /** Writer-facing copy for a refused reversal. */
 export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames): string {
   switch (refusal.status) {
-    case "nothing_to_redo":
-      return t`Redo is no longer available because the manuscript changed.`;
     case "nothing_to_undo":
       return t`Undo is no longer available.`;
     case "expired":
@@ -65,15 +57,11 @@ export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames
     case "ancestor_taken":
     case "folder_missing":
     case "superseded":
-      return treeFaultCopy(refusal.status, refusal.direction, refusal.at ?? null, names);
-    case "internal_error":
-    case "request_failed":
-      return reversalRetryCopy(refusal.direction);
-    default: {
-      // Model-only refusal codes do not drive writer controls. Unknown
-      // statuses keep the existing retry path.
-      return reversalRetryCopy(refusal.direction);
-    }
+      return treeFaultCopy(refusal.status, refusal.at ?? null, names);
+    default:
+      // Model-only refusal codes do not drive writer controls. Unknown statuses, an internal
+      // error and a lost request keep the retry path.
+      return t`Undo didn't go through. Try again.`;
   }
 }
 
@@ -91,45 +79,27 @@ function permissionDeniedCopy(denial: ReversalOutcome["denial"]): string {
 }
 
 /**
- * A move or delete that met its destination unable to take it back, naming the command and the
- * whole place, so the writer can find it. "Taken" doesn't say by what: a document or a folder.
+ * A move or delete that met its destination unable to take it back, naming the whole place, so
+ * the writer can find it. "Taken" doesn't say by what: a document or a folder.
  */
 function treeFaultCopy(
   fault: TreeReversalFault,
-  direction: ReversalDirection,
   at: string | null,
   names: OwnerNames | undefined,
 ): string {
   const place = at ? documentLocationName(at, names) : null;
-  const redo = direction === "redo";
   switch (fault) {
     case "ancestor_taken":
-      if (place)
-        return redo
-          ? t`Can't redo: a document blocks the folder path to ${place}. Move it, then try again.`
-          : t`Can't undo: a document blocks the folder path to ${place}. Move it, then try again.`;
-      return redo
-        ? t`Can't redo: a document blocks its folder path. Move it, then try again.`
+      return place
+        ? t`Can't undo: a document blocks the folder path to ${place}. Move it, then try again.`
         : t`Can't undo: a document blocks its folder path. Move it, then try again.`;
     case "folder_missing":
-      return redo
-        ? t`Can't redo: the folder it would move to is gone.`
-        : t`Can't undo: the folder it would return to is gone.`;
+      return t`Can't undo: the folder it would return to is gone.`;
     case "superseded":
-      if (place)
-        return redo
-          ? t`Can't redo: ${place} was moved or deleted after you undid this change.`
-          : t`Can't undo: ${place} was moved or deleted after this change.`;
-      return redo
-        ? t`Can't redo: the document was moved or deleted after you undid this change.`
+      return place
+        ? t`Can't undo: ${place} was moved or deleted after this change.`
         : t`Can't undo: the document was moved or deleted after this change.`;
   }
-}
-
-function reversalRetryCopy(direction: ReversalDirection): string {
-  return direction === "redo"
-    ? t`Redo didn't go through. Try again.`
-    : t`Undo didn't go through. Try again.`;
 }
 
 /** Why one part of a reversal stayed, beside its excerpts or its document's name. */
@@ -149,8 +119,6 @@ export function skipCauseCopy(skip: Pick<TurnInverseSkip, "cause" | "why">): str
       return t`Discarded`;
     case "already_undone":
       return t`Taken out`;
-    case "already_redone":
-      return t`Put back`;
     case "deleted_since":
       return t`Deleted since`;
     case "moved_since":

@@ -560,10 +560,9 @@ CREATE TABLE "document_edits" (
 	"w_id" integer,
 	"kind" text NOT NULL,
 	"action_id" uuid,
-	"consumes" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_edits_actor_valid" CHECK ("document_edits"."actor" IN ('agent','human','system')),
-	CONSTRAINT "document_edits_kind_valid" CHECK ("document_edits"."kind" IN ('write','undo','redo','revert'))
+	CONSTRAINT "document_edits_kind_valid" CHECK ("document_edits"."kind" IN ('write','undo','revert'))
 );
 --> statement-breakpoint
 CREATE TABLE "tree_edit_receipt_nodes" (

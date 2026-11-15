@@ -1,4 +1,4 @@
-/** One step of an inverse, shared by the model's undo, redo and revert, and the turn card. */
+/** One step of an inverse, shared by the model's undo and revert, and the turn card. */
 import type { ComputedInverseEdit } from "@meridian/agent-edit/integration";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 
@@ -10,7 +10,7 @@ import type { InverseDestination } from "./inverse-draft-destination.js";
  */
 export type InverseStep = {
   actionId: string;
-  actionKind: "undo" | "redo" | "revert";
+  actionKind: "undo" | "revert";
   at: number;
   edit: ComputedInverseEdit;
   destination: InverseDestination;

@@ -22,7 +22,7 @@ card has no Before/After excerpts or word totals. A conversation reveal opened
 from an editor peer mark lands on the owning turn.
 
 `AssistantTurn` combines server-owned facts: full turn lineage supplies the count
-and the rows, and the durable receipt supplies whole-turn Undo/Redo authority. Both
+and the rows, and the durable receipt supplies whole-turn Undo authority. Both
 direct and draft lineage may produce the same receipt. The receipt is a record of
 what the reply wrote: it counts every document the reply wrote to, live or draft,
 edited or created, as soon as the reply finishes. Apply and Discard never create
@@ -51,11 +51,14 @@ now. The parts list's heading says which command leaves them as
 they are: "Undo leaves 2 parts as they are" before a press, "Undo left 1 part as
 it was" after one.
 
-The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
-(`live-active`, `work-active`, reversed, dependent, or expired) decides whether
-it is available. When it is not (`view_change`; the server gives no control once every drafted document is
-discarded, where a Redo would bring the discarded text back) the card shows no
-control and no failure line: "can't reverse" is never read as "went wrong". What
+The single Undo action calls the turn-scoped reverse endpoint. There is no Redo: to put an
+undone reply back, the writer asks the model to write it again. Receipt `state` decides what
+the header offers: `live-active` has Undo (`control: "undo"`); the rest are `view_change` and
+show no button. `undone` says "Undone", `partly` "Partly undone" (some parts stayed, each
+listed under "Undo left # part as it was" with its own cause), `expired` nothing; the server
+gives no control once every drafted document is discarded, where nothing is left to take out.
+The card shows no failure line for these: "can't reverse" is never read as "went wrong". An old
+tab that still posts a Redo gets 200 `expired`. What
 became of each part shows as plain facts after expansion, worded from the typed
 causes ("Taken out", "Stayed as you edited it"); a drafted document's apply or
 discard is on its row instead. A deleted document's row stays as a record without
@@ -84,14 +87,13 @@ never leaves the card unchanged.
 
 Undo reverses the turn's remaining edits where they are now: pending in the
 Work's document drafts or already applied to live. Draft and live writes remain one atomic
-command. The receipt immediately shows Undoing/Redoing while the command runs;
+command. The receipt immediately shows Undoing while the command runs;
 Yjs publishes the edit after durable commit and failures stay on the card.
 Inverse eligibility comes from the inverse kernel's identity classification.
 The derived applied/pending/discarded disposition chooses a skipped part's copy,
-never grants or refuses Redo. The card offers Redo only for what its own Undo took
-back, text and tree alike: an undo the model made in the reply is part of what the
-reply did, so the card offers Undo for what still stands, never Redo of the model's
-undo. The model redoes its own undo with its `redo` tool. Review text Discard is a separate local
+never grants or refuses Undo. The word "Undone" counts only the writer's own Undo, text and
+tree alike: an undo the model made in the reply is part of what the reply did, so the card
+offers Undo for what still stands. Review text Discard is a separate local
 edit in the same stable room, not receipt Undo or a generation reset. Terminal
 closure retires that draft identity without changing committed live authority.
 Dependency and archived-Work guards still apply.

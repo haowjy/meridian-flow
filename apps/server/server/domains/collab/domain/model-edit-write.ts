@@ -226,8 +226,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
     const { grant, ...given } = routed;
     const documentId = documentIdFromCommand(command);
-    const inverse =
-      command.command === "undo" || command.command === "redo" || command.command === "revert";
+    const inverse = command.command === "undo" || command.command === "revert";
     return runInLockedWrite(async () => {
       // An inverse takes its own locks in the turn-inverse service, as it always has.
       if (inverse) {

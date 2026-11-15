@@ -13,13 +13,12 @@ import type {
   TurnTreeLine,
   TurnTreeState,
 } from "@meridian/contracts/protocol";
-import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import type { WorkReceipt } from "@meridian/thread-client";
 import { useEffect, useId, useState } from "react";
-import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
+import { successfulWorkReversals } from "@/client/api/reverse-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
-import { applyRecentAvailability } from "@/client/recents";
+import { removeAccountRecents } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
@@ -84,11 +83,8 @@ export function TurnEditsReceipt({
   const canOpenContextUri = useChatContextRoutability();
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
-  // The parts the writer's last Undo or Redo left, with the command that left them.
-  const [actionSkips, setActionSkips] = useState<{
-    direction: ReversalDirection;
-    skips: TurnInverseSkip[];
-  } | null>(null);
+  // The parts the writer's last Undo left.
+  const [actionSkips, setActionSkips] = useState<TurnInverseSkip[] | null>(null);
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
   const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
@@ -97,11 +93,10 @@ export function TurnEditsReceipt({
 
   const drafts = receipt?.drafts;
   const trees = receipt?.trees;
-  const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   // A part the refusal line already names (a blocked or missing folder, or a document gone
   // again) isn't listed a second time, nor is a drafted document's apply or discard: its row
   // says what became of it.
-  const skips = (actionSkips?.skips ?? receipt?.skips ?? []).filter(
+  const skips = (actionSkips ?? receipt?.skips ?? []).filter(
     (skip) =>
       !(skip.kind === "tree" && commandRefusal?.status === skip.cause) &&
       !(
@@ -116,7 +111,7 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  const reversible = receipt != null && receipt.control !== "view_change";
+  const reversible = receipt?.control === "undo";
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
@@ -128,7 +123,7 @@ export function TurnEditsReceipt({
     if (pending || !reversible) return;
     setPending(true);
     try {
-      const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
+      const outcome = await turnMutation.mutateAsync({ turnId: turn.id });
       if (accountId && projectId) {
         const liveCreates = documents.filter(
           (document) =>
@@ -141,33 +136,12 @@ export function TurnEditsReceipt({
                 result.destination?.kind === "live",
             ),
         );
-        if (direction === "undo") {
-          applyRecentAvailability(accountId, {
-            removed: liveCreates.map(({ documentId }) => ({ documentId, projectId })),
-            updates: [],
-          });
-        } else {
-          for (const document of liveCreates) {
-            const uri =
-              outcome.landings?.find((landing) => landing.documentId === document.documentId)
-                ?.landedAt ?? document.uri;
-            const parsed = parseContextUri(uri);
-            if (!parsed.ok || !isProjectContextTreeScheme(parsed.value.scheme)) continue;
-            applyRecentAvailability(accountId, {
-              removed: [],
-              updates: [
-                {
-                  documentId: document.documentId,
-                  name: documentDisplayName(uri),
-                  scheme: parsed.value.scheme,
-                  path: `/${parsed.value.path}`,
-                },
-              ],
-            });
-          }
-        }
+        removeAccountRecents(
+          accountId,
+          liveCreates.map(({ documentId }) => ({ documentId, projectId })),
+        );
       }
-      setActionSkips({ direction, skips: outcome.skips ?? [] });
+      setActionSkips(outcome.skips ?? []);
       const restored = successfulWorkReversals(outcome);
       const status =
         outcome.status === "partial" && outcome.acceptedParts
@@ -177,9 +151,7 @@ export function TurnEditsReceipt({
       // fact about documents that were never part of the claim. With a Work
       // restored, repeating it would report a successful restore as refusal.
       const documentHalfEmpty =
-        !hasEditedDocuments &&
-        restored.length > 0 &&
-        (status === "nothing_to_undo" || status === "nothing_to_redo");
+        !hasEditedDocuments && restored.length > 0 && status === "nothing_to_undo";
       // A part a closed Work kept as it was is listed below with its reason; it isn't a refusal.
       const onlyReturned =
         !!outcome.skips?.length && outcome.skips.every((skip) => skip.cause === "returned");
@@ -187,7 +159,6 @@ export function TurnEditsReceipt({
       setCommandRefusal(
         refusal
           ? {
-              direction,
               status: refusal,
               at: treeFaultLocation(refusal, outcome.skips),
               denial: outcome.denial,
@@ -204,7 +175,7 @@ export function TurnEditsReceipt({
       // A rejected request is a refusal the writer never asked for: the command
       // is the only thing that can report it, so it says so here rather than
       // leaving the click looking like it worked.
-      setCommandRefusal({ direction, status: "request_failed" });
+      setCommandRefusal({ status: "request_failed" });
       setExpanded(true);
     } finally {
       setPending(false);
@@ -253,15 +224,11 @@ export function TurnEditsReceipt({
             disabled={pending}
             className="ml-auto shrink-0 text-jade-text"
           >
-            {pending
-              ? direction === "redo"
-                ? t`Redoing…`
-                : t`Undoing…`
-              : direction === "redo"
-                ? t`Redo`
-                : t`Undo`}
+            {pending ? t`Undoing…` : t`Undo`}
           </Button>
-        ) : null}
+        ) : (
+          <UndoneWord state={receipt?.state} />
+        )}
       </div>
       {projectId ? (
         <AgentPackagesSaveLines projectId={projectId} documents={documents} drafts={drafts} />
@@ -275,9 +242,9 @@ export function TurnEditsReceipt({
               role="status"
             >
               <p>
-                {!reversible && !actionSkips
+                {receipt?.state === "expired"
                   ? t`What happened to each part`
-                  : skipsHeading(skips.length, actionSkips?.direction ?? null, direction)}
+                  : skipsHeading(skips.length, actionSkips !== null || receipt?.state === "partly")}
               </p>
               <ul>
                 {skips.map((skip, index) => (
@@ -651,33 +618,29 @@ function draftedMix(
 }
 
 /**
- * What the listed parts are: the ones the last Undo or Redo left as they were, or, before one,
- * the ones it would leave (a stopped turn's rolled-back parts, an applied draft).
+ * What the listed parts are: the ones an Undo left as they were, or, before one, the ones it
+ * would leave (a stopped turn's rolled-back parts, an applied draft).
  */
-function skipsHeading(
-  count: number,
-  done: ReversalDirection | null,
-  next: ReversalDirection,
-): string {
-  if (done === "redo")
-    return plural(count, {
-      one: "Redo left # part as it was",
-      other: "Redo left # parts as they were",
-    });
-  if (done === "undo")
+function skipsHeading(count: number, undone: boolean): string {
+  if (undone)
     return plural(count, {
       one: "Undo left # part as it was",
       other: "Undo left # parts as they were",
     });
-  return next === "redo"
-    ? plural(count, {
-        one: "Redo leaves # part as it is",
-        other: "Redo leaves # parts as they are",
-      })
-    : plural(count, {
-        one: "Undo leaves # part as it is",
-        other: "Undo leaves # parts as they are",
-      });
+  return plural(count, {
+    one: "Undo leaves # part as it is",
+    other: "Undo leaves # parts as they are",
+  });
+}
+
+/** Where Undo sat once the writer's Undo ran; an expired card has no word. */
+function UndoneWord({ state }: { state: TurnReceiptChip["state"] | undefined }) {
+  if (state !== "undone" && state !== "partly") return null;
+  return (
+    <span className="ml-auto shrink-0 text-muted-foreground" role="status">
+      {state === "partly" ? <Trans>Partly undone</Trans> : <Trans>Undone</Trans>}
+    </span>
+  );
 }
 
 /**
@@ -717,10 +680,8 @@ function workCountLabel(count: number) {
 
 /** One receipt-style line per restored Work. The server names the Work when it
  * can; without a name the sentence stays factual instead of guessing one. */
-function reversedWorkLine(work: { name: string; status: string }): string {
-  return work.status === "redone"
-    ? t`Redid change to Work ${work.name}.`
-    : t`Undid change to Work ${work.name}.`;
+function reversedWorkLine(work: { name: string }): string {
+  return t`Undid change to Work ${work.name}.`;
 }
 
 /** Where a tree inverse actually committed when its recorded name was no longer free. */

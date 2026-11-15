@@ -1,5 +1,5 @@
 /**
- * useReverseMutation — React Query mutations for chat turn undo/redo.
+ * useReverseMutation — React Query mutations for chat turn undo.
  *
  * The editor is updated by server-side Yjs sync; the mutation refreshes the
  * turn lineage cache so transcript undo affordances reflect server state.
@@ -47,7 +47,7 @@ export function useReverseTurnMutation(threadId: string) {
           query.queryKey[0] === projectQueryKeys.all[0] &&
           query.queryKey[2] === "document-draft-hints",
       });
-      // The lineage receipt owns the Undo/Redo/View change affordance. Await
+      // The lineage receipt owns the Undo and view-change affordance. Await
       // its refresh so an HTTP-200 refusal cannot settle against stale UI.
       return queryClient.invalidateQueries({
         queryKey: threadQueryKeys.liveLineageRoot(threadId),

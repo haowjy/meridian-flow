@@ -51,7 +51,6 @@ export interface TurnInverseNoticePort {
     docId: string;
     /** The Work's branch whose draft took the reversal, when it landed in one. */
     branchId?: BranchId;
-    direction: "undo" | "redo";
     sweptContent: boolean;
     beforeContentRef: number | null;
   }): Promise<void>;
@@ -83,7 +82,6 @@ export function createReversalNoticePort(deps: {
           turnId: input.turnId,
           documentId: input.docId,
           uri,
-          direction: input.direction,
           sweptContent: input.sweptContent,
           beforeContentRef: input.beforeContentRef,
         },

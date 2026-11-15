@@ -59,10 +59,7 @@ describe("account recents", () => {
     const recents = store();
     recents.setUser("account");
     open(recents, "chapter", "2026-09-22T12:00:00.000Z");
-    recents.applyAvailability("account", {
-      removed: [{ documentId: "chapter", projectId: "project" }],
-      updates: [],
-    });
+    recents.remove("account", [{ documentId: "chapter", projectId: "project" }]);
 
     recents.applyServerList("account", "project", [], recents.epoch);
     recents.applyServerList(

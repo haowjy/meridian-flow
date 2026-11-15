@@ -76,10 +76,10 @@ function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** Undo and redo can allocate a free name; their settled result owns the document door. */
+/** Undo can allocate a free name; its settled result owns the document door. */
 function settledDocumentPath(tool: ToolView, fallback: string | undefined): string | undefined {
   const command = toolCommand(tool);
-  if (tool.status !== "complete" || (command !== "undo" && command !== "redo")) return fallback;
+  if (tool.status !== "complete" || command !== "undo") return fallback;
   const result = tool.result;
   if (result === null || typeof result !== "object" || Array.isArray(result)) return fallback;
   return asString(result.path) ?? fallback;
@@ -302,18 +302,8 @@ export function documentToolFailureCopy(tool: ToolView): string {
       return t`That change can't be undone because it was discarded.`;
     case "cant_undo_changed":
       return t`That change can't be undone because the text changed afterwards.`;
-    case "cant_redo_applied":
-      return t`That change can't be redone here because it was already applied to your manuscript.`;
-    case "cant_redo_discarded":
-      return t`That change can't be redone because it was discarded.`;
-    case "cant_redo_changed":
-      return t`That change can't be redone because the text changed afterwards.`;
-    case "cant_redo_users_undo":
-      return t`That change can't be redone because you undid it.`;
     case "insufficient_undo":
       return t`There isn't enough left to undo.`;
-    case "insufficient_redo":
-      return t`There isn't enough left to redo.`;
     case "nothing_to_revert":
       return t`That change wasn't reverted because its text changed or is already gone.`;
     case "work_archived":

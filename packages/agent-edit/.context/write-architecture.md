@@ -6,7 +6,7 @@ parses or serializes. Resolver and apply code stay CRDT-neutral through the opaq
 `DocHandle` and `BlockRef`.
 
 The model's view, frontiers and the concurrent-change listing are in [The Model's
-View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal].
+View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
 
 ## Identity and targeting
 
@@ -152,7 +152,7 @@ a paragraph alone never joins independent writes. A live write merges one update
   it stands, recorded as the model's latest view, so its next write plans on it. A hash or
   number the view does not hold (`not_found`) carries the current text for the same reason. An
   insert whose anchor block was deleted is not missing its target: it is new words, applied on
-  the view, and Yjs places it after the anchor's tombstone, where the anchor was. An undo, redo
+  the view, and Yjs places it after the anchor's tombstone, where the anchor was. An undo
   or revert that finds its text applied, discarded or changed since is `done` and says what was
   left (`cant_*`, `insufficient_*`, `nothing_to_revert` are outcomes, not errors).
 - Provider tool IDs are response-local: the host keys a write by response and tool call, so

@@ -11,8 +11,6 @@ export type Entry = {
   parts: StoredInversePart[];
 };
 export const entryKeys = (entry: Entry) => entry.parts.map(key);
-export const entryRows = (entry: Entry): { id: number; key: string }[] =>
-  entry.parts.map((part) => ({ id: part.id, key: key(part) }));
 export function entries(history: readonly StoredInversePart[], threadId: string): Entry[] {
   const map = new Map<string, Entry>();
   for (const part of history) {
@@ -51,9 +49,6 @@ export function inspectionActions(history: StoredInversePart[], own: Entry[]) {
     actions,
     stack,
     top: stack[0],
-    candidate: actions.actions.find(
-      (action) => !own.some((entry) => entryRows(entry).some((row) => row.id > action.newest)),
-    ),
   };
 }
 /** Facts belong to one immutable view. Advancing a scratch plan replaces this context. */

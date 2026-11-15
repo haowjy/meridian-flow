@@ -60,7 +60,7 @@ sink built without it writes raw payloads. `errorMessage` is free text by design
 ## Marks and receipts say truthfully who did what
 
 **How.** Draft review attributes changes in the browser with
-`packages/agent-edit/src/diff/attribution.ts`. Every edit, undo, redo, revert and
+`packages/agent-edit/src/diff/attribution.ts`. Every edit, undo, revert and
 rollback writes an immutable receipt naming its actor (`document_edits`); an inverse
 is an ordinary forward edit with its own receipt. Apply records its settlement in one
 commit. Contracts: `apps/server/server/domains/collab/.context/reversal.md` and

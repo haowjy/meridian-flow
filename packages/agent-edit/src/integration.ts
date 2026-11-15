@@ -140,7 +140,6 @@ export type {
   EditRange,
   EditTarget,
   InversePart,
-  InverseSelection,
   PartClassification,
   PartState,
   PreparedEditRoots,

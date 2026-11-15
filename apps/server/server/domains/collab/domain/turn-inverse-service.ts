@@ -1,10 +1,6 @@
 /** Writer receipt and failed-response policies over immutable forward-inverse parts. */
 import { randomUUID } from "node:crypto";
-import {
-  editHandle,
-  type InversePart,
-  type InverseSelection,
-} from "@meridian/agent-edit/integration";
+import { editHandle, type InversePart } from "@meridian/agent-edit/integration";
 import type {
   BranchId,
   DocumentId,
@@ -28,7 +24,7 @@ import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
-import { effectiveActionIndex, partKey } from "./inverse-actions.js";
+import { partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
@@ -40,7 +36,6 @@ export type StoredInversePart = InversePart & {
   turnId: TurnId | null;
   responseId: string | null;
   toolCallId: string | null;
-  consumes: string[];
   actor: "agent" | "human" | "system";
   wId: number | null;
   origin: EditOrigin;
@@ -54,8 +49,6 @@ export type TurnInverseQuery = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
-  /** A card reversal's direction: a Redo plans a document it restores as live, not as removed. */
-  direction?: "undo" | "redo";
   draftId?: string | null;
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
@@ -78,10 +71,7 @@ export type InverseDocument = {
   liveRoom: string | null;
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
-  /**
-   * The card's Undo deletes this applied create in live: the text an Apply brought there leaves
-   * with the document, and its Redo's restore brings it back, so neither writes it.
-   */
+  /** The card's Undo deletes this applied create in live: the text an Apply brought there leaves with the document, so it isn't reverted. */
   leavesLive: boolean;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
@@ -104,7 +94,6 @@ export type PreparedDocumentInverse = {
   document: InverseDocument;
   /** The document's steps, in the order they plan and run. */
   steps: InverseStep[];
-  consumes: string[];
   skips: TurnInverseSkip[];
 };
 export interface TurnInverseStore {
@@ -123,19 +112,14 @@ export interface TurnInverseStore {
    * Read with no lock, for the caller to lock them first and declare them in the query.
    * Throws `ReversalOwnersMoved` when the documents move under the read.
    */
-  ownersOf(
-    query: TurnInverseQuery,
-    direction: "undo" | "redo",
-    userId: UserId | undefined,
-  ): Promise<OwnerLocks>;
+  ownersOf(query: TurnInverseQuery, userId: UserId | undefined): Promise<OwnerLocks>;
   /**
-   * The reply's tree receipts this card reversal would take back (`acting`), and those it finds
+   * The reply's tree receipts the card's Undo would take back (`acting`), and those it finds
    * with nothing left to act on, which it reports as skipped (`gone`).
    */
-  treeSteps(
-    query: TurnInverseQuery,
-    direction: "undo" | "redo",
-  ): Promise<{ acting: number; gone: number }>;
+  treeSteps(query: TurnInverseQuery): Promise<{ acting: number; gone: number }>;
+  /** Whether the card's Undo already took back any of the reply's tree changes. */
+  treeUndoneByCard(query: TurnInverseQuery): Promise<boolean>;
   /** What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`). */
   treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnTreeState>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
@@ -144,7 +128,7 @@ export interface TurnInverseStore {
   commit(input: {
     plans: PreparedDocumentInverse[];
     sequence: { plan: PreparedDocumentInverse; step: InverseStep }[];
-    kind: "undo" | "redo" | "revert";
+    kind: "undo" | "revert";
     userId?: UserId;
     query: TurnInverseQuery;
   }): Promise<{
@@ -175,49 +159,33 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   part.turnId === query.turnId;
 
 /**
- * Each document's ordered steps, for both command and dry run; each step lands where its
- * original did, live or in its draft. Each of the turn's original edits is one step, newest
- * first for an undo and oldest first for a redo, judged on what the steps before it leave: a
- * reversed undo puts the edit it undid back on the stack.
+ * Each document's ordered steps, for both command and chip; each step lands where its original
+ * did, live or in its draft. Each of the turn's original edits is one step, newest first, judged
+ * on what the steps before it leave. A part an Undo already took out (the planner's `takenBy`)
+ * is neither a step nor a skip: the card's own Undo is done with it, and the model's undo in the
+ * same chat is part of what the chat did. `undoneByWriter` says the card's Undo was among them.
  */
 function prepare(
   store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
-  kind: "undo" | "redo",
   actionId: string,
-): PreparedDocumentInverse[] {
-  const direction = kind;
-  const keys = new Set(
-    documents.flatMap((document) =>
-      document.history.filter((part) => targetsTurn(part, query)).map(partKey),
-    ),
-  );
-  const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
-  const index = effectiveActionIndex(all, keys);
-  // The card redoes only what its own Undo took back (a person's action); the model's own undo
-  // in the reply is part of what the reply did, as for the tree's receipts.
-  const selected =
-    direction === "redo"
-      ? index.actions.find((action) => action.parts.every((part) => part.actor === "human"))
-      : undefined;
-  const selectedAction = selected?.id;
-  const accepted = selected?.targets ?? new Set<string>();
-  const consumes = selectedAction ? [selectedAction] : [];
-  return documents.map((document) => {
-    const targets = document.history.filter(
-      (part) =>
-        targetsTurn(part, query) &&
-        (direction === "redo"
-          ? accepted.has(partKey(part))
-          : !(document.leavesLive && part.disposition === "applied")),
-    );
-    const reversals =
-      direction === "undo"
-        ? targets
-        : document.history.filter((part) => part.actionId === selectedAction);
-    const skips: TurnInverseSkip[] = [];
+): { plans: PreparedDocumentInverse[]; undoneByWriter: boolean } {
+  let undoneByWriter = false;
+  const plans = documents.map((document) => {
     const entryPlanner = createCapturedReversalPlanner(document, query);
+    const targets = document.history.filter((part) => {
+      if (!targetsTurn(part, query)) return false;
+      const takenBy = entryPlanner.takenBy(part);
+      if (takenBy) {
+        undoneByWriter ||= takenBy.some((action) =>
+          action.parts.every((undo) => undo.actor === "human"),
+        );
+        return false;
+      }
+      return !(document.leavesLive && part.disposition === "applied");
+    });
+    const skips: TurnInverseSkip[] = [];
     const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) => {
       const { closed } = document.destinationOf(part.origin);
       skips.push({
@@ -235,42 +203,33 @@ function prepare(
     const originals = [...byEdit.values()]
       .map((parts) => ({
         at: Math.max(...parts.map((part) => part.id)),
-        parts: parts.sort((a, b) => (direction === "undo" ? b.id - a.id : a.id - b.id)),
+        parts: parts.sort((a, b) => b.id - a.id),
       }))
-      .sort((a, b) => (direction === "undo" ? b.at - a.at : a.at - b.at));
+      .sort((a, b) => b.at - a.at);
     const order: {
       editId: string;
       destination: InverseDestination;
-      actionKind: "undo" | "redo" | "revert";
+      actionKind: "undo" | "revert";
       at: number;
     }[] = [];
-    const selection = new Map<InverseDestination, InverseSelection[]>();
+    const selection = new Map<InverseDestination, InversePart[]>();
     for (const { at, parts } of originals) {
       let chosen = 0;
-      const inverseParts =
-        direction === "redo"
-          ? reversals.filter((inverse) =>
-              parts.some((part) =>
-                inverse.targets.some((target) => partKey(target) === partKey(part)),
-              ),
-            )
-          : undefined;
       const entry = {
         id: parts[0]?.editId ?? "",
         handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
         parts,
       };
-      const planned = entryPlanner.turnTextPlan(entry, direction, query, inverseParts);
+      const planned = entryPlanner.turnTextPlan(entry, query);
       if ("causes" in planned) {
         for (const [i, part] of parts.entries())
           skip(part, planned.causes[i] as TurnInverseSkipCause);
         continue;
       }
-      for (const { part, direction: partDirection } of planned.selection) {
-        const selectedPart = part as StoredInversePart;
+      for (const part of planned.selection) {
         selection.set(planned.destination, [
           ...(selection.get(planned.destination) ?? []),
-          { part: selectedPart, direction: partDirection },
+          part as StoredInversePart,
         ]);
         chosen++;
       }
@@ -278,7 +237,7 @@ function prepare(
         order.push({
           editId: parts[0].editId,
           destination: planned.destination,
-          actionKind: planned.actionKind as "undo" | "redo" | "revert",
+          actionKind: planned.actionKind,
           at,
         });
     }
@@ -297,16 +256,16 @@ function prepare(
     );
     for (const classified of [...computed.values()].flatMap((result) => result.skipped)) {
       const part = targets.find((target) => partKey(target) === partKey(classified.part));
-      if (part) skip(part, entryPlanner.turnSkipCause(part, direction, reversals, classified));
+      if (part) skip(part, entryPlanner.turnSkipCause(part, classified));
     }
     const emittedEditIds = new Set(
       [...computed.values()].flatMap((result) => result.edits.map((edit) => edit.targetEditId)),
     );
     for (const selected of [...selection.values()].flat()) {
-      const key = partKey(selected.part);
+      const key = partKey(selected);
       const target = targets.find((part) => partKey(part) === key);
-      if (target && !classifiedKeys.has(key) && !emittedEditIds.has(selected.part.editId))
-        skip(target, entryPlanner.turnSkipCause(target, direction, reversals, null));
+      if (target && !classifiedKeys.has(key) && !emittedEditIds.has(selected.editId))
+        skip(target, entryPlanner.turnSkipCause(target, null));
     }
     const steps = order.flatMap((step): InverseStep[] => {
       const edit = computed
@@ -324,19 +283,20 @@ function prepare(
           ]
         : [];
     });
-    return { document, steps, consumes, skips };
+    return { document, steps, skips };
   });
+  return { plans, undoneByWriter };
 }
 
 /**
- * Every document's steps as one sequence for the commit: newest original first for an undo,
- * oldest first for a redo, so a renumber across documents never meets a location it vacated
- * later. Each document's own steps already run in that order.
+ * Every document's steps as one sequence for the commit, newest original first, so a renumber
+ * across documents never meets a location it vacated later. Each document's own steps already
+ * run in that order.
  */
-function inSequence(plans: readonly PreparedDocumentInverse[], direction: "undo" | "redo") {
+function inSequence(plans: readonly PreparedDocumentInverse[]) {
   return plans
     .flatMap((plan) => plan.steps.map((step) => ({ plan, step })))
-    .sort((a, b) => (direction === "undo" ? b.step.at - a.step.at : a.step.at - b.step.at));
+    .sort((a, b) => b.step.at - a.step.at);
 }
 const countAccepted = (plans: PreparedDocumentInverse[]) =>
   plans.reduce(
@@ -388,24 +348,16 @@ export function createTurnInverseService(store: TurnInverseStore) {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
         // A reply that only changed the tree has no text to capture, and its card still takes it back.
-        const treeRedo = (await store.treeSteps(query, "redo")).acting;
-        const treeUndo = (await store.treeSteps(query, "undo")).acting;
-        if (!documents.length && !treeRedo && !treeUndo) return null;
+        const treeUndone = await store.treeUndoneByCard(query);
+        const treeUndo = (await store.treeSteps(query)).acting;
+        if (!documents.length && !treeUndone && !treeUndo) return null;
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
         );
         const treeStates = await store.treeDraftStates(query);
         const trees = Object.keys(treeStates).length ? treeStates : undefined;
-        const redo = prepare(store, documents, query, "redo", randomUUID());
-        if (countAccepted(redo) || treeRedo)
-          return {
-            state: "live-reversed",
-            control: "redo",
-            skips: redo.flatMap((plan) => plan.skips),
-          };
-        const undo = prepare(store, documents, query, "undo", randomUUID());
-        // Text the writer discarded is gone: an Undo has nothing to take out, and its Redo
-        // would bring the discarded text back.
+        const { plans: undo, undoneByWriter } = prepare(store, documents, query, randomUUID());
+        // Text the writer discarded is gone: an Undo has nothing to take out.
         const allDiscarded =
           drafts !== undefined &&
           documents.every(({ documentId }) => drafts[documentId] === "discarded");
@@ -417,49 +369,37 @@ export function createTurnInverseService(store: TurnInverseStore) {
             trees,
             skips: undo.flatMap((plan) => plan.skips),
           };
-        return {
-          state: "expired",
-          control: "view_change",
-          drafts,
-          trees,
-          skips: undo.flatMap((plan) => plan.skips),
-        };
+        // A part an Undo took out has no skip, so the skips left are the parts that stayed.
+        const skips = undo.flatMap((plan) => plan.skips);
+        const state =
+          treeUndone || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
+        return { state, control: "view_change", drafts, trees, skips };
       });
     },
     /** What a card reversal of this query locks, for its caller to hold first (`ownersOf`). */
     reversalOwners(
-      query: TurnInverseQuery & {
-        direction: "undo" | "redo";
-        actor: { type: "user"; userId: string } | { type: "agent" };
-      },
+      query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<OwnerLocks> {
       return store.ownersOf(
         query,
-        query.direction,
         query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
       );
     },
     async reverseTurn(
-      query: TurnInverseQuery & {
-        direction: "undo" | "redo";
-        actor: { type: "user"; userId: string } | { type: "agent" };
-      },
+      query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
-        const plans = prepare(store, documents, query, query.direction, randomUUID());
-        const tree = await store.treeSteps(query, query.direction);
+        const { plans } = prepare(store, documents, query, randomUUID());
+        const tree = await store.treeSteps(query);
         const treeSteps = tree.acting + tree.gone;
         if (!query.documentIds && !plans.length && !treeSteps)
-          return {
-            status: query.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
-            documents: [],
-          };
+          return { status: "nothing_to_undo", documents: [] };
         const committed =
           countAccepted(plans) || treeSteps
             ? await store.commit({
                 plans,
-                sequence: inSequence(plans, query.direction),
-                kind: query.direction,
+                sequence: inSequence(plans),
+                kind: "undo",
                 query,
                 userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
               })

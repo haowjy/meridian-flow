@@ -1,13 +1,14 @@
 # Collab — reversal contracts
 
-Reversal uses the same forward-inverse primitive for card actions, model
-Undo/Redo/Revert. An inverse is an ordinary
+Reversal uses the same forward-inverse primitive for card actions and the model's
+Undo/Revert. There is no Redo: the card's and the model's `redo` are gone, and to redo, the
+model writes the edit again (the writer asks it to). An inverse is an ordinary
 immutable journal edit; it never rewrites a target row or marks it reversed.
 
 ## Commands and policy
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
-accepts only `{ scope: "turn", target: turnId, direction, commandId }`; the browser mints
+accepts only `{ scope: "turn", target: turnId, commandId }`; the browser mints
 `commandId` for each click and each Try again. It is a `reverse_turn` row in `commands`:
 `DocumentCommands.run` claims the id and runs the whole reversal in one transaction, and stores
 its outcome, the no-op answers included (`nothing_to_undo`, `expired`); every stored answer is
@@ -23,6 +24,8 @@ reports each closed one as a `returned` skip with its `why` (`work_archived`, `w
 target is closed answers `expired` with those skips. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the attempt misses and recaptures, which plans those targets as `returned` (`refusalOrMiss`; a deleted Work's refusal reads `not_found` and is not recognised). A denial for another reason refuses the
 whole reversal, and the outcome carries the policy's reason (`denial`) for the card to word: deleted
 document, or no longer editable.
+A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
+`"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
 command declares its owners first. After the claim, `reversalOwners` reads, with no lock, the Works
 and lineages the commit will lock (the documents' drafts, the reply's tree receipts, and each
@@ -44,33 +47,40 @@ that same resolved object; commit validates it before writing the planned view.
 
 After selection, one admission call authorizes every content destination. Commit runs under those exact grants and confirms them after
 locking their combined Work set. The incoming content grant carries the caller
-identity only; it never chooses the inverse branch. Undo and Redo land in the
+identity only; it never chooses the inverse branch. Undo lands in the
 Work that owns the selected edit, including after the chat is rebound. A user
 card uses the same admission boundary.
 
-Redo is preferred when the latest unconsumed Undo has a reapplicable part;
-otherwise an invertible active part offers Undo. The card counts only a person's Undo
-(its own, `actor: "human"`): the model's undo in the reply is part of what the reply did and
-gives the card no Redo, the same rule as for tree receipts below. Effective action state is
-indexed per immutable part. A model count consumes original actions: once a
-partial model Undo reverses any surviving part of an edit, the next count
-continues to the preceding edit; Redo retains the exact parts that were
-reversed.
+An invertible active part offers Undo. One eligibility rule, in the captured planner
+(`model-reversal-planner.ts`, `taken`/`takenBy`), decides what every reversal may still take: a
+part an Undo took (the card's, a writer's revert, or the model's own undo in the same chat) is not
+available, whatever the kernel says it could restore. Nothing reverses an Undo, so its action is the
+permanent record of what it took. Without the rule, an older edit's Undo that removed the text a
+newer edit's Undo restored leaves that newer edit "restorable" again: a card would take it out on
+every press, and a model `revert` of it would bring back an intermediate word. The card's Undo and
+its chip choose from one selection (`prepare`): a taken part is neither a step nor a skip. The
+model's `undo` and `revert` list a taken part as `already removed`, and `read(format: "edits")`
+offers neither for it, because the listing asks the same planner. A model's forward revert is its
+own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
+(`getTurnReceiptChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
+the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
+card's undo receipts, whatever has happened to the nodes since), `partly` when parts stayed, else
+`expired` (the same rule as for tree receipts below). Effective action state is indexed per
+immutable part (`effectiveActionIndex`). A model count consumes original
+actions: once a partial model Undo reverses any surviving part of an edit, the next count
+continues to the preceding edit.
 
-The model owns one strict stack per thread/document. `write undo` and `write
-redo` accept a count; `write revert` creates a new edit at the current
-(destination) view. All three use Yjs identity: a part edited since is skipped
+The model owns one strict stack per thread/document. `write undo` accepts a count; `write revert`
+creates a new edit at the current (destination) view. Both use Yjs identity: a part edited since is skipped
 and listed by its 1-based immutable part ordinal and reason, without quoting old
-or current text. Undo and Redo refuse `cant_*_changed` only when nothing of a text-only
+or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port. Model actions
 cannot use a reconstruction endpoint, reversal table, or reserved client. A
-multi-edit Undo is all-or-nothing on stack availability, and Redo restores the
-last undone edit first; a count beyond what is available refuses with the
-available count and changes nothing. User-actuated entries refuse model stack commands. A card Undo pops the turn's
-poppable stack prefix and writes forward reverts for its other text parts, including applied
-parts. Both kinds share one action identity, so the card's Redo reverses exactly the parts its
-Undo accepted. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest.
+multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
+refuses with the available count and changes nothing. User-actuated entries refuse model stack
+commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its
+other text parts, including applied parts. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest.
 Each agent is its own peer: Undo of its edit removes the items the edit inserted and restores
 the items it deleted, item by item, and keeps everyone else's typing, so a later writer edit
 never refuses it. An item that is already gone is skipped ("Stayed as you edited it"): text
@@ -80,14 +90,15 @@ element the edit created that the writer typed in stays, holding only the writer
 A replacement is a deleted run with the part's insertion beside it. The deleted run stays
 gone only when the insertion is gone and text written after the edit (the writer or a pull
 replaced it; a clock at or past the part's `frontier`, read on the original of an
-Undo- or Redo-restored copy) stands at its edge, so Undo doesn't
+Undo-restored copy) stands at its edge, so Undo doesn't
 double it. When the writer only deleted the insertion, the original comes back. A pull or Apply
 writes only the insertions inside a changed run that only gained characters (`retainShared` in
 `packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the run whole), so
 Undo after a pull equals Undo of the same typing on the draft when the writer inserted inside
 the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
-Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
-item can still be removed or restored, `undone` when only Redo can, else `changed`.
+A part is `active` (Undo can act) while one item can still be removed or restored, else
+`changed`; a part an Undo already took out is `changed` too, and `kernelCause` words it
+`already_undone` from the action index.
 Un-Apply adds one rule the card does not have: an inverse never changes a word that holds writing
 made after the Apply, so a group whose reversal would (a writer's letters inside or joined to the
 AI's word) stays applied and is named in `skippedGroupIds`. A whole word typed after the AI's
@@ -145,12 +156,11 @@ still ignores live removal and accepts its own inverse.
 
 Applied text is not a refusal. Model Undo and the card write its inverse as a forward
 `revert` in the active origin draft, leaving live untouched and making a pending change against
-the review base. Redo of an Undo whose inverse was applied reapplies the original parts through
-that same captured origin.
+the review base.
 
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
 review base has no shown change and can read discarded. In an active draft the kernel decides
-Undo/Redo and Revert eligibility; a discarded or applied disposition
+Undo and Revert eligibility; a discarded or applied disposition
 chooses the copy only when the kernel skips a part, ahead of the edited-since reading, so an
 applied part never reads as the writer's edit. Effective action consumption follows immutable receipts,
 regardless of whether those receipts currently contribute to review. Closed drafts are never
@@ -215,13 +225,11 @@ The receipts carry the command's id (`tree_edit_receipts.command_id`), as the te
 and Undo counts by it: the steps of one command (a create with content is a node and its text)
 are one step, taken and redone together; `revert` names a handle and takes that receipt only.
 
-Every inverse (model undo, redo and revert, and the card) is one ordered
+Every text inverse (model undo and revert, and the card) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,
 with its action and its place on the history axis, planned against a simulation the steps
-before it advanced (simulated rows, one clock). A model count-N Undo records N separately
-redoable actions, and a step that reverses an undo puts its edit back on the stack. The commit
-runs the steps in planned order (the card merges documents newest first, redo
-oldest first). A draft's text commits as one checkpoint rewrite, at its plan's first step.
+before it advanced (simulated rows, one clock). A model count-N Undo records N separate
+actions. The commit runs the steps in planned order (the card merges documents newest first). A draft's text commits as one checkpoint rewrite, at its plan's first step.
 A document removed at capture plans no live text (`document_deleted`);
 a draft that outlived the removal still takes its own inverse. Commit takes the attempt's
 document mutation locks in id order.
@@ -252,11 +260,11 @@ unwinds the whole attempt and recaptures. After four misses one more capture is
 planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for
 the card and `internal_error` ("the document changed while reversing; try again")
-for model Undo, Redo and Revert, never an invented refusal. Delivery runs
+for model Undo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
-semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
+semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. A reversal that reversed nothing because a document
 blocks an ancestor folder, the folder is missing, or the document moved or was deleted again

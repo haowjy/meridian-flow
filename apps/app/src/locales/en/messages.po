@@ -525,12 +525,12 @@ msgstr "{count, plural, one {Applied before your Discard reached it, so it stays
 #~ msgstr "{count, plural, one {Not saved: # problem} other {Not saved: # problems}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
-msgstr "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
+#~ msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
+#~ msgstr "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{count, plural, one {Redo left # part as it was} other {Redo left # parts as they were}}"
-msgstr "{count, plural, one {Redo left # part as it was} other {Redo left # parts as they were}}"
+#~ msgid "{count, plural, one {Redo left # part as it was} other {Redo left # parts as they were}}"
+#~ msgstr "{count, plural, one {Redo left # part as it was} other {Redo left # parts as they were}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Undo leaves # part as it is} other {Undo leaves # parts as they are}}"
@@ -1725,24 +1725,24 @@ msgid "Can’t put that inside code"
 msgstr "Can’t put that inside code"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: {place} was moved or deleted after you undid this change."
-msgstr "Can't redo: {place} was moved or deleted after you undid this change."
+#~ msgid "Can't redo: {place} was moved or deleted after you undid this change."
+#~ msgstr "Can't redo: {place} was moved or deleted after you undid this change."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: a document blocks its folder path. Move it, then try again."
-msgstr "Can't redo: a document blocks its folder path. Move it, then try again."
+#~ msgid "Can't redo: a document blocks its folder path. Move it, then try again."
+#~ msgstr "Can't redo: a document blocks its folder path. Move it, then try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
-msgstr "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
+#~ msgid "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
+#~ msgstr "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: the document was moved or deleted after you undid this change."
-msgstr "Can't redo: the document was moved or deleted after you undid this change."
+#~ msgid "Can't redo: the document was moved or deleted after you undid this change."
+#~ msgstr "Can't redo: the document was moved or deleted after you undid this change."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: the folder it would move to is gone."
-msgstr "Can't redo: the folder it would move to is gone."
+#~ msgid "Can't redo: the folder it would move to is gone."
+#~ msgstr "Can't redo: the folder it would move to is gone."
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Can't restore all of these"
@@ -2681,8 +2681,8 @@ msgid "Couldn't read report from {line}"
 msgstr "Couldn't read report from {line}"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't redo"
-msgstr "Couldn't redo"
+#~ msgid "Couldn't redo"
+#~ msgstr "Couldn't redo"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -5287,6 +5287,7 @@ msgstr "Partial result"
 msgid "Partly restored"
 msgstr "Partly restored"
 
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Partly undone"
 msgstr "Partly undone"
@@ -5414,8 +5415,8 @@ msgid "Purchase confirmed."
 msgstr "Purchase confirmed."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Put back"
-msgstr "Put back"
+#~ msgid "Put back"
+#~ msgstr "Put back"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
@@ -5505,31 +5506,30 @@ msgid "Reconnecting…"
 msgstr "Reconnecting…"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Redid"
-msgstr "Redid"
+#~ msgid "Redid"
+#~ msgstr "Redid"
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Redid change to Work {0}."
-msgstr "Redid change to Work {0}."
+#~ msgid "Redid change to Work {0}."
+#~ msgstr "Redid change to Work {0}."
 
-#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Redo"
 msgstr "Redo"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Redo didn't go through. Try again."
-msgstr "Redo didn't go through. Try again."
+#~ msgid "Redo didn't go through. Try again."
+#~ msgstr "Redo didn't go through. Try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Redo is no longer available because the manuscript changed."
-msgstr "Redo is no longer available because the manuscript changed."
+#~ msgid "Redo is no longer available because the manuscript changed."
+#~ msgstr "Redo is no longer available because the manuscript changed."
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Redoing…"
-msgstr "Redoing…"
+#~ msgid "Redoing…"
+#~ msgstr "Redoing…"
 
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/CreationComposer.tsx
@@ -6544,20 +6544,20 @@ msgid "That change can't be made because this Work's drafts are archived."
 msgstr "That change can't be made because this Work's drafts are archived."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because it was discarded."
-msgstr "That change can't be redone because it was discarded."
+#~ msgid "That change can't be redone because it was discarded."
+#~ msgstr "That change can't be redone because it was discarded."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because the text changed afterwards."
-msgstr "That change can't be redone because the text changed afterwards."
+#~ msgid "That change can't be redone because the text changed afterwards."
+#~ msgstr "That change can't be redone because the text changed afterwards."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because you undid it."
-msgstr "That change can't be redone because you undid it."
+#~ msgid "That change can't be redone because you undid it."
+#~ msgstr "That change can't be redone because you undid it."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone here because it was already applied to your manuscript."
-msgstr "That change can't be redone here because it was already applied to your manuscript."
+#~ msgid "That change can't be redone here because it was already applied to your manuscript."
+#~ msgstr "That change can't be redone here because it was already applied to your manuscript."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."
@@ -6960,8 +6960,8 @@ msgid "There is nowhere left to put that picture."
 msgstr "There is nowhere left to put that picture."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "There isn't enough left to redo."
-msgstr "There isn't enough left to redo."
+#~ msgid "There isn't enough left to redo."
+#~ msgstr "There isn't enough left to redo."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "There isn't enough left to undo."
@@ -7746,6 +7746,7 @@ msgstr "Undoing…"
 
 #: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undone"
 msgstr "Undone"
 

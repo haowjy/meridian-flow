@@ -1,4 +1,4 @@
-/** Authenticated whole-turn card Undo/Redo transport. */
+/** Authenticated whole-turn card Undo transport. */
 
 import { COMMAND_CONFLICT_CODE, CommandIdSchema } from "@meridian/contracts/commands";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
@@ -19,7 +19,8 @@ import { CommandConflictError } from "../../../../../shared/commands/command-rec
 import { throwHttpInterrupt } from "../../../../../shared/interrupt-boundary.js";
 
 const reverseBodySchema = z.strictObject({
-  direction: z.enum(["undo", "redo"], { error: "direction must be undo or redo" }),
+  // A tab that predates the removal of Redo still sends a direction.
+  direction: z.enum(["undo", "redo"]).optional(),
   scope: z.literal("turn"),
   commandId: CommandIdSchema,
   target: z.string({ error: "target must be a string" }).min(1),
@@ -35,13 +36,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: parsed.error.issues[0]?.message });
   }
   const body = parsed.data;
+  // Redo is gone: an open tab's Redo finds nothing to reverse, as an Undo of an expired card does.
+  if (body.direction === "redo") return { status: "expired", documents: [] };
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const turnId = requireRequestId(body.target, "target") as TurnId;
   try {
     const outcome = await reverseTurnCard(app, {
       threadId,
       userId: user.userId,
-      direction: body.direction,
+      direction: "undo",
       turnId,
       commandId: body.commandId,
     });

@@ -8,7 +8,7 @@ current text.
 
 When every part is skipped, the status is `nothing_to_revert` and the failed
 step says, “That change wasn't reverted because its text changed or is already
-gone.” Undo and Redo use the same part policy. `count` checks whole stack
+gone.” Undo uses the same part policy. `count` checks whole stack
 entries before writing; an excessive count changes nothing.
 
 ## Setup
@@ -53,13 +53,11 @@ otherwise. N is the model's first write.
 | Revert of a revert | Revert Plain, then revert the handle it prints. | N's sentence returns. |
 | Two parts | N changes the first and third of three paragraphs; writer edits the first. | `reverted: e1 (1 of 2 parts)` plus `not reverted: part 1: edited since`; only the third reverses. |
 
-Repeat Two parts with `undo`: only the unchanged third paragraph reverses, and
-Redo restores it without replacing the writer's first paragraph.
+Repeat Two parts with `undo`: only the unchanged third paragraph reverses.
 
 In Draft mode, Apply N and run model Undo. It reports `reverted: e1`, restores
-the old text as a pending change, and leaves live unchanged. N's turn card offers
-no Redo for the model's undo (the card redoes only its own Undo); the model's
-`redo` reapplies N. With one newer pending edit and one
+the old text as a pending change, and leaves live unchanged. A model `redo` call is
+answered `invalid_arguments`: to redo, the model writes the edit again. With one newer pending edit and one
 applied edit, `undo` with `count: 2` names the newer handle as undone and the
 older as reverted.
 
