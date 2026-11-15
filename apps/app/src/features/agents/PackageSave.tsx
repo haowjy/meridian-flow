@@ -222,7 +222,7 @@ function Word({
               label={t`Undo save of ${label}`}
               sentence={
                 undoState === "failed"
-                  ? t`Couldn't reach the server. Undo tries again.`
+                  ? t`Undo didn't go through. Try again.`
                   : t`Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays.`
               }
               pending={!saveId || undoState === "pending"}

@@ -161,9 +161,16 @@ taken back never falls through to the next older step.
 
 A Discard never refuses either, and its answer is read per item the same way (`discardAnswer`
 in `draft-command-owner.ts`): an item it took, or one an earlier Discard took (`already`, quiet),
-leaves review, a created document's tab closing either way; an item an Apply took first keeps
-its row with its own `overtaken_applied` line and the Apply's id. The command is `done`, with
-its Undo, when it took any item, and `settled` when it took none.
+leaves review, a created document's tab closing either way. The outcome carries what the answer
+says of the items sent (`took`: the ones it didn't take, and of those the ones an Apply took
+first), and the notice lists only what it took (`DraftNotices.answered`): its struck rows and its
+Undo are the answer's, never the press's. An item an Apply took first says "Applied first" where
+the writer pressed: on its row while the list draws it, else as the chip a bounce shows (the
+Changes bar, the strip, the band, or the change card pressed, where a closed owner's bounce
+goes) when the Discard took nothing else. A move's Discard that also writes its own text is two
+shares of the notice, the room's and the server's, and only the server's answer narrows. The command is `done`,
+with its Undo, when it took any item, and `settled` when it took none. An Apply's Undo step
+holds the nodes its answer says landed, not the ones pressed.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
 Retry. Transient disconnects keep acknowledgement barriers pending. Each click has two
