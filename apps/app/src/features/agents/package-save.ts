@@ -93,6 +93,7 @@ const signature = (status: AgentPackageStatus | undefined) =>
     : "missing";
 
 const entries = new Map<string, Entry>();
+const latestSaves = new Map<string, string>();
 const listeners = new Set<() => void>();
 let revision = 0;
 
@@ -219,6 +220,7 @@ async function save(
       const ref = { level: outcome.level, folder: outcome.folder };
       const key = keyOf(projectId, ref);
       const before = bases.get(key);
+      if (outcome.saveId) latestSaves.set(key, outcome.saveId);
       // A Save with nothing new still says which edits it kept out of use.
       if (outcome.outcome === "unchanged" && outcome.kept.length + outcome.leftOut.length === 0) {
         entries.delete(key);
@@ -264,6 +266,16 @@ export type UndoAnswer = "undone" | "nothing" | "failed";
 
 /** Each Save's Undo, by `saveId`: the one state the notice and the AI's card both show. */
 const undoStates = new Map<string, UndoAnswer | "pending">();
+
+function offeredSaveId(projectId: string, ref: PackageRef, status: AgentPackageStatus | undefined) {
+  const saveId = latestSaves.get(keyOf(projectId, ref));
+  if (!saveId) return undefined;
+  const state = undoStates.get(saveId);
+  if (state === "undone") return undefined;
+  if (status && status.saveId !== saveId && state !== "pending" && state !== "nothing")
+    return undefined;
+  return saveId;
+}
 
 async function undo(
   queryClient: QueryClient,
@@ -325,10 +337,16 @@ export function usePackageSaves(projectId: string) {
       const entry = entries.get(keyOf(projectId, ref));
       return entry ? heldWord(entry, status) : null;
     },
+    saveIdOf: (ref: PackageRef, status: AgentPackageStatus | undefined) =>
+      offeredSaveId(projectId, ref, status),
     /** Whether `PackageSave` has anything to say of the package. */
     shows: (ref: PackageRef, status: AgentPackageStatus | undefined) => {
       const entry = entries.get(keyOf(projectId, ref));
-      return Boolean((entry && heldWord(entry, status)) || (status && status.state !== "saved"));
+      return Boolean(
+        (entry && heldWord(entry, status)) ||
+          offeredSaveId(projectId, ref, status) ||
+          (status && status.state !== "saved"),
+      );
     },
     /** Imports saved and removed while their word still shows, for the level's removed lines. */
     removedWithWord: (level: AgentsLevel, packages: readonly AgentPackageStatus[] | undefined) =>

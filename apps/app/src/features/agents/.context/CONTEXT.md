@@ -83,6 +83,10 @@ revisions.
   rest saves. Only a package-level Error (a broken `mars.toml`, state `cant-save`) fails the
   Save, as a result in a 200, never a refused write: the files and the saved version both stay.
   Warnings never fail it.
+- The Save word follows the current files; its Undo is separate and stays after typing or a hand
+  revert, until another Save supersedes it. `UndoSave` uses the shared `RowWord` action on the
+  toolbar, sidebar and AI receipt, with one result per `saveId`. An old receipt can still try
+  Undo: the server answers that a later Save is in use, shown as Unchanged rather than an error.
 - Undo puts the package back on the version before and restores its files by a three-way
   merge, so an edit made since is kept: the package then reads Saved, or Unsaved when such an
   edit survives.

@@ -14,10 +14,7 @@ stateDiagram-v2
   saving --> [*]: unchanged with nothing held back, or the server listed no such package
   saving --> unreached: no usable answer
   unreached --> saving: Retry
-  saved --> undoing: Undo
-  undoing --> undone: undone
-  undoing --> [*]: a later Save exists, nothing changed
-  undoing --> saved: no usable answer (Undo shows as a retry)
+  saved --> undone: Undo succeeds
   undone --> saving: Save
   saved --> [*]: the package changes from how the Save left it
   failed --> [*]: its files or their findings change
@@ -27,11 +24,29 @@ stateDiagram-v2
 
 - **`saving` is predicted from the files query**: a package-level Error (state `cant-save`, or
   an Error in a file that defines no Agent or skill) shows "Not saved"; a package whose every
-  change is to an item with an Error saved nothing new; anything else "Saved", with Undo inert
-  until the server gives a `saveId`. The server's outcome replaces it. What is out of use is not
+  change is to an item with an Error saved nothing new; anything else "Saved". Undo is offered
+  once the server gives a `saveId`. The server's outcome replaces it. What is out of use is not
   taken from the outcome (only the server knows which held item keeps a good save): it is counted
   from the files with `troubleAfterSave`, which says the same of the files before the Save and of
   the files read after it, so the count never changes when the answer lands.
+## Save Undo
+
+```mermaid
+stateDiagram-v2
+  [*] --> offered: Save returns a saveId
+  offered --> offered: typing or a hand revert
+  offered --> pending: Undo from any surface
+  pending --> undone: previous version restored
+  pending --> nothing: a later Save is in use
+  pending --> failed: no usable answer
+  failed --> pending: Retry Undo
+  offered --> [*]: later Save replaces toolbar and sidebar offer
+```
+
+The AI receipt keeps its own Save's Undo, so an older receipt can show the server's `nothing`
+answer as Unchanged. Toolbar and sidebar offers track the latest successful Save separately
+from the word's basis. Failed or unchanged Saves do not discard that offer.
+
 - **Undo merges the previous text into the files**, so `undone` waits for the files to be read
   again and then holds while the package is as Undo left it and reads Unsaved; one that reads Saved
   shows nothing, the state says it. Each Save's Undo (`pending`, `failed`, `undone`, `nothing`) is
