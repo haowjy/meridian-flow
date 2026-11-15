@@ -5,14 +5,23 @@
  * hover. The chip adds no row and covers nothing, and the field keeps the typed text.
  */
 import { Trans } from "@lingui/react/macro";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Chip } from "@/components/ui/chip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const LONG_PRESS_MS = 450;
 const SHOWN_MS = 4000;
 
-export function WorkClosedChip({ sentence, id }: { sentence: string; id?: string }) {
+export function WorkClosedChip({
+  sentence,
+  id,
+  label,
+}: {
+  sentence: string;
+  id?: string;
+  /** What the chip says; the default is the Work's. */
+  label?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -40,7 +49,7 @@ export function WorkClosedChip({ sentence, id }: { sentence: string; id?: string
           onPointerCancel={release}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <Trans>Work was closed</Trans>
+          {label ?? <Trans>Work was closed</Trans>}
         </Chip>
       </TooltipTrigger>
       {/* Beside the chip: above or below it the sentence covers the field it belongs to. */}

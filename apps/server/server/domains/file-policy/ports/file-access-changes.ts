@@ -3,7 +3,8 @@
  * rooms admitted at the old level reconnect at the new one (file-access §7).
  */
 import { draftOwnerKey } from "@meridian/contracts/branches";
-import { type AccessChangedWhy, treeRoomName } from "@meridian/contracts/protocol";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
+import { treeRoomName } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 
 /**
@@ -13,8 +14,8 @@ import type { WorkId } from "@meridian/contracts/runtime";
  * that is still archived) and names why; an unarchive, a restore to open, or a thaw leaves it out.
  */
 export type FileAccessChange =
-  | { workId: WorkId; closed?: AccessChangedWhy }
-  | { rootThreadId: string; closed?: AccessChangedWhy }
+  | { workId: WorkId; closed?: ClosedOwnerWhy }
+  | { rootThreadId: string; closed?: ClosedOwnerWhy }
   /** A project deleted: its tree list's connections end (a tree list's key is its room name). */
   | { projectId: string };
 

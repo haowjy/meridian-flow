@@ -64,6 +64,8 @@ export function createReviewRuntime(
   let remoteArrival = false;
   let arrivalSequence = 0;
   let synced = room.getSnapshot().status === "synced";
+  // A read-only admission's reason is on its way; a Discard sent now could not say why it bounced.
+  let reasonPending = room.getSnapshot().reasonPending;
   const baseFor = (schema: Schema) => {
     let blocks = baseBlocks.get(schema);
     if (!blocks) {
@@ -95,7 +97,7 @@ export function createReviewRuntime(
     state = {
       frame,
       changes,
-      ready: synced && frame !== null,
+      ready: synced && !reasonPending && frame !== null,
     };
     for (const listener of listeners) listener();
   };
@@ -153,8 +155,9 @@ export function createReviewRuntime(
   };
   yDoc.on("update", onUpdate);
   const unsubscribe = room.subscribe((snapshot) => {
-    if (snapshot.status === "synced" && !synced) {
-      synced = true;
+    if ((snapshot.status === "synced" && !synced) || snapshot.reasonPending !== reasonPending) {
+      synced ||= snapshot.status === "synced";
+      reasonPending = snapshot.reasonPending;
       dirty = true;
       flushSoon();
     }

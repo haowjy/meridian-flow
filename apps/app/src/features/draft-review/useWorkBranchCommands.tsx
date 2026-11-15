@@ -34,13 +34,14 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
-import type {
-  AppliedFact,
-  AppliedUndo,
-  DiscardPart,
-  DiscardUndo,
-  DiscardUndoAnswer,
-  NoticeSurface,
+import {
+  type AppliedFact,
+  type AppliedUndo,
+  type DiscardPart,
+  type DiscardUndo,
+  type DiscardUndoAnswer,
+  type NoticeSurface,
+  returnedOf,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
@@ -73,8 +74,7 @@ export function useWorkBranchCommands({
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  // An archived or deleted Work's drafts show, and take no command until it is back.
-  const locked = !ownerKey || !work || workLifecycleState(work) !== "active";
+  const locked = !ownerKey;
   // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
@@ -123,6 +123,21 @@ export function useWorkBranchCommands({
           ? { kind: "strip", threadId }
           : { kind: "changes" };
     const endNotice = () => notices.end(ownerKey);
+    /**
+     * The one place a closed owner's `returned` answer becomes a notice: the chip on the control
+     * pressed (`documentIds`: its rows; none: the bar's), and the Works list read again, since
+     * the writer's view of the Work was stale.
+     */
+    const bounced = (
+      outcomes: readonly CommandOutcome[],
+      surface: NoticeSurface,
+      documentIds: readonly string[],
+    ) => {
+      const returned = outcomes.find((outcome) => outcome.kind === "returned");
+      if (returned?.kind !== "returned") return;
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+      notices.showBounce({ projectId, ownerKey, surface, documentIds, why: returned.why });
+    };
     const titleOf = (item: ThreadDraftListItem | undefined) =>
       item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
     // Apply facts join the owner's notice until its next action. A band's go to the document's
@@ -429,12 +444,7 @@ export function useWorkBranchCommands({
       draft: DraftReviewSelection,
       target: ChangeTarget,
     ): CommandStart => {
-      const started = mode === "apply" ? applyOne(draft, target) : discardOne(draft, target);
-      void started.outcome.then((outcome) => {
-        if (outcome.kind === "change-refused" && outcome.code === "work_archived")
-          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
-      });
-      return started;
+      return mode === "apply" ? applyOne(draft, target) : discardOne(draft, target);
     };
     const discardOne = (draft: DraftReviewSelection, target: ChangeTarget): CommandStart => {
       // A new Discard replaces the owner's notice, with its own or with none.
@@ -446,6 +456,12 @@ export function useWorkBranchCommands({
       const leaves =
         target.kind === "draft" && (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
       const { start, part } = dispatchDiscard(draft, target);
+      // A change card's chip stays on the card pressed; a whole draft's is the band's.
+      const bounceSurface: NoticeSurface =
+        surface === "band" && target.kind === "groups"
+          ? { kind: "card", documentId: draft.documentId }
+          : noticeSurface(draft);
+      void start.outcome.then((outcome) => bounced([outcome], bounceSurface, [draft.documentId]));
       const shown = part
         ? notices.showDiscard({
             projectId,
@@ -471,9 +487,19 @@ export function useWorkBranchCommands({
       const started = items.map(({ draft, target }) => dispatchDiscard(draft, target));
       const parts = started.flatMap(({ part }) => (part ? [part] : []));
       const [first] = items;
-      if (first)
-        notices.showDiscard({ projectId, ownerKey, surface: noticeSurface(first.draft), parts });
-      return Promise.all(started.map(({ start }) => start.outcome));
+      const outcomes = Promise.all(started.map(({ start }) => start.outcome));
+      if (first) {
+        const surface = noticeSurface(first.draft);
+        notices.showDiscard({ projectId, ownerKey, surface, parts });
+        void outcomes.then((settled) =>
+          bounced(
+            settled,
+            surface,
+            items.map(({ draft }) => draft.documentId),
+          ),
+        );
+      }
+      return outcomes;
     };
     /**
      * One Discard and its share of the notice's Undo. A whole draft is one server command, which
@@ -648,10 +674,14 @@ export function useWorkBranchCommands({
       });
       const [first] = input.drafts;
       const count = input.drafts.length + folders.length;
+      const surface: NoticeSurface = first ? noticeSurface(first) : { kind: "changes" };
+      void outcome.then((answer) =>
+        bounced([answer], surface, input.all ? [] : folders.slice(0, 1)),
+      );
       notices.showDiscard({
         projectId,
         ownerKey,
-        surface: first ? noticeSurface(first) : { kind: "changes" },
+        surface,
         parts: [
           {
             documentId: first?.documentId ?? folders[0] ?? "",
@@ -682,6 +712,7 @@ export function useWorkBranchCommands({
       ownerKey,
       threadId,
       owner,
+      /** No owner to act on. A closed Work is not locked: its Apply lands, its Discard bounces. */
       dispositionLocked: locked,
       /** A frozen owner's draft takes no single-change command: only the whole draft's Discard. */
       changesLocked: locked || frozen,
@@ -689,8 +720,7 @@ export function useWorkBranchCommands({
       frozen,
       /**
        * Whether Apply is offered at all. A frozen owner (a lineage with every chat in Trash)
-       * takes no Apply, so every surface hides it; an archived Work still shows it, disabled by
-       * `dispositionLocked`.
+       * takes no Apply, so every surface hides it; a closed Work's Apply lands as any other.
        */
       canApply: !frozen,
       commandChange,
@@ -758,25 +788,18 @@ export async function restoreDiscard(
       });
     }
     // A closed owner stores the restore as `restored` with a `returned` settlement: nothing came back.
-    const returned =
-      answer.status === "restored"
-        ? answer.settled?.find((one) => one.rule === "returned")
-        : undefined;
-    if (answer.status === "restored" && !returned)
+    const closed = answer.status === "restored" ? returnedOf(answer) : null;
+    if (closed) {
+      if (closed === "work-closed")
+        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+      return { answer: "returned", why: closed };
+    }
+    if (answer.status === "restored")
       return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
     if (answer.status === "conflict") return { answer: "failed" };
-    switch (returned?.why ?? (answer.status === "refused" ? answer.reason : undefined)) {
-      case "already_restored":
-      case "nothing_to_restore":
-        return { answer: "gone" };
-      case "work_archived":
-      case "work_deleted":
-        return { answer: "returned", why: "work-closed" };
-      case "chat_frozen":
-        return { answer: "returned", why: "chat-in-trash" };
-      default:
-        return { answer: "returned", why: "gone-from-trash" };
-    }
+    return answer.reason === "already_restored" || answer.reason === "nothing_to_restore"
+      ? { answer: "gone" }
+      : { answer: "returned", why: "gone-from-trash" };
   } catch {
     return { answer: "failed" };
   }

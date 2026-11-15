@@ -41,7 +41,7 @@ import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
-import { type DiscardUndo, DraftNotices } from "./draft-notices";
+import { type DiscardUndo, DraftNotices, type RestoreReturned, returnedOf } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
@@ -102,6 +102,8 @@ export type CommandOutcome =
    * Apply of several, every item answers it; `deleted` marks the ones live deleted.
    */
   | { kind: "needs-restore"; deleted?: true }
+  /** A closed owner answered and changed nothing (`returnedOf`): the surface says why, once. */
+  | { kind: "returned"; why: RestoreReturned }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -132,25 +134,18 @@ type Entry = {
 /** A click that is one member of a several-item Apply: it takes the group's id and send. */
 type Joint = { commandId: string; send(body: ApplyClick): Promise<ApplyClickAnswer> };
 export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
-/**
- * A refusal the screen already explains reverts silently (offer only what
- * applies): an archived Work removes its commands and shows its own notice with
- * Unarchive, so a held "archived" line would only go stale once it is unarchived.
- */
-function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | null {
-  return failure.serverCode === "work_archived" || failure.serverCode === "work_deleted"
-    ? null
-    : failure;
-}
-/**
- * The code a Discard that changed nothing answers with: a closed owner's `returned` settlement
- * names why (`work_archived`, `work_deleted`, `chat_frozen`), else the answer's status.
- */
-function discardCode(result: DiscardCommandResult): string {
-  const settled = "settled" in result ? result.settled : undefined;
-  const returned = settled?.find((one) => one.rule === "returned");
-  if (returned?.rule === "returned") return returned.why;
-  return result.status;
+/** A Discard that changed nothing: a closed owner's return, else the answer's status as a refusal. */
+function notDiscarded(result: DiscardCommandResult): {
+  failure: BranchCommandFailure | null;
+  outcome: CommandOutcome;
+} {
+  const why = returnedOf(result);
+  return why
+    ? { failure: null, outcome: { kind: "returned", why } }
+    : {
+        failure: { code: "discard-refused", serverCode: result.status },
+        outcome: { kind: "change-refused", code: result.status },
+      };
 }
 /** The server's word for an unapplied click, as the surfaces' refusal copy keys it. */
 function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>): string {
@@ -660,7 +655,7 @@ export class DraftCommandOwner {
     if (answer.status !== "applied" && answer.status !== "landed" && answer.status !== "cancelled")
       this.setState(
         ref.itemKey,
-        { failure: shownRefusal({ code: "apply-refused", serverCode: refusalCode(answer) }) },
+        { failure: { code: "apply-refused", serverCode: refusalCode(answer) } },
         id,
       );
     return this.outcomeOf(ref, answer, restore);
@@ -964,8 +959,9 @@ export class DraftCommandOwner {
   }
   /**
    * Discards a whole item on the server, every Discard of a whole draft: Trash lists it and its
-   * Undo is the server's, by `commandId`. A created document leaves at once; any other stays in review,
-   * discarding, until the server answers, so a refusal shows on it. A Discard decided on the
+   * Undo is the server's, by `commandId`. A created document is hidden at once and closes once the server
+   * says `done`; any other stays in review, discarding, until the server answers. Either way a
+   * refusal or a return shows on it. A Discard decided on the
    * frozen reading names the draft the writer saw, so the server refuses it if the chat came
    * back and the draft moved on. Server-only lifecycle commands share this account owner, never
    * the Apply route.
@@ -983,7 +979,6 @@ export class DraftCommandOwner {
       ref.itemKey,
       item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
     );
-    if (item.isNew) this.lifecycle.closeCreated?.(ref);
     try {
       const result = await discardDraftItem(ref, {
         branchId: item.branchId,
@@ -1002,15 +997,13 @@ export class DraftCommandOwner {
           ref.itemKey,
           hides ? { hidden: true, discarding: null } : { discarding: null },
         );
+        if (item.isNew) this.lifecycle.closeCreated?.(ref);
         return { kind: "done" };
       }
       this.discardedHere.delete(own);
-      this.setState(ref.itemKey, {
-        hidden: false,
-        discarding: null,
-        failure: shownRefusal({ code: "discard-refused", serverCode: discardCode(result) }),
-      });
-      return { kind: "change-refused", code: discardCode(result) };
+      const { failure, outcome } = notDiscarded(result);
+      this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
+      return outcome;
     } catch {
       this.discardedHere.delete(own);
       if (this.active)
@@ -1062,10 +1055,9 @@ export class DraftCommandOwner {
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") return { kind: "done" };
-      this.setState(ref.itemKey, {
-        failure: shownRefusal({ code: "discard-refused", serverCode: discardCode(result) }),
-      });
-      return { kind: "change-refused", code: discardCode(result) };
+      const { failure, outcome } = notDiscarded(result);
+      this.setState(ref.itemKey, { failure });
+      return outcome;
     } catch {
       if (this.active) this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
       return { kind: "change-refused", code: "unknown" };
@@ -1112,8 +1104,7 @@ export class DraftCommandOwner {
     const failed = (failure: BranchCommandFailure | null) => {
       for (const key of own) this.discardedHere.delete(key);
       if (this.active)
-        for (const ref of scope.values())
-          this.setState(ref.itemKey, { hidden: false, failure: failure && shownRefusal(failure) });
+        for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false, failure });
     };
     try {
       const answer = await discardBranch(projectId, branchId, {
@@ -1134,8 +1125,9 @@ export class DraftCommandOwner {
         for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
         return { kind: "done" };
       }
-      failed({ code: "discard-refused", serverCode: discardCode(answer) });
-      return { kind: "change-refused", code: discardCode(answer) };
+      const { failure, outcome } = notDiscarded(answer);
+      failed(failure);
+      return outcome;
     } catch {
       failed({ code: "discard-unknown" });
       return { kind: "change-refused", code: "unknown" };

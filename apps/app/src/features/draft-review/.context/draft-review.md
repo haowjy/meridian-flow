@@ -152,10 +152,19 @@ independent duties:
   under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
   as `landed`, with `restored` unknown.
 
-A Discard on a closed owner is a `done` that changed nothing (`status: "returned"`, `settled`
-`returned`, `why` `work_archived`, `work_deleted` or `chat_frozen`); the owner reads it as a change
-that was refused with that code. `work_archived` and `work_deleted` store no failure: the Works query
-refetches and `EndedWorkNotice` explains. An Undo of a Discard that returned reports `failed`. Other refusals still move prose in two cases, open in
+A closed owner (an archived or deleted Work, or a chat in Trash) locks nothing: Apply and Un-Apply land and
+leave the Work closed. A Discard, Discard all, a folder's ×, a change's Discard and an Undo of a Discard come
+back on their own: the server answers `done` with a settled `returned { why }` (`work_archived`, `work_deleted`,
+`chat_frozen`) and changes nothing. `returnedOf` reads `settled`, never the status, into the `returned` words the
+Undo already uses (`work-closed`, `chat-in-trash`); the owner's outcome is `returned`, and `bounced` in the command
+hook is the one place that makes it a notice (`showBounce`, a `discarded` notice with status `bounced`) and reads the
+Works list again. The notice is a chip ("Work was closed", "Its chat is in Trash") in the trailing slot of the
+control pressed, for 6 s, with the full sentence on hover, focus or long press: a Changes row's notice slot (a
+folder's ×: the folder's row; Discard all: the bar's), the strip's first line, the document band, a change card's own row (one press, one chip, on the card pressed). It adds no line,
+so `hasLine` is false for it. A change's Discard in a closed Work writes in a room the server admits read-only;
+`startDraftDiscardSession` returns `returned` there, with the word for the room's `closedWhy`, instead of a
+`read_only` refusal. The room names `closedWhy` itself: a `read_only` stateless message after every read admission (`why` only for a closed owner), or the 4409 close's reason; the client infers none. A read admission, and any 4409 that names no reason, holds `reasonPending` (so the review is not `ready`, and the controls show their loading state) until its message arrives, and a known reason survives the reconnect meanwhile. A Discard's deferred write answers from the room only once it is settled read-only; while the reason is pending it writes at once, as an offline press does, and the next admission decides. A created document's Discard closes its tab only after `done`, so a returned answer's chip has a band to show on. A returned Undo of a Discard is the same word on its
+notice, Trash's row and the editor's pill. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
 leaves subscribe to command records; command callbacks and the project controller don't.
@@ -186,7 +195,7 @@ main's band or Recently opened (`landing`); the sidebar's rows carry their own (
 tree's interactions page). A page whose document a Discard took away
 (a Work's new document) shows the Discard's notice, Undo included, while it holds the document
 (`discarding`); after that it says the document was discarded from the draft. A newer Apply or
-Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
+Discard by the owner replaces it; only a bounced one (below) has a timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
 there. In the Changes list a notice is said on its rows, never as a line (`useDraftNoticeWords`,
 `RowWord`): every row a Discard took stays struck through with Undo, in the place the list
