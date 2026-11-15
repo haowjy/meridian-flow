@@ -175,8 +175,11 @@ export function documentToolFailed(tool: ToolView): boolean {
     return false;
   const result = tool.result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return false;
-  return typeof result.status === "string" && result.status !== "success";
+  return typeof result.status === "string" && !DONE_STATUSES.has(result.status);
 }
+
+/** A write that did what it was asked: an undo or redo that took the change back answers `reversed`. */
+const DONE_STATUSES = new Set(["success", "reversed", "reconciled"]);
 
 /**
  * A write the document's state returned: nothing was kept and the AI carries on. It is a settled
