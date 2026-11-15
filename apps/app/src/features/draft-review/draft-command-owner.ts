@@ -49,8 +49,10 @@ import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./app
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import {
+  type ApplyHalves,
   type DiscardUndo,
   DraftNotices,
+  halvesOf,
   itemOf,
   type RestoreReturned,
   returnedIn,
@@ -102,6 +104,8 @@ export type CommandOutcome =
       kind: "done";
       /** The Apply command that landed it, which an Un-Apply names. */
       commandId?: string;
+      /** What of the whole command landed; unknown (the answer was never read): both halves. */
+      halves?: ApplyHalves;
       /** Its tree half landed whole: nothing of its move, delete or creation is still pending. */
       treeWhole?: boolean;
       /** Each half's lines for what stayed out beside what landed. */
@@ -704,6 +708,7 @@ export class DraftCommandOwner {
       return {
         kind: "done",
         commandId: answer.commandId,
+        halves: halvesOf(answer),
         treeWhole,
         lines,
         ...(restored ? { restored: true as const } : {}),

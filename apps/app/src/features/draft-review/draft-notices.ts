@@ -107,6 +107,19 @@ export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult 
   return answer.items.find((item) => item.node === node);
 }
 
+/** What of an Apply landed, command-wide: its Undo step's two halves. */
+export type ApplyHalves = { text: boolean; tree: boolean; restores: string[] };
+
+export function halvesOf(answer: ApplyClickResult): ApplyHalves {
+  return {
+    text: answer.items.some((item) => item.text?.landed),
+    tree: answer.items.some((item) => item.tree?.landed),
+    restores: answer.items.flatMap((item) =>
+      item.tree?.landed && item.tree.restore ? [item.tree.restore] : [],
+    ),
+  };
+}
+
 /** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
 export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
   return why === "chat_frozen" ? "chat-in-trash" : "work-closed";

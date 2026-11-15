@@ -84,6 +84,11 @@ export type ApplyItemResult = {
     /** Where live had the document before and after this command, when its tree half landed. */
     transition?: { from: string | null; to: string | null };
     renamed?: ApplyRenamedNote;
+    /**
+     * The live restore this command made of the document so its text could land: the record
+     * Un-Apply takes back, and what `appliedNodes` reads to tell whether it still stands.
+     */
+    restore?: string;
   };
   /** Present when the click carried a text cut for the item. */
   text?: ApplyHalfResult;

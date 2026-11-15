@@ -107,7 +107,7 @@ function treeResult(
   const left = new Set(one.left.map(({ record }) => record.id));
   const superseded = new Set(one.superseded.map((record) => record.id));
   const landed =
-    one.restored ||
+    one.restore !== null ||
     one.records.some((record) => !left.has(record.id) && !superseded.has(record.id));
   const notes: Settlement[] = [...new Set(one.left.map(({ why }) => why))].map((why) => ({
     rule: "left_out",
@@ -124,12 +124,15 @@ function treeResult(
           : [noteOf(last, node, "applied")],
     };
   if (one.lifted) notes.push({ rule: "restored", documentId: node });
-  if (!one.document) return { landed: true, ...(notes.length ? { settled: notes } : {}) };
+  const restore = one.restore ? { restore: one.restore } : {};
+  if (!one.document)
+    return { landed: true, ...(notes.length ? { settled: notes } : {}), ...restore };
   const from = one.before?.kind === "visible" ? one.before.address.uri : null;
   const to = one.after?.kind === "visible" ? one.after.address.uri : null;
   return {
     landed: true,
     ...(notes.length ? { settled: notes } : {}),
+    ...restore,
     transition: { from, to },
     ...(wanted?.uri && to && wanted.uri !== to
       ? { renamed: { code: "renamed" as const, wanted: wanted.uri, path: to } }
@@ -410,6 +413,7 @@ export function createDrizzleApplyClick(
               const backFromDelete = new Set<string>();
               const left: { node: string; why: LeftOutWhy }[] = [];
               const treeUndone = new Set<string>();
+              const alreadyUndone = new Set<string>();
               if (lists.length > 0) {
                 const written = await textWrittenSince(
                   db,
@@ -439,9 +443,11 @@ export function createDrizzleApplyClick(
                         ])
                           backFromDelete.add(node);
                       }
-                      // A change already taken back is the answer `already`, not a loss.
+                      // A change something else already took back (a card's Undo) is `already`,
+                      // not a loss.
                       for (const { record, why } of result.left)
-                        if (why !== "already")
+                        if (why === "already") alreadyUndone.add(record.node);
+                        else
                           left.push({ node: record.node, why: why === "unknown" ? "purged" : why });
                     }
                   },
@@ -654,6 +660,8 @@ export function createDrizzleApplyClick(
                 );
               for (const [why, nodes] of byWhy)
                 settled.push({ rule: "left_out", items: [...nodes], why });
+              for (const node of alreadyUndone)
+                settled.push({ rule: "already", state: "unapplied", item: node });
               // Everything this Apply did was taken back before, or it left nothing to take back.
               if (
                 settled.length === 0 &&
@@ -815,7 +823,7 @@ export function createDrizzleApplyClick(
                   overrode += wrote.overrode;
                   texts.set(
                     item.node,
-                    one.restored
+                    one.restore
                       ? { landed: true, settled: [{ rule: "restored", documentId: item.node }] }
                       : { landed: true },
                   );
@@ -828,7 +836,7 @@ export function createDrizzleApplyClick(
                     node: item.node,
                     // A restore is a tree fact of this command too: Un-Apply takes it back, and a
                     // name taken meanwhile gives the document a new path to report.
-                    ...(one.ran || one.restored || (item.tree && !listOf.get(item.node))
+                    ...(one.ran || one.restore || (item.tree && !listOf.get(item.node))
                       ? {
                           tree: treeResult(
                             item.node,

@@ -48,6 +48,11 @@ export class TreeListRegistry {
     };
   }
 
+  /** The signed-in account's own list. */
+  get account(): TreeListRef {
+    return { kind: "account", userId: this.accountId };
+  }
+
   /** The account is signing out or closing: every session ends. */
   close() {
     this.closed = true;

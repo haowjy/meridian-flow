@@ -60,8 +60,8 @@ export type TreeItemFacts = {
   superseded: TreeRecord[];
   /** A landed move or rename of it brought it back from Trash. */
   lifted: boolean;
-  /** This command restored it so its text could land. */
-  restored: boolean;
+  /** The live restore this command made of it so its text could land: the record's id. */
+  restore: string | null;
   /** A delete this command appended covers it in live. */
   deletedHere: boolean;
   /** It stands in live (not in Trash, not only in the draft). */
@@ -128,7 +128,7 @@ export function createApplyTreeOperations(input: {
       left: [],
       superseded: [],
       lifted: false,
-      restored: false,
+      restore: null,
       deletedHere: false,
       standsInLive: false,
     });
@@ -174,8 +174,9 @@ export function createApplyTreeOperations(input: {
           // The restores this command makes are its own: Un-Apply takes them back with the copies.
           const restored: string[] = [];
           const restore = (it: TreeApplyItem) => {
-            restored.push(writer.restore(LIVE, actor, it.node).id);
-            (facts.get(it.node) as TreeItemFacts).restored = true;
+            const { id } = writer.restore(LIVE, actor, it.node);
+            restored.push(id);
+            (facts.get(it.node) as TreeItemFacts).restore = id;
           };
           // No delete of this command can land on these, and the Work's view the copies are
           // checked against then has them standing.
@@ -236,7 +237,7 @@ export function createApplyTreeOperations(input: {
             nodes: [
               ...new Set([
                 ...mine.flatMap((it) =>
-                  (facts.get(it.node) as TreeItemFacts).restored ? [it.node] : [],
+                  (facts.get(it.node) as TreeItemFacts).restore ? [it.node] : [],
                 ),
                 ...copies.map((copy) => copy.node),
               ]),

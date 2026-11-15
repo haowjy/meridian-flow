@@ -77,6 +77,10 @@ stateDiagram-v2
   refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
   either view: the press asks the server's Un-Apply, and a refusal (the tree changed since) is
   skipped the same way; on the Changes tab a press takes the latest step of any source. The
-  applied rows in Changes carry the same step's Undo (`undoApply`).
+  applied rows in Changes carry the same step's Undo (`undoApply`). An Apply step has two
+  halves, from its answer: its text ends only by an Un-Apply, and its tree half ends by itself
+  when `appliedNodes` (over the Apply's command and the restores its answer named) reads empty in
+  the list copies, as after a chat card's Undo of the rename (`endWhenTakenBack`). With both
+  ended it leaves the stack, and its notice with it.
 
 A wrong edit here shows one tree in the sidebar while actions write into another.

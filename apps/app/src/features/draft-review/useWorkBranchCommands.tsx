@@ -21,6 +21,7 @@ import { documentBasename, type ReviewFileTarget } from "@/client/query/work-bra
 import { editorHistory } from "@/core/editor/editor-history";
 import {
   type ApplyStep,
+  endWhenTakenBack,
   pushUndoStep,
   shownSourceOf,
   undoApply,
@@ -36,9 +37,11 @@ import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-
 import {
   type AppliedFact,
   type AppliedUndo,
+  type ApplyHalves,
   type DiscardPart,
   type DiscardUndo,
   type DiscardUndoAnswer,
+  halvesOf,
   type NoticeSurface,
   returnedIn,
 } from "./draft-notices";
@@ -226,6 +229,7 @@ export function useWorkBranchCommands({
       branchId: string,
       nodes: readonly string[],
       name: string,
+      halves: ApplyHalves = { text: true, tree: true, restores: [] },
     ): AppliedUndo | null => {
       if (surface === "band" || !treeLists) return null;
       const handle = treeLists.acquire({ kind: "project", projectId });
@@ -259,11 +263,24 @@ export function useWorkBranchCommands({
           return { answer: "failed" };
         }
       };
+      // A node the project's list doesn't show is in the account's: its tree half is read there too.
+      const account = nodes.some((node) => !shown.nodes.has(node))
+        ? treeLists.acquire(treeLists.account)
+        : null;
+      let stopWatch = () => {};
       const step: ApplyStep = {
         kind: "apply",
         sources: [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
         name,
         nodes,
+        text: halves.text,
+        tree: halves.tree ? { command: commandId, restores: halves.restores } : null,
+        ended: () => {
+          stopWatch();
+          account?.release();
+          // The step's notice ends with it; a newer Apply's notice stays.
+          if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step === undo)) endNotice();
+        },
         unapply: async () => {
           const said = await unapplyOnServer();
           // The press says what became of it on the rows (`TreeNotice`): the Apply's own words,
@@ -273,9 +290,11 @@ export function useWorkBranchCommands({
         },
       };
       pushUndoStep(session, step);
+      stopWatch = endWhenTakenBack(session, account ? [session, account.session] : [session], step);
       handle.release();
       // The applied rows' Undo is this step, the one Ctrl+Z takes.
-      return { undo: () => void undoApply(session, step), count: nodes.length };
+      const undo: AppliedUndo = { undo: () => void undoApply(session, step), count: nodes.length };
+      return undo;
     };
     const applyOne = (draft: DraftReviewSelection, target: ChangeTarget): CommandStart => {
       endNotice();
@@ -300,6 +319,7 @@ export function useWorkBranchCommands({
                   item.branchId,
                   [draft.documentId],
                   titleOf(item) ?? t`Untitled document`,
+                  outcome.halves,
                 )
               : null;
           applied(draft, [{ item, outcome }], step);
@@ -359,7 +379,13 @@ export function useWorkBranchCommands({
             answer?.status === "applied" &&
             answer.items.some((item) => item.tree?.landed || item.text?.landed);
           const step = landed
-            ? rememberApply(answer.commandId, branchId, taken, name ?? only ?? t`${count} changes`)
+            ? rememberApply(
+                answer.commandId,
+                branchId,
+                taken,
+                name ?? only ?? t`${count} changes`,
+                halvesOf(answer),
+              )
             : null;
           if (first)
             applied(

@@ -135,11 +135,11 @@ its copies), and the nodes it touched. Text half: `apply_command_effects`, one r
 document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
 and the restores leave live), then each document's text groups. It runs the tree half before any
 write. A change it cannot take back (`changed_since`, `has_text` for a created document with text past
-its heads, `purged`) stays and is named in `settled` as `left_out`, one line per reason; one already
-taken back is quiet. `treeUndone` names the nodes with a fact it took back, so it took something
+its heads, `purged`) stays and is named in `settled` as `left_out`, one line per reason. One
+something else already took back (a chat card's Undo of a rename: the copy is no longer in force)
+is `already { unapplied }` with the item. `treeUndone` names the nodes with a fact it took back, so it took something
 back when that or `reversedGroupIds` is not empty. When nothing was taken back and nothing was left,
-the answer is `already { unapplied }`, and so is a second Un-Apply of a delete. After a chat card's
-Undo took a rename back, the copy reads `changed_since` to it, not `already`. When the tree rows of
+the answer is `already { unapplied }`, and so is a second Un-Apply of a delete. When the tree rows of
 the Apply are gone (`treeHalfLostWithBranch`, read from the stored answer's `applied`), the document
 it moved or deleted is `left_out purged`; the route answers 404 for a purged Work before the command
 runs, so that path is reached only when a chat's lineage branch goes while its Work lives on. A text

@@ -14,6 +14,7 @@
  * writer's next gesture, press or action elsewhere in the list, as the notice does.
  */
 import {
+  appliedNodes,
   type DroppedRecord,
   deleteStands,
   isSourceRoot,
@@ -61,10 +62,19 @@ export type TreeStep = {
 
 /**
  * An Apply, one step whichever view is on screen: it changed live and the Work's tree alike.
- * `unapply` asks the server; `skipped` is its answer that something changed since.
+ * `unapply` asks the server; `skipped` is its answer that something changed since. It has two
+ * halves: its text ends only by an Un-Apply (a press answers it, this tab's or, as `already`,
+ * another's); its tree half ends when nothing of it stands in live any more (`endWhenTakenBack`).
+ * It leaves the stack when both have ended.
  */
 export type ApplyStep = {
   kind: "apply";
+  /** Some text of it landed. */
+  text: boolean;
+  /** Its tree half, while something of it stands in live: the command and the restores it made. */
+  tree: { command: string; restores: readonly string[] } | null;
+  /** Hears the step leave the stack, taken back or ended: a notice holding its Undo ends. */
+  ended?: () => void;
   /** The sources its nodes show in; none known, every source's stack holds it. */
   sources: readonly string[];
   /** What it applied, for the notice: "Ch 3 and Outline", "4 changes". */
@@ -269,6 +279,7 @@ async function takeLatest(
     if (step.kind === "tree") step.ended?.();
     if (step.kind === "apply") {
       const { answer, textLeft = 0 } = await step.unapply();
+      if (answer !== "failed") step.ended?.();
       if (answer === "unapplied")
         return {
           kind: "undone",
@@ -336,6 +347,7 @@ export async function undoApply(session: TreeListSession, step: ApplyStep): Prom
   show(session, null);
   const { answer, textLeft = 0 } = await step.unapply();
   if (answer === "failed") stack.splice(Math.min(at, stack.length), 0, step);
+  else step.ended?.();
   show(
     session,
     saidOf(
@@ -354,6 +366,47 @@ export async function undoApply(session: TreeListSession, step: ApplyStep): Prom
     ),
   );
   return answer === "unapplied";
+}
+
+/**
+ * Ends the Apply `step`'s tree half once nothing of it stands in `lists` (`appliedNodes`): a
+ * card's Undo, or another tab's Un-Apply, took it back. Only a half seen standing ends, so a list
+ * still catching up with the Apply's copies ends nothing. With its text half ended too, the step
+ * leaves `session`'s stack. Returns the stop for the watch.
+ */
+export function endWhenTakenBack(
+  session: TreeListSession,
+  lists: readonly TreeListSession[],
+  step: ApplyStep,
+): () => void {
+  const half = step.tree;
+  if (!half) return () => undefined;
+  const stands = () =>
+    lists.some(
+      (list) => appliedNodes(list.getSnapshot().doc, half.command, half.restores).length > 0,
+    );
+  let seen = stands();
+  const stops = lists.map((list) =>
+    list.subscribe(() => {
+      if (stands()) {
+        seen = true;
+        return;
+      }
+      if (!seen) return;
+      stop();
+      step.tree = null;
+      if (step.text) return;
+      const stack = stackOf(session);
+      const at = stack.indexOf(step);
+      if (at < 0) return;
+      stack.splice(at, 1);
+      step.ended?.();
+    }),
+  );
+  const stop = () => {
+    for (const each of stops) each();
+  };
+  return stop;
 }
 
 /**
