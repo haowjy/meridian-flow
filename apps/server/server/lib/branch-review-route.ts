@@ -259,7 +259,8 @@ const UndoDiscardBody = z.strictObject({
   commandId: CommandIdSchema,
   discardCommandId: CommandIdSchema,
 });
-const DiscardBody = z.strictObject({
+// Not strict: a tab still on the old code sends `branchId` and `draftSeenAt` too, and they are dropped.
+const DiscardBody = z.object({
   itemKey: Base.itemKey,
   commandId: Base.commandId,
   ends: z.enum(["tree", "item"]),
