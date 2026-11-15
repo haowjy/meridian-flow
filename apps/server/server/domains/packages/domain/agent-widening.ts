@@ -28,6 +28,8 @@ export type AgentCapability = {
 /** The Agent a name resolves to at one level set, whatever its state. */
 export interface EffectiveAgent {
   name: string;
+  /** The Agent's file in the level, relative to the level's root: where Changes finds its label. */
+  file: string;
   level: AgentLevel;
   capability: AgentCapability;
 }
@@ -36,12 +38,14 @@ export interface EffectiveAgent {
 export type EffectiveAgents = ReadonlyMap<string, EffectiveAgent>;
 
 /**
- * What a broken Agent that gets fixed is compared with: an Agent that can only read. Fixing a
- * read-only Agent therefore changes nothing; fixing one that edits, spawns or gains a tool asks.
+ * What a broken Agent that gets fixed is compared with: an Agent that can only read, with the
+ * whole tool catalog (the permission caps what its writes do, not its tool list). Fixing a
+ * read-only Agent therefore changes nothing, whether or not it lists tools; fixing one that
+ * edits or may spawn Agents asks.
  */
 const READ_ONLY_BASELINE: NonNullable<AgentCapability> = {
   permission: "read",
-  tools: new Set(["read", "ls", "grep", "skill", "return_result"]),
+  tools: projectToolPolicy({}, "subagent"),
   subagents: new Set(),
   skills: new Set(),
 };
@@ -62,6 +66,8 @@ export function capabilityOf(
 /** One Agent that became wider: what it could do, what it can do now, and how. */
 export interface Widened {
   slug: string;
+  /** The Agent's file in the level (see `EffectiveAgent.file`). */
+  file: string;
   /** The Agent's display name after the change. */
   name: string;
   /** Whether the same change renamed it; a renamed Agent prints by slug alone. */
@@ -96,6 +102,7 @@ export function compareAgents(before: EffectiveAgents, after: EffectiveAgents): 
     if (!rises && tools.length === 0 && subagents.length === 0) continue;
     widened.push({
       slug,
+      file: now.file,
       name: now.name,
       renamed: was.name !== now.name,
       level: now.level,
@@ -119,7 +126,8 @@ export function compareAgents(before: EffectiveAgents, after: EffectiveAgents): 
  */
 export function widenedByFile(widened: Widened[], file: string): Widened[] {
   const defined = agentsFileOf(file);
-  if (defined?.kind === "agent") return widened.filter((entry) => entry.slug === defined.slug);
+  // The file names the Agent, not its slug: a package clash renames the Agent (`critic__x`).
+  if (defined?.kind === "agent") return widened.filter((entry) => entry.file === file);
   if (defined?.kind === "skill")
     return widened.filter((entry) => entry.skills.includes(defined.slug));
   return widened;

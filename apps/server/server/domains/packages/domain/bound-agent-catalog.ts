@@ -301,6 +301,7 @@ export function createBoundAgentCatalog(input: {
           entry.slug,
           {
             name: entry.value?.agent.name ?? entry.slug,
+            file: entry.value ? `${entry.value.folder}${agentPath(entry.value.agent.slug)}` : "",
             level: entry.level,
             capability: capabilityOf(entry.value?.agent),
           },
