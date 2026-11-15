@@ -154,6 +154,9 @@ async function setup(
         },
       };
     },
+    async refreshBinding() {
+      return undefined;
+    },
   };
   const gateway = scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 }, ...options });
   const { requests } = gateway;
