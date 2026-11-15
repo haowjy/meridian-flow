@@ -221,7 +221,7 @@ export async function containerReadonly(
   path: string,
   at?: FileDestination,
 ): Promise<boolean | undefined> {
-  const target = await threadContainerTarget(deps.works, context.resolution, path);
+  const target = await threadContainerTarget(context.resolution, path);
   if (!target) return undefined;
   const grant = at
     ? await deps.fileAccess.authorizeAt(principal, target, at, "edit")

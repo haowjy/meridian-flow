@@ -175,16 +175,12 @@ async function reverseReceipt(
   const parts = areaOfPath(input.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const history = deps.documentSync.treeHistory();
   const threadId = ctx.threadId as ThreadId;
-  const target = await threadContainerTarget(deps.works, call.context.resolution, input.path);
+  const target = await threadContainerTarget(call.context.resolution, input.path);
   const grant = target ? await deps.fileAccess.authorize(call.principal, target, "edit") : null;
   if (grant && "denied" in grant) return fileAccessDeniedError(input.command, grant, input.path);
   if (receipt.across) {
     // The other end of a move between lists: its own container, its own grant.
-    const otherTarget = await threadContainerTarget(
-      deps.works,
-      call.context.resolution,
-      receipt.across.from,
-    );
+    const otherTarget = await threadContainerTarget(call.context.resolution, receipt.across.from);
     const other = otherTarget
       ? await deps.fileAccess.authorize(call.principal, otherTarget, "edit")
       : null;

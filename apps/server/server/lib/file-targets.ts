@@ -63,7 +63,6 @@ export async function containerTarget(
  * own when it names none). Null when the path names no Work.
  */
 export async function threadContainerTarget(
-  works: Pick<WorkRepository, "findNoWork">,
   resolution: Pick<
     ThreadContextResolution,
     | "thread"

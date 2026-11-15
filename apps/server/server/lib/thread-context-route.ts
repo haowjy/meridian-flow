@@ -55,7 +55,7 @@ async function uriTarget(
   const ref = await context.port.stat(uri);
   if (ref.ok && ref.value.documentId) return documentTarget(ref.value.documentId);
   if (ref.ok || ref.error.code === "not_found") {
-    const container = await threadContainerTarget(deps.works, context.resolution, uri);
+    const container = await threadContainerTarget(context.resolution, uri);
     if (container) return container;
   }
   if (!ref.ok) contextErrorToHttp(ref.error);
