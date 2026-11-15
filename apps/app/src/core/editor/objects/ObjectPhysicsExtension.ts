@@ -12,6 +12,7 @@ import {
   documentEdgeTransaction,
   type ObjectAt,
   objectBeside,
+  objectSelectionForDOM,
   selectedObject,
   selectObjectTransaction,
   typeBesideObjectTransaction,
@@ -257,6 +258,10 @@ export const ObjectPhysicsExtension = Extension.create({
               ),
             ]);
           },
+
+          // Chromium adopts a nonempty native range before compositionstart.
+          // Keep object selection in the model, but give native input a caret.
+          selectionForDOM: (view) => (view.editable ? objectSelectionForDOM(view.state) : null),
 
           /** Typing beside a selected object keeps the object intact. */
           handleTextInput(view, _from, _to, text) {
