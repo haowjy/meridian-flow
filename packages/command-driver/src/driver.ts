@@ -322,14 +322,6 @@ export class CommandDriver {
     return result;
   }
 
-  private update(id: string, next: (record: CommandRecord) => CommandRecord | null): Promise<void> {
-    return this.mutate(({ records }) => {
-      const record = records.find((candidate) => candidate.id === id);
-      const replacement = record && next(record);
-      return { change: { put: replacement ? [replacement] : [] }, result: undefined };
-    });
-  }
-
   /** Tells the other tabs and reads again. The write is committed by now: a failed read is not its failure. */
   private async changed(): Promise<void> {
     this.ports.changes.post();
@@ -473,7 +465,7 @@ export class CommandDriver {
     this.inFlight.set(first.id, delivery);
     try {
       await this.attempt(first, delivery.signal);
-    } catch (cause) {
+    } catch {
       if (!delivery.signal.aborted) this.later(first, "network");
     } finally {
       if (this.inFlight.get(first.id) === delivery) this.inFlight.delete(first.id);
