@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /** Drop local project-prefixed databases that no live git worktree owns. */
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";

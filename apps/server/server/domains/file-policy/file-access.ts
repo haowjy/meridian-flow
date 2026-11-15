@@ -5,7 +5,7 @@
  */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { TreeView } from "../context/tree/tree-view.js";
-import { decide, levelAt, personLevel } from "./domain/policy.js";
+import { decide, destinationFor, levelAt, personLevel } from "./domain/policy.js";
 import {
   type AgentChain,
   atLeast,
@@ -19,7 +19,7 @@ import {
   grantOwnerLocks,
   type Principal,
 } from "./domain/types.js";
-import type { FileFactsPort, FileFactsRequest } from "./ports/file-facts.js";
+import type { FileFactsPort } from "./ports/file-facts.js";
 import type { FileGrantsPort } from "./ports/file-grants.js";
 
 interface FileAccessDeps {
@@ -66,12 +66,16 @@ export interface FileAccess {
   /**
    * The list path (§6): each listed document's decision from one facts query,
    * with an agent's drafted documents decided in its branch. A document the principal
-   * can't read is absent, so callers drop it.
+   * can't read is absent, so callers drop it. `destination` decides every document
+   * there instead of where the principal's access sends it (`ls version:"live"`).
    */
   listAccess(
     principal: Principal,
     documentIds: readonly DocumentId[],
-    options?: { branchViews?: ReadonlyMap<DocumentId, TreeView> },
+    options?: {
+      branchViews?: ReadonlyMap<DocumentId, TreeView>;
+      destination?: FileDestination;
+    },
   ): Promise<Map<DocumentId, FileDecision>>;
   /**
    * History reads keep a deleted document's captured
@@ -101,7 +105,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       return { frozen: work?.archived === true || work?.deleted === true || frozenLineage };
     },
     async authorize(principal, target, need) {
-      const facts = await deps.facts.load(factsRequest(principal, target));
+      const facts = await loadFor(principal, target);
       if (!facts) return notFound(principal, target);
       const result = await decision(principal, facts);
       if (!allows(result, need)) return denied(principal, facts, result);
@@ -173,27 +177,77 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     },
 
     async listAccess(principal, documentIds, options) {
-      const facts = await deps.facts.loadList(
-        documentIds,
-        principal.agent?.branchOwner?.owner,
-        options?.branchViews,
-      );
+      const at = options?.destination;
+      const facts = at
+        ? await deps.facts.loadList(
+            documentIds,
+            at.kind === "draft" ? at.owner : undefined,
+            options.branchViews,
+          )
+        : await loadListFor(principal, documentIds, options?.branchViews);
       const out = new Map<DocumentId, FileDecision>();
       for (const [documentId, fact] of facts) {
-        const result = await decision(principal, fact);
+        const result = at
+          ? levelAt(principal, fact, await deps.grants.personGrants(principal.accountId, fact), at)
+          : await decision(principal, fact);
         if (atLeast(result.level, "read")) out.set(documentId, result);
       }
       return out;
     },
   };
-}
 
-/** An agent's document or container access may go through its draft-mode chat's Work branch. */
-function factsRequest(principal: Principal, target: FileTarget): FileFactsRequest {
-  const branchOwner = principal.agent?.branchOwner;
-  return target.kind !== "draft" && target.kind !== "restore" && branchOwner
-    ? { target, branchOwner: branchOwner.owner }
-    : { target };
+  /**
+   * An agent's facts, decided where its write would land. A chat in draft mode loads its
+   * branch's view. Any other chat loads the live tree, and only a place that sends the write to
+   * a draft loads the branch: the branch's lifecycle and locks apply to a draft, never to a live
+   * write. Once live says draft, the branch's facts are the answer, null included. A document
+   * only the branch holds (one an earlier write of this chat created there) counts when its
+   * place drafts.
+   */
+  async function loadFor(principal: Principal, target: FileTarget): Promise<FileFacts | null> {
+    const agent = principal.agent;
+    if (!agent || target.kind === "draft" || target.kind === "restore")
+      return deps.facts.load({ target });
+    const branched = { target, branchOwner: agent.branchOwner.owner };
+    if (agent.writeMode === "draft") return deps.facts.load(branched);
+    const live = await deps.facts.load({ target });
+    if (live)
+      return destinationFor(principal, live).kind === "live" ? live : deps.facts.load(branched);
+    const drafted = await deps.facts.load(branched);
+    return drafted && destinationFor(principal, drafted).kind === "draft" ? drafted : null;
+  }
+
+  /** `loadFor` for a list: one live query, then one branch query for the documents that draft. */
+  async function loadListFor(
+    principal: Principal,
+    documentIds: readonly DocumentId[],
+    branchViews: ReadonlyMap<DocumentId, TreeView> | undefined,
+  ): Promise<Map<DocumentId, FileFacts>> {
+    const agent = principal.agent;
+    if (!agent) return deps.facts.loadList(documentIds, undefined, branchViews);
+    const owner = agent.branchOwner.owner;
+    if (agent.writeMode === "draft") return deps.facts.loadList(documentIds, owner, branchViews);
+    const facts = await deps.facts.loadList(documentIds, undefined, branchViews);
+    const onlyBranch = new Set<DocumentId>();
+    const toDraft: DocumentId[] = [];
+    for (const id of documentIds) {
+      const fact = facts.get(id);
+      if (!fact) {
+        onlyBranch.add(id);
+        toDraft.push(id);
+      } else if (destinationFor(principal, fact).kind === "draft") {
+        facts.delete(id);
+        toDraft.push(id);
+      }
+    }
+    if (toDraft.length === 0) return facts;
+    const drafted = await deps.facts.loadList(toDraft, owner, branchViews);
+    for (const [id, fact] of drafted) {
+      if (!onlyBranch.has(id) || destinationFor(principal, fact).kind === "draft")
+        facts.set(id, fact);
+    }
+    return facts;
+  }
 }
 
 async function refreshPrincipal(

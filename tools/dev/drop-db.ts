@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 import { stdin as input, stdout as output } from "node:process";
 import readline from "node:readline/promises";
 import { dropDatabaseForUrl, formatPgError, parseTargetDatabase } from "./lib/dev-db";

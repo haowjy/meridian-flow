@@ -133,6 +133,9 @@ Write a PR body for a reader who knows nothing about the area, from the
 `pnpm check:pr-body <body.md>`. Its `## Changelog` section is the changelog; never
 edit `CHANGELOG.md`.
 
+Never run a bare `git stash` or `git stash pop`: every worktree shares one stash stack, so a pop can
+take another agent's entry. Set work aside with a WIP commit on your own branch.
+
 Never switch the branch of a checkout you do not own. Work in a sibling worktree:
 `git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>`.
 

@@ -7,6 +7,7 @@ import { Plus } from "lucide-react";
 import { useProjectListStatus } from "@/client/query/useProjectList";
 import { useProjectStore } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
+import { NotSentYet } from "@/components/app/NotSentYet";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
@@ -30,8 +31,11 @@ export function ProjectLibrary() {
             <MeridianMark className="size-7" />
             Meridian
           </Link>
-          <div className="max-w-48">
-            <AccountMenu />
+          <div className="flex items-center gap-2">
+            <NotSentYet />
+            <div className="max-w-48">
+              <AccountMenu />
+            </div>
           </div>
         </header>
 

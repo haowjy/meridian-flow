@@ -21,12 +21,16 @@ import {
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 
 import { projectQueryKeys } from "./project-query-keys";
-import { beginWorksSnapshotRequest, seedWorksSnapshot } from "./works-projection-acquisition";
+import {
+  beginWorksSnapshotRequest,
+  seedWorksSnapshot,
+  type WorksRequestStart,
+} from "./works-projection-acquisition";
 
 export type ProjectRouteData = {
   threads: ThreadListItem[] | null;
   works: ListWorksResponse | null;
-  worksStarted: number;
+  worksStarted: WorksRequestStart;
   workingSet:
     | { status: "row"; row: ProjectWorkingSet }
     | { status: "absent" }

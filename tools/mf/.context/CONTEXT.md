@@ -1,7 +1,7 @@
 # tools/mf — Dev CLI
 
 `@meridian/mf` is a private workspace package, invoked by the repo-root `./mf`
-shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
+shim, which runs it with `bun`. Read [AGENTS.md](../AGENTS.md) before editing.
 
 ## Architecture and contracts
 

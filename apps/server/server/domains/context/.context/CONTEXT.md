@@ -125,10 +125,10 @@ document or folder that exists only in that Work's draft appears only there. A d
 empty live Y.Doc and text in its draft until Apply. Readers compose `visibleDocuments(view)` and
 `visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
 
-`DocumentRevisions.current` resolves the thread's current primary Work and the
-chat's write mode, checks the document is placed in the view, and delegates effective
-document reads to collab. A `version: "live"` request uses live text and the
-live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
+`DocumentRevisions.current` resolves the thread's current primary Work, asks file access
+(`listAccess`) for each document's decision, and delegates effective document reads to collab at
+that decision's destination: a live document reads live, a draft destination reads the Work's
+draft, whatever the chat's mode. A document the thread can't read has no revision. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
 independent pull transaction rules. It reports settled authority.
 
@@ -162,11 +162,21 @@ Work lifecycle rows, the list's key, then namespace keys (an arrival settling ah
 document keys; a caller holds no document or namespace key when it submits. `context-fs/tree-writes.ts`
 (`SourceTree`) is the one place ContextFS makes records.
 
-- **Placement.** People and auto-apply chats write live (`LIVE`). A draft-mode chat on a drafted
-  source writes the Work's branch (`{ draft: branchId }`); the command transaction ensures and
-  locks the branch (`runInBranch`). Scratch content writes stay live in draft mode, while its tree
+- **Placement.** People write live (`LIVE`), and so does an auto-apply chat in a place whose AI access
+  is auto-apply. A chat whose write mode is draft, or whose place asks for review, writes a drafted
+  source to the chat's branch (`{ draft: branchId }`; the owner is set in both modes and
+  `sourceDestination(writeMode, scheme, owner)` decides); the command transaction ensures and
+  locks the branch (`runInBranch`). A port built with a `destination` (a person's write, an Undo, a
+  tool call holding its grants) places every write there and ignores the chat's mode. Scratch content writes stay live in draft mode, while its tree
   writes are drafted, so one drafted move can cross Scratch and a drafted source. A draft never
   seeds live Yjs: whole-file seed is a live-only command.
+- **Text reads take the document's destination.** A document's address scheme is where it was found;
+  a branch move can leave its content in another source. Grep's `readable` returns each document's
+  decision (`level` and `destination`) and ContextFS reads each text there; the model's read tool
+  reads at its grant's destination, and `keptDraft` asks the grant's `contentScheme`. The per-source
+  decider (`sourceDestination` in `placementFor` and `ContextFS.threadView()` with no decision)
+  remains only where no document has been decided: a create, and `port.read` of a path for a person
+  opening a thread's context.
 - **Create.** The record, the document's first Yjs state and its arrival are one unit
   (`documentCreation.createDocumentAtomically`; `live-create.ts`). An occupied name refuses with
   `conflict`; a create never replaces or joins another document. A text document created in a

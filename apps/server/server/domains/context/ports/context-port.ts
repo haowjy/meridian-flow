@@ -19,10 +19,11 @@ import type {
   Filetype,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import type { BranchOwnerRef } from "../../file-policy/index.js";
+import type { BranchOwnerRef, FileDestination } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { AddressGlob } from "../grep/address-glob.js";
 import type { GrepMatcher } from "../grep/matcher.js";
@@ -48,8 +49,15 @@ export interface ThreadContextView {
   /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
   uploadsOwner?: UploadsOwner;
   threadId: string;
-  /** The owner whose branch this thread's drafted writes land in; null outside draft mode. */
-  branchOwner: BranchOwnerRef | null;
+  /** The owner whose branch this thread's drafts land in, in either write mode. */
+  branchOwner: BranchOwnerRef;
+  writeMode: AiWriteMode;
+  /**
+   * Where every write of this port lands, when its caller already knows: a person's write, an
+   * Undo, a tool call holding its grants. Absent, the chat's write mode and each place's AI
+   * access decide.
+   */
+  destination?: FileDestination;
   version?: "draft" | "live";
 }
 
@@ -255,8 +263,14 @@ export interface GrepQuery {
   headLimit: number;
   /** Stops the scan early; the result is then not exact. */
   signal: AbortSignal;
-  /** The documents the caller may read, asked before anything is matched or counted. */
-  readable(ids: readonly string[]): Promise<ReadonlyMap<string, "read" | "edit">>;
+  /**
+   * The documents the caller may read, asked before anything is matched or counted, each with
+   * the destination its access reads from: the text is read there, not where its source's
+   * scheme would send it (a moved document's content source is not its address's).
+   */
+  readable(
+    ids: readonly string[],
+  ): Promise<ReadonlyMap<string, { level: "read" | "edit"; destination: FileDestination }>>;
 }
 
 export interface GrepResult {

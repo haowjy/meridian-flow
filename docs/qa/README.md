@@ -36,6 +36,7 @@ stack.
 - [Failure cards](../../apps/app/src/features/chat/.context/qa/failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
 - [Queue controls](../../apps/app/src/features/chat/.context/qa/queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
 - [Durable questions](../../apps/server/server/domains/runtime/.context/qa/ask.md): answer, own words, Skip, timeout, restart and crash recovery, claim races, the queue barrier, and fork refusal.
+- [Fold fuzz](../../apps/app/src/core/editor/.context/qa/fold-fuzz.md): random concurrent typing, deleting, bolding and paragraph inserts in two or three TipTap editors while agent-edit writes the same paragraphs, through a relaying server; counts lost, doubled and re-attributed characters and rebuilt blocks. Vitest, no stack; run it by hand when the y-tiptap patch changes.
 - [Unsent edits hold a live session](../../apps/app/src/core/editor/.context/qa/unsent-edits-session-hold.md): offline edit, tab closed, reconnect without reopening, and the removal exit; plus the two-draft Apply and untitled-document probes.
 - [Browser state envelopes](../../apps/app/.context/qa/browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Settled chat Markdown](../../apps/app/src/features/chat/.context/qa/chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
@@ -97,7 +98,7 @@ that has not exited after five minutes (`PROBE_TIMEOUT_MS`) is killed and counte
 - `pnpm smoke:prod-boot`: [production build, startup and public routes](../../tools/dev/smoke-app-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
-- `pnpm --filter @meridian/server exec tsx scripts/probe-link-resolution.ts`: [import link resolution and frontmatter parse timings](../../apps/server/scripts/probe-link-resolution.ts) at vault scale; pure, no database. These scale checks stay out of the correctness gate.
+- `pnpm exec tsx apps/server/scripts/probe-link-resolution.ts`: [import link resolution and frontmatter parse timings](../../apps/server/scripts/probe-link-resolution.ts) at vault scale; pure, no database. These scale checks stay out of the correctness gate.
 - [Project repository smoke](../../tools/dev/smoke-project-domain.ts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
 
 Large-chapter editing, image-in-table layout and browser first-send/concurrent
@@ -279,7 +280,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    Uploading in another window.
 
 For the large gate, generate a 3,219-file/1,207-folder vault with
-`pnpm --filter @meridian/server exec tsx scripts/build-import-performance-fixture.ts <output-dir>`.
+`bun apps/server/scripts/build-import-performance-fixture.ts <output-dir>`.
 Import it through the browser. Sample the import header and `/readyz` while it runs;
 record selection-to-`organizing` as upload, `organizing` to every entry `prepared`
 as organize, and all-prepared to `revealed_at` as reveal. Keep upload, organize,

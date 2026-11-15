@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
