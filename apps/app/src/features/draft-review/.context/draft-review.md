@@ -252,7 +252,8 @@ document's (`InTrashStatus`). This tab's own Discard (`here`) leaves for Live, w
 has the Undo; any other close (`other`, a purge) leaves too. Restore, the notice's Undo and Trash's
 Restore send the one `restoreDiscard`; every tab learns of it from fresh draft metadata (the
 owner hint re-reads it), and `metadataActive` clears what the tab held as ended and lets the
-room join again under the same id: the session on screen rejoins in place. While closed, the
+room join again under the same id: the session on screen rejoins in place, and every reader whose
+read of the room failed while it was closed asks again, whichever reader brought the answer. While closed, the
 review keeps the room its metadata last named (`useRoomBindings`), and the band and change
 bars offer nothing to act on (`useOpenReviewChanges` reads `gone`).
 

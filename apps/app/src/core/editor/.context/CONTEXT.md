@@ -126,8 +126,9 @@ and remain quarantined until their retryable destroy ledger succeeds.
   the socket frame, and the pool refuses to reopen that closed id until a restore reopens the
   draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive` or a close the server
   answers open). A room an owner still retains keeps its session, read-only (`endClosed`), so a
-  draft that ended on screen stays readable; a restore restarts that same session's transport
-  rather than opening a new one. Only an unretained closed room retires.
+  draft that ended on screen stays readable; a reader that comes to it while closed reads that
+  session too, and a restore restarts its transport rather than opening a new one. Only an
+  unretained closed room retires.
   `abandonDraftRoom` ends the room of a document's create the server dropped (its draft was
   never made, so the room would only retry `DOCUMENT_UNKNOWN`): the tree list's dropped stamp
   calls it (`watchBounces`). Its session is marked handed back, so its retire offers no typing:
