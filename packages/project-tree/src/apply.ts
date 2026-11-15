@@ -403,20 +403,24 @@ function appliedBy(doc: Y.Doc, applied: string) {
 }
 
 /**
- * The nodes whose copies of an Apply command still stand in live: the copy is in force
- * (`recordsInForce`). Empty once Un-Apply, or an Undo of each change, took them all back; the tab
- * reads it to tell whether the Apply's tree half has ended. A pure function of the list, the same
- * in every client.
+ * The nodes of an Apply command that still stand in live: each node whose copy is in force
+ * (`recordsInForce`), and each whose `restore` the Apply made (`restoredByApply`, the ids
+ * `undoApply` takes back) is in force too. Empty once Un-Apply, or an Undo of each change, took
+ * them all back; the tab reads it to tell whether the Apply's tree half has ended. A pure function
+ * of the list, the same in every client.
  */
-export function appliedNodes(doc: Y.Doc, applied: string): string[] {
+export function appliedNodes(
+  doc: Y.Doc,
+  applied: string,
+  restoredByApply: readonly string[] = [],
+): string[] {
   const standing = recordsInForce(viewRecords(doc, LIVE));
-  return [
-    ...new Set(
-      appliedBy(doc, applied)
-        .copies.filter((copy) => standing.has(copy.id))
-        .map((copy) => copy.node),
-    ),
-  ];
+  const restores = new Set(restoredByApply);
+  const copies = appliedBy(doc, applied).copies.filter((copy) => standing.has(copy.id));
+  const restored = listRecords(doc).filter(
+    (record) => restores.has(record.id) && standing.has(record.id),
+  );
+  return [...new Set([...restored, ...copies].map((record) => record.node))];
 }
 
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */

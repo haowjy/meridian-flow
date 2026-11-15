@@ -806,6 +806,25 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
     expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: ROOT });
   });
 
+  it("an Apply that only restores lists the node until Un-Apply or a card's Undo takes the restore back", () => {
+    for (const how of ["unapply", "undo"] as const) {
+      const t = start();
+      const n = t.chapter("Hall");
+      t.w.delete(LIVE, WRITER, n);
+      const restore = t.w.restore(LIVE, WRITER, n);
+      const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
+      const mine = [restore.id];
+      expect(appliedNodes(t.doc, command, mine)).toEqual([n]);
+      expect(appliedNodes(t.doc, command)).toEqual([]);
+      if (how === "unapply") {
+        const result = undoApply(t.w, command, WRITER, cmd(), { restoredByApply: mine });
+        expect(result.left).toEqual([]);
+      } else undoChange(t.w, LIVE, WRITER, restore.id);
+      expect(t.at(n)?.trashed).toBe(true);
+      expect(appliedNodes(t.doc, command, mine)).toEqual([]);
+    }
+  });
+
   it("a move's name undone as a rename and redone is still taken back by Undo of the move", () => {
     const t = start();
     const folder = t.folder("Arc");

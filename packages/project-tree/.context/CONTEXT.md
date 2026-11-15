@@ -117,7 +117,10 @@ the replay uses them (package `AGENTS.md`).
   `restores`, `restoredBy`, `appliedBy` and `fromDraft` say who and from where, not which record.
 - **A record is in force while no later record in force undoes its root** (`recordsInForce`, in
   `undo.ts`; the one reading of it). `undoChange` answers `already` for a record that is not, and
-  `appliedNodes(doc, command)` lists the nodes whose live copies of an Apply are in force, so a
+  `appliedNodes(doc, command, restoredByApply)` is the one reader of what of an Apply still
+  stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
+  ids `undoApply` takes back) is in force by the same rule. An Apply that only brought a document
+  back from Trash lists it until Un-Apply or a card's Undo takes the restore back. A
   tab can tell the Apply's tree half has ended (a card's Undo of the drafted change took the copy
   back). A Redo (an undo of the undo) puts it back in force, and an Undo of it then undoes the
   Redo (`redoneAs`) when the Undos in the chain put back exactly what they undid, else it answers
