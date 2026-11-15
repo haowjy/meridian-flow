@@ -1116,6 +1116,10 @@ msgstr "A file path in this selection is too long to import."
 msgid "A folder named {name} already exists in this location."
 msgstr "A folder named {name} already exists in this location."
 
+#: src/components/app/AppStatus.tsx
+msgid "A new version of Meridian is ready."
+msgstr "A new version of Meridian is ready."
+
 #: src/features/agents/ThreadAgentDefinition.tsx
 msgid "A newer version is saved"
 msgstr "A newer version is saved"
@@ -1852,7 +1856,7 @@ msgstr "Changed the position of {source}"
 msgid "Changes"
 msgstr "Changes"
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "Changes are waiting to be sent. They go out on their own."
 msgstr "Changes are waiting to be sent. They go out on their own."
 
@@ -4861,11 +4865,11 @@ msgstr "Not saved yet"
 msgid "Not saved: {label}"
 msgstr "Not saved: {label}"
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "Not sent"
 msgstr "Not sent"
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "Not sent, signed out"
 msgstr "Not sent, signed out"
 
@@ -5429,6 +5433,10 @@ msgstr "Reload"
 #: src/features/chat/ChatCards.tsx
 msgid "Reload to see the latest replies."
 msgstr "Reload to see the latest replies."
+
+#: src/components/app/AppStatus.tsx
+msgid "Reload to update"
+msgstr "Reload to update"
 
 #: src/features/billing/UsageCard.tsx
 msgid "remaining"
@@ -7193,6 +7201,10 @@ msgstr "This stored figure needs a project before it can be rendered."
 msgid "This switch already happened."
 msgstr "This switch already happened."
 
+#: src/components/app/AppStatus.tsx
+msgid "This tab needs the new version to keep working. It reloads when you pause; unsent changes go out afterwards."
+msgstr "This tab needs the new version to keep working. It reloads when you pause; unsent changes go out afterwards."
+
 #: src/features/chat/tool-failure.tsx
 msgid "This took too long, so it was stopped."
 msgstr "This took too long, so it was stopped."
@@ -7584,6 +7596,10 @@ msgstr "Untitled document"
 msgid "Untitled project"
 msgstr "Untitled project"
 
+#: src/components/app/AppStatus.tsx
+msgid "Update"
+msgstr "Update"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Updated a Work"
 msgstr "Updated a Work"
@@ -7891,7 +7907,7 @@ msgstr "You left checkout. No purchase was confirmed."
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr "You're out of usage. Your messages will send when you add more."
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "You’re signed out of this account. Sign in again and the changes will be sent."
 msgstr "You’re signed out of this account. Sign in again and the changes will be sent."
 

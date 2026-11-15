@@ -1116,6 +1116,10 @@ msgstr ""
 msgid "A folder named {name} already exists in this location."
 msgstr ""
 
+#: src/components/app/AppStatus.tsx
+msgid "A new version of Meridian is ready."
+msgstr ""
+
 #: src/features/agents/ThreadAgentDefinition.tsx
 msgid "A newer version is saved"
 msgstr ""
@@ -1852,7 +1856,7 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "Changes are waiting to be sent. They go out on their own."
 msgstr ""
 
@@ -4861,11 +4865,11 @@ msgstr ""
 msgid "Not saved: {label}"
 msgstr ""
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "Not sent"
 msgstr ""
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "Not sent, signed out"
 msgstr ""
 
@@ -5428,6 +5432,10 @@ msgstr ""
 
 #: src/features/chat/ChatCards.tsx
 msgid "Reload to see the latest replies."
+msgstr ""
+
+#: src/components/app/AppStatus.tsx
+msgid "Reload to update"
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -7193,6 +7201,10 @@ msgstr ""
 msgid "This switch already happened."
 msgstr ""
 
+#: src/components/app/AppStatus.tsx
+msgid "This tab needs the new version to keep working. It reloads when you pause; unsent changes go out afterwards."
+msgstr ""
+
 #: src/features/chat/tool-failure.tsx
 msgid "This took too long, so it was stopped."
 msgstr "耗时太久，已停止。"
@@ -7584,6 +7596,10 @@ msgstr ""
 msgid "Untitled project"
 msgstr ""
 
+#: src/components/app/AppStatus.tsx
+msgid "Update"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Updated a Work"
 msgstr ""
@@ -7891,7 +7907,7 @@ msgstr ""
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
 
-#: src/components/app/NotSentYet.tsx
+#: src/components/app/AppStatus.tsx
 msgid "You’re signed out of this account. Sign in again and the changes will be sent."
 msgstr ""
 
