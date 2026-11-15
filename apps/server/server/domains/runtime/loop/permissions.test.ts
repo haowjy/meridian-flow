@@ -4,14 +4,18 @@
  * - Fresh permission resolution and subagent-only return_result
  */
 
-import type { AgentPermission, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import {
+  type AgentPermission,
+  projectToolPolicy,
+  type ResolvedAgentConfiguration,
+  toolsBeyond,
+} from "@meridian/contracts/agents";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { describe as __mergedSuite, expect, it } from "vitest";
 import type { AgentRevisionBinding } from "../../packages/index.js";
 import { actionPolicy } from "./permissions/action-policy.js";
 import { type AgentChain, chainPermission, readAgentChain } from "./permissions/agent-chain.js";
-import { projectToolPolicy, toolsBeyondParent } from "./permissions/tool-policy.js";
 
 __mergedSuite("action-policy.test.ts", () => {
   // Merged from apps/server/server/domains/runtime/loop/permissions/action-policy.test.ts.
@@ -175,8 +179,8 @@ __mergedSuite("tool-policy.test.ts", () => {
   __mergedSuite("toolsBeyondParent", () => {
     it("names the child's tools its parent lacks, never return_result", () => {
       const parent = config({ "disallowed-tools": ["write", "spawn"] });
-      expect(toolsBeyondParent(parent, config())).toEqual(["write", "spawn"]);
-      expect(toolsBeyondParent(parent, config({ tools: ["read", "return_result"] }))).toEqual([]);
+      expect(toolsBeyond(parent, config())).toEqual(["write", "spawn"]);
+      expect(toolsBeyond(parent, config({ tools: ["read", "return_result"] }))).toEqual([]);
     });
   });
 });
