@@ -77,7 +77,16 @@ A replacement is a deleted run with the part's insertion beside it. The deleted 
 gone only when the insertion is gone and text written after the edit (the writer or a pull
 replaced it; a clock at or past the part's `frontier`, read on the original of an
 Undo- or Redo-restored copy) stands at its edge, so Undo doesn't
-double it. When the writer only deleted the insertion, the original comes back. A pull or Apply
+double it. When the writer only deleted the insertion, the original comes back. When the
+writer typed between the two ("very " before the AI's "big"), Undo brings the old word back whole,
+directly left of the insertion, not at its tombstone, which lies before the typing and gave "One
+smallvery  cat." (`packages/agent-edit/src/undo/restore-seam.ts`). It moves the word only when the
+insertion was made at it (its Yjs origins lead back to the word through marks and the part's own
+items) and the marks in force are the same at both places; otherwise the word returns at its
+tombstone. Still misplaced: an edge of someone's mark between the two places (a writer's bold over
+"very big" as one range), a tombstone older than the edit between them (a typo backspaced at the
+end of the word), and a typed word that starts with the AI word's first letter, which the
+browser's string diff inserts inside the AI's word ("bright " before "big"). A pull or Apply
 writes only the insertions inside a changed run that only gained characters (`retainShared` in
 `packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the run whole), so
 Undo after a pull equals Undo of the same typing on the draft when the writer inserted inside
@@ -86,9 +95,12 @@ Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act)
 item can still be removed or restored, `undone` when only Redo can, else `changed`.
 Un-Apply adds one rule the card does not have: an inverse never changes a word that holds writing
 made after the Apply, so a group whose reversal would (a writer's letters inside or joined to the
-AI's word) stays applied and is named in `skippedGroupIds`. A whole word typed after the AI's
-text usually doesn't stop it, but one typed just before a replacement does: restoring the old word
-there would join it to the writer's ("smallvery"). `packages/agent-edit/.context/CONTEXT.md` has the definition and its known gap, a
+AI's word) stays applied and is named in `skippedGroupIds`. A whole word typed beside the AI's
+text usually doesn't stop it, before a replacement too, since the old word comes back beside the
+insertion; in the cases above that still misplace, restoring the old word would join it to the
+writer's ("smallvery"), so the group stays. Marks are not characters: typing that sat inside a mark
+pair the AI's word brought (beside a plain AI word in a bold paragraph) loses that mark when the
+group is reversed. `packages/agent-edit/.context/CONTEXT.md` has the definition and its known gap, a
 later deletion that glues words.
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`): a restore in live acts only through deletes that

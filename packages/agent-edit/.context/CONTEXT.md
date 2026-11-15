@@ -14,7 +14,7 @@ directions are in [ALTERNATIVES.md](ALTERNATIVES.md).
 ## Pinned reconstruction adapter
 
 Several files read Yjs struct internals, among them `frontier.ts`, `model/block-hash.ts`,
-`undo/forward-inverse.ts` and `diff/`, which is why `yjs` is exactly pinned in
+`undo/forward-inverse.ts`, `undo/restore-seam.ts` and `diff/`, which is why `yjs` is exactly pinned in
 `package.json`; check them all when the pin changes. `src/yjs-mutation.ts` holds the
 mutation mechanics. Keep version-sensitive
 reconstruction here rather than in app or undo copies. Hosts choose operations,
@@ -86,6 +86,31 @@ only when the part's inserted side is no longer visible beside it *and* an item 
 the part (a clock at or past the part's `frontier`, read on the original of an Undo- or
 Redo-restored copy) bounds the gap: the writer or a pull replaced the text, and restoring would
 double it. A plain deletion of the insertion leaves nothing there, so the original comes back.
+The gap's edge is read across the run's *seam* (`undo/restore-seam.ts`): its siblings the part
+could not see as text (tombstones, marks, the part's own items and their copies, writing newer
+than its frontier), up to the first text the inverse removes or the first visible text the part
+saw. While that removed text still stands at the end of the seam, past the writer's typing, the
+run is not stranded.
+
+**Where a restored run goes.** Yjs restores a deleted item at its tombstone, and `Y.Text` puts
+an insert after every tombstone at its position, so a writer's word typed before a replacement
+lies between the old word's tombstone and the AI's insertion. The planner (`readSeams`) moves a
+run, whole, to directly left of the text the inverse removes when all hold: that text ends the
+run's seam on the right with visible writing between; no removed text ends it on the left; no
+visible writing sits between the run's own pieces (writing inside a word stays inside it); the
+run holds text, not only marks; the removed text was inserted at the run (its original's
+`origin` chain, character by character, reaches the run through nothing but marks and the part's
+own items: adjacency alone pairs a deletion with an unrelated insertion once the writer rewrites
+what lay between); and the marks in force, leaving out the removed side's own, are the same at
+each piece's tombstone and at the new place. Everything else stays at its tombstone. A run only
+ever moves right, so Redo, whose returning text lies right of what it replaces, is unchanged. The
+planner reads the host's document from `classify` and never writes: pieces are per character,
+places are computed only for an inverse being executed (`InversePlan.place`), and the executor
+(`restoreBefore` in `yjs-mutation.ts`, Yjs's `redoItem` with the neighbours given) splits items
+and copies each run where it is told. The stranded condition deliberately does not ask for the
+origin chain: keeping a run is never worse than Yjs's place, and the chain stops at a tombstone
+older than the part (a typo backspaced at the end of the word), where asking would lose the word.
+Yjs does not record when a deletion happened, so such a tombstone also keeps a run home.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
