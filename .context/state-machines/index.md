@@ -66,6 +66,7 @@ have it:
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Import creation, local upload phase | This tab's part in an import | [features/import](../../apps/app/src/features/import/.context/state-machines.md) |
 | Apply click command | One Apply or Undo click on a draft change | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| Package Save word | What the last Save or Undo of one Agent package says where its state shows | [features/agents](../../apps/app/src/features/agents/.context/state-machines.md) |
 | Draft end and reopen | What closed one draft, which decides whether it stays on screen | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
 | Held paint | A document still painting a draft that left its list | [features/project](../../apps/app/src/features/project/.context/document-paint-state-machine.md) |
 | Sidebar version | Whether the sidebar and its actions show live or the picked Work's tree, and sidebar Undo | [features/project](../../apps/app/src/features/project/.context/tree-version-state-machine.md) |

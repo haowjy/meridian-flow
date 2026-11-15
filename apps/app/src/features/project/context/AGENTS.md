@@ -23,6 +23,8 @@ stay chat resources, not documents main opens.
   not a second scope. A refused drop is not an error: no fill, no red; the pointer hint
   names the reason.
 - Inline create and rename use `useInlineEdit`/`EntryNameField`; don't fork a form protocol.
+  A file made in an Agents location is stored by `documentFilenameAt` (literal name, `source`
+  kind); at an Agent or skill path it starts with the Agent template.
 - A source's pane states are distinct: rows; an error row when the account can't read the
   list; "Loading files…" until the list has synced (`isComplete` false);
   an empty line once it is installed and the source is empty. A failed or in-flight load must never read as an

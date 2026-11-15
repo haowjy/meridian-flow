@@ -58,14 +58,19 @@ pnpm --filter @meridian/app lingui:extract   # scan source → update .po
 pnpm --filter @meridian/app lingui:compile   # .po → .ts (committed)
 ```
 
-`lingui extract` is idempotent — running it twice doesn't churn the catalog
-beyond a regenerated header timestamp.
+These commands write the catalogs and can reload an open dev app. To check without
+writing, run `pnpm check:i18n` from the repo root. It generates in scratch space
+and reports any missing or stale catalog; it never restores or overwrites your
+files. Finish concurrent catalog edits and rerun if they cause a drift report.
+
+`lingui extract` is idempotent: unchanged source and catalogs keep the same
+contents, including the existing header timestamp.
 
 ## How to add a new locale
 
 1. Add the locale code to `lingui.config.ts`:
    ```ts
-   locales: ["en", "de"],
+   locales: ["en", "zh", "de"],
    ```
 2. Run extract to seed the catalog file:
    ```bash
@@ -78,11 +83,14 @@ beyond a regenerated header timestamp.
    ```bash
    pnpm --filter @meridian/app lingui:compile
    ```
-5. Register the catalog with the app at
-   `src/lib/i18n.ts` — add it to the `CATALOGS` map:
+5. Register the locale in one change: add its code to `ACCOUNT_LANGUAGES` in
+   `packages/contracts/src/preferences/index.ts`, then add its catalog and display
+   name to `CATALOGS` and `LOCALE_LABELS` in `src/lib/i18n.ts`. These maps must
+   cover every account language before typechecking:
    ```ts
    import { messages as deMessages } from "@/locales/de/messages";
-   const CATALOGS = { en: enMessages, de: deMessages } as const;
+   const CATALOGS = { en: enMessages, zh: zhMessages, de: deMessages };
+   const LOCALE_LABELS = { en: "English", zh: "中文", de: "Deutsch" };
    ```
 
 That's it. **No component-site code changes** are required — every user-facing
@@ -110,5 +118,4 @@ import { i18n } from "@/lib/i18n";
 new Intl.DateTimeFormat(i18n.locale, { month: "short", day: "numeric" }).format(d);
 ```
 
-This is the pattern documented in `src/lib/thread-groups.ts`. Phase 4 / 5
-should follow it.
+Use this pattern wherever the app formats dates or numbers.

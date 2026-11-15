@@ -23,6 +23,7 @@
     "@hocuspocus/provider": "4.3.0",
     "@lingui/core": "^6.4.0",
     "@lingui/react": "^6.4.0",
+    "@meridian-flow/mars-schema": "0.33.0",
     "@meridian/agent-edit": "workspace:*",
     "@meridian/command-driver": "workspace:*",
     "@meridian/contracts": "workspace:*",

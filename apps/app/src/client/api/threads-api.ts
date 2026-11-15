@@ -174,8 +174,6 @@ export function listThreadAvailableSkills(
 }
 
 export function listSelectionAvailableSkills(input: {
-  catalogEntryId: string;
-  definitionRevisionId: string;
   projectId?: string | null;
 }): Promise<ThreadAvailableSkillsResponse> {
   return getJson(apiAvailableSkillsPath(input), { schema: threadAvailableSkillsResponseSchema });

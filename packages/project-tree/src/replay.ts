@@ -345,7 +345,7 @@ export function replay(
       nodes.set(record.node, {
         id: record.node,
         kind: record.kind,
-        name: shownName(record.kind, record.name),
+        name: shownName(record.kind, record.name, record.filetype),
         parent: parentId,
         rank: record.rank,
         source: record.source,
@@ -424,10 +424,10 @@ export function replay(
             record,
             index,
             { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
-            node.name !== shownName(node.kind, record.name),
+            node.name !== shownName(node.kind, record.name, node.filetype),
             arrivedBefore,
           );
-          node.name = shownName(node.kind, record.name);
+          node.name = shownName(node.kind, record.name, node.filetype);
           if (record.actor.startsWith("user:")) node.provisional = false;
         }
         node.parent = record.parent;
@@ -458,9 +458,9 @@ export function replay(
           record,
           index,
           { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
-          node.name !== shownName(node.kind, record.name),
+          node.name !== shownName(node.kind, record.name, record.filetype ?? node.filetype),
         );
-        node.name = shownName(node.kind, record.name);
+        node.name = shownName(node.kind, record.name, record.filetype ?? node.filetype);
         if (record.filetype) node.filetype = record.filetype;
         // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
         if (record.actor.startsWith("user:")) node.provisional = false;
@@ -761,6 +761,7 @@ export function deleteCovering(projection: TreeProjection, id: string): TrashEnt
  * The records that are one node's item in a view: those made on it, and the delete in force that
  * covers it from a folder above (`deleteCovering`). A delete whose recorded cascade names the node
  * is not among them once the node has left the folder: the cascade is what its author saw.
+ * Applying an item adds what these records stand on, and nothing else (`prerequisites`).
  */
 export function recordsOfItem(
   projection: TreeProjection,

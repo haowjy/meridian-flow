@@ -9,6 +9,7 @@ import {
   type InvocationOverlay,
   type InvocationPatch,
   type ResolvedAgentConfiguration,
+  toolsBeyond,
 } from "@meridian/contracts/agents";
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/errors";
 import {
@@ -18,7 +19,6 @@ import {
   type CompiledAgentDefinition,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
-import { toolsBeyondParent } from "../loop/permissions/tool-policy.js";
 import {
   type InvalidArgumentIssue,
   type InvalidArgumentsResult,
@@ -138,7 +138,7 @@ export async function resolveChildInvocation(
     configuration = patched;
   }
 
-  const extra = toolsBeyondParent(parentAgent.configuration, configuration);
+  const extra = toolsBeyond(parentAgent.configuration, configuration);
   if (extra.length) {
     return {
       ok: false,

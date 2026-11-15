@@ -5,11 +5,25 @@ tree views, arrivals, and the sources query. It deliberately omits adapter
 inventories; code owns those details. The [entry page](../AGENTS.md) lists the rules to
 know before editing.
 
+## Agents locations
+
+Agent files are documents. `agents://` is a project source and the folder `user://.agents/` is the
+account's; `packages/contracts/src/agents/location.ts` is the one place that spells those
+addresses (`agentsLocationOf`, `agentsRootOf`), so a different layout changes it and provisioning.
+A file created there is a `source` document (code text, `x.md` keeps its suffix), chosen once at
+create by `documentFilenameAt`; every later naming path follows the stored kind (`storedFilename`,
+the project tree's `shownName` take the filetype). A client that creates a node itself (`./mf doc put`, the app)
+states the kind in its create record. A prose document or a stored file at an Agent path is read
+as a problem, not as an Agent (`adapters/agent-level-files.ts`, whose text cache is keyed on the
+head's admission sequence: every admitted update moves it, a checkpoint need not come first); Copy keeps the source's kind, so a
+prose document copied there reads as unavailable until phase 3 converts it.
+
 ## URI and ownership
 
 The unified `ContextPort` resolves `manuscript://`, `kb://`, `user://`,
-`unfiled://`, `scratch://`, and `uploads://`. Bare paths default to
-`manuscript://`. Owners are named by handle, flat after `@`: `scratch://@w3/` is a Work's
+`unfiled://`, `scratch://`, `uploads://` and `agents://`. Bare paths default to
+`manuscript://`, bar two aliases models are trained on: `~/x` is `user://x` and `.agents/x` is
+`agents://x` (`formatParsedContextUri` is the one serializer and spells the Agents levels `.agents/x` and `~/.agents/x`, so every address a model or writer is shown or stored has one spelling). Owners are named by handle, flat after `@`: `scratch://@w3/` is a Work's
 Scratch, `uploads://@c12/` a chat's uploads (bare `uploads://name` is the
 asking chat's; the Work owns none), and `scratch://@c12/` the No Work chat
 lineage rooted at its first chat. `owner-lookup.ts` is the one answer to who
@@ -308,9 +322,9 @@ a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
   subscription through `ProjectHintPort`, after commit. A lost hint leaves the browser stale
   until its next read.
 - A chat's uploads add what the list does not hold, `GET .../context/chat-uploads?chatId=`
-  (`ChatUploadsResult`): `attachedAt` and `used` per document id. Deleting an unused upload is
-  `DELETE .../context/uploads/upload?chatId=` with `{ documentId }`, refused once a sent message
-  used it; the document id is the node's id.
+  (`ChatUploadsResult`): `attachedAt` per document id. Deleting an upload is a tree `delete`
+  record like a document's, used or not: a sent file has the chat's own copy
+  (`chat-media/<threadId>/`), and Trash and the 30-day purge treat it as any document.
 
 A delete or a move across lists is addressed by entry id: the router takes the node
 (`{kind, nodeId}`) and an area; the area only decides which adapter to ask. The adapter finds the

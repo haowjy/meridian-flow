@@ -1,5 +1,3 @@
-/** Coordinates selection, engagement, and key behavior for registered editor objects. */
-
 import { type Editor, Extension, isMacOS } from "@tiptap/core";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
@@ -260,13 +258,13 @@ export const ObjectPhysicsExtension = Extension.create({
             ]);
           },
 
-          /** A printable character while an object is selected types BESIDE it ( other half). */
+          /** Typing beside a selected object keeps the object intact. */
           handleTextInput(view, _from, _to, text) {
             const selected = selectedObject(view.state);
             if (!selected) return false;
-            const transaction = typeBesideObjectTransaction(view.state, selected.pos, text);
+            const transaction = typeBesideObjectTransaction(view.state, selected.pos);
             if (!transaction) return false;
-            view.dispatch(transaction);
+            view.dispatch(transaction.insertText(text));
             return true;
           },
 
@@ -285,6 +283,45 @@ export const ObjectPhysicsExtension = Extension.create({
           },
 
           handleDOMEvents: {
+            beforeinput(view, event) {
+              if (
+                !view.editable ||
+                !event.cancelable ||
+                event.inputType !== "insertText" ||
+                event.data === null ||
+                event.isComposing ||
+                view.composing ||
+                /[\r\n]/.test(event.data) ||
+                !selectedObject(view.state)
+              )
+                return false;
+
+              // Native text input can have no keypress, which is where PM normally
+              // routes a non-text selection through the text-input handlers.
+              const { from, to } = view.state.selection;
+              const text = event.data;
+              const insert = () => view.state.tr.insertText(text, from, to).scrollIntoView();
+              if (
+                !view.someProp("handleTextInput", (handler) =>
+                  handler(view, from, to, text, insert),
+                )
+              )
+                view.dispatch(insert());
+              event.preventDefault();
+              return true;
+            },
+
+            compositionstart(view) {
+              if (!view.editable) return false;
+              const selected = selectedObject(view.state);
+              if (!selected) return false;
+              // PM's compositionstart deletes a selected block (or a table's cells).
+              // Establish the typing destination before it runs, not at beforeinput.
+              const transaction = typeBesideObjectTransaction(view.state, selected.pos);
+              if (transaction) view.dispatch(transaction);
+              return false;
+            },
+
             /** Whether a picture is capped depends on the pane, so it is asked on approach. */
             mouseover(_view, event) {
               if (event.target instanceof HTMLImageElement) {

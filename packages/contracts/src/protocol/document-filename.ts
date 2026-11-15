@@ -1,4 +1,7 @@
 /** The input codec for document basenames. Stored parts are the canonical name. */
+
+import { agentsLocationOf } from "../agents/location.js";
+import type { ContextUriScheme } from "../context-uri.js";
 import {
   classifyFiletype,
   type Filetype,
@@ -71,6 +74,35 @@ export function parseDocumentFilename(
   };
 }
 
+/**
+ * The name parts a document gets when created at `path`, the full source-relative path. The
+ * location chooses the kind: a file in an Agents location is code text that keeps its suffix
+ * (`agents/critic.md`, `mars.toml`), because Mars reads those bytes. Anywhere else the name codec
+ * decides. Later naming follows the stored kind (`storedFilename`).
+ */
+export function documentFilenameAt(
+  scheme: ContextUriScheme,
+  path: string,
+  options: { sourceExtension?: string } = {},
+): DocumentFilenameResult {
+  const leaf = path.slice(path.lastIndexOf("/") + 1);
+  const location = agentsLocationOf(scheme, path);
+  if (!location || location.path === "") return parseDocumentFilename(leaf, options);
+  const input = leaf.trim();
+  const dot = input.lastIndexOf(".");
+  const name = dot > 0 ? input.slice(0, dot) : input;
+  if (!name || name === "." || name === "..") {
+    return {
+      ok: false,
+      error: { code: "invalid_name", message: "A document name must have a nonempty stem" },
+    };
+  }
+  return {
+    ok: true,
+    value: { name, extension: dot > 0 ? input.slice(dot + 1) : "", filetype: "source" },
+  };
+}
+
 /** Binary storage chooses a registered suffix only when the parsed name is prose.
  * Identity parsing itself never depends on storage kind.
  */
@@ -119,6 +151,8 @@ export function firstFreeName(
 export interface NamedRow {
   extension: string;
   editable: boolean;
+  /** The row's kind when known: a `source` document keeps its name literally, as a kept file does. */
+  filetype?: string | null;
 }
 
 export type StoredFilenameResult =
@@ -139,7 +173,7 @@ function invalidName(message: string): StoredFilenameResult {
  * document follows the document rules. No row is a create. `filetype` null keeps the file's type.
  */
 export function storedFilename(typed: string, row?: NamedRow): StoredFilenameResult {
-  if (row && !row.editable) return fileName(typed, row);
+  if (row && (!row.editable || row.filetype === "source")) return fileName(typed, row);
   const parsed = parseDocumentFilename(typed, { sourceExtension: row?.extension });
   return parsed.ok
     ? {

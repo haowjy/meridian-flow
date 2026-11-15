@@ -217,10 +217,10 @@ export async function getProjectContextSources(
 
 /**
  * What a chat's uploads query says that its tree list does not (the server's `ChatUploadsResult`):
- * when each file was attached and whether a sent message has used it.
+ * when each file was attached.
  */
 export type ChatUploadFacts = {
-  uploads: readonly { documentId: string; attachedAt: string; used: boolean }[];
+  uploads: readonly { documentId: string; attachedAt: string }[];
 };
 
 export async function getChatUploadFacts(

@@ -163,7 +163,7 @@ it("Edit dissolves every never-created message in order before newer New chat wr
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
-    agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+    agentSelection: { slug: "general", definitionRevisionId: "rev" },
   };
   recordChatSubmission(account, { ...entry(), creation });
   recordChatSubmission(account, { ...entry("two", "Second rejected"), creation });
@@ -247,7 +247,7 @@ it("dissolves this pane without retiring a message recorded after the transfer r
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
-    agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+    agentSelection: { slug: "general", definitionRevisionId: "rev" },
   };
   recordChatSubmission(account, { ...entry(), creation });
   const scenario = new ThreadRunScenario();
@@ -294,7 +294,7 @@ it("a delayed observer of creation then acceptance loads the real destination, n
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
-    agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+    agentSelection: { slug: "general", definitionRevisionId: "rev" },
   };
   recordChatSubmission(account, { ...entry(), creation });
   const scenario = new ThreadRunScenario();
@@ -405,7 +405,7 @@ it("a chat send during creation hands off its chat draft even if projection thro
       workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
-      agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+      agentSelection: { slug: "general", definitionRevisionId: "rev" },
     },
   });
   vi.stubGlobal("reportError", vi.fn());
@@ -517,7 +517,7 @@ it.each([
       workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
-      agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+      agentSelection: { slug: "general", definitionRevisionId: "rev" },
     },
   });
   const scenario = new ThreadRunScenario();

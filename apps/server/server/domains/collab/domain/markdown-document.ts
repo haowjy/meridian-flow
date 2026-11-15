@@ -38,6 +38,7 @@ import type {
   SyncError,
   UpdateOrigin,
 } from "../contracts.js";
+import { mergeCodeText } from "./code-merge.js";
 import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
@@ -87,6 +88,8 @@ type MarkdownDocumentEngineDeps = {
   initialDocumentSeeds: InitialDocumentSeeds;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
+  /** Takes the document's durable mutation lock in the open transaction, held to its end. */
+  lockDocument?(documentId: DocumentId): Promise<void>;
   afterWrite?: MarkdownWriteHook;
   /**
    * A whole-document write recorded as an actor's mutation (thread undo,
@@ -107,6 +110,8 @@ type MarkdownDocumentEngineDeps = {
  * commits (see `replaceLiveDocumentMarkdown`).
  */
 type WriteHook = { kind: "now" } | { kind: "after-commit"; threadId?: ThreadId };
+
+class MergeChangesNothing extends Error {}
 
 /** Stages a change on a copy of the live document, under its lock. */
 type DraftMutation = (
@@ -185,6 +190,12 @@ export type MarkdownDocumentEngine = {
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
+  mergeCodeText(input: {
+    documentId: DocumentId;
+    base: string;
+    target: string;
+    origin: DocumentWriteOrigin;
+  }): Promise<Result<void, SyncError>>;
   withLiveDocument<T>(
     documentId: string,
     operation: (held: HeldLiveDocument) => Promise<T>,
@@ -306,7 +317,7 @@ export function createMarkdownDocumentEngine(
   async function overwriteDraft(
     documentId: DocumentId,
     draft: Y.Doc,
-    content: BoundWrite,
+    content: Pick<BoundWrite, "fresh" | "blocks" | "markdown">,
     yjsOrigin: TransactionOrigin,
   ): Promise<Result<void, SyncError>> {
     if (content.fresh && deps.model.getBlocks(toDocHandle(draft)).length > 0) {
@@ -424,9 +435,12 @@ export function createMarkdownDocumentEngine(
     input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
     mutate: DraftMutation,
     format: { schemaType: YjsTrackedSchemaType },
+    /** The change reads the live text: take the document's lock before reading it. */
+    readsLive = false,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     try {
       await ensureDocumentAuthority(input.documentId);
+      if (readsLive) await deps.lockDocument?.(input.documentId);
       const result = await deps.coordinator.withDocument(input.documentId, (liveDoc) =>
         replaceLiveDocumentMarkdown(
           input.documentId,
@@ -641,6 +655,41 @@ export function createMarkdownDocumentEngine(
       const result = await identityPreservingSet(input);
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
+    },
+
+    async mergeCodeText({ documentId, base, target, origin }) {
+      const format = await documentFormat(documentId);
+      if (!format.ok) return format;
+      if (format.value.schemaType !== "code") {
+        return Err({ code: "corrupt_state", documentId, message: "Not a code document" });
+      }
+      try {
+        const written = await changeDocument(
+          { documentId, origin },
+          (draft, yjsOrigin) => {
+            const block = projectBlocks(documentId, draft, (blocks) => blocks[0]);
+            const live = block?.textContent ?? "";
+            const merged = mergeCodeText({ base, live, target });
+            // Raised before anything is staged or admitted: nothing to write, nothing to announce.
+            if (merged === live) throw new MergeChangesNothing();
+            const next = block
+              ? block.type.create(block.attrs, merged ? block.type.schema.text(merged) : undefined)
+              : undefined;
+            return overwriteDraft(
+              documentId,
+              draft,
+              { fresh: false, blocks: next ? [next] : [], markdown: merged },
+              yjsOrigin,
+            );
+          },
+          format.value,
+          true,
+        );
+        return written.ok ? Ok(undefined) : written;
+      } catch (cause) {
+        if (cause instanceof MergeChangesNothing) return Ok(undefined);
+        throw cause;
+      }
     },
 
     async withLiveDocument(documentId, operation) {
