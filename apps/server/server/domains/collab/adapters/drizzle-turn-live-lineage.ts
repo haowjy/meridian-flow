@@ -15,6 +15,7 @@ import {
   readTurnEditTargets,
   readTurnFolderTargets,
   readTurnTreeTargets,
+  receiptBranchExists,
 } from "./drizzle-turn-edit-targets.js";
 
 export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineageDocumentStore {
@@ -63,6 +64,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
             // The standing change, a Redo included: a line says where the document is now, and
             // `readTurnTreeTargets` alone says where the turn wrote.
             ne(treeEditReceipts.kind, "undo"),
+            receiptBranchExists,
           ),
         )
         .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);

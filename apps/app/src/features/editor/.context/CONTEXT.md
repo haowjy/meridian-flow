@@ -107,7 +107,7 @@ repair snapshots rather than inspecting the editor document.
 
 Both notices live in `SchemaNotices.tsx` as one-line bars in
 `EditorSurfaceFrame`'s `notices` slot, prose-aligned above the toolbar; the slot
-collapses when neither has anything to say. The fence bar carries Refresh. The
+collapses when neither has anything to say. The fence bar carries Refresh; the same refusal also makes the app reload by itself once the writer pauses (`client/release`). The
 repair bar says only that text was removed; its Details popover holds every
 recovered excerpt with Copy, then the cause and Dismiss, so the excerpts never
 push the manuscript down. The popover anchors to the whole bar and takes its

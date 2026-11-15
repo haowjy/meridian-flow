@@ -6,8 +6,8 @@ import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useProjectListStatus } from "@/client/query/useProjectList";
 import { useProjectStore } from "@/client/stores";
+import { AppStatus } from "@/components/app/AppStatus";
 import { MeridianMark } from "@/components/app/MeridianMark";
-import { NotSentYet } from "@/components/app/NotSentYet";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { AccountMenu } from "@/features/account/AccountMenu";
@@ -32,7 +32,7 @@ export function ProjectLibrary() {
             Meridian
           </Link>
           <div className="flex items-center gap-2">
-            <NotSentYet />
+            <AppStatus />
             <div className="max-w-48">
               <AccountMenu />
             </div>
