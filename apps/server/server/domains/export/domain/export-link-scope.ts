@@ -9,7 +9,7 @@ import {
   type SpelledHref,
   splitDocumentHrefSuffix,
 } from "@meridian/contracts";
-import { contextUriScheme, contextualUri } from "@meridian/contracts/context-uri";
+import { addressScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { DocumentLinkScope } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
@@ -63,7 +63,7 @@ export class ExportLinkScope implements DocumentLinkScope {
       href: attrs.href,
       address: id
         ? (this.uris.get(id) ??
-          (address && contextUriScheme(address.uri) === "user" ? address.uri : null))
+          (address && addressScheme(address.uri) === "user" ? address.uri : null))
         : (address?.uri ?? null),
     };
     let target = id
@@ -94,7 +94,7 @@ export class ExportLinkScope implements DocumentLinkScope {
     }
     if (attrs.ref) return this.spellLink({ href: attrs.src, ref: attrs.ref });
     // Bare image sources follow the ordinary manuscript-root grammar, not the holder folder.
-    const address = resolveDocumentHref(attrs.src, contextualUri("manuscript", "_"));
+    const address = resolveDocumentHref(attrs.src, canonicalContextUri("manuscript", "_"));
     return this.spell(
       address ? this.addresses.get(address.uri) : undefined,
       address?.suffix ?? "",

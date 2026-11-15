@@ -1,6 +1,6 @@
 /** Durable writer-turn admission wire contracts. */
 import { z } from "zod";
-import { type CanonicalContextUri, hasUriScheme, parseContextUri } from "../context-uri.js";
+import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
 import type { DocumentId, FolderId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
 import type { ThreadId, TurnId } from "../runtime/index.js";
@@ -221,7 +221,6 @@ export function referenceOccurrenceContent(block: {
   const parsedUri = parseContextUri(content.uri);
   if (
     !parsedUri.ok ||
-    !hasUriScheme(content.uri) ||
     parsedUri.value.path.length === 0 ||
     parsedUri.value.normalized !== content.uri
   ) {

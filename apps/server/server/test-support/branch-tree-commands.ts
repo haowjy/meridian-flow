@@ -16,7 +16,7 @@ import {
   type WorkId,
 } from "@meridian/contracts";
 import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
-import { contextualUri, withDefaultScheme } from "@meridian/contracts/context-uri";
+import { canonicalContextUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
@@ -180,7 +180,10 @@ export function typeLink(href: string, aheadId: string) {
 }
 
 function uri(path: string): string {
-  return withDefaultScheme(path);
+  const parsed = parseUnifiedContextUri(path);
+  if (!parsed.ok)
+    throw new Error(`Scenario path ${path} is not an address: ${parsed.error.reason}`);
+  return parsed.value.normalized;
 }
 
 /** Command verbs over `world`; `composed()` supplies the runtime (it throws when absent). */
@@ -294,7 +297,7 @@ export function branchTreeCommands(
             authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
           )
         : await livePort();
-      const target = createOptions.inScratchOf ? contextualUri("scratch", path) : uri(path);
+      const target = createOptions.inScratchOf ? canonicalContextUri("scratch", path) : uri(path);
       const created = await port.createTrackedDocument(target, createOptions.content ?? "", {
         origin: human(),
       });

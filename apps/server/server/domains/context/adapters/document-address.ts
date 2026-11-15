@@ -8,7 +8,7 @@
  */
 import { type DocumentId, isAheadFilename, type ProjectId } from "@meridian/contracts";
 import {
-  contextualUri,
+  contextRootUri,
   isOwnedContextScheme,
   isProjectScopedScheme,
   parseContextUri,
@@ -178,7 +178,7 @@ async function resolveAddressCoordinates(
   ) {
     throw new UnresolvableAddressError(
       input.address,
-      `Address owner does not fit ${contextualUri(scheme)}`,
+      `Address owner does not fit ${contextRootUri(scheme)}`,
     );
   }
   if (authority.kind === "lineage") {

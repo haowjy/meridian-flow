@@ -12,21 +12,20 @@ import {
   aheadAddress,
   type CatalogDocument,
   type CatalogFolder,
+  canonicalContextUri,
   classifyWrittenLink,
   classifyWrittenSource,
-  contextUriScheme,
-  contextualUri,
   type DocumentRef,
   documentRef,
   type FolderRef,
   folderRef,
   formatParsedContextUri,
-  hasUriScheme,
   type LinkCatalog,
   type LinkHolder,
   type LinkResolution,
   mintAheadRef,
   parseLinkRef,
+  parseUnifiedContextUri,
   qualifyContextUriByHolder,
   type ResolvedDocumentHref,
   resolveDocumentHref,
@@ -36,7 +35,6 @@ import {
   spellStoredLink,
   storedHref,
   type WrittenLinkClass,
-  withDefaultScheme,
 } from "@meridian/contracts";
 import type { Node as PMNode } from "prosemirror-model";
 
@@ -124,7 +122,7 @@ export function createHolderLinkScope(
         // The upload's identity is its src, which no reader is ever shown.
         if (!address) return UNSPELLED_UPLOAD;
         return address.kind === "path"
-          ? { href: address.path, address: contextualUri("manuscript", address.path) }
+          ? { href: address.path, address: canonicalContextUri("manuscript", address.path) }
           : {
               href: storedHref({ kind: "document", uri: address.uri }, ""),
               address: address.uri,
@@ -146,9 +144,9 @@ export function createHolderLinkScope(
       return folder ?? null;
     },
     assetFor(manuscriptPath) {
-      if (hasUriScheme(manuscriptPath) && contextUriScheme(manuscriptPath) !== "manuscript")
-        return null;
-      const uri = withDefaultScheme(manuscriptPath);
+      const parsed = parseUnifiedContextUri(manuscriptPath);
+      if (!parsed.ok || parsed.value.scheme !== "manuscript") return null;
+      const uri = parsed.value.normalized;
       const id = catalog.assetFor(uri);
       if (id === undefined) onMiss(uri);
       return id ?? null;

@@ -19,9 +19,9 @@
 
 import { t } from "@lingui/core/macro";
 import {
+  addressScheme,
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
-  contextUriScheme,
 } from "@meridian/contracts/context-uri";
 import type { UploadState } from "@/core/uploads/upload-store";
 import { fileTypeLabel } from "@/lib/file-type-label";
@@ -82,7 +82,7 @@ export function referenceChip(
 ): LinkChip {
   return {
     state: available ? "filled" : "dashed",
-    icon: reference.kind === "folder" ? "folder" : (contextUriScheme(reference.uri) ?? "file"),
+    icon: reference.kind === "folder" ? "folder" : (addressScheme(reference.uri) ?? "file"),
   };
 }
 
@@ -95,8 +95,8 @@ export function linkChipAttributes(chip: LinkChip): {
 }
 
 function targetFamily(target: LinkTarget, baseUri: string | null): ContextUriScheme | null {
-  if (target.kind === "scheme") return contextUriScheme(target.uri);
-  return baseUri ? contextUriScheme(baseUri) : null;
+  if (target.kind === "scheme") return addressScheme(target.uri);
+  return baseUri ? addressScheme(baseUri) : null;
 }
 
 /** A file's type and size in one detail row; null when nothing is known. */

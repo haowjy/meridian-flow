@@ -8,7 +8,7 @@
  */
 
 import type { ProjectId, ThreadId } from "@meridian/contracts";
-import { contextualUri } from "@meridian/contracts/context-uri";
+import { contextRootUri } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -302,7 +302,7 @@ export function createProjectContextDocumentStore(
   userId: string,
 ): ContextDocumentStore {
   const find = () => findProjectContextSource(db, projectId, scheme, userId);
-  return new SourceResolvedContextDocumentStore(db, required(find, contextualUri(scheme)), find);
+  return new SourceResolvedContextDocumentStore(db, required(find, contextRootUri(scheme)), find);
 }
 
 export function createWorkContextDocumentStore(
@@ -313,7 +313,7 @@ export function createWorkContextDocumentStore(
   const find = () => findWorkContextSource(db, workId, scheme);
   return new SourceResolvedContextDocumentStore(
     db,
-    required(find, contextualUri(scheme)),
+    required(find, contextRootUri(scheme)),
     find,
     workId,
   );

@@ -11,7 +11,7 @@
  * stored `href`/`src` is an escaped wire spelling, built only by `storedHref`.
  */
 import type { DraftOwnerKey } from "./branches/owner.js";
-import { contextualUri, isProjectScopedScheme, parseContextUri } from "./context-uri.js";
+import { canonicalContextUri, isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
   documentPathKey,
   type LinkAddress,
@@ -219,7 +219,7 @@ export function classifyWrittenLink(href: string, holderUri: string | null): Wri
 // `resolveDocumentHref` and `spellDocumentHref` resolve against a holder's
 // directory, so a holder sitting at the manuscript root stands in for the
 // root itself. Only its directory is ever read.
-const MANUSCRIPT_ROOT_HOLDER = contextualUri("manuscript", "_");
+const MANUSCRIPT_ROOT_HOLDER = canonicalContextUri("manuscript", "_");
 
 /**
  * `classifyWrittenLink` for an `image`/`figure` source, under the

@@ -8,7 +8,7 @@
 
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts";
-import { contextUriScheme } from "@meridian/contracts/context-uri";
+import { addressScheme } from "@meridian/contracts/context-uri";
 import { canonicalLeaf } from "@meridian/contracts/protocol";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
@@ -30,7 +30,7 @@ import {
 
 /** Whether a move from `from` to `to` leaves its list: `user://` is the account's, the rest the project's. */
 export const crossesLists = (from: string, to: string) =>
-  (contextUriScheme(from) === "user") !== (contextUriScheme(to) === "user");
+  (addressScheme(from) === "user") !== (addressScheme(to) === "user");
 
 const lastSegment = (path: string) => path.split("/").filter(Boolean).at(-1) ?? "";
 /** The folder part of a path, with its trailing slash. */

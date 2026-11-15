@@ -183,7 +183,10 @@ function toParsedAuthority(authority: CanonicalContextAuthority): ParsedContextA
   return { kind: "work", workHandle };
 }
 
-/** Strict serializer, lenient parser; bare paths resolve to `manuscript://`. */
+/**
+ * Strict serializer, lenient parser; bare paths resolve to `manuscript://`. A scheme is
+ * `name://`, in any letter case: `Prologue: Dawn` is a chapter name, not a malformed address.
+ */
 export function parseContextUri(
   raw: string,
   options: ParseContextUriOptions = {},
@@ -195,9 +198,9 @@ export function parseContextUri(
 
   let scheme: ContextUriScheme;
   let rawPath: string;
-  const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):\/{2}(.*)$/);
-  if (schemeMatch) {
-    const parsedScheme = schemeMatch[1] ?? "";
+  const prefix = SCHEME_PREFIX.exec(trimmed);
+  if (prefix?.[2]) {
+    const parsedScheme = (prefix[1] ?? "").toLowerCase();
     if (!isContextScheme(parsedScheme, schemes)) {
       return {
         ok: false,
@@ -209,9 +212,7 @@ export function parseContextUri(
       };
     }
     scheme = parsedScheme;
-    rawPath = schemeMatch[2] ?? "";
-  } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
-    return invalidContextUri(raw, 'Malformed URI: expected "scheme://path"');
+    rawPath = trimmed.slice(prefix[0].length);
   } else {
     scheme = bareDefault;
     rawPath = trimmed;
@@ -261,37 +262,34 @@ export function parseUnifiedContextUri(raw: string): ContextUriParseResult {
 
 export const UNIFIED_CONTEXT_SCHEMES = CONTEXT_URI_SCHEMES;
 
-const URI_SCHEME_PREFIX = /^([a-z][a-z0-9+.-]*):\/{2}/i;
+/** How a written address begins: `scheme:`, with its `//` when there is one. The one reading of that prefix. */
+const SCHEME_PREFIX = /^([a-z][a-z0-9+.-]*):(\/{2})?/i;
 
-/** Whether `raw` is written with a `scheme://` prefix, rather than as a bare path. */
-export function hasUriScheme(raw: string): boolean {
-  return URI_SCHEME_PREFIX.test(raw.trim());
+/** The area `raw` addresses, as the parser reads it (a bare path is the manuscript); null when it does not parse. */
+export function addressScheme(raw: string): ContextUriScheme | null {
+  const parsed = parseUnifiedContextUri(raw);
+  return parsed.ok ? parsed.value.scheme : null;
 }
 
-/** The context scheme `raw` is written in (any letter case), or null for a bare path or another scheme. */
-export function contextUriScheme(raw: string): ContextUriScheme | null {
-  const scheme = URI_SCHEME_PREFIX.exec(raw.trim())?.[1]?.toLowerCase();
-  return isContextUriScheme(scheme) ? scheme : null;
+/** Whether `raw` is already the serializer's spelling of the address it parses to. */
+export function isCanonicalAddress(raw: string): boolean {
+  const parsed = parseUnifiedContextUri(raw);
+  return parsed.ok && parsed.value.normalized === raw;
 }
 
-/** `raw` with its `scheme://` prefix lower-cased; schemes are case-insensitive, the parser is not. */
-export function lowercaseUriScheme(raw: string): string {
-  return raw.trim().replace(URI_SCHEME_PREFIX, (prefix) => prefix.toLowerCase());
+/**
+ * How a writer wrote `raw`: as a context address, as another scheme's (`https://`, `mailto:`),
+ * or as a path with no scheme.
+ */
+export function writtenForm(raw: string): "address" | "foreign" | "path" {
+  const prefix = SCHEME_PREFIX.exec(raw.trim());
+  if (!prefix) return "path";
+  return prefix[2] && isContextUriScheme((prefix[1] ?? "").toLowerCase()) ? "address" : "foreign";
 }
 
-/** What follows `scheme://`, or `raw` itself when it is a bare path. */
-export function uriPath(raw: string): string {
-  return raw.replace(URI_SCHEME_PREFIX, "");
-}
-
-/** The address of `path` under a scheme's contextual root, as written: no normalizing, no owner. */
-export function contextualUri(scheme: ContextUriScheme, path = ""): string {
-  return formatParsedContextUri(scheme, path, { kind: "contextual" });
-}
-
-/** `raw` as an address: a bare path gets `scheme://` (the manuscript by default); a written address stays. */
-export function withDefaultScheme(raw: string, scheme: ContextUriScheme = "manuscript"): string {
-  return hasUriScheme(raw) ? raw : contextualUri(scheme, raw);
+/** The root address of a scheme (`kb://`): where its documents begin. */
+export function contextRootUri(scheme: ContextUriScheme): string {
+  return formatParsedContextUri(scheme, "", { kind: "contextual" });
 }
 
 export function isContextUriScheme(value: unknown): value is ContextUriScheme {
@@ -556,7 +554,8 @@ export function splitDocumentHrefSuffix(value: string): { path: string; suffix: 
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
-  const segment = uriPath(uri).split("/").filter(Boolean).at(-1);
+  const parsed = parseUnifiedContextUri(uri);
+  const segment = (parsed.ok ? parsed.value.path : uri).split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   return canonicalLeaf(segment);
 }

@@ -1,5 +1,9 @@
 /** Import snapshots over Context's live tree authority. */
-import { contextualUri, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  canonicalContextUri,
+  contextRootUri,
+  parseContextUri,
+} from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { contextSources } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -46,13 +50,13 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
           const folderId = area === originalArea ? (destinationFolder?.id ?? null) : null;
           const uri =
             area === originalArea && destinationFolder
-              ? contextualUri(area, `${destinationFolder.path}/`)
-              : contextualUri(area);
+              ? canonicalContextUri(area, destinationFolder.path)
+              : contextRootUri(area);
           if (!sourceId)
             return {
               area,
               folderId: null,
-              uri: contextualUri(area),
+              uri: contextRootUri(area),
               fellBack: area === originalArea && input.folderId !== null,
               children: [],
             };

@@ -6,7 +6,7 @@
  * browser writes those records itself in the tree's room.
  */
 
-import { hasUriScheme } from "@meridian/contracts/context-uri";
+import { writtenForm } from "@meridian/contracts/context-uri";
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import {
@@ -56,7 +56,7 @@ function parseMove(body: unknown): ParsedMove {
   if (expected?.kind !== "file" || typeof expected.nodeId !== "string" || !expected.nodeId.trim())
     throw createError({ statusCode: 400, message: "`expected` names the document to move" });
   for (const field of ["from", "to"] as const)
-    if (typeof raw[field] !== "string" || !hasUriScheme(raw[field] as string))
+    if (typeof raw[field] !== "string" || writtenForm(raw[field] as string) !== "address")
       throw createError({ statusCode: 400, message: `\`${field}\` must be a context URI` });
   return {
     nodeId: expected.nodeId,

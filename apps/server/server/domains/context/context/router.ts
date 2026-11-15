@@ -9,7 +9,7 @@ import {
   validateContextEntryPath,
 } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
-import { contextualUri } from "@meridian/contracts/context-uri";
+import { contextRootUri } from "@meridian/contracts/context-uri";
 import {
   type ContextEntryRef,
   filenameForBinary,
@@ -709,7 +709,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([scheme, { adapter }]) => ({
               kind: "directory" as const,
-              uri: contextualUri(scheme),
+              uri: contextRootUri(scheme),
               readonly: !adapter.capabilities.writable,
             })),
         });
@@ -767,7 +767,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       let stopped = false;
       for (const [scheme, { adapter, authority }] of await contextualSources()) {
         if (!adapter.capabilities.searchable) continue;
-        const result = await callAdapter(contextualUri(scheme), () =>
+        const result = await callAdapter(contextRootUri(scheme), () =>
           adapter.grep({ ...query, headLimit: query.headLimit - found.length }),
         );
         if (!result.ok) continue;

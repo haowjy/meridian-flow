@@ -9,7 +9,7 @@ import {
   overFileBudget,
 } from "@meridian/contracts";
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
-import { contextUriScheme } from "@meridian/contracts/context-uri";
+import { addressScheme, isCanonicalAddress } from "@meridian/contracts/context-uri";
 import { z } from "zod";
 
 export const IMPORT_LIMITS = {
@@ -85,7 +85,11 @@ const schema = z
       .object({
         folderUri: z
           .string()
-          .refine((uri) => IMPORT_SCHEMES.some((scheme) => contextUriScheme(uri) === scheme)),
+          .refine(
+            (uri) =>
+              isCanonicalAddress(uri) &&
+              IMPORT_SCHEMES.some((scheme) => scheme === addressScheme(uri)),
+          ),
       })
       .strict(),
     roots: z.array(root).min(1).max(IMPORT_ADMISSION.files),

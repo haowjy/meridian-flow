@@ -6,7 +6,7 @@
  */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { contextualUri } from "@meridian/contracts/context-uri";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -109,7 +109,7 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
         "Drafts:",
         ...result.drafts.map((draft) => {
           const name = draft.contextLocation
-            ? contextualUri(
+            ? canonicalContextUri(
                 draft.contextLocation.scheme,
                 draft.contextLocation.path.replace(/^\/+/, ""),
               )

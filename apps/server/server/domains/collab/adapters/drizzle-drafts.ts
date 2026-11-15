@@ -12,7 +12,7 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { type BranchId, createdDraftId, type DraftOwner } from "@meridian/contracts";
-import { contextualUri, isContextUriScheme } from "@meridian/contracts/context-uri";
+import { contextRootUri, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -358,7 +358,7 @@ export function createDrizzleDraftStore(
     const owner = await loadDocumentOwner(tx, documentId);
     if (owner && isContextUriScheme(owner.scheme) && !isDrafted(owner.scheme)) {
       throw new Error(
-        `Document ${documentId} is in ${contextualUri(owner.scheme)}, which is never drafted`,
+        `Document ${documentId} is in ${contextRootUri(owner.scheme)}, which is never drafted`,
       );
     }
     const holder = await loadBranchHolder(tx, branchId);

@@ -1,5 +1,5 @@
 /** Durable prepare → plan → batches of first texts → one reveal orchestration. */
-import { contextualUri, parseContextUri } from "@meridian/contracts/context-uri";
+import { contextRootUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type {
   DocumentProjectionRefresher,
@@ -61,7 +61,7 @@ function uriMap(tree: OrganizedTree): Map<string, string> {
     const parent = node.parentId ? nodes.get(node.parentId) : null;
     const base = parent
       ? uri(parent.id).replace(/[^/]*$/, "")
-      : (destinations.get(node.area)?.uri ?? contextualUri(node.area));
+      : (destinations.get(node.area)?.uri ?? contextRootUri(node.area));
     const value = `${base}${node.filename}${node.kind === "folder" ? "/" : ""}`;
     memo.set(id, value);
     return value;
@@ -211,7 +211,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
           source,
           index,
           attachmentFolder: root?.settings.attachmentFolderPath ?? "",
-          aheadFolder: contextualUri(node.area),
+          aheadFolder: contextRootUri(node.area),
         });
         const bound = await deps.binder.bindPlannedMarkdown({
           holder: {

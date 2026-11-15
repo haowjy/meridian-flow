@@ -1,7 +1,6 @@
 /** Projects persisted turns and blocks into the canonical gateway message context. */
 
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
-import { uriPath } from "@meridian/contracts/context-uri";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type {
   Block,
@@ -456,6 +455,5 @@ function filenameFromUri(uri: string): string {
   if (lastSlash >= 0 && lastSlash < trimmed.length - 1) {
     return decodeURIComponent(trimmed.slice(lastSlash + 1));
   }
-  const path = uriPath(trimmed);
-  return path !== trimmed && path !== "" ? decodeURIComponent(path) : uri;
+  return uri;
 }

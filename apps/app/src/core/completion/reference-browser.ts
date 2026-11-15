@@ -4,10 +4,10 @@ import type { WorkHandle } from "@meridian/contracts";
 import { matchDocumentPath } from "@meridian/contracts";
 import {
   type ContextUriScheme,
-  hasUriScheme,
   ownerSegment,
   type ParsedContextUri,
   parseContextUri,
+  writtenForm,
 } from "@meridian/contracts/context-uri";
 import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
 import type { TreeDirectory, TreeFile } from "@/core/project-tree/tree-view";
@@ -168,7 +168,7 @@ export function createReferenceBrowserController(
   let hasSearch = false;
   const typedQuery = () => (query.startsWith("@") ? query.slice(1) : query);
   const explicitUri = () => {
-    if (!hasUriScheme(typedQuery())) return null;
+    if (writtenForm(typedQuery()) !== "address") return null;
     const parsed = parseContextUri(typedQuery());
     return parsed.ok ? parsed.value : null;
   };
@@ -213,9 +213,10 @@ export function createReferenceBrowserController(
     const works = rootLocation?.works ?? [];
     if (location.kind === "drilled" && !sourceIds.includes(location.activeSource))
       sourceIds.push(location.activeSource);
-    const allRows = hasUriScheme(typedQuery())
-      ? rootRows(sourceIds, works, options.catalog, referenceKinds, true)
-      : [];
+    const allRows =
+      writtenForm(typedQuery()) === "address"
+        ? rootRows(sourceIds, works, options.catalog, referenceKinds, true)
+        : [];
     queriedContainer =
       allRows
         .filter(
