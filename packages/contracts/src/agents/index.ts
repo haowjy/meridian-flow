@@ -113,6 +113,14 @@ export const agentFilesSchema = z.object({
 /** A built-in file's text: built-ins are not documents, so they are read here. */
 export const agentBuiltinFileSchema = z.object({ text: z.string() });
 
+/** The Agent file a chat is bound to, as saved; `stale` when a newer save exists. */
+export const threadAgentSchema = z.object({
+  name: z.string(),
+  text: z.string(),
+  stale: z.boolean(),
+});
+export type ThreadAgent = z.infer<typeof threadAgentSchema>;
+
 /** Raw overlay retained for inspection/export; effective values live in `configuration`. */
 export interface InvocationOverlay {
   appendSystemPrompt?: string;

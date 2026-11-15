@@ -125,6 +125,17 @@ export interface AgentRevisionStore {
     configuration: ResolvedAgentConfiguration,
     invocationOverlay: InvocationOverlay | null,
   ): Promise<boolean>;
+  /**
+   * Moves a bound thread onto another revision with its resolved configuration, and re-pins the
+   * given skills by slug. The invocation overlay, and a skill pinned since `skillPins` was read,
+   * stay. False when the thread has no binding.
+   */
+  replaceThreadBinding(
+    threadId: string,
+    revisionId: string,
+    configuration: ResolvedAgentConfiguration,
+    skillPins: Readonly<Record<string, RetainedSkillReference>>,
+  ): Promise<boolean>;
   /** Throws when the bound revision has no definition: null `revision` means the generic subagent. */
   readThreadBinding(threadId: string): Promise<AgentRevisionBinding | undefined>;
   /**

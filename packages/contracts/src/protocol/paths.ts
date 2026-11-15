@@ -222,6 +222,10 @@ export function apiThreadSkillsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/skills`;
 }
 
+export function apiThreadAgentPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/agent`;
+}
+
 export const API_AVAILABLE_SKILLS_PATH = "/api/skills";
 
 /** The `/` menu of a chat not yet created: built-in, user and (with a project) project skills. */

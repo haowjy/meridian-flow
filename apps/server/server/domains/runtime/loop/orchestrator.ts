@@ -267,9 +267,13 @@ export interface OrchestratorDeps {
   reports: RunSessionReports;
   agentRevisions: Pick<
     AgentRevisionStore,
-    "readThreadBinding" | "readSource" | "readRevision" | "recordInvokedSkill"
+    | "readThreadBinding"
+    | "readSource"
+    | "readRevision"
+    | "recordInvokedSkill"
+    | "replaceThreadBinding"
   >;
-  agentCatalog: Pick<BoundAgentCatalog, "resolveSkill">;
+  agentCatalog: Pick<BoundAgentCatalog, "resolveSkill" | "refreshBinding">;
   toolRegistry: ToolRegistry;
   workContext: WorkContextReader;
   billingUsage: BillingUsagePolicy;

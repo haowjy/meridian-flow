@@ -216,7 +216,7 @@ export function TurnEditsReceipt({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. slop-lint: allow suppression the reason is stated in this comment */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex min-h-[calc(var(--strip-row)-2px)] cursor-pointer items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-1"
+        className="flex min-h-[calc(var(--strip-row)-2px)] cursor-pointer flex-wrap items-center gap-x-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] py-1"
       >
         <FoldToggle
           open={expanded}
@@ -226,14 +226,13 @@ export function TurnEditsReceipt({
           }}
           aria-controls={panelId}
           inline
-          className="-mx-1 flex-1 px-1 coarse:min-h-11"
+          multiline
+          className="-mx-1 min-w-[min(100%,10rem)] flex-1 px-1 coarse:min-h-11"
         >
-          <span className="flex min-w-0 flex-1 items-baseline">
-            <span className="min-w-0 truncate font-medium text-foreground">
-              {hasEditedDocuments
-                ? documentCountLabel(documents, drafts)
-                : workCountLabel(reversibleWorkReceipts.length)}
-            </span>
+          <span className="min-w-0 flex-1 font-medium text-foreground">
+            {hasEditedDocuments
+              ? documentCountLabel(documents, drafts)
+              : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
         {reversible ? (
@@ -246,7 +245,7 @@ export function TurnEditsReceipt({
               void reverseTurn();
             }}
             disabled={pending}
-            className="shrink-0 text-jade-text"
+            className="ml-auto shrink-0 text-jade-text"
           >
             {pending
               ? direction === "redo"
