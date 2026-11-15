@@ -91,6 +91,7 @@ export const works = pgTable(
     // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
     // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
+    pendingFolderCount: integer("pending_folder_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),

@@ -29,7 +29,7 @@ export function DocumentChanges({
           role="status"
           aria-busy={!!view.completing}
         >
-          <ReviewStatusContent completing={view.completing} finished={false} />
+          <ReviewStatusContent completing={view.completing} />
         </p>
       );
     }

@@ -18,6 +18,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { formatWorkHandle, type WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -88,8 +89,10 @@ const SOURCES = ["manuscript", "kb", "unfiled"] as const;
 
 /** A source-qualified scenario path's scheme and source-relative path. */
 export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } {
-  const match = /^(kb|unfiled|manuscript|user):\/\/(.*)$/.exec(path);
-  return { scheme: (match?.[1] ?? "manuscript") as ScenarioSource, rel: match?.[2] ?? path };
+  const parsed = parseUnifiedContextUri(path);
+  if (!parsed.ok)
+    throw new Error(`Scenario path ${path} is not an address: ${parsed.error.reason}`);
+  return { scheme: parsed.value.scheme as ScenarioSource, rel: parsed.value.path };
 }
 
 /** The account's personal project and its `user://` source, made once per account. */

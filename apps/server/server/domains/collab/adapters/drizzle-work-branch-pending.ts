@@ -5,14 +5,14 @@ import { branches, documentDrafts, threads, works } from "@meridian/database/sch
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { pendingDocuments } from "../../context/tree/pending-documents.js";
+import { pendingDocuments, pendingFolders } from "../../context/tree/pending-documents.js";
 import { createDraftDispositionReader } from "../domain/draft-disposition.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 
 /**
  * What is pending in a Work is the one reviewable-pending predicate
- * (`context/tree/pending-documents.ts`), the review list's too: the Work count and the document hint both
+ * (`context/tree/pending-documents.ts`), the review list's too: the Work count (with the folders it changes) and the document hint both
  * count by it, and the Works boundary reconciles each Work's stored count through it.
  */
 export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
@@ -31,29 +31,35 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       ].filter((clause) => clause !== null);
       const active = sql`SELECT b.id FROM branches b WHERE b.status = 'active'
         AND (${sql.join(owned, sql` OR `)})`;
-      // One row per active branch and document, whichever arm made it pending.
+      // One row per active branch: its documents and its folders changed, whichever arm made each pending.
       const rows = await currentDrizzleDb(db).execute<{
         branch_id: string;
         project_id: string;
         work_id: string | null;
         root_thread_id: string | null;
-        count: number;
+        documents: number;
+        folders: number;
       }>(sql`
         SELECT b.id::text AS branch_id, b.project_id::text AS project_id,
                b.origin_work_id::text AS work_id, b.origin_root_thread_id::text AS root_thread_id,
-               coalesce(c.count, 0)::int AS count
+               coalesce(d.count, 0)::int AS documents, coalesce(f.count, 0)::int AS folders
         FROM branches b
         LEFT JOIN (
           SELECT p.branch_id, count(DISTINCT p.document_id) AS count
           FROM (${pendingDocuments(active)}) p GROUP BY p.branch_id
-        ) c ON c.branch_id = b.id
+        ) d ON d.branch_id = b.id
+        LEFT JOIN (
+          SELECT p.branch_id, count(DISTINCT p.folder_id) AS count
+          FROM (${pendingFolders(active)}) p GROUP BY p.branch_id
+        ) f ON f.branch_id = b.id
         WHERE b.id IN (${active})`);
       return rows.map((row) => ({
         branchId: row.branch_id,
         projectId: row.project_id,
         workId: row.work_id,
         rootThreadId: row.root_thread_id,
-        count: Number(row.count),
+        documents: Number(row.documents),
+        folders: Number(row.folders),
       }));
     },
     async countPendingInProject(projectId) {

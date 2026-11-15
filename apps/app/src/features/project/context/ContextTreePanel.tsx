@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import { addressScheme, isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, Folder, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -151,7 +151,7 @@ export function ContextTreePanel({
     for (const { importId, summary } of importSnapshot.imports) {
       if (
         summary.projectId !== projectId ||
-        summary.destination.folderUri.split(":")[0] !== scheme ||
+        addressScheme(summary.destination.folderUri) !== scheme ||
         arrived.current.has(importId)
       )
         continue;

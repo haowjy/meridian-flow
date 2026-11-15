@@ -5,8 +5,10 @@
  * way, which finds the node by id and refuses when it is no longer where the move put it. Each
  * document is its own move with its own receipt. Only documents and files cross; a folder stays.
  */
+
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts";
+import { addressScheme, joinContextUri } from "@meridian/contracts/context-uri";
 import { canonicalLeaf } from "@meridian/contracts/protocol";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
@@ -28,7 +30,7 @@ import {
 
 /** Whether a move from `from` to `to` leaves its list: `user://` is the account's, the rest the project's. */
 export const crossesLists = (from: string, to: string) =>
-  from.startsWith("user://") !== to.startsWith("user://");
+  (addressScheme(from) === "user") !== (addressScheme(to) === "user");
 
 const lastSegment = (path: string) => path.split("/").filter(Boolean).at(-1) ?? "";
 /** The folder part of a path, with its trailing slash. */
@@ -50,7 +52,7 @@ function moveBackOf(receipt: AcrossReceipt) {
     node: receipt.subject,
     fromUri: receipt.across.to,
     fromArea: here.area,
-    folderUri: `${back.area}${folderPart(back.rest)}`,
+    folderUri: joinContextUri(back.area, folderPart(back.rest)),
     name: lastSegment(back.rest),
     shownAt: receipt.across.to,
     backArea: back.area,
@@ -185,7 +187,7 @@ export async function runMoveAcrossLists(
       const leaf = lastSegment(to.rest);
       const renamed =
         !intoFolder && canonicalLeaf(leaf) !== canonicalLeaf(lastSegment(source.rest));
-      const folderUri = `${to.area}${intoFolder ? to.rest : folderPart(to.rest)}`;
+      const folderUri = joinContextUri(to.area, intoFolder ? to.rest : folderPart(to.rest));
       const result = await moveOne(deps, call, ctx, grants, {
         node: reached.node.id,
         fromUri: reached.uri,
@@ -202,7 +204,7 @@ export async function runMoveAcrossLists(
       moved.push(result.moved);
       handle = result.handle;
       const expected = intoFolder
-        ? `${folderUri}${canonicalLeaf(lastSegment(source.rest))}`
+        ? joinContextUri(folderUri, canonicalLeaf(lastSegment(source.rest)))
         : `${to.area}${to.rest}`;
       if (canonicalLeaf(result.moved.uri) !== canonicalLeaf(expected)) landed = result.moved.uri;
     }
