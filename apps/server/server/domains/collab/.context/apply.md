@@ -99,7 +99,39 @@ write and after every check that can end the command quietly, so a refusal (`gon
 or a created document has text past its heads; `superseded`) stores nothing of either half. A text
 group a later edit overlaps stays applied and is named in `skippedGroupIds`; when every group stays
 and the tree half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
-the lists' keys, then the keys of the documents the Apply wrote text in or created.
+the lists' keys, then the keys of the documents the Apply wrote text in or created (and of the
+drafts the Apply closed, below).
+
+**Un-Apply is read by the Apply, not by a branch.** Its effects and tree rows are found by the
+Apply's command id and the account; the URL's branch only names the Work. A Restore moves a draft
+to another branch, a Discard closes it, and neither changes what the Un-Apply finds. A text effect
+whose draft is **open** is reversed in the draft's base as before (`reverseBaseHalf`) and marked
+`draft_reversed`. One whose draft is **closed** is reversed in live only: its row gets
+`unapplied_by` and `unapplied_seq` (a value taken from `apply_command_effects_unapplied_seq` under
+the Work lock, since `commands.created_at` is the transaction start, not the lock order), leaves
+`draft_reversed` false, and the answer says `draftHalfWaits`. A purged draft has no draft half.
+A closed branch alone does not stop the tree half.
+
+**Reopening a closed draft** is one function, `reopenDrafts` (`drizzle-reopen-drafts.ts`), called by
+Restore and by Un-Apply of an Apply whose drafted delete closed the Work's drafts (`closed_by` = the
+Apply). It flips each row to active in the Work's current branch, closes a newer active draft of the
+document under the calling command's id, then **replays** the Un-Applies the draft waited on, and
+resyncs the reopened drafts' own lists. The replay reads the draft's effects with `unapplied_by` set
+and `draft_reversed` false, orders them by `unapplied_seq` and, within one Un-Apply, by descending
+ordinal, rebuilds each effect's base from the Apply's rows (reversed ones included: `baseStart` is
+stored once), and runs the same body as the open path (`reverseBaseHalf`): merge the group's text
+out of the base, remove its Apply records. Without it the base keeps text the Un-Apply took out of
+live, and a pull merges that deletion into the draft's own text. `draft_reversed` is what stops a
+second replay of an effect the open path already reversed. Un-Apply reopens before it reads any
+base, so the draft half of its own text effects on a draft its delete closed runs on an open draft.
+Where the draft goes: `ensureActiveForWrite` with `{ requireActive: false }`, called only when the
+Apply closed a draft, so an Un-Apply with nothing to reopen makes no branch; an archived Work whose
+branch closed gets a new one.
+
+A newer draft the reopen swaps out is closed with the reopening command's id, and that command
+(`undo_discard` or `unapply`) is a Trash entry with that draft as a member, so the swap stays
+restorable. The entry query lists `discard`, `undo_discard` and `unapply` commands, and Restore
+accepts the same three; the Un-Apply's answer carries `branchId` for it.
 
 Every route that writes documents on behalf of a command takes the same grants before it runs:
 Apply the draft's `command` grant and the live `edit` grant on each document (and a restore grant
@@ -116,7 +148,7 @@ notice right after it or from Trash; `discardCommandId` may also name an earlier
 below). The branch in the URL is the one the command ran on. The tree records the Discard settled
 come back as pending copies (`restoreDiscard`) on the Work's current branch (`ensureActiveForWrite`:
 a whole Discard closed the branch it ran on, so a new one is made; a branch row never reopens). Each
-text draft with `closed_by` = the Discard is **reopened as the same row**, moved to that branch,
+text draft with `closed_by` = the Discard is **reopened as the same row** (`reopenDrafts`, above), moved to that branch,
 `closed_by` and `closed_cause` cleared: its receipts' origin, authorship and seeds stay keyed to
 the draft id, and the model's next write finds an active draft, not a closed one. If the Work has
 a newer active draft of the document, the restore closes it first with `closed_by` = the restore's

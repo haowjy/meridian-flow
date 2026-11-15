@@ -57,12 +57,7 @@ import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/
 import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
-import {
-  documentTarget,
-  isFileAccessRefusal,
-  requireFileGrant,
-  withEditGrants,
-} from "./file-access-http.js";
+import { documentTarget, isFileAccessRefusal, withEditGrants } from "./file-access-http.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
 
 type BranchRouteServices = {
@@ -876,7 +871,6 @@ export function handleUnapplyClickRequest(
       for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofApply({
         applyCommandId: request.applyCommandId as CommandId,
         accountId: input.userId,
-        branchId: input.branchId,
       })) {
         const grant = await documentGrant(deps, input, documentId, null);
         if (isFileAccessDenied(grant)) return refused();

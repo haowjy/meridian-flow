@@ -1,7 +1,7 @@
 # Collab state machines
 
 The status columns collab owns. A draft is a pending version of one document, and a branch is
-the set of drafts one owner holds. A branch never reopens; a draft reopens only by a restore. The model they
+the set of drafts one owner holds. A branch never reopens; a draft reopens only through `reopenDrafts`: a restore, or an Un-Apply of a drafted delete. The model they
 belong to is in [draft-model-and-records.md](draft-model-and-records.md).
 
 ## Draft and branch
@@ -21,24 +21,25 @@ stateDiagram-v2
   state "draft" as D {
     [*] --> d_active
     d_active --> d_closed: discard, or the document is removed
-    d_closed --> d_active: restore of the Discard that closed it
+    d_closed --> d_active: restore of the Discard that closed it, or Un-Apply of the Apply whose delete did
     state "active" as d_active
     state "closed" as d_closed
   }
 ```
 
-- **A closed branch never reopens; a closed draft reopens only by a restore.** A Discard
+- **A closed branch never reopens; a closed draft reopens only through `reopenDrafts`.** A Discard
   stamps each draft it closes with `closed_by`, its command id. Restoring that Discard
   (`undo_discard`, from the notice or Trash) sets the same row `active` again in the Work's
   current branch (moving it there when the Discard closed another) and clears `closed_by` and
   `closed_cause`; a newer draft of the document closes under the restore's own id, so restoring
-  that entry swaps back. A retirement acts on a command-closed draft only while `closed_by`
+  that entry swaps back. An Un-Apply of an Apply whose drafted delete closed a draft reopens it the
+  same way, under the Un-Apply's id, and replays the Un-Applies the draft waited on. A retirement acts on a command-closed draft only while `closed_by`
   still names its command, so a late one leaves a reopened draft's room alone. Only an `active`
   draft accepts writes, and a draft room for a closed
   draft is refused at the [handshake](../../../lib/.context/state-machines.md).
 - **A model's edit planned on a closed draft changes nothing and says so.** The edit is a `done`
   `model_edit` row with `settled: returned` (`draft_discarded` when a Discard closed the draft,
-  `draft_replaced` when a restore's swap did, `document_removed` when the document's removal, an
+  `draft_replaced` when a restore's or an Un-Apply's swap did, `document_removed` when the document's removal, an
   Apply of its delete or a Work's purge did; `closed_by` names the closing command, and a null one
   is a purge, whose chats go with the Work). The test runs
   before any branch or draft opens, nothing is journalled, and the result shows the document as

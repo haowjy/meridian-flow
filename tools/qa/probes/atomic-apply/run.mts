@@ -18,13 +18,16 @@ import {
 import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
 import { createDrizzleBranchTreeActors } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-actors.ts";
 import { createDrizzleBranchTreeState } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-tree-state.ts";
+import { createDrizzleBranchWriteBoundary } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
 import { createDrizzleCommandDocuments } from "../../../../apps/server/server/domains/collab/adapters/drizzle-command-documents.ts";
 import { createDrizzleDocumentCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-commands.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
+import { createReopenDrafts } from "../../../../apps/server/server/domains/collab/adapters/drizzle-reopen-drafts.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
 import { createBranchReviewItems } from "../../../../apps/server/server/domains/collab/domain/branch-review-items.ts";
+import { createBranches } from "../../../../apps/server/server/domains/collab/domain/branches.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { createTreeReader } from "../../../../apps/server/server/domains/context/tree/tree-view.ts";
 import {
@@ -140,10 +143,20 @@ async function fixture(
   });
   liveSeed.destroy();
   const room = await h.coordinator.readDraft(snapshot.draftId, async (doc) => clone(doc, client++));
+  const workBranches = createBranches({
+    store: h.branches,
+    boundary: createDrizzleBranchWriteBoundary(h.db, h.projection),
+  });
   const apiStore = createDrizzleApplyClick(h.db, {
     workProjection: h.projection,
-    branches: h.branches,
+    branches: workBranches,
     coordinator: h.coordinator,
+    reopen: createReopenDrafts(h.db, {
+      coordinator: h.coordinator,
+      close: draftClose,
+      treeLists,
+      workProjection: h.projection,
+    }),
     live: h.persistence.journal,
     liveCoordinator: {
       deliver: async () => {

@@ -556,6 +556,14 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    that holds a document key writes its rows after it, and one that writes first never takes that
    document's key afterwards.
 
+Un-Apply and Restore reopen closed drafts (`reopenDrafts`, `apply.md`) within this list: the Work
+lock; a plain read of the drafts the Apply (Un-Apply) or Discard (Restore) closed; only when that
+selection is not empty, `ensureActiveForWrite` (it joins the command's transaction only while it
+has locked nothing but Works, so no list or document key comes before it, and an Un-Apply with
+nothing to reopen creates no branch); the branch; the lists; the documents of the Apply's text and
+of the selected drafts; then the draft rows. The selection is read again under the document keys
+before the reopen.
+
 `submit` and `resync` take the list keys themselves when a path holds no document key, as the
 tree tools do. `resync` (and so `DraftClose.closeDrafts`, which resyncs the list that holds each
 document it closes a Work draft of) takes none: it throws when the transaction does not hold the

@@ -662,7 +662,7 @@ export function createDrizzleDraftStore(
             ? null
             : cause === "discarded" && closedBy === "discard"
               ? ("discarded" as const)
-              : cause === "discarded" && closedBy === "undo_discard"
+              : cause === "discarded" && (closedBy === "undo_discard" || closedBy === "unapply")
                 ? ("replaced" as const)
                 : ("document_removed" as const),
       }));

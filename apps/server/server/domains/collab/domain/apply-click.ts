@@ -38,7 +38,8 @@ export type PreparedUnapply = {
   branchId: import("@meridian/contracts").BranchId;
   /** One per document the Apply wrote text in, by document id; empty for a tree-only Apply. */
   texts: {
-    base: DraftBase;
+    /** The draft the effects were written in; it may be closed, on another branch, or purged. */
+    draftId: string;
     documentId: import("@meridian/contracts").DocumentId;
     effects: {
       ordinal: number;

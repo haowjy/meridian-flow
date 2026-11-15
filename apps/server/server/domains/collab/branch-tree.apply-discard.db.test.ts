@@ -47,6 +47,7 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
+import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createApplyClickService } from "./domain/apply-click.js";
@@ -99,11 +100,18 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const branchTree = createDrizzleBranchTreeState(db, tree);
     const seed = treeSeeder(db);
     const pending = createDrizzleWorkBranchPendingStore(db);
+    // A tree-only click reads no text: no text base is read or replayed.
+    const reopen = createReopenDrafts(db, {
+      coordinator: {} as never,
+      close: draftClose,
+      treeLists,
+      workProjection,
+    });
     const apply = createDrizzleApplyClick(db, {
       workProjection,
       branches: workBranches,
-      // A tree-only click reads no text: nothing below the tree half is reached.
       coordinator: {} as never,
+      reopen,
       live: {} as never,
       liveCoordinator: {} as never,
       treeLists,
@@ -137,7 +145,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection,
         branches: workBranches,
         treeLists,
-        close: draftClose,
+        reopen,
       }),
     });
 

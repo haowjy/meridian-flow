@@ -33,11 +33,7 @@ export function createDrizzleCommandDocuments(
 
   return {
     /** The documents an Apply command wrote text in or copied tree records of. */
-    async ofApply(input: {
-      applyCommandId: CommandId;
-      accountId: UserId;
-      branchId: BranchId;
-    }): Promise<DocumentId[]> {
+    async ofApply(input: { applyCommandId: CommandId; accountId: UserId }): Promise<DocumentId[]> {
       const tx = currentDrizzleDb(db);
       const text = await tx
         .select({ id: applyCommandEffects.documentId })
@@ -56,7 +52,6 @@ export function createDrizzleCommandDocuments(
         .where(
           and(
             eq(applyCommandTrees.commandId, input.applyCommandId),
-            eq(applyCommandTrees.branchId, input.branchId),
             eq(commands.accountId, input.accountId),
           ),
         );
