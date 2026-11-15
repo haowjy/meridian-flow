@@ -26,11 +26,23 @@ const useAnnouncementStore = create<AnnouncementStore>((set) => ({
   clearPolite: () => set({ polite: "" }),
 }));
 
-/** Push a polite announcement. Screen readers announce it at the next pause. */
+/** Long enough for a screen reader to take the text; it describes a moment, not a state. */
+const POLITE_LIFETIME_MS = 5000;
+let politeTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Push a polite announcement. Screen readers announce it at the next pause, and the region is
+ * cleared soon after, so a surface that has since moved on never leaves its old sentence behind.
+ */
 export function announce(message: string): void {
   const { clearPolite, setPolite } = useAnnouncementStore.getState();
+  clearTimeout(politeTimer);
   clearPolite();
-  queueMicrotask(() => setPolite(message));
+  queueMicrotask(() => {
+    setPolite(message);
+    clearTimeout(politeTimer);
+    politeTimer = setTimeout(clearPolite, POLITE_LIFETIME_MS);
+  });
 }
 
 /** Publish a batch in one live-region update; report only keys actually published. */
