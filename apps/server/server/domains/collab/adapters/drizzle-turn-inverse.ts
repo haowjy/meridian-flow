@@ -7,7 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
-import { describeRanges } from "@meridian/agent-edit/yjs-mutation";
+import { type ItemRanges, textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { BranchId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import {
@@ -19,6 +19,7 @@ import {
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -513,7 +514,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         document.excerptViews.set(doc, excerpt);
       }
       Y.applyUpdate(excerpt, part.update);
-      return describeRanges(excerpt, part.effect.deleted, part.effect.inserted, part.frontier);
+      const fragment = excerpt.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+      // Only the changed words, with `…` where other text sits between them in a block.
+      const read = (ranges: ItemRanges) => textInRanges(fragment, ranges, { gap: " … " }).text;
+      return {
+        before: read(clockRanges(part.effect.deleted)),
+        after: read(clockRanges(part.effect.inserted)),
+      };
     },
     async commit({ plans, sequence, kind, userId, query }) {
       const attempt = attemptStorage.getStore();
@@ -921,6 +928,18 @@ type InverseCapture = {
 };
 
 /** A stable hash of the capture's reads: maps as entries, bytes and bigints as text. */
+function clockRanges(
+  ranges: readonly { client: number; clock: number; len: number }[],
+): ItemRanges {
+  const clients = new Map<number, { clock: number; len: number }[]>();
+  for (const { client, clock, len } of ranges) {
+    const list = clients.get(client) ?? [];
+    list.push({ clock, len });
+    clients.set(client, list);
+  }
+  return { clients };
+}
+
 function fingerprintOf(facts: unknown[]): string {
   return createHash("sha256")
     .update(

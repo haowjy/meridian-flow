@@ -250,79 +250,78 @@ export function executeUndo(
   return updates;
 }
 
-type ClockRange = { client: number; clock: number; len: number };
+/** Item clock ranges by client: a delete set, or the items an update inserts. */
+export type ItemRanges = { clients: Map<number, ReadonlyArray<{ clock: number; len: number }>> };
+
+function slicesIn(item: Y.Item, ranges: ItemRanges): Array<{ from: number; to: number }> {
+  const clientRanges = ranges.clients.get(item.id.client);
+  if (!clientRanges) return [];
+  const itemStart = item.id.clock;
+  const itemEnd = itemStart + item.length;
+  const slices: Array<{ from: number; to: number }> = [];
+  for (const range of clientRanges) {
+    const from = Math.max(itemStart, range.clock);
+    const to = Math.min(itemEnd, range.clock + range.len);
+    if (from < to) slices.push({ from: from - itemStart, to: to - itemStart });
+  }
+  return slices;
+}
 
 /**
- * A part's before and after text in reading order: from its first changed unit to its last,
- * with the text it left alone between (`old cat sat` -> `young dog ran`). That text is what
- * existed when the part was written (a clock below its `frontier`), whether or not a peer has
- * since deleted it; text written later is no part of what the model changed. Text units only;
- * container and formatting structs have no textual excerpt. Reads document positions, so
- * the order never depends on clocks, which run opposite to position for a right-to-left write.
+ * The text of the items in `ranges`, in document order, one line per block; with `liveOnly`,
+ * only items nothing has deleted. Text outside the ranges between two kept runs in one block is
+ * joined by `gap`, so changes in two places never read as one word. It reads document positions,
+ * never clocks, which run opposite to position for a right-to-left write.
+ *
+ * Traversal follows Y item identity and logical XML order. It never compares
+ * sibling positions between before and after documents, which would be
+ * ambiguous when repeated or nested siblings have the same shape.
  */
-export function describeRanges(
-  doc: Y.Doc,
-  deleted: readonly ClockRange[],
-  inserted: readonly ClockRange[],
-  frontier: Readonly<Record<string, number>>,
-): { before: string; after: string } {
-  const unitsOf = (ranges: readonly ClockRange[]) => {
-    const keys = new Set<string>();
-    for (const range of ranges)
-      for (let offset = 0; offset < range.len; offset++)
-        keys.add(`${range.client}:${range.clock + offset}`);
-    return keys;
+export function textInRanges(
+  fragment: Y.XmlFragment,
+  ranges: ItemRanges,
+  { liveOnly = false, gap = "\n" }: { liveOnly?: boolean; gap?: string } = {},
+) {
+  const nodeTypes: string[] = [];
+  let resolvedClockCount = 0;
+  let contentUnavailable = false;
+  let text = "";
+  let pending: "" | "gap" | "block" = "";
+  const breakAfter = (kind: "gap" | "block") => {
+    if (text && pending !== "block") pending = kind;
   };
-  const gone = unitsOf(deleted);
-  const added = unitsOf(inserted);
-  // Only the texts holding a changed unit, and the elements above them, are walked.
-  const holders = new Set<Y.AbstractType<unknown>>();
-  const reach = new Set<Y.AbstractType<unknown>>();
-  let root: Y.AbstractType<unknown> | undefined;
-  for (const range of [...deleted, ...inserted])
-    for (const { item } of itemsInRange(doc, range)) {
-      holders.add(item.parent as Y.AbstractType<unknown>);
-      let type = item.parent;
-      while (type instanceof Y.AbstractType) {
-        reach.add(type);
-        root = type;
-        type = type._item?.parent ?? null;
-      }
-    }
-  const units: Array<{ char: string; role: "gone" | "added" | "kept" | "other" }> = [];
-  const walk = (type: Y.AbstractType<unknown>) => {
-    for (let item = type._start; item; item = item.right) {
-      if (item.content instanceof Y.ContentType) {
-        if (reach.has(item.content.type)) walk(item.content.type);
-      } else if (item.content instanceof Y.ContentString && holders.has(type)) {
-        for (let offset = 0; offset < item.content.str.length; offset++) {
-          const char = item.content.str[offset];
-          const key = `${item.id.client}:${item.id.clock + offset}`;
-          const role = gone.has(key)
-            ? "gone"
-            : added.has(key)
-              ? "added"
-              : item.id.clock + offset < (frontier[item.id.client] ?? 0)
-                ? "kept"
-                : "other";
-          units.push({ char, role });
+  const walk = (start: Y.Item | null) => {
+    // An element among text runs is an inline atom: a gap in its line, not a block end.
+    let textblock = false;
+    for (let item = start; item && !textblock; item = item.right)
+      textblock = item.content instanceof Y.ContentType && item.content.type instanceof Y.XmlText;
+    const breakKind = textblock ? "gap" : "block";
+    for (let item = start; item; item = item.right) {
+      const slices = slicesIn(item, ranges);
+      const content = item.content;
+      resolvedClockCount += slices.reduce((total, slice) => total + slice.to - slice.from, 0);
+      if (content instanceof Y.ContentString && !(liveOnly && item.deleted)) {
+        const kept = slices.map((slice) => content.str.slice(slice.from, slice.to)).join("");
+        if (kept.length < content.str.length) breakAfter("gap");
+        if (kept) {
+          if (pending) text += pending === "block" ? "\n" : gap;
+          text += kept;
+          pending = "";
         }
+      } else if (slices.length > 0 && content instanceof Y.ContentDeleted) {
+        contentUnavailable = true;
       }
+      if (!(content instanceof Y.ContentType)) continue;
+      const child = content.type;
+      const nodeName = child instanceof Y.XmlElement ? child.nodeName : undefined;
+      if (slices.length > 0 && nodeName && !nodeTypes.includes(nodeName)) nodeTypes.push(nodeName);
+      if (nodeName) breakAfter(breakKind);
+      walk(child._start);
+      if (nodeName) breakAfter(breakKind);
     }
   };
-  if (root) walk(root);
-  const side = (changed: "gone" | "added") => {
-    const own = units.filter((unit) => unit.role === changed || unit.role === "kept");
-    const first = own.findIndex((unit) => unit.role === changed);
-    const last = own.findLastIndex((unit) => unit.role === changed);
-    return first < 0
-      ? ""
-      : own
-          .slice(first, last + 1)
-          .map((unit) => unit.char)
-          .join("");
-  };
-  return { before: side("gone"), after: side("added") };
+  walk(fragment._start);
+  return { text, nodeTypes, resolvedClockCount, contentUnavailable };
 }
 
 /** Transaction deltas only; state-vector encoding would repeat old tombstones. */
