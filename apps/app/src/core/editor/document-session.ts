@@ -182,10 +182,6 @@ export function updatesRefused(state: DocumentSessionConnectionState | null | un
 export type DocumentSessionTransportProvider = {
   /** Local updates not acknowledged on this connection, merged; null when none. */
   unacknowledgedUpdates(): Uint8Array | null;
-  /** The part of them the writer typed, merged; null when none. */
-  unacknowledgedTyping?: () => Uint8Array | null;
-  /** Takes the unacknowledged updates back out of the document, so it matches the server again. */
-  revertUnacknowledgedUpdates?: () => void;
   whenCurrentChangesAcknowledged?: () => Promise<void>;
   synced?: boolean;
   whenSynced?: Promise<void>;
@@ -547,18 +543,8 @@ export class DocumentSession {
 
   /** The words typed here that the server has not acknowledged; null when there are none. */
   unsentText(): string | null {
-    const typing = this.transportProvider?.unacknowledgedTyping?.() ?? null;
-    return typing ? unsentText(this.document, typing) : null;
-  }
-
-  /**
-   * Takes back the typing a read-only room dropped (the server never acknowledges it): the
-   * document and its local copy return to the server's state. Returns the words, null when none.
-   */
-  revertUnsentEdits(): string | null {
-    const text = this.unsentText();
-    this.transportProvider?.revertUnacknowledgedUpdates?.();
-    return text;
+    const updates = this.unacknowledgedUpdates();
+    return updates ? unsentText(this.document, updates) : null;
   }
 
   /**

@@ -26,6 +26,5 @@ stateDiagram-v2
   (access lost, reset, terminal, destroyed) or the server admitted it read-only, as it does an
   archived Work's draft. A browser with typing still unsent when the Work is archived
   (offline then, or online with it in flight) reconnects read-only; the pill goes quiet instead of saying "offline", the
-  archived notice says why, and the unsent typing is taken back out of the room and handed to the
-  writer with Copy (`revertUnsentEdits`): a read-only room never keeps words the server will not.
+  archived notice says why, and the typing stays on screen for an Unarchive to deliver.
 - A refused update (`updatesRefused`) is not a phase. It is checked first and replaces the pill.

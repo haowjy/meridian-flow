@@ -402,13 +402,6 @@ export class DocumentSessionRegistry {
       ownUserId: this.accountId,
       persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.documentId, fence),
     });
-    // A read-only room drops the writer's unsent typing without saying so: it goes back to the
-    // server's text and comes back to the writer with Copy.
-    session.subscribe((snapshot) => {
-      if (snapshot.access !== "read" || !session.hasUnacknowledgedEdits()) return;
-      const text = session.revertUnsentEdits();
-      if (text) this.publishUnsent("closed", text);
-    });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
     if (session.room.kind === "live")
@@ -442,10 +435,6 @@ export class DocumentSessionRegistry {
     const text = session.unsentText();
     if (!text) return;
     this.handedBack.add(session);
-    this.publishUnsent(cause, text);
-  }
-
-  private publishUnsent(cause: UnsentTypingCause, text: string): void {
     const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
     for (const observer of this.unsentTypingObservers) observer(typing);
   }

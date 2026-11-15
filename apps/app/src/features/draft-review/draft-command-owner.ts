@@ -931,14 +931,12 @@ export class DraftCommandOwner {
     ref: DraftRef,
     target: GroupsTarget,
     history: Editor | "notice" | null,
-    onReturned?: (why: RestoreReturned) => void,
   ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
     const entry = this.byItem.get(ref.itemKey);
     let handle: DiscardUndo | null = null;
     const started = startDraftDiscardSession({
       target,
       history,
-      onReturned,
       onNoticeEnd: () => {
         if (handle) this.notices.partEnded(handle);
       },

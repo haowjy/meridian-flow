@@ -12,9 +12,8 @@ import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
-import { markNotTyping } from "@/core/editor/rescued-text";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
-import { closedOwnerWord, type DiscardUndo, type RestoreReturned } from "./draft-notices";
+import { closedOwnerWord, type DiscardUndo } from "./draft-notices";
 import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
 
@@ -37,8 +36,6 @@ export function startDraftDiscardSession(input: {
    */
   history: Editor | "notice" | null;
   onNoticeEnd?: () => void;
-  /** The room turned read-only for a closed owner after this Discard was written: it came back. */
-  onReturned?: (why: RestoreReturned) => void;
   entry: Entry | undefined;
   registry: DraftRoomRegistry;
   active(): boolean;
@@ -46,7 +43,7 @@ export function startDraftDiscardSession(input: {
   setState(state: Partial<DraftCommandState>): void;
   releaseIdle(): void;
 }): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
-  const { target, history: owner, onNoticeEnd, onReturned, entry } = input;
+  const { target, history: owner, onNoticeEnd, entry } = input;
   const editor = owner === "notice" ? null : owner;
   const binding = entry?.binding;
   if (
@@ -75,7 +72,6 @@ export function startDraftDiscardSession(input: {
       yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
   // Its own origin, so the write is one stack item the notice can name.
   const origin = {};
-  markNotTyping(origin);
   const history: Y.UndoManager = editor
     ? yUndoPluginKey.getState(editor.state).undoManager
     : new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
@@ -123,13 +119,7 @@ export function startDraftDiscardSession(input: {
   // remote, or Ctrl+Z taking it back ends it, so the notice and the editor never undo twice.
   let undoing = false;
   const onProse = (_events: unknown, transaction: Y.Transaction) => {
-    // A read-only room's revert of the unsent edits is the room's, and the access watch below ends this.
-    if (
-      !undoing &&
-      transaction.origin !== origin &&
-      binding.session.getSnapshot().access !== "read"
-    )
-      end();
+    if (!undoing && transaction.origin !== origin) end();
   };
   const onPopped = ({ stackItem }: { stackItem: StackItem }) => {
     if (!undoing && stackItem === item) end();
@@ -140,15 +130,9 @@ export function startDraftDiscardSession(input: {
     watching = true;
     fragment.observeDeep(onProse);
     history.on("stack-item-popped", onPopped);
-    // A room that turns read-only (its Work was archived) drops what was written into it: the
-    // session reverts the unsent edits, so this Discard did not happen, and its Undo ends.
+    // A room that turns read-only (its Work was archived) drops an Undo written into it.
     stopAccess = binding.session.subscribe((snapshot) => {
-      if (snapshot.access !== "read" || snapshot.reasonPending) return;
-      const { closedWhy } = snapshot;
-      queueMicrotask(() => {
-        if (active && closedWhy) onReturned?.(closedOwnerWord(closedWhy));
-        end();
-      });
+      if (snapshot.access === "read") queueMicrotask(end);
     });
   };
   const unwatch = () => {
@@ -199,7 +183,6 @@ export function startDraftDiscardSession(input: {
       if (!active) return { answer: "gone", landed: none };
       if (pending) {
         pending = false;
-        clearTimeout(waitTimer);
         cancelAnimationFrame(paintFrame);
         document.removeEventListener("visibilitychange", onVisibility);
         finish({ kind: "done" });
@@ -248,15 +231,7 @@ export function startDraftDiscardSession(input: {
   }
   const commit = () => {
     if (!pending) return;
-    // The room's access is still being named (a reconnect after a 4409): its answer decides what
-    // this write meets, so wait for it, as `ready` makes a press wait.
-    if (binding.session.getSnapshot().reasonPending) {
-      clearTimeout(waitTimer);
-      waitTimer = setTimeout(commit, 50);
-      return;
-    }
     pending = false;
-    clearTimeout(waitTimer);
     cancelAnimationFrame(paintFrame);
     document.removeEventListener("visibilitychange", onVisibility);
     try {
@@ -275,7 +250,6 @@ export function startDraftDiscardSession(input: {
     failure: null,
   });
   let paintFrame = 0;
-  let waitTimer: ReturnType<typeof setTimeout> | undefined;
   const onVisibility = () => {
     if (document.visibilityState === "hidden") commit();
   };

@@ -446,11 +446,6 @@ export function useWorkBranchCommands({
     ): CommandStart => {
       return mode === "apply" ? applyOne(draft, target) : discardOne(draft, target);
     };
-    // A change card's chip stays on the card pressed; a whole draft's is the band's.
-    const bounceSurfaceOf = (draft: DraftReviewSelection, target: ChangeTarget): NoticeSurface =>
-      surface === "band" && target.kind === "groups"
-        ? { kind: "card", documentId: draft.documentId }
-        : noticeSurface(draft);
     const discardOne = (draft: DraftReviewSelection, target: ChangeTarget): CommandStart => {
       // A new Discard replaces the owner's notice, with its own or with none.
       endNotice();
@@ -461,9 +456,12 @@ export function useWorkBranchCommands({
       const leaves =
         target.kind === "draft" && (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
       const { start, part } = dispatchDiscard(draft, target);
-      void start.outcome.then((outcome) =>
-        bounced([outcome], bounceSurfaceOf(draft, target), [draft.documentId]),
-      );
+      // A change card's chip stays on the card pressed; a whole draft's is the band's.
+      const bounceSurface: NoticeSurface =
+        surface === "band" && target.kind === "groups"
+          ? { kind: "card", documentId: draft.documentId }
+          : noticeSurface(draft);
+      void start.outcome.then((outcome) => bounced([outcome], bounceSurface, [draft.documentId]));
       const shown = part
         ? notices.showDiscard({
             projectId,
@@ -575,9 +573,7 @@ export function useWorkBranchCommands({
           part: { ...share(handle, outcome, discarded.handle !== null), restore: commandId },
         };
       }
-      const discarded = owner.discard(ref(draft), target, history, (why) =>
-        bounced([{ kind: "returned", why }], bounceSurfaceOf(draft, target), [draft.documentId]),
-      );
+      const discarded = owner.discard(ref(draft), target, history);
       if (!discarded) return none(blocked());
       void discarded.outcome.then(() => refresh([draft.documentId]));
       const start = { sent: true, outcome: discarded.outcome };

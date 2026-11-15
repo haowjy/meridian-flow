@@ -143,17 +143,6 @@ export function documentText(document: Y.Doc): string | null {
   return text || null;
 }
 
-const writtenNotTyped = new WeakSet<object>();
-
-/** A transaction origin whose writes are the app's, not the writer's typing: a Discard's text. */
-export function markNotTyping(origin: object): void {
-  writtenNotTyped.add(origin);
-}
-
-export function isNotTyping(origin: unknown): boolean {
-  return typeof origin === "object" && origin !== null && writtenNotTyped.has(origin);
-}
-
 /**
  * The words this browser typed into `document` that the server never acknowledged: the text
  * `unacknowledged` inserted and nothing has deleted since. Null when it holds no words (a format
