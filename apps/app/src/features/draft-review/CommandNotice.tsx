@@ -384,6 +384,7 @@ function factSentence(fact: AppliedFact): string {
 
 /** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
 export const noticeAction = (container: HTMLElement) =>
+  container.querySelector<HTMLElement>("[data-command-notice] [data-row-word]:not(:disabled)") ??
   container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
 
 /**
