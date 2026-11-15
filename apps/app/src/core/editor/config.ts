@@ -133,13 +133,23 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 const lowlight = createLowlight(common);
 
 /**
+ * The lowlight grammar a filetype paints with, where its name differs: lowlight's `shell` is a
+ * terminal session (`#` is a prompt), and CSV has no grammar, so it would be detected as code.
+ */
+const GRAMMAR_FOR_FILETYPE: Partial<Record<Filetype, string>> = {
+  shell: "bash",
+  csv: "plaintext",
+};
+
+/**
  * What a code file's fence is painted with: its filetype, whatever `language` the block stores,
  * so a rename to another type repaints and a file stored with no or another language reads as
  * its type. A filetype lowlight doesn't know is detected from the text.
  */
 function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
-  if (!filetype || !lowlight.registered(filetype)) return lowlight;
-  const paint = (value: string) => lowlight.highlight(filetype, value);
+  const grammar = filetype && (GRAMMAR_FOR_FILETYPE[filetype] ?? filetype);
+  if (!grammar || !lowlight.registered(grammar)) return lowlight;
+  const paint = (value: string) => lowlight.highlight(grammar, value);
   return { ...lowlight, highlight: (_language, value) => paint(value), highlightAuto: paint };
 }
 
