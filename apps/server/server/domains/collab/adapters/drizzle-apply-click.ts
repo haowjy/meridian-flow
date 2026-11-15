@@ -34,7 +34,7 @@ import type {
   ApplyItemResult,
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
-import type { LeftOutWhy, Settlement } from "@meridian/contracts/commands";
+import type { ClosedOwnerWhy, LeftOutWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
 import { appliedCreates, listRecords, undoApply } from "@meridian/project-tree";
@@ -82,6 +82,7 @@ import {
   settlementOf,
 } from "./drizzle-settlement-of.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
+import { closedFileOwner, fileOwnersOf, ownersToLock, returnedFor } from "./file-owners.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -363,11 +364,22 @@ export function createDrizzleApplyClick(
       const by = `user:${command.envelope.accountId}`;
       const lives: Y.Doc[] = [];
       try {
+        // Each document's file has an owner of its own, which the branch's does not stand for.
+        const fileOwners = await fileOwnersOf(db, [
+          ...prepared.texts.map((text) => text.documentId),
+          ...prepared.trees.flatMap((tree) => tree.nodes),
+        ]);
         return await runDocumentCommand(db, command.envelope, () =>
           deps.workProjection.mutate(
-            { branches: [prepared.branchId] },
-            async (): Promise<UnapplyClickResult> => {
+            { branches: [prepared.branchId], ...ownersToLock(fileOwners) },
+            async (locked): Promise<UnapplyClickResult> => {
               const tx = currentDrizzleDb(db);
+              // A document whose file's owner is closed stays as the Apply left it.
+              const held = new Map<string, ClosedOwnerWhy>();
+              for (const [node, owner] of fileOwners) {
+                const why = closedFileOwner(owner, locked);
+                if (why) held.set(node, why);
+              }
               // The drafts this Apply's delete closed come back before anything reads a base
               // (`reopenDrafts`). The Work's current branch is made only for them: an Un-Apply
               // with nothing to reopen must not create one.
@@ -427,6 +439,7 @@ export function createDrizzleApplyClick(
                       const result = undoApply(writer, applyCommandId, by, commandId, {
                         writtenSince: written,
                         restoredByApply: tree.restored,
+                        held: new Set(held.keys()),
                       });
                       const records = new Map(
                         listRecords(writer.doc).map((record) => [record.id, record]),
@@ -486,6 +499,7 @@ export function createDrizzleApplyClick(
                 skipped: PreparedUnapply["texts"][number]["effects"];
               }[] = [];
               for (const text of prepared.texts) {
+                if (held.has(text.documentId)) continue;
                 const [draft] = await tx
                   .select({ status: documentDrafts.status })
                   .from(documentDrafts)
@@ -662,6 +676,7 @@ export function createDrizzleApplyClick(
                 settled.push({ rule: "left_out", items: [...nodes], why });
               for (const node of alreadyUndone)
                 settled.push({ rule: "already", state: "unapplied", item: node });
+              for (const why of new Set(held.values())) settled.push(...returnedFor(why));
               // Everything this Apply did was taken back before, or it left nothing to take back.
               if (
                 settled.length === 0 &&
@@ -691,7 +706,7 @@ export function createDrizzleApplyClick(
       }
     },
     measured: deps.measured,
-    async apply(command, items, saw) {
+    async apply(command, asked, saw) {
       const { branchId, envelope } = command;
       const { commandId } = envelope;
       const userId = envelope.accountId as UserId;
@@ -706,13 +721,25 @@ export function createDrizzleApplyClick(
             deferUntilDrizzleCommit(() => {
               committedAt = performance.now();
             });
+            // Each item's file has an owner of its own, which the branch's does not stand for.
+            const fileOwners = await fileOwnersOf(
+              db,
+              asked.map((item) => item.node),
+            );
             // The branch's owner enters the boundary after the claim, as Discard's does.
             const answer = await deps.workProjection.mutate(
-              { branches: [branchId] },
-              async (): Promise<ApplyClickResult> => {
+              { branches: [branchId], ...ownersToLock(fileOwners) },
+              async (locked): Promise<ApplyClickResult> => {
                 // Orders this command with a Discard all's close; a closed branch has no pending
                 // records or open drafts, and each item below says what became of it.
                 await deps.branches.lockActive(branchId);
+                // An item whose file's owner is closed bounces on its own halves; the rest land.
+                const bounced = new Map<string, Settlement[]>();
+                for (const item of asked) {
+                  const why = closedFileOwner(fileOwners.get(item.node), locked);
+                  if (why) bounced.set(item.node, returnedFor(why));
+                }
+                const items = asked.filter((item) => !bounced.has(item.node));
                 const nodes = items.map((item) => item.node);
                 // Read before the locks, for the `renamed` note's wanted path only: nothing in it
                 // decides a write.
@@ -829,7 +856,14 @@ export function createDrizzleApplyClick(
                   );
                 }
 
-                const results = items.map((item): ApplyItemResult => {
+                const results = asked.map((item): ApplyItemResult => {
+                  const returned = bounced.get(item.node);
+                  if (returned)
+                    return {
+                      node: item.node,
+                      tree: { landed: false, settled: returned },
+                      ...(item.text ? { text: { landed: false, settled: returned } } : {}),
+                    };
                   const one = fact(item.node);
                   const text = texts.get(item.node);
                   return {

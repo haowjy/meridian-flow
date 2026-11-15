@@ -37,6 +37,10 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`Apply couldn't be sent. Try again.`;
     case "read_only":
       return msg`This draft just became read-only, so nothing was discarded. Check it, then try again.`;
+    case "work_archived":
+      return msg`This Work is archived, so its notes take no new text. Unarchive it to apply this.`;
+    case "work_deleted":
+      return msg`This Work is deleted, so its notes take no new text.`;
     case "chat_frozen":
       return msg`This chat is in the trash, so its drafts are frozen. Restore the chat to apply them.`;
     default:

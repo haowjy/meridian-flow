@@ -195,7 +195,8 @@ const leftOut = (lines: readonly ApplyLine[] | undefined): BranchCommandFailure 
   lines?.length ? { code: "apply-left-out", landed: false, lines } : null;
 /**
  * Every line an item shows for what of it didn't land, each with its half: `overtaken_<state>`
- * or `left_out_<why>`. `already` and `restored` are painted quietly and give none.
+ * or `left_out_<why>`, or the closed owner's own reason (`work_archived`, `work_deleted`,
+ * `chat_frozen`). `already` and `restored` are painted quietly and give none.
  */
 function linesOf(item: ApplyItemResult | undefined): ApplyLine[] {
   return (["tree", "text"] as const).flatMap((half) =>
@@ -204,6 +205,8 @@ function linesOf(item: ApplyItemResult | undefined): ApplyLine[] {
       if (view?.kind === "overtaken")
         return [{ half, code: `overtaken_${view.state}`, by: view.by }];
       if (view?.kind === "left_out") return [{ half, code: `left_out_${view.why}` }];
+      // The file's own Work (or chat) is closed: the line says which, and the item stays pending.
+      if (view?.kind === "returned" && one.rule === "returned") return [{ half, code: one.why }];
       return [];
     }),
   );

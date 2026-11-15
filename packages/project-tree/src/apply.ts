@@ -471,6 +471,8 @@ export function undoApply(
   options: {
     writtenSince?: ReadonlySet<string>;
     restoredByApply?: readonly string[];
+    /** Nodes whose copies stay as they are: their file's owner takes no write now. */
+    held?: ReadonlySet<string>;
   } = {},
 ): UndoApplyResult {
   assertNewCommand(writer.doc, command);
@@ -483,6 +485,7 @@ export function undoApply(
   const reversed = new Set<string>();
   writer.transact(() => {
     for (const copy of made.reverse()) {
+      if (options.held?.has(copy.node)) continue;
       if (copy.type === "create" && options.writtenSince?.has(copy.node)) {
         left.push({ record: copy, why: "has_text" });
         continue;

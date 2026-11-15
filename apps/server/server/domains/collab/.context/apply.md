@@ -216,9 +216,18 @@ chat that cannot take the restore (archived, deleted, a chat in Trash) bounces: 
 changed, `restored: 0`, `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
 The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
 result in the command's mapper; Discard bounces the same way (the item as it stands, with the `returned` line). Apply and
-Un-Apply land on a closed owner, and it stays closed. `listDiscards(projectId)` is the document half of Trash's Discard entries.
+Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows.
+
+**An item's file has an owner of its own.** A file in another Work's (or a chat lineage's) notes is judged by that
+owner, not the branch's. Apply and Un-Apply take the `command` grant on the live file (it ignores lifecycle, as
+Discard's does), read each item's file owner from its source (`adapters/file-owners.ts`), and lock those Works and
+lineages with the branch's in the same `mutate` call (Work locks sorted by id, before lists and documents). Under the
+locks, an item whose file's owner is closed bounces on its own halves: `{ landed: false, settled: [returned] }` for
+Apply, the rest of the selection landing. Un-Apply leaves such documents as the Apply left them (text and tree copies,
+via `undoApply`'s `held`) and adds one `returned` line per reason. Restore and Discard write no live file, so
+they judge the branch's owner only. A file in the project (no Work, no lineage) has no closed owner.
 
 **The day-30 purge** (`recovery.purgeDiscards`, `adapters/drizzle-discard-purge.ts`, run hourly
 beside `purgeWorks` and `purgeDocuments`) is the only reader of the clock for Trash's command

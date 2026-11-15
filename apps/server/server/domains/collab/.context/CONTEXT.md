@@ -16,7 +16,7 @@ and names its owner: the chat's Work, or for a chat with no Work
 its lineage (the first chat, its forks and subagents; a handoff starts a new one).
 `shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
 (`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
-writes are refused; Apply, Un-Apply and Discard still work (Apply and Un-Apply land in a closed owner). Scratch and upload content is always live.
+writes are refused; Apply, Un-Apply and Discard still work (Apply and Un-Apply land in a closed branch owner; an item whose file's own Work is closed bounces `returned`). Scratch and upload content is always live.
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows
 the writes before it. Rebinding is resolved again for each query; a read-only draft query
@@ -336,7 +336,7 @@ either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
-Work of the set is active, and `allowFrozenLineage` lets a chat in Trash pass it. Discard and Restore keep `requireActive` (a closed owner bounces them); Apply and Un-Apply pass `requireActive: false` and `work: "any"` at their `prepareAppend`, so they land on a closed owner. `ensureActiveForWrite` takes the caller's `WorkWriteOptions` the same way. No other collab code locks a Work for a write; the
+Work of the set is active, and `allowFrozenLineage` lets a chat in Trash pass it. Discard and Restore keep `requireActive` (a closed owner bounces them); Apply and Un-Apply pass `requireActive: false` and `work: "any"` at their `prepareAppend`, so they land on a closed branch owner; each item's file owner is locked beside it and judged on its own (`apply.md`). `ensureActiveForWrite` takes the caller's `WorkWriteOptions` the same way. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. Creating a document draft
 runs inside `mutate`: a draft made while its Work archives waits on
 the Work row and is read as archived once the archive commits. No append enters the boundary: no

@@ -660,8 +660,9 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ParsedA
 /**
  * The one Apply: any selection of nodes, a per-document click being the one-item case. It
  * takes the grants every item needs, whatever the route it came by: the draft's grant and the
- * live grant on each document, and a restore grant on one live has deleted (it authorizes at
- * its source through the draft's destination, F9). A folder has no file of its own: the writer
+ * `command` grant on each live document (a closed owner's file passes: the core bounces it),
+ * and a restore grant on one live has deleted (it authorizes at its source through the draft's
+ * destination, F9). A folder has no file of its own: the writer
  * owns the project, which the branch's identity proved.
  */
 async function applyItems(
@@ -736,7 +737,7 @@ async function applyItems(
       const live = await deps.fileAccess.authorize(
         { accountId: input.userId },
         documentTarget(node),
-        "edit",
+        "command",
       );
       if (isFileAccessDenied(live)) {
         const answer = await denied(live, node);
@@ -873,9 +874,9 @@ async function documentGrant(
     );
     if (!isFileAccessDenied(restored)) return restored;
   }
-  const live = await deps.fileAccess.authorize(principal, documentTarget(documentId), "edit");
+  const live = await deps.fileAccess.authorize(principal, documentTarget(documentId), "command");
   if (!isFileAccessDenied(live) || !live.facts?.deleted) return live;
-  return deps.fileAccess.authorize(principal, { kind: "restore", documentId }, "edit");
+  return deps.fileAccess.authorize(principal, { kind: "restore", documentId }, "command");
 }
 
 /**

@@ -161,6 +161,7 @@ export async function loadPreparedUnapply(
       mark: applyCommandTrees.mark,
       createdHeads: applyCommandTrees.createdHeads,
       restored: applyCommandTrees.restored,
+      nodes: applyCommandTrees.nodes,
     })
     .from(applyCommandTrees)
     .innerJoin(commands, eq(commands.id, applyCommandTrees.commandId))

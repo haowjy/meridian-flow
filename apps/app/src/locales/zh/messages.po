@@ -7407,6 +7407,10 @@ msgstr ""
 msgid "This Work is archived, so its drafts take no new text and the change wasn't kept."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This Work is archived, so its notes take no new text. Unarchive it to apply this."
+msgstr ""
+
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr ""
@@ -7425,6 +7429,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This Work is deleted, so its drafts take no new text and the change wasn't kept."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This Work is deleted, so its notes take no new text."
 msgstr ""
 
 #: src/features/project/work/EndedWorkNotice.tsx
