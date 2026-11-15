@@ -102,7 +102,16 @@ export function createAgentEditRouter(input: {
       return read
         ? {
             ...outcome,
-            result: { ...outcome.result, read: { ...read, version: destination.kind } },
+            result: {
+              ...outcome.result,
+              read: {
+                ...read,
+                version: destination.kind,
+                ...(destination.kind === "draft"
+                  ? { draftWork: destination.ownerHandle ?? "/" }
+                  : {}),
+              },
+            },
           }
         : outcome;
     },

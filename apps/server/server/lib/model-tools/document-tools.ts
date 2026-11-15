@@ -58,6 +58,7 @@ import {
 import {
   documentGrant,
   documentNotFoundError,
+  draftOnlyPath,
   fileAccessDeniedError,
   firstRefusal,
   inContainer,
@@ -395,11 +396,32 @@ export async function readTrackedDocument(
           (await deps.documentRemovals.lookup([address.documentId])).get(address.documentId),
         )
       : null;
-  const notice = [owner && "notice" in owner ? owner.notice : null, surviving]
+  // A document moved out of a source that is never drafted reads its live text at a path only the
+  // Work's draft has: the result names that draft, as a drafted write does.
+  const moved =
+    version !== "live" && grant.destination.kind === "live"
+      ? await draftOnlyPath(deps, address.documentId, call.execution)
+      : null;
+  const notice = [
+    owner && "notice" in owner ? owner.notice : null,
+    surviving,
+    moved &&
+      `this file is at ${moved.path} only in this chat's draft (moved from ${moved.movedFrom}); its text is the live text.`,
+  ]
     .filter(Boolean)
     .join("\n");
+  const read =
+    moved && outcome.result.read
+      ? {
+          read: {
+            ...outcome.result.read,
+            version: "draft" as const,
+            draftWork: moved.ownerHandle ?? "/",
+          },
+        }
+      : {};
   return {
-    output: { ...outcome.result, ...owner, ...(notice ? { notice } : {}) },
+    output: { ...outcome.result, ...read, ...owner, ...(notice ? { notice } : {}) },
     revision: outcome.revision,
     metadata: documentRevisionMetadata(address, outcome.revision),
     evidence: {

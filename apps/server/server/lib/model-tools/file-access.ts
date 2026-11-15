@@ -9,7 +9,7 @@ import {
   modelResult,
 } from "@meridian/agent-edit/integration";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import {
   type FileAccessDenied,
@@ -75,6 +75,25 @@ export async function keptDraft(
   return drafts.some((draft) => draft.documentId === documentId)
     ? { kind: "draft", owner, ownerHandle: execution.scope.workHandle }
     : null;
+}
+
+/**
+ * Where the Work's draft moved a document, when the document is at the path the model read
+ * only in that draft: its content source (Scratch) is never drafted, so its grant says `live`,
+ * but the path is the Work's. Its path there and the live address it moved from, else null.
+ */
+export async function draftOnlyPath(
+  deps: Pick<ToolWiringDeps, "branches">,
+  documentId: string,
+  execution: ThreadExecutionContext,
+): Promise<{ path: string; movedFrom: string; ownerHandle: string | null } | null> {
+  const resolved = await deps.branches.draftReview.resolveItemByDocument({
+    owner: execution.branchOwner,
+    documentId: documentId as DocumentId,
+  });
+  const path = resolved?.item.path;
+  const movedFrom = resolved?.item.tree?.movedFrom;
+  return path && movedFrom ? { path, movedFrom, ownerHandle: execution.scope.workHandle } : null;
 }
 
 /**
