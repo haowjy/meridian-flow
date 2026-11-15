@@ -8,6 +8,7 @@ import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";
 import { useRef } from "react";
+import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { IconButton } from "@/components/ui/icon-button";
 import { role } from "@/components/ui/roles";
 import { focusIsFree } from "@/lib/focus-follow";
@@ -51,6 +52,7 @@ function DialogContent({
   showCloseButton = true,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
@@ -66,6 +68,10 @@ function DialogContent({
           className,
         )}
         {...focus}
+        onEscapeKeyDown={(event) => {
+          ignoreFieldEscape(event);
+          onEscapeKeyDown?.(event);
+        }}
         {...props}
       >
         {children}

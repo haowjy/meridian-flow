@@ -183,6 +183,8 @@ export function withGone<T, G = T>(
   gone: readonly GoneRow<G>[],
 ): WithGone<T, G>[] {
   const shown: WithGone<T, G>[] = rows.map((row) => ({ row, key: keyOf(row), gone: false }));
+  // Rows with no neighbour left go to the top in the order given, not each ahead of the last.
+  let top = 0;
   for (const each of gone) {
     if (shown.some((item) => item.key === each.key)) continue;
     let at = -1;
@@ -190,7 +192,9 @@ export function withGone<T, G = T>(
       at = shown.findIndex((item) => item.key === key);
       if (at >= 0) break;
     }
-    shown.splice(at + 1, 0, { row: each.row, key: each.key, gone: true });
+    const index = at < 0 ? top : at + 1;
+    if (index <= top) top++;
+    shown.splice(index, 0, { row: each.row, key: each.key, gone: true });
   }
   return shown;
 }

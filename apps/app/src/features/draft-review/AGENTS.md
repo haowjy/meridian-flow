@@ -11,9 +11,9 @@ partitions the text.
 - Text Discard is one local transaction, one stack item. Its Undo belongs to the owner's
   notice (`DraftNotices`, one per draft owner, outliving surfaces); a band Discard's item is
   also on the reviewing editor's history, and either handle ends the other. A Discard in the
-  side never enters editor history. One rule (`discardsLocally`, behind `discardAsks`) says
-  whether a Discard runs here as a local text Discard: anything else goes to the server, and
-  its notice's Undo is the server's Undo of a Discard. Only a frozen owner's Discard asks.
+  side never enters editor history. Only a Discard of some changes is local: a whole draft's
+  goes to the server, so Trash lists it, and its notice's Undo is the server's Undo of a
+  Discard (`restoreDiscard`). No Discard asks first.
 - Cached text may paint before first sync, but a row is ready only after sync.
 - The editor extension is a passive painter. A stale frame is mapped while the next
   projection waits, never installed onto unequal prose from another binding.

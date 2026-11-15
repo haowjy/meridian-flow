@@ -21,6 +21,11 @@ const focusing = new Set<string>();
 /** Where the Work's row was when it was deleted from a list; none when deleted elsewhere. */
 export const workPlace = (workId: string) => places.get(workId) ?? null;
 
+/** Keeps where a Work's row is, for a row that stands in for it after the Work leaves the list. */
+export function rememberWorkPlace(workId: string, place: WorkPlace): void {
+  places.set(workId, place);
+}
+
 /** True once per delete from a list: its Undo takes the focus the deleted row had. */
 export function takeWorkFocus(workId: string): boolean {
   return focusing.delete(workId);
@@ -31,7 +36,7 @@ export type WorkDeletion = {
   windows: readonly WorkDeleteWindow[];
   /** Deletes the Work; `place` keeps its row where it was while its Undo shows. */
   remove: (work: Work, place?: WorkPlace) => void;
-  undo: (workId: string) => void;
+  undo: (work: Work) => void;
   /** Ends every Undo window: opening a Work, starting one, or closing the dialog. */
   dismissAll: () => void;
 };
@@ -60,6 +65,9 @@ export function useWorkDeletion(projectId: string): WorkDeletion {
     },
     [deleteCommand],
   );
-  const undo = useCallback((workId: string) => void restore({ workId }), [restore]);
+  const undo = useCallback(
+    (work: Work) => void restore({ workId: work.id, name: work.name }),
+    [restore],
+  );
   return { windows, remove, undo, dismissAll };
 }

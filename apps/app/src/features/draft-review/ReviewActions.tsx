@@ -6,8 +6,7 @@
  * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
  * is the one filled button, and a column of filled squares would drown it.
  *
- * A Discard with no Undo asks once (`discardAsks`): its question takes the pair's place until
- * the writer keeps the draft or confirms. An undoable Discard never asks.
+ * Discard never asks: every Discard's notice has its Undo, and Trash keeps it.
  *
  * Each button has a word on screen and a name: the name ("Discard draft", or the caller's
  * `labels` where the row names more) is the accessible name and the tooltip. A change's and a
@@ -20,7 +19,6 @@
 import { t } from "@lingui/core/macro";
 import { Check, Loader2, X } from "lucide-react";
 import { type MouseEventHandler, type ReactNode, useRef, useState } from "react";
-import { AskOnce } from "@/components/app/AskOnce";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -43,48 +41,6 @@ function reviewActionNames(
   return { word: scope === "all" ? name : t`Discard`, name };
 }
 
-/**
- * A Discard's one question, in the place of the controls that asked it: the Discard carries no
- * Undo.
- */
-export function DiscardQuestion({
-  scope,
-  onKeep,
-  onConfirm,
-  returnFocus,
-  touch = false,
-  className,
-}: {
-  scope: ReviewScope;
-  onKeep(): void;
-  onConfirm(): void;
-  /** Where Keep puts the focus when the question took the place of the control that asked. */
-  returnFocus?: () => HTMLElement | null | undefined;
-  touch?: boolean;
-  className?: string;
-}) {
-  return (
-    <AskOnce
-      sentence={discardQuestion(scope)}
-      keep={t`Keep`}
-      confirm={t`Discard`}
-      onKeep={onKeep}
-      onConfirm={onConfirm}
-      returnFocus={returnFocus}
-      touch={touch}
-      className={className}
-    />
-  );
-}
-
-function discardQuestion(scope: ReviewScope): string {
-  return scope === "change"
-    ? t`Discard this change? This can't be undone.`
-    : scope === "document"
-      ? t`Discard this draft? This can't be undone.`
-      : t`Discard these drafts? This can't be undone.`;
-}
-
 export type ReviewActionsProps = {
   scope: ReviewScope;
   /** Names, where the scope's name doesn't say all the buttons act on. */
@@ -94,8 +50,6 @@ export type ReviewActionsProps = {
   density?: ReviewDensity;
   /** Absent withdraws Discard: a change no Discard command takes, such as a folder alone. */
   onDiscard?: () => void;
-  /** The Discard carries no Undo, so it asks first. */
-  discardAsks?: boolean;
   /** Absent withdraws Apply; Discard still applies. */
   onApply?: MouseEventHandler<HTMLButtonElement>;
   disabled?: boolean;
@@ -113,7 +67,6 @@ export function ReviewActions({
   named = false,
   density,
   onDiscard,
-  discardAsks = false,
   onApply,
   disabled = false,
   applyDisabled = false,
@@ -121,70 +74,47 @@ export function ReviewActions({
   touch = false,
   className,
 }: ReviewActionsProps) {
-  const [asking, setAsking] = useState(false);
   const names = (action: "apply" | "discard") => {
     const scoped = reviewActionNames(action, scope);
     const name = labels?.[action] ?? scoped.name;
     return { word: named ? name : scoped.word, name };
   };
-  // Outlives the swap between the buttons and the question, so Keep can find Discard again.
-  const place = useRef<HTMLSpanElement>(null);
-  if (asking && discardAsks && !disabled)
-    return (
-      <span ref={place} className="contents">
-        <DiscardQuestion
-          scope={scope}
-          className={className}
-          returnFocus={() => place.current?.querySelector("button")}
-          onKeep={() => setAsking(false)}
-          onConfirm={() => {
-            setAsking(false);
-            onDiscard?.();
+  return (
+    <span
+      data-review-actions
+      data-density={density}
+      className={cn(
+        "group/review flex shrink-0 items-center whitespace-nowrap",
+        touch ? "gap-3" : "gap-1.5",
+        className,
+      )}
+    >
+      {onDiscard ? (
+        <ReviewActionButton
+          density={density}
+          {...names("discard")}
+          icon={<X aria-hidden />}
+          variant="quiet"
+          touch={touch}
+          disabled={disabled}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDiscard();
           }}
         />
-      </span>
-    );
-  return (
-    <span ref={place} className="contents">
-      <span
-        data-review-actions
-        data-density={density}
-        className={cn(
-          "group/review flex shrink-0 items-center whitespace-nowrap",
-          touch ? "gap-3" : "gap-1.5",
-          className,
-        )}
-      >
-        {onDiscard ? (
-          <ReviewActionButton
-            density={density}
-            {...names("discard")}
-            icon={<X aria-hidden />}
-            variant="quiet"
-            touch={touch}
-            disabled={disabled}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (discardAsks) setAsking(true);
-              else onDiscard();
-            }}
-          />
-        ) : null}
-        {onApply ? (
-          <ReviewActionButton
-            density={density}
-            {...names("apply")}
-            icon={
-              applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />
-            }
-            busy={applying}
-            variant={scope !== "all" && density === "icon" ? "row" : "default"}
-            touch={touch}
-            disabled={disabled || applyDisabled}
-            onClick={onApply}
-          />
-        ) : null}
-      </span>
+      ) : null}
+      {onApply ? (
+        <ReviewActionButton
+          density={density}
+          {...names("apply")}
+          icon={applying ? <Loader2 aria-hidden className="animate-spin" /> : <Check aria-hidden />}
+          busy={applying}
+          variant={scope !== "all" && density === "icon" ? "row" : "default"}
+          touch={touch}
+          disabled={disabled || applyDisabled}
+          onClick={onApply}
+        />
+      ) : null}
     </span>
   );
 }

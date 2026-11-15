@@ -14,11 +14,8 @@ import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
 import type { DiscardUndo } from "./draft-notices";
-import type { TextTarget } from "./review-model";
+import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
-
-const sameClicks = <T>(before: readonly T[], now: readonly T[]) =>
-  before.length === now.length && before.every((click, index) => now[index] === click);
 
 type Entry = {
   ref: { documentId: string };
@@ -31,7 +28,7 @@ type Entry = {
 };
 
 export function startDraftDiscardSession(input: {
-  target: TextTarget;
+  target: GroupsTarget;
   /**
    * The issuing host's editor, whose Ctrl+Z also takes it back; `notice`: the surface has no
    * editor. Either way the returned handle is the notice's Undo. Null: the surface's editor is
@@ -44,7 +41,6 @@ export function startDraftDiscardSession(input: {
   active(): boolean;
   state(): DraftCommandState;
   setState(state: Partial<DraftCommandState>): void;
-  textClicks(): readonly unknown[];
   releaseIdle(): void;
 }): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
   const { target, history: owner, onNoticeEnd, entry } = input;
@@ -61,24 +57,16 @@ export function startDraftDiscardSession(input: {
   const frame = editor ? binding.runtime.projectNow() : binding.runtime.state().frame;
   if (!frame) return null;
   if (
-    target.kind === "groups" &&
-    (!blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
-      !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks))
+    !blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
+    !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks)
   ) {
     input.setState({ failure: { code: "discard-refused", serverCode: "review_updated" } });
     return null;
   }
-  const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
+  const ids = target.groupIds;
   if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id))) return null;
   const doc = binding.session.document;
   const fragment = doc.getXmlFragment("prosemirror");
-  const wholeClick = !editor && target.kind === "draft";
-  const queued = wholeClick ? input.textClicks() : [];
-  let changed = false;
-  const onTextChange = () => {
-    changed = true;
-  };
-  if (wholeClick) doc.on("update", onTextChange);
   if (!editor)
     for (const attached of binding.runtime.editors())
       yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
@@ -92,8 +80,7 @@ export function startDraftDiscardSession(input: {
   history.stopCapturing();
   let item: StackItem | null = null;
   const write = (): CommandOutcome => {
-    doc.off("update", onTextChange);
-    if (!input.active() || entry.binding !== binding || input.state().closed)
+    if (!input.active() || entry.binding !== binding || input.state().ended)
       return { kind: "blocked" };
     // A read room drops the writer's text: a revert written here would show, then never land.
     if (binding.session.getSnapshot().access === "read") {
@@ -103,24 +90,20 @@ export function startDraftDiscardSession(input: {
     const current = binding.runtime.projectNow();
     if (
       !current ||
-      (wholeClick
-        ? changed || !sameClicks(queued, input.textClicks())
-        : !blocksEqual(frame.diff.base.blocks, current.diff.base.blocks) ||
-          !blocksEqual(frame.diff.draft.blocks, current.diff.draft.blocks))
+      !blocksEqual(frame.diff.base.blocks, current.diff.base.blocks) ||
+      !blocksEqual(frame.diff.draft.blocks, current.diff.draft.blocks)
     ) {
       input.setState({ failure: { code: "discard-refused", serverCode: "review_updated" } });
       return { kind: "change-refused", code: "review_updated" };
     }
-    const cut = wholeClick ? current : frame;
-    const selected = wholeClick ? cut.groups.map((group) => group.id) : ids;
     const blocks = applySpanPatches(
-      cut.diff.draft.blocks,
-      composeGroups(cut.doc.type.schema, cut, selected, "discard"),
+      frame.diff.draft.blocks,
+      composeGroups(frame.doc.type.schema, frame, ids, "discard"),
       "draft",
     );
     const before = history.undoStack.length;
     try {
-      doc.transact(() => writeDiscardBlocks(fragment, cut.doc.type.schema, blocks), origin);
+      doc.transact(() => writeDiscardBlocks(fragment, frame.doc.type.schema, blocks), origin);
     } finally {
       history.removeTrackedOrigin(origin);
     }
@@ -169,7 +152,6 @@ export function startDraftDiscardSession(input: {
     settle = resolve;
   });
   const finish = (answer: CommandOutcome) => {
-    doc.off("update", onTextChange);
     input.setState({ discarding: null });
     settle(answer);
   };
@@ -209,7 +191,7 @@ export function startDraftDiscardSession(input: {
         !item ||
         !input.active() ||
         entry.binding !== binding ||
-        input.state().closed ||
+        input.state().ended ||
         binding.session.getSnapshot().access === "read"
       ) {
         end();

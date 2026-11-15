@@ -7,7 +7,6 @@
 import { X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
-
 import {
   DialogClose,
   DialogDescription,
@@ -17,6 +16,7 @@ import {
   focusContentOnOpen,
   useOpenerFocus,
 } from "@/components/ui/dialog";
+import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
@@ -46,6 +46,7 @@ export function PhoneTakeover({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         {...focus}
+        onEscapeKeyDown={ignoreFieldEscape}
         className="fixed inset-0 z-50 flex flex-col bg-background outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
       >
         {/* Solid background, no backdrop-filter: iOS repaints a blurred header badly. */}

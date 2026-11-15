@@ -19,8 +19,8 @@ export function WorkRow({
   gone = false,
   notice,
 }: {
-  /** A Work still being created has no status yet. */
-  work: Pick<Work, "name" | "goal" | "lastActivityAt"> & Partial<Pick<Work, "status" | "id">>;
+  /** A Work still being created has no status yet; a purged one has no age. */
+  work: Pick<Work, "name" | "goal"> & Partial<Pick<Work, "status" | "id" | "lastActivityAt">>;
   now: number;
   onOpen: () => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
@@ -50,7 +50,7 @@ export function WorkRow({
           />
         }
         detail={work.goal ? (work.goal.split("\n").find((line) => line.trim()) ?? "") : null}
-        meta={liveState ? null : relativeTime(work.lastActivityAt, now)}
+        meta={liveState || !work.lastActivityAt ? null : relativeTime(work.lastActivityAt, now)}
         // A live state is announced, so it sits beside the control, not inside its name.
         actions={
           liveState || actions ? (

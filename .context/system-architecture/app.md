@@ -56,7 +56,7 @@ The largest feature: every other feature except `billing` imports it or is impor
 - Kind: feature
 - Paths: `apps/app/src/features/project`
 - Docs: [CONTEXT](../../apps/app/src/features/project/.context/CONTEXT.md), [AGENTS](../../apps/app/src/features/project/AGENTS.md)
-- Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [sidebar version](../../apps/app/src/features/project/.context/tree-version-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
+- Machines: [panes](../../apps/app/src/features/project/.context/pane-state-machine.md), [sidebar version](../../apps/app/src/features/project/.context/tree-version-state-machine.md), [held paint](../../apps/app/src/features/project/.context/document-paint-state-machine.md), [project](../../apps/app/src/features/project/context/.context/state-machines.md)
 - Drift: Features import each other freely: `project` imports `draft-review` from 22 files, `project` imports `chat` from 14, `chat` imports `project` from 19, `editor` imports `draft-review` from 7 (tests left out). No rule forbids it.
 
 ## conversation
@@ -106,7 +106,7 @@ HTTP clients, React Query hooks, the thread store and the transport provider. Al
 - Kind: module
 - Paths: `apps/app/src/client`
 - Docs: [app CONTEXT](../../apps/app/.context/CONTEXT.md), [chat-submissions CONTEXT](../../apps/app/src/client/chat-submissions/.context/CONTEXT.md), [working-set CONTEXT](../../apps/app/src/client/working-set/.context/CONTEXT.md), [recents CONTEXT](../../apps/app/src/client/recents/.context/CONTEXT.md)
-- Machines: [chat submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md), [creation](../../apps/app/src/client/creation/.context/state-machines.md)
+- Machines: [chat submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md)
 - Drift: No written dependency rule covers the app's layers, and imports run both ways between them: `client` imports `features/project`, `components` imports `features/editor` and `features/project`, `core/editor` imports `components`, `client` and `features/project`, and `lib` imports `features/agents`.
 
 ## core

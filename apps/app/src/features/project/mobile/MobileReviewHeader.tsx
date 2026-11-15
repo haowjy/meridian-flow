@@ -9,7 +9,6 @@ import type { OpenDocument } from "@/client/stores";
 import { DraftNoticeLine } from "@/features/draft-review/CommandNotice";
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
-import { DiscardQuestion } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
@@ -73,17 +72,7 @@ export function MobileReviewHeader({
             }}
           />
         </div>
-        {header.asking ? (
-          <DiscardQuestion
-            touch
-            scope="document"
-            className="flex-1"
-            onKeep={header.keepDraft}
-            onConfirm={header.confirmDiscard}
-          />
-        ) : (
-          <ManuscriptStateSlot state={manuscriptState} touch />
-        )}
+        <ManuscriptStateSlot state={manuscriptState} touch />
         <ReviewStateInline
           touch
           finished={finished}

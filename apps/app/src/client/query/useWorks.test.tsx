@@ -129,7 +129,7 @@ async function withProbe(server: WorksSnapshot, run: (client: QueryClient) => Pr
     log() {},
   });
   await driver.open();
-  const unbind = domain.bind(driver);
+  const unbind = domain.bind(driver, "account");
   renders.length = 0;
   requests.length = 0;
   stored.clear();

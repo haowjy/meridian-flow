@@ -5,10 +5,12 @@
  * - `usable`: a live session. Commands and editors may read and write it.
  * - `rebuilding`: the previous session is still being torn down, or a retry asked again. The read joins
  *   the pool's one rebuild and becomes `usable` again.
- * - `fenced`: a schema reset, or a room whose updates the server kept refusing (`updatesRefused`). Its
- *   terminal session is kept so an editor can paint it read-only with its notice, and it is never a
- *   target for a command. `retry()` rebuilds a refused one, which resends its edits from IndexedDB.
- * - `unavailable`: the draft closed, its room was superseded, or the session ended. Ask what the draft is now.
+ * - `fenced`: a schema reset, a room whose updates the server kept refusing (`updatesRefused`), or a
+ *   draft the server closed (`draftClosed`, in Trash). Its terminal session is kept so an editor can
+ *   paint it read-only with its notice, and it is never a target for a command. `retry()` rebuilds
+ *   a refused one, which resends its edits from IndexedDB; a restore restarts a closed one's
+ *   transport in place, and it reads `usable` again.
+ * - `unavailable`: the room was superseded, or the session ended. Ask what the draft is now.
  * - `error`: opening or rebuilding the room failed. `retry()` asks again.
  *
  * Editors, row readers and command-time readers all take a room through it; none of them retains, gets or
@@ -55,7 +57,7 @@ type Verdict = "usable" | "fenced" | "gone";
 
 function judge(snapshot: DocumentSessionSnapshot): Verdict {
   const connection = snapshot.connectionState;
-  if (connection?.kind === "reset") return connection.disposition === "schema" ? "fenced" : "gone";
+  if (connection?.kind === "reset") return connection.disposition === "removed" ? "gone" : "fenced";
   if (updatesRefused(connection)) return "fenced";
   if (
     snapshot.status === "destroyed" ||

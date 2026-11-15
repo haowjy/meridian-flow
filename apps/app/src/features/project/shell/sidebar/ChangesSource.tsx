@@ -31,7 +31,7 @@ import {
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
-import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
@@ -131,7 +131,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * folder's apply or discard everything under it, the folder's own change included. Discard all
  * and Apply all act on every change of the scope, new documents, folders, moves and deletes
  * included. Each Apply is one command, which sidebar Undo takes back whole, and each Discard's
- * notice has its Undo; only a frozen owner's Discard asks first (`discardAsks`). An Apply of
+ * notice has its Undo. An Apply of
  * several asks when it would delete documents or bring back documents deleted from the
  * manuscript, naming each, and again for any a newer delete held back. A question takes the
  * place of the buttons that asked it. A Discard made here shows its notice in the row's place
@@ -303,12 +303,16 @@ export function ChangesSource({
       if (group.folder) folderOf.set(group.folder.id, null);
       for (const file of group.files) folderOf.set(file.documentId, group.folder?.id ?? null);
     }
+    // A row the Apply took stays drawn while a word speaks for it, so what undoing the Apply
+    // skipped or left (an edit made since) has a row to show on.
+    for (const { key } of taken.get(ownerKey) ?? [])
+      if (!folderOf.has(key)) folderOf.set(key, null);
     return {
       holds: (node) => folderOf.has(node),
       parent: (node) => folderOf.get(node) ?? null,
       open: (folder) => !folded.has(folder),
     };
-  }, [groups, folded]);
+  }, [groups, folded, ownerKey]);
   const treeWords = useTreeNoticeWords(projectId, drawn);
   const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
   // One list of the rows as shown, folders heading theirs.
@@ -350,7 +354,7 @@ export function ChangesSource({
   const shown = withGone(
     items,
     changeKey,
-    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key)),
+    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
   const goneRows = shown.some((item) => item.gone);
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
@@ -385,7 +389,6 @@ export function ChangesSource({
               density="full"
               touch={touch}
               disabled={archived}
-              discardAsks={controller.frozen}
               onDiscard={
                 everyDraft.length > 0 || changedFolders.length > 0
                   ? () => {
@@ -439,7 +442,7 @@ export function ChangesSource({
                   <li key={item.key} data-change-row={item.key} data-command-notice="row">
                     <ListRow
                       depth={item.kind === "file" ? item.depth : 0}
-                      gone={notice?.kind !== "applied"}
+                      gone={notice?.kind === "discarded"}
                       disabled={item.kind !== "file"}
                       onOpen={() => void openDocument({ documentId: item.key })}
                       icon={
@@ -587,9 +590,6 @@ function ChangeRow({
 }) {
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
-  // A row's actions are too narrow for its question: it asks on the line under the name.
-  const [asking, setAsking] = useState(false);
-  const draft = { documentId: file.documentId, itemKey: file.draft.itemKey };
   const discard = () => {
     onCommand();
     void controller.discard(file.documentId, file.draft.itemKey);
@@ -638,7 +638,7 @@ function ChangeRow({
             touch={touch}
             disabled={command.pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
-            onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
+            onDiscard={discard}
             onApply={
               canApply
                 ? () => {
@@ -651,16 +651,6 @@ function ChangeRow({
         }
         below={
           <div className="pl-1">
-            {asking && !controller.dispositionLocked ? (
-              <DiscardQuestion
-                scope="document"
-                onKeep={() => setAsking(false)}
-                onConfirm={() => {
-                  setAsking(false);
-                  discard();
-                }}
-              />
-            ) : null}
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}

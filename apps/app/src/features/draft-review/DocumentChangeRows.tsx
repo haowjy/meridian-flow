@@ -75,7 +75,6 @@ export function DocumentChangeRows({
           onFocus={() => onSelect(change)}
           onApply={() => void view.apply(change)}
           onDiscard={() => void view.discard(change)}
-          discardAsks={view.discardAsks(change)}
         />
       ))}
     </ul>
