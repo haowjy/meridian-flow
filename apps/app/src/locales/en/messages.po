@@ -7099,6 +7099,10 @@ msgstr "What's on your mind?"
 msgid "Where were we?"
 msgstr "Where were we?"
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Wider Agent: {label}"
+msgstr "Wider Agent: {label}"
+
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Withdrawn"
 msgstr "Withdrawn"

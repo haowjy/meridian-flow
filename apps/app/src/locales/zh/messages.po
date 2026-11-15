@@ -7099,6 +7099,10 @@ msgstr "你在想什么？"
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
 
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "Wider Agent: {label}"
+msgstr ""
+
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Withdrawn"
 msgstr "已撤回"
