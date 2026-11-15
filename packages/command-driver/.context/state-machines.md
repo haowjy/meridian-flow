@@ -28,7 +28,7 @@ stateDiagram-v2
 - **Lanes.** Only the earliest `sending` record of a lane is sent; a record with several lanes
   waits to head all of them. A `done` or `never` record releases its lane, except a `never` of
   a kind with `holdsLane`, which keeps its lanes closed until it is retried (same place) or
-  dismissed (the records behind it then go, and the server answers for themselves).
+  dismissed (the records behind it then go, and and the server answers for them).
 - **An unread journal is not an empty one.** If the first read fails, the driver still asks for the
   lock; the read is tried again when the lock is held, on a nudge, and by any successful write.
 - **A lost answer is resent under the same `sendId`** with backoff (1 s doubling to 30 s); a 500
