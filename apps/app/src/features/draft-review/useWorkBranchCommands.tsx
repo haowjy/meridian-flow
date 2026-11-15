@@ -1,10 +1,10 @@
 /** Work-scoped authority over the account command owner; its notices live in the owner (`DraftNotices`). */
 
 import { t } from "@lingui/core/macro";
-import { parseDraftItemKey } from "@meridian/contracts";
+import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { unapplyCommand, undoDiscard } from "@/client/api/branches-api";
@@ -17,7 +17,7 @@ import {
   useOwnerDraftsFrozen,
 } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
-import { documentBasename } from "@/client/query/work-branch-files";
+import { documentBasename, type ReviewFileTarget } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
 import {
   type ApplyStep,
@@ -33,12 +33,13 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
-import { type CommandOutcome, folderKey } from "./draft-command-owner";
+import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import type {
   AppliedFact,
   AppliedUndo,
   DiscardPart,
   DiscardUndo,
+  DiscardUndoAnswer,
   NoticeSurface,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
@@ -91,6 +92,7 @@ export function useWorkBranchCommands({
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
       refreshTurnCards(queryClient);
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
       });
@@ -121,18 +123,6 @@ export function useWorkBranchCommands({
           ? { kind: "strip", threadId }
           : { kind: "changes" };
     const endNotice = () => notices.end(ownerKey);
-    /**
-     * The one Discard rule: whether this Discard runs here as a local text Discard, whose Undo
-     * the room holds. That is a change the writer sees in a read frame, or a whole text draft
-     * (not a created document or a picture, with no move or delete) whose room is read now. Any
-     * other Discard goes to the server, whose Undo is its own command.
-     */
-    const discardsLocally = (draft: DraftReviewSelection, target: ChangeTarget) => {
-      if (locked || frozen || target.kind === "tree") return false;
-      if (target.kind === "groups") return !target.tree;
-      const item = row(draft);
-      return !item?.wholeItem && !item?.tree && owner.canDiscardLocally(draft.itemKey);
-    };
     const titleOf = (item: ThreadDraftListItem | undefined) =>
       item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
     // Apply facts join the owner's notice until its next action. A band's go to the document's
@@ -396,32 +386,21 @@ export function useWorkBranchCommands({
       );
       return outcomes;
     };
-    /** The Undo of a Discard the server ran: its Undo command, which copies back both halves. */
+    /**
+     * The Undo of a Discard the server ran: its Undo command, which brings both halves back, sent
+     * through the one restore progress Trash and the editor read.
+     */
     const serverUndo = (
       branchId: string,
       discardCommandId: string,
       documentIds: readonly string[],
     ): DiscardUndo => ({
-      undo: async () => {
-        const settled = { landed: Promise.resolve() };
-        try {
-          const answer = await undoDiscard(projectId, branchId, {
-            commandId: crypto.randomUUID(),
-            discardCommandId,
-          });
-          refresh(documentIds);
-          if (answer.status === "restored")
-            return { ...settled, answer: "ok", leftOut: answer.leftOut };
-          if (
-            answer.status === "refused" &&
-            (answer.reason === "already_restored" || answer.reason === "nothing_to_restore")
-          )
-            return { ...settled, answer: "gone" };
-          return { ...settled, answer: "failed" };
-        } catch {
-          return { ...settled, answer: "failed" };
-        }
-      },
+      undo: async () => ({
+        landed: Promise.resolve(),
+        ...(await owner.restores.restore(discardCommandId, () =>
+          restoreDiscard(queryClient, { projectId, branchId, discardCommandId, documentIds }),
+        )),
+      }),
       end: () => {},
     });
     /** One share for a Discard that is a room's text and a server command together. */
@@ -497,9 +476,9 @@ export function useWorkBranchCommands({
       return Promise.all(started.map(({ start }) => start.outcome));
     };
     /**
-     * One Discard and its share of the notice's Undo: a room's text, the server's command (a
-     * whole draft not read here, a move or delete), or both. A frozen owner's Discard has no
-     * Undo: its Undo command would be refused, so it asked first.
+     * One Discard and its share of the notice's Undo. A whole draft is one server command, which
+     * Trash lists and its Undo brings back; a move or delete is one too, with the chosen changes'
+     * text written here; changes alone are text written in the room, whose Undo the room holds.
      */
     const dispatchDiscard = (
       draft: DraftReviewSelection,
@@ -512,15 +491,18 @@ export function useWorkBranchCommands({
       const name = titleOf(item) ?? t`Untitled document`;
       const scope = target.kind === "draft" ? ("draft" as const) : ("change" as const);
       /** The notice's share; it leaves the notice when the Discard itself was refused. */
-      const share = (handle: DiscardUndo, outcome: Promise<CommandOutcome>, ownText: boolean) => {
-        if (frozen) return null;
+      const share = (
+        handle: DiscardUndo,
+        outcome: Promise<CommandOutcome>,
+        ownText: boolean,
+      ): DiscardPart => {
         void outcome.then((answer) => {
           if (answer.kind !== "done" && !ownText) notices.partEnded(handle);
         });
         return { documentId: draft.documentId, name, scope, handle };
       };
-      // A whole draft that can't be discarded here ends on the server, everything it holds.
-      if (target.kind === "draft" && !discardsLocally(draft, target)) {
+      // A whole draft ends on the server, everything it holds.
+      if (target.kind === "draft") {
         if (!item) return none(blocked());
         const commandId = crypto.randomUUID();
         const outcome = owner
@@ -535,7 +517,13 @@ export function useWorkBranchCommands({
           });
         return {
           start: { sent: true, outcome },
-          part: share(serverUndo(item.branchId, commandId, [draft.documentId]), outcome, false),
+          part: {
+            ...share(serverUndo(item.branchId, commandId, [draft.documentId]), outcome, false),
+            restore: commandId,
+            review: reviewOf(item),
+            // A view following the Undo opens the draft once the server lists it again.
+            undone: () => relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey),
+          },
         };
       }
       // A move or delete is discarded on the server, with the item's chosen text, as one command.
@@ -556,7 +544,7 @@ export function useWorkBranchCommands({
         );
         return {
           start: { sent: true, outcome },
-          part: share(handle, outcome, discarded.handle !== null),
+          part: { ...share(handle, outcome, discarded.handle !== null), restore: commandId },
         };
       }
       const discarded = owner.discard(ref(draft), target, history);
@@ -571,17 +559,7 @@ export function useWorkBranchCommands({
           name,
           scope,
           handle: discarded.handle,
-          ...(item
-            ? {
-                review: {
-                  documentId: draft.documentId,
-                  documentName: item.documentName,
-                  contextLocation: item.contextLocation,
-                  draft: item,
-                  draftOnly: item.isNew || item.deletedLive,
-                },
-              }
-            : {}),
+          ...(item ? { review: reviewOf(item) } : {}),
           // The row comes back with the prose. The list is read again only once the server lists
           // the draft: a read before then drops the row, and a page opened on it would close.
           undone: async (landed) => {
@@ -664,33 +642,32 @@ export function useWorkBranchCommands({
           refresh(documentIds);
           return answer;
         });
-      if (!frozen) {
-        const handle = serverUndo(branchId, commandId, documentIds);
-        void outcome.then((answer) => {
-          if (answer.kind !== "done") notices.partEnded(handle);
-        });
-        const [first] = input.drafts;
-        const count = input.drafts.length + folders.length;
-        notices.showDiscard({
-          projectId,
-          ownerKey,
-          surface: first ? noticeSurface(first) : { kind: "changes" },
-          parts: [
-            {
-              documentId: first?.documentId ?? folders[0] ?? "",
-              covers: [...documentIds, ...folders],
-              ...(input.name
-                ? { name: input.name, scope: "folder" as const }
-                : {
-                    name: titleOf(first ? row(first) : undefined) ?? t`Untitled document`,
-                    scope: "draft" as const,
-                    count,
-                  }),
-              handle,
-            },
-          ],
-        });
-      }
+      const handle = serverUndo(branchId, commandId, documentIds);
+      void outcome.then((answer) => {
+        if (answer.kind !== "done") notices.partEnded(handle);
+      });
+      const [first] = input.drafts;
+      const count = input.drafts.length + folders.length;
+      notices.showDiscard({
+        projectId,
+        ownerKey,
+        surface: first ? noticeSurface(first) : { kind: "changes" },
+        parts: [
+          {
+            documentId: first?.documentId ?? folders[0] ?? "",
+            covers: [...documentIds, ...folders],
+            ...(input.name
+              ? { name: input.name, scope: "folder" as const }
+              : {
+                  name: titleOf(first ? row(first) : undefined) ?? t`Untitled document`,
+                  scope: "draft" as const,
+                  count,
+                }),
+            handle,
+            restore: commandId,
+          },
+        ],
+      });
       return outcome;
     };
     const commandChange = (
@@ -705,11 +682,6 @@ export function useWorkBranchCommands({
       ownerKey,
       threadId,
       owner,
-      /**
-       * Whether this Discard asks first: a frozen owner's, the one Discard with no Undo. Every
-       * other Discard's notice takes it back.
-       */
-      discardAsks: (_draft: DraftReviewSelection, _target?: ChangeTarget) => frozen,
       dispositionLocked: locked,
       /** A frozen owner's draft takes no single-change command: only the whole draft's Discard. */
       changesLocked: locked || frozen,
@@ -753,6 +725,101 @@ export function useWorkBranchCommands({
     queryClient,
     work,
   ]);
+}
+
+/**
+ * The one Undo of a Discard: the notice's Undo, Trash's Restore and an editor's Restore all send
+ * it. A fresh command id each time: a resend of a stored refusal would only replay it. Every draft
+ * list is read again (a Trash entry names its Work, not the owner a surface reads); `documentIds`:
+ * the documents it touched.
+ */
+export async function restoreDiscard(
+  queryClient: QueryClient,
+  input: {
+    projectId: string;
+    branchId: string;
+    discardCommandId: string;
+    documentIds: readonly string[];
+  },
+): Promise<Omit<DiscardUndoAnswer, "landed"> & { branchId?: string }> {
+  const { projectId } = input;
+  try {
+    const answer = await undoDiscard(projectId, input.branchId, {
+      commandId: crypto.randomUUID(),
+      discardCommandId: input.discardCommandId,
+    });
+    refreshTurnCards(queryClient);
+    void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
+    void queryClient.invalidateQueries({ queryKey: projectQueryKeys.ownerDraftsOf(projectId) });
+    void queryClient.invalidateQueries({ queryKey: projectQueryKeys.draftMetadataOf(projectId) });
+    for (const documentId of input.documentIds) {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
+      });
+    }
+    if (answer.status === "restored")
+      return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
+    if (answer.status === "conflict") return { answer: "failed" };
+    switch (answer.reason) {
+      case "already_restored":
+      case "nothing_to_restore":
+        return { answer: "gone" };
+      case "work_archived":
+      case "work_deleted":
+        return { answer: "returned", why: "work-closed" };
+      case "chat_frozen":
+        return { answer: "returned", why: "chat-in-trash" };
+      default:
+        return { answer: "returned", why: "gone-from-trash" };
+    }
+  } catch {
+    return { answer: "failed" };
+  }
+}
+
+/** A draft's review, for a view following an Undo back to it. */
+const reviewOf = (item: ThreadDraftListItem): ReviewFileTarget => ({
+  documentId: item.documentId,
+  documentName: item.documentName,
+  contextLocation: item.contextLocation,
+  draft: item,
+  draftOnly: item.isNew || item.deletedLive,
+});
+
+/**
+ * Discards these documents' drafts of a Work's branch as one command (`DraftCommandOwner
+ * .discardBranch`, the one a selection's Discard sends): the Undo of a restore made from Trash,
+ * which puts them back in Trash as a new entry.
+ */
+export async function discardDrafts(
+  queryClient: QueryClient,
+  owner: DraftCommandOwner,
+  input: { projectId: string; ownerKey: string; branchId: string; documentIds: readonly string[] },
+): Promise<CommandOutcome> {
+  const { projectId, ownerKey, branchId } = input;
+  const outcome = await owner.discardBranch({
+    projectId,
+    branchId,
+    commandId: crypto.randomUUID(),
+    selection: {
+      items: input.documentIds.map((documentId) => ({
+        ref: {
+          projectId,
+          ownerKey,
+          documentId,
+          itemKey: draftItemKey(branchId as BranchId, documentId),
+        },
+        ends: "item" as const,
+      })),
+    },
+  });
+  refreshTurnCards(queryClient);
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
+  });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.draftMetadataOf(projectId) });
+  return outcome;
 }
 
 const editorHistoryOf = (editor: Editor | null | undefined) =>

@@ -190,10 +190,6 @@ export function useDraftDock({
     files,
     notice,
     mounted: files.length > 0 || notice !== null,
-    /** The strip's Discard carries no Undo for one of its files, so it asks first. */
-    discardAsks: discardItems(actionableFiles).some(({ draft, target }) =>
-      controller.discardAsks(draft, target),
-    ),
     changeCount: totalChanges(files),
     /** The one review count (`reviewCount`): the Work's changed documents and folders. */
     reviewCount: shell?.ownerKey === ownerKey ? shell.changeCount : files.length,

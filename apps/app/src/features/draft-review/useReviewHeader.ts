@@ -10,7 +10,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -64,12 +64,8 @@ export type ReviewHeaderModel = {
   showLive: () => void;
   /** `takeFocus`: the writer's focus was in the controls, so it follows to what replaces them. */
   applyDraft: (takeFocus?: boolean) => void;
-  /** Discard draft: at once when it carries an Undo, else it asks first (`asking`). */
+  /** Discard draft, at once: its notice has the Undo. */
   discardDraft: (takeFocus?: boolean) => void;
-  /** Discard draft's question is open: it can't be undone. */
-  asking: boolean;
-  keepDraft: () => void;
-  confirmDiscard: (takeFocus?: boolean) => void;
 };
 
 /**
@@ -156,8 +152,6 @@ export function useReviewHeader({
   }, [itemKey]);
   // Local Discard stays in this draft. Only an Apply that landed advances to another file: a
   // refusal shows on the draft the writer applied, so it must not move them first.
-  const [askingFor, setAskingFor] = useState<string | null>(null);
-  const asking = askingFor === itemKey && Boolean(itemKey) && !locked;
   const dispose = (mode: "apply" | "discard", takeFocus: boolean) => {
     if (locked) return;
     const start = controller.startDraft(mode, { documentId, itemKey });
@@ -182,16 +176,7 @@ export function useReviewHeader({
     failedElsewhere,
     showLive,
     applyDraft: (takeFocus) => dispose("apply", takeFocus === true),
-    discardDraft: (takeFocus) =>
-      controller.discardAsks({ documentId, itemKey })
-        ? setAskingFor(itemKey)
-        : dispose("discard", takeFocus === true),
-    asking,
-    keepDraft: () => setAskingFor(null),
-    confirmDiscard: (takeFocus) => {
-      setAskingFor(null);
-      dispose("discard", takeFocus === true);
-    },
+    discardDraft: (takeFocus) => dispose("discard", takeFocus === true),
     draftOnly: Boolean(onCloseDraftOnly),
     openDraft: onOpenDraft,
   };
