@@ -337,15 +337,19 @@ export function createBoundAgentCatalog(input: {
         const file = agentPath(entry.value.agent.slug);
         const path = `${entry.value.folder}${file}`;
         const saved = savedAgents.get(`${entry.level}:${path}`);
+        const savedAgent = saved?.value?.agent;
+        // Only a read Agent has runtime reasons; without one, its Errors are its findings.
+        const runtimeOf = (agent: CompiledAgent | undefined) =>
+          agent?.definition ? reasonsOf(agent, file, false) : null;
         return [
           {
             kind: "agent" as const,
             slug: entry.slug,
             level: entry.level,
             path,
-            unavailableReasons: reasonsOf(entry.value.agent, file, false),
+            unavailableReasons: runtimeOf(entry.value.agent) ?? runtimeOf(savedAgent) ?? [],
             saved: saved !== undefined,
-            savedVersionInUse: Boolean(saved?.value?.agent.definition),
+            savedVersionInUse: savedAgent ? reasonsOf(savedAgent, file, false).length === 0 : false,
             pickable: entry.value.agent.definition ? isPrimary(entry.value.agent.definition) : true,
             shadows: saved?.shadows ?? [],
             hiddenBy: saved?.hiddenBy ?? null,
@@ -364,9 +368,7 @@ export function createBoundAgentCatalog(input: {
             slug: entry.slug,
             level: entry.level,
             path,
-            unavailableReasons: entry.value.diagnostics
-              .filter(isError)
-              .map((item) => (item.file === file ? item.message : `${item.file}: ${item.message}`)),
+            unavailableReasons: [],
             saved: saved !== undefined,
             savedVersionInUse: saved?.value ? !saved.value.diagnostics.some(isError) : false,
             pickable: listingOf(entry)?.userInvocable ?? true,

@@ -15,7 +15,7 @@ import { Chip } from "@/components/ui/chip";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSection } from "@/components/ui/picker";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { hidesSentence, levelLabel } from "./AgentFileNotice";
+import { hidesSentence, levelLabel } from "./AgentFileState";
 import type { CreationAgent, PickableAgent } from "./creation-agent";
 
 type AgentPickerPanelProps = {

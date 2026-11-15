@@ -267,6 +267,7 @@ export function createPackageSaver(input: {
               kept,
               leftOut,
               renamed: [] as string[],
+              savedBefore: saved !== undefined,
             };
             if (blocked) {
               return {

@@ -10,7 +10,7 @@ import {
   agentsFileOf,
   type SaveOutcome,
 } from "@meridian/contracts/agents";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { notifyManager, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { saveAgentPackages, undoAgentSave } from "@/client/api/agents-api";
 import { invalidateAgentReads, latestAgentFiles } from "@/client/query/useAgentFiles";
@@ -33,7 +33,10 @@ export type PackageWord =
 
 type Entry = {
   word: PackageWord;
-  /** The package as the writer saw it when they pressed: what the word speaks of. */
+  /**
+   * The package the word speaks of: as pressed, until a settled Save's or Undo's files are read
+   * again; `null` while that read is outstanding, when the word holds whatever the files say.
+   */
   basis: string | null;
   ref: PackageRef;
   /** The package had no files when saved: its line stays while the word does. */
@@ -97,6 +100,20 @@ function publish() {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Publishes a change made from a read of the files query only after that read has reached the
+ * components (the notify batch runs first): published at once, a word whose basis is the new read
+ * met the old files for a frame and dropped.
+ */
+const publishWithRead = (change: () => void) =>
+  new Promise<void>((resolve) =>
+    notifyManager.schedule(() => {
+      change();
+      publish();
+      resolve();
+    }),
+  );
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => {
@@ -113,9 +130,9 @@ function set(projectId: string, entry: Entry) {
 }
 
 /**
- * The word a package shows now. A Save's word stays until the package changes again (its
- * `saveId` moves with the Save, so typing after it reads as a change); a failure until the files
- * or their findings change; an Undo's until the package is saved again.
+ * The word a package shows now: until the package changes from what the word speaks of. A
+ * settled Save's or Undo's basis is the package as the files read after it, so typing after it,
+ * or putting a file back by hand, reads as a change; a failure's is the package as pressed.
  */
 function heldWord(entry: Entry, status: AgentPackageStatus | undefined): PackageWord | null {
   const { word, basis } = entry;
@@ -123,7 +140,7 @@ function heldWord(entry: Entry, status: AgentPackageStatus | undefined): Package
   const unchanged = signature(status) === basis;
   switch (word.kind) {
     case "saved":
-      return !word.settled || status.state === "saved" || unchanged ? word : null;
+      return !word.settled || basis === null || unchanged ? word : null;
     case "failed":
       return !word.settled || unchanged ? word : null;
     case "undone":
@@ -136,22 +153,33 @@ function heldWord(entry: Entry, status: AgentPackageStatus | undefined): Package
 /**
  * What a Save of these files will answer, said before it does: a package-level Error fails it;
  * an Agent or skill file with an Error is not used, its errors listed first. Whether that item
- * keeps an earlier saved version is the server's to say, so the prediction holds none.
+ * keeps an earlier saved version is the server's to say, so the prediction holds none; what is
+ * shown of it (the count of what is out of use) is read from the files, so it does not wait.
  */
 function predicted(status: AgentPackageStatus): PackageWord {
   const errors = errorsOf(status.findings);
   const fails = failsSave(status);
+  const leftOut = fails ? [] : itemsWithErrors(status.findings);
+  // A Save whose every change is to an item it holds back saves nothing new.
+  const held = (path: string) =>
+    leftOut.some((item) => {
+      const file = `${status.folder}${item}`;
+      const skill = agentsFileOf(item)?.kind === "skill" ? file.replace(/SKILL\.md$/, "") : null;
+      return path === file || (skill !== null && path.startsWith(skill));
+    });
+  const nothingNew = !fails && status.changes.every((change) => held(change.path));
   const outcome: SaveOutcome = {
     level: status.level,
     folder: status.folder,
-    outcome: fails ? "failed" : "saved",
+    outcome: fails ? "failed" : nothingNew ? "unchanged" : "saved",
     changes: status.changes,
     findings: fails
       ? errors
       : [...errors, ...status.findings.filter((finding) => finding.severity === "warning")],
     kept: [],
-    leftOut: fails ? [] : itemsWithErrors(status.findings),
+    leftOut,
     renamed: [],
+    savedBefore: status.savedAt !== null,
   };
   return fails
     ? { kind: "failed", outcome, settled: false }
@@ -188,13 +216,15 @@ async function save(
       const key = keyOf(projectId, ref);
       const before = bases.get(key);
       // A Save with nothing new still says which edits it kept out of use.
-      if (outcome.outcome === "unchanged" && outcome.kept.length === 0) {
+      if (outcome.outcome === "unchanged" && outcome.kept.length + outcome.leftOut.length === 0) {
         entries.delete(key);
         continue;
       }
+      // A failed Save changed nothing, so it speaks of the package as pressed; a Save, of the
+      // package as the read after it finds it.
       set(projectId, {
         ref,
-        basis: before?.basis ?? null,
+        basis: outcome.outcome === "failed" ? (before?.basis ?? null) : null,
         removed: before?.removed ?? false,
         word:
           outcome.outcome === "failed"
@@ -207,9 +237,22 @@ async function save(
     for (const key of bases.keys()) entries.delete(key);
   } catch {
     for (const entry of bases.values()) set(projectId, { ...entry, word: { kind: "unreached" } });
+    publish();
+    void invalidateAgentReads(queryClient, projectId, accountId);
+    return;
   }
   publish();
-  void invalidateAgentReads(queryClient, projectId, accountId);
+  await invalidateAgentReads(queryClient, projectId, accountId);
+  // A Save's word speaks of the package as the Save left it, read once the files are read again.
+  const after = latestAgentFiles(queryClient, projectId)?.packages;
+  await publishWithRead(() => {
+    for (const status of statuses) {
+      const ref = { level: status.level, folder: status.folder };
+      const entry = entries.get(keyOf(projectId, ref));
+      if (entry?.word.kind !== "saved" || !entry.word.settled) continue;
+      set(projectId, { ...entry, basis: signature(statusOf(after, ref)) });
+    }
+  });
 }
 
 /** `nothing`: a later Save of the package exists, so the Undo changed nothing. */
@@ -246,13 +289,14 @@ async function undo(
     // The word speaks of the package as Undo left it: its files may read Saved or Unsaved now.
     if (undone && entries.get(key)?.word.kind === "undone") {
       const after = statusOf(latestAgentFiles(queryClient, projectId)?.packages, ref);
-      set(projectId, {
-        ref,
-        basis: signature(after),
-        removed,
-        word: { kind: "undone", settled: true },
-      });
-      publish();
+      await publishWithRead(() =>
+        set(projectId, {
+          ref,
+          basis: signature(after),
+          removed,
+          word: { kind: "undone", settled: true },
+        }),
+      );
     }
     return undone ? "undone" : "nothing";
   } catch {
