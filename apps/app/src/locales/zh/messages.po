@@ -368,6 +368,11 @@ msgstr ""
 #~ msgid "{0}: your latest edit isn't in use: {1}"
 #~ msgstr ""
 
+#. placeholder {0}: owner.rootThreadRef
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{0}'s notes"
+msgstr ""
+
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
 msgstr "{agent} 想要归档 {work}，是否允许？"
@@ -825,6 +830,10 @@ msgstr ""
 #. placeholder {0}: line.place
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: renaming to {0}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{name}'s notes"
 msgstr ""
 
 #: src/features/chat/TurnStoppedLine.tsx

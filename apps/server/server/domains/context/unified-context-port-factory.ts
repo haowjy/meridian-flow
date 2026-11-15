@@ -16,7 +16,7 @@ import { approveBranchWriteJoin } from "../../shared/branch-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { Branches } from "../collab/domain/branches.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
-import { sourceDestination } from "../file-policy/index.js";
+import { type ScratchPlace, sourceDestination } from "../file-policy/index.js";
 import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
 import type { TopPrimaryChatResolver } from "../threads/index.js";
 import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
@@ -122,15 +122,18 @@ interface AdapterAssembly {
 
 /**
  * Where an adapter's creates land (contract §2.3): a drafted source whose writes draft is a
- * draft placement, exactly as `sourceDestination` decides; people and the places an auto-apply
- * chat writes live are live. A draft-mode chat's live source still reads its branch's tree, where
- * a draft moved a file in.
+ * draft placement, exactly as `sourceDestination` decides (`place` is whose Scratch the source
+ * is); people and the places an auto-apply chat writes live are live. A draft-mode chat's live
+ * source still reads its branch's tree, where a draft moved a file in.
  */
-function placementFor(assembly: AdapterAssembly, scheme: ContextScheme): ContextPlacement {
+function placementFor(
+  assembly: AdapterAssembly,
+  scheme: ContextScheme,
+  place: ScratchPlace | undefined,
+): ContextPlacement {
   const { thread, branches } = assembly;
   if (!thread) return { kind: "live" };
-  const destination =
-    thread.destination ?? sourceDestination(thread.writeMode, scheme, thread.branchOwner);
+  const destination = thread.destination ?? sourceDestination(thread, scheme, place);
   const branch = (owner: DraftOwner) => ({
     owner,
     threadId: thread.threadId as ThreadId,
@@ -145,7 +148,7 @@ function placementFor(assembly: AdapterAssembly, scheme: ContextScheme): Context
 
 function contextFsAdapter(
   assembly: AdapterAssembly,
-  deps: Pick<ContextFSDeps, "store" | "commandTransaction" | "scheme" | "holder">,
+  deps: Pick<ContextFSDeps, "store" | "commandTransaction" | "scheme" | "holder" | "place">,
 ): ContextSchemeAdapter {
   return new ContextFS({
     ...deps,
@@ -156,7 +159,7 @@ function contextFsAdapter(
     }),
     actor: `user:${assembly.owner.userId}`,
     ...(assembly.arrivals ? { arrivals: assembly.arrivals } : {}),
-    placement: placementFor(assembly, deps.scheme),
+    placement: placementFor(assembly, deps.scheme, deps.place),
     documentSync: assembly.documentSync,
     links: assembly.links,
     documentCreation: assembly.documentCreation,
@@ -208,6 +211,7 @@ function buildWorkScopedContextFsAdapters(
         },
         scheme,
         holder: { projectId, authority },
+        place: { workId, rootThreadId: null },
       }),
     );
   }
@@ -283,6 +287,7 @@ function buildUnifiedContextPort(input: {
         projectId: scope.projectId,
         authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef },
       },
+      place: { workId: null, rootThreadId: lineage.rootThreadId },
     }),
     authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef },
   });

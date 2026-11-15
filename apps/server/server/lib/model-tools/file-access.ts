@@ -19,7 +19,7 @@ import {
   type FileGrant,
   type FileNeed,
   type FileTarget,
-  isDrafted,
+  holdsDrafts,
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
@@ -70,7 +70,7 @@ export async function keptDraft(
   documentId: string,
   execution: ThreadExecutionContext,
 ): Promise<FileDestination | null> {
-  if (!isDrafted(grant.facts.contentScheme)) return null;
+  if (!holdsDrafts(grant.facts.contentScheme)) return null;
   const owner = execution.branchOwner;
   const drafts = await deps.branches.draftReview.list({ owner });
   return drafts.some((draft) => draft.documentId === documentId)

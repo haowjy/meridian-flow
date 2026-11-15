@@ -24,7 +24,11 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
-import { type FileDestination, sourceDestination } from "../../../file-policy/index.js";
+import {
+  type FileDestination,
+  type ScratchPlace,
+  sourceDestination,
+} from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, renderFilename, splitPath } from "../../context/paths.js";
@@ -119,6 +123,8 @@ export interface ContextFSDeps {
    * document binds its links as that document's address (contract §6.2).
    */
   holder: { projectId: string; authority?: CanonicalContextAuthority };
+  /** Whose Scratch this source is; absent for any other source. */
+  place?: ScratchPlace;
   /** Where creates land and what reads see; the port factory decides it (`placementFor`). */
   placement: ContextPlacement;
   /** The thread reading through this adapter; without one, reads are live. */
@@ -147,6 +153,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly readView?: ThreadContextView;
   private readonly scheme: ContextScheme;
   private readonly holder: ContextFSDeps["holder"];
+  private readonly place?: ScratchPlace;
   private readonly boundWrites: BoundWrites;
 
   readonly tree: ContextTreeAdapter = {
@@ -189,6 +196,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.readView = deps.threadView;
     this.scheme = deps.scheme;
     this.holder = deps.holder;
+    this.place = deps.place;
     this.name = deps.scheme;
     this.boundWrites = new BoundWrites({
       scheme: deps.scheme,
@@ -626,10 +634,7 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!view) return null;
     const reader = { threadId: view.threadId as ThreadId };
     // Without a separate draft both versions are the same document.
-    const at =
-      decided ??
-      view.destination ??
-      sourceDestination(view.writeMode, this.scheme, view.branchOwner);
+    const at = decided ?? view.destination ?? sourceDestination(view, this.scheme, this.place);
     return (decided || view.version !== "live") && at.kind === "draft"
       ? { ...reader, destination: "draft", owner: at.owner }
       : { ...reader, destination: "live" };

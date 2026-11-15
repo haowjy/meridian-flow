@@ -98,16 +98,16 @@ describe("file policy", () => {
     ["a deleted Work's scratch reads until its purge", person, file("scratch", work("d", { deleted: true })), "read", "not_found"],
     ["an archived Work's scratch is read-only", person, file("scratch", archived), "read", "work_archived"],
     ["an archived Work's chat still edits manuscript", agent(link("edit", "old")), file("manuscript"), "edit", null],
-    ["archive outranks a read agent's limit", agent(link("read", "a")), file("scratch", archived), "read", "work_archived"],
+    ["archive outranks a read agent's limit", agent(link("read", "a")), file("scratch", archived, { branchOwner: ownerFacts(A) }), "read", "work_archived"],
     // Uploads: read-only for every agent, writable for the person.
     ["the person edits uploads", person, file("uploads", A), "edit", null],
     ["an edit agent reads uploads", agent(link("edit", "a")), file("uploads", A), "read", "uploads_read_only"],
     // Own scratch follows the thread's current named Work.
     ["a read agent edits its Work's scratch", agent(link("read", "a")), file("scratch", A), "edit", null],
-    ["a read agent reads another Work's scratch", agent(link("read", "a")), file("scratch", X), "read", "agent_read_only"],
+    ["a read agent reads another Work's scratch", agent(link("read", "a")), file("scratch", X, { branchOwner: ownerFacts(A) }), "read", "agent_read_only"],
     // A No Work agent's Scratch is its lineage's: shared with its family, read-only elsewhere.
     ["a read agent edits its lineage's scratch", agent(lineageLink("root")), file("scratch", null, { ownerRootThreadId: "root" }), "edit", null],
-    ["a read agent reads another lineage's scratch", agent(lineageLink("other")), file("scratch", null, { ownerRootThreadId: "root" }), "read", "agent_read_only"],
+    ["a read agent reads another lineage's scratch", agent(lineageLink("other")), file("scratch", null, { ownerRootThreadId: "root", branchOwner: ownerFacts(A) }), "read", "agent_read_only"],
     // Delegation: the minimum over the chain.
     ["an edit child under a read parent reads manuscript", agent(link("edit", "a"), link("read", "a")), file("manuscript"), "read", "agent_read_only"],
     ["an edit child under a read parent edits their shared Work's scratch", agent(link("edit", "a"), link("read", "a")), file("scratch", A), "edit", null],
@@ -148,11 +148,15 @@ describe("file policy", () => {
     expect(live.level).toBe("edit");
     const frozen = decide(...drafting(archived), ownerGrants);
     expect([frozen.level, frozen.limitedBy]).toEqual(["read", "work_archived"]);
-    // Scratch and uploads stay live in draft mode.
+    // A chat's own Scratch and uploads stay live in draft mode; another Work's Scratch asks.
     const [principal] = drafting(archived);
-    expect(decide(principal, file("scratch", A), ownerGrants).destination).toEqual({
+    expect(decide(principal, file("scratch", archived), ownerGrants).destination).toEqual({
       kind: "live",
     });
+    expect(
+      decide(principal, file("scratch", A, { branchOwner: ownerFacts(archived) }), ownerGrants)
+        .destination,
+    ).toEqual({ kind: "draft", owner: { kind: "work", workId: "old" }, ownerHandle: "old" });
   });
 });
 

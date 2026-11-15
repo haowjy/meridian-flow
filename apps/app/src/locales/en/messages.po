@@ -368,6 +368,11 @@ msgstr "{0} will be renamed {1}"
 #~ msgid "{0}: your latest edit isn't in use: {1}"
 #~ msgstr "{0}: your latest edit isn't in use: {1}"
 
+#. placeholder {0}: owner.rootThreadRef
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{0}'s notes"
+msgstr "{0}'s notes"
+
 #: src/features/chat/ask/permission-request.ts
 msgid "{agent} wants to archive {work}?"
 msgstr "{agent} wants to archive {work}?"
@@ -826,6 +831,10 @@ msgstr "{name}: moving to {0}"
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: renaming to {0}"
 msgstr "{name}: renaming to {0}"
+
+#: src/features/project/shell/sidebar/ChangesSource.tsx
+msgid "{name}'s notes"
+msgstr "{name}'s notes"
 
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "{named} and {more} more"

@@ -771,7 +771,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       it("restore reaches the Trash of its own source, and again brings the older one", async () => {
         const call = await live(await start());
         await call("write", { command: "delete", path: "ch1" });
-        await call("write", { command: "delete", path: "scratch://@w2/sect-notes" });
+        // Another Work's note: a delete by the model is held, so the writer deletes it live.
+        await store().submit({
+          lists: [await treeListOfSource(db, SCRATCH_SOURCE)],
+          make: ([{ writer }]) => writer.delete(LIVE, WRITER, SCRATCH_NOTE),
+        });
         const refused = await call("write", { command: "restore", path: "sect-notes" });
         expect((await placement(SCRATCH_NOTE))?.deletedAt).not.toBeNull();
         expect(text(refused)).not.toContain("status: success");

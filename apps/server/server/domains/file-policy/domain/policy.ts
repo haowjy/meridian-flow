@@ -9,11 +9,11 @@
  */
 
 import { draftOwnerKey } from "@meridian/contracts";
-import { type ContextUriScheme, isDraftedScheme } from "@meridian/contracts/context-uri";
+import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { ScratchOwner } from "../../context/scratch-owner.js";
 import { matchAncestors } from "./ancestors.js";
 import {
-  type AgentChain,
   type AiAccess,
   type BranchOwnerRef,
   type FileAccessDenial,
@@ -41,26 +41,69 @@ const SOURCE_AGENT_LIMITS: Readonly<
   uploads: { cap: "read", limit: "uploads_read_only" },
 };
 
-/** Whether agent writes to this source go to the Work branch in draft mode. */
-export function isDrafted(scheme: ContextUriScheme): boolean {
-  return isDraftedScheme(scheme);
+/** Sources whose documents a branch can hold a draft of: every source but `uploads`. */
+export function holdsDrafts(scheme: ContextUriScheme): boolean {
+  return scheme !== "uploads";
+}
+
+/**
+ * Sources whose agent writes go to the chat's branch when it is in draft mode. Scratch is not
+ * one: a chat's own Scratch stays live in both modes (another owner's Scratch asks instead,
+ * `fixedAccess`).
+ */
+export function followsWriteMode(scheme: ContextUriScheme): boolean {
+  return holdsDrafts(scheme) && scheme !== "scratch";
+}
+
+/** Whose Scratch a file or a source is, by the ids a Work's or a lineage's Scratch carries. */
+export interface ScratchPlace {
+  workId: string | null;
+  rootThreadId: string | null;
+}
+
+/** Whether a chat's Scratch (the owner its writes and its branch go by) is this place. */
+export function ownsScratch(owner: ScratchOwner, place: ScratchPlace): boolean {
+  return owner.scope === "lineage"
+    ? place.rootThreadId === owner.rootThreadId
+    : place.workId === owner.workId;
+}
+
+function factsPlace(facts: FileFacts): ScratchPlace {
+  return { workId: facts.ownerWork?.id ?? null, rootThreadId: facts.ownerRootThreadId ?? null };
 }
 
 /**
  * The AI access of a source's places that no stored setting names: the floor `placeAccess` falls
- * back to, evaluated last. Empty: every place auto-applies. A source's rule is a row here.
+ * back to, evaluated last. Another owner's Scratch asks, so the writer reviews it in Changes;
+ * everything else auto-applies.
  */
-const FIXED_AI_ACCESS: Readonly<Partial<Record<ContextUriScheme, AiAccess>>> = {};
+function fixedAccess(
+  scheme: ContextUriScheme,
+  caller: ScratchOwner | undefined,
+  place: ScratchPlace | undefined,
+): AiAccess {
+  return scheme === "scratch" && caller && place && !ownsScratch(caller, place)
+    ? "ask"
+    : "auto-apply";
+}
+
+/** Whether the file is in a Scratch the calling link doesn't own: its writes are held. */
+export function inOthersNotes(agent: AgentPrincipal, facts: FileFacts): boolean {
+  return (
+    fixedAccess(facts.contentScheme, agent.chain[0]?.scratchOwner, factsPlace(facts)) === "ask"
+  );
+}
 
 /**
  * What the AI may do with a write to this file: the nearest stored setting on its live folder
- * chain, else its source's fixed rule, else `auto-apply`. `ask` on a source that can't hold a
- * draft would land live without the review it asks for, so it denies.
+ * chain, else its source's fixed rule. `ask` on a source that can't hold a draft would land live
+ * without the review it asks for, so it denies.
  */
-export function placeAccess(facts: FileFacts): AiAccess {
+export function placeAccess(agent: AgentPrincipal, facts: FileFacts): AiAccess {
   const access =
-    facts.aiAccessSettings?.[0]?.access ?? FIXED_AI_ACCESS[facts.contentScheme] ?? "auto-apply";
-  return access === "ask" && !isDrafted(facts.contentScheme) ? "deny" : access;
+    facts.aiAccessSettings?.[0]?.access ??
+    fixedAccess(facts.contentScheme, agent.chain[0]?.scratchOwner, factsPlace(facts));
+  return access === "ask" && !holdsDrafts(facts.contentScheme) ? "deny" : access;
 }
 
 function destinationAt(
@@ -69,26 +112,31 @@ function destinationAt(
   scheme: ContextUriScheme,
   owner: BranchOwnerRef,
 ): FileDestination {
-  const draft = access === "ask" || writeMode === "draft";
-  return draft && isDrafted(scheme)
+  const draft =
+    (access === "ask" && holdsDrafts(scheme)) ||
+    (writeMode === "draft" && followsWriteMode(scheme));
+  return draft
     ? { kind: "draft", owner: owner.owner, ownerHandle: owner.handle }
     : { kind: "live" };
 }
 
 /**
  * Where an agent's access to a file of this source goes, decided per source (the fixed rule):
- * its chat's branch for a drafted source in draft mode or where the source asks for review,
- * otherwise live. People always write live. Creates and view paths ask this per source; a
- * document's decision and a tool call's grant carry their own destination (`destinationFor`),
- * and a caller that has one reads it from there.
+ * its chat's branch for a source that follows the write mode in draft mode or where the source
+ * asks for review (another owner's Scratch), otherwise live. People always write live. Creates
+ * and view paths ask this per source; a document's decision and a tool call's grant carry their
+ * own destination (`destinationFor`), and a caller that has one reads it from there.
  */
 export function sourceDestination(
-  writeMode: AiWriteMode,
+  agent: { writeMode: AiWriteMode; branchOwner: BranchOwnerRef; scratchOwner?: ScratchOwner },
   scheme: ContextUriScheme,
-  owner: BranchOwnerRef,
+  place: ScratchPlace | undefined,
 ): FileDestination {
-  return destinationAt(writeMode, FIXED_AI_ACCESS[scheme] ?? "auto-apply", scheme, owner);
+  const access = fixedAccess(scheme, agent.scratchOwner, place);
+  return destinationAt(agent.writeMode, access, scheme, agent.branchOwner);
 }
+
+type AgentPrincipal = NonNullable<Principal["agent"]>;
 
 /** A grant on a node of the tree; v1 has only the owner's, on the project. */
 export interface NodeGrant {
@@ -111,7 +159,7 @@ export function destinationFor(principal: Principal, facts: FileFacts): FileDest
   return principal.agent
     ? destinationAt(
         principal.agent.writeMode,
-        placeAccess(facts),
+        placeAccess(principal.agent, facts),
         facts.contentScheme,
         principal.agent.branchOwner,
       )
@@ -143,7 +191,7 @@ export function levelAt(
   const terms: Term[] = [
     { cap: personLevel(facts, grants), limit: "not_found" },
     ...lifecycleTerms(facts, at),
-    ...(principal.agent ? agentTerms(principal.agent.chain, facts) : []),
+    ...(principal.agent ? agentTerms(principal.agent, facts) : []),
   ];
   const level = terms.reduce<FileAccessLevel>((min, term) => lowerLevel(min, term.cap), "edit");
   const limiting = level === "edit" ? undefined : terms.find((term) => term.cap === level);
@@ -151,8 +199,7 @@ export function levelAt(
   // only who the writer is, and what an agent may do, decide it.
   const command =
     personLevel(facts, grants) === "edit" &&
-    (!principal.agent ||
-      agentTerms(principal.agent.chain, facts).every((term) => term.cap === "edit"));
+    (!principal.agent || agentTerms(principal.agent, facts).every((term) => term.cap === "edit"));
   return {
     command,
     level,
@@ -217,19 +264,16 @@ function workTerms(work: FileWorkFacts): Term[] {
  * permission against its own thread. A `read` link may edit only the scratch
  * of its thread's current Work, No Work's included. A place set to `deny` reads. The minimum wins.
  */
-function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
+function agentTerms(agent: AgentPrincipal, facts: FileFacts): Term[] {
   const sourceLimit = SOURCE_AGENT_LIMITS[facts.contentScheme];
   const terms: Term[] = sourceLimit ? [sourceLimit] : [];
-  for (const link of chain) {
+  for (const link of agent.chain) {
     const ownScratch =
-      facts.contentScheme === "scratch" &&
-      (link.scratchOwner.scope === "lineage"
-        ? facts.ownerRootThreadId === link.scratchOwner.rootThreadId
-        : facts.ownerWork?.id === link.scratchOwner.workId);
+      facts.contentScheme === "scratch" && ownsScratch(link.scratchOwner, factsPlace(facts));
     const cap = link.permission === "edit" || ownScratch ? "edit" : "read";
     terms.push({ cap, limit: "agent_read_only" });
   }
-  if (placeAccess(facts) === "deny") terms.push({ cap: "read", limit: "ai_access_denied" });
+  if (placeAccess(agent, facts) === "deny") terms.push({ cap: "read", limit: "ai_access_denied" });
   return terms;
 }
 

@@ -39,6 +39,7 @@ import {
   type FileDestination,
   FileEditRefusedError,
   type FileGrant,
+  inOthersNotes,
   isFileAccessDenied,
   type Principal,
 } from "../../domains/file-policy/index.js";
@@ -219,11 +220,18 @@ function buildAgentWriteCommand(
   };
 }
 
-/** Writes report where they landed; a drafted write names its Work. */
+const HELD_IN_OTHERS_NOTES =
+  "These are another owner's notes: your change is held in this chat's Changes until the writer applies it.";
+
+/**
+ * Writes report where they landed; a drafted write names its Work, and one into another owner's
+ * notes says it is held (the model's other drafts are the chat's mode, which it knows).
+ */
 function withDestination(
   outcome: WriteOutcome,
   destination: FileDestination,
   command: EngineWriteInput["command"],
+  held: boolean,
 ): WriteOutcome {
   if (outcome.isError) return outcome;
   // Inverses can follow an edit away from the chat's current destination. Their owner reports
@@ -235,6 +243,11 @@ function withDestination(
       ...outcome.result,
       destination: destination.kind,
       ...(destination.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
+      ...(held
+        ? {
+            notice: [HELD_IN_OTHERS_NOTES, outcome.result.notice].filter(Boolean).join("\n"),
+          }
+        : {}),
     },
   };
 }
@@ -435,7 +448,14 @@ async function writeUnderGrant(
   // Showing and frontier are host-only: they leave here only as `evidence`.
   const { showing: _showing, frontier: _frontier, ...outcome } = written;
   return {
-    ...withDestination(outcome, grant.destination, parsed.command),
+    ...withDestination(
+      outcome,
+      grant.destination,
+      parsed.command,
+      grant.destination.kind === "draft" &&
+        !!principal.agent &&
+        inOthersNotes(principal.agent, grant.facts),
+    ),
     evidence,
   } as WriteOutcome & {
     isError: false;
