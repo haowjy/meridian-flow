@@ -44,6 +44,7 @@ import {
   halvesOf,
   type NoticeSurface,
   returnedIn,
+  unappliedOf,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
@@ -232,7 +233,7 @@ export function useWorkBranchCommands({
       branchId: string,
       nodes: readonly string[],
       name: string,
-      halves: ApplyHalves = { text: true, tree: true, restores: [] },
+      halves: ApplyHalves = { text: true, tree: true, restores: [], did: {} },
     ): AppliedUndo | null => {
       if (surface === "band" || !treeLists) return null;
       const handle = treeLists.acquire({ kind: "project", projectId });
@@ -253,17 +254,14 @@ export function useWorkBranchCommands({
             commandId: unapplyId,
             applyCommandId: commandId,
           });
-          if (answer.status === "conflict") return { answer: "failed" };
+          if (answer.status === "conflict") return { taken: "failed" };
           refresh(documentIds);
-          // Nothing taken back, and not because an earlier Un-Apply took it all: what is left
-          // changed since (or was purged with its Work).
-          const already = answer.settled?.some((one) => one.rule === "already") ?? false;
-          if (!already && answer.reversedGroupIds.length === 0 && answer.treeUndone.length === 0)
-            return { answer: "skipped" };
-          for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
-          return { answer: "unapplied", textLeft: answer.skippedGroupIds.length };
+          const unapplied = unappliedOf(answer);
+          if (unapplied.taken !== "nothing")
+            for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
+          return unapplied;
         } catch {
-          return { answer: "failed" };
+          return { taken: "failed" };
         }
       };
       // A node the project's list doesn't show is in the account's: its tree half is read there too.
@@ -276,6 +274,12 @@ export function useWorkBranchCommands({
         sources: [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
         name,
         nodes,
+        facts: new Map(
+          nodes.map((node) => [
+            node,
+            { did: halves.did[node] ?? null, folder: shown.nodes.get(node)?.kind === "folder" },
+          ]),
+        ),
         text: halves.text,
         tree: halves.tree ? { command: commandId, restores: halves.restores } : null,
         ended: () => {

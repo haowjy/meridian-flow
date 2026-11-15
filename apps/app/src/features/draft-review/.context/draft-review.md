@@ -230,8 +230,10 @@ keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedF
 sentence says it was applied, with where it landed, the name a clash gave it or that it came back
 to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
 takes (`undoApply`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
-answers ends the applied notice, so its result ("Skipped", "Partly undone", "Retry") shows on the
-rows as a press's does. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
+answers ends the applied notice, so its result shows on the rows as a press's does: nothing, when it
+took everything back; "Partly undone" or "Not undone", when what stayed was edited or changed since
+(`unappliedOf`, in `draft-notices.ts`, the one reading of an Un-Apply answer); "Retry", when it
+didn't reach the server. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
@@ -365,8 +367,10 @@ the text never comes back without its move or delete.
 
 An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack as one step
 (`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
-command's id; changes it could not take back come back as `left_out` and, with nothing
-reversed, are a skipped step with its notice. A band's Apply has its editor's Undo instead.
+command's id, and the press is spent once the server answers, whatever it took back. What it
+couldn't take back (text edited since, a tree change named by a `left_out` line) is said on the
+rows it stayed on (`unappliedOf`); only a tree step is skipped for the one before it. A band's
+Apply has its editor's Undo instead.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

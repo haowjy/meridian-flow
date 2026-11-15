@@ -7,11 +7,24 @@
  */
 
 import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
-import type { TurnInverseSkip } from "@meridian/contracts/protocol";
+import type { TurnInverseSkip, TurnTreeState } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
-import { deleteStands, LIVE, undoChange, type View } from "@meridian/project-tree";
-import { eq, inArray, sql } from "drizzle-orm";
+import {
+  documents,
+  projects,
+  threads,
+  treeEditReceipts,
+  treeNodes,
+} from "@meridian/database/schema";
+import {
+  type DraftedFate,
+  deleteStands,
+  draftedFates,
+  LIVE,
+  undoChange,
+  type View,
+} from "@meridian/project-tree";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { placedNodesSql } from "../../context/tree/tree-addresses.js";
@@ -21,7 +34,7 @@ import type {
   TreeReceipt,
   TreeReceiptInput,
 } from "../contracts.js";
-import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
+import { treeListOfNode, treeListsOfNodes } from "./drizzle-branch-tree-lists.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
 export type TreePlan = {
@@ -75,6 +88,63 @@ export function createTurnTreeInverse(deps: {
     return list.kind === "project"
       ? { kind: "account", userId: row.userId }
       : { kind: "project", projectId: row.projectId };
+  }
+
+  /**
+   * What became of each node's tree change the turn drafted (`draftedFates`, which follows a
+   * restored Discard's copies): `pending` while one of the node's records still waits, else
+   * `applied` when one landed, else `replaced` or `discarded`. The lists are found once for the
+   * turn's nodes, and each list is read once for the turn's own record ids.
+   */
+  async function draftStates(
+    threadId: ThreadId,
+    turnId: TurnId,
+  ): Promise<Record<string, TurnTreeState>> {
+    const receipts = await db()
+      .select({ records: treeEditReceipts.records })
+      .from(treeEditReceipts)
+      .where(
+        and(
+          eq(treeEditReceipts.threadId, threadId),
+          eq(treeEditReceipts.turnId, turnId),
+          eq(treeEditReceipts.kind, "write"),
+          isNotNull(treeEditReceipts.draftBranchId),
+        ),
+      );
+    const entries = receipts.flatMap((receipt) => receipt.records);
+    const listOf = await treeListsOfNodes(deps.db, [...new Set(entries.map((e) => e.node))]);
+    const byList = new Map<
+      string,
+      { list: TreeList; records: { record: string; node: string }[] }
+    >();
+    for (const entry of entries) {
+      const list = listOf.get(entry.node);
+      if (!list) continue;
+      const key = JSON.stringify(list);
+      const known = byList.get(key) ?? { list, records: [] };
+      known.records.push(entry);
+      byList.set(key, known);
+    }
+    const states: Record<string, TurnTreeState> = {};
+    const rank = { discarded: 0, replaced: 1, applied: 2, pending: 3 } as const;
+    for (const { list, records } of byList.values()) {
+      const fates = await deps.treeLists.read<Map<string, DraftedFate>>({
+        lists: [list],
+        view: ([end]) =>
+          end
+            ? draftedFates(
+                end.writer.doc,
+                records.map((entry) => entry.record),
+              )
+            : new Map(),
+      });
+      for (const { record, node } of records) {
+        const fate = fates.get(record) ?? "discarded";
+        const was = states[node];
+        if (!was || rank[fate] > rank[was]) states[node] = fate;
+      }
+    }
+    return states;
   }
 
   async function plan(
@@ -315,5 +385,5 @@ export function createTurnTreeInverse(deps: {
     return { reversed, skips };
   }
 
-  return { plan, run };
+  return { plan, run, draftStates };
 }

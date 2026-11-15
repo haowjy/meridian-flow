@@ -123,6 +123,11 @@ msgstr "{0, plural, other {# 次调用}}"
 msgid "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
 msgstr ""
 
+#. placeholder {0}: said.treeLeft
+#: src/features/project/context/use-tree-notice-words.tsx
+#~ msgid "{0, plural, one {# document stayed as it is: it was changed since.} other {# documents stayed as they are: they were changed since.}}"
+#~ msgstr ""
+
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
@@ -175,8 +180,8 @@ msgstr ""
 
 #. placeholder {0}: said.textLeft
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
-msgstr ""
+#~ msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+#~ msgstr ""
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -403,6 +408,18 @@ msgstr "{answered, plural, other {# 个已回答}}"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} can no longer be taken back."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: it has writing in it since."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: it was changed since."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -822,6 +839,10 @@ msgstr "{position} / {count}"
 msgid "{remainingPercent}% remaining"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{replaced} replaced by a later change"
+#~ msgstr ""
+
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "{seconds, plural, one {Continues in # second} other {Continues in # seconds}}"
 msgstr "{seconds, plural, other {# 秒后继续}}"
@@ -856,6 +877,10 @@ msgstr ""
 
 #: src/features/creation/CreationDialog.tsx
 msgid "{submitLabel} (enter a name first)"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{text, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
@@ -1314,6 +1339,10 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Appearance and behavior settings."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "applied"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2142,6 +2171,10 @@ msgstr ""
 msgid "Copied from {source} into"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "copy"
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -2860,6 +2893,10 @@ msgstr ""
 msgid "Default alignment"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "delete"
+msgstr ""
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -3111,6 +3148,10 @@ msgstr ""
 #~ msgid "Discard this draft? This can't be undone."
 #~ msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "discarded"
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Discarded"
@@ -3256,11 +3297,43 @@ msgid "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change, {discarded} discarded"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change, {discarded} discarded, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Drafted {what}: {applied} applied, {waiting} still a draft"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Drafted {what}: {discarded} discarded, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change, {discarded} discarded"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change, {discarded} discarded, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change, {waiting} still a draft"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -4270,6 +4343,10 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "move"
+msgstr ""
+
 #: src/features/project/context/entry-drag/drop-choice.ts
 #: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Move after {sibling}"
@@ -4477,6 +4554,10 @@ msgstr ""
 
 #: src/features/agents/PackageSave.tsx
 msgid "New chats can't use {label} until it is saved."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "new document"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -4754,9 +4835,25 @@ msgstr ""
 msgid "Not sent: {0}"
 msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone"
+msgstr ""
+
 #: src/features/agents/AgentSavesReceipt.tsx
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+#~ msgid "Not undone: it was changed since."
+#~ msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone: it was edited since."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone."
+msgstr ""
 
 #. placeholder {0}: whose(file.hiddenBy, file.slug)
 #: src/features/agents/AgentFileNotice.tsx
@@ -5372,6 +5469,14 @@ msgstr "切换设备时，会重新打开你之前打开的文档。"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Replaced by a later change"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "replaced by a later one"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
@@ -6032,6 +6137,10 @@ msgstr "状态未知"
 msgid "Stayed as you edited it"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "still a draft"
+msgstr ""
+
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "Still loading. Try again in a moment."
 #~ msgstr "仍在加载，请稍后再试。"
@@ -6232,6 +6341,13 @@ msgstr ""
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
+msgstr ""
+
+#. placeholder {0}: halfState(text)
+#. placeholder {1}: treeNoun(op)
+#. placeholder {2}: halfState(tree)
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Text {0}, {1} {2}"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -6497,6 +6613,18 @@ msgstr ""
 #~ msgid "The change didn't fit the current draft. The AI will read it again."
 #~ msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The change to this document"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The change to this folder"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The delete"
+msgstr ""
+
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The destination is no longer there."
 msgstr ""
@@ -6541,6 +6669,18 @@ msgstr ""
 msgid "The latest edits hadn't reached the server."
 msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The move"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The new document"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The new folder"
+msgstr ""
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr ""
@@ -6549,12 +6689,20 @@ msgstr ""
 msgid "the project's"
 msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The rename"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage in {name} wasn't specific enough."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage wasn't specific enough."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The restore from Trash"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -7279,12 +7427,16 @@ msgid "Undid"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undid applying {name}."
-msgstr ""
+#~ msgid "Undid applying {name}."
+#~ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undid change to Work {0}."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undid part of applying {name}."
 msgstr ""
 
 #: src/features/agents/AgentSavesReceipt.tsx
@@ -7359,8 +7511,8 @@ msgid "Undo save of {label}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undo skipped applying {name}: the tree changed since."
-msgstr ""
+#~ msgid "Undo skipped applying {name}: the tree changed since."
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped your change to {name}: it was changed again since."

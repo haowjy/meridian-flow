@@ -22,6 +22,12 @@ export {
   undoApply,
 } from "./apply.js";
 export { changedFolders, type LandingFault, landingFaults } from "./changes.js";
+export {
+  type DraftedFate,
+  draftedFates,
+  type RecordSettled,
+  settledRecords,
+} from "./drafted-fate.js";
 export { shownName } from "./names.js";
 export {
   type Actor,
