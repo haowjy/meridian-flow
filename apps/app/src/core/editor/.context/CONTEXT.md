@@ -603,15 +603,17 @@ from the wire alone, with nothing stored between handshakes.
     browser runs one at a time across tabs and workers, so two tabs holding the same words get
     one notice between them and a tab holding more gets a second notice with only the rest. It
     reads the words inside the transaction, from a scratch document of the caller's snapshot.
-  - `act(id)` on Copy or Dismiss sets `acted`, and nothing clears it. No path rewrites a notice's
-    ranges or words, so no stale tab can take a fact back.
+  - `act(id)` on Copy or Dismiss marks it acted on: it drops the words and keeps the items, and
+    nothing clears it. No path rewrites a notice's ranges, so no stale tab can take a fact back.
+    Unacted notices carry a field a sparse index lists, so a tab's read costs the open notices,
+    not the account's history.
 - **Who claims.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
   it reads that and a snapshot, makes the old session inert, then claims), the older-copy read
   below (everything an older incarnation holds beyond the new session's first handshake), and a
   closing or removing retirement (the session's unacknowledged typing, read synchronously; a
   removal's `clearLocalCopy` claims through it). **A copy is deleted only after a claim of what it
   holds has resolved, and a claim that rejects still shows its words**, unstored, in this tab
-  (`done` does nothing). The replacement goes on and its old copy stays for the older-copy read; an
+  (`done` resolves at once). The replacement goes on and its old copy stays for the older-copy read; an
   older copy stays for the next open; a removal keeps the copy for this page. A terminal
   retirement has only the snapshot, so a rejected claim there is the one place words can be shown
   once and then lost. Offering twice is accepted; losing is not. A change with no words (a
@@ -627,12 +629,16 @@ from the wire alone, with nothing stored between handshakes.
   no copy, lock, server or open document. A copy's measure of what the server lacks can't be the
   store: what the server lacks is known only to a connected session, and an empty measure would
   offer a purged document's whole text.
-- **Cleaning the store.** An acted notice still stops a later claim from its copy offering the
-  same words again, and is needed for as long as that copy database exists. At the account's
-  start, after showing, one transaction deletes the acted notices whose copy is not among
-  `indexedDB.databases()`; a browser without it skips the cleanup. An unacted notice is never
-  deleted. Sign-out (`clearAll`) deletes the notice database after the copies, and only when no
-  copy was left behind: the notices say which of its words the writer already acted on.
+- **Nothing is deleted from the store.** An acted notice's items stop any later claim from its
+  copy offering the same words again, and a claim can still be on its way after its copy
+  database is gone: a terminal retirement claims from its snapshot without anyone waiting for it,
+  in any tab. No tab can know when the last such claim has run, so collecting acted notices by
+  their copy's absence brought words back. Sign-out (`clearAll`) deletes the whole
+  notice database after the copies, and only when no copy was left behind.
+- **A press that isn't stored stays actionable.** Copy and Dismiss show their result at once.
+  `done` resolves when `act` commits; when it rejects, the toast comes back (or stays) with
+  "Didn't go through. Try again.", and the next press runs `act` again. Until one commits, the
+  notice stays unacted, so a reload offers it again too.
 - A session that opens a room's current incarnation reads the older ones no tab holds against
   its first handshake, claims what they hold beyond it (never a wordless toast, which only the
   current session's own edit earns), and deletes each one whose claim resolved.

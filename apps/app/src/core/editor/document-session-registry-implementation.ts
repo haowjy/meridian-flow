@@ -591,9 +591,7 @@ export class DocumentSessionRegistry {
     if (!this.stopNotices) {
       const report = (error: unknown) => reportError(error);
       this.stopNotices = this.notices.subscribe(() => void this.showUnacted().catch(report));
-      void this.showUnacted()
-        .then(() => this.notices.forgetActed())
-        .catch(report);
+      void this.showUnacted().catch(report);
     }
     return () => {
       this.unsentTypingObservers.delete(observer);
@@ -642,7 +640,8 @@ export class DocumentSessionRegistry {
   ): Promise<boolean> {
     const text = typedText(document, lacking);
     if (text === null) {
-      if (own) this.emit({ id: crypto.randomUUID(), cause, text: null, done: () => undefined });
+      if (own)
+        this.emit({ id: crypto.randomUUID(), cause, text: null, done: () => Promise.resolve() });
       return true;
     }
     try {
@@ -653,7 +652,7 @@ export class DocumentSessionRegistry {
       return true;
     } catch (error) {
       reportError(error);
-      this.emit({ id: crypto.randomUUID(), cause, text, done: () => undefined });
+      this.emit({ id: crypto.randomUUID(), cause, text, done: () => Promise.resolve() });
       return false;
     }
   }
@@ -673,12 +672,17 @@ export class DocumentSessionRegistry {
     if (this.shownNotices.has(id)) return;
     this.shownNotices.add(id);
     this.showingNotices.add(id);
-    let acted = false;
+    let acting: Promise<void> | null = null;
     const done = () => {
-      if (acted) return;
-      acted = true;
-      this.showingNotices.delete(id);
-      void this.notices.act(id).catch(reportError);
+      acting ??= this.notices.act(id).then(
+        () => void this.showingNotices.delete(id),
+        (error: unknown) => {
+          acting = null;
+          reportError(error);
+          throw error;
+        },
+      );
+      return acting;
     };
     this.emit({ id, cause, text, done });
   }

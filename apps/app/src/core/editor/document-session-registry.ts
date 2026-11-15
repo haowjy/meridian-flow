@@ -25,13 +25,14 @@ export type UnsentTypingCause = "closed" | "removed" | "owner-closed";
 /**
  * Typing a room ended with before the server acknowledged it, handed back once. `text` is null for
  * an `owner-closed` change that has no words (a deletion, a format change). `done` says the writer
- * is done with it (copied it, or dismissed it): until then a reload offers its words again.
+ * is done with it (copied it, or dismissed it): until it resolves a reload offers its words again.
+ * It rejects when that can't be stored, and the next call tries again.
  */
 export type UnsentTyping = Readonly<{
   id: string;
   cause: UnsentTypingCause;
   text: string | null;
-  done: () => void;
+  done: () => Promise<void>;
 }>;
 
 /**

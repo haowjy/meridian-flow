@@ -2,8 +2,9 @@
  * The account's hand-back notices: words a room could not deliver, kept with the notice that
  * offers them, apart from the copies they came from. One IndexedDB database per account, one
  * store. Two writes exist and neither can undo the other: `claim` adds a notice under a new id,
- * `act` sets `acted` on one. Each is one transaction, run one at a time across tabs, so two tabs
- * holding the same words get one notice between them.
+ * `act` marks one acted on, keeping its items. Each is one transaction, run one at a time across
+ * tabs, so two tabs holding the same words get one notice between them. Nothing is deleted but
+ * the whole database, at sign-out.
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import { openIndexedDbDatabase, settled } from "../indexeddb-database";
@@ -12,6 +13,7 @@ import { addList, listOf, type RangeList, type Ranges, subtract } from "./item-r
 
 const NOTICES = "notices";
 const BY_COPY = "copy";
+const UNACTED = "unacted";
 export const HAND_BACK_NOTICES_PREFIX = "meridian-handback:";
 
 export function handBackNoticesName(accountId: AccountId): string {
@@ -26,8 +28,15 @@ export type HandBackNotice = Readonly<{
   /** The Yjs items whose words it holds. */
   ranges: RangeList;
   text: string;
-  acted: boolean;
 }>;
+
+/**
+ * An unacted notice carries `unacted`, which the sparse `unacted` index lists. Acting drops it
+ * and the words, keeping the items: a claim still pending somewhere (a retiring session's, in
+ * any tab) must find them held, and nothing can tell when the last such claim has run.
+ */
+type Stored = HandBackNotice & { unacted: 1 };
+type Acted = Pick<HandBackNotice, "id" | "copy" | "ranges">;
 
 export interface HandBackNotices {
   /**
@@ -42,15 +51,10 @@ export interface HandBackNotices {
     lacking: Ranges,
     read: (ranges: Ranges) => string | null,
   ): Promise<HandBackNotice | null>;
-  /** Copy or Dismiss was pressed. Sets `acted`; nothing ever clears it. */
+  /** Copy or Dismiss was pressed: the notice is acted on, for good. Rejects when it can't be stored. */
   act(id: string): Promise<void>;
   /** Every notice not acted on. */
   unacted(): Promise<HandBackNotice[]>;
-  /**
-   * Deletes the acted notices whose copy is gone: one only stops a later claim from that copy
-   * offering its words again. Skipped where the browser can't list its databases.
-   */
-  forgetActed(): Promise<void>;
   /** Calls `listener` when another tab of the account claimed or acted on a notice. */
   subscribe(listener: () => void): () => void;
   close(): void;
@@ -59,9 +63,11 @@ export interface HandBackNotices {
 export function createHandBackNotices(accountId: AccountId): HandBackNotices {
   const name = handBackNoticesName(accountId);
   if (typeof indexedDB === "undefined") return unavailableNotices();
-  const database = openIndexedDbDatabase(name, (db) =>
-    db.createObjectStore(NOTICES, { keyPath: "id" }).createIndex(BY_COPY, BY_COPY),
-  );
+  const database = openIndexedDbDatabase(name, (db) => {
+    const store = db.createObjectStore(NOTICES, { keyPath: "id" });
+    store.createIndex(BY_COPY, BY_COPY);
+    store.createIndex(UNACTED, UNACTED);
+  });
   let channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(name);
   const listeners = new Set<() => void>();
   if (channel)
@@ -75,7 +81,7 @@ export function createHandBackNotices(accountId: AccountId): HandBackNotices {
     async claim(copy, cause, lacking, read) {
       const notice = await database.transact([NOTICES], "readwrite", async (tx) => {
         const store = tx.objectStore(NOTICES);
-        const earlier = await settled<HandBackNotice[]>(store.index(BY_COPY).getAll(copy));
+        const earlier = await settled<Acted[]>(store.index(BY_COPY).getAll(copy));
         const held: Ranges = new Map();
         for (const each of earlier) addList(held, each.ranges);
         const ranges = subtract(lacking, held);
@@ -87,9 +93,8 @@ export function createHandBackNotices(accountId: AccountId): HandBackNotices {
           cause,
           ranges: listOf(ranges),
           text,
-          acted: false,
         };
-        store.add(made);
+        store.add({ ...made, unacted: 1 } satisfies Stored);
         return made;
       });
       if (notice) changed();
@@ -98,25 +103,17 @@ export function createHandBackNotices(accountId: AccountId): HandBackNotices {
     async act(id) {
       await database.transact([NOTICES], "readwrite", async (tx) => {
         const store = tx.objectStore(NOTICES);
-        const notice = await settled<HandBackNotice | undefined>(store.get(id));
-        if (notice && !notice.acted) store.put({ ...notice, acted: true });
+        const notice = await settled<Stored | Acted | undefined>(store.get(id));
+        if (notice && "unacted" in notice)
+          store.put({ id, copy: notice.copy, ranges: notice.ranges } satisfies Acted);
       });
       changed();
     },
     async unacted() {
-      const all = await database.transact([NOTICES], "readonly", (tx) =>
-        settled<HandBackNotice[]>(tx.objectStore(NOTICES).getAll()),
+      const open = await database.transact([NOTICES], "readonly", (tx) =>
+        settled<Stored[]>(tx.objectStore(NOTICES).index(UNACTED).getAll()),
       );
-      return all.filter((notice) => !notice.acted);
-    },
-    async forgetActed() {
-      if (!indexedDB.databases) return;
-      const existing = new Set((await indexedDB.databases()).map((each) => each.name));
-      await database.transact([NOTICES], "readwrite", async (tx) => {
-        const store = tx.objectStore(NOTICES);
-        for (const notice of await settled<HandBackNotice[]>(store.getAll()))
-          if (notice.acted && !existing.has(notice.copy)) store.delete(notice.id);
-      });
+      return open.map(({ unacted: _, ...notice }) => notice);
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -137,7 +134,6 @@ function unavailableNotices(): HandBackNotices {
     claim: () => Promise.reject(new Error("IndexedDB is unavailable")),
     act: () => Promise.resolve(),
     unacted: () => Promise.resolve([]),
-    forgetActed: () => Promise.resolve(),
     subscribe: () => () => undefined,
     close: () => undefined,
   };

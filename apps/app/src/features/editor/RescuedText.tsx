@@ -158,14 +158,7 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
  * then a reload offers the words again. Done in another tab, it leaves this one too.
  */
 export const unsentTypingToasts: UnsentTypingObserver = {
-  show: (typing) =>
-    notifyUnsentTyping({
-      ...typing,
-      done: () => {
-        actedHere.add(typing.id);
-        typing.done();
-      },
-    }),
+  show: notifyUnsentTyping,
   // The toaster is the page's: a toast acted on here stays, showing "Copied", whoever withdraws it.
   withdraw: (id) => {
     if (!actedHere.has(id)) toast.dismiss(`unsent:${id}`);
@@ -174,23 +167,58 @@ export const unsentTypingToasts: UnsentTypingObserver = {
 
 const actedHere = new Set<string>();
 
+/** Copy and Dismiss show as done at once; one that couldn't be stored brings the toast back to retry. */
 function notifyUnsentTyping(typing: UnsentTyping) {
-  toast.custom(
-    (id) => (
-      <UnsentTypingToast
-        typing={typing}
-        onDismiss={() => {
-          typing.done();
-          toast.dismiss(id);
-        }}
-      />
-    ),
-    // Swiping it away would clear words the writer never read.
-    { id: `unsent:${typing.id}`, duration: Number.POSITIVE_INFINITY, dismissible: false },
-  );
+  const id = `unsent:${typing.id}`;
+  let failed = false;
+  let dismissed = false;
+  const act = () => {
+    actedHere.add(typing.id);
+    typing.done().then(
+      () => {
+        if (failed && !dismissed) render(false);
+      },
+      () => {
+        actedHere.delete(typing.id);
+        dismissed = false;
+        render(true);
+      },
+    );
+  };
+  const render = (failing: boolean) => {
+    failed = failing;
+    toast.custom(
+      () => (
+        <UnsentTypingToast
+          typing={typing}
+          failed={failing}
+          onCopied={act}
+          onDismiss={() => {
+            dismissed = true;
+            toast.dismiss(id);
+            act();
+          }}
+        />
+      ),
+      // Swiping it away would clear words the writer never read.
+      { id, duration: Number.POSITIVE_INFINITY, dismissible: false },
+    );
+  };
+  render(false);
 }
 
-function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDismiss: () => void }) {
+function UnsentTypingToast({
+  typing,
+  failed,
+  onCopied,
+  onDismiss,
+}: {
+  typing: UnsentTyping;
+  /** Copy or Dismiss was pressed and couldn't be stored, so a reload would offer it again. */
+  failed: boolean;
+  onCopied: () => void;
+  onDismiss: () => void;
+}) {
   const [counted] = useState(() => [
     {
       occurrenceId: `unsent:${typing.id}`,
@@ -212,8 +240,11 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
         passages={typing.text === null ? [] : [typing.text]}
         note={typing.text === null ? null : <Trans>It isn't in the document.</Trans>}
         onDismiss={onDismiss}
-        onCopied={typing.done}
+        onCopied={onCopied}
       />
+      {failed ? (
+        <InlineErrorRow message={<Trans>Didn't go through. Try again.</Trans>} className="p-0" />
+      ) : null}
     </div>
   );
 }
