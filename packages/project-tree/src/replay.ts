@@ -173,6 +173,8 @@ type Working = {
   arrivedAt: number;
   /** Where it last came to stand in this list: its create, or the restore that brought it back. */
   stoodAt: number;
+  /** Where it came to show its name, which only a change to its name moves. */
+  namedAt: number;
   born: LabelSays & PlaceSays;
   purged: boolean;
   /** The create it was made by, or the original a copy of that create carries. */
@@ -357,8 +359,16 @@ export function replay(
       node.name = label.name;
       if (label.filetype) node.filetype = label.filetype;
       else delete node.filetype;
+      node.namedAt = since(node, node.label, (says) => {
+        return shownName(node.kind, says.name, node.filetype) === node.name;
+      });
     }
-    node.arrivedAt = arrival(node);
+    // Rule 4: the later arrival shows the number; never before it came to stand in the list.
+    node.arrivedAt = Math.max(
+      node.stoodAt,
+      since(node, node.place, (says) => says.parent === node.parent),
+      node.namedAt,
+    );
   };
   // An Undo or Redo of a move or rename sets nothing itself: it puts the change it speaks about
   // out of force or back in, and the node shows what the changes in force then say. One that
@@ -449,6 +459,7 @@ export function replay(
         createdAt: index,
         arrivedAt: index,
         stoodAt: index,
+        namedAt: index,
         born: {
           name: record.name,
           ...(record.filetype ? { filetype: record.filetype } : {}),
@@ -713,26 +724,21 @@ export function labelOf(
 }
 
 /**
- * Where a node arrived at its parent under its name (rule 4: the later arrival shows the number):
- * the earliest of the changes in force that, one after another, left it in this folder, and the
- * same for its name; never before it came to stand in the list.
+ * When a node came to show what `same` accepts of one fact: the earliest of the changes in force
+ * that, one after another up to the last, say so; its create when it was created so too.
  */
-function arrival(node: Working): number {
-  const since = <Says>(stack: Array<Holder<Says>>, same: (says: Says) => boolean) => {
-    let at: number | undefined;
-    for (let i = stack.length - 1; i >= 0; i -= 1) {
-      const each = stack[i] as Holder<Says>;
-      if (!same(each.says)) return at ?? each.at;
-      at = each.at;
-    }
-    return at !== undefined && !same(node.born as unknown as Says) ? at : node.createdAt;
-  };
-  const shows = (says: LabelSays) => shownName(node.kind, says.name, node.filetype) === node.name;
-  return Math.max(
-    node.stoodAt,
-    since(node.place, (says) => says.parent === node.parent),
-    since(node.label, shows),
-  );
+function since<Says>(
+  node: Working,
+  stack: ReadonlyArray<Holder<Says>>,
+  same: (says: Says) => boolean,
+): number {
+  let at: number | undefined;
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    const each = stack[i] as Holder<Says>;
+    if (!same(each.says)) return at ?? each.at;
+    at = each.at;
+  }
+  return at !== undefined && !same(node.born as unknown as Says) ? at : node.createdAt;
 }
 
 type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean; source: string };
