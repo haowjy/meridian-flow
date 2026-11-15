@@ -20,6 +20,18 @@ import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
 
 /**
+ * The ahead address of a manuscript path a writer typed, or null when the text
+ * is no address (a segment beginning with `@`, or `..`): the serializer throws on those.
+ */
+function manuscriptAhead(path: string): string | null {
+  try {
+    return aheadAddress(canonicalContextUri("manuscript", path), "link");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * What a writer calls the document an address names: its stored name
  * (`Chapter 13`, `map.png`). Addresses hold names already decoded, so this
  * never decodes again.
@@ -55,7 +67,7 @@ export function linkedDocumentName(name: string): string | null {
   if (!parsed.ok) return null;
   const classification = classifyFiletype(parsed.value.filetype);
   if (classification.kind !== "tracked" || classification.schemaType !== "document") return null;
-  const ahead = aheadAddress(canonicalContextUri("manuscript", name), "link");
+  const ahead = manuscriptAhead(name);
   const address = ahead === null ? null : parseContextUri(ahead);
   return address?.ok ? address.value.path : null;
 }
@@ -82,7 +94,7 @@ export function linkAheadAddress(
   const path = [...segments, filename];
   const holder = holderUri ? parseContextUri(holderUri) : null;
   if (!holder?.ok || !holder.value.path || !isCreatableLinkScheme(holder.value.scheme))
-    return aheadAddress(canonicalContextUri("manuscript", path.join("/")), "link");
+    return manuscriptAhead(path.join("/"));
   // Relative to the holder: beside it, or up its folders to the area root.
   const depth = segments.length ? holder.value.path.split("/").length - 1 : 0;
   const href = [...Array<string>(depth).fill(".."), ...path.map(encodeURIComponent)].join("/");

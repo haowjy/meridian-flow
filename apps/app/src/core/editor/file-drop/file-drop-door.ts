@@ -92,11 +92,14 @@ function chipFor(
   documentId: string,
   scheme: ContextUriScheme,
 ): PMNode | null {
-  return documentReferenceNode(editor.state.schema, {
-    label: name,
-    documentId,
-    uri: canonicalContextUri(scheme, `${ASSETS_FOLDER}/${name}`),
-  });
+  // A dropped file's name is the writer's: `@notes.png` is no address segment.
+  let uri: string;
+  try {
+    uri = canonicalContextUri(scheme, `${ASSETS_FOLDER}/${name}`);
+  } catch {
+    return null;
+  }
+  return documentReferenceNode(editor.state.schema, { label: name, documentId, uri });
 }
 
 type Reserved = { ok: true; name: string } | { ok: false; reason: unknown };
