@@ -19,8 +19,6 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This draft is no longer here. It may have been applied or discarded already.`;
     case "overtaken_discarded":
       return msg`This was discarded before Apply reached it. Restore it to apply it.`;
-    case "overtaken_applied":
-      return msg`This was applied before your Discard reached it.`;
     case "overtaken_removed":
       return msg`This document was deleted before its changes could be applied.`;
     case "left_out_would_loop":
@@ -82,7 +80,7 @@ export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }
   const { code, serverCode, serverReason } = failure;
   switch (code) {
     case "unapply-refused":
-      return <Trans>Couldn't undo this Apply. Try again.</Trans>;
+      return <Trans>Undo didn't go through. Try again.</Trans>;
     case "apply-refused":
       return (
         <>

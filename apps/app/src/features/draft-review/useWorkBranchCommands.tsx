@@ -140,6 +140,16 @@ export function useWorkBranchCommands({
           : { kind: "changes" };
     const endNotice = () => notices.end(ownerKey);
     /**
+     * A server Discard's share of the notice, as its answer says: only what it took stays, and
+     * what an Apply took first says so (`DraftNotices.answered`). A share it never answered for
+     * (refused, blocked) leaves.
+     */
+    const answeredShare = (handle: DiscardUndo, answer: CommandOutcome) => {
+      const took = answer.kind === "done" || answer.kind === "settled" ? answer.took : undefined;
+      if (took) notices.answered(handle, took);
+      else if (answer.kind !== "done") notices.partEnded(handle);
+    };
+    /**
      * The one place a closed owner's `returned` answer becomes a notice: the chip on the control
      * pressed (`documentIds`: its rows; none: the bar's), and the Works list read again, since
      * the writer's view of the Work was stale.
@@ -378,22 +388,29 @@ export function useWorkBranchCommands({
       const outcomes = Promise.all(started.outcomes.slice(0, members.length));
       void Promise.all([outcomes, Promise.all(started.outcomes), started.answer]).then(
         ([settled, _all, answer]) => {
-          const taken = [...members.map(({ draft }) => draft.documentId), ...folders];
-          const only = members.length === 1 && folders.length === 0 ? titleOf(first?.item) : null;
+          // The step is what the answer says landed, not what was pressed: an item settled
+          // before it (an earlier Discard's, another Apply's) is no part of its Undo.
+          const landed = answer?.status === "applied" ? answer : null;
+          const taken =
+            landed?.items.flatMap((item) =>
+              item.tree?.landed || item.text?.landed ? [item.node] : [],
+            ) ?? [];
+          const only =
+            taken.length === 1
+              ? titleOf(members.find((m) => m.draft.documentId === taken[0])?.item)
+              : null;
           const count = taken.length;
           // Only an Apply that landed something is a step: Ctrl+Z would take an empty one.
-          const landed =
-            answer?.status === "applied" &&
-            answer.items.some((item) => item.tree?.landed || item.text?.landed);
-          const step = landed
-            ? rememberApply(
-                answer.commandId,
-                branchId,
-                taken,
-                name ?? only ?? t`${count} changes`,
-                halvesOf(answer),
-              )
-            : null;
+          const step =
+            count > 0 && landed
+              ? rememberApply(
+                  landed.commandId,
+                  branchId,
+                  taken,
+                  name ?? only ?? t`${count} changes`,
+                  halvesOf(landed),
+                )
+              : null;
           if (first)
             applied(
               first.draft,
@@ -424,27 +441,6 @@ export function useWorkBranchCommands({
       }),
       end: () => {},
     });
-    /** One share for a Discard that is a room's text and a server command together. */
-    const bothUndo = (text: DiscardUndo | null, server: DiscardUndo): DiscardUndo =>
-      text
-        ? {
-            undo: async () => {
-              const shares = [text.undo(), server.undo()];
-              const [own, theirs] = await Promise.all(shares);
-              const answers = [own?.answer, theirs?.answer];
-              return {
-                answer: answers.includes("failed")
-                  ? "failed"
-                  : answers.includes("ok")
-                    ? "ok"
-                    : "gone",
-                landed: Promise.all([own?.landed, theirs?.landed]).then(() => undefined),
-                ...(theirs?.leftOut ? { leftOut: theirs.leftOut } : {}),
-              };
-            },
-            end: () => text.end(),
-          }
-        : server;
     const start = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
@@ -461,21 +457,20 @@ export function useWorkBranchCommands({
       // on the page, which shows the refusal.
       const leaves =
         target.kind === "draft" && (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
-      const { start, part } = dispatchDiscard(draft, target);
+      const { start, parts } = dispatchDiscard(draft, target);
       // A change card's chip stays on the card pressed; a whole draft's is the band's.
       const bounceSurface: NoticeSurface =
         surface === "band" && target.kind === "groups"
           ? { kind: "card", documentId: draft.documentId }
           : noticeSurface(draft);
       void start.outcome.then((outcome) => bounced([outcome], bounceSurface, [draft.documentId]));
-      const shown = part
-        ? notices.showDiscard({
-            projectId,
-            ownerKey,
-            surface: noticeSurface(draft),
-            parts: [part],
-          })
-        : null;
+      const shown = notices.showDiscard({
+        projectId,
+        ownerKey,
+        surface: noticeSurface(draft),
+        bounceSurface,
+        parts,
+      });
       if (leaves && removal)
         void start.outcome.then((outcome) => {
           if (outcome.kind !== "done") return;
@@ -491,7 +486,7 @@ export function useWorkBranchCommands({
     ): Promise<CommandOutcome[]> => {
       endNotice();
       const started = items.map(({ draft, target }) => dispatchDiscard(draft, target));
-      const parts = started.flatMap(({ part }) => (part ? [part] : []));
+      const parts = started.flatMap(({ parts }) => parts);
       const [first] = items;
       const outcomes = Promise.all(started.map(({ start }) => start.outcome));
       if (first) {
@@ -515,22 +510,16 @@ export function useWorkBranchCommands({
     const dispatchDiscard = (
       draft: DraftReviewSelection,
       target: ChangeTarget,
-    ): { start: CommandStart; part: DiscardPart | null } => {
-      const none = (start: CommandStart) => ({ start, part: null });
+    ): { start: CommandStart; parts: DiscardPart[] } => {
+      const none = (start: CommandStart) => ({ start, parts: [] });
       if (locked) return none(blocked());
       const item = row(draft);
       const history = reviewEditor ? reviewEditor(draft) : "notice";
       const name = titleOf(item) ?? t`Untitled document`;
       const scope = target.kind === "draft" ? ("draft" as const) : ("change" as const);
-      /** The notice's share; it leaves the notice when the Discard itself was refused. */
-      const share = (
-        handle: DiscardUndo,
-        outcome: Promise<CommandOutcome>,
-        ownText: boolean,
-      ): DiscardPart => {
-        void outcome.then((answer) => {
-          if (answer.kind !== "done" && !ownText) notices.partEnded(handle);
-        });
+      /** A server command's share of the notice: its answer says what of it stays. */
+      const share = (handle: DiscardUndo, outcome: Promise<CommandOutcome>): DiscardPart => {
+        void outcome.then((answer) => answeredShare(handle, answer));
         return { documentId: draft.documentId, name, scope, handle };
       };
       // A whole draft ends on the server, everything it holds.
@@ -547,13 +536,15 @@ export function useWorkBranchCommands({
         });
         return {
           start: { sent: true, outcome },
-          part: {
-            ...share(serverUndo(item.branchId, commandId, [draft.documentId]), outcome, false),
-            restore: commandId,
-            review: reviewOf(item),
-            // A view following the Undo opens the draft once the server lists it again.
-            undone: () => relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey),
-          },
+          parts: [
+            {
+              ...share(serverUndo(item.branchId, commandId, [draft.documentId]), outcome),
+              restore: commandId,
+              review: reviewOf(item),
+              // A view following the Undo opens the draft once the server lists it again.
+              undone: () => relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey),
+            },
+          ],
         };
       }
       // A move or delete is discarded on the server, with the item's chosen text, as one command.
@@ -568,13 +559,17 @@ export function useWorkBranchCommands({
           refresh([draft.documentId]);
           return answer;
         });
-        const handle = bothUndo(
-          discarded.handle,
-          serverUndo(item.branchId, commandId, [draft.documentId]),
-        );
+        // Two shares of one Undo: the room's text, and the server's command, which its answer
+        // narrows like any other (an Apply that took the item first leaves only the text).
+        const server: DiscardPart = {
+          ...share(serverUndo(item.branchId, commandId, [draft.documentId]), discarded.tree),
+          restore: commandId,
+        };
         return {
           start: { sent: true, outcome },
-          part: { ...share(handle, outcome, discarded.handle !== null), restore: commandId },
+          parts: discarded.handle
+            ? [{ documentId: draft.documentId, name, scope, handle: discarded.handle }, server]
+            : [server],
         };
       }
       const discarded = owner.discard(ref(draft), target, history);
@@ -584,28 +579,35 @@ export function useWorkBranchCommands({
       if (!discarded.handle) return none(start);
       return {
         start,
-        part: {
-          documentId: draft.documentId,
-          name,
-          scope,
-          handle: discarded.handle,
-          ...(item ? { review: reviewOf(item) } : {}),
-          // The row comes back with the prose. The list is read again only once the server lists
-          // the draft: a read before then drops the row, and a page opened on it would close.
-          undone: async (landed) => {
-            if (!item) {
+        parts: [
+          {
+            documentId: draft.documentId,
+            name,
+            scope,
+            handle: discarded.handle,
+            ...(item ? { review: reviewOf(item) } : {}),
+            // The row comes back with the prose. The list is read again only once the server lists
+            // the draft: a read before then drops the row, and a page opened on it would close.
+            undone: async (landed) => {
+              if (!item) {
+                refresh([draft.documentId]);
+                return landed.then(() => false);
+              }
+              patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
+                rows.some((listed) => listed.itemKey === item.itemKey) ? rows : [...rows, item],
+              );
+              await landed;
+              const listed = await relistedOwnerDraft(
+                queryClient,
+                projectId,
+                ownerKey,
+                item.itemKey,
+              );
               refresh([draft.documentId]);
-              return landed.then(() => false);
-            }
-            patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-              rows.some((listed) => listed.itemKey === item.itemKey) ? rows : [...rows, item],
-            );
-            await landed;
-            const listed = await relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey);
-            refresh([draft.documentId]);
-            return listed;
+              return listed;
+            },
           },
-        },
+        ],
       };
     };
     /**
@@ -665,9 +667,7 @@ export function useWorkBranchCommands({
           return answer;
         });
       const handle = serverUndo(branchId, commandId, documentIds);
-      void outcome.then((answer) => {
-        if (answer.kind !== "done") notices.partEnded(handle);
-      });
+      void outcome.then((answer) => answeredShare(handle, answer));
       const [first] = input.drafts;
       const count = input.drafts.length + folders.length;
       const surface: NoticeSurface = first ? noticeSurface(first) : { kind: "changes" };

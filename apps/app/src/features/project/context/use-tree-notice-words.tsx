@@ -365,7 +365,7 @@ function SaidWord({
           tone="warning"
           word={<Trans>Retry</Trans>}
           label={t`Retry undoing applying ${name}`}
-          sentence={t`Couldn't undo applying ${name}. Retry tries again.`}
+          sentence={t`Undo didn't go through. Try again.`}
           onAction={() => onRetry(said.step)}
         />
       );

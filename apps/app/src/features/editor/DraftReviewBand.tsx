@@ -84,7 +84,8 @@ export function DraftReviewBand({
   });
   const focusInControls = () => controlsRef.current?.contains(document.activeElement) ?? false;
   const { controller, view, locked, finished } = header;
-  // A Discard the closed Work returned, from this band or its change bar.
+  // A Discard that discarded nothing (the closed Work returned it, or an Apply took it first),
+  // from this band or its change bar.
   const bounce = useDocumentNotice(controller.projectId, props.documentId);
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
@@ -187,9 +188,11 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
+      {/* A Discard that discarded nothing says why, even once an Apply that took it first
+          finished the draft. */}
+      <BounceChip notice={bounce} />
       {finished ? null : (
         <>
-          <BounceChip notice={bounce} />
           <ReviewActions
             scope="document"
             disabled={locked}

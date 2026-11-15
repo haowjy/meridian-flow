@@ -175,36 +175,18 @@ export function DraftNoticeLine({
   }
   const { subject } = notice;
   const onUndo = () => undo(notice);
-  const { sentence, failedUndo } =
+  const sentence =
     subject.kind === "drafts"
-      ? {
-          sentence: t`${subject.count} drafts discarded.`,
-          failedUndo: t`Couldn't bring back ${subject.count} drafts.`,
-        }
+      ? t`${subject.count} drafts discarded.`
       : subject.kind === "deletes"
-        ? {
-            sentence: t`${subject.count} items deleted.`,
-            failedUndo: t`Couldn't bring back ${subject.count} items.`,
-          }
+        ? t`${subject.count} items deleted.`
         : subject.kind === "deleted"
-          ? {
-              sentence: (name: string) => t`${name} deleted.`,
-              failedUndo: t`Couldn't bring back ${subject.name}.`,
-            }
+          ? (name: string) => t`${name} deleted.`
           : subject.kind === "draft"
-            ? {
-                sentence: (name: string) => t`Draft of ${name} discarded.`,
-                failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
-              }
+            ? (name: string) => t`Draft of ${name} discarded.`
             : subject.kind === "folder"
-              ? {
-                  sentence: (name: string) => t`Changes in ${name} discarded.`,
-                  failedUndo: t`Couldn't bring back the changes in ${subject.name}.`,
-                }
-              : {
-                  sentence: (name: string) => t`Change to ${name} discarded.`,
-                  failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
-                };
+              ? (name: string) => t`Changes in ${name} discarded.`
+              : (name: string) => t`Change to ${name} discarded.`;
   const failed = notice.status === "failed";
   if (notice.status === "returned") {
     return (
@@ -230,14 +212,32 @@ export function DraftNoticeLine({
       />
     );
   }
+  const first = notice.appliedFirst.length;
+  const named = "name" in subject ? subject.name : "";
+  const said = typeof sentence === "function" ? sentence(named) : sentence;
   return (
     <ActionNotice
       data-command-notice={failed ? "undo-failed" : "discarded"}
-      sentence={sentence}
+      sentence={
+        first === 0
+          ? sentence
+          : typeof sentence === "function"
+            ? (name: string) => `${sentence(name)} ${appliedFirstLine(first)}`
+            : `${sentence} ${appliedFirstLine(first)}`
+      }
       name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: onUndo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
-      failure={failed ? { message: failedUndo, onRetry: onUndo, onDismiss: notice.dismiss } : null}
+      failure={
+        failed
+          ? {
+              // Away from the rows, the line still says which Undo failed.
+              message: `${said} ${t`Undo didn't go through. Try again.`}`,
+              onRetry: onUndo,
+              onDismiss: notice.dismiss,
+            }
+          : null
+      }
       className={className}
     />
   );
@@ -270,6 +270,22 @@ function useNoticeUndo() {
   };
 }
 
+/** What a Discard says of the changes an Apply took before it reached them. */
+function appliedFirstSentence(count: number): string {
+  return plural(count, {
+    one: "Applied before your Discard reached it, so it stays applied.",
+    other: "# changes were applied before your Discard reached them, so they stay applied.",
+  });
+}
+
+/** The same said on a notice's line, beside what the Discard took: it names how many. */
+function appliedFirstLine(count: number): string {
+  return plural(count, {
+    one: "# change was applied before your Discard reached it.",
+    other: "# changes were applied before your Discard reached them.",
+  });
+}
+
 /**
  * What a Discard that a closed owner returned leaves on the control pressed, in its trailing
  * slot so it adds no height (`DraftNotices.showBounce`). Nothing for any other notice.
@@ -277,6 +293,13 @@ function useNoticeUndo() {
 export function BounceChip({ notice }: { notice: DraftNotice | null }) {
   useLingui();
   if (notice?.kind !== "discarded" || notice.status !== "bounced") return null;
+  if (notice.returned === null)
+    return (
+      <WorkClosedChip
+        label={<Trans>Applied first</Trans>}
+        sentence={appliedFirstSentence(notice.appliedFirst.length)}
+      />
+    );
   const chat = notice.returned === "chat-in-trash";
   return (
     <WorkClosedChip
@@ -349,14 +372,23 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
       },
     };
   }
-  const held = (id: string) => notice.documentIds.includes(id);
+  const took = (id: string) => notice.documentIds.includes(id);
+  const appliedFirst = (id: string) => notice.appliedFirst.includes(id);
   const { subject } = notice;
   const count = "count" in subject ? subject.count : 1;
   const name = "name" in subject ? subject.name : "";
   return {
-    held,
+    held: (id) => took(id) || appliedFirst(id),
     word: (id) => {
-      if (!held(id)) return null;
+      if (appliedFirst(id))
+        return (
+          <RowWord
+            tone="done"
+            word={<Trans>Applied first</Trans>}
+            sentence={appliedFirstSentence(1)}
+          />
+        );
+      if (!took(id)) return null;
       if (notice.status === "bounced") return <BounceChip notice={notice} />;
       if (notice.status === "returned")
         return (
@@ -387,7 +419,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
             label={
               count > 1 ? t`Retry bringing back ${count} changes` : t`Retry bringing back ${name}`
             }
-            sentence={t`Couldn't bring it back. Retry tries again.`}
+            sentence={t`Undo didn't go through. Try again.`}
             onAction={() => undo(notice)}
           />
         );
