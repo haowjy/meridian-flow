@@ -141,7 +141,7 @@ it.each([
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       }),
-    ).toMatchObject({ status: "partial", acceptedParts: 1 });
+    ).toMatchObject({ status: "reversed", acceptedParts: 2 });
     expect(await text()).toBe("gold\n\nbluepink\n\nblack\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, currentTurn)).toMatchObject({
       state: "live-reversed",
