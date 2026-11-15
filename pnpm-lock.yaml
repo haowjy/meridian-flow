@@ -6,12 +6,9 @@ settings:
 
 catalogs:
   default:
-    '@anthropic-ai/sdk':
-      specifier: ^0.106.0
-      version: 0.106.0
-    '@google/genai':
-      specifier: ^3.3.0
-      version: 3.3.0
+    '@meridian-flow/gateway':
+      specifier: ^0.1.0
+      version: 0.1.0
     '@types/node':
       specifier: ^24
       version: 24.13.2
@@ -30,9 +27,6 @@ catalogs:
     drizzle-orm:
       specifier: ^0.45.2
       version: 0.45.2
-    jsonrepair:
-      specifier: ^3.14.1
-      version: 3.14.1
     nitro:
       specifier: 3.0.260610-beta
       version: 3.0.260610-beta
@@ -447,8 +441,8 @@ importers:
         specifier: 4.3.0
         version: 4.3.0(srvx@0.11.17)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e)))(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
       '@meridian-flow/gateway':
-        specifier: workspace:*
-        version: link:../../packages/gateway
+        specifier: 'catalog:'
+        version: 0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)
       '@meridian-flow/mars-schema':
         specifier: 0.34.1
         version: 0.34.1
@@ -733,8 +727,8 @@ importers:
         specifier: 0.0.57
         version: 0.0.57
       '@meridian-flow/gateway':
-        specifier: workspace:*
-        version: link:../gateway
+        specifier: 'catalog:'
+        version: 0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -791,34 +785,6 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
-
-  packages/gateway:
-    dependencies:
-      '@anthropic-ai/sdk':
-        specifier: 'catalog:'
-        version: 0.106.0(zod@4.4.3)
-      '@google/genai':
-        specifier: 'catalog:'
-        version: 3.3.0
-      jsonrepair:
-        specifier: 'catalog:'
-        version: 3.14.1
-      openai:
-        specifier: ^6.45.0
-        version: 6.45.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)(zod@4.4.3)
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.13.2
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.9(@types/node@24.13.2)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/markup:
     dependencies:
@@ -2272,6 +2238,10 @@ packages:
         optional: true
       rolldown:
         optional: true
+
+  '@meridian-flow/gateway@0.1.0':
+    resolution: {integrity: sha512-L3xsw4G9rtFG8atcDz3tX7LYpvCjCY6hmtZwp0KVQVCtls3xzytNi7q2Oi91sKZgfMF80ZQyWW4w3UY2mIoDtQ==}
+    engines: {node: '>=20'}
 
   '@meridian-flow/mars-schema@0.34.1':
     resolution: {integrity: sha512-/5bJ7TjK9TtWAp04iRvDJ8ioG+w1bM28LYlWaxGSJpxtn0nv7bDN6z0UOU2UPez7RmgzdBB1WsFnHHGgeabGvw==}
@@ -5256,8 +5226,8 @@ packages:
   jsonc-parser@3.3.1:
     resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
 
-  jsonrepair@3.14.1:
-    resolution: {integrity: sha512-NpGgMhmzG/fajkBEFlS9jZvMSGDvc2xN/9wNCHZ+Nx32GZfLRELU6UE6dQkebvrQUct9S+7bvnpX29NB36Qbdw==}
+  jsonrepair@3.15.0:
+    resolution: {integrity: sha512-wy8OTjwsJwQRnQJkKnMJJ9vcytRdBPAgIF/Hy6+s1dAj42BHMKiyL8JzEieIl3JY7idt8eyHwBWTO8mh/+mtwA==}
     hasBin: true
 
   jszip@3.10.1:
@@ -5811,8 +5781,8 @@ packages:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
     engines: {node: '>=12'}
 
-  openai@6.45.0:
-    resolution: {integrity: sha512-5DQVNErssk0afNpTTHUm/qZPU4iKR9OYdNid8Ib4puq4gHNNvGWZht2zY4h9a8JMF949Ik6m8gQutllVPbjdnw==}
+  openai@6.49.0:
+    resolution: {integrity: sha512-aYCc0C6L864eR6WSYIwQGyXriw/nIyZx0ObvhzOEVuk0zoBDpynjSbrionWI7q65B5H8jJX0DXR9snEzM6bfPg==}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
@@ -6299,8 +6269,8 @@ packages:
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
 
-  standardwebhooks@1.0.0:
-    resolution: {integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==}
+  standardwebhooks@1.1.1:
+    resolution: {integrity: sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ==}
 
   std-env@4.1.0:
     resolution: {integrity: sha512-Rq7ybcX2RuC55r9oaPVEW7/xu3tj8u4GeBYHBWCychFtzMIr86A7e3PPEBPT37sHStKX3+TiX/Fr/ACmJLVlLQ==}
@@ -6937,7 +6907,7 @@ snapshots:
   '@anthropic-ai/sdk@0.106.0(zod@4.4.3)':
     dependencies:
       json-schema-to-ts: 3.1.1
-      standardwebhooks: 1.0.0
+      standardwebhooks: 1.1.1
     optionalDependencies:
       zod: 4.4.3
 
@@ -8111,6 +8081,23 @@ snapshots:
     transitivePeerDependencies:
       - babel-plugin-macros
       - supports-color
+
+  '@meridian-flow/gateway@0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)':
+    dependencies:
+      '@anthropic-ai/sdk': 0.106.0(zod@4.4.3)
+      '@google/genai': 3.3.0
+      jsonrepair: 3.15.0
+      openai: 6.49.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)(zod@4.4.3)
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@modelcontextprotocol/sdk'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
 
   '@meridian-flow/mars-schema@0.34.1': {}
 
@@ -11270,7 +11257,7 @@ snapshots:
 
   jsonc-parser@3.3.1: {}
 
-  jsonrepair@3.14.1: {}
+  jsonrepair@3.15.0: {}
 
   jszip@3.10.1:
     dependencies:
@@ -12246,7 +12233,7 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@6.45.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)(zod@4.4.3):
+  openai@6.49.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)(zod@4.4.3):
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.972.58
       '@smithy/signature-v4': 5.5.2
@@ -12850,7 +12837,7 @@ snapshots:
 
   stackback@0.0.2: {}
 
-  standardwebhooks@1.0.0:
+  standardwebhooks@1.1.1:
     dependencies:
       '@stablelib/base64': 1.0.1
       fast-sha256: 1.3.0

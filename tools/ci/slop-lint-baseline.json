@@ -323,16 +323,6 @@
         "count": 1
       },
       {
-        "path": "packages/gateway/src/adapters/provider-http-error.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/attempt-stream.ts",
-        "line": "void Promise.resolve()",
-        "count": 1
-      },
-      {
         "path": "packages/markup/src/escape.ts",
         "line": "} catch {",
         "count": 1
@@ -442,21 +432,6 @@
       {
         "path": "apps/app/src/rich-content/TranscriptReference.tsx",
         "line": "// biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/adapters/anthropic/request-map.ts",
-        "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Adapter request-map bridges canonical ↔ SDK types; casts are intentional.",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/adapters/anthropic/stream-collect.ts",
-        "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Stream accumulator bridges canonical ↔ SDK types; casts are intentional.",
-        "count": 1
-      },
-      {
-        "path": "packages/gateway/src/adapters/openai/request-map.ts",
-        "line": "// biome-ignore-all lint/suspicious/noExplicitAny: Adapter request-map bridges canonical ↔ SDK types; casts are intentional.",
         "count": 1
       }
     ],
