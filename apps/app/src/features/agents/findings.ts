@@ -53,9 +53,9 @@ export const findingsOfFile = (findings: readonly AgentFinding[], file: string) 
 
 /**
  * What keeps one Agent or skill file from use, the first that applies:
- * - `unavailable`: new chats can't use it at all (its name is struck through): it has an Error and
- *   no saved version that runs, or it can't run (`runtime`, such as a model the account can't use);
- * - `not-in-use`: it has an Error, and its last good save stays in use instead of this edit;
+ * - `unavailable`: new chats can't use it at all (its name is struck through): it has an Error or
+ *   can't run (`runtime`, such as a model the account can't use), and no saved version that runs;
+ * - `not-in-use`: this edit has an Error or can't run, and its last good save stays in use instead;
  * - `hidden`: a level above has the same name;
  * - `notes`: it works, with warnings.
  * A package-level Error (a broken `mars.toml`) is the package's to say, not each file's.
@@ -75,7 +75,7 @@ export function fileTrouble(
   const runtime = file.unavailableReasons;
   if (errors.length > 0 || runtime.length > 0) {
     return {
-      kind: errors.length > 0 && file.savedVersionInUse ? "not-in-use" : "unavailable",
+      kind: file.savedVersionInUse ? "not-in-use" : "unavailable",
       problems: [...errors.map(findingSentence), ...runtime],
       runtime: errors.length === 0,
     };

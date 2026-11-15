@@ -101,9 +101,9 @@ function publish() {
 }
 
 /**
- * Publishes a change made from a read of the files query in the batch that hands that read to
- * the components: published at once, a word whose basis is the new read met the old one for a
- * frame and dropped.
+ * Publishes a change made from a read of the files query only after that read has reached the
+ * components (the notify batch runs first): published at once, a word whose basis is the new read
+ * met the old files for a frame and dropped.
  */
 const publishWithRead = (change: () => void) =>
   new Promise<void>((resolve) =>
