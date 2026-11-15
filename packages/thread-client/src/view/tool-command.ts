@@ -163,3 +163,15 @@ export function documentToolFailed(tool: ToolView): boolean {
   if (!result || typeof result !== "object" || Array.isArray(result)) return false;
   return typeof result.status === "string" && result.status !== "success";
 }
+
+/**
+ * A write the document's state returned: nothing was kept and the AI carries on. It is a settled
+ * outcome, not a failure, even though it takes the failed row's explanation.
+ */
+export function documentToolReturned(tool: ToolView): boolean {
+  if (tool.isError || tool.status !== "complete" || tool.toolName !== "write") return false;
+  const result = tool.result;
+  return (
+    !!result && typeof result === "object" && !Array.isArray(result) && result.status === "returned"
+  );
+}

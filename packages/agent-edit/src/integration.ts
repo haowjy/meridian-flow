@@ -3,6 +3,7 @@ export type { BlockSnapshot } from "./apply/echo.js";
 export { snapshotBlocks } from "./apply/echo.js";
 export { overwriteWithAssigned } from "./apply/overwrite.js";
 export type { ConcurrentUpdate, ConcurrentUpdateOrigin } from "./apply/types.js";
+export { EDIT_FAILED_MESSAGE } from "./apply/types.js";
 export type { AgentEditCodec, AgentEditCodecFactory } from "./codec-adapter.js";
 export { createAgentEditCodecFactory } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
@@ -63,7 +64,6 @@ export type {
   RoomRead,
   SaveCut,
   SavePrecondition,
-  WriteRefusalReason,
 } from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,
@@ -126,11 +126,7 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
-export {
-  rejectedWriteExplanation,
-  rejectedWriteResult,
-  removedWriteRefusal,
-} from "./tool/receipt.js";
+export { returnedWriteResult } from "./tool/receipt.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";
 export type {

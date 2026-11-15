@@ -16,6 +16,7 @@ import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  commands,
   documentDrafts,
   documentEditParts,
   draftWriteJournal,
@@ -643,12 +644,28 @@ export function createDrizzleDraftStore(
 
     async listWorkDraftStates(documentId) {
       const rows = await currentDrizzleDb(db)
-        .select({ draftId: documentDrafts.id, status: documentDrafts.status })
+        .select({
+          draftId: documentDrafts.id,
+          status: documentDrafts.status,
+          cause: documentDrafts.closedCause,
+          closedBy: commands.kind,
+        })
         .from(documentDrafts)
+        .leftJoin(commands, eq(commands.id, documentDrafts.closedBy))
         .where(
           and(eq(documentDrafts.documentId, documentId), eq(documentDrafts.kind, "work_draft")),
         );
-      return rows;
+      return rows.map(({ cause, closedBy, ...row }) => ({
+        ...row,
+        closedAs:
+          cause === null
+            ? null
+            : cause === "discarded" && closedBy === "discard"
+              ? ("discarded" as const)
+              : cause === "discarded" && closedBy === "undo_discard"
+                ? ("replaced" as const)
+                : ("document_removed" as const),
+      }));
     },
 
     findBranchDraft: activeDocumentDraft,

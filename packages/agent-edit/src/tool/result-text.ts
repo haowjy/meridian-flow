@@ -41,7 +41,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   }
   const body = bodyLines(groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
-  if (result.concurrent) sections.push(concurrentLines(result.concurrent, result).join("\n"));
+  if (result.concurrent) sections.push(concurrentLines(result.concurrent).join("\n"));
   const notMoved = result.tree?.notMoved;
   if (notMoved?.length) sections.push(`not moved: ${notMoved.join("; ")}`);
   for (const group of result.tree?.concurrent ?? [])
@@ -76,7 +76,10 @@ function statusLine(result: AgentEditResultV1): string {
     facts.push(
       total !== undefined && total > count ? `blocks: ${count} of ${total}` : `blocks: ${count}`,
     );
-    if (result.read.version) facts.push(`version: ${result.read.version}`);
+    if (result.read.version)
+      facts.push(
+        `version: ${writeVersion({ destination: result.read.version, draftWork: result.read.draftWork })}`,
+      );
     if (result.read.format === "outline") facts.push("format: outline");
   }
   return facts.join("; ");
@@ -195,19 +198,10 @@ function listed(items: readonly string[]): string {
 }
 
 /**
- * Who changed which blocks after the model last read them, by hash. Past the limit, one line sends
- * the model back to the file. The one line of repair guidance appears only when a changed block is
- * in the echo, where a merge can have garbled it.
+ * Who changed which blocks after the model last read them, by hash. The one line of repair
+ * guidance appears only when a changed block is in the echo, where a merge can have garbled it.
  */
-function concurrentLines(listing: AgentEditConcurrentListing, result: AgentEditResultV1): string[] {
-  if (listing.reread) {
-    const read = result.path
-      ? readCall(result.path, result.destination === "live" ? "live" : undefined)
-      : "read";
-    return [
-      `${listing.reread} blocks were changed by others after you last read it, so this result has no echo and no list. The write landed. Your view of this file is out of date: ${read} before you edit it again.`,
-    ];
-  }
+function concurrentLines(listing: AgentEditConcurrentListing): string[] {
   const lines = listing.groups.flatMap((group) => {
     const changed = [
       ...(group.shown?.map((hash) => `${hash} (in the echo)`) ?? []),

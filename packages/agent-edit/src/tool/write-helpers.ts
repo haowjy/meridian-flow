@@ -1,4 +1,5 @@
 // Shared parsing, identity, and error helpers for the write command pipeline.
+import { EDIT_FAILED_MESSAGE } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import { isDocumentNotFoundError } from "../ports/document-coordinator.js";
@@ -8,7 +9,6 @@ import type { RenderedRead } from "./document-renderer.js";
 import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { status } from "./response-format.js";
-import { readCall } from "./result-text.js";
 import type { DocumentCommandName, MutationActor, WriteErrorStatus } from "./types.js";
 
 let nextAutoTurnIdNonce = 0;
@@ -29,11 +29,7 @@ export function parseFileAddress(command: {
   return parseDocumentAddress(command.file, command.documentId);
 }
 
-/**
- * A `not_found` points at a re-read, since the model's hashes are stale,
- * unless its message already names the read to make. A block number past the
- * end isn't stale, so it gets the document's size.
- */
+/** A failed command's result. A block number past the end is given the document's size. */
 export function errorResponse(
   code: WriteErrorStatus,
   message: string,
@@ -46,9 +42,7 @@ export function errorResponse(
       `${message}. ${filePath} has ${documentBlocks === 1 ? "1 block" : `${documentBlocks} blocks`}.`,
     );
   }
-  const needsRead = code === "not_found" && !/\bread\b/.test(message);
-  const sentence = message.replace(/\.$/, "");
-  return status(code, needsRead ? `${sentence}. Run ${readCall(filePath)} to re-sync.` : message);
+  return status(code, message);
 }
 
 export function readSuccess(read: RenderedRead): InternalWriteResult {
@@ -74,7 +68,7 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
 /** A write that threw, as the model's answer: a file gone under it is `document_not_found`. */
 export function writeError(cause: unknown, commandName: DocumentCommandName): InternalWriteResult {
   if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, cause);
-  return status("internal_error", "Retry — transient edit system failure.");
+  return status("internal_error", EDIT_FAILED_MESSAGE);
 }
 
 export function errorMessage(cause: unknown): string {

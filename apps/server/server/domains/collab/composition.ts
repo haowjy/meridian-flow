@@ -124,7 +124,7 @@ import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
-import { createModelEditWriter } from "./domain/model-edit-write.js";
+import { createModelEditRead, createModelEditWriter } from "./domain/model-edit-write.js";
 import { liveRoom } from "./domain/observation-rooms.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
@@ -342,19 +342,19 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     aheadRefs: deps.aheadRefs,
     observability,
   });
-  const agentEdit = scopeAgentEdit(
-    createAgentEditRouter({
-      branches: workBranches,
-      drafts,
-      liveUtilityCore: runtime.liveUtilityCore,
-      threadCore,
-    }),
-    deps.links,
-  );
+  const agentEditRouter = createAgentEditRouter({
+    branches: workBranches,
+    drafts,
+    liveUtilityCore: runtime.liveUtilityCore,
+    threadCore,
+  });
+  const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
+  const modelEditRead = createModelEditRead(agentEdit.read);
 
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
     evidence: modelEvidence,
+    read: modelEditRead,
     liveCore: runtime.liveUtilityCore,
     threadCore,
     branches: workBranches,
@@ -383,6 +383,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.db,
     {
       write: scopeModelEditWrite(modelEditWrite, deps.links),
+      read: modelEditRead,
       catchUp: (documentId) => draftPulls.flushLivePull(documentId),
     },
     modelEvidence,

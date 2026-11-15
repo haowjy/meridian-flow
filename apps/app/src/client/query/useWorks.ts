@@ -10,7 +10,7 @@ import { useCallback, useMemo } from "react";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectWorkCommands } from "./work-command-projection";
-import { useWorkCommandRecords } from "./work-command-store";
+import { useWorkCommandRecords } from "./work-mutations";
 import { acquireWorksSnapshot, workFromSnapshot } from "./works-projection-acquisition";
 
 export { workFromSnapshot };
@@ -30,6 +30,9 @@ export function useWorksSnapshot(projectId: string, requested = true) {
     queryKey: projectQueryKeys.works(projectId),
     queryFn: () => acquireWorksSnapshot(client, projectId),
     staleTime: 30_000,
+    // A read that failed while offline leaves its error beside data that is still fresh, so
+    // reconnecting would not refetch on staleness alone.
+    refetchOnReconnect: "always",
     enabled: projectReadEnabled(requested),
   });
   return { list, enabled };

@@ -7,7 +7,7 @@ import {
 import { type Block, isNotesStepHeldResult, type JsonObject } from "@meridian/contracts/threads";
 import { ToolCallPairing } from "@meridian-flow/gateway";
 import type { CompactionMetadata } from "../../../threads/index.js";
-import type { DocumentTextPolicy } from "../../tools/document-text.js";
+import { type DocumentTextPolicy, showsDocumentText } from "../../tools/document-text.js";
 import { textContent } from "../../tools/tool-content.js";
 import { elideReferenceRead } from "../reference-context.js";
 import type { RetainedTurnSlice } from "./tail.js";
@@ -30,13 +30,16 @@ function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies)
       }
       if (result.blockType !== "tool_result") return [];
       const content = result.content as JsonObject;
-      if (content.isError || isNotesStepHeldResult(content.result)) return [];
+      if (isNotesStepHeldResult(content.result)) return [];
+      if (content.isError && !showsDocumentText(content.result as JsonObject)) return [];
       const call = calls.answer(content.toolCallId as string);
       if (!call) return [];
       const tool = call.content as JsonObject;
       const policy = policies(tool.toolName as string);
       const input = (tool.input ?? {}) as JsonObject;
-      return policy ? [{ call, result, input, policy, kind: policy.kind }] : [];
+      // A result that shows the document without changing it is a read, whichever tool made it.
+      const kind = showsDocumentText(content.result as JsonObject) ? "read" : policy?.kind;
+      return policy ? [{ call, result, input, policy, kind }] : [];
     });
 }
 

@@ -110,7 +110,12 @@ export async function reachShown(
   call: ToolCall,
   ctx: Pick<ToolHandlerContext, "shownNames" | "threadId">,
   path: string,
-  options: { version?: "draft" | "live"; folderOf?: boolean } = {},
+  options: {
+    version?: "draft" | "live";
+    folderOf?: boolean;
+    /** A write names a node in Trash by the path it was shown: that node is the one it means. */
+    deleted?: boolean;
+  } = {},
 ): Promise<Reached> {
   const { filePath, fragment } = splitDocumentFile(path);
   const parts = areaOfPath(filePath);
@@ -124,7 +129,10 @@ export async function reachShown(
   const reached = await call.context.port.readTree(parts.area, {
     ...(options.version ? { version: options.version } : {}),
     read: (scope) =>
-      reachPath(scope, parts.area, shown, looked, { destination: options.folderOf === true }),
+      reachPath(scope, parts.area, shown, looked, {
+        destination: options.folderOf === true,
+        ...(options.deleted ? { deleted: true } : {}),
+      }),
   });
   if (!reached.ok || reached.value.kind === "unresolved") return { path };
   if (reached.value.kind === "gone") {

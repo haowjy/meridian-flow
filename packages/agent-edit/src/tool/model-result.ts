@@ -1,4 +1,5 @@
 // Versioned JSON result contract presented to editing models.
+import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord, PermissionDeniedReason } from "@meridian/contracts/protocol";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
@@ -14,6 +15,23 @@ export type WriteErrorStatus =
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
+  | "work_archived"
+  | "binary_file"
+  | "permission_denied"
+  | "internal_error";
+
+/**
+ * What an undo, redo or revert came to: it changed what it could and says what it left and why
+ * (the writer applied it, discarded it, or changed the text since). None of these is an error:
+ * the call settled.
+ */
+export type UndoRedoOutcome =
+  | "reversed"
+  | "reconciled"
+  | "partial"
+  | "nothing_to_undo"
+  | "nothing_to_redo"
+  | "expired"
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
@@ -23,22 +41,10 @@ export type WriteErrorStatus =
   | "cant_redo_users_undo"
   | "insufficient_undo"
   | "insufficient_redo"
-  | "nothing_to_revert"
-  | "work_archived"
-  | "binary_file"
-  | "permission_denied"
-  | "internal_error";
-
-export type UndoRedoOutcome =
-  | "reversed"
-  | "reconciled"
-  | "partial"
-  | "nothing_to_undo"
-  | "nothing_to_redo"
-  | "expired";
+  | "nothing_to_revert";
 
 // Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
-export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoRedoOutcome;
 export type WriteSuccessPhase = "committed";
 
 export interface AgentEditBlockItem {
@@ -79,26 +85,9 @@ export interface AgentEditConcurrentGroup {
   overwritten?: string[];
 }
 
-/**
- * Past `CONCURRENT_REREAD_BLOCKS` the groups are empty, `reread` counts the blocks others changed,
- * and the result carries no echo.
- */
 export interface AgentEditConcurrentListing {
   groups: AgentEditConcurrentGroup[];
-  reread?: number;
 }
-
-/**
- * A write the host refused: the writer discarded what it edited, its document was removed
- * (`removed`, with the record in `removal` when one exists), or it could not integrate.
- */
-export type WriteRejection =
-  | "removed"
-  | "discarded_draft"
-  | "discarded_document"
-  | "discarded_edit"
-  | "inverse"
-  | "integration";
 
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
@@ -112,10 +101,11 @@ export interface AgentEditModelPayload {
   notice?: string;
   /** The owner a named address reaches (`Work "Tea Arc"`), which the receipt puts after the path. */
   owner?: string;
-  /** Why an `invalid_write` write was refused, when the host knows. */
-  rejected?: WriteRejection;
-  /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */
-  removal?: DocumentRemovalRecord;
+  /**
+   * A `returned` write: it did not land, and the document is shown as it stands. `why` is the
+   * part of it the writer changed; `removal` says who removed the document, when it was.
+   */
+  returned?: { why: ReturnedWhy; removal?: DocumentRemovalRecord };
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -152,6 +142,8 @@ export interface AgentEditModelPayload {
     documentBlocks?: number;
     /** The version actually read; the host fills it in, since only it knows the selected document draft. */
     version?: "draft" | "live";
+    /** The Work a `draft` read names, as a write's `draftWork` does; `/` for no Work's draft. */
+    draftWork?: string;
   };
   blocks?: AgentEditBlockGroup[];
   concurrent?: AgentEditConcurrentListing;
@@ -258,12 +250,17 @@ export function isAgentEditResultEnvelope(input: unknown): input is AgentEditRes
 export function isWriteStatus(status: unknown): status is WriteStatus {
   switch (status) {
     case "success":
+    case "returned":
     case "not_found":
     case "ambiguous_match":
     case "ambiguous_path":
     case "invalid_write":
     case "document_not_found":
     case "partial_failure":
+    case "work_archived":
+    case "binary_file":
+    case "internal_error":
+    case "reversed":
     case "cant_undo_applied":
     case "cant_undo_discarded":
     case "cant_undo_changed":
@@ -271,17 +268,13 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_redo_discarded":
     case "cant_redo_changed":
     case "cant_redo_users_undo":
+    case "insufficient_undo":
+    case "insufficient_redo":
     case "nothing_to_revert":
-    case "work_archived":
-    case "binary_file":
-    case "internal_error":
-    case "reversed":
     case "reconciled":
     case "partial":
     case "nothing_to_undo":
     case "nothing_to_redo":
-    case "insufficient_undo":
-    case "insufficient_redo":
     case "expired":
       return true;
     default:

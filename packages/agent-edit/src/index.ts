@@ -60,7 +60,6 @@ export {
   agentEditResultCommand,
   isAgentEditResultEnvelope,
   modelResult,
-  type WriteRejection,
 } from "./tool/model-result.js";
 export { readStaticMarkdown } from "./tool/read-static.js";
 export { removedFile, removerName, survivingDraftNotice } from "./tool/removal-copy.js";

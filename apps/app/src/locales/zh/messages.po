@@ -471,8 +471,8 @@ msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "{days, plural, one {# day left} other {# days left}}"
-msgstr ""
+#~ msgid "{days, plural, one {# day left} other {# days left}}"
+#~ msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
@@ -639,6 +639,10 @@ msgstr "{name} 从草稿中放弃了{title}。"
 msgid "{name} discarded this document from the draft."
 msgstr "{name} 从草稿中放弃了这份文档。"
 
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "{name} is gone from Trash."
+msgstr ""
+
 #: src/lib/upload-limit.ts
 msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
 msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
@@ -652,8 +656,8 @@ msgid "{name} was deleted before this change could be made."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
-msgstr ""
+#~ msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "{name} was deleted with the Work {work} before this change could be made."
@@ -858,6 +862,10 @@ msgstr ""
 msgid "{work} is reordering this."
 msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{work} was closed."
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
 msgstr "<0.1 秒"
@@ -952,6 +960,10 @@ msgstr ""
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
 msgstr "图片不能放在这里。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source is no longer there."
@@ -1621,6 +1633,10 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
+#: src/components/app/NotSentYet.tsx
+msgid "Changes are waiting to be sent. They go out on their own."
+msgstr ""
+
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
 msgstr ""
@@ -1972,6 +1988,7 @@ msgstr ""
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
+#: src/features/project/context/use-tree-notice-words.tsx
 msgid "Copy"
 msgstr ""
 
@@ -2011,9 +2028,21 @@ msgstr ""
 msgid "Copy reference"
 msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Copy takes the name you typed."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Copy takes what you typed."
+msgstr ""
+
 #: src/features/draft-review/UnsentDraftTextNotice.tsx
 #~ msgid "Copy the draft's text"
 #~ msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Copy the name you typed"
+msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy these between your files and a project"
@@ -2030,6 +2059,10 @@ msgstr ""
 #: src/features/draft-review/ReviewToast.tsx
 #~ msgid "Copy unsent text"
 #~ msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Copy what you typed"
+msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -2135,8 +2168,8 @@ msgid "Couldn't create a Work"
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "Couldn't create this document. Try another place."
-msgstr ""
+#~ msgid "Couldn't create this document. Try another place."
+#~ msgstr ""
 
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't create this fork."
@@ -2311,12 +2344,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
-msgstr ""
+#~ msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
+#~ msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
-msgstr ""
+#~ msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
@@ -2374,8 +2407,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "Couldn't rename this document. Try another name."
-msgstr ""
+#~ msgid "Couldn't rename this document. Try another name."
+#~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "Couldn't rename this folder."
@@ -2386,8 +2419,8 @@ msgid "Couldn’t rename this Work. Try again."
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
-msgid "Couldn't rename. Use Rename in the file list to try again."
-msgstr ""
+#~ msgid "Couldn't rename. Use Rename in the file list to try again."
+#~ msgstr ""
 
 #. placeholder {0}: entry.name
 #: src/features/project/context/DocumentTrashRestoreProvider.tsx
@@ -2431,8 +2464,16 @@ msgstr ""
 msgid "Couldn't run that skill"
 msgstr ""
 
+#: src/client/commands/submit.ts
+msgid "Couldn’t save that change on this device, so it wasn’t sent."
+msgstr ""
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Couldn’t save the goal. Try again."
+msgstr ""
+
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Couldn’t save this change to the Work"
 msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
@@ -2772,7 +2813,11 @@ msgid "workReceipt.deleted"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgstr ""
+
+#: src/features/project/work/DeletedWorkList.tsx
+msgid "Deleted Work can be restored."
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
@@ -2902,14 +2947,13 @@ msgstr ""
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/RescuedText.tsx
-#: src/features/project/context/EntryRefusalNotice.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Dismiss"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-msgid "Dismiss the error"
-msgstr ""
+#~ msgid "Dismiss the error"
+#~ msgstr ""
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -3342,6 +3386,10 @@ msgstr ""
 msgid "Gone for good: this document was emptied from Trash."
 msgstr ""
 
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Gone from Trash."
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
 msgstr ""
@@ -3711,8 +3759,8 @@ msgid "Left"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Less than a day left"
-msgstr ""
+#~ msgid "Less than a day left"
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
@@ -4021,7 +4069,6 @@ msgid "Move up"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/context/EntryRefusalNotice.tsx
 msgid "Move…"
 msgstr ""
 
@@ -4331,14 +4378,23 @@ msgstr ""
 msgid "None"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Not applied to"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
 msgstr ""
 
-#: src/features/project/context/NamespaceFailureMark.tsx
-#~ msgid "Not deleted"
-#~ msgstr ""
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not created:"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not deleted"
+msgstr ""
 
 #: src/features/project/context/IdentityChips.tsx
 msgid "Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project."
@@ -4357,20 +4413,41 @@ msgstr ""
 msgid "Not in the folder you picked."
 msgstr ""
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not moved"
+msgstr ""
+
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Not placed"
+#~ msgid "Not placed"
+#~ msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not renamed"
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not renamed:"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"
 msgstr "未报告"
 
+#: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Not restored"
 msgstr ""
 
 #: src/features/chat/ToolRow.tsx
 msgid "Not run before compaction"
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent"
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent, signed out"
 msgstr ""
 
 #. placeholder {0}: answer.text
@@ -4903,8 +4980,6 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
-#: src/features/project/context/EntryRefusalNotice.tsx
-#: src/features/project/mobile/MobileRefusalNotice.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Rename"
@@ -4934,8 +5009,8 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkTitles.tsx
-msgid "Rename Work: {0}"
-msgstr ""
+#~ msgid "Rename Work: {0}"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Renamed"
@@ -5181,8 +5256,8 @@ msgstr ""
 
 #: src/features/project/work/WorkDetail.tsx
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Saving…"
-msgstr ""
+#~ msgid "Saving…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "scene break"
@@ -5793,6 +5868,14 @@ msgid "That change is no longer in the draft."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change wasn't kept in {name}."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change wasn't kept."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change wasn't reverted because its text changed or is already gone."
 msgstr ""
 
@@ -5818,8 +5901,8 @@ msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/context/EntryDestinationPicker.tsx
-msgid "that folder"
-msgstr ""
+#~ msgid "that folder"
+#~ msgstr ""
 
 #: src/features/import/selection-limits.ts
 msgid "That folder has no files to import."
@@ -5837,6 +5920,10 @@ msgstr ""
 #~ msgid "That location does not exist"
 #~ msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr ""
+
 #: src/features/editor/PassageNotice.tsx
 msgid "That passage changed after this search."
 msgstr ""
@@ -5850,8 +5937,8 @@ msgid "That place is no longer available"
 msgstr ""
 
 #: src/features/project/context/use-rename-entry-form.ts
-msgid "That rename couldn't be completed. Choose another name or try again."
-msgstr ""
+#~ msgid "That rename couldn't be completed. Choose another name or try again."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -5968,8 +6055,8 @@ msgid "The change could not be confirmed. Try again."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The change didn't fit the current draft. The AI will read it again."
-msgstr ""
+#~ msgid "The change didn't fit the current draft. The AI will read it again."
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The destination is no longer there."
@@ -6041,12 +6128,12 @@ msgid "the source chat"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
-msgstr ""
+#~ msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
-msgstr ""
+#~ msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+#~ msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "The upload didn’t start."
@@ -6074,6 +6161,10 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The Work did not change. Try again."
+msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The Work was closed."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -6268,8 +6359,8 @@ msgid "This document changed since you opened the review. The review now shows t
 msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "This document couldn't be created where you put it."
-msgstr ""
+#~ msgid "This document couldn't be created where you put it."
+#~ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 msgid "This document is not taking changes right now."
@@ -6349,8 +6440,8 @@ msgid "This draft just became read-only, so nothing was discarded. Check it, the
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
-msgstr ""
+#~ msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewToast.tsx
 msgid "This draft was discarded."
@@ -6377,8 +6468,8 @@ msgid "This filename contains unsupported characters. Rename the file and try ag
 msgstr "此文件名含有不受支持的字符。请重命名文件后重试。"
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "This folder couldn't be created where you put it."
-msgstr ""
+#~ msgid "This folder couldn't be created where you put it."
+#~ msgstr ""
 
 #: src/features/project/context/FolderMenu.tsx
 msgid "This folder is no longer available."
@@ -6425,8 +6516,8 @@ msgid "This name can't be used. Try a different one."
 msgstr "无法使用这个名称，请换一个。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
-msgstr ""
+#~ msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This note is empty. Open it in the Editor to write."
@@ -6484,6 +6575,10 @@ msgstr "耗时太久，已停止。"
 msgid "This version of Meridian can't display it."
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This Work is archived, so its drafts take no new text and the change wasn't kept."
+msgstr ""
+
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr ""
@@ -6498,6 +6593,10 @@ msgstr ""
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This Work is deleted, so its drafts take no new text and the change wasn't kept."
 msgstr ""
 
 #: src/features/project/work/EndedWorkNotice.tsx
@@ -6522,8 +6621,8 @@ msgid "This Work no longer exists."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
-msgstr ""
+#~ msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgstr ""
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work was deleted. Restore it to edit."
@@ -6601,8 +6700,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
-msgid "Try another place."
-msgstr ""
+#~ msgid "Try another place."
+#~ msgstr ""
 
 #: src/features/chat/useReplyRetry.ts
 msgid "Trying the response again"
@@ -7002,6 +7101,10 @@ msgstr ""
 msgid "Work couldn’t load"
 msgstr ""
 
+#: src/components/app/WorkClosedChip.tsx
+msgid "Work was closed"
+msgstr ""
+
 #: src/features/chat/SpawnReportCard.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Working"
@@ -7076,6 +7179,10 @@ msgstr ""
 msgid "You can't open these files."
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr ""
+
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "You don't have access to change this."
 #~ msgstr "你没有修改此内容的权限。"
@@ -7086,6 +7193,10 @@ msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
+msgstr ""
+
+#: src/components/app/NotSentYet.tsx
+msgid "You’re signed out of this account. Sign in again and the changes will be sent."
 msgstr ""
 
 #: src/features/import/ImportProvider.tsx

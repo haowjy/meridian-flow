@@ -56,7 +56,11 @@ export async function trashActorsOf(
         displayName: names.get(who.userId) ?? null,
       };
     if (who?.kind === "agent" && titles.has(who.chatId))
-      return { kind: "agent", chatTitle: titles.get(who.chatId)?.trim() || null };
+      return {
+        kind: "agent",
+        chatTitle: titles.get(who.chatId)?.trim() || null,
+        chatId: who.chatId,
+      };
     return null;
   };
 }

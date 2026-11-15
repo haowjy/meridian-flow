@@ -8,10 +8,19 @@ import type { DraftSnapshot, DraftStore } from "../draft-store.js";
 
 export type ApplicationDraftStore = DraftStore & {
   listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
-  /** Every Work draft of the document, any status and branch. */
-  listWorkDraftStates(
-    documentId: DocumentId,
-  ): Promise<{ draftId: string; status: DraftSnapshot["status"] }[]>;
+  /**
+   * Every Work draft of the document, any status and branch. A closed draft says why: a Discard
+   * closes it `discarded`; a Restore's swap, `replaced`; the document's removal, an Apply of its
+   * delete or a Work's purge, `document_removed` (a purge closes with no command, and the chat
+   * goes with its Work).
+   */
+  listWorkDraftStates(documentId: DocumentId): Promise<
+    {
+      draftId: string;
+      status: DraftSnapshot["status"];
+      closedAs: "discarded" | "replaced" | "document_removed" | null;
+    }[]
+  >;
   /** The branch's active draft of the document, or null. */
   findBranchDraft(documentId: DocumentId, branchId: BranchId): Promise<DraftSnapshot | null>;
   /**
