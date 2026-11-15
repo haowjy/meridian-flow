@@ -124,6 +124,7 @@ export async function insertCopiedTree(
   if (!tree.ok) return tree;
   let refusal: AdapterFault | null = null;
   let replan = false;
+  let folders: string[] = [];
   // Rows, then each tracked document's first state, then its arrival: one unit.
   let created: Awaited<ReturnType<DocumentCreationAggregate["createDocumentsAtomically"]>>;
   try {
@@ -145,6 +146,7 @@ export async function insertCopiedTree(
           replan = true;
           return null;
         }
+        folders = inserted.value.folders;
         // Arrivals settle ahead refs under the source's namespace key, taken after the list's.
         await deps.arrivals?.lockNamespaces(tree.value.ids as DocumentId[], [
           (await deps.writes.sourceId()) as never,
@@ -169,7 +171,7 @@ export async function insertCopiedTree(
   // An upload's arrival publishes with its live identity; a tracked document's waited for its
   // content, in the creation aggregate.
   await deps.arrivals?.settle(tree.value.binaryIds as DocumentId[]);
-  return Ok({ kind: "copied", entries: entriesOf(plan.roots) });
+  return Ok({ kind: "copied", entries: entriesOf(plan.roots), folders });
 }
 
 /**

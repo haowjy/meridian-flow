@@ -8,7 +8,6 @@
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type {
   ContextEntryRef,
-  ContextSiblingPosition,
   InvalidOperationReason,
   ParsedDocumentFilename,
 } from "@meridian/contracts/protocol";
@@ -141,16 +140,6 @@ export type TreeReadInput<T> = {
   read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T;
 };
 
-/** A document that crossed lists: the two records, one in each list, and where it stands now. */
-export type AdapterMovedAcrossLists = {
-  /** Source-relative path it stands at in the list it entered. */
-  path: string;
-  /** The ids of the move in the list it left and the create in the list it entered. */
-  records: { left: string; entered: string };
-  /** The node moved: a document or file. */
-  node: string;
-};
-
 export type AdapterDeleted = {
   /** Source-relative path it stood at. */
   path: string;
@@ -175,24 +164,6 @@ export interface ContextTreeAdapter {
   command<T>(input: TreeCommandInput<T>): Promise<Result<T, AdapterFault>>;
   /** The tree this adapter's source shows the reader: the Work's draft, else live (or live when asked). */
   read<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>>;
-  /**
-   * A document or file from another list (a project's and the account's `user://`) into `dir` of
-   * this source, live: one transaction on both lists. Fails `invalid_operation` for a folder, a
-   * Work's draft or a node in this source's own list.
-   */
-  moveAcrossLists(input: {
-    node: ContextEntryRef;
-    /** The source the caller found the node in. */
-    fromSourceId: string;
-    dir: readonly string[];
-    /** The name the writer typed; omitted keeps the node's own. */
-    leaf?: string;
-    position?: ContextSiblingPosition;
-    /** Only while the node stands at this source-relative path. */
-    onlyAt?: string;
-    origin?: WriteProvenance;
-    afterWrite?: (moved: AdapterMovedAcrossLists) => Promise<void>;
-  }): Promise<Result<AdapterMovedAcrossLists, AdapterFault>>;
   /** Deletes the node and what is inside it, live: one Trash entry. */
   delete(input: {
     node: ContextEntryRef;

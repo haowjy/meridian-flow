@@ -194,7 +194,7 @@ export type ResolvedDrop = {
    * copied from, not moved out of.
    */
   canMove: boolean;
-  /** A carried row is in the account's files and the target in a project, or the other way: a move there is a command the browser does not send, a copy is. */
+  /** A carried row is in the account's files and the target in a project, or the other way: two lists, between which the action is Copy. */
   crossesLists: boolean;
 };
 

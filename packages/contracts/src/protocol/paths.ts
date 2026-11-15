@@ -183,11 +183,6 @@ export function apiProjectDocumentReadPath(projectId: string, documentId: string
   return `${apiProjectPath(projectId)}/documents/${documentId}/read`;
 }
 
-/** Move one document between the project's files and the account's (`user://`). */
-export function apiProjectContextMovePath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/context/move`;
-}
-
 /** One Copy command: many sources, one destination, one receipt. */
 export function apiProjectContextCopyPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/copy`;

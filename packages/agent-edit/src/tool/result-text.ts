@@ -44,6 +44,8 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   if (result.concurrent) sections.push(concurrentLines(result.concurrent).join("\n"));
   const notMoved = result.tree?.notMoved;
   if (notMoved?.length) sections.push(`not moved: ${notMoved.join("; ")}`);
+  for (const copy of result.tree?.copied ?? [])
+    sections.push(`copied to ${copy.to}; the original is still at ${copy.from}`);
   for (const group of result.tree?.concurrent ?? [])
     sections.push(
       [

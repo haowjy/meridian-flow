@@ -126,7 +126,9 @@ export async function readTurnFolderTargets(
   const rows = await db
     .selectDistinct({
       nodeId: treeEditReceiptNodes.nodeId,
-      shownAt: treeEditReceipts.shownAt,
+      shownAt: sql<
+        string | null
+      >`coalesce(${treeEditReceiptNodes.afterAt}, ${treeEditReceiptNodes.beforeAt}, ${treeEditReceipts.shownAt})`,
       workId: owner.workId,
       rootThreadId: owner.rootThreadId,
     })

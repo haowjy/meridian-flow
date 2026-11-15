@@ -160,6 +160,11 @@ export interface AgentEditTreeFacts {
   moved?: { made: number; of: number };
   /** Each one not made, with its reason. */
   notMoved?: string[];
+  /**
+   * A move's sources in another list (a project's files and `user://` are two): each was copied
+   * to `to`, and the original stays at `from`.
+   */
+  copied?: Array<{ from: string; to: string }>;
   /** A folder's delete took this many documents and files. */
   deleted?: number;
   /** A folder stands holding what was not deleted, or what a restore needed. */

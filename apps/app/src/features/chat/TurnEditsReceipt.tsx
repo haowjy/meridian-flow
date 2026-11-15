@@ -395,14 +395,17 @@ function DocumentRow({
 }) {
   const drag = useDocumentRowDrag(document);
   // A folder has no document to open or drag: its row names where it is.
-  if (document.folder)
+  if (document.folder && !document.tree)
     return (
       <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
         {folderDisplayName(document.uri)}
       </span>
     );
   const openable =
-    document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
+    !document.folder &&
+    document.tree?.op !== "delete" &&
+    onOpenContextUri &&
+    canOpenContextUri?.(document.uri);
   if (!openable) {
     return (
       <span
