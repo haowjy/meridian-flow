@@ -78,7 +78,12 @@ and remain quarantined until their retryable destroy ledger succeeds.
   To drop the patch when upstream stops doing either, remove the grouping
   changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
-  read) and keep `refreshProseMirrorDoc` and `sameBlock`.
+  read) and keep `refreshProseMirrorDoc`, `sameBlock` and the forced-render selection
+  resolver (until upstream resolves valid selections there too).
+- The binding’s forced render replaces the editor’s document before restoring its selection.
+  It resolves offsets from the previous document to a valid selection in the rendered one,
+  a text selection when text is available. A clamped offset alone can land at a table
+  boundary, where a text selection is invalid.
 - A block keeps its Yjs element: `updateYFragment` pairs the children it can't
   match from either end by block `id` (`pairByBlockId`), deletes an old element
   with no partner, inserts a node with none, and never writes a node into an

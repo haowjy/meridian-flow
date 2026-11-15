@@ -245,8 +245,8 @@ msgstr ""
 
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
-msgid "{0} documents"
-msgstr ""
+#~ msgid "{0} documents"
+#~ msgstr ""
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
@@ -3374,8 +3374,8 @@ msgid "flowchart"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Folder"
-msgstr ""
+#~ msgid "Folder"
+#~ msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"

@@ -17,10 +17,7 @@ export type ReviewStateProps = {
   onShowLive: () => void;
 };
 
-export function ReviewStatusContent({
-  completing,
-  finished,
-}: Pick<ReviewStateProps, "completing" | "finished">) {
+export function ReviewStatusContent({ completing }: Pick<ReviewStateProps, "completing">) {
   if (completing) {
     return (
       <>
@@ -29,7 +26,6 @@ export function ReviewStatusContent({
       </>
     );
   }
-  if (finished) return <Trans>No changes left</Trans>;
   return <Trans>No changes left</Trans>;
 }
 

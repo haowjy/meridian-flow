@@ -1,12 +1,15 @@
 /** Strict selection validation and the exact-command identity POST replay checks. */
+
 import { createHash } from "node:crypto";
 import {
   IMPORT_ADMISSION,
+  IMPORT_SCHEMES,
   type ImportRefusalCode,
   type ImportSelection,
   overFileBudget,
 } from "@meridian/contracts";
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
+import { addressScheme, isCanonicalAddress } from "@meridian/contracts/context-uri";
 import { z } from "zod";
 
 export const IMPORT_LIMITS = {
@@ -79,7 +82,15 @@ const schema = z
   .object({
     importId: z.uuid(),
     destination: z
-      .object({ folderUri: z.string().regex(/^(kb|manuscript|unfiled):\/\//) })
+      .object({
+        folderUri: z
+          .string()
+          .refine(
+            (uri) =>
+              isCanonicalAddress(uri) &&
+              IMPORT_SCHEMES.some((scheme) => scheme === addressScheme(uri)),
+          ),
+      })
       .strict(),
     roots: z.array(root).min(1).max(IMPORT_ADMISSION.files),
     folders: z

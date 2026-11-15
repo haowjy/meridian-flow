@@ -52,6 +52,7 @@ function mapWork(row: WorkRow): Work {
     defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
     pendingDocumentCount: row.pendingDocumentCount,
+    pendingFolderCount: row.pendingFolderCount,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

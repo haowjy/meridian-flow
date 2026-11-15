@@ -10,16 +10,20 @@
  * - an active text draft with an effect on a document the Work's tree shows: a drafted delete,
  *   or a document in no view, hides the text changes everywhere.
  *
- * A write and its undo net to no row, so they net to no item.
+ * A write and its undo net to no row, so they net to no item. The Work's review count adds the
+ * folders its rows change (`pendingFolders`), stored beside the documents' so a surface can name
+ * each; the open browser counts the same two sets from its own replay (`changedFolders` in
+ * `@meridian/project-tree`, which also writes a row for a folder whose change cannot land), and
+ * this stored count serves the Works it has not opened.
  */
 import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
 
-/** The rows of a Work's differing documents that count, as `(branch_id, document_id)`. */
-function treeChanges(branches: SQL): SQL {
+/** The rows of a Work's differing nodes of `kind` that count, as `(branch_id, node_id)`. */
+function treeChanges(branches: SQL, kind: "document" | "folder"): SQL {
   return sql`SELECT b.branch_id, b.id AS document_id
     FROM branch_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
-    WHERE b.kind = 'document' AND b.branch_id IN (${branches}) AND (
+    WHERE b.kind = ${kind} AND b.branch_id IN (${branches}) AND (
       (b.exists_only_in_draft AND NOT b.deleted)
       OR (NOT b.exists_only_in_draft AND b.deleted AND t.trash_record IS NULL)
       OR (NOT b.exists_only_in_draft AND NOT b.deleted))`;
@@ -32,7 +36,7 @@ function treeChanges(branches: SQL): SQL {
 export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
   const one = documentId ? sql` AND candidate.document_id = ${documentId}::uuid` : sql``;
   return sql`SELECT candidate.branch_id, candidate.document_id FROM (
-      ${treeChanges(branches)}
+      ${treeChanges(branches, "document")}
       UNION
       SELECT dd.branch_id, dd.document_id FROM document_drafts dd
       WHERE dd.kind = 'work_draft' AND dd.status = 'active' AND dd.has_effect
@@ -47,4 +51,13 @@ export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
     ) candidate
     JOIN documents d ON d.id = candidate.document_id
     WHERE true${one}`;
+}
+
+/**
+ * The folders a Work's tree changes (created, moved, renamed, deleted, or unable to land), as
+ * `(branch_id, folder_id)`: every changed folder is one item of the Changes list and one of the
+ * count.
+ */
+export function pendingFolders(branches: SQL): SQL {
+  return sql`SELECT c.branch_id, c.document_id AS folder_id FROM (${treeChanges(branches, "folder")}) c`;
 }

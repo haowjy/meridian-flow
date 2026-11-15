@@ -1,6 +1,7 @@
 /** Pure mapping from durable progress and this tab's upload facts to what the Import button and popup show. */
 import { plural, t } from "@lingui/core/macro";
 import type { ImportEntryStatus, ImportScheme, ImportSummary } from "@meridian/contracts";
+import { addressScheme } from "@meridian/contracts/context-uri";
 import { areaLabel, type ImportDestination } from "./destination";
 import type { LocalUpload, TrackedImport } from "./import-coordinator";
 
@@ -47,7 +48,7 @@ export function importState(summary: ImportSummary, local: LocalUpload): ImportS
 export const importScheme = (summary: ImportSummary) =>
   (summary.label.kind === "export"
     ? "manuscript"
-    : summary.destination.folderUri.split(":")[0]) as ImportScheme;
+    : addressScheme(summary.destination.folderUri)) as ImportScheme;
 
 /** `running`: the spinner. `needs-writer`: the dot. */
 export type ImportStatus = "running" | "needs-writer";
@@ -109,7 +110,7 @@ export function importPresentation(summary: ImportSummary, local: LocalUpload) {
       ? plural(files, { one: "# file", other: "# files" })
       : summary.label.name;
   const area = areaLabel(
-    summary.destination.folderUri.split(":")[0] as ImportDestination["scheme"],
+    addressScheme(summary.destination.folderUri) as ImportDestination["scheme"],
   );
   const progress = bytes
     ? Math.min(100, ((receivedBytes + (local.sendingBytes ?? 0)) / bytes) * 100)

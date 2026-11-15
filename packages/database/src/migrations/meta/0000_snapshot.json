@@ -4028,6 +4028,13 @@
           "notNull": true,
           "default": 0
         },
+        "pending_folder_count": {
+          "name": "pending_folder_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "created_by": {
           "name": "created_by",
           "type": "uuid",
@@ -5428,6 +5435,13 @@
         },
         "pending_document_count": {
           "name": "pending_document_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "pending_folder_count": {
+          "name": "pending_folder_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

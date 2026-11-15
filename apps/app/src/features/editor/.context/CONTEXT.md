@@ -36,6 +36,9 @@ block, link, table, and object surfaces and must not become a second toolbar.
 Slash and link completion keep focus in prose and use moving `anchorRect`
 anchors. Their rows come from the shared completion/catalog seams.
 
+Word count reads the selection’s content, not its first `from..to` range: a cell rectangle
+has several ranges. Selected counts update when content changes even if the selection stays equal.
+
 ## Scope and catalogs
 
 `useEditorScope()` reads `{ projectId, workId, rootThreadId }` from the provider.

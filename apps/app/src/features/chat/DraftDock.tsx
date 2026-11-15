@@ -122,12 +122,12 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">
-          {multi ? <Trans>{dock.files.length} documents</Trans> : only ? fileLabel(only) : null}
+          {multi ? <ChangeCount count={dock.reviewCount} /> : only ? fileLabel(only) : null}
         </span>
         {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
       </FoldToggle>
       {trouble}
-      {trouble || dock.changeCount === null ? null : (
+      {trouble || multi || dock.changeCount === null ? null : (
         <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
           <ChangeCount count={dock.changeCount} />
         </span>

@@ -8,6 +8,7 @@
  */
 
 import type { ProjectId, ThreadId } from "@meridian/contracts";
+import { contextRootUri } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -301,7 +302,7 @@ export function createProjectContextDocumentStore(
   userId: string,
 ): ContextDocumentStore {
   const find = () => findProjectContextSource(db, projectId, scheme, userId);
-  return new SourceResolvedContextDocumentStore(db, required(find, `${scheme}://`), find);
+  return new SourceResolvedContextDocumentStore(db, required(find, contextRootUri(scheme)), find);
 }
 
 export function createWorkContextDocumentStore(
@@ -310,7 +311,12 @@ export function createWorkContextDocumentStore(
   scheme: WorkScopedContextFsScheme,
 ): ContextDocumentStore {
   const find = () => findWorkContextSource(db, workId, scheme);
-  return new SourceResolvedContextDocumentStore(db, required(find, `${scheme}://`), find, workId);
+  return new SourceResolvedContextDocumentStore(
+    db,
+    required(find, contextRootUri(scheme)),
+    find,
+    workId,
+  );
 }
 
 /** Reads never provision lineage notes; the first AI write does. */
