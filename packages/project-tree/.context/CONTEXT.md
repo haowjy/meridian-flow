@@ -123,6 +123,10 @@ the replay uses them (package `AGENTS.md`).
   its root id while it stands for something it put back: an entry, or a member of a folder's
   cascade (a restore of one chapter out of a deleted folder), until a restore lifts that again.
   A Redo of a Redo's Undo, and so on round, works every time.
+  Redo reads the same ownership as Undo (`holds` in `undo.ts`): an Undo whose opposite record
+  took its target off the top still holds the fact while the record it left holding it still
+  does (`TreeProjection.undoneTo`). A change since that an Undo took back, a crossing taken back
+  included, holds nothing, so it is not in the Redo's way. No record order is compared.
 - **Undo writes where the change stands.** `undoChange` takes the view the caller acts in; when the
   record in force there is live (a drafted change an Apply landed), the opposite record goes to
   live. Its `draft` says which. No caller retries in another view.
@@ -202,7 +206,8 @@ the replay uses them (package `AGENTS.md`).
   where the root left from, each node below settling as in any crossing. The root goes under the
   name it is given unless renamed since it entered this list (`sinceEntry`, read from the replay:
   a change an Undo took back does not count). It answers `changed_since` for a root moved since,
-  or held in Trash by a delete made after the crossing entered the list: the deletes an Undo put
-  back (rule 14) go with its Redo.
+  or held in Trash by a delete put in force after the root entered the list (`sinceEntry.deleted`):
+  an Undo of a restore puts an old delete in force when it lands, so it counts. The deletes the
+  entering create itself put back (rule 14) go with its Redo.
 - Replay live and the views a record can change, then `changedRows` against the last rows.
 - Give the writer `pendingText` for views it replays: this package cannot see text.

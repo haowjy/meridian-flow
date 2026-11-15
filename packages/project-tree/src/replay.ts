@@ -112,9 +112,17 @@ export type TreeProjection = {
   standingDeletes: ReadonlySet<string>;
   /**
    * Per node, whether its name and its place were set since it last entered this list (its
-   * create, or the create that brought it back): a change an Undo took back does not count.
+   * create, or the create that brought it back), and whether a delete put in force on it since
+   * holds it in Trash (an Undo of a restore puts the delete in force when it lands, not when
+   * the delete was made): a change an Undo took back does not count.
    */
-  sinceEntry: ReadonlyMap<string, { label: boolean; place: boolean }>;
+  sinceEntry: ReadonlyMap<string, { label: boolean; place: boolean; deleted: boolean }>;
+  /**
+   * Per Undo of a move or rename that took its target off the top (by the id a Redo names): the
+   * record it left holding each fact, null for none. The Undo holds that fact while the same
+   * record still does: a change an Undo took back since does not count.
+   */
+  undoneTo: ReadonlyMap<string, { label?: string | null; place?: string | null }>;
   /** Rule 14: the nodes that are in another list now. */
   away: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
@@ -172,6 +180,8 @@ type DeleteInForce = {
   cascade: Set<string>;
   /** The viewed Work's own delete, pending or already applied. */
   own: boolean;
+  /** By node, the position of the record that last put this delete in force on it. */
+  heldFrom: Map<string, number>;
 };
 
 /**
@@ -210,6 +220,7 @@ export function replay(
   // What a restore lifted, and what a delete that took a restore back put in force again, by
   // the id an Undo of it names: taking either back undoes exactly that.
   const lifted = new Map<string, Lifted>();
+  const undoneTo = new Map<string, { label?: string | null; place?: string | null }>();
   const pendingOn = new Map<string, Set<string>>();
   // A drafted change and the drafted record that takes it back leave nothing pending.
   const pend = (record: TreeRecord) => {
@@ -278,16 +289,19 @@ export function replay(
 
   // An Undo of a restore (or of a move or rename that lifted deletes, rule 9) takes it off: the
   // deletes it lifted are in force again, each with what it took and its own Trash entry.
-  const putBack = (record: TreeRecord, back: Lifted) => {
+  const putBack = (record: TreeRecord, back: Lifted, index: number) => {
     const root = record.carries ?? record.id;
     const put = (entry: DeleteInForce, node: string) =>
       entry.putBackBy.set(root, (entry.putBackBy.get(root) ?? new Set()).add(node));
     for (const entry of back.entries) {
       put(entry, entry.node);
-      if (!deletes.includes(entry)) deletes.push(entry);
+      if (deletes.includes(entry)) continue;
+      deletes.push(entry);
+      for (const id of [entry.node, ...entry.cascade]) entry.heldFrom.set(id, index);
     }
     for (const [entry, member] of back.members) {
       entry.cascade.add(member);
+      entry.heldFrom.set(member, index);
       put(entry, member);
     }
     lifted.set(root, back);
@@ -297,6 +311,7 @@ export function replay(
   // takes its target off instead, putting back the arrival it moved (so an undone move or
   // rename shows the names it showed before, not a numbered copy).
   const setFact = <Before>(
+    fact: "label" | "place",
     stack: Array<Setter<Before>>,
     node: Working,
     record: TreeRecord,
@@ -313,6 +328,8 @@ export function replay(
     ) {
       stack.pop();
       node.arrivedAt = top.arrivedBefore;
+      const root = record.carries ?? record.id;
+      undoneTo.set(root, { ...undoneTo.get(root), [fact]: stack.at(-1)?.id ?? null });
       return;
     }
     stack.push({
@@ -383,7 +400,7 @@ export function replay(
       if (left) takeUp(nodes.get(record.node) as Working, left.was, record.id);
       // Rule 14: a node coming back by the Undo of its leave is in the Trash it left.
       const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-      if (back) putBack(record, back);
+      if (back) putBack(record, back, index);
       continue;
     }
     // A node is acted on only while it stands in this view (`placeIn`): the same test Undo and
@@ -432,13 +449,14 @@ export function replay(
         }
         // Rule 9: acting on a node in Trash brings it back (an Undo's opposite record never does).
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-        if (back) putBack(record, back);
+        if (back) putBack(record, back, index);
         else if (record.undoes === undefined)
           lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
         // One arrival sets both facts, so both answer to the arrival before it.
         const arrivedBefore = node.arrivedAt;
         setFact(
+          "place",
           node.place,
           node,
           record,
@@ -448,6 +466,7 @@ export function replay(
         );
         if (record.name !== undefined) {
           setFact(
+            "label",
             node.label,
             node,
             record,
@@ -477,11 +496,12 @@ export function replay(
         }
         // A rename that takes back only the name a move set leaves the deletes that move lifted lifted.
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-        if (back?.by === "rename") putBack(record, back);
+        if (back?.by === "rename") putBack(record, back, index);
         else if (record.undoes === undefined)
           lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
         setFact(
+          "label",
           node.label,
           node,
           record,
@@ -499,7 +519,7 @@ export function replay(
       case "delete": {
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
         if (back) {
-          putBack(record, back);
+          putBack(record, back, index);
           break;
         }
         // Two deletes of one node both count: each takes what its author saw.
@@ -510,6 +530,7 @@ export function replay(
           node: record.node,
           cascade: new Set(record.cascade),
           own: ownDelete(record),
+          heldFrom: new Map([record.node, ...record.cascade].map((id) => [id, index])),
         });
         break;
       }
@@ -541,6 +562,7 @@ export function replay(
   if (purgedAt.size > 0 || leftAt.size > 0) rescueOrphans(nodes, purgedAt, leftAt);
   return {
     ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
+    undoneTo,
     away: new Set([...leftAt.keys()].filter(isAway)),
     dropped: [],
   };
@@ -630,7 +652,14 @@ function takeUp(node: Working, was: Working, create: string) {
   node.entered = { label: node.label.at(-1)?.id, place: node.place.at(-1)?.id };
 }
 
-type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean; source: string };
+type Standing = {
+  deleted: boolean;
+  keptByChild: boolean;
+  keptByPending: boolean;
+  /** Held by a delete put in force on it after it last entered this list (its create). */
+  deletedSince: boolean;
+  source: string;
+};
 
 /**
  * One pass over the nodes, parents before children on the way down and children before parents
@@ -645,7 +674,7 @@ function derive(
   skipped: TreeProjection["skipped"],
   rescued: string[],
   gone: ReadonlySet<string>,
-): Omit<TreeProjection, "dropped" | "away"> {
+): Omit<TreeProjection, "dropped" | "away" | "undoneTo"> {
   const children = new Map<string, Working[]>();
   for (const node of nodes.values()) {
     const siblings = children.get(node.parent);
@@ -703,6 +732,9 @@ function derive(
           deleted: deleted && !keptByPending,
           keptByChild: false,
           keptByPending,
+          deletedSince: taken.some(
+            (entry) => (entry.heldFrom.get(child.id) ?? 0) > child.createdAt,
+          ),
           source: frame.source,
         });
         open(child.id, frame.source, child);
@@ -736,17 +768,18 @@ function derive(
 
   const out = new Map<string, TreeNode>();
   const setters = new Map<string, NodeSetters>();
-  const sinceEntry = new Map<string, { label: boolean; place: boolean }>();
+  const sinceEntry = new Map<string, { label: boolean; place: boolean; deleted: boolean }>();
   for (const node of nodes.values()) {
     const label = node.label[node.label.length - 1];
     const place = node.place[node.place.length - 1];
+    const state = standing.get(node.id) as Standing;
     sinceEntry.set(node.id, {
       label: label?.id !== node.entered.label,
       place: place?.id !== node.entered.place,
+      deleted: !node.purged && state.deleted && !state.keptByChild && state.deletedSince,
     });
     if (label || place)
       setters.set(node.id, { ...(label ? { label } : {}), ...(place ? { place } : {}) });
-    const state = standing.get(node.id) as Standing;
     out.set(node.id, {
       id: node.id,
       kind: node.kind,

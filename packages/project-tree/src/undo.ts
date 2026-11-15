@@ -1,19 +1,30 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
-import { placeIn, type Setter, type TreeProjection } from "./replay.js";
+import { type NodeSetters, placeIn, type TreeProjection } from "./replay.js";
 import { descendantsOf, nameAmong } from "./shape.js";
 import { inForce, LIVE, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
-/** Whether the record is the one that last set the fact `setter` stands for. */
-const lastSetBy = <Before>(setter: Setter<Before> | undefined, record: TreeRecord) =>
-  setter?.id === record.id ? setter : undefined;
+/** The setter of `fact` when `record` is the one that last set it. */
+const lastSetBy = <Fact extends "label" | "place">(
+  projection: TreeProjection,
+  record: TreeRecord,
+  fact: Fact,
+): NodeSetters[Fact] => {
+  const top = projection.setters.get(record.node)?.[fact];
+  return top?.id === record.id ? top : undefined;
+};
 
-/** Whether a later record in the view moved or renamed the same node as this kind of record. */
-function movedAfter(writer: TreeWriter, view: View, record: TreeRecord): boolean {
-  const records = viewRecords(writer.doc, view);
-  return records
-    .slice(records.findIndex((other) => other.id === record.id) + 1)
-    .some((other) => other.type === record.type && other.node === record.node);
+/**
+ * Whether `record` still holds its node's `fact`, the one test for Undo and Redo of a move or
+ * rename: it is the record that last set it, or it is an Undo that took its target off and the
+ * record it left holding the fact still does. A change an Undo took back since holds nothing
+ * (rule 14's crossing taken back included), so it does not stand in the way.
+ */
+function holds(projection: TreeProjection, record: TreeRecord, fact: "label" | "place"): boolean {
+  if (lastSetBy(projection, record, fact)) return true;
+  const top = projection.setters.get(record.node)?.[fact];
+  const left = projection.undoneTo.get(record.carries ?? record.id)?.[fact];
+  return left !== undefined && (top?.id ?? null) === left;
 }
 
 /**
@@ -93,8 +104,8 @@ export function undoChange(
       return writer.author(view, actor, { type: "delete", node: record.node, cascade: [] }, extra);
     case "move": {
       if (record.undoes !== undefined) {
-        // An Undo's own move taken back is a redo: the original move again, unless the node was moved since.
-        if (movedAfter(writer, view, record)) return "changed_since";
+        // An Undo's own move taken back is a redo: the original move again, while the Undo holds the place.
+        if (!holds(projection, record, "place")) return "changed_since";
         const { parent, rank } = record.from;
         const back = projection.nodes.get(parent);
         if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
@@ -116,11 +127,8 @@ export function undoChange(
       }
       // A move that carried a name set two facts, and each goes back while the move still holds
       // it: a later rename keeps its name and the place still goes back, and the other way round.
-      const placed = lastSetBy(projection.setters.get(record.node)?.place, record);
-      const named =
-        record.name === undefined
-          ? undefined
-          : lastSetBy(projection.setters.get(record.node)?.label, record);
+      const placed = lastSetBy(projection, record, "place");
+      const named = record.name === undefined ? undefined : lastSetBy(projection, record, "label");
       if (!placed && !named) return "changed_since";
       if (!placed && named)
         return writer.author(
@@ -148,9 +156,10 @@ export function undoChange(
     }
     case "rename": {
       if (record.undoes !== undefined) {
-        // The same for a rename: the Undo's name taken back is the original name again. An Undo of
-        // a type change does not say the type it changed from, so it is not redone.
-        if (record.filetype !== undefined || movedAfter(writer, view, record))
+        // The same for a rename: the Undo's name taken back is the original name again, while the
+        // Undo holds the name. An Undo of a type change does not say the type it changed from, so
+        // it is not redone.
+        if (record.filetype !== undefined || !holds(projection, record, "label"))
           return "changed_since";
         return writer.author(
           view,
@@ -159,7 +168,7 @@ export function undoChange(
           extra,
         );
       }
-      const last = lastSetBy(projection.setters.get(record.node)?.label, record);
+      const last = lastSetBy(projection, record, "label");
       if (!last) return "changed_since";
       // A rename that changed the type takes the type back with the name, or it is not undone.
       if (record.filetype !== undefined && last.before.filetype === undefined)

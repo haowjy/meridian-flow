@@ -498,7 +498,8 @@ function standingBelow(projection: TreeProjection, node: string): TreeNode[] {
  * now goes with it as in any crossing, so a node renamed since keeps its name, one added since
  * comes along, one moved out since stays out and one deleted since stays in that Trash; a node
  * that crossed out of Trash goes back into it (rule 14). `records` are the crossing's own. The
- * root deleted or moved since answers `changed_since`, as an Undo in one list does.
+ * root moved since, or held in Trash by a delete put in force since it entered (`sinceEntry`),
+ * answers `changed_since`, as an Undo in one list does.
  */
 export function moveBackBetweenLists(
   out: ListEnd,
@@ -519,7 +520,7 @@ export function moveBackBetweenLists(
   const now = placeIn(here.nodes, node);
   if (!leave || !now) return "unknown";
   const since = here.sinceEntry.get(node);
-  if (deletedSince(out.writer, here, node, ids) || since?.place) return "changed_since";
+  if (since?.place || since?.deleted) return "changed_since";
   const there = into.writer.view(LIVE);
   const back =
     isSourceRoot(leave.from.parent) || placeIn(there.nodes, leave.from.parent)?.kind === "folder";
@@ -535,27 +536,5 @@ export function moveBackBetweenLists(
     actor,
     node,
     records,
-  );
-}
-
-/**
- * Whether a delete made after the crossing (`records`) entered this list holds `node` in Trash.
- * The deletes it left Trash with come back with the Undo's create (rule 14): the Redo of that
- * Undo takes them with it, as the crossing did.
- */
-function deletedSince(
-  writer: TreeWriter,
-  here: TreeProjection,
-  node: string,
-  records: ReadonlySet<string>,
-): boolean {
-  if (!here.nodes.get(node)?.trashed) return false;
-  const order = listRecords(writer.doc);
-  const entered = order.findIndex(
-    (record) => records.has(record.id) && record.type === "create" && record.node === node,
-  );
-  const at = (id: string) => order.findIndex((record) => record.id === id);
-  return here.trash.some(
-    (entry) => (entry.node === node || entry.cascade.includes(node)) && at(entry.id) > entered,
   );
 }

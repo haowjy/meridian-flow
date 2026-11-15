@@ -1286,6 +1286,63 @@ describe("replay rules 9 to 14", () => {
     }
   });
 
+  it("14. Redo reads what holds a fact now, as Undo does: a crossing taken back holds nothing, and a Trash put back since it entered holds the root", () => {
+    const MINE = sourceRoot("user-files");
+    const ids = (made: { left: TreeRecord[]; entered: TreeRecord[] }) =>
+      [...made.left, ...made.entered].map((record) => record.id);
+    const ok = <T>(made: T | string): T => {
+      if (typeof made === "string") throw new Error(made);
+      return made;
+    };
+    const said = (made: TreeRecord | string) => (typeof made === "string" ? made : made.type);
+
+    // Move, Undo, cross, Undo the crossing: the Redo of the move goes.
+    {
+      const here = start();
+      const there = start();
+      const out = { writer: here.w, list: "project" };
+      const away = { writer: there.w, list: "account" };
+      const into = here.folder("In");
+      const place = here.folder("Place");
+      const m = here.w.move(LIVE, CHAT, place, into);
+      const u = undoChange(here.w, LIVE, CHAT, m.id);
+      if (typeof u === "string") throw new Error(u);
+      const c = moveBetweenLists(out, { ...away, parent: MINE }, CHAT, place);
+      ok(moveBackBetweenLists(away, { ...out, parent: ROOT }, CHAT, place, ids(c)));
+      const redo = ok(undoChange(here.w, LIVE, CHAT, u.id));
+      expect(redo.type).toBe("move");
+      expect(here.at(place)?.parent).toBe(into);
+      // A move since that still stands is in the way of the Redo; one an Undo took back is not.
+      const again = ok(undoChange(here.w, LIVE, CHAT, redo.id));
+      const later = here.w.move(LIVE, WRITER, place, here.folder("Later"));
+      expect(said(undoChange(here.w, LIVE, CHAT, again.id))).toBe("changed_since");
+      ok(undoChange(here.w, LIVE, WRITER, later.id));
+      expect(said(undoChange(here.w, LIVE, CHAT, again.id))).toBe("move");
+      here.valid();
+    }
+    // Delete, restore, cross, Undo the crossing, Undo the restore: the folder is in Trash by a
+    // change after it came back, and the Redo of the crossing does not take it out.
+    {
+      const here = start();
+      const there = start();
+      const out = { writer: here.w, list: "project" };
+      const away = { writer: there.w, list: "account" };
+      const f = here.folder("F");
+      here.w.delete(LIVE, WRITER, f);
+      const r = here.w.restore(LIVE, CHAT, f);
+      const c = moveBetweenLists(out, { ...away, parent: MINE }, CHAT, f);
+      const u = ok(moveBackBetweenLists(away, { ...out, parent: ROOT }, CHAT, f, ids(c)));
+      expect(said(undoChange(here.w, LIVE, CHAT, r.id))).toBe("delete");
+      expect(here.at(f)?.trashed).toBe(true);
+      expect(moveBackBetweenLists(out, { ...away, parent: MINE }, CHAT, f, ids(u))).toBe(
+        "changed_since",
+      );
+      expect(here.at(f)?.trashed).toBe(true);
+      expect(there.at(f)).toBeUndefined();
+      here.valid();
+    }
+  });
+
   it("a create the server stamped dropped is in no view and is listed", () => {
     const t = start();
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
