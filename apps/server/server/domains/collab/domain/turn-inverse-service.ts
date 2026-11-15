@@ -13,6 +13,7 @@ import type {
   TurnId,
   UserId,
 } from "@meridian/contracts";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
@@ -81,7 +82,7 @@ export type InverseDocument = {
       documentDraft: DraftSnapshot;
       doc: Y.Doc;
       name: string;
-      frozen: boolean;
+      closed: ClosedOwnerWhy | null;
       /** The base text each waiting change in the draft removes, read from the capture. */
       waitingRemoved: readonly string[];
     }
@@ -197,14 +198,17 @@ function prepare(
         : document.history.filter((part) => part.actionId === selectedAction);
     const skips: TurnInverseSkip[] = [];
     const entryPlanner = createCapturedReversalPlanner(document, query);
-    const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) =>
+    const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) => {
+      const { closed } = document.destinationOf(part.origin);
       skips.push({
         kind: "text",
         ...store.describePart(document, part),
         documentId: document.documentId,
         uri: document.uri,
         cause,
+        ...(cause === "returned" && closed ? { why: closed } : {}),
       });
+    };
     // The originals in step order: one edit's targeted parts each.
     const byEdit = new Map<string, StoredInversePart[]>();
     for (const part of targets) byEdit.set(part.editId, [...(byEdit.get(part.editId) ?? []), part]);
@@ -460,14 +464,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
               : "reversed"
             : onlySuperseded
               ? "superseded"
-              : plans.length &&
-                  plans.every(
-                    (plan) =>
-                      plan.skips.length &&
-                      plan.skips.every((skip) => skip.cause === "draft_archived"),
-                  )
-                ? "permission_denied"
-                : "expired",
+              : "expired",
           // One row per destination a document's steps reversed in, or one for its refusal.
           documents: plans.flatMap((plan): DocumentReversalResult[] => {
             const reversed = reversedAt(plan);
@@ -484,10 +481,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
               {
                 documentId: plan.document.documentId,
                 uri: plan.document.uri,
-                status:
-                  plan.skips.length && plan.skips.every((skip) => skip.cause === "draft_archived")
-                    ? ("permission_denied" as const)
-                    : ("expired" as const),
+                status: "expired" as const,
               },
             ];
           }),

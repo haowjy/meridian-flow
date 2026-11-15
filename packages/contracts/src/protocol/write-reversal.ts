@@ -1,5 +1,6 @@
 // Shared write reversal response contracts for context undo/redo APIs.
 
+import type { ClosedOwnerWhy } from "../commands/index.js";
 import type { FileAccessDenial } from "./file-access.js";
 
 export type WriteErrorStatus =
@@ -91,7 +92,8 @@ export type TurnInverseSkipCause =
   /** Text in a document that is deleted (or discarded) now. */
   | "document_deleted"
   | "document_discarded"
-  | "draft_archived"
+  /** The document's owner is closed (Work archived or deleted, chat in Trash): nothing changed; `why` says which. */
+  | "returned"
   | "paragraph_removed"
   | "edited_since"
   /** Text in a document whose restore in the same reversal couldn't run. */
@@ -102,6 +104,8 @@ export type TurnInverseSkip = {
   documentId: string;
   uri: string;
   cause: TurnInverseSkipCause;
+  /** Set when `cause` is `returned`. */
+  why?: ClosedOwnerWhy;
 } & ({ kind: "text"; before: string; after: string } | { kind: "tree"; at: string | null });
 
 export interface ReversalOutcome {

@@ -95,7 +95,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     inspection: Inspection,
   ): TextFailure | null {
     const destination = document.destinationOf(part.origin);
-    if (destination.frozen) return "draft_archived";
+    if (destination.closed) return "draft_archived";
     if (destination.kind === "draft" && destination.state === "gone") return closedPartCause(part);
     const state = inspection.states([part])[0];
     if (state.state !== (direction === "undo" ? "active" : "undone")) {
@@ -185,7 +185,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
               : ("discarded" as const),
       };
     }
-    if (destination.frozen) return { failure: "draft_archived" as const };
+    if (destination.closed) return { failure: "draft_archived" as const };
     if (destination.kind === "live" && destination.removed)
       return { failure: "document_deleted" as const };
     const actionKind =
@@ -227,7 +227,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const [destination] = destinations;
     if (!destination) throw new Error("One edit has no destination");
     const every = (cause: TurnInverseSkipCause) => ({ causes: entry.parts.map(() => cause) });
-    if (destination.frozen) return every("draft_archived");
+    if (destination.closed) return every("returned");
     if (destination.kind === "draft" && destination.state === "gone")
       return {
         causes: entry.parts.map((part) =>
@@ -271,7 +271,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     for (const [i, part] of entry.parts.entries()) {
       const state = states[i];
       const originDestination = document.destinationOf(part.origin);
-      const reason = originDestination.frozen
+      const reason = originDestination.closed
         ? "draft_archived"
         : originDestination.kind === "draft" && originDestination.state === "gone"
           ? "discarded"

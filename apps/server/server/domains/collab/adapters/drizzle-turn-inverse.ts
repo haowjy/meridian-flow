@@ -22,7 +22,7 @@ import {
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { branchOwnerSql, mergeOwnerLocks } from "../../../shared/draft-owner.js";
+import { branchOwnerSql, closedOwnerOf, mergeOwnerLocks } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -220,7 +220,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             removal,
             live: Y.encodeSnapshotV2(Y.snapshot(live)),
             liveRoom: liveRoomName,
-            liveFrozen: liveAvailability.get(documentId)?.frozen ?? false,
+            liveClosed: liveAvailability.get(documentId)?.closed ?? null,
           });
           const document: InverseDocument = {
             documentId,
@@ -267,7 +267,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               documentDraft,
               doc,
               name: name?.handle ?? "No Work",
-              frozen: documentDraft.lifecycle !== "active",
+              closed: closedOwnerOf(documentDraft.lifecycle),
               waitingRemoved: [],
             });
           }
@@ -275,7 +275,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           Object.assign(
             document,
             createInverseDestinationResolver(document, {
-              frozen: liveAvailability.get(documentId)?.frozen ?? false,
+              closed: liveAvailability.get(documentId)?.closed ?? null,
               removed: removal !== null,
             }),
           );
@@ -430,6 +430,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     }
   }
 
+  /**
+   * An owner that closed after this attempt's capture: the next capture sees it closed and
+   * plans its targets as `returned` skips. Any other refusal is the policy's and stands.
+   */
+  function refusalOrMiss(refusal: FileEditRefusedError): Error {
+    return refusal.refused.every(
+      (denial) => denial.reason === "work_archived" || denial.reason === "chat_frozen",
+    )
+      ? new InverseAttemptMiss()
+      : refusal;
+  }
+
   const store: TurnInverseStore = {
     withCapturedDocuments: attempts,
     async ownersOf(query, direction, userId) {
@@ -557,7 +569,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         },
         operation,
       });
-      if (!admitted.ok) throw admitted.refusal;
+      if (!admitted.ok) throw refusalOrMiss(admitted.refusal);
       attempt.deliveries.push(...deliveries);
       return {
         handles,
@@ -636,7 +648,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           : { kind: "live" },
         "edit",
       );
-      if (isFileAccessDenied(grant)) throw new FileEditRefusedError([grant]);
+      if (isFileAccessDenied(grant)) throw refusalOrMiss(new FileEditRefusedError([grant]));
       grants.push(grant);
     }
     return grants;

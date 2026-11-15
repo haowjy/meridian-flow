@@ -113,6 +113,7 @@ export async function insertCopiedTree(
   deps: CopyTreeDeps,
   input: {
     dir: readonly string[];
+    parent?: { folderId: string; createFolders: readonly string[] };
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
     position?: ContextSiblingPosition;
@@ -133,6 +134,7 @@ export async function insertCopiedTree(
           { view: LIVE, actor: deps.actor },
           {
             dir: input.dir,
+            ...(input.parent ? { parent: input.parent } : {}),
             roots: tree.value.roots,
             ...(input.position ? { position: input.position } : {}),
           },

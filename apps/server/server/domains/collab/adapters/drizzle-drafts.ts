@@ -32,7 +32,7 @@ import {
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { chatOwner } from "../../../shared/draft-owner.js";
+import { branchOwnedBy, chatOwner } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -146,6 +146,24 @@ export function createDrizzleDraftStore(
     const branch = await branches.activeForOwner(owner);
     const row = branch ? await activeDocumentDraft(documentId, branch.id) : null;
     return row ? resolved(row) : null;
+  }
+
+  async function findClosedOwnerDraft(
+    documentId: DocumentId,
+    owner: DraftOwner,
+  ): Promise<ResolvedDraft | null> {
+    const [row] = await selectDraft(currentDrizzleDb(db))
+      .where(
+        and(
+          eq(documentDrafts.documentId, documentId),
+          eq(documentDrafts.kind, "work_draft"),
+          eq(documentDrafts.status, "closed"),
+          branchOwnedBy(owner),
+        ),
+      )
+      .orderBy(desc(documentDrafts.updatedAt))
+      .limit(1);
+    return row ? resolved(mapDraft(row)) : null;
   }
 
   async function activeDocumentDraft(
@@ -627,6 +645,7 @@ export function createDrizzleDraftStore(
     },
 
     findOwnerDraft,
+    findClosedOwnerDraft,
 
     async listActiveWorkDraftIds(documentId) {
       const rows = await currentDrizzleDb(db)

@@ -46,7 +46,8 @@ proposed project path, while project content stays drafted behind a proposed
 Scratch path. The physical Scratch owner continues to cap delegation.
 
 The decision also carries `command`: whether the person may run a document command (Apply,
-Un-Apply, Discard, Undo of a Discard) there. It is `edit` by grants and agent terms and ignores the
+Un-Apply, Discard, Undo of a Discard) there, or Copy into or out of a closed Work (a Copy's
+destination asks `command`; a source in Trash asks it too, since a deleted file's `read` is none). It is `edit` by grants and agent terms and ignores the
 lifecycle terms, so a closed Work, a chat in Trash or a deleted document passes: the command itself
 answers a closed owner (`returned`, under the Work lock) instead of the route refusing it. `level` is
 unchanged, so words stay read-only.
