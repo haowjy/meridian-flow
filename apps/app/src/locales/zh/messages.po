@@ -185,8 +185,8 @@ msgstr ""
 
 #. placeholder {0}: said.textLeft
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
-msgstr ""
+#~ msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+#~ msgstr ""
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -5172,8 +5172,8 @@ msgid "Partly restored"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Partly undone"
-msgstr ""
+#~ msgid "Partly undone"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
@@ -7419,8 +7419,8 @@ msgid "Undid"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undid applying {name}."
-msgstr ""
+#~ msgid "Undid applying {name}."
+#~ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx

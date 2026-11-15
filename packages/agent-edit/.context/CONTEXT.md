@@ -82,9 +82,12 @@ holding a live descendant outside the receipt stays (`delete-filter.ts`) with al
 leaves a writer's later attribute value.
 
 A replacement undoes as plain Yjs does: the deleted run comes back wherever it was, beside whatever
-the writer put there. Over "One small cat." (the AI's replacement of "big"), a writer who typed
+the writer put there. Over "One big cat." (the AI replaced `small` with `big`), a writer who typed
 "huge" over "big" gets "One smallhuge cat." on Undo, and one who typed before the word gets
 "One smallvery  cat.". Undo never drops an original word to avoid doubling or joining text.
+The result equals a plain `Y.UndoManager`'s replacement restoration, with no stranded rule and no
+word rule, except the descendant protection above: Flow keeps the writer's text inside a block the
+AI created, where plain Yjs deletes it, so no writer text is lost.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
