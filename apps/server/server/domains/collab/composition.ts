@@ -544,7 +544,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const branches = createWorkBranchReviewService({
     commandDocuments: createDrizzleCommandDocuments(deps.db, { treeLists: deps.treeLists }),
     apply: applyCommands.apply,
-    autoApply: createBranchAutoApply({
+    freezeApply: createBranchAutoApply({
       items: async (owner) => {
         const branch = await workBranches.activeForOwner(owner);
         return branch
@@ -553,6 +553,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       },
       folders: (branchId) => branchFolderPlaces(deps.db, treeReader, branchId),
       copyDraft: (draftId) => draftCoordinator.copyDraft(draftId),
+      serialize: async (documentId, doc, owner) =>
+        (
+          await runtime.markdownDocuments.serializeVersionedDocument(
+            documentId as DocumentId,
+            doc,
+            await workBranches.viewForOwner(owner),
+          )
+        ).content,
       apply: applyCommands.apply,
     }),
     unapplyClick: applyCommands.unapply,

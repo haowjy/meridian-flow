@@ -295,8 +295,8 @@ function createInMemoryBranchStub(): CollabBranches {
       async apply({ request }) {
         return { status: "closed", commandId: request.commandId };
       },
-      async autoApply() {
-        return { status: "nothing" };
+      async freezeApply() {
+        return null;
       },
       async unapplyClick({ request }) {
         return { status: "closed", commandId: request.commandId };

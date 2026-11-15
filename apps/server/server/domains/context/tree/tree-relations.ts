@@ -16,7 +16,13 @@ import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
 import { bigint, boolean, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 
-export type TreeView = { kind: "live" } | { kind: "branch"; branchId: BranchId };
+/**
+ * `only` limits a branch view to the rows of these nodes: live plus exactly the changes a frozen
+ * Apply click carries, every other row of the branch reading as live.
+ */
+export type TreeView =
+  | { kind: "live" }
+  | { kind: "branch"; branchId: BranchId; only?: readonly string[] };
 export const LIVE_TREE: TreeView = Object.freeze({ kind: "live" });
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries below,
@@ -75,6 +81,17 @@ const documentTail = sql.raw(
   "d.storage_url, d.mime_type, d.size_bytes, d.has_preview, d.metadata, d.created_at, d.updated_at",
 );
 
+/** `AND <id> IN (only)` for a view limited to some rows; nothing for a whole branch. */
+export function onlyRows(view: TreeView, column: SQL): SQL {
+  if (view.kind !== "branch" || !view.only) return sql``;
+  return view.only.length === 0
+    ? sql` AND FALSE`
+    : sql` AND ${column} IN (${sql.join(
+        view.only.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})`;
+}
+
 function documentsQuery(view: TreeView): SQL {
   const live = sql`SELECT t.id, t.context_source_id, t.parent_id AS folder_id, t.name, t.extension,
       t.file_type, ${documentTail}, t.rank, t.location_version
@@ -83,13 +100,13 @@ function documentsQuery(view: TreeView): SQL {
   if (view.kind === "live") return live;
   const branch = sql`${view.branchId}::uuid`;
   return sql`${live} AND NOT EXISTS (
-      SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
+      SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id${onlyRows(view, sql`x.id`)})
     UNION ALL
     SELECT b.id, b.context_source_id, b.parent_id AS folder_id, b.name, b.extension,
       b.file_type, ${documentTail}, b.rank, coalesce(t.location_version, 0)
     FROM branch_tree_nodes b JOIN documents d ON d.id = b.id
       LEFT JOIN tree_nodes t ON t.id = b.id
-    WHERE b.branch_id = ${branch} AND b.kind = 'document' AND NOT b.deleted`;
+    WHERE b.branch_id = ${branch} AND b.kind = 'document' AND NOT b.deleted${onlyRows(view, sql`b.id`)}`;
 }
 
 function foldersQuery(view: TreeView): SQL {
@@ -98,11 +115,11 @@ function foldersQuery(view: TreeView): SQL {
   if (view.kind === "live") return live;
   const branch = sql`${view.branchId}::uuid`;
   return sql`${live} AND NOT EXISTS (
-      SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
+      SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id${onlyRows(view, sql`x.id`)})
     UNION ALL
     SELECT b.id, b.context_source_id, b.parent_id, b.name, b.rank, coalesce(t.location_version, 0)
     FROM branch_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
-    WHERE b.branch_id = ${branch} AND b.kind = 'folder' AND NOT b.deleted`;
+    WHERE b.branch_id = ${branch} AND b.kind = 'folder' AND NOT b.deleted${onlyRows(view, sql`b.id`)}`;
 }
 
 /** Documents visible in this view, at the view's location (alias "visible_documents"). */

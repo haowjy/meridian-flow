@@ -447,16 +447,17 @@ export type DraftReviewApi = {
     envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   /**
-   * The server's Apply of the owner's branch items `select` names (an AI write that passed its
-   * check), as one Apply command.
+   * Freezes the click that Applies the owner's branch items `select` names (what an AI write
+   * produced): null when none has anything to apply. The caller reads `cut` to check the click,
+   * then `apply()` dispatches that same click as one Apply command.
    */
-  autoApply(input: {
+  freezeApply(input: {
     owner: DraftOwner;
     accountId: UserId;
     projectId: ProjectId;
     commandId: CommandId;
     select(item: import("./domain/branch-review-items.js").DraftReviewItem): boolean;
-  }): Promise<import("./domain/branch-auto-apply.js").AutoApplyResult>;
+  }): Promise<import("./domain/branch-auto-apply.js").FrozenApply | null>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */
   unapplyClick(input: {
     branchId: BranchId;
