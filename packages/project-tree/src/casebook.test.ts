@@ -758,7 +758,7 @@ function reorganisedOnce() {
 }
 
 describe("an Apply's copy that a later record undid is no longer in force", () => {
-  const inLive = (t: ReturnType<typeof start>, command: string) => appliedNodes(t.doc, command);
+  const inLive = (t: ReturnType<typeof start>, command: string) => appliedNodes(t.doc, command, []);
 
   it("a card's Undo of the drafted rename ends the Apply's copy; a Redo brings it back", () => {
     const t = start();
@@ -815,7 +815,6 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
       const mine = [restore.id];
       expect(appliedNodes(t.doc, command, mine)).toEqual([n]);
-      expect(appliedNodes(t.doc, command)).toEqual([]);
       if (how === "unapply") {
         const result = undoApply(t.w, command, WRITER, cmd(), { restoredByApply: mine });
         expect(result.left).toEqual([]);

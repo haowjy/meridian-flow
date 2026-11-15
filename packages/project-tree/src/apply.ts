@@ -412,7 +412,7 @@ function appliedBy(doc: Y.Doc, applied: string) {
 export function appliedNodes(
   doc: Y.Doc,
   applied: string,
-  restoredByApply: readonly string[] = [],
+  restoredByApply: readonly string[],
 ): string[] {
   const standing = recordsInForce(viewRecords(doc, LIVE));
   const restores = new Set(restoredByApply);
