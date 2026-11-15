@@ -163,8 +163,7 @@ control pressed, for 6 s, with the full sentence on hover, focus or long press: 
 folder's ×: the folder's row; Discard all: the bar's), the strip's first line, the document band. It adds no line,
 so `hasLine` is false for it. A change's Discard in a closed Work writes in a room the server admits read-only;
 `startDraftDiscardSession` returns `returned` there, with the word for the room's `closedWhy`, instead of a
-`read_only` refusal. The room names `closedWhy` itself: a `read_only` stateless message after admission, or the
-4409 close's reason; the client infers none. A returned Undo of a Discard is the same word on its
+`read_only` refusal. The room names `closedWhy` itself: a `read_only` stateless message after every read admission (`why` only for a closed owner), or the 4409 close's reason; the client infers none. A read admission holds `reasonPending` (so the review is not `ready`, and the controls show their loading state) until its message arrives, and a known reason survives the reconnect meanwhile. A created document's Discard closes its tab only after `done`, so a returned answer's chip has a band to show on. A returned Undo of a Discard is the same word on its
 notice, Trash's row and the editor's pill. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
