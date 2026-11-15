@@ -25,6 +25,7 @@ revisions.
   acknowledged (`serverHasLocalChanges`), which also refreshes the picker's catalog.
 - A file made at an Agent or skill path (`agentsFileOf`), from New Agent, New skill or a plain
   New file, starts with `agentFileTemplate`, written into its local copy as typing would be
-  (`writeFirstText`). The template must read with no Mars finding.
+  (`writeFirstAgentText`). The name goes through Mars's own emitter (`rewriteBlock`, the browser
+  build), so `123` and `[critic]` are quoted. The template must read with no Mars finding.
 - The picker marks a level (Project, Yours, Built-in) only on a name that hides another.
 - Copy spells the levels `.agents/` and `~/.agents/`; `agents://` never reaches the screen.

@@ -23,7 +23,7 @@ prose document copied there reads as unavailable until phase 3 converts it.
 The unified `ContextPort` resolves `manuscript://`, `kb://`, `user://`,
 `unfiled://`, `scratch://`, `uploads://` and `agents://`. Bare paths default to
 `manuscript://`, bar two aliases models are trained on: `~/x` is `user://x` and `.agents/x` is
-`agents://x` (stored and shown addresses stay canonical). Owners are named by handle, flat after `@`: `scratch://@w3/` is a Work's
+`agents://x` (`formatParsedContextUri` is the one serializer and spells the Agents levels `.agents/x` and `~/.agents/x`, so every address a model or writer is shown or stored has one spelling). Owners are named by handle, flat after `@`: `scratch://@w3/` is a Work's
 Scratch, `uploads://@c12/` a chat's uploads (bare `uploads://name` is the
 asking chat's; the Work owns none), and `scratch://@c12/` the No Work chat
 lineage rooted at its first chat. `owner-lookup.ts` is the one answer to who

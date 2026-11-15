@@ -55,7 +55,6 @@ import {
 } from "../domains/file-policy/index.js";
 import {
   type Widened,
-  widenedByFile,
   widenedLabel,
 } from "../domains/packages/domain/agent-widening.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
@@ -463,34 +462,31 @@ export async function handleOwnerDraftListRequest(
     (item) =>
       readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
   );
-  // One comparison per Agents level the listed items touch, not one per item; each item then
-  // carries the Agents its own file can widen.
-  const levels = new Set(visible.flatMap((item) => agentsPlacesOf(item).map((at) => at.level)));
-  const widened = new Map<AgentsLevel, Widened[]>();
-  for (const level of listed.branchId ? levels : [])
-    widened.set(
-      level,
-      await deps.agentsWidening.widened({
-        userId: input.userId,
-        projectId: input.projectId,
-        owner,
-        level,
-      }),
+  // What each item would do if the writer Applied it alone, as live plus that change (and the
+  // folders it sits in) read through the Agents catalog; an item outside Agents levels costs nothing.
+  const labelsOf = async (item: (typeof visible)[number]) => {
+    const places = listed.branchId ? agentsPlacesOf(item) : [];
+    const labels = await Promise.all(
+      places.map(async (at) =>
+        (
+          await deps.agentsWidening.widened({
+            userId: input.userId,
+            projectId: input.projectId,
+            owner,
+            level: at.level,
+            nodes: [item.documentId],
+          })
+        ).map(widenedLabel),
+      ),
     );
+    return [...new Set(labels.flat())];
+  };
+  const labelled = await Promise.all(visible.map(async (item) => ({ item, labels: await labelsOf(item) })));
   return {
-    items: visible.map((item) => {
-      const labels = [
-        ...new Set(
-          agentsPlacesOf(item).flatMap((at) =>
-            widenedByFile(widened.get(at.level) ?? [], at.path).map(widenedLabel),
-          ),
-        ),
-      ];
-      return {
-        ...toWireItem(item, listed.threadTitles),
-        ...(labels.length ? { widened: labels } : {}),
-      };
-    }),
+    items: labelled.map(({ item, labels }) => ({
+      ...toWireItem(item, listed.threadTitles),
+      ...(labels.length ? { widened: labels } : {}),
+    })),
     branchId: listed.branchId,
     folders: listed.folders,
     frozen,

@@ -10,7 +10,6 @@
 import {
   type AgentLevel,
   type AgentPermission,
-  agentsFileOf,
   DEFAULT_AGENT_PERMISSION,
   projectToolPolicy,
 } from "@meridian/contracts/agents";
@@ -28,8 +27,6 @@ export type AgentCapability = {
 /** The Agent a name resolves to at one level set, whatever its state. */
 export interface EffectiveAgent {
   name: string;
-  /** The Agent's file in the level, relative to the level's root: where Changes finds its label. */
-  file: string;
   level: AgentLevel;
   capability: AgentCapability;
 }
@@ -66,8 +63,6 @@ export function capabilityOf(
 /** One Agent that became wider: what it could do, what it can do now, and how. */
 export interface Widened {
   slug: string;
-  /** The Agent's file in the level (see `EffectiveAgent.file`). */
-  file: string;
   /** The Agent's display name after the change. */
   name: string;
   /** Whether the same change renamed it; a renamed Agent prints by slug alone. */
@@ -102,7 +97,6 @@ export function compareAgents(before: EffectiveAgents, after: EffectiveAgents): 
     if (!rises && tools.length === 0 && subagents.length === 0) continue;
     widened.push({
       slug,
-      file: now.file,
       name: now.name,
       renamed: was.name !== now.name,
       level: now.level,
@@ -115,22 +109,6 @@ export function compareAgents(before: EffectiveAgents, after: EffectiveAgents): 
     });
   }
   return widened.sort((a, b) => a.slug.localeCompare(b.slug));
-}
-
-/**
- * The widened Agents a file of the level can be the reason for: an Agent's own file for that
- * Agent, a skill's file for the Agents that load or may use it, any other file (a manifest, a
- * prompt) for all of them. `file` is relative to the level's root. A file of one pending change
- * can widen an Agent only together with another (a skill and the Agent that loads it), so each
- * such file carries the Agent's label.
- */
-export function widenedByFile(widened: Widened[], file: string): Widened[] {
-  const defined = agentsFileOf(file);
-  // The file names the Agent, not its slug: a package clash renames the Agent (`critic__x`).
-  if (defined?.kind === "agent") return widened.filter((entry) => entry.file === file);
-  if (defined?.kind === "skill")
-    return widened.filter((entry) => entry.skills.includes(defined.slug));
-  return widened;
 }
 
 /** An Agent no level held before: what a receipt says when it appears. */

@@ -48,11 +48,14 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   non-text file leaves its Agent in the level, unavailable, and it still hides the same name
   below (no fall-through; a prose document or two documents at one path is a `problems` entry
   of the level read). Rename uses the name before any rename for shadowing.
-- Compile results are cached by content digest (bounded); a package is written to the store
-  (`installSource`, idempotent) when a catalog read first offers its Agents or a skill is
-  invoked, so a picker's selection (`{slug, definitionRevisionId}`) names a stored row. Rows are
-  immutable and shared by every account that has the same bytes; they grow with observed edits
-  and are not collected yet (they are small; a chat binding is the only reference).
+- Compile results are cached by content digest (bounded). A read writes nothing: a picker's
+  selection (`{slug, definitionRevisionId}`) carries an id derived from the content
+  (`agentRevisionId`), and the catalog remembers per account what it showed. A package is written
+  to the store (`installSource`, idempotent) when a chat binds or a skill is invoked; `resolvePrimary`
+  binds the revision the picker showed, only if this account's levels or the built-ins produced it
+  (else it binds the Agent's current files by name; the server restarting is the other way to get
+  there). Rows are immutable and shared by every account that has the same bytes; they are not
+  collected yet (a chat binding is the only reference).
 - `files` is every level's Agent and skill file, winner or not, with its reasons, whether the
   writer picks it (`pickable`: false for a subagent or a model-only skill, which are not
   broken), what it hides and what hides it (`layerByName`; `combineByName` is its winners). A
@@ -79,9 +82,10 @@ and says which Agents became wider: the permission rose, the runtime's tool set 
 in `@meridian/contracts/agents`) gained a tool, or `subagents` gained a name. Capability is what
 the runtime grants: `ask`/`confirm` run as `allow` today, so they never count. An Agent with no
 item of its name before is new, never a widening. A broken Agent that is fixed is compared with a
-read-only Agent. One formatter (`widenedLabel`) serves the receipt and Changes. `widenedByFile`
-says which widened Agents a pending file can be the reason for (an Agent's own file; a skill's file
-for the Agents that load it; any other file for all), so Changes labels each item, not the level.
+read-only Agent that has the whole tool catalog. One formatter (`widenedLabel`) serves the receipt
+and Changes. `effectiveAgents` takes a branch read limited to some nodes (`AgentsBranch.only`, with
+`texts` when an Apply click froze them): the check reads live plus its frozen click, and Changes
+labels each item by what Applying that item alone would do.
 
 Checks: `tools/qa/probes/agents-through-mars/run.mts` (database) and
 `tools/qa/agents-through-mars/server-gate.mts` (running stack).

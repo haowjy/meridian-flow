@@ -7,7 +7,7 @@ import { agentsRootOf } from "@meridian/contracts/agents";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts, documentYjsHeads } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { Branches, DraftPeerShadowAccess, MarkdownDocumentStore } from "../../collab/index.js";
 import type {
@@ -70,6 +70,24 @@ export function createAgentLevelFiles(deps: {
     return new Set(rows.map((row) => row.id));
   }
 
+  /** `nodes` and the folders above them that the branch has a row on, so a placed node has its path. */
+  async function withBranchFolders(branchId: string, nodes: readonly string[]): Promise<string[]> {
+    if (nodes.length === 0) return [];
+    const rows = await currentDrizzleDb(deps.db).execute<{ id: string }>(sql`
+      WITH RECURSIVE above(id, parent_id) AS (
+        SELECT b.id, b.parent_id FROM branch_tree_nodes b
+        WHERE b.branch_id = ${branchId}::uuid
+          AND b.id IN (${sql.join(
+            nodes.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
+        UNION
+        SELECT p.id, p.parent_id FROM branch_tree_nodes p JOIN above a ON p.id = a.parent_id
+        WHERE p.branch_id = ${branchId}::uuid)
+      SELECT id::text AS id FROM above`);
+    return [...new Set([...nodes, ...[...rows].map((row) => row.id)])];
+  }
+
   async function liveText(document: ContextDocument, version: string | undefined) {
     const cached = texts.get(document.id);
     if (cached && version !== undefined && cached.version === version) return cached.text;
@@ -94,10 +112,11 @@ export function createAgentLevelFiles(deps: {
         userId,
       );
       const branchView = branch ? await deps.branches.viewForOwner(branch.owner) : LIVE_TREE;
-      const view =
-        branch?.frozen && branchView.kind === "branch"
-          ? { ...branchView, only: branch.frozen.nodes }
-          : branchView;
+      const only =
+        branch?.only && branchView.kind === "branch"
+          ? await withBranchFolders(branchView.branchId, branch.only)
+          : undefined;
+      const view = only && branchView.kind === "branch" ? { ...branchView, only } : branchView;
       const rootFolder =
         root.path === ""
           ? { kind: "found" as const, node: null }
@@ -141,16 +160,17 @@ export function createAgentLevelFiles(deps: {
       }
       const versions = await versionsOf(readable.map((candidate) => candidate.document.id));
       // A branch read shows its drafts' text over live's; a document it holds no draft of is live
-      // and shares live's per-version cache. A frozen read has exactly the click's texts.
+      // and shares live's per-version cache. A read with frozen texts has exactly those.
+      const placed = (id: string) => !only || only.includes(id);
       const drafted =
-        branch && !branch.frozen && branchView.kind === "branch"
+        branch && !branch.texts && branchView.kind === "branch"
           ? await draftedIn(
               branchView.branchId,
-              readable.map((candidate) => candidate.document.id),
+              readable.map((candidate) => candidate.document.id).filter(placed),
             )
           : new Set<string>();
       for (const { document, path } of readable) {
-        const frozen = branch?.frozen?.texts[document.id];
+        const frozen = branch?.texts?.[document.id];
         let text: string;
         if (frozen !== undefined) text = frozen;
         else if (branch && drafted.has(document.id)) {

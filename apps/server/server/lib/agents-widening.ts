@@ -39,12 +39,16 @@ export type AgentsCheck =
   | { status: "unchanged"; created: string[] };
 
 export interface AgentsWidening {
-  /** The Agents of `level` that `owner`'s branch would make wider than live. */
+  /**
+   * The Agents of `level` that live plus the changes of these `nodes` of `owner`'s branch would
+   * make wider than live: what the writer's Apply of those changes alone would do.
+   */
   widened(input: {
     userId: string;
     projectId: string;
     owner: DraftOwner;
     level: AgentsLevel;
+    nodes: readonly string[];
   }): Promise<Widened[]>;
   /**
    * The check's outcome for the chat's write at `levels`; `callId` makes the Apply a single
@@ -100,12 +104,12 @@ export function createAgentsWidening(deps: {
     userId: string,
     scope: { projectId: string; level: AgentsLevel },
     owner: DraftOwner,
-    frozen?: FrozenCut,
+    view: { nodes: readonly string[]; texts?: FrozenCut["texts"] },
   ) {
     const before = await deps.catalog.effectiveAgents(userId, scope);
     const after = await deps.catalog.effectiveAgents(userId, {
       ...scope,
-      branch: { owner, ...(frozen ? { frozen } : {}) },
+      branch: { owner, only: view.nodes, ...(view.texts ? { texts: view.texts } : {}) },
     });
     return {
       widened: compareAgents(before, after),
@@ -114,9 +118,8 @@ export function createAgentsWidening(deps: {
   }
 
   return {
-    // What Changes would label if the writer Applied the whole branch; the check never uses it.
-    async widened({ userId, projectId, owner, level }) {
-      return (await compare(userId, { projectId, level }, owner)).widened;
+    async widened({ userId, projectId, owner, level, nodes }) {
+      return (await compare(userId, { projectId, level }, owner, { nodes })).widened;
     },
     async settle({ thread, owner, levels, nodes, callId, apply }) {
       const written = new Set(nodes);

@@ -41,6 +41,9 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
   writer's own Apply when it widens no Agent, else leaves it labelled. `deny` still wins; a stored
   `ask` or a draft-mode chat never auto-applies. Reads, `ls` and `grep` need no extra term: the
   place's destination is the draft, and the branch view falls back to live for a file with none.
+  The check freezes only the items this call wrote (`AgentsCheckTarget.nodes`) as the writer's
+  Apply click is frozen, compares live plus exactly that click, and dispatches that click; other
+  chats' drafts in the Work and other levels are never in it.
   A move that touches a level is checked too: within one list it is a draft tree move; between a
   project's files and the account's it is a create at the destination and a delete at the source
   (`lib/model-tools/tree-agents-move.ts`), one command, both through the check. An Undo of an
