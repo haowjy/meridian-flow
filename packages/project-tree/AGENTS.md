@@ -33,6 +33,9 @@ it may write, whether a node id is in use) comes in as plain inputs.
   `restoredBy` who restored it); the discarded records stay discarded.
 - Every record the package writes goes through `writable`, the reader that will read it back, and
   throws if that would drop it. A document's `create` states its `filetype`.
+- Who a delete covers is `deleteCovering` (rows, Trash, the tools), and a document's item in a
+  view is `recordsOfItem` (Apply, Discard, review attribution). A delete's recorded `cascade` is
+  what its author saw: nothing reads it as what the delete covers now.
 - A move between two lists is `moveBetweenLists`: a `move` to `list:<id>` in one list and a
   `create` in the other. Only the server writes it.
 

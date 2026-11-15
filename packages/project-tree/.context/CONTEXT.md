@@ -37,7 +37,9 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
    record lifts live deletes by list order; a drafted record lifts only its Work's own, so rule 7
    still holds in a Work's view.
 10. A purge is final wherever it sits in the list: no later restore, and no record placed after
-    it by Yjs, brings the node back.
+    it by Yjs, brings the node back. It takes exactly the nodes it names (`nodes`, what the server
+    found its delete covering and released); any other node standing under a purged one at the
+    end of the replay goes to the top of its source, arriving there at that purge.
 11. A document create or rename to a type that is not a tracked document is skipped
     (`type-not-editable`).
 12. A rename to a type of another Yjs schema is skipped (`type-across-schemas`).
@@ -52,9 +54,10 @@ the replay uses them (package `AGENTS.md`).
 - **Sources are `source:<id>` parents, not nodes.** A create carries `source`, the id of the
   source it was made in, so rule 6 and the admission check know it. A record that names a
   source as its node is skipped (`missing-node`); a create cannot name one at all.
-- **`purge`** marks the node `purged`: later records on it are skipped with reason `purged`, and
-  it is in no Trash entry. Descendants are not purged by it; the server purges each node, and
-  nothing here checks that it did. A purged node is absent from every view, for placement as for
+- **`purge`** marks the nodes it names `purged`: later records on them are skipped with reason
+  `purged`, and they are in no Trash entry. Its `nodes` is a server-only field, so the guard
+  covers it, and the release set, the rows and every replay read that one set: no replay works out
+  coverage again from cascades that later records changed. A purged node is absent from every view, for placement as for
   display (`placeIn`): a create into it takes rule 6's outcome and a move into it is skipped
   (`missing-parent`).
 - **A node can be acted on only if `placeIn` finds it in the view** (its create is in force, and it

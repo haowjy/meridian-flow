@@ -287,12 +287,13 @@ export class TreeWriter {
     return this.author(view, actor, { type: "restore", node }) as RestoreRecord;
   }
 
-  /** Empties one Trash entry: what the delete `entry.id` took is gone for good. */
-  purge(actor: Actor, entry: { id: string; node: string }): PurgeRecord {
+  /** Empties one Trash entry: `nodes`, what the delete `entry.id` covers now, are gone for good. */
+  purge(actor: Actor, entry: { id: string; node: string }, nodes: readonly string[]): PurgeRecord {
     return this.author(LIVE, actor, {
       type: "purge",
       node: entry.node,
       delete: entry.id,
+      nodes: [...nodes],
     }) as PurgeRecord;
   }
 

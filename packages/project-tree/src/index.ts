@@ -50,6 +50,7 @@ export {
   type NodeSetters,
   type PlaceBefore,
   placeIn,
+  recordsOfItem,
   replay,
   type Setter,
   type SkipReason,

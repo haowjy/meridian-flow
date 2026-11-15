@@ -56,6 +56,12 @@ function start() {
   return { doc, w, folder, chapter, names, at, valid };
 }
 
+/** Empties a Trash entry as the server does: the purge names what the entry covers now. */
+function purge(w: TreeWriter, removal: { id: string; node: string }) {
+  const entry = w.view(LIVE).trash.find((each) => each.id === removal.id);
+  return w.purge("system", removal, entry ? [entry.node, ...entry.cascade] : []);
+}
+
 /** Drafted records review reports as "deleted in live": their node stands in the view only because they are pending. */
 function targetGone(doc: Y.Doc, view: View): TreeRecord[] {
   const projection: TreeProjection = replayView(doc, view);
@@ -609,8 +615,9 @@ describe("a purge empties one Trash entry", () => {
     const arc = t.folder("Arc");
     const ch = t.chapter("Chapter", arc);
     const removal = t.w.delete(LIVE, WRITER, arc);
+    // The server purged what it held, both; the restore, placed before the purge, came later.
     t.w.restore(LIVE, WRITER, ch);
-    t.w.purge("system", removal);
+    t.w.purge("system", removal, [arc, ch]);
     expect(t.w.view(LIVE).skipped).toEqual([]);
     expect(t.w.view(LIVE).nodes.get(arc)).toMatchObject({ purged: true });
     expect(t.w.view(LIVE).nodes.get(ch)).toMatchObject({ purged: true });
@@ -618,7 +625,7 @@ describe("a purge empties one Trash entry", () => {
     const gone = start();
     const folder = gone.folder("Old");
     const inside = gone.chapter("Inside", folder);
-    gone.w.purge("system", gone.w.delete(LIVE, WRITER, folder));
+    purge(gone.w, gone.w.delete(LIVE, WRITER, folder));
     expect(gone.w.view(LIVE).nodes.get(inside)).toMatchObject({ purged: true });
     expect(gone.w.view(LIVE).trash).toEqual([]);
   });
@@ -629,7 +636,7 @@ describe("a purged node is absent from every view, for placement as for display"
     const t = start();
     const old = t.folder("Old");
     const kept = t.chapter("Kept");
-    t.w.purge("system", t.w.delete(LIVE, "system", old));
+    purge(t.w, t.w.delete(LIVE, "system", old));
     const made = t.w.create(LIVE, WRITER, {
       kind: "document",
       filetype: "markdown",
@@ -982,23 +989,29 @@ describe("replay rules 9 to 13", () => {
     const ch = t.chapter("Chapter");
     const removal = t.w.delete(LIVE, WRITER, ch);
     t.w.restore(LIVE, WRITER, ch);
-    t.w.purge("system", removal);
+    t.w.purge("system", removal, [ch]);
     t.w.rename(LIVE, WRITER, ch, "After the purge");
     expect(t.at(ch)).toMatchObject({ purged: true });
     expect(t.w.view(LIVE).skipped.map((skip) => skip.reason)).toEqual(["purged"]);
   });
 
-  it("10b. a purge covers what its delete covers now: a node moved out before the delete is not purged", () => {
+  it("10b. a purge takes exactly the nodes it names: one moved out is kept, one moved in goes to its source's top", () => {
     const t = start();
     const folder = t.folder("F");
     const child = t.chapter("C", folder);
+    const other = t.chapter("D");
     // The move reaches the list before the delete, which was made by someone who still saw C in F.
     t.w.move(LIVE, CHAT, child, ROOT);
+    // Placed before the delete, admitted after the server worked out what the purge takes.
+    t.w.move(LIVE, CHAT, other, folder);
     const removal = t.w.author(LIVE, WRITER, { type: "delete", node: folder, cascade: [child] });
-    t.w.purge("system", removal);
+    t.w.purge("system", removal, [folder]);
     expect(t.at(folder)).toMatchObject({ purged: true });
     expect(t.at(child)).toMatchObject({ purged: false, trashed: false });
+    expect(t.at(other)).toMatchObject({ parent: ROOT, purged: false, trashed: false });
+    expect(t.names(ROOT).sort()).toEqual(["C", "D"]);
     expect(t.w.view(LIVE).trash).toEqual([]);
+    t.valid();
   });
 
   it("11. a document create or rename to a type that is not tracked is skipped", () => {

@@ -18,7 +18,13 @@ import {
   documentYjsUpdates,
   draftWriteJournal,
 } from "@meridian/database/schema";
-import { applyDraft, LIVE, pendingRecords, type TreeRecord } from "@meridian/project-tree";
+import {
+  applyDraft,
+  LIVE,
+  pendingRecords,
+  recordsOfItem,
+  type TreeRecord,
+} from "@meridian/project-tree";
 import { and, eq, inArray, max } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -28,7 +34,7 @@ import type { TreeList, TreeListStore } from "../../context/ports/tree-list-stor
 import { LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
 import { ApplyClickRefused } from "../domain/apply-click.js";
 import type { BranchDocumentTree } from "../domain/ports/branch-tree-state.js";
-import { recordsOfItem, treeListOfNode } from "./drizzle-branch-tree-lists.js";
+import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 export type TreeApplyOutcome =
@@ -129,9 +135,10 @@ export function createApplyTreeOperations(input: {
         const chosen = new Map<string, TreeRecord[]>();
         for (const [at, { writer }] of writers.entries()) {
           const pending = pendingRecords(writer.doc, branchId);
+          const draft = writer.view({ draft: branchId });
           for (const it of active) {
             if (listOf.get(it.node) !== lists[at] || !landing(it)) continue;
-            const records = recordsOfItem(pending, it.node as DocumentId);
+            const records = recordsOfItem(draft, pending, it.node);
             if (records.length === 0) return "changed" as const;
             chosen.set(it.node, records);
           }
@@ -167,8 +174,9 @@ export function createApplyTreeOperations(input: {
                   click.commandId,
                   mine.flatMap((it) => (chosen.get(it.node) ?? []).map((record) => record.id)),
                 );
+          const live = applied ? writer.view(LIVE) : null;
           for (const it of mine)
-            if (recordsOfItem(applied?.copies ?? [], it.node as DocumentId).length > 0)
+            if (live && recordsOfItem(live, applied?.copies ?? [], it.node).length > 0)
               landed.add(it.node);
           if (!applied && restored.length === 0) continue;
           perList.push({

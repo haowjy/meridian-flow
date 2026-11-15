@@ -183,6 +183,8 @@ export function replay(
   // Rule 10: a purge is final wherever it sits. A Yjs-merged record placed before it in the list
   // (an offline restore or move admitted later) never lifts the delete it empties.
   const purgedDeletes = new Set<string>();
+  // Each purged node, by the position of the purge that took it.
+  const purgedAt = new Map<string, number>();
   for (const value of values) {
     const read = readStored(value);
     if (read.ok && read.record.type === "purge") purgedDeletes.add(read.record.delete);
@@ -484,20 +486,20 @@ export function replay(
         lift(record, node, { index });
         break;
       case "purge": {
-        // Rule 10: final. The server's `held` check ran before it wrote the purge.
+        // Rule 10: final, and exactly what the server found the delete covering when it purged
+        // (and whose content it released). A node someone put inside since, by a record placed
+        // before the purge but admitted after it, was not purged: it goes to its source's top.
         const entry = deletes.find((d) => d.id === record.delete || d.from === record.delete);
         if (!entry || entry.node !== record.node) {
           skip("missing-node");
           break;
         }
-        // What the delete covers now: the nodes of its cascade that still sit under its node.
-        const taken = new Set([
-          entry.node,
-          ...[...entry.cascade].filter((id) => isAncestor(entry.node, id)),
-        ]);
-        for (const id of taken) {
+        for (const id of record.nodes) {
           const gone = nodes.get(id);
-          if (gone) gone.purged = true;
+          if (gone && !gone.purged) {
+            gone.purged = true;
+            purgedAt.set(id, index);
+          }
         }
         deletes = deletes.filter((d) => d !== entry);
         break;
@@ -505,10 +507,31 @@ export function replay(
     }
   }
 
+  if (purgedAt.size > 0) rescueFromPurged(nodes, purgedAt);
   return {
     ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
     dropped: [],
   };
+}
+
+/**
+ * Every node standing directly under a purged one goes to the top of the source its place was in,
+ * arriving there at that purge. Once purged a node takes nothing (`placeIn`), so what is under one
+ * at the end was under it at its purge.
+ */
+function rescueFromPurged(nodes: Map<string, Working>, purgedAt: ReadonlyMap<string, number>) {
+  const sourceAbove = (id: string) => {
+    let parent = id;
+    for (let guard = 0; !isSourceRoot(parent) && guard <= nodes.size; guard += 1)
+      parent = nodes.get(parent)?.parent ?? parent;
+    return parent;
+  };
+  for (const node of nodes.values()) {
+    const at = node.purged ? undefined : purgedAt.get(node.parent);
+    if (at === undefined) continue;
+    node.parent = sourceAbove(node.parent);
+    node.arrivedAt = at;
+  }
 }
 
 /** Whether a restore lifts a delete: the one it `undoes`, or every delete of the node if it undoes none. */
@@ -730,4 +753,20 @@ export function deleteCovering(projection: TreeProjection, id: string): TrashEnt
     if (entry) return entry;
   }
   return undefined;
+}
+
+/**
+ * The records that are one node's item in a view: those made on it, and the delete in force that
+ * covers it from a folder above (`deleteCovering`). A delete whose recorded cascade names the node
+ * is not among them once the node has left the folder: the cascade is what its author saw.
+ */
+export function recordsOfItem(
+  projection: TreeProjection,
+  records: readonly TreeRecord[],
+  node: string,
+): TreeRecord[] {
+  const covering = deleteCovering(projection, node);
+  return records.filter(
+    (record) => record.node === node || (record.type === "delete" && record.id === covering?.id),
+  );
 }

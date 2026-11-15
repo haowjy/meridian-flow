@@ -292,6 +292,7 @@ describe("a tree list's room (postgres)", () => {
       draft: null,
       type: "purge",
       delete: first.id,
+      nodes: [first.node],
     } as TreeRecord;
     const brokenDoc = tab.copy.doc;
     createDocument(tab.copy, "second");

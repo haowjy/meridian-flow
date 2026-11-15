@@ -20,7 +20,7 @@ const FIELDS = new Map<string, readonly string[]>([
 /** What the server adds: a file's blob, a document's aliases and properties mark, and `purge`, which names the Trash entry it empties. */
 export const SERVER_FIELDS = new Map<string, readonly string[]>([
   ["create", ["aliases", "hasProperties", "blob"]],
-  ["purge", [...BASE, "delete"]],
+  ["purge", [...BASE, "delete", "nodes"]],
 ]);
 
 export type ReadRecord = { ok: true; record: TreeRecord } | { ok: false; why: string };
@@ -172,22 +172,28 @@ function read(value: unknown): ReadRecord {
     }
     case "delete": {
       const { cascade } = value;
-      if (
-        !Array.isArray(cascade) ||
-        Object.getPrototypeOf(cascade) !== Array.prototype ||
-        cascade.length > MAX_CASCADE ||
-        !cascade.every((member) => matches(member, ID))
-      )
-        return fail("cascade");
+      if (!isIds(cascade, MAX_CASCADE)) return fail("cascade");
       return { ok: true, record: { ...base, type: "delete", cascade: [...cascade] } };
     }
-    case "purge":
+    case "purge": {
+      const { nodes } = value;
       if (!matches(value.delete, ID)) return fail("delete");
-      return { ok: true, record: { ...base, type: "purge", delete: value.delete } };
+      if (!isIds(nodes, MAX_CASCADE + 1)) return fail("nodes");
+      return {
+        ok: true,
+        record: { ...base, type: "purge", delete: value.delete, nodes: [...nodes] },
+      };
+    }
     default:
       return { ok: true, record: { ...base, type: "restore" } };
   }
 }
+
+const isIds = (v: unknown, max: number): v is string[] =>
+  Array.isArray(v) &&
+  Object.getPrototypeOf(v) === Array.prototype &&
+  v.length <= max &&
+  v.every((member) => typeof member === "string" && ID.test(member));
 
 const isAliases = (v: unknown): v is string[] =>
   Array.isArray(v) &&

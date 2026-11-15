@@ -85,10 +85,8 @@ export function installTreeListDebugHook(
     },
     appendForged(kind, id) {
       const { doc } = handleOf(kind, id).session.getSnapshot();
-      new TreeWriter(doc).purge(`user:${accountId}`, {
-        id: crypto.randomUUID(),
-        node: crypto.randomUUID(),
-      });
+      const node = crypto.randomUUID();
+      new TreeWriter(doc).purge(`user:${accountId}`, { id: crypto.randomUUID(), node }, [node]);
     },
     close() {
       for (const handle of handles.values()) handle.release();

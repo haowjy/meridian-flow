@@ -19,7 +19,7 @@ import type { BranchId, CommandId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
-import { discardDraft, newId, pendingRecords } from "@meridian/project-tree";
+import { discardDraft, newId, pendingRecords, recordsOfItem } from "@meridian/project-tree";
 import { and, eq, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -68,14 +68,10 @@ async function discardTreeRecords(
     make: (copies) =>
       copies.flatMap(({ writer }) => {
         const pending = pendingRecords(writer.doc, input.branchId);
+        const draft = writer.view({ draft: input.branchId });
         const items = input.documents;
         const only = items
-          ? pending.filter(
-              (record) =>
-                items.includes(record.node as DocumentId) ||
-                (record.type === "delete" &&
-                  record.cascade.some((id) => items.includes(id as DocumentId))),
-            )
+          ? [...new Set(items.flatMap((id) => recordsOfItem(draft, pending, id)))]
           : pending;
         const discarded = new Set(
           discardDraft(
@@ -86,13 +82,19 @@ async function discardTreeRecords(
             items ? only.map((r) => r.id) : undefined,
           ),
         );
-        return pending.filter((record) => discarded.has(record.id));
+        // A discarded delete had what it covered in the Work's view, not what its author saw.
+        return pending
+          .filter((record) => discarded.has(record.id))
+          .map((record) => ({
+            record,
+            covered: draft.trash.find((entry) => entry.id === record.id)?.cascade ?? [],
+          }));
       }),
   });
-  for (const record of result) {
+  for (const { record, covered } of result) {
     had.add(record.node as DocumentId);
     if (record.type === "create") created.add(record.node as DocumentId);
-    if (record.type === "delete") for (const id of record.cascade) had.add(id as DocumentId);
+    for (const id of covered) had.add(id as DocumentId);
   }
   return { had, created };
 }

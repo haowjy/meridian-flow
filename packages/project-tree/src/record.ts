@@ -106,9 +106,11 @@ export type DeleteRecord = RecordBase & { type: "delete"; cascade: string[] };
 export type RestoreRecord = RecordBase & { type: "restore" };
 /**
  * One Trash entry emptied: `delete` is the id of the delete record that put it there (`node` is
- * that delete's node), and what that delete took is gone for good. Only the server writes one.
+ * that delete's node), and `nodes` exactly what the server found that delete covering when it
+ * purged (the content it released). Those are gone for good; anything else standing under a
+ * purged node goes to the top of its source. Only the server writes one.
  */
-export type PurgeRecord = RecordBase & { type: "purge"; delete: string };
+export type PurgeRecord = RecordBase & { type: "purge"; delete: string; nodes: string[] };
 
 export type TreeRecord =
   | CreateRecord

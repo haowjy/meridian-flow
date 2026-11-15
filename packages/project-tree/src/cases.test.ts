@@ -31,6 +31,12 @@ function replica(clientID: number): TreeWriter {
   return new TreeWriter(doc);
 }
 
+/** Empties a Trash entry as the server does: the purge names what the entry covers now. */
+function purge(w: TreeWriter, removal: { id: string; node: string }) {
+  const entry = w.view(LIVE).trash.find((each) => each.id === removal.id);
+  return w.purge("system", removal, entry ? [entry.node, ...entry.cascade] : []);
+}
+
 function sync(...writers: TreeWriter[]) {
   for (const from of writers)
     for (const to of writers)
@@ -492,7 +498,7 @@ describe("file tree log: cases found in review", () => {
     }).node;
     const removal = a.delete(LIVE, W, ch);
     expect(replayView(a.doc, LIVE).trash.map((entry) => entry.node)).toEqual([ch]);
-    a.purge("system", removal);
+    purge(a, removal);
     a.restore(LIVE, W, ch);
     a.rename(LIVE, W, ch, "Back");
     const live = replayView(a.doc, LIVE);
@@ -540,7 +546,7 @@ describe("file tree log: cases found in review", () => {
     const arc = a.create(LIVE, A, { kind: "folder", name: "Arc", parent: ROOT }).node;
     const renamed = a.rename({ draft: "w" }, A, arc, "Act 1");
     discardDraft(a, "w", W, "cmd-1");
-    a.purge("system", a.delete(LIVE, A, arc));
+    purge(a, a.delete(LIVE, A, arc));
     const result = restoreDiscard(a, "cmd-1", A, "w", "restore-3");
     expect(result).toEqual({ copies: [], leftOut: [{ record: renamed, why: "purged" }] });
   });
