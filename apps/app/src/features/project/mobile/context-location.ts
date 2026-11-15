@@ -1,4 +1,3 @@
-import { readSegment } from "@meridian/contracts/protocol";
 /**
  * context-location — pure helpers describing the phone shell's drilled-in
  * context location (Files › scheme › folders › file) for the top-bar
@@ -9,6 +8,7 @@ import { readSegment } from "@meridian/contracts/protocol";
  * stripped, so the scheme root has no `folder` param at all). Everything here
  * is pure string/array logic so it unit-tests without the shell or Lingui.
  */
+import { readSegment } from "@meridian/contracts/protocol";
 
 /** One ancestor folder of the current context location. */
 export type FolderCrumb = {
