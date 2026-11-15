@@ -21,15 +21,15 @@ import type {
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import { type Ranges, union } from "./item-ranges";
 import {
   type CopyHold,
   documentSessionPersistenceKey,
   draftRoomPersistenceKey,
-  furthest,
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
-import { missingText } from "./rescued-text";
+import { offer, readBeyond } from "./rescued-text";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
 const LIVE_DOC_SOFT_CAP = 50;
@@ -94,11 +94,11 @@ export class DocumentSessionRegistry {
   private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
   private readonly handedBack = new WeakSet<DocumentSession>();
   /**
-   * Hand-backs shown here that the writer is not done with yet, by the copy they came from, as
-   * what each covers. Reads here offer none of it again, and the copy is kept: until `done`
-   * records it in the copy, the toast must not be the only place its words are.
+   * Notices shown here that the writer is not done with yet, by the copy they came from, as what
+   * each offered. Reads here offer none of it again; until `done` records it in the copy, the
+   * copy holds those words outside its acted-on sets, so it is kept.
    */
-  private readonly pendingHandBacks = new Map<string, Set<Map<number, number>>>();
+  private readonly pendingHandBacks = new Map<string, Set<Ranges>>();
   /** Each session's copy: the room's key and the incarnation it opened. */
   private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
   private readonly replacing = new WeakSet<DocumentSession>();
@@ -435,22 +435,22 @@ export class DocumentSessionRegistry {
     // Until the first handshake the document is not the server's, and everything would look unsent.
     await session.whenSynced();
     const settled = session.getSnapshot().status !== "destroyed";
-    const server = Y.decodeStateVector(Y.encodeStateVector(session.document));
+    const server = Y.encodeStateVector(session.document);
+    const kept = new Set<string>();
     try {
       if (settled)
-        for (const { name, update, handedBack } of older) {
-          const known = furthest(server, handedBack, ...(this.pendingHandBacks.get(name) ?? []));
-          const text = missingText(update, Y.encodeStateVector(known));
-          if (text)
-            this.handBack(text, "owner-closed", {
-              name,
-              covered: furthest(known, Y.decodeStateVector(Y.encodeStateVectorFromUpdate(update))),
-            });
-        }
+        for (const { name, update, handedBack } of older)
+          readBeyond(update, server, (document, lacking) => {
+            // Deletable only when nothing beyond the server has words outside the acted-on sets.
+            const left = offer(document, lacking, handedBack);
+            if (left.text === null) return;
+            kept.add(name);
+            const notice = offer(document, left.ranges, union(...this.pendingIn(name)));
+            if (notice.text)
+              this.handBack(notice.text, "owner-closed", { name, offered: notice.ranges });
+          });
     } finally {
-      await Promise.all(
-        older.map((copy) => copy.finish(!settled || this.pendingHandBacks.has(copy.name))),
-      );
+      await Promise.all(older.map((copy) => copy.finish(!settled || kept.has(copy.name))));
     }
   }
 
@@ -517,15 +517,18 @@ export class DocumentSessionRegistry {
       this.replacing.delete(old);
       return;
     }
-    const edits = old.undeliverableEdits();
-    // Wordless edits made by another tab or an earlier page are not told to this one.
     const copy = this.copyOf.get(old);
     if (!copy) throw new Error(`Session has no local copy to advance: ${old.roomKey}`);
-    if (edits && (edits.typing !== null || edits.own))
-      this.handBack(edits.typing, "owner-closed", {
-        name: incarnationName(copy.key, copy.incarnation),
-        covered: edits.covered,
-      });
+    const name = incarnationName(copy.key, copy.incarnation);
+    const handedBack = union(await this.copies.handedBack(name), ...this.pendingIn(name));
+    if (!this.isRoomSession(old)) {
+      this.replacing.delete(old);
+      return;
+    }
+    const edits = old.undeliverableEdits(handedBack);
+    // Wordless edits made by another tab or an earlier page are not told to this one.
+    if (edits && (edits.text !== null || edits.own))
+      this.handBack(edits.text, "owner-closed", { name, offered: edits.ranges });
     void old.makeInert().catch(reportError);
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
@@ -594,14 +597,14 @@ export class DocumentSessionRegistry {
   private handBack(
     text: string | null,
     cause: UnsentTypingCause,
-    from?: { name: string; covered: Map<number, number> },
+    from?: { name: string; offered: Ranges },
   ): void {
     if (text === null && cause !== "owner-closed") return;
     const id = crypto.randomUUID();
     let done = () => {};
     if (from) {
       const pending = this.pendingHandBacks.get(from.name) ?? new Set();
-      pending.add(from.covered);
+      pending.add(from.offered);
       this.pendingHandBacks.set(from.name, pending);
       let recorded = false;
       done = () => {
@@ -609,9 +612,9 @@ export class DocumentSessionRegistry {
         recorded = true;
         // Pending until written: a read here in between must not offer the words again.
         void this.copies
-          .recordHandedBack(from.name, id, from.covered)
+          .recordHandedBack(from.name, id, from.offered)
           .then(() => {
-            pending.delete(from.covered);
+            pending.delete(from.offered);
             if (pending.size === 0 && this.pendingHandBacks.get(from.name) === pending)
               this.pendingHandBacks.delete(from.name);
           })
@@ -620,6 +623,10 @@ export class DocumentSessionRegistry {
     }
     const typing = Object.freeze({ id, cause, text, done });
     for (const observer of this.unsentTypingObservers) observer(typing);
+  }
+
+  private pendingIn(name: string): Ranges[] {
+    return [...(this.pendingHandBacks.get(name) ?? [])];
   }
 
   private retainedSnapshot(): readonly RetainedLiveDocumentReference[] {

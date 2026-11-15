@@ -577,23 +577,30 @@ from the wire alone, with nothing stored between handshakes.
   tabs advancing at once end on the same number. The old session is destroyed when its editors
   have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
   older-copy path below, like any older incarnation: read whole against the new session's first
-  handshake, so words another tab wrote into the same copy meanwhile come back (once). A
-  hand-back from a copy is recorded in that copy when the writer is done with its toast (Copy
-  pressed or Dismiss; the toast never times out): `UnsentTyping.done` writes, into the copy's
-  `custom` store, what the hand-back covered (the deciding handshake's: the server's state plus
-  what it lacked). Every read of an older copy offers only what lies beyond the server, those
-  records, and this tab's hand-backs not yet done with; a tab keeps a copy while one of its
-  hand-backs from it is not done with. So a reload or crash with the toast still showing offers
-  its words again (the toast is never the only place they are), and once the writer has acted, in
-  any tab, no read offers them again. Two live tabs whose read admissions overlap each offer the
-  words; one acting is enough. A copy can't drop handed-back words instead: it is shared with
-  tabs still writing into it, and Yjs can't remove an operation. Holders follow through
-  `observeReplacement` (live bindings and open tabs, draft room reads); a review mount carries its
-  reading position across it (`use-reading-position.ts`).
+  handshake, so words another tab wrote into the same copy meanwhile come back (once). Holders
+  follow through `observeReplacement` (live bindings and open tabs, draft room reads); a review
+  mount carries its reading position across it (`use-reading-position.ts`).
+- **Each notice records exactly what it offered.** A hand-back from a copy carries the item
+  ranges (client, clock range) whose words it shows, and nothing else: not the server's state,
+  not an earlier notice's words. When the writer is done with its toast (Copy pressed or
+  Dismiss; the toast never times out), `UnsentTyping.done` adds that set, and only it, to the
+  copy's `custom` store, under the copy's shared lock, never recreating a deleted copy. Every
+  reader offers through one function (`offer` in `rescued-text.ts`): what the server lacks,
+  minus the union of the copy's acted-on sets, minus this tab's notices from the copy still
+  showing. The readers are the replacement (`undeliverableEdits`, the session's typing) and the
+  older-copy read below (the whole copy). A copy is deletable only when nothing it holds beyond
+  the server has words outside its acted-on sets, so a notice still showing keeps it. So a
+  reload or crash offers again every notice's words the writer has not acted on, acting on one
+  notice consumes only its own words, and once acted on, in any tab, no reader offers them
+  again. Two live tabs whose read admissions overlap each offer the words; one acting is enough.
+  A state vector can't be the record: a later notice's would also cover an earlier notice's
+  words, and a per-client clock can't keep the holes left by a notice not acted on. A copy can't
+  drop handed-back words instead: it is shared with tabs still writing into it, and Yjs can't
+  remove an operation.
 - A session that opens a room's current incarnation reads the older ones no tab holds against
-  its first handshake, hands back the words the server lacks that no acted-on hand-back covers
-  (never a wordless toast, which only the current session's own edit earns), and deletes them,
-  unless one of its hand-backs from them is still showing: then the next open deletes them.
+  its first handshake, offers what `offer` leaves (never a wordless toast, which only the
+  current session's own edit earns), and deletes each one that is deletable; one that is not
+  stays for the next open.
 - Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
   (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
 

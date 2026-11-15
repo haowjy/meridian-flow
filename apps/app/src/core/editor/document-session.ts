@@ -52,11 +52,11 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import { DocumentHistory } from "./editor-history";
+import type { Ranges } from "./item-ranges";
 import {
   commitContentInitialization,
   readContentInitialization,
 } from "./local-content-initialization";
-import { coveredBy } from "./local-document-copies";
 import { LocalDocumentPeers } from "./local-document-peers";
 import {
   createLocalPresence,
@@ -598,23 +598,17 @@ export class DocumentSession {
   }
 
   /**
-   * What the last read-admitted handshake found that the server lacks, for the writer: the words
-   * typed here (null when there are none), whether this session wrote any of it through an
-   * editor or its Undo, and what that handshake covered (`coveredBy`), for the record a hand-back
-   * leaves in the copy. Null when the room holds none.
+   * What a notice offers from the last read-admitted handshake (`UnsentEdits.undeliverable`): the
+   * typing the server lacks outside `handedBack`, its words (null when there are none), and whether
+   * this session wrote any of what is left through an editor or its Undo. Null when the room holds
+   * none.
    */
-  undeliverableEdits(): {
-    typing: string | null;
-    own: boolean;
-    covered: Map<number, number>;
-  } | null {
+  undeliverableEdits(
+    handedBack: Ranges,
+  ): { ranges: Ranges; text: string | null; own: boolean } | null {
     const difference = this.lastDifference;
     if (!difference || !this.holdsUndeliverable) return null;
-    return {
-      typing: this.unsent.typing(difference.lacking),
-      own: this.unsent.holdsOwnEdits(difference),
-      covered: coveredBy(difference),
-    };
+    return this.unsent.undeliverable(difference, handedBack);
   }
 
   /**

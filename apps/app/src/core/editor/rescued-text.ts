@@ -5,6 +5,7 @@
  */
 import * as Y from "yjs";
 
+import { insertedBy, type Ranges, subtract } from "./item-ranges";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type SchemaRepairEvidence = {
@@ -149,45 +150,49 @@ export function documentText(document: Y.Doc): string | null {
  * change, a deletion).
  */
 export function unsentText(document: Y.Doc, unacknowledged: Uint8Array): string | null {
-  const inserted = new Map<number, { clock: number; len: number }[]>();
-  for (const struct of Y.decodeUpdate(unacknowledged).structs) {
-    if (!(struct instanceof Y.Item)) continue;
-    const ranges = inserted.get(struct.id.client) ?? [];
-    ranges.push({ clock: struct.id.clock, len: struct.length });
-    inserted.set(struct.id.client, ranges);
-  }
-  return typedText(document, inserted);
+  return typedText(document, insertedBy(unacknowledged));
 }
 
-/** The live words of the items in `inserted` (clock ranges by client); null when they hold none. */
-export function typedText(
-  document: Y.Doc,
-  inserted: Map<number, { clock: number; len: number }[]>,
-): string | null {
+/** The live words of the items in `ranges`; null when they hold none. */
+function typedText(document: Y.Doc, ranges: Ranges): string | null {
+  const clients = new Map(
+    [...ranges].map(([client, list]) => [
+      client,
+      list.map(([from, to]) => ({ clock: from, len: to - from })),
+    ]),
+  );
   const { text } = textInRanges(
     document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    { clients: inserted },
+    { clients },
     true,
   );
   return text || null;
 }
 
 /**
- * The live words of `copy` (an update) beyond `known` (a state vector): what a room's older copy
- * held that the server never got, once `known` covers the server's state.
+ * What a hand-back notice offers, for every reader of what a copy holds: the items of `lacking`
+ * (what the server lacks) outside `handedBack` (the notices acted on, and those still showing
+ * here), and their live words in `document`. The notice records `ranges`, exactly what it offered.
  */
-export function missingText(copy: Uint8Array, known: Uint8Array): string | null {
+export function offer(
+  document: Y.Doc,
+  lacking: Ranges,
+  handedBack: Ranges,
+): { ranges: Ranges; text: string | null } {
+  const ranges = subtract(lacking, handedBack);
+  return { ranges, text: typedText(document, ranges) };
+}
+
+/** `read` on the items of `copy` (an update) beyond `server` (a state vector), in a scratch document. */
+export function readBeyond<T>(
+  copy: Uint8Array,
+  server: Uint8Array,
+  read: (document: Y.Doc, lacking: Ranges) => T,
+): T {
   const scratch = new Y.Doc();
   try {
     Y.applyUpdate(scratch, copy);
-    const missing = new Map<number, { clock: number; len: number }[]>();
-    for (const struct of Y.decodeUpdate(Y.encodeStateAsUpdate(scratch, known)).structs) {
-      if (!(struct instanceof Y.Item)) continue;
-      const ranges = missing.get(struct.id.client) ?? [];
-      ranges.push({ clock: struct.id.clock, len: struct.length });
-      missing.set(struct.id.client, ranges);
-    }
-    return typedText(scratch, missing);
+    return read(scratch, insertedBy(Y.encodeStateAsUpdate(scratch, server)));
   } finally {
     scratch.destroy();
   }

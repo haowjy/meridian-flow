@@ -22,77 +22,23 @@ import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 
 import type { HandshakeDifference } from "./document-session";
-import { typedText } from "./rescued-text";
+import {
+  addList,
+  addRange,
+  type DeleteSet,
+  hasMoreThan,
+  listOf,
+  type RangeList,
+  type Ranges,
+  rangesOf,
+  within,
+  without,
+} from "./item-ranges";
+import { offer } from "./rescued-text";
 
-type DeleteSet = Y.Transaction["deleteSet"];
-/** Clock ranges per client, `[from, to)`. */
-type Ranges = Map<number, Array<[number, number]>>;
-type RangeList = Array<[client: number, from: number, to: number]>;
 type DisplayRecord = { inserted: RangeList; deleted: RangeList };
 
 const RECORD_PREFIX = `meridian:display-writes:${collabSchemaKeyTag()}:`;
-
-function addRange(ranges: Ranges, client: number, from: number, to: number): void {
-  if (to <= from) return;
-  const list = ranges.get(client) ?? [];
-  const last = list.at(-1);
-  if (last && last[1] === from) last[1] = to;
-  else list.push([from, to]);
-  ranges.set(client, list);
-}
-
-function rangesOf(deleteSet: DeleteSet): Ranges {
-  const ranges: Ranges = new Map();
-  for (const [client, items] of deleteSet.clients)
-    for (const { clock, len } of items) addRange(ranges, client, clock, clock + len);
-  return ranges;
-}
-
-/** `ranges` with `[from, to)` of `client` removed, as `[from, to)` pieces. */
-function without(
-  from: number,
-  to: number,
-  removed: ReadonlyArray<[number, number]> | undefined,
-): Array<[number, number]> {
-  let pieces: Array<[number, number]> = [[from, to]];
-  for (const [start, end] of removed ?? [])
-    pieces = pieces.flatMap(([a, b]) =>
-      end <= a || start >= b
-        ? [[a, b] as [number, number]]
-        : [
-            ...(a < start ? [[a, start] as [number, number]] : []),
-            ...(end < b ? [[end, b] as [number, number]] : []),
-          ],
-    );
-  return pieces;
-}
-
-function within(ranges: Ranges, client: number, from: number, to: number): Array<[number, number]> {
-  const kept: Array<[number, number]> = [];
-  for (const [start, end] of ranges.get(client) ?? []) {
-    const a = Math.max(from, start);
-    const b = Math.min(to, end);
-    if (a < b) kept.push([a, b]);
-  }
-  return kept;
-}
-
-/** Whether any clock of `a` is not in `b`. */
-function hasMoreThan(a: Ranges, b: Ranges): boolean {
-  for (const [client, list] of a)
-    for (const [from, to] of list) if (without(from, to, b.get(client)).length > 0) return true;
-  return false;
-}
-
-function listOf(ranges: Ranges): RangeList {
-  return [...ranges].flatMap(([client, list]) =>
-    list.map(([from, to]): [number, number, number] => [client, from, to]),
-  );
-}
-
-function addList(ranges: Ranges, list: RangeList): void {
-  for (const [client, from, to] of list) addRange(ranges, client, from, to);
-}
 
 export class UnsentEdits {
   /** What this session wrote through an editor or the document's Undo and Redo, by client id. */
@@ -223,42 +169,37 @@ export class UnsentEdits {
     return lacking;
   }
 
-  /** Whether the difference holds something this session itself wrote through an editor or its Undo. */
-  holdsOwnEdits({ lacking, server }: HandshakeDifference): boolean {
-    const update = Y.decodeUpdate(lacking);
-    for (const struct of update.structs) {
-      if (struct instanceof Y.Skip) continue;
-      const { client, clock } = struct.id;
-      if (within(this.ledgerInserted, client, clock, clock + struct.length).length > 0) return true;
-    }
-    const lackingDeleted = this.deletionsLacking(update.ds, rangesOf(Y.decodeSnapshot(server).ds));
-    for (const [client, list] of lackingDeleted)
-      for (const [from, to] of list)
-        if (within(this.ledgerDeleted, client, from, to).length > 0) return true;
-    return false;
-  }
-
   /**
-   * The words handed back for an undeliverable difference: the live text of the items the server
-   * lacks that are typing. An item of this session's own client ids counts only inside the ledger;
-   * an item of any other client id counts whole, because something the server lacks was written in
-   * this browser by another tab, or by a session before a reload, and the copy does not say how.
+   * What a notice offers for an undeliverable difference (`offer`): the items the server lacks
+   * that are typing, outside `handedBack`, with their words, and whether that or a deletion the
+   * server lacks is this session's own. An item of this session's own client ids is typing only
+   * inside the ledger; an item of any other client id counts whole, because something the server
+   * lacks was written in this browser by another tab, or by a session before a reload, and the
+   * copy does not say how.
    */
-  typing(lacking: Uint8Array): string | null {
-    const ranges = new Map<number, { clock: number; len: number }[]>();
-    for (const struct of Y.decodeUpdate(lacking).structs) {
+  undeliverable(
+    { lacking, server }: HandshakeDifference,
+    handedBack: Ranges,
+  ): { ranges: Ranges; text: string | null; own: boolean } {
+    const update = Y.decodeUpdate(lacking);
+    const typing: Ranges = new Map();
+    for (const struct of update.structs) {
       if (!(struct instanceof Y.Item)) continue;
       const { client, clock } = struct.id;
-      const own = this.ownClients.has(client);
-      const kept = own
+      const kept = this.ownClients.has(client)
         ? within(this.ledgerInserted, client, clock, clock + struct.length)
         : [[clock, clock + struct.length] as [number, number]];
-      const list = ranges.get(client) ?? [];
       for (const [from, to] of kept)
         for (const [a, b] of without(from, to, this.displayInserted.get(client)))
-          list.push({ clock: a, len: b - a });
-      ranges.set(client, list);
+          addRange(typing, client, a, b);
     }
-    return typedText(this.document, ranges);
+    const offered = offer(this.document, typing, handedBack);
+    const lackingDeleted = this.deletionsLacking(update.ds, rangesOf(Y.decodeSnapshot(server).ds));
+    const own =
+      [...offered.ranges.keys()].some((client) => this.ownClients.has(client)) ||
+      [...lackingDeleted].some(([client, list]) =>
+        list.some(([from, to]) => within(this.ledgerDeleted, client, from, to).length > 0),
+      );
+    return { ...offered, own };
   }
 }
