@@ -174,6 +174,14 @@ export function offer(document: Y.Doc, lacking: Ranges, handedBack: Ranges): Off
   return { ranges, text: typedText(document, ranges) } as Offer;
 }
 
+/**
+ * A kept notice whose copy is gone (`LocalDocumentCopies.keep`): the copy's acted-on records went
+ * with it, so its words are what it kept.
+ */
+export function keptOffer(ranges: Ranges, text: string): Offer {
+  return { ranges, text } as Offer;
+}
+
 /** `read` on `copy` (an update) in a scratch document. */
 export function readCopy<T>(copy: Uint8Array, read: (document: Y.Doc) => T): T {
   const scratch = new Y.Doc();

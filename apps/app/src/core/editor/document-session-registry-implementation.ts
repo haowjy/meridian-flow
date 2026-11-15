@@ -21,7 +21,7 @@ import type {
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
-import { type Ranges, union } from "./item-ranges";
+import { addList, listOf, type Ranges, union } from "./item-ranges";
 import {
   type CopyHold,
   documentSessionPersistenceKey,
@@ -29,7 +29,7 @@ import {
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
-import { type Offer, offer, readBeyond, readCopy } from "./rescued-text";
+import { keptOffer, type Offer, offer, readBeyond, readCopy } from "./rescued-text";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
 const LIVE_DOC_SOFT_CAP = 50;
@@ -93,6 +93,8 @@ export class DocumentSessionRegistry {
   >();
   private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
   private readonly handedBack = new WeakSet<DocumentSession>();
+  /** The replay of kept notices (`offerKept`), once the first observer subscribes. */
+  private keptOffered: Promise<void> | null = null;
   /**
    * Notices shown here that the writer is not done with yet, by the copy they came from, as what
    * each offered. Reads here offer none of it again; until `done` records it in the copy, the
@@ -432,6 +434,8 @@ export class DocumentSessionRegistry {
     copyKey: string,
     incarnation: number,
   ): Promise<void> {
+    // A kept notice's read holds its copy, and its words must be pending before this subtracts them.
+    await this.keptOffered;
     const older = await this.copies.openOlder(copyKey, incarnation);
     if (older.length === 0) return;
     // Until the first handshake the document is not the server's, and everything would look unsent.
@@ -574,8 +578,10 @@ export class DocumentSessionRegistry {
     session.attachTransport(this.transportFactory);
   }
 
+  /** The first observer is also offered the notices kept from before this start (`offerKept`). */
   observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void {
     this.unsentTypingObservers.add(observer);
+    this.keptOffered ??= this.offerKept().catch((error: unknown) => reportError(error));
     return () => {
       this.unsentTypingObservers.delete(observer);
     };
@@ -615,12 +621,39 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * Shows `notice`, made from the copy `name` by `offer`. It is pending until the writer is done
-   * with it, then recorded in the copy, so no later read offers its words again. `text` is null
-   * for a change that has no words (a deletion, a format change).
+   * The notices with words shown before this start, in any tab, that the writer has not acted on:
+   * offered again, read from their copy wherever it is, without opening its document. A copy that
+   * is gone (a purge) leaves the words the notice kept.
    */
-  private handBack(cause: UnsentTypingCause, name: string, notice: Offer): void {
-    const id = crypto.randomUUID();
+  private async offerKept(): Promise<void> {
+    for (const kept of this.copies.kept()) {
+      const ranges: Ranges = new Map();
+      addList(ranges, kept.ranges);
+      const copy = await this.copies.read(kept.name);
+      const notice = copy
+        ? readCopy(copy.update, (document) =>
+            offer(document, ranges, union(copy.handedBack, ...this.pendingIn(kept.name))),
+          )
+        : keptOffer(ranges, kept.text);
+      if (notice.text === null) this.copies.forget(kept.id);
+      else this.handBack(kept.cause, kept.name, notice, kept.id);
+    }
+  }
+
+  /**
+   * Shows `notice`, made from the copy `name` by `offer`. It is pending until the writer is done
+   * with it, then recorded in the copy, so no later read offers its words again. Until then a
+   * notice with words is kept, so the next start offers it again. `text` is null for a change that
+   * has no words (a deletion, a format change).
+   */
+  private handBack(
+    cause: UnsentTypingCause,
+    name: string,
+    notice: Offer,
+    id: string = crypto.randomUUID(),
+  ): void {
+    if (notice.text !== null)
+      this.copies.keep({ id, name, cause, ranges: listOf(notice.ranges), text: notice.text });
     const pending = this.pendingHandBacks.get(name) ?? new Set();
     pending.add(notice.ranges);
     this.pendingHandBacks.set(name, pending);
@@ -632,6 +665,8 @@ export class DocumentSessionRegistry {
       void this.copies
         .recordHandedBack(name, id, notice.ranges)
         .then(() => {
+          // After the record: a crash in between leaves a kept notice the record then empties.
+          this.copies.forget(id);
           pending.delete(notice.ranges);
           if (pending.size === 0 && this.pendingHandBacks.get(name) === pending)
             this.pendingHandBacks.delete(name);

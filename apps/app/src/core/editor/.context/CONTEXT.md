@@ -602,7 +602,18 @@ from the wire alone, with nothing stored between handshakes.
   older-copy read below (the whole copy), and a closing or removing retirement (the session's
   unacknowledged typing, above). The registry's one way to show a notice, `handBack`, takes the
   copy's name and an `Offer`, which only `offer` makes, so no notice can skip the records. A copy is deletable only when nothing it holds beyond
-  the server has words outside its acted-on sets, so a notice still showing keeps it. So a
+  the server has words outside its acted-on sets, so a notice still showing keeps it.
+- **A notice not acted on comes back at the next start, wherever its document is.** `handBack`
+  keeps each notice with words in `localStorage`, one key per notice under the account
+  (`LocalDocumentCopies.keep`: its copy's name, cause, ranges and words), and `done` forgets it
+  once the record is written. The registry's first `observeUnsentTyping` (the account's start in
+  a tab) offers every kept notice again through `offer` against its copy, read without opening
+  the document, under the same id; a copy that is gone (the `removed` cause's purge) leaves the
+  words the notice kept (`keptOffer`). A closed draft or an older incarnation is rarely opened
+  again, so its document's next open can't be what offers them. A tab that starts while another
+  still shows a notice shows it too; acting in either is enough. Sign-out forgets the account's
+  kept notices with its copies. Wordless notices are not kept: they have nothing to lose.
+- So a
   reload or crash offers again every notice's words the writer has not acted on, acting on one
   notice consumes only its own words, and once acted on, in any tab, no reader offers them
   again. Two live tabs whose read admissions overlap each offer the words; one acting is enough.
