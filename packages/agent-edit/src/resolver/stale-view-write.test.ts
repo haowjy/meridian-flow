@@ -1,7 +1,7 @@
 /**
  * Guards the invariant "Text converges" (`.context/invariants.md`): a write planned on a
  * stale view lands after someone deleted text it shares words with. A word the model
- * kept stays deleted; a word it changed lands whole. The server plans a reply's write on the model's view
+ * kept stays deleted; a word it replaced lands whole. The server plans a reply's write on the model's view
  * and merges the update into the current room, which is what this test does with two Yjs
  * docs. Every row runs with the model's client id below and above the writer's, since Yjs
  * orders concurrent inserts at one place by client id.

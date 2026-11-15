@@ -7,7 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
-import { textInRanges } from "@meridian/agent-edit/yjs-mutation";
+import { describeRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { BranchId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import {
@@ -513,10 +513,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         document.excerptViews.set(doc, excerpt);
       }
       Y.applyUpdate(excerpt, part.update);
-      return {
-        before: textInRanges(excerpt, part.effect.deleted),
-        after: textInRanges(excerpt, part.effect.inserted),
-      };
+      return describeRanges(excerpt, part.effect.deleted, part.effect.inserted, part.frontier);
     },
     async commit({ plans, sequence, kind, userId, query }) {
       const attempt = attemptStorage.getStore();

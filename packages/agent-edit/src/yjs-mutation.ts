@@ -250,22 +250,79 @@ export function executeUndo(
   return updates;
 }
 
-/** String clocks only; container and formatting structs have no textual excerpt. */
-export function textInRanges(
+type ClockRange = { client: number; clock: number; len: number };
+
+/**
+ * A part's before and after text in reading order: from its first changed unit to its last,
+ * with the text it left alone between (`old cat sat` -> `young dog ran`). That text is what
+ * existed when the part was written (a clock below its `frontier`), whether or not a peer has
+ * since deleted it; text written later is no part of what the model changed. Text units only;
+ * container and formatting structs have no textual excerpt. Reads document positions, so
+ * the order never depends on clocks, which run opposite to position for a right-to-left write.
+ */
+export function describeRanges(
   doc: Y.Doc,
-  ranges: readonly { client: number; clock: number; len: number }[],
-): string {
-  return ranges
-    .flatMap((range) =>
-      Array.from({ length: range.len }, (_, offset) => {
-        const clock = range.clock + offset;
-        const item = findItem(doc, Y.createID(range.client, clock));
-        return item?.content instanceof Y.ContentString
-          ? item.content.str[clock - item.id.clock]
-          : "";
-      }),
-    )
-    .join("");
+  deleted: readonly ClockRange[],
+  inserted: readonly ClockRange[],
+  frontier: Readonly<Record<string, number>>,
+): { before: string; after: string } {
+  const unitsOf = (ranges: readonly ClockRange[]) => {
+    const keys = new Set<string>();
+    for (const range of ranges)
+      for (let offset = 0; offset < range.len; offset++)
+        keys.add(`${range.client}:${range.clock + offset}`);
+    return keys;
+  };
+  const gone = unitsOf(deleted);
+  const added = unitsOf(inserted);
+  // Only the texts holding a changed unit, and the elements above them, are walked.
+  const holders = new Set<Y.AbstractType<unknown>>();
+  const reach = new Set<Y.AbstractType<unknown>>();
+  let root: Y.AbstractType<unknown> | undefined;
+  for (const range of [...deleted, ...inserted])
+    for (const { item } of itemsInRange(doc, range)) {
+      holders.add(item.parent as Y.AbstractType<unknown>);
+      let type = item.parent;
+      while (type instanceof Y.AbstractType) {
+        reach.add(type);
+        root = type;
+        type = type._item?.parent ?? null;
+      }
+    }
+  const units: Array<{ char: string; role: "gone" | "added" | "kept" | "other" }> = [];
+  const walk = (type: Y.AbstractType<unknown>) => {
+    for (let item = type._start; item; item = item.right) {
+      if (item.content instanceof Y.ContentType) {
+        if (reach.has(item.content.type)) walk(item.content.type);
+      } else if (item.content instanceof Y.ContentString && holders.has(type)) {
+        for (let offset = 0; offset < item.content.str.length; offset++) {
+          const char = item.content.str[offset];
+          const key = `${item.id.client}:${item.id.clock + offset}`;
+          const role = gone.has(key)
+            ? "gone"
+            : added.has(key)
+              ? "added"
+              : item.id.clock + offset < (frontier[item.id.client] ?? 0)
+                ? "kept"
+                : "other";
+          units.push({ char, role });
+        }
+      }
+    }
+  };
+  if (root) walk(root);
+  const side = (changed: "gone" | "added") => {
+    const own = units.filter((unit) => unit.role === changed || unit.role === "kept");
+    const first = own.findIndex((unit) => unit.role === changed);
+    const last = own.findLastIndex((unit) => unit.role === changed);
+    return first < 0
+      ? ""
+      : own
+          .slice(first, last + 1)
+          .map((unit) => unit.char)
+          .join("");
+  };
+  return { before: side("gone"), after: side("added") };
 }
 
 /** Transaction deltas only; state-vector encoding would repeat old tombstones. */
