@@ -30,12 +30,9 @@ export function useDroppedCreate(projectId: string, documentId: string | null): 
   useEffect(() => {
     if (!recordId || !node) return;
     let current = true;
-    void registry
-      .localText(node as DocumentId)
-      .catch(() => null)
-      .then((text) => {
-        if (current) setTyped({ record: recordId, text });
-      });
+    void registry.localText(node as DocumentId).then((text) => {
+      if (current) setTyped({ record: recordId, text });
+    });
     return () => {
       current = false;
     };

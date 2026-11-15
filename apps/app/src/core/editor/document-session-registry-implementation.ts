@@ -169,7 +169,11 @@ export class DocumentSessionRegistry {
   }
 
   localText(documentId: DocumentId): Promise<string | null> {
-    return this.copies.text(documentId);
+    // A copy that can't be read is a tab without the typed words, not a failed bounce.
+    return this.copies.text(documentId).catch((error: unknown) => {
+      reportError(error);
+      return null;
+    });
   }
 
   /** Calls `observer` with the documents this browser holds a copy of for the account, and again as they change. */

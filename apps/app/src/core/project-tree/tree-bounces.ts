@@ -71,7 +71,7 @@ async function say(
       const view = record.draft === null ? LIVE : { draft: record.draft };
       return {
         record,
-        typed: record.kind === "document" ? await localText(record.node).catch(() => null) : null,
+        typed: record.kind === "document" ? await localText(record.node) : null,
         made: madeAt(session.replay(view), record),
       };
     }),
