@@ -8,6 +8,7 @@ import {
   writtenForm,
 } from "./context-uri.js";
 import { addressCandidates, canonicalLeaf, filenameSplits } from "./protocol/document-filename.js";
+import { readSegment, withSegmentName } from "./protocol/entry-segment.js";
 import { filetypeForExtension } from "./protocol/filetype.js";
 
 export { splitDocumentHrefSuffix } from "./context-uri.js";
@@ -98,17 +99,19 @@ export function documentPathKey(path: string): string {
  * as `page.html` is stored as name `page` and extension `html`.
  */
 export function documentPathCandidateNames(path: string): string[] {
-  return filenameSplits(canonicalLeaf(path.slice(path.lastIndexOf("/") + 1))).map(
-    (split) => split.name,
-  );
+  const { name } = readSegment(path.slice(path.lastIndexOf("/") + 1));
+  return filenameSplits(canonicalLeaf(name)).map((split) => split.name);
 }
 
 /** `path` without its registered extension (`a/again.md` is `a/again`); null when it has none. */
 export function omittedExtensionPath(path: string): string | null {
-  const dot = path.lastIndexOf(".");
-  return dot > path.lastIndexOf("/") + 1 && filetypeForExtension(path.slice(dot + 1)) !== null
-    ? path.slice(0, dot)
-    : null;
+  const slash = path.lastIndexOf("/");
+  const { name } = readSegment(path.slice(slash + 1));
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0 || filetypeForExtension(name.slice(dot + 1)) === null) return null;
+  return (
+    path.slice(0, slash + 1) + withSegmentName(path.slice(slash + 1), (leaf) => leaf.slice(0, dot))
+  );
 }
 
 /** The candidate a tree lookup finds at a path: its exact spelling, else its alias (`ch1.md` is `ch1`). */
