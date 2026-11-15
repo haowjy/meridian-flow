@@ -455,9 +455,5 @@ function filenameFromUri(uri: string): string {
   if (lastSlash >= 0 && lastSlash < trimmed.length - 1) {
     return decodeURIComponent(trimmed.slice(lastSlash + 1));
   }
-  const schemeSeparator = trimmed.indexOf("://");
-  if (schemeSeparator >= 0 && schemeSeparator < trimmed.length - 3) {
-    return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
-  }
   return uri;
 }

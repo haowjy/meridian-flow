@@ -410,6 +410,7 @@ function peerPictureBlock(editor: Editor) {
 function documentWithTable(): JSONContent {
   const cell = (text: string): JSONContent => ({
     type: "table_cell",
+    attrs: { id: `cell-${text}` },
     content: [{ type: "paragraph", attrs: { id: `p-${text}` }, content: [{ type: "text", text }] }],
   });
   return {
@@ -495,6 +496,7 @@ describe("a new picture lands where the writer asked for it", () => {
 function tableDocument2x2(): JSONContent {
   const cell = (text: string): JSONContent => ({
     type: "table_cell",
+    attrs: { id: `cell-${text}` },
     content: [{ type: "paragraph", attrs: { id: `p-${text}` }, content: [{ type: "text", text }] }],
   });
   return {

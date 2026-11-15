@@ -1,4 +1,5 @@
 /** Adds only pending folder roots; the source's tree remains the sole owner of every real node. */
+import { addressScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import type { TreeView } from "@/core/project-tree/tree-view";
@@ -19,7 +20,7 @@ export function useImportedTree(
       if (
         summary.projectId !== projectId ||
         !summary.root ||
-        summary.destination.folderUri.split(":")[0] !== scheme
+        addressScheme(summary.destination.folderUri) !== scheme
       )
         continue;
       const draw = coordinator?.observeRoot(

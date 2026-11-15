@@ -1,7 +1,6 @@
 /** Table transforms that are intentionally absent from prosemirror-tables. */
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { Fragment } from "@tiptap/pm/model";
-import type { Command, EditorState, Transaction } from "@tiptap/pm/state";
+import type { Command, EditorState } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
 import {
   addRowAfter,
@@ -134,26 +133,6 @@ function cellTextPosition(table: ProseMirrorNode, tablePos: number, row: number,
   return cellPos + 2;
 }
 
-function replaceTable(
-  state: EditorState,
-  dispatch: ((tr: Transaction) => void) | undefined,
-  selection: TableSelection,
-  table: ProseMirrorNode,
-  row: number,
-  column: number,
-) {
-  if (!dispatch) return true;
-  const tr = state.tr.replaceWith(
-    selection.tablePos,
-    selection.tablePos + selection.table.nodeSize,
-    table,
-  );
-  const cursor = cellTextPosition(table, selection.tablePos, row, column);
-  tr.setSelection(TextSelection.near(tr.doc.resolve(cursor))).scrollIntoView();
-  dispatch(tr);
-  return true;
-}
-
 export function moveTableRow(direction: -1 | 1): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
@@ -215,29 +194,37 @@ export function moveTableColumn(direction: -1 | 1): Command {
       return false;
     }
 
-    const rows: ProseMirrorNode[] = [];
-    selection.table.forEach((row) => {
-      const cells: ProseMirrorNode[] = [];
-      row.forEach((cell) => {
-        cells.push(cell);
-      });
-      const selectedCells = cells.splice(
-        selection.columnFrom,
-        selection.columnTo - selection.columnFrom + 1,
-      );
-      const insertAt = direction === -1 ? selection.columnFrom - 1 : selection.columnFrom + 1;
-      cells.splice(insertAt, 0, ...selectedCells);
-      rows.push(row.copy(Fragment.fromArray(cells)));
+    if (!dispatch) return true;
+    const tr = state.tr;
+    // Delete/insert only the moved cells: replacing their row would hide which cells moved
+    // from the binding and could re-create the cell a collaborator is typing in.
+    selection.table.forEach((row, rowOffset) => {
+      const cellStart = (index: number) => {
+        let pos = selection.tablePos + rowOffset + 2;
+        for (let i = 0; i < index; i++) pos += row.child(i).nodeSize;
+        return pos;
+      };
+      const from = cellStart(selection.columnFrom);
+      const to = cellStart(selection.columnTo + 1);
+      const rowStart = selection.tablePos + rowOffset + 2;
+      const moved = row.slice(from - rowStart, to - rowStart).content;
+      const target =
+        direction === -1 ? cellStart(selection.columnFrom - 1) : cellStart(selection.columnTo + 2);
+      tr.delete(tr.mapping.map(from), tr.mapping.map(to));
+      tr.insert(tr.mapping.map(target), moved);
     });
-    const table = selection.table.copy(Fragment.fromArray(rows));
-    return replaceTable(
-      state,
-      dispatch,
-      selection,
-      table,
-      selection.row,
-      selection.column + direction,
-    );
+    const table = tr.doc.nodeAt(selection.tablePos);
+    if (table) {
+      const cursor = cellTextPosition(
+        table,
+        selection.tablePos,
+        selection.row,
+        selection.column + direction,
+      );
+      tr.setSelection(TextSelection.near(tr.doc.resolve(cursor)));
+    }
+    dispatch(tr.scrollIntoView());
+    return true;
   };
 }
 

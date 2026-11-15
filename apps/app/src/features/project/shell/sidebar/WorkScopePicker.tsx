@@ -21,6 +21,7 @@ import {
 import { ChooserMark } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
+import { useWorkReviewCount } from "../../tree-version";
 import { useBringWorkBack } from "../../work/EndedWorkNotice";
 import { useChangesScope } from "./ChangesSource";
 
@@ -190,7 +191,7 @@ function PickRow({
 
 /** Only state that asks for action: documents to review and chats waiting on the writer. */
 function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
-  const toReview = work.pendingDocumentCount;
+  const toReview = useWorkReviewCount(work);
   if (toReview === 0 && needsYou === 0) return null;
   return (
     <span className="flex shrink-0 gap-2 text-xs text-jade-text tabular-nums">

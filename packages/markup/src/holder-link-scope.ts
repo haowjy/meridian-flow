@@ -12,6 +12,7 @@ import {
   aheadAddress,
   type CatalogDocument,
   type CatalogFolder,
+  canonicalContextUri,
   classifyWrittenLink,
   classifyWrittenSource,
   type DocumentRef,
@@ -24,6 +25,7 @@ import {
   type LinkResolution,
   mintAheadRef,
   parseLinkRef,
+  parseUnifiedContextUri,
   qualifyContextUriByHolder,
   type ResolvedDocumentHref,
   resolveDocumentHref,
@@ -90,8 +92,6 @@ const ASSET_PREFIX = "asset:";
  * and binds to nothing when written back.
  */
 export const UNSPELLED_UPLOAD: SpelledHref = Object.freeze({ href: "", address: null });
-/** Bare image sources are manuscript-root-relative (IMAGE_SOURCE_BASE). */
-const MANUSCRIPT_SCHEME = /^manuscript:\/\//i;
 
 /**
  * The rules over a catalog. `onMiss` hears every lookup the catalog never
@@ -122,7 +122,7 @@ export function createHolderLinkScope(
         // The upload's identity is its src, which no reader is ever shown.
         if (!address) return UNSPELLED_UPLOAD;
         return address.kind === "path"
-          ? { href: address.path, address: `manuscript://${address.path}` }
+          ? { href: address.path, address: canonicalContextUri("manuscript", address.path) }
           : {
               href: storedHref({ kind: "document", uri: address.uri }, ""),
               address: address.uri,
@@ -144,14 +144,9 @@ export function createHolderLinkScope(
       return folder ?? null;
     },
     assetFor(manuscriptPath) {
-      const uri = MANUSCRIPT_SCHEME.test(manuscriptPath)
-        ? manuscriptPath
-        : `manuscript://${manuscriptPath}`;
-      if (
-        /^[a-z][a-z0-9+.-]*:\/\//i.test(manuscriptPath) &&
-        !MANUSCRIPT_SCHEME.test(manuscriptPath)
-      )
-        return null;
+      const parsed = parseUnifiedContextUri(manuscriptPath);
+      if (!parsed.ok || parsed.value.scheme !== "manuscript") return null;
+      const uri = parsed.value.normalized;
       const id = catalog.assetFor(uri);
       if (id === undefined) onMiss(uri);
       return id ?? null;

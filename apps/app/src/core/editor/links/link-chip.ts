@@ -18,7 +18,11 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
+import {
+  addressScheme,
+  CONTEXT_URI_SCHEMES,
+  type ContextUriScheme,
+} from "@meridian/contracts/context-uri";
 import type { UploadState } from "@/core/uploads/upload-store";
 import { fileTypeLabel } from "@/lib/file-type-label";
 import { formatBytes } from "@/lib/format-size";
@@ -93,7 +97,7 @@ export function referenceChip(
 ): LinkChip {
   return {
     state: available ? "filled" : "dashed",
-    icon: reference.kind === "folder" ? "folder" : (uriFamily(reference.uri) ?? "file"),
+    icon: reference.kind === "folder" ? "folder" : (addressScheme(reference.uri) ?? "file"),
   };
 }
 
@@ -106,15 +110,8 @@ export function linkChipAttributes(chip: LinkChip): {
 }
 
 function targetFamily(target: LinkTarget, baseUri: string | null): ContextUriScheme | null {
-  if (target.kind === "scheme") return uriFamily(target.uri);
-  return baseUri ? uriFamily(baseUri) : null;
-}
-
-const SCHEMES: ReadonlySet<string> = new Set(CONTEXT_URI_SCHEMES);
-
-function uriFamily(uri: string): ContextUriScheme | null {
-  const scheme = /^([a-z][a-z\d+.-]*):\/\//i.exec(uri.trim())?.[1]?.toLowerCase();
-  return scheme && SCHEMES.has(scheme) ? (scheme as ContextUriScheme) : null;
+  if (target.kind === "scheme") return addressScheme(target.uri);
+  return baseUri ? addressScheme(baseUri) : null;
 }
 
 /** A file's type and size in one detail row; null when nothing is known. */
