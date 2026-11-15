@@ -96,6 +96,7 @@ import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRouter } from "./domain/agent-edit-router.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
 import { createApplyClickService } from "./domain/apply-click.js";
+import { createBranchAutoApply } from "./domain/branch-auto-apply.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranchReviewIdentity } from "./domain/branch-review-identity.js";
 import { createBranchReviewItems } from "./domain/branch-review-items.js";
@@ -542,6 +543,17 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const branches = createWorkBranchReviewService({
     commandDocuments: createDrizzleCommandDocuments(deps.db, { treeLists: deps.treeLists }),
     apply: applyCommands.apply,
+    autoApply: createBranchAutoApply({
+      items: async (owner) => {
+        const branch = await workBranches.activeForOwner(owner);
+        return branch
+          ? { branchId: branch.id, items: await reviewItems.list(branch.id) }
+          : { branchId: null, items: [] };
+      },
+      copyDraft: (draftId) => draftCoordinator.copyDraft(draftId),
+      apply: ({ branchId, request, envelope }, gate) =>
+        applyCommands.apply({ branchId, request, envelope }, gate),
+    }),
     unapplyClick: applyCommands.unapply,
     undoDiscard,
     listDiscards: (projectId) => discardEntries.list(projectId),

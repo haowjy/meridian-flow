@@ -446,6 +446,18 @@ export type DraftReviewApi = {
     request: import("@meridian/contracts/branches").ApplyItemsClick;
     envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
+  /**
+   * The server's Apply of the owner's branch items `select` names (an AI write that passed its
+   * check), as one Apply command. `gate` runs under the Apply's locks and may hold it back.
+   */
+  autoApply(input: {
+    owner: DraftOwner;
+    accountId: UserId;
+    projectId: ProjectId;
+    commandId: CommandId;
+    select(item: import("./domain/branch-review-items.js").DraftReviewItem): boolean;
+    gate?: import("./domain/apply-click.js").ApplyGate;
+  }): Promise<import("./domain/branch-auto-apply.js").AutoApplyResult>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */
   unapplyClick(input: {
     branchId: BranchId;

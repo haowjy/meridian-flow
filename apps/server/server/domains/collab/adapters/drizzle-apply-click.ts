@@ -49,6 +49,7 @@ import {
   ApplyClickRefused,
   type ApplyCommand,
   type ApplyCommandStore,
+  ApplyHeld,
   type PreparedApplyItem,
   type PreparedUnapply,
 } from "../domain/apply-click.js";
@@ -555,7 +556,7 @@ export function createDrizzleApplyClick(
       }
     },
     measured: deps.measured,
-    async apply(command, items) {
+    async apply(command, items, gate) {
       const { branchId, request, envelope } = command;
       const { commandId } = envelope;
       const userId = envelope.accountId as UserId;
@@ -587,6 +588,7 @@ export function createDrizzleApplyClick(
                 { branches: [branchId] },
                 async (): Promise<ApplyClickResult> => {
                   if (!(await deps.branches.lockActive(branchId))) return closed();
+                  if (gate && !(await gate())) throw new ApplyHeld();
                   const nodes = items.map((item) => item.node);
                   const revisions = await branchRowRevisions(db, branchId, nodes);
                   const reviewItems = new Map(

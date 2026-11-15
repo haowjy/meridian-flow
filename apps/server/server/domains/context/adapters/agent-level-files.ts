@@ -1,14 +1,20 @@
 /**
  * Reads one Agents level's package files from the documents that hold them: the level's folder
- * only, live view, and only the documents whose content moved since the last read.
+ * only, and only the documents whose content moved since the last read. A live read shows live;
+ * a branch read shows a chat's branch (its tree, and a draft's text over live's).
  */
 import { agentsRootOf } from "@meridian/contracts/agents";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { MarkdownDocumentStore } from "../../collab/index.js";
-import type { AgentLevelFiles, LevelFiles } from "../../packages/ports/agent-level-files.js";
+import type { Branches, DraftPeerShadowAccess, MarkdownDocumentStore } from "../../collab/index.js";
+import type {
+  AgentLevelFiles,
+  AgentsBranch,
+  LevelFiles,
+} from "../../packages/ports/agent-level-files.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import type { ContextDocument } from "../ports/context-document-store.js";
 import { LIVE_TREE } from "../tree/tree-view.js";
@@ -24,7 +30,9 @@ interface Candidate {
 
 export function createAgentLevelFiles(deps: {
   db: Database;
-  documentSync: Pick<MarkdownDocumentStore, "readAsMarkdown">;
+  documentSync: Pick<MarkdownDocumentStore, "readAsMarkdown"> &
+    Pick<DraftPeerShadowAccess, "readEffectiveMarkdown">;
+  branches: Pick<Branches, "viewForOwner">;
 }): AgentLevelFiles {
   const texts = new Map<string, { version: string; text: string }>();
 
@@ -45,7 +53,22 @@ export function createAgentLevelFiles(deps: {
     );
   }
 
-  async function textOf(document: ContextDocument, version: string | undefined): Promise<string> {
+  async function textOf(
+    document: ContextDocument,
+    version: string | undefined,
+    branch: AgentsBranch | undefined,
+  ): Promise<string> {
+    // A branch read is the chat's own view (its draft, else live), never cached by live's heads.
+    if (branch) {
+      const read = await deps.documentSync.readEffectiveMarkdown({
+        documentId: document.id as DocumentId,
+        threadId: branch.threadId as ThreadId,
+        destination: "draft",
+        owner: branch.owner,
+      });
+      if (!read.ok) throw new Error(`Cannot read ${document.name}: ${read.error.code}`);
+      return read.value.content;
+    }
     const cached = texts.get(document.id);
     if (cached && version !== undefined && cached.version === version) return cached.text;
     const read = await deps.documentSync.readAsMarkdown(document.id);
@@ -59,7 +82,7 @@ export function createAgentLevelFiles(deps: {
   }
 
   return {
-    async read({ level, userId, projectId }): Promise<LevelFiles> {
+    async read({ level, userId, projectId, branch }): Promise<LevelFiles> {
       const root = agentsRootOf(level);
       if (level === "project" && !projectId) return { files: {}, problems: {} };
       const store = createProjectContextDocumentStore(
@@ -68,10 +91,11 @@ export function createAgentLevelFiles(deps: {
         root.scheme,
         userId,
       );
+      const view = branch ? await deps.branches.viewForOwner(branch.owner) : LIVE_TREE;
       const rootFolder =
         root.path === ""
           ? { kind: "found" as const, node: null }
-          : await store.resolveFolderAt(LIVE_TREE, root.path);
+          : await store.resolveFolderAt(view, root.path);
       if (rootFolder.kind !== "found") return { files: {}, problems: {} };
 
       const candidates: Candidate[] = [];
@@ -80,10 +104,10 @@ export function createAgentLevelFiles(deps: {
       ];
       for (let next = pending.pop(); next; next = pending.pop()) {
         const { folderId, prefix } = next;
-        for (const folder of await store.listFolders(LIVE_TREE, folderId)) {
+        for (const folder of await store.listFolders(view, folderId)) {
           pending.push({ folderId: folder.id, prefix: `${prefix}${folder.name}/` });
         }
-        for (const document of await store.listDocuments(LIVE_TREE, folderId)) {
+        for (const document of await store.listDocuments(view, folderId)) {
           const name = document.extension
             ? `${document.name}.${document.extension}`
             : document.name;
@@ -111,7 +135,7 @@ export function createAgentLevelFiles(deps: {
       }
       const versions = await versionsOf(readable.map((candidate) => candidate.document.id));
       for (const { document, path } of readable) {
-        const text = await textOf(document, versions.get(document.id));
+        const text = await textOf(document, versions.get(document.id), branch);
         if (text.includes("\0")) problems[path] = `${path} is not plain text`;
         else files[path] = text;
       }

@@ -63,6 +63,22 @@ export function placeAccess(facts: FileFacts): AiAccess {
   return access === "ask" && !isDrafted(facts.contentScheme) ? "deny" : access;
 }
 
+/**
+ * A file of an Agents level an AI may write to, with no stored setting asking for review: the
+ * write lands as a draft, and the server Applies it only when the check finds that it widens no
+ * Agent (`agents-widening`). A chat in draft mode keeps every draft for the writer, so none is
+ * checked. The decision order is `deny`, then the widening setting (fixed at `ask`), then the
+ * place's own setting: this is the second term.
+ */
+export function appliesAfterCheck(principal: Principal, facts: FileFacts): boolean {
+  return (
+    principal.agent !== undefined &&
+    principal.agent.writeMode !== "draft" &&
+    facts.agentsLevel !== undefined &&
+    placeAccess(facts) === "auto-apply"
+  );
+}
+
 function destinationAt(
   writeMode: AiWriteMode,
   access: AiAccess,
@@ -111,7 +127,7 @@ export function destinationFor(principal: Principal, facts: FileFacts): FileDest
   return principal.agent
     ? destinationAt(
         principal.agent.writeMode,
-        placeAccess(facts),
+        appliesAfterCheck(principal, facts) ? "ask" : placeAccess(facts),
         facts.contentScheme,
         principal.agent.branchOwner,
       )
