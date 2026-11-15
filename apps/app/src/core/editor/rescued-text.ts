@@ -5,6 +5,7 @@
  */
 import * as Y from "yjs";
 
+import { insertedBy, type Ranges } from "./item-ranges";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type SchemaRepairEvidence = {
@@ -143,23 +144,40 @@ export function documentText(document: Y.Doc): string | null {
   return text || null;
 }
 
-/**
- * The words this browser typed into `document` that the server never acknowledged: the text
- * `unacknowledged` inserted and nothing has deleted since. Null when it holds no words (a format
- * change, a deletion).
- */
-export function unsentText(document: Y.Doc, unacknowledged: Uint8Array): string | null {
-  const inserted = new Map<number, { clock: number; len: number }[]>();
-  for (const struct of Y.decodeUpdate(unacknowledged).structs) {
-    if (!(struct instanceof Y.Item)) continue;
-    const ranges = inserted.get(struct.id.client) ?? [];
-    ranges.push({ clock: struct.id.clock, len: struct.length });
-    inserted.set(struct.id.client, ranges);
-  }
+/** The live words of the items in `ranges`; null when they hold none. */
+export function typedText(document: Y.Doc, ranges: Ranges): string | null {
+  const clients = new Map(
+    [...ranges].map(([client, list]) => [
+      client,
+      list.map(([from, to]) => ({ clock: from, len: to - from })),
+    ]),
+  );
   const { text } = textInRanges(
     document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    { clients: inserted },
+    { clients },
     true,
   );
   return text || null;
+}
+
+/** `read` on `copy` (an update) in a scratch document, which lives until `read` settles. */
+export async function readCopy<T>(copy: Uint8Array, read: (document: Y.Doc) => T | Promise<T>) {
+  const scratch = new Y.Doc();
+  try {
+    Y.applyUpdate(scratch, copy);
+    return await read(scratch);
+  } finally {
+    scratch.destroy();
+  }
+}
+
+/** `read` on the items of `copy` (an update) beyond `server` (a state vector), in a scratch document. */
+export function readBeyond<T>(
+  copy: Uint8Array,
+  server: Uint8Array,
+  read: (document: Y.Doc, lacking: Ranges) => T | Promise<T>,
+) {
+  return readCopy(copy, (document) =>
+    read(document, insertedBy(Y.encodeStateAsUpdate(document, server))),
+  );
 }

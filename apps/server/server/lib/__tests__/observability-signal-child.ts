@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import type { Gateway, StreamEvent } from "@meridian-flow/gateway";
+import type { Gateway, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { runtimeScenario } from "../../domains/runtime/loop/__tests__/runtime-harness.js";
 import {
   getOrBindProcessObservability,

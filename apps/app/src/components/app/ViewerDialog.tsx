@@ -29,6 +29,10 @@ export function ViewerDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
+        // A viewer opened from a list row is portaled, but React still carries its clicks and keys
+        // up to the row, which would open or move in the list behind it.
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
         showCloseButton={false}
         className="flex h-[min(48rem,calc(100dvh-2rem))] max-w-[min(56rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden rounded-lg p-0"
       >

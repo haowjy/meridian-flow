@@ -110,7 +110,6 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
       turnId: command.turnId,
       direction: command.direction,
       actor: { type: "user" as const, userId: command.userId },
-      ...(command.moveBackAcrossLists ? { moveBackAcrossLists: command.moveBackAcrossLists } : {}),
       // A reply of tree changes alone has no target: its receipts are reversed all the same.
       ...(targets.length
         ? { documentIds: [...new Set(targets.map((target) => target.documentId))] }

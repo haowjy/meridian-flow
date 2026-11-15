@@ -11,7 +11,7 @@ import type {
   GenerateResult,
   ModelInfo,
   StreamEvent,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";

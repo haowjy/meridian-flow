@@ -24,6 +24,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
     vi.spyOn(account, "useAccountId").mockReturnValue("writer"),
     vi.spyOn(account, "useAccountEpochSignal").mockReturnValue(epoch.signal),
     vi.spyOn(trees, "useProjectTrees").mockReturnValue({
+      ready: false,
       isComplete: false,
       isError: false,
       sources: [],

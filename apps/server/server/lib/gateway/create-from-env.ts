@@ -13,14 +13,14 @@ import {
   type Gateway,
   type ProviderConfig,
   type TraceSpan,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import {
   createMockOpenAICompatibleServer,
   createMockScriptQueue,
   type MockScriptQueue,
   mockProviderConfig,
-} from "@meridian-flow/gateway/mock";
-import { mockModelDefaultResponseSchema } from "@meridian-flow/gateway/mock-script";
+} from "@meridian-flow/runtime/gateway/mock";
+import { mockModelDefaultResponseSchema } from "@meridian-flow/runtime/gateway/mock-script";
 import { isProductionEnv } from "../production-env.js";
 import { withLiveTestModel } from "./live-test-model.js";
 import {

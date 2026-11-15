@@ -299,30 +299,6 @@ async function dropUnowned(
 }
 
 /**
- * Moves the claims of nodes that arrived from another list to this one, with their documents'
- * owner: the list's project or account. The list they left has written its rows already, so no
- * row stands on the old claim.
- */
-export async function arriveNodes(
-  tx: DrizzleDb,
-  list: TreeList,
-  listId: string,
-  ids: ReadonlySet<string>,
-): Promise<void> {
-  if (ids.size === 0) return;
-  const nodes = sql.join(
-    [...ids].map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
-  await tx.execute(sql`UPDATE tree_node_ids SET list_id = ${listId}::uuid WHERE id IN (${nodes})`);
-  const owner = ownerColumns(list);
-  await tx.execute(
-    sql`UPDATE documents SET project_id = ${owner.projectId}::uuid, user_id = ${owner.userId}::uuid
-      WHERE id IN (${nodes})`,
-  );
-}
-
-/**
  * A document or file made by an admitted `create` has its `documents` row from the same
  * transaction, drafted or live: its drafts, receipts and links point at it by foreign key. A
  * file's bytes are the record's blob. A node that no view shows has no row.

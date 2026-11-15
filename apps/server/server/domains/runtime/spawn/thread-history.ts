@@ -13,7 +13,7 @@ import {
   type Thread,
   type Turn,
 } from "@meridian/contracts/threads";
-import type { TokenizerFamily } from "@meridian-flow/gateway";
+import type { TokenizerFamily } from "@meridian-flow/runtime/gateway";
 import { z } from "zod";
 import type { OwnerLookup } from "../../context/index.js";
 import {

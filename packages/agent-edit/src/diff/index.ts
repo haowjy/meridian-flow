@@ -1,5 +1,6 @@
 /** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply and Discard. */
 
+export { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 export { appliedParts } from "./applied-parts.js";
 export {
   APPLY_RECORD_ROOT,
@@ -56,6 +57,6 @@ export {
   type ReviewProjection,
   type ReviewSpan,
 } from "./review.js";
-export type { Tok } from "./tokens.js";
+export { diffKeys, type Tok, wordDiff } from "./tokens.js";
 export { countWords } from "./word-count.js";
 export { type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";

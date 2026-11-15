@@ -2,7 +2,7 @@
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ProjectId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
-import type { TokenizerFamily } from "@meridian-flow/gateway";
+import type { TokenizerFamily } from "@meridian-flow/runtime/gateway";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   compactionFailureMetadata,

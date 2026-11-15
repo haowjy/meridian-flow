@@ -18,6 +18,7 @@ import { type ReactNode, useLayoutEffect, useState } from "react";
 import type { RowMenu, RowMenuEntry, RowMenuItem } from "@/components/ui/row-menu";
 import type { DragEntry } from "./entry-drag/entry";
 import {
+  type EntryList,
   type SelectionGrant,
   type SelectionGroup,
   useOptionalEntrySelection,
@@ -90,7 +91,20 @@ function selectionActions(group: SelectionGroup): EntryActionSpec[] {
   const n = group.entries.length;
   const noun = selectionNoun(group.entries);
   const specs: EntryActionSpec[] = [];
-  if (group.grants.includes("move"))
+  // Between the project's files and Your files the action is Copy: each list keeps its own history.
+  if (group.grants.includes("move") && group.crossesLists)
+    specs.push({
+      action: "copy",
+      icon: Copy,
+      group: "manage",
+      label:
+        noun === "file"
+          ? plural(n, { one: "Copy # file to…", other: "Copy # files to…" })
+          : noun === "folder"
+            ? plural(n, { one: "Copy # folder to…", other: "Copy # folders to…" })
+            : plural(n, { one: "Copy # item to…", other: "Copy # items to…" }),
+    });
+  else if (group.grants.includes("move"))
     specs.push({
       action: "move",
       icon: FolderInput,
@@ -142,14 +156,15 @@ export function useEntryMenu(
   entry: DragEntry,
   actions: readonly EntryAction[],
   run: (action: EntryAction, selection: readonly DragEntry[] | null) => void,
+  list: EntryList,
 ): RowMenu | undefined {
   const selection = useOptionalEntrySelection();
   const [group, setGroup] = useState<SelectionGroup | null>(null);
   // Joined so a caller's fresh array of the same actions doesn't re-register every render.
   const grants = SELECTION_GRANTS.filter((grant) => actions.includes(grant)).join(" ");
   useLayoutEffect(
-    () => selection?.grant(entry, grants ? (grants.split(" ") as SelectionGrant[]) : []),
-    [selection, entry, grants],
+    () => selection?.grant(entry, grants ? (grants.split(" ") as SelectionGrant[]) : [], list),
+    [selection, entry, grants, list],
   );
   if (actions.length === 0) return undefined;
   const items = group

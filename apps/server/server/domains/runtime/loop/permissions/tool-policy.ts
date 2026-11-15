@@ -5,7 +5,7 @@
  * refuses a call outside it, and a child never has a tool its parent lacks.
  */
 import type { ToolPolicy } from "@meridian/contracts/agents";
-import type { Tool } from "@meridian-flow/gateway";
+import type { Tool } from "@meridian-flow/runtime/gateway";
 
 export function advertiseTools(tools: Tool[] | undefined, policy: ToolPolicy): Tool[] {
   return (tools ?? []).filter((tool) => policy.has(tool.name));

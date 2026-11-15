@@ -7,7 +7,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WriteToolInputSchema } from "@meridian/agent-edit/integration";
-import { createGateway, type GenerateRequest, user } from "@meridian-flow/gateway";
+import { createGateway, type GenerateRequest, user } from "@meridian-flow/runtime/gateway";
 import { expect, it } from "vitest";
 import { WorkCommandSchema } from "../../domains/runtime/tools/core-tools.js";
 import { modelToolSchema } from "../../domains/runtime/tools/model-tool-schema.js";

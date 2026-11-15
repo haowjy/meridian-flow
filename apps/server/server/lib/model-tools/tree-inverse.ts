@@ -24,7 +24,6 @@ import {
   type ToolWiringDeps,
   writeToolError,
 } from "./tool-context.js";
-import { reverseAcrossLists } from "./tree-across-lists.js";
 
 type InverseInput = {
   command: "undo" | "redo" | "revert";
@@ -182,23 +181,6 @@ async function reverseReceipt(
   const target = await threadContainerTarget(call.context.resolution, input.path);
   const grant = target ? await deps.fileAccess.authorize(call.principal, target, "edit") : null;
   if (grant && "denied" in grant) return fileAccessDeniedError(input.command, grant, input.path);
-  if (receipt.across) {
-    // The other end of a move between lists: its own container, its own grant.
-    const otherTarget = await threadContainerTarget(call.context.resolution, receipt.across.from);
-    const other = otherTarget
-      ? await deps.fileAccess.authorize(call.principal, otherTarget, "edit")
-      : null;
-    if (other && "denied" in other)
-      return fileAccessDeniedError(input.command, other, receipt.across.from);
-    return reverseAcrossLists(
-      deps,
-      call,
-      ctx,
-      [grant, other].flatMap((granted) => (granted ? [granted] : [])),
-      input.command,
-      receipt as TreeReceipt & { across: { from: string; to: string } },
-    );
-  }
   const drafted = receipt.draftBranchId !== null;
   const port = drafted
     ? call.context.port

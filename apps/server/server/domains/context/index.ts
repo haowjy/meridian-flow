@@ -93,8 +93,6 @@ export type {
   ContextListEntry,
   ContextListing,
   ContextListOptions,
-  ContextMoveAcrossListsChange,
-  ContextMovedAcrossLists,
   ContextPort,
   ContextReadResult,
   ContextScheme,

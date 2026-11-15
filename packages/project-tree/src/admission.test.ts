@@ -143,13 +143,6 @@ describe("a copy the guard turns away, storing nothing", () => {
       { blob: { storageKey: "k", mime: "x", size: 1 } },
       { aliases: ["x"] },
       { hasProperties: true },
-      {
-        type: "move",
-        node: "ch1",
-        parent: "list:other",
-        rank: "a5",
-        from: { parent: "arc", rank: "a0" },
-      },
     ])
       expect(faultOf(push(record(over)))).toBe("a kind or field only the server writes");
   });

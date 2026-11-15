@@ -9,18 +9,13 @@
 import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
+import { documents, treeNodes } from "@meridian/database/schema";
 import { deleteStands, LIVE, undoChange, type View } from "@meridian/project-tree";
-import { eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { placedNodesSql } from "../../context/tree/tree-addresses.js";
-import type {
-  AgentTreeHistory,
-  MoveBackAcrossLists,
-  TreeReceipt,
-  TreeReceiptInput,
-} from "../contracts.js";
+import type { AgentTreeHistory, TreeReceipt, TreeReceiptInput } from "../contracts.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
@@ -65,18 +60,6 @@ export function createTurnTreeInverse(deps: {
   const db = () => currentDrizzleDb(deps.db);
 
   /** The other list of a move between a project's files and the account's: the thread's project, or its owner. */
-  async function otherList(threadId: ThreadId, list: TreeList): Promise<TreeList | null> {
-    const [row] = await db()
-      .select({ projectId: projects.id, userId: projects.userId })
-      .from(threads)
-      .innerJoin(projects, eq(projects.id, threads.projectId))
-      .where(eq(threads.id, threadId));
-    if (!row) return null;
-    return list.kind === "project"
-      ? { kind: "account", userId: row.userId }
-      : { kind: "project", projectId: row.projectId };
-  }
-
   async function plan(
     threadId: ThreadId,
     turnId: TurnId,
@@ -155,8 +138,6 @@ export function createTurnTreeInverse(deps: {
       const list = await treeListOfNode(deps.db, step.subject);
       if (!list) continue;
       lists.set(JSON.stringify(list), list);
-      const other = step.across ? await otherList(threadId, list) : null;
-      if (other) lists.set(JSON.stringify(other), other);
     }
     return {
       steps,
@@ -206,7 +187,6 @@ export function createTurnTreeInverse(deps: {
     input: {
       threadId: ThreadId;
       userId: UserId | undefined;
-      moveBackAcrossLists?: MoveBackAcrossLists;
     },
   ): Promise<{ reversed: number; skips: TurnInverseSkip[] }> {
     const actor = input.userId ? `user:${input.userId}` : "system";
@@ -222,7 +202,7 @@ export function createTurnTreeInverse(deps: {
     const record = (
       receipt: TreeReceipt,
       fields: Pick<TreeReceiptInput, "nodes" | "records"> &
-        Partial<Pick<TreeReceiptInput, "acrossLists" | "draftBranchId">>,
+        Partial<Pick<TreeReceiptInput, "draftBranchId">>,
     ) =>
       deps.history().recordAgentTreeChange({
         subject: receipt.subject,
@@ -281,35 +261,12 @@ export function createTurnTreeInverse(deps: {
         skips.push(skip(receipt, "superseded"));
         continue;
       }
-      if (!receipt.across) {
-        if (batch && JSON.stringify(batch.list) === JSON.stringify(list))
-          batch.receipts.push(receipt);
-        else {
-          await flush();
-          batch = { list, receipts: [receipt] };
-        }
-        continue;
+      if (batch && JSON.stringify(batch.list) === JSON.stringify(list))
+        batch.receipts.push(receipt);
+      else {
+        await flush();
+        batch = { list, receipts: [receipt] };
       }
-      // A move between lists writes both: what came before it in the order goes first.
-      await flush();
-      const answer = input.moveBackAcrossLists
-        ? await input.moveBackAcrossLists(receipt)
-        : ({ ok: false, cause: "refused" } as const);
-      if (!answer.ok) {
-        skips.push(skip(receipt, answer.cause));
-        continue;
-      }
-      reversed++;
-      await record(receipt, {
-        nodes: [
-          { nodeId: receipt.subject, beforeAt: receipt.across.to, afterAt: receipt.across.from },
-        ],
-        records: [
-          { record: answer.records.left, node: receipt.subject },
-          { record: answer.records.entered, node: receipt.subject },
-        ],
-        acrossLists: true,
-      });
     }
     await flush();
     return { reversed, skips };
