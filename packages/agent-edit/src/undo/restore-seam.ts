@@ -42,7 +42,12 @@ export function readPairs(lineage: PairLineage, inverse: PairInverse) {
   const stands = (n: number): Key[] => {
     let known = standing.get(n);
     if (!known) {
-      known = pairs[n].gone.map((k) => lineage.effective(k)).filter((k) => lineage.isVisible(k));
+      const now = pairs[n].gone.map((k) => lineage.effective(k));
+      known = now.filter((k) => lineage.isVisible(k));
+      // Whole: every character of the replacement is still visible (mark items aside). A
+      // replacement the writer deleted or replaced part of no longer speaks for the run.
+      if (!process.env.PARTIAL && now.some((k) => !lineage.isVisible(k) && find(doc, k)?.countable !== false))
+        known = [];
       standing.set(n, known);
     }
     return known;

@@ -364,6 +364,8 @@ interface InversePlan {
   blocked: boolean;
   /** The runs of `restoring` that go back beside the text that replaced them, not at their tombstones. */
   place: () => RestorePlacement[];
+  /** `main`'s stranded rule kept a run with a recorded replacement out. */
+  inferredOut: boolean;
 }
 function planInverse(
   index: Lineage,
@@ -460,16 +462,19 @@ function planInverse(
     }
     return crossed && !newerThere;
   };
+  let inferredOut = false;
   const candidates = new Set(
     returning
       // One struct can hold characters of two pairs, so the record is asked per character.
       .filter(({ original }) => {
         if (!process.env.RECORD_STRAND)
-          return (
-            !strandedByRemoval(original) ||
-            recordedPairs().replacementStands(original) ||
-            (!!process.env.SIDE && onlyFarSide(original))
-          );
+        {
+          if (!strandedByRemoval(original)) return true;
+          if (recordedPairs().replacementStands(original)) return true;
+          if (process.env.SIDE && onlyFarSide(original)) return true;
+          if (recordedPairs().replacementOf(original)) inferredOut = true;
+          return false;
+        }
         const recorded = part.effect.replacements?.length
           ? recordedPairs().replacedSince(original)
           : undefined;
@@ -515,6 +520,7 @@ function planInverse(
     restoring,
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
+    inferredOut,
     place: () => (part.effect.replacements?.length ? recordedPairs().placements(restoring) : []),
   };
 }
@@ -799,8 +805,10 @@ function computePreparedInverse(
           break;
         }
         index.hydrate();
-        const plan = planInverse(index, part, direction),
-          placements = plan.place(),
+        const plan = planInverse(index, part, direction);
+        // Un-Apply uses the record only where it settles every recorded run of the part.
+        if (!final && plan.inferredOut && !process.env.NO_STRICT_KEEP) continue;
+        const placements = plan.place(),
           placed = new Set(placements.flatMap((placement) => clocks(placement.ranges)));
         const stack = {
           insertions: deleteSet(plan.removing),
