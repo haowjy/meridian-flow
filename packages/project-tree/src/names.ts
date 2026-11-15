@@ -1,6 +1,6 @@
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
 import {
-  firstFreeName,
+  firstFreeCopy,
   parseDocumentFilename,
   splitCopyNumber,
 } from "@meridian/contracts/protocol";
@@ -49,10 +49,7 @@ export function freeName(kind: NodeKind, name: string, taken: ReadonlySet<string
   const letters = [...base];
   for (;;) {
     const kept = letters.join("").trimEnd();
-    const { filename } = firstFreeName(
-      { name: copy > 1 ? `${kept} (${copy})` : kept, extension },
-      taken,
-    );
+    const { filename } = firstFreeCopy(kept, copy, extension, taken);
     if (filename.length <= MAX_NAME || letters.length <= 1) return filename;
     letters.pop();
   }

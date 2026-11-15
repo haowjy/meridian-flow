@@ -1148,6 +1148,21 @@ describe("replay rules 9 to 13", () => {
     t.valid();
   });
 
+  it("only the numbers the numbering writes continue: a huge or zero-led one is part of the name", () => {
+    const t = start();
+    const f = t.folder("F");
+    t.chapter("Notes (9007199254740992)", f);
+    t.chapter("Notes (9007199254740992)", f);
+    t.chapter("Notes (02)", f);
+    t.chapter("Notes (02)", f);
+    expect(t.names(f)).toEqual([
+      "Notes (9007199254740992)",
+      "Notes (9007199254740992) (2)",
+      "Notes (02)",
+      "Notes (02) (2)",
+    ]);
+  });
+
   it("a create the server stamped dropped is in no view and is listed", () => {
     const t = start();
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
