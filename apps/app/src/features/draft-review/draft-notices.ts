@@ -213,6 +213,23 @@ export class DraftNotices {
     this.publish();
   }
 
+  /**
+   * Something other than the Apply's own Undo took these documents back (a turn's Undo or Redo):
+   * what an Apply said about them, and the Undo it offered, no longer hold.
+   */
+  forgetApplied(documentIds: ReadonlySet<string>): void {
+    let changed = false;
+    for (const notice of [...this.notices.values()]) {
+      if (notice.kind !== "applied") continue;
+      const facts = notice.facts.filter((fact) => !documentIds.has(fact.documentId));
+      if (facts.length === notice.facts.length) continue;
+      changed = true;
+      if (facts.length === 0) this.drop(notice);
+      else this.notices.set(notice.ownerKey, { ...notice, facts });
+    }
+    if (changed) this.publish();
+  }
+
   /** The facts an Apply adds to the owner's applied notice, if it is the one showing. */
   appliedFacts(ownerKey: string) {
     const held = this.notices.get(ownerKey);

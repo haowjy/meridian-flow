@@ -20,7 +20,10 @@ import { applyRecentAvailability } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
-import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
+import {
+  useOptionalAccountId,
+  useOptionalDraftCommandOwner,
+} from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import {
@@ -89,6 +92,7 @@ export function TurnEditsReceipt({
   const turnMutation = useReverseTurnMutation(threadId);
   const accountId = useOptionalAccountId();
   const projectId = useProjectDocumentNavigationProjectId();
+  const draftCommands = useOptionalDraftCommandOwner();
 
   const drafts = receipt?.drafts;
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
@@ -120,6 +124,15 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
+      // The Changes rows and a band say what an Apply did, with its Undo: once this took the
+      // document back, neither holds.
+      if (projectId)
+        draftCommands?.takenBack(
+          projectId,
+          outcome.documents.flatMap((result) =>
+            result.status === "reversed" ? [result.documentId] : [],
+          ),
+        );
       if (accountId && projectId) {
         const liveCreates = documents.filter(
           (document) =>

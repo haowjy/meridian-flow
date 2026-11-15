@@ -18,7 +18,7 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, documentDrafts } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { branchOwnerSql, ownerKeyOfColumns, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
@@ -99,7 +99,9 @@ export async function readTurnEditTargets(
 /**
  * The folders the turn's tree receipts changed, live or in the branch the change was drafted in,
  * whether or not the card's Undo has since taken them back: a folder has no document, and the
- * reply's card lists it all the same. Each is named by the path the receipt recorded.
+ * reply's card lists it all the same. Each is named by the path the receipt recorded. Only the
+ * turn's own writes say where it wrote: a Redo of an applied draft lands live, and read as a
+ * target it would list the folder a second time, live.
  */
 export async function readTurnFolderTargets(
   db: Pick<Database, "selectDistinct">,
@@ -124,7 +126,7 @@ export async function readTurnFolderTargets(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
-        ne(treeEditReceipts.kind, "undo"),
+        eq(treeEditReceipts.kind, "write"),
         isNull(documents.id),
       ),
     )
@@ -143,7 +145,9 @@ export async function readTurnFolderTargets(
 /**
  * The documents the turn's tree receipts changed (a folder has no document), live or in the
  * branch the change was drafted in, whether or not the card's Undo has since taken them back.
- * Merged into `known` where a text edit already lists the same destination.
+ * Merged into `known` where a text edit already lists the same destination. Only the turn's own
+ * writes count, as for folders: a Redo's receipt names where the Redo landed, not where the
+ * turn wrote.
  */
 export async function readTurnTreeTargets(
   db: Pick<Database, "selectDistinct">,
@@ -171,7 +175,7 @@ export async function readTurnTreeTargets(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
-        ne(treeEditReceipts.kind, "undo"),
+        eq(treeEditReceipts.kind, "write"),
       ),
     );
   const targets = new Map<string, TurnEditedDocumentId>();
