@@ -159,22 +159,30 @@ export function createEffectiveDocumentReader(input: {
         ),
       );
     },
-    readEffectiveBlocks(command) {
-      const project = async (handle: DocHandle): Promise<EffectiveBlocksRead> => {
-        const doc = unwrapDoc(handle);
-        const scope = await spelling(command, doc);
-        const blocks = input.model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
-        return {
-          content: blocks,
-          revision: documentRevision(doc, scope),
-          holderUri: scope.holder.uri,
-          stateVector: Y.encodeStateVector(doc),
-          aheadSettlements: settledAheads(blocks, scope),
+    async readEffectiveBlocks(command) {
+      const project =
+        (version: "live" | "draft") =>
+        async (handle: DocHandle): Promise<EffectiveBlocksRead> => {
+          const doc = unwrapDoc(handle);
+          const scope = await spelling(command, doc);
+          const blocks = input.model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
+          return {
+            content: blocks,
+            version,
+            revision: documentRevision(doc, scope),
+            holderUri: scope.holder.uri,
+            stateVector: Y.encodeStateVector(doc),
+            aheadSettlements: settledAheads(blocks, scope),
+          };
         };
-      };
-      return command.destination === "draft"
-        ? readWorkDraft(command, project)
-        : readEffective(command, project);
+      if (command.destination === "draft") {
+        const draft = await readWorkDraft(command, project("draft"));
+        if (draft.ok) return draft;
+      }
+      return readEffective(
+        { documentId: command.documentId, destination: "live" },
+        project("live"),
+      );
     },
     readEffectiveHashlines(command) {
       return readEffective(command, async (handle): Promise<HashlineRead> => {

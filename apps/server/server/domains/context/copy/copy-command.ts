@@ -120,6 +120,7 @@ export interface ContextCopyCommandDeps {
     CollabDomain,
     "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed" | "refreshDocumentProjection"
   >;
+  branches: Pick<import("../../collab/domain/branches.js").Branches, "viewForOwner">;
   objectStore: ObjectStorePort;
   release: Pick<ObjectRelease, "keys">;
 }
@@ -230,7 +231,11 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
     const roots: PreparedRoot[] = [];
     for (const source of input.sources) {
-      const snapshot = await source.copy.snapshotSource(source.path);
+      const view =
+        source.view.kind === "draft"
+          ? await deps.branches.viewForOwner(source.view.owner)
+          : { kind: "live" as const };
+      const snapshot = await source.copy.snapshotSource(source.path, view);
       if (!snapshot.ok) return Err(adapterFaultToContextError(snapshot.error, source.uri));
       if (snapshot.value.kind !== source.expected.kind) {
         return Err({ code: "not_found", uri: source.uri });
@@ -353,13 +358,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       }
       return Ok(documents);
     }
-    if (source.view.kind === "draft") {
-      return Err({
-        code: "invalid_operation",
-        uri: source.uri,
-        message: "A folder copies the live documents in it; open a document to copy its draft",
-      });
-    }
     for (const file of filesOf(snapshot)) {
       if (file.fileType !== null) continue;
       const prepared = await prepareDocument(source, file);
@@ -395,13 +393,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         switch (read.error.code) {
           case "not_found":
             return Err({ code: "not_found", uri: source.uri });
-          case "draft_not_found":
-            return Err({
-              code: "invalid_operation",
-              uri: source.uri,
-              message: "That Work has no draft of this document to copy",
-              reason: "no_draft",
-            });
           default:
             return Err({ code: "io_error", uri: source.uri, message: read.error.code });
         }
@@ -428,7 +419,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         blocks: read.value.content,
         aheadSettlements: read.value.aheadSettlements,
         revision: read.value.revision,
-        version: draft ? "draft" : "live",
+        version: read.value.version,
       });
     }
   }

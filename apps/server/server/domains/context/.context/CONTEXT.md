@@ -227,9 +227,10 @@ addresses to adapters, `copy/copy-command.ts` reads, duplicates and orchestrates
 `adapters/context-fs/copy-adapter.ts` (source read) with `copy-tree.ts` (insertion) is what
 one source's tree contributes.
 
-- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, live tree) and each
+- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, in the source view) and each
   tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
-  document, or the draft a tab shows when the source names that view). The listing is a
+  document, or the Work's draft where it has one). A Draft view reads live content for
+  documents without a Work draft, while spelling links in the Draft tree. The listing is a
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
