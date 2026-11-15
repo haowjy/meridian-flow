@@ -224,8 +224,10 @@ keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedF
 sentence says it was applied, with where it landed, the name a clash gave it or that it came back
 to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
 takes (`undoApply`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
-answers ends the applied notice, so its result ("Skipped", "Partly undone", "Retry") shows on the
-rows as a press's does. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
+answers ends the applied notice, so its result shows on the rows as a press's does: nothing, when it
+took everything back; "Partly undone" or "Not undone", when what stayed was edited or changed since
+(`unappliedOf`, in `draft-notices.ts`, the one reading of an Un-Apply answer); "Retry", when it
+didn't reach the server. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
