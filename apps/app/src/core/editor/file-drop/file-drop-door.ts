@@ -26,9 +26,8 @@ import { placeNodes } from "../extensions/reference-drop";
 import { imageIngressStorage } from "../images/image-ingress-runtime";
 import type { ImageIngressStore } from "../images/image-ingress-store";
 import { insertImageFile } from "../images/image-uploads";
-import { acceptsInlineImage, isImageFile } from "../images/image-workflow";
+import { acceptsInlineImage, inlineImagePos, isImageFile } from "../images/image-workflow";
 import type { DropDoor } from "../landing/drop-plan";
-import { snapOutOfCode } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
 import { type FileDropHost, fileDropHost } from "./FileDropExtension";
 
@@ -61,7 +60,7 @@ export const fileDropDoor: DropDoor = {
       listed.length > 0 && listed.every((file) => !isUnread(file) && isImageFile(file));
     const at: Exclude<Landing, { kind: "source" }> =
       landing.kind === "inline"
-        ? { kind: "inline", pos: snapOutOfCode(editor.state.doc, landing.pos) }
+        ? { kind: "inline", pos: inlineImagePos(editor.state.doc, landing.pos) }
         : landing;
     if (picturesOnly) {
       if (at.kind === "inline" && !acceptsInlineImage(editor.state.doc, at.pos))

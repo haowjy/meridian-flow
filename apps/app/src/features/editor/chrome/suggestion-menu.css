@@ -15,12 +15,20 @@
    ABOVE hangs off the top of the window, taking the refusal note with it, which
    is the one line saying why the rows below are grey. Radix measures that space
    for every placement it tries; capping to it makes the list give way instead
-   of the note. */
+   of the note.
+
+   The cap has a floor. floating-ui decides whether to flip from the menu's
+   height as it stands, and that height is already capped to the side it chose
+   last, so a menu that opened short under a caret near the bottom (one row
+   while references load, a composer at the window's edge) fit that sliver on
+   every later check and never flipped as its rows arrived, leaving them under
+   the window's edge. With the floor, a sliver too small for a few rows reads as
+   an overflow and the menu moves to the roomier side. */
 .meridian-suggestion-menu-shell {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: var(--radix-popper-available-height);
+  max-height: max(var(--radix-popper-available-height), 12rem);
 }
 
 /* Height caps near eight rows and the list scrolls inside itself (ruled). The

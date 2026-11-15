@@ -6,6 +6,8 @@
 
 import type { Mark, Node as PMNode } from "@tiptap/pm/model";
 
+import { classifyLinkTarget, isInternalLinkTarget } from "../links/link-target";
+
 import type { Geometry, Point } from "./point-landing";
 
 type Run = { start: number; end: number };
@@ -58,9 +60,18 @@ function snapOutOf(doc: PMNode, pos: number, key: RunKey): number {
 
 const codeMark: RunKey = (node) => node.marks.find((mark) => mark.type.name === "code") ?? null;
 
-/** A link that names a file or folder, as opposed to an address. */
-function identityLink(node: PMNode): Mark | null {
-  return node.marks.find((mark) => mark.type.name === "link" && mark.attrs.ref !== null) ?? null;
+/**
+ * A link drawn as a chip: one that names a file or folder, by its ref or by an
+ * internal address (`kb://notes/kael`, `kael.md`). An external link stays text.
+ */
+function chipLink(node: PMNode): Mark | null {
+  return node.marks.find((mark) => mark.type.name === "link" && isChip(mark)) ?? null;
+}
+
+function isChip(link: Mark): boolean {
+  if (link.attrs.ref !== null) return true;
+  const target = typeof link.attrs.href === "string" ? classifyLinkTarget(link.attrs.href) : null;
+  return target !== null && isInternalLinkTarget(target);
 }
 
 /** Inside inline code the landing is the span's nearer edge. */
@@ -68,8 +79,9 @@ export function snapOutOfCode(doc: PMNode, pos: number): number {
   return snapOutOf(doc, pos, codeMark);
 }
 
-export function snapOutOfIdentityLink(doc: PMNode, pos: number): number {
-  return snapOutOf(doc, pos, identityLink);
+/** Inside a link chip the landing is the chip's nearer edge. */
+export function snapOutOfChip(doc: PMNode, pos: number): number {
+  return snapOutOf(doc, pos, chipLink);
 }
 
 /** A pointer over an inline atom (a mention chip) chooses its nearer side. */
@@ -102,7 +114,7 @@ function isWordCharacter(character: string): boolean {
 /** A pointer inside a word of plain text chooses the word's nearer edge. */
 export function snapToWordEdge(doc: PMNode, pos: number): number {
   const run = runAround(doc, pos, (node) =>
-    node.isText && !identityLink(node) && !codeMark(node) ? true : null,
+    node.isText && !chipLink(node) && !codeMark(node) ? true : null,
   );
   if (!run) return pos;
   const { start, end } = run;

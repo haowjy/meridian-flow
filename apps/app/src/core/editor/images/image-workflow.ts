@@ -4,6 +4,7 @@ import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/mo
 import type { Transaction } from "@tiptap/pm/state";
 
 import type { AnchorRange } from "../anchors";
+import { snapOutOfChip, snapOutOfCode } from "../landing/inline-snap";
 import { pictureKeyOfNode } from "../links/link-resolution";
 
 export function isImageFile(file: Pick<File, "type" | "name">): boolean {
@@ -25,6 +26,14 @@ export function acceptsInlineImage(doc: PMNode, pos: number): boolean {
   if (!imageType || pos < 0 || pos > doc.content.size) return false;
   const $pos = doc.resolve(pos);
   return $pos.parent.canReplaceWith($pos.index(), $pos.index(), imageType);
+}
+
+/**
+ * Where a picture asked for at `pos` in text stands: beside a link chip or a
+ * code span the position is inside, never splitting it in two.
+ */
+export function inlineImagePos(doc: PMNode, pos: number): number {
+  return snapOutOfChip(doc, snapOutOfCode(doc, pos));
 }
 
 /** The picture a paste carried as its own file item, rather than as an address. */
