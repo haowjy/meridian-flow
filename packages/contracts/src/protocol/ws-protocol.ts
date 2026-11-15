@@ -6,6 +6,7 @@
 import { z } from "zod";
 
 import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
+import { type ServerProtocol, serverProtocolSchema } from "../release/index.js";
 import { askAnswerSchema, draftAnswersSchema, threadAskSchema } from "../threads/asks.js";
 import { controlBodySchema } from "../threads/control-body.js";
 import type { RunState } from "../threads/run-state.js";
@@ -231,7 +232,10 @@ export type WsServerMessage =
       type: "connected";
       userId: string;
       scope: { type: "standalone" } | { type: "project"; projectId: string };
+      /** The server's release id (`x-meridian-release`). */
       serverVersion: string;
+      /** The server's protocol, as on every HTTP answer; absent from a server older than this field. */
+      protocol?: ServerProtocol;
       connectionToken: string;
     }
   | {
@@ -259,6 +263,7 @@ export type WsServerMessage =
   | import("./context-catalog.js").DraftOwnerHint
   | import("./context-catalog.js").ProjectChatsHint
   | import("./context-sources.js").ContextSourcesHint
+  | import("./context-catalog.js").AgentFilesHint
   | AskAnswerReply
   | {
       type: "error";
@@ -278,6 +283,7 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
       z.object({ type: z.literal("project"), projectId: z.string().min(1) }),
     ]),
     serverVersion: z.string().min(1),
+    protocol: serverProtocolSchema.optional(),
     connectionToken: z.string().min(1),
   }),
   z.object({
@@ -313,6 +319,10 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
   }),
   z.object({
     type: z.literal("context-sources-hint"),
+    projectId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("agent-files-hint"),
     projectId: z.string().min(1),
   }),
   z.object({

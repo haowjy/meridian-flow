@@ -43,6 +43,7 @@ import { createHocuspocusBinding } from "../../../../apps/server/server/domains/
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { createHocuspocusPersistenceService } from "../../../../apps/server/server/domains/collab/hocuspocus-persistence.ts";
 import { createYjsGateway } from "../../../../apps/server/server/lib/yjs-ws-handler.ts";
+import { resolveReleaseId } from "../../../release/release-id.mjs";
 import { type Harness, observe, type Probe, Y } from "./harness.mts";
 import {
   deadline,
@@ -97,7 +98,11 @@ async function loadClient(): Promise<{ openTab(roomName: string): Tab }> {
       logLevel: "silent",
       alias: { "@": join(repo, "apps/app/src") },
       nodePaths: [join(repo, "apps/app/node_modules")],
-      define: { "import.meta.env.DEV": "false", "import.meta.env.VITE_DEBUG_OVERLAY": '"0"' },
+      define: {
+        "import.meta.env.DEV": "false",
+        "import.meta.env.VITE_DEBUG_OVERLAY": '"0"',
+        __MERIDIAN_RELEASE__: JSON.stringify(resolveReleaseId({ dev: true })),
+      },
     });
     return (await import(pathToFileURL(outfile).href)) as { openTab(roomName: string): Tab };
   } finally {

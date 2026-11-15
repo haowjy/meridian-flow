@@ -57,8 +57,11 @@ export type TreeEnv = {
   meta?: (file: TreeFile) => ReactNode;
   /** A file left out of use that still opens: its name is struck through. */
   crossedOut?: (file: TreeFile) => boolean;
-  /** What a folder's row says at its end, beside its control: a state with its action. */
-  folderEnd?: (dir: TreeDirectory) => ReactNode;
+  /**
+   * What a folder's row says at its end, beside its control: a state with its action, or, while
+   * closed, what it holds out of sight.
+   */
+  folderEnd?: (dir: TreeDirectory, open: boolean) => ReactNode;
   creation?: {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
@@ -269,7 +272,7 @@ function DirRow({
           frameProps={drop.dropProps}
           menu={interaction.menu}
           revealActions
-          notice={env.notices.word(dir.entryId) ?? env.folderEnd?.(dir)}
+          notice={env.notices.word(dir.entryId) ?? env.folderEnd?.(dir, isOpen)}
           trailing={env.changed?.has(dir.entryId) ? <DraftChangeMark /> : null}
         />
       </EntryDestinationPicker>

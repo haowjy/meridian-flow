@@ -18,6 +18,7 @@
  */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
+import { shownFindings } from "@meridian/contracts/agents";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
@@ -146,7 +147,7 @@ try {
   });
 
   await check(
-    "the built-in package: nine Agents at the built-in level, no diagnostics, read-only stays read-only",
+    "the built-in package: nine Agents at the built-in level, no errors or warnings, read-only stays read-only",
     async () => {
       const slugs = [
         "general",
@@ -166,7 +167,7 @@ try {
         assert.ok(item.selection, `${slug} has no selection`);
         const row = await store.readCatalogRevision(item.selection.definitionRevisionId);
         assert.ok(row?.definition, `${slug} has no definition`);
-        assert.deepEqual(row.diagnostics, [], `${slug} has diagnostics`);
+        assert.deepEqual(shownFindings(row.diagnostics), [], `${slug} has diagnostics`);
         assert.ok(await store.readRevision(row.id));
       }
       for (const slug of ["general", "critic", "muse", "setup", "spark", "writer"])
@@ -206,8 +207,11 @@ try {
     { name: "unparseable YAML", files: alone(() => "---\nname: [x\n---\n") },
     { name: "duplicate key", files: alone(() => "---\nname: A\nname: A\n---\n") },
     { name: "anchor", files: fm("description: &a A\n") },
-    { name: "removed key permission", files: fm("permission: read\n") },
-    { name: "removed key disallowed-tools", files: fm("disallowed-tools: [write]\n") },
+    { name: "retired key permission (Mars warning)", files: fm("permission: read\n") },
+    {
+      name: "retired key disallowed-tools (Mars warning)",
+      files: fm("disallowed-tools: [write]\n"),
+    },
     { name: "removed value effort adaptive", files: fm("effort: adaptive\n") },
     { name: "wrong type effort 7", files: fm("effort: 7\n") },
     { name: "tools as a list", files: fm("tools: [read]\n") },
@@ -273,7 +277,7 @@ try {
       files: (slug) => ({
         "mars.toml": MANIFEST,
         [`agents/${slug}.md`]: agent("A", `subagents: [${slug}-child]\n`),
-        [`agents/${slug}-child.md`]: agent("Child", "permission: read\n"),
+        [`agents/${slug}-child.md`]: agent("Child", "effort: 7\n"),
       }),
     },
     {
@@ -293,6 +297,8 @@ try {
   const saves = new Map([
     ["misspelled harness-override (Mars info)", false],
     ["modelInvocable (Mars info)", false],
+    ["retired key permission (Mars warning)", true],
+    ["retired key disallowed-tools (Mars warning)", true],
     ["Flow namespace misspelled (Mars warning)", true],
     ["manifest with a misspelled table (Mars info)", false],
     ["skill with a diagnostic (Mars info)", false],
@@ -312,8 +318,10 @@ try {
       const slug = `u${index}`;
       const name = publish(entry.files(slug));
       const outcome = await savePackage(`packages/${name}/`);
-      const file = (await catalog.files(USER, {})).files.find(
-        (item) => item.slug === slug && item.level === "user",
+      const files = await catalog.files(USER, {});
+      const file = files.files.find((item) => item.slug === slug && item.level === "user");
+      const status = files.packages.find(
+        (item) => item.level === "user" && item.folder === `packages/${name}/`,
       );
       if (saves.has(entry.name)) {
         assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
@@ -326,7 +334,16 @@ try {
         assert.equal((await catalog.resolvePrimary(USER, item.selection)).ok, true);
         return;
       }
-      assert.ok(file && file.unavailableReasons.length > 0, "the files show no reason");
+      // A file's Errors are its package's findings: its own, or a package-level one.
+      assert.ok(file, "the files don't list it");
+      assert.ok(
+        status?.findings.some(
+          (item) =>
+            item.severity === "error" &&
+            (item.file === `agents/${slug}.md` || !item.file.startsWith("agents/")),
+        ),
+        "the files show no Error",
+      );
       if (fails.has(entry.name)) {
         assert.equal(outcome.outcome, "failed");
         assert.ok(
@@ -452,7 +469,7 @@ try {
       const name = publish({
         "mars.toml": MANIFEST,
         "agents/good1.md": agent("Good"),
-        "agents/bad1.md": agent("Bad", "permission: read\n"),
+        "agents/bad1.md": agent("Bad", "effort: 7\n"),
       });
       const outcome = await savePackage(`packages/${name}/`);
       assert.equal(outcome.outcome, "saved");
@@ -476,15 +493,11 @@ try {
   });
 
   await check("fixing a broken Agent: edit the file, Save, and the name is available", async () => {
-    levels.write("user", "agents/fix1.md", agent("Fix", "permission: read\n"));
+    levels.write("user", "agents/fix1.md", agent("Fix", "effort: 7\n"));
     const broken = await savePackage("");
     assert.deepEqual(broken.leftOut, ["agents/fix1.md"]);
     assert.ok((await listed("fix1")).unavailableReasons.length > 0);
-    levels.write(
-      "user",
-      "agents/fix1.md",
-      agent("Fix", "harness-overrides: {meridian-flow: {permission: read}}\n"),
-    );
+    levels.write("user", "agents/fix1.md", agent("Fix", "effort: high\n"));
     const fixedOutcome = await savePackage("");
     assert.equal(fixedOutcome.outcome, "saved");
     assert.deepEqual(fixedOutcome.leftOut, []);
@@ -575,7 +588,7 @@ try {
   );
 
   await check("a stray line above the frontmatter leaves the Agent out", async () => {
-    levels.write("user", "agents/stray.md", `stray\n${agent("Stray", "permission: read\n")}`);
+    levels.write("user", "agents/stray.md", `stray\n${agent("Stray", "effort: 7\n")}`);
     const outcome = await savePackage("");
     assert.deepEqual(outcome.leftOut, ["agents/stray.md"]);
     assert.match(

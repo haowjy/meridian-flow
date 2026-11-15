@@ -26,6 +26,15 @@ export const agentFindingSchema = z.object({
   message: z.string(),
 }) satisfies z.ZodType<AgentFinding>;
 
+/**
+ * The findings a writer is shown: errors and warnings. Info says what Flow ignored and is for the
+ * editor's own marks only, so every list, chip, count and the AI's `save_agents` text takes its
+ * findings through this.
+ */
+export const shownFindings = <T extends Pick<AgentFinding, "severity">>(
+  findings: readonly T[],
+): T[] => findings.filter((finding) => finding.severity !== "info");
+
 /** How a package's files differ from its saved version. */
 export interface AgentFileChange {
   path: string;
@@ -56,7 +65,7 @@ export interface AgentPackageStatus {
   saveId: string | null;
   /** Files added, changed or deleted since the saved version. */
   changes: AgentFileChange[];
-  /** Errors and warnings in the package's files. */
+  /** Errors, warnings and Info in the package's files; show them through `shownFindings`. */
   findings: AgentFinding[];
 }
 export const agentPackageStatusSchema = z.object({
@@ -93,6 +102,8 @@ export interface SaveOutcome {
   leftOut: string[];
   /** `critic is now critic__a, critic__b`. */
   renamed: string[];
+  /** The package had a saved version before this Save: what new chats keep when it fails. */
+  savedBefore: boolean;
 }
 export const saveOutcomeSchema = z.object({
   level: levelSchema,
@@ -104,6 +115,8 @@ export const saveOutcomeSchema = z.object({
   kept: z.array(z.string()),
   leftOut: z.array(z.string()),
   renamed: z.array(z.string()),
+  // A chat's card stored before this field read as a package saved before.
+  savedBefore: z.boolean().default(true),
 }) satisfies z.ZodType<SaveOutcome>;
 
 const projectIdSchema = z

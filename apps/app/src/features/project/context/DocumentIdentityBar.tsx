@@ -11,6 +11,7 @@ import { useTreeList } from "@/client/query/useProjectTree";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
+import { AgentFileState } from "@/features/agents/AgentFileState";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -142,6 +143,7 @@ export function DocumentIdentityBar({
             show={showChip && !placementOpen}
             onChooseHome={() => setFieldOpen(true)}
           />
+          <AgentFileState projectId={projectId} document={document} />
           {/* The version chip holds one place: Live, or Draft while reviewing. */}
           {version ??
             (reviewItemKey || reviewPending ? null : (

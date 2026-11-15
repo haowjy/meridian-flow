@@ -31,6 +31,7 @@ import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
+import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DraftDispositionView } from "../domain/draft-disposition.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
@@ -43,6 +44,7 @@ export function createDrizzleDiscardPurge(
   deps: {
     workProjection: Pick<WorkProjectionMutation, "mutate">;
     treeLists: Pick<TreeListStore, "read">;
+    eventSink?: EventSink;
     /** What became of each of a draft's parts, read from its bytes. */
     readDisposition(draftId: string): Promise<Pick<DraftDispositionView, "parts"> | null>;
   },
@@ -122,7 +124,10 @@ export function createDrizzleDiscardPurge(
     );
   }
 
-  /** One batch of the oldest due entries, each branch's in a transaction; how many it took. */
+  /**
+   * One batch of the oldest due entries, each its own transaction: a failure is logged with its id
+   * and stays for the next pass, and does not stop the entries after it. Returns how many it took.
+   */
   async function purgeBatch(now: Date): Promise<number> {
     const due = await currentDrizzleDb(db)
       .select({
@@ -138,11 +143,22 @@ export function createDrizzleDiscardPurge(
       )
       .orderBy(commands.createdAt)
       .limit(DISCARD_PURGE_BATCH_LIMIT);
-    const byBranch = new Map<string | null, string[]>();
-    for (const { id, branchId } of due)
-      byBranch.set(branchId, [...(byBranch.get(branchId) ?? []), id]);
-    for (const [branchId, ids] of byBranch) await purgeBranch(branchId, ids);
-    return due.length;
+    let taken = 0;
+    for (const { id, branchId } of due) {
+      try {
+        await purgeBranch(branchId, [id]);
+        taken += 1;
+      } catch (error) {
+        if (!deps.eventSink) throw error;
+        emitEvent(deps.eventSink, {
+          level: "error",
+          source: "collab.discard-purge",
+          name: "purge.failed",
+          payload: { id, error },
+        });
+      }
+    }
+    return taken;
   }
 
   return {

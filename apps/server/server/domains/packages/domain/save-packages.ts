@@ -7,12 +7,13 @@
  * saved version. Also what the Agents tab says of each package (`statuses`), which is computed
  * from the files and the latest Save, never stored.
  */
-import type {
-  AgentFileChange,
-  AgentFinding,
-  AgentPackageStatus,
-  AgentsLevel,
-  SaveOutcome,
+import {
+  type AgentFileChange,
+  type AgentFinding,
+  type AgentPackageStatus,
+  type AgentsLevel,
+  type SaveOutcome,
+  shownFindings,
 } from "@meridian/contracts/agents";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type { AgentRevisionStore, PackageSave } from "../ports/agent-revision-store.js";
@@ -251,7 +252,7 @@ export function createPackageSaver(input: {
                 : { effective: pkg, kept: [] as string[] };
             const leftOut = effective && !blocked ? checkPackage(effective).leftOut : [];
             // An error on an item that now runs (one only a broken subagent held back) is no longer news.
-            const shown = (check?.findings ?? [])
+            const shown = shownFindings(check?.findings ?? [])
               .filter(
                 (item) =>
                   item.severity !== "error" ||
@@ -267,6 +268,7 @@ export function createPackageSaver(input: {
               kept,
               leftOut,
               renamed: [] as string[],
+              savedBefore: saved !== undefined,
             };
             if (blocked) {
               return {

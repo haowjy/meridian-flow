@@ -66,14 +66,14 @@ export interface AgentFileStatus {
   level: AgentLevel;
   /** Relative to the level's root (`agentsRootOf`): `agents/critic.md`, `packages/x/skills/y/SKILL.md`. */
   path: string;
-  /** Why these files can't be used, in Mars's words; empty when they can. */
+  /**
+   * Why the Agent can't run though Mars reads it (a model the account can't use): this text's, or
+   * while this text has an Error, its saved version's. Its Errors are its package's findings.
+   */
   unavailableReasons: string[];
   /** The saved version has this file; without it, new chats do not see the item at all. */
   saved: boolean;
-  /**
-   * With `unavailableReasons`: the last saved version of this item has no such problem and stays
-   * in use, so only the latest edit is not.
-   */
+  /** The saved version of this item runs, so new chats use it even while this text has an Error. */
   savedVersionInUse: boolean;
   /**
    * Whether the writer picks it: from the Agent picker for an Agent, the `/` menu for a skill.

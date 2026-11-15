@@ -37,7 +37,7 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
   const accountId = useAccountId();
   const { tree, isComplete, isError } = useProjectTreeView(projectId, "uploads", {
     enabled: Boolean(chatId),
-    chatId,
+    chatThreadId: chatId,
   });
   const sources = useProjectContextSources(projectId);
   const files = useMemo(() => tree?.files() ?? [], [tree]);

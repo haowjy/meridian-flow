@@ -18,7 +18,7 @@ and runs the real Drizzle store and catalog over it. It checks:
 - the built-in package: nine Agents, no diagnostics, `resolvePrimary` for the six primaries, and
   `permission: "read"` for Critic and for the two subagents Muse names;
 - 25 files: the errors in an Agent's file (Mars's, Flow's own block checks, a missing skill or
-  subagent) must leave it out (`leftOut`, a reason on `files()`, unbindable); a missing or invalid
+  subagent) must leave it out (`leftOut`, an Error in its package's `files()` findings, unbindable); a missing or invalid
   manifest must fail the Save; the Mars warnings and infos must save, the warnings with a finding
   on the result;
 - files that must resolve with exactly the permission or tool lists their rules give (an allow-list is `tools`, `deny` is `disallowed-tools`, `ask` runs as allow, a rule on a tool Flow lacks is met);
@@ -35,7 +35,7 @@ pnpm exec tsx tools/qa/agents-through-mars/server-gate.mts
 ```
 
 (`LIVE_TEST_MODEL` set in the main checkout's `.env` stops the mock provider booting; the empty
-value overrides it.) It makes a file with a removed key, Saves it through `POST /api/agents/save`
+value overrides it.) It makes a file with an Error (`effort: 7`), Saves it through `POST /api/agents/save`
 and checks the Save leaves it out (HTTP 200, its error first), it is listed unavailable and no thread binds it; it has Critic write to `manuscript://Scene` and
 checks the refusal and that no document exists; it has Muse spawn `continuity-checker` and
 `reader-sim` and reads each child's binding from the database for `permission: read`.

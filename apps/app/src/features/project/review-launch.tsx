@@ -235,12 +235,12 @@ export function useOpenCreatedDocument(): (
 }
 
 /**
- * Where one followed link goes. `live` is the surface's own opener for a live page in main;
- * `workId` is the Work the link names, which a hold beside keeps.
+ * Where one followed link goes. `live` is the surface's own opener for a live page, which passes
+ * `placeBeside` on to the opener; `workId` is the Work the link names, which a hold beside keeps.
  */
 export type LinkPlacement = (
   document: LinkDocumentRef,
-  live: (document: LinkDocumentRef) => Promise<OpenDocumentOutcome>,
+  live: (document: LinkDocumentRef, placeBeside?: () => boolean) => Promise<OpenDocumentOutcome>,
   workId?: string | null,
 ) => Promise<OpenDocumentOutcome>;
 
@@ -249,8 +249,9 @@ export type LinkPlacement = (
  * "Drafted N documents" rows. The pane is `place`'s.
  * - A page only a draft holds (`document.review`) opens on that draft.
  * - A page `ownerKey` drafted opens on that draft, as the draft strip does.
- * - Any other page opens live, placed beside in the link's Work, or through `live` in main. A page
- *   in the trash opens in main.
+ * - Any other page opens through `live`. Once the opener knows what it is, a chat's upload opens in
+ *   its viewer wherever the link is (no pane holds one), a page in the trash opens in main, and any
+ *   other page is placed beside in the link's Work (`placeBeside`) or opens in main.
  */
 export function useLinkPlacement(projectId: string | null, ownerKey: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
@@ -280,8 +281,7 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
         documentId: document.documentId,
         ...(workId ? { workId } : {}),
       } as const;
-      if (place?.(placed) !== "side") return live(document);
-      return Promise.resolve(committed(document.documentId));
+      return live(document, place ? () => place(placed) === "side" : undefined);
     },
     [fileForDocument, ownerKey, openDraft, place],
   );
@@ -298,7 +298,9 @@ export function useOpenPlacedDocument(
   const place = useLinkPlacement(projectId ?? null, null);
   return useCallback(
     (documentId) =>
-      place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
+      place({ documentId }, (found, placeBeside) =>
+        openDocument({ documentId: found.documentId, placeBeside }),
+      ),
     [place, openDocument],
   );
 }

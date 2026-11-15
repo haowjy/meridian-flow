@@ -3,7 +3,12 @@
  * a package's own files comes back as the tool result with Mars's code, key path and message
  * (never a refused write): the files stay as written, so the model fixes them and saves again.
  */
-import { type AgentsLevel, agentsLocationOf, type SaveOutcome } from "@meridian/contracts/agents";
+import {
+  type AgentsLevel,
+  agentsLocationOf,
+  type SaveOutcome,
+  shownFindings,
+} from "@meridian/contracts/agents";
 import { meridianErrorFromTool } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { z } from "zod";
@@ -44,12 +49,23 @@ const where = (item: Pick<SaveOutcome, "level" | "folder">) =>
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
+/** One finding under the file it is in: the file is named once, above its findings. */
 const line = (finding: SaveOutcome["findings"][number]) => {
   const key = finding.path.length ? ` ${finding.path.join(".")}` : "";
-  return `  ${finding.file} [${finding.code}]${key}: ${finding.message}`;
+  return `  [${finding.code}]${key}: ${finding.message}`;
 };
 
-/** What the model reads: the items an error keeps out of use and their errors first, then what changed, then warnings. */
+/** Findings grouped under their file, each file named once with what its findings did to it. */
+const byFile = (findings: SaveOutcome["findings"], verdict: (file: string) => string): string[] =>
+  [...new Set(findings.map((finding) => finding.file))].flatMap((file) => [
+    `${file} ${verdict(file)}:`,
+    ...findings.filter((finding) => finding.file === file).map(line),
+  ]);
+
+/**
+ * What the model reads: the items an error keeps out of use first, each with its errors, then what
+ * was saved, then warnings and renames.
+ */
 export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
   if (outcomes.length === 0)
     return "Nothing to save: those packages have no files and no saved version.";
@@ -57,29 +73,36 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
     .map((item) => {
       if (item.outcome === "failed") {
         return [
-          `Not saved: ${where(item)}. Nothing in it can be read, so the saved version is unchanged. Your edits are in the files.`,
-          ...item.findings.map(line),
+          `Not saved: ${where(item)}. Nothing in it can be read, so ${
+            item.savedBefore
+              ? "new chats keep the version saved before"
+              : "new chats can't use it until it is saved"
+          }. Your edits are in the files.`,
+          ...byFile(item.findings, () => "fails the check"),
           "Fix these and save again.",
         ].join("\n");
       }
-      const errors = item.findings.filter((finding) => finding.severity === "error");
-      const warnings = item.findings.filter((finding) => finding.severity !== "error");
+      const held = item.findings.filter(
+        (finding) =>
+          finding.severity === "error" &&
+          (item.kept.includes(finding.file) || item.leftOut.includes(finding.file)),
+      );
+      const warnings = shownFindings(item.findings).filter(
+        (finding) => finding.severity !== "error",
+      );
       return [
-        ...(item.kept.length
-          ? [
-              `Edits with an error are not in use in ${where(item)}; the last saved version of each stays in use: ${item.kept.join(", ")}`,
-            ]
-          : []),
-        ...(item.leftOut.length
-          ? [
-              `Not in use in ${where(item)}, which has no saved version without an error: ${item.leftOut.join(", ")}`,
-            ]
-          : []),
-        ...(item.kept.length || item.leftOut.length ? errors.map(line) : []),
+        ...byFile(held, (file) =>
+          item.kept.includes(file)
+            ? "fails the check, so this edit isn't in use; its last good save stays in use"
+            : "fails the check and has no good save, so it is left out",
+        ),
+        ...(held.length ? ["Fix these and save again."] : []),
         item.outcome === "unchanged"
-          ? `Already saved: ${where(item)} has no changes since its saved version.`
+          ? `Already saved: ${where(item)} has no ${held.length ? "other " : ""}changes since its saved version.`
           : `Saved ${where(item)}: ${count(item.changes.length, "file")} changed. New chats use it; this chat keeps the version it started with.`,
-        ...(warnings.length ? ["Warnings:", ...warnings.map(line)] : []),
+        ...(warnings.length
+          ? ["Warnings (they don't stop a Save):", ...byFile(warnings, () => "has")]
+          : []),
         ...(item.renamed.length ? [`Renamed: ${item.renamed.join("; ")}`] : []),
       ].join("\n");
     })

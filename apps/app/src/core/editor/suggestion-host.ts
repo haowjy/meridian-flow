@@ -8,7 +8,7 @@ import { getEditorChrome } from "./chrome";
 
 export function editorSuggestionHost(
   editor: Editor,
-  reach: "prose" | "chrome",
+  route: "prose" | "chrome",
 ): SuggestionHost | null {
   const chrome = getEditorChrome(editor);
   if (!chrome) return null;
@@ -21,7 +21,7 @@ export function editorSuggestionHost(
         // Registration precedes the React layer by one frame so the first key
         // cannot outrun its menu. Chrome retains that host policy.
         layer: null,
-        ...(reach === "chrome" ? { reach: "chrome" as const } : {}),
+        ...(route === "chrome" ? { route: "chrome" as const } : {}),
         bindings,
       });
       let releaseRetreat: (() => void) | null;

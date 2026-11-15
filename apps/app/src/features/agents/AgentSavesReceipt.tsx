@@ -1,15 +1,15 @@
 /**
- * What the AI's `save_agents` calls in a turn did, one part per package: the edits an Error keeps
- * out of use first, then what changed, renames, warnings, and Undo; or, for a package not saved,
- * its problems.
+ * What the AI's `save_agents` calls in a turn did, one part per package, in the words the
+ * package's own Save result uses: what an Error kept out of use first, then what was saved,
+ * renames, warnings, and Undo; or, for a package not saved, its problems.
  */
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AgentFileChange, AgentFinding, SaveOutcome } from "@meridian/contracts/agents";
+import { type AgentFinding, type SaveOutcome, shownFindings } from "@meridian/contracts/agents";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
 import { Button } from "@/components/ui/button";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
-import { FindingList, heldBack, useOpenAgentFile } from "./PackageSave";
+import { changeLine, FindingList, heldBack, heldSummary, useOpenAgentFile } from "./PackageSave";
 import { packageLabel, statusOf, usePackageSaves } from "./package-save";
 
 export function AgentSavesReceipt({ outcomes }: { outcomes: readonly SaveOutcome[] }) {
@@ -37,20 +37,23 @@ export function AgentSavesReceipt({ outcomes }: { outcomes: readonly SaveOutcome
 function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: string | null }) {
   const label = packageLabel(outcome);
   const held = heldBack(outcome);
-  const warnings = outcome.findings.filter((finding) => finding.severity === "warning");
+  const warnings = shownFindings(outcome.findings).filter(
+    (finding) => finding.severity !== "error",
+  );
+  const heldPaths = new Set(
+    [...outcome.kept, ...outcome.leftOut].map((file) => `${outcome.folder}${file}`),
+  );
+  const saved = outcome.changes.filter((change) => !heldPaths.has(change.path));
   return (
     <div className="py-[var(--chat-card-pad-y)]">
       <div className="flex min-h-[calc(var(--strip-row)-2px)] items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)]">
         <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-          {outcome.outcome === "saved" ? (
-            <Trans>Saved {label}</Trans>
-          ) : outcome.outcome === "failed" ? (
+          {outcome.outcome === "failed" ? (
             <Trans>Not saved: {label}</Trans>
           ) : held.length > 0 ? (
-            plural(held.length, {
-              one: `${label}: # edit not in use`,
-              other: `${label}: # edits not in use`,
-            })
+            heldSummary(outcome).heading
+          ) : outcome.outcome === "saved" ? (
+            <Trans>Saved {label}</Trans>
           ) : (
             <Trans>{label} was already saved</Trans>
           )}
@@ -62,10 +65,16 @@ function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: 
       {outcome.outcome === "failed" ? (
         <>
           <p className="px-[var(--chat-card-pad-x)] text-muted-foreground">
-            <Trans>
-              Nothing in it could be read. New chats keep the previous saved version until this is
-              fixed.
-            </Trans>
+            {outcome.savedBefore ? (
+              <Trans>
+                Nothing in it could be read. New chats keep the version saved before until this is
+                fixed.
+              </Trans>
+            ) : (
+              <Trans>
+                Nothing in it could be read. New chats can't use it until this is fixed.
+              </Trans>
+            )}
           </p>
           <Findings projectId={projectId} outcome={outcome} findings={outcome.findings} />
         </>
@@ -74,17 +83,14 @@ function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: 
           {held.length > 0 ? (
             <>
               <p className="px-[var(--chat-card-pad-x)] text-foreground">
-                <Trans>
-                  Each Error stops its edit from being used. Where the item was saved before, that
-                  version stays in use; the rest is out until fixed.
-                </Trans>
+                {heldSummary(outcome).sub}
               </p>
               <Findings projectId={projectId} outcome={outcome} findings={held} />
             </>
           ) : null}
-          {outcome.changes.length > 0 ? (
+          {saved.length > 0 ? (
             <ul className="px-[var(--chat-card-pad-x)]">
-              {outcome.changes.map((change) => (
+              {saved.map((change) => (
                 <li key={change.path} className="truncate">
                   {changeLine(change)}
                 </li>
@@ -121,22 +127,9 @@ function Findings({
       findings={findings}
       held={outcome}
       className="px-[calc(var(--chat-card-pad-x)-0.5rem)]"
-      onOpen={
-        projectId ? (finding) => openFile(outcome.level, `${outcome.folder}${finding.file}`) : null
-      }
+      onOpen={projectId ? (file) => openFile(outcome.level, `${outcome.folder}${file}`) : null}
     />
   );
-}
-
-function changeLine({ path, change }: AgentFileChange): string {
-  switch (change) {
-    case "added":
-      return t`${path} added`;
-    case "changed":
-      return t`${path} changed`;
-    case "deleted":
-      return t`${path} deleted`;
-  }
 }
 
 /**
