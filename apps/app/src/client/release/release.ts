@@ -149,7 +149,14 @@ export function installReleaseWatch(): void {
 
   // The release changed under a tab whose route code is split into files the deploy removed. The
   // import is left to throw: `preventDefault` would resolve it to undefined and break the render.
-  window.addEventListener("vite:preloadError", requireReloadAtOnce);
+  // TanStack Router's lazy route component reloads on the same error unless its own once-per-message
+  // key is set, and it has no option to turn that off, so set the key to leave the reload to this module.
+  window.addEventListener("vite:preloadError", (event) => {
+    requireReloadAtOnce();
+    const message = (event as Event & { payload?: { message?: unknown } }).payload?.message;
+    if (typeof message === "string")
+      sessionStorage.setItem(`tanstack_router_reload:${message}`, "1");
+  });
 
   const touch = () => {
     lastActivity = Date.now();
