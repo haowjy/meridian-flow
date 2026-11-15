@@ -108,12 +108,10 @@ export function RecentDocumentsLanding({
             <RemovedDocumentLandingNotice projectId={projectId} className="min-w-0" />
           ) : null}
         </div>
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h2 className={role.sectionHeading}>
-              <Trans>Recently opened</Trans>
-            </h2>
-          </div>
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+          <h2 className={role.sectionHeading}>
+            <Trans>Recently opened</Trans>
+          </h2>
           <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
             <FilePlus aria-hidden />
             <Trans>New document</Trans>
