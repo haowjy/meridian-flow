@@ -51,11 +51,16 @@ identity only; it never chooses the inverse branch. Undo lands in the
 Work that owns the selected edit, including after the chat is rebound. A user
 card uses the same admission boundary.
 
-An invertible active part offers Undo. Once nothing is left to undo, the chip
+An invertible active part offers Undo. The card's Undo and its chip choose from one selection
+(`prepare`): the turn's parts no Undo took out yet. A part the card's Undo took out is done, and
+one the model's own undo in the same chat took out is part of what the reply did, so neither is a
+step or a skip; nothing reverses an Undo, so its action stays the record of what it took. Without that filter the engine could restore
+an intermediate copy and take it out again on every press. Once nothing is left to undo, the chip
 (`getTurnReceiptChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
-the turn's text out, `partly` when parts stayed, else `expired`; the model's undo in the reply is
-part of what the reply did and shows no word (the same rule as for tree receipts below). Effective
-action state is indexed per immutable part (`effectiveActionIndex`). A model count consumes original
+the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
+card's undo receipts, whatever has happened to the nodes since), `partly` when parts stayed, else
+`expired` (the same rule as for tree receipts below). Effective action state is indexed per
+immutable part (`effectiveActionIndex`). A model count consumes original
 actions: once a partial model Undo reverses any surviving part of an edit, the next count
 continues to the preceding edit.
 
@@ -214,13 +219,11 @@ The receipts carry the command's id (`tree_edit_receipts.command_id`), as the te
 and Undo counts by it: the steps of one command (a create with content is a node and its text)
 are one step, taken and redone together; `revert` names a handle and takes that receipt only.
 
-Every inverse (model undo, redo and revert, and the card) is one ordered
+Every text inverse (model undo and revert, and the card) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,
 with its action and its place on the history axis, planned against a simulation the steps
-before it advanced (simulated rows, one clock). A model count-N Undo records N separately
-redoable actions, and a step that reverses an undo puts its edit back on the stack. The commit
-runs the steps in planned order (the card merges documents newest first, redo
-oldest first). A draft's text commits as one checkpoint rewrite, at its plan's first step.
+before it advanced (simulated rows, one clock). A model count-N Undo records N separate
+actions. The commit runs the steps in planned order (the card merges documents newest first). A draft's text commits as one checkpoint rewrite, at its plan's first step.
 A document removed at capture plans no live text (`document_deleted`);
 a draft that outlived the removal still takes its own inverse. Commit takes the attempt's
 document mutation locks in id order.
@@ -251,11 +254,11 @@ unwinds the whole attempt and recaptures. After four misses one more capture is
 planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for
 the card and `internal_error` ("the document changed while reversing; try again")
-for model Undo, Redo and Revert, never an invented refusal. Delivery runs
+for model Undo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
-semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
+semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. A reversal that reversed nothing because a document
 blocks an ancestor folder, the folder is missing, or the document moved or was deleted again

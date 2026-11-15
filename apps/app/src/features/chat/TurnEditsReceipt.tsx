@@ -18,7 +18,7 @@ import type { WorkReceipt } from "@meridian/thread-client";
 import { useEffect, useId, useState } from "react";
 import { successfulWorkReversals } from "@/client/api/reverse-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
-import { applyRecentAvailability } from "@/client/recents";
+import { removeAccountRecents } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
@@ -136,10 +136,10 @@ export function TurnEditsReceipt({
                 result.destination?.kind === "live",
             ),
         );
-        applyRecentAvailability(accountId, {
-          removed: liveCreates.map(({ documentId }) => ({ documentId, projectId })),
-          updates: [],
-        });
+        removeAccountRecents(
+          accountId,
+          liveCreates.map(({ documentId }) => ({ documentId, projectId })),
+        );
       }
       setActionSkips(outcome.skips ?? []);
       const restored = successfulWorkReversals(outcome);

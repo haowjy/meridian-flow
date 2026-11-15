@@ -277,6 +277,8 @@ export type AgentTreeHistory = {
    * the model's `undo` chooses from.
    */
   turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
+  /** Whether the reply's card Undo took back any of its tree changes: true for good once it did. */
+  undoneByCard(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
   receiptsAt(threadId: ThreadId, shownAt: string): Promise<TreeReceipt[]>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */

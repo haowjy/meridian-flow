@@ -106,10 +106,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     history: () => treeHistory,
   });
   /** A card's reversal takes the reply's tree receipts too; the model's own tools take their own. */
-  const treePlanOf = (query: TurnInverseQuery, direction: "undo" | "redo") =>
+  const treePlanOf = (query: TurnInverseQuery) =>
     query.model || !query.turnId
       ? Promise.resolve(NO_TREE_STEPS)
-      : treeInverse.plan(query.threadId, query.turnId, direction);
+      : treeInverse.plan(query.threadId, query.turnId, "undo");
   const readDisposition = createDraftDispositionReader(
     createDrizzleDraftDispositionStore(input.db),
   );
@@ -117,19 +117,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    * What the tree half does to the documents' text: an Undo that deletes an applied create in
    * live takes its applied text with it.
    */
-  async function treeEffects(query: TurnInverseQuery) {
-    const tree = await treePlanOf(query, "undo");
-    return { restoring: new Set<string>(), leavingLive: new Set(tree.leavingLive) };
+  async function leavingLiveOf(query: TurnInverseQuery) {
+    return new Set((await treePlanOf(query)).leavingLive);
   }
-  async function selectedDocuments(
-    query: TurnInverseQuery,
-    restoring: ReadonlySet<string>,
-  ): Promise<DocumentId[]> {
+  async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
     if (query.model) return [...new Set(query.documentIds ?? [])].sort();
     return [
-      ...new Set(
-        (await readTurnEditTargets(db(), query, [...restoring])).map((target) => target.documentId),
-      ),
+      ...new Set((await readTurnEditTargets(db(), query)).map((target) => target.documentId)),
     ].sort();
   }
   async function history(documentIds: DocumentId[]) {
@@ -202,8 +196,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     /** A part whose draft the Trash purge deleted: what it recorded became of the part. */
     const purged = new Map<number, "applied" | "discarded">();
     const captured = await (async () => {
-      const { restoring, leavingLive } = await treeEffects(query);
-      const ids = await selectedDocuments(query, restoring);
+      const leavingLive = await leavingLiveOf(query);
+      const ids = await selectedDocuments(query);
       const rows = await history(ids);
       for (const row of rows) if (row.purgedDisposition) purged.set(row.id, row.purgedDisposition);
       const draftIds = inverseDraftIds(query, rows);
@@ -229,7 +223,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       );
       try {
         for (const documentId of ids) {
-          const removal = restoring.has(documentId) ? null : (removals.get(documentId) ?? null);
+          const removal = removals.get(documentId) ?? null;
           // A delete keeps the document's bytes, and its drafts that outlived it plan their
           // inverse over the retained live history.
           const { doc: live, room: liveRoomName } = await materialize(documentId);
@@ -469,7 +463,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   const store: TurnInverseStore = {
     withCapturedDocuments: attempts,
-    async ownersOf(query, direction, userId) {
+    async ownersOf(query, userId) {
       let captured: InverseCapture;
       try {
         captured = await capture(query);
@@ -479,7 +473,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
       const { ids, draftIds } = captured;
       destroyDocuments(captured.documents);
-      const tree = await treePlanOf(query, direction);
+      const tree = await treePlanOf(query);
       let owners = await input.workProjection.ownersOf({
         drafts: draftIds,
         branches: tree.branches,
@@ -503,10 +497,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       query.model || !query.turnId
         ? Promise.resolve({})
         : treeInverse.draftStates(query.threadId, query.turnId),
-    async treeSteps(query, direction) {
-      const tree = await treePlanOf(query, direction);
+    async treeSteps(query) {
+      const tree = await treePlanOf(query);
       return { acting: tree.steps.length, gone: tree.gone.length };
     },
+    treeUndoneByCard: (query) =>
+      query.model || !query.turnId
+        ? Promise.resolve(false)
+        : treeHistory.undoneByCard(query.threadId, query.turnId),
     async readHistory(documentId) {
       return (await history([documentId])).map((part) => ({ ...part, disposition: "pending" }));
     },
@@ -541,7 +539,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const deliveries: (() => Promise<void>)[] = [];
       const skips: TurnInverseSkip[] = [];
       // Off every lock: the tree receipts the reply left, which lists and Works they write.
-      const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query, "undo");
+      const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query);
       const grants = await admitInverse(sequence, query, userId, tree.documents);
       const works = { drafts: attempt.draftIds, branches: tree.branches };
       if (query.declared) {
@@ -573,7 +571,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         };
         const runTree = async () => {
           if (!tree.steps.length && !tree.gone.length) return;
-          const now = await treePlanOf(query, "undo");
+          const now = await treePlanOf(query);
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
             throw new InverseAttemptMiss();
@@ -710,9 +708,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   /**
    * The one recorder of a committed inverse step: who made it (the model's chat and reply with
-   * its write ordinal, stamped on the draft journal rows it wrote; or the writer), its action
-   * and what it consumes, the receipts it committed, and its count
-   * where it landed. Returns the model's handle.
+   * its write ordinal, stamped on the draft journal rows it wrote; or the writer), its action,
+   * the receipts it committed, and its count where it landed. Returns the model's handle.
    */
   async function recordStep(
     entry: PlannedInverse,

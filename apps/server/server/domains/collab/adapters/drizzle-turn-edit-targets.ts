@@ -37,8 +37,6 @@ export const receiptBranchExists = or(
 export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
   query: TurnInverseQuery,
-  /** Documents in Trash that the caller's Redo restores first: their text is a target too. */
-  restoring: readonly string[] = [],
 ): Promise<TurnEditedDocumentId[]> {
   const owner = branchOwnerSql(branches);
   const rows = await db
@@ -61,7 +59,6 @@ export async function readTurnEditTargets(
         // A draft-scoped edit keeps its history while the document's content is kept: a delete
         // in live or a discarded creation leaves the draft's bytes to retention.
         sql`(${livingDocumentSql(documentEdits.documentId)}
-          OR ${restoring.length ? inArray(documentEdits.documentId, restoring as DocumentId[]) : sql`false`}
           OR (${documentEditParts.origin}->>'kind' = 'pending'
             AND exists (select 1 from documents d
               where d.id = ${documentEdits.documentId} and d.content_purged_at is null)))`,
