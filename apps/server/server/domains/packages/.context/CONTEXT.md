@@ -12,7 +12,10 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   for `compilePackage`: it adds the package's `[package.tools]` to each Agent that does not name
   the key, and Flow adds no tool rule itself. `prepare` upgrades a pre-v1 package and translates a
   foreign one in memory, so a package whose classification is not `schema-1` makes every Agent
-  unavailable (`flow.package-not-schema-1`). A `changes` entry on an Agent's file
+  unavailable (`flow.package-not-schema-1`, left out when the TOML doesn't parse). Findings are
+  causes only: an Agent of a package whose `mars.toml` has an Error carries that Error and nothing
+  of its own about not being read, so every reader (the Agents tab, the Save result, `save_agents`)
+  shows them as they are. A `changes` entry on an Agent's file
   (`field.restriction-lost` above all) is a warning, not an error. A manifest error reaches each Agent as Mars's
   `package-tools.unreadable`. A lone file (a skill's listing, a package name) is still read with
   `read`.

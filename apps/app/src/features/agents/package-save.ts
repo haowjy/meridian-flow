@@ -10,7 +10,7 @@ import {
   agentsFileOf,
   type SaveOutcome,
 } from "@meridian/contracts/agents";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { notifyManager, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { saveAgentPackages, undoAgentSave } from "@/client/api/agents-api";
 import { invalidateAgentReads, latestAgentFiles } from "@/client/query/useAgentFiles";
@@ -33,7 +33,10 @@ export type PackageWord =
 
 type Entry = {
   word: PackageWord;
-  /** The package as the writer saw it when they pressed: what the word speaks of. */
+  /**
+   * The package the word speaks of: as pressed, until a settled Save's or Undo's files are read
+   * again; `null` while that read is outstanding, when the word holds whatever the files say.
+   */
   basis: string | null;
   ref: PackageRef;
   /** The package had no files when saved: its line stays while the word does. */
@@ -97,6 +100,20 @@ function publish() {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Publishes a change made from a read of the files query in the batch that hands that read to
+ * the components: published at once, a word whose basis is the new read met the old one for a
+ * frame and dropped.
+ */
+const publishWithRead = (change: () => void) =>
+  new Promise<void>((resolve) =>
+    notifyManager.schedule(() => {
+      change();
+      publish();
+      resolve();
+    }),
+  );
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => {
@@ -123,7 +140,7 @@ function heldWord(entry: Entry, status: AgentPackageStatus | undefined): Package
   const unchanged = signature(status) === basis;
   switch (word.kind) {
     case "saved":
-      return !word.settled || unchanged ? word : null;
+      return !word.settled || basis === null || unchanged ? word : null;
     case "failed":
       return !word.settled || unchanged ? word : null;
     case "undone":
@@ -152,6 +169,7 @@ function predicted(status: AgentPackageStatus): PackageWord {
     kept: [],
     leftOut: fails ? [] : itemsWithErrors(status.findings),
     renamed: [],
+    savedBefore: status.savedAt !== null,
   };
   return fails
     ? { kind: "failed", outcome, settled: false }
@@ -192,9 +210,11 @@ async function save(
         entries.delete(key);
         continue;
       }
+      // A failed Save changed nothing, so it speaks of the package as pressed; a Save, of the
+      // package as the read after it finds it.
       set(projectId, {
         ref,
-        basis: before?.basis ?? null,
+        basis: outcome.outcome === "failed" ? (before?.basis ?? null) : null,
         removed: before?.removed ?? false,
         word:
           outcome.outcome === "failed"
@@ -215,13 +235,14 @@ async function save(
   await invalidateAgentReads(queryClient, projectId, accountId);
   // A Save's word speaks of the package as the Save left it, read once the files are read again.
   const after = latestAgentFiles(queryClient, projectId)?.packages;
-  for (const status of statuses) {
-    const ref = { level: status.level, folder: status.folder };
-    const entry = entries.get(keyOf(projectId, ref));
-    if (entry?.word.kind !== "saved" || !entry.word.settled) continue;
-    set(projectId, { ...entry, basis: signature(statusOf(after, ref)) });
-  }
-  publish();
+  await publishWithRead(() => {
+    for (const status of statuses) {
+      const ref = { level: status.level, folder: status.folder };
+      const entry = entries.get(keyOf(projectId, ref));
+      if (entry?.word.kind !== "saved" || !entry.word.settled) continue;
+      set(projectId, { ...entry, basis: signature(statusOf(after, ref)) });
+    }
+  });
 }
 
 /** `nothing`: a later Save of the package exists, so the Undo changed nothing. */
@@ -258,13 +279,14 @@ async function undo(
     // The word speaks of the package as Undo left it: its files may read Saved or Unsaved now.
     if (undone && entries.get(key)?.word.kind === "undone") {
       const after = statusOf(latestAgentFiles(queryClient, projectId)?.packages, ref);
-      set(projectId, {
-        ref,
-        basis: signature(after),
-        removed,
-        word: { kind: "undone", settled: true },
-      });
-      publish();
+      await publishWithRead(() =>
+        set(projectId, {
+          ref,
+          basis: signature(after),
+          removed,
+          word: { kind: "undone", settled: true },
+        }),
+      );
     }
     return undone ? "undone" : "nothing";
   } catch {

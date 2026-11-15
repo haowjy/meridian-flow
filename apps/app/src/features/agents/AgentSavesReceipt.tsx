@@ -9,7 +9,6 @@ import type { AgentFinding, SaveOutcome } from "@meridian/contracts/agents";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
 import { Button } from "@/components/ui/button";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
-import { rootFindings } from "./findings";
 import { changeLine, FindingList, heldBack, heldSummary, useOpenAgentFile } from "./PackageSave";
 import { packageLabel, statusOf, usePackageSaves } from "./package-save";
 
@@ -64,16 +63,18 @@ function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: 
       {outcome.outcome === "failed" ? (
         <>
           <p className="px-[var(--chat-card-pad-x)] text-muted-foreground">
-            <Trans>
-              Nothing in it could be read. New chats keep the version saved before until this is
-              fixed.
-            </Trans>
+            {outcome.savedBefore ? (
+              <Trans>
+                Nothing in it could be read. New chats keep the version saved before until this is
+                fixed.
+              </Trans>
+            ) : (
+              <Trans>
+                Nothing in it could be read. New chats can't use it until this is fixed.
+              </Trans>
+            )}
           </p>
-          <Findings
-            projectId={projectId}
-            outcome={outcome}
-            findings={rootFindings(outcome.findings)}
-          />
+          <Findings projectId={projectId} outcome={outcome} findings={outcome.findings} />
         </>
       ) : (
         <>

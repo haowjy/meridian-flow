@@ -1,7 +1,6 @@
 /**
  * What Mars and Flow found in an Agent package, as the writer reads it: each finding in Flow's
- * sentence where Flow has one (Mars's own words otherwise), a package-level problem said once on
- * the package, and what a file's findings make of it.
+ * sentence where Flow has one (Mars's own words otherwise), and what a file's findings make of it.
  */
 import { t } from "@lingui/core/macro";
 import type {
@@ -10,7 +9,6 @@ import type {
   AgentLevel,
   AgentPackageStatus,
 } from "@meridian/contracts/agents";
-import { agentsFileOf } from "@meridian/contracts/agents";
 import { errorsOf, failsSave, packageFolderOf } from "./package-save";
 
 const quoted = (message: string) => /"([^"]+)"|`([^`]+)`/.exec(message)?.slice(1).find(Boolean);
@@ -49,37 +47,21 @@ export function findingSentence(finding: AgentFinding): string {
   return finding.message;
 }
 
-/**
- * The findings that are causes: an unreadable `mars.toml` also makes Mars read the package as no
- * schema and each Agent in it as no Agent, and those say nothing more.
- */
-export function rootFindings(findings: readonly AgentFinding[]): AgentFinding[] {
-  const tomlBroken = findings.some((finding) => finding.code === "toml.invalid");
-  const packageBroken = findings.some(
-    (finding) => finding.severity === "error" && agentsFileOf(finding.file) === null,
-  );
-  return findings.filter(
-    (finding) =>
-      !(tomlBroken && finding.code === "flow.package-not-schema-1") &&
-      !(packageBroken && finding.code === "flow.file-unreadable"),
-  );
-}
-
 /** A file's findings in its package, by the package-relative path. */
 export const findingsOfFile = (findings: readonly AgentFinding[], file: string) =>
   findings.filter((finding) => finding.file === file);
 
 /**
  * What keeps one Agent or skill file from use, the first that applies:
- * - `unavailable`: it has an Error and no good save is in use, so it isn't in use at all (its name
- *   is struck through);
+ * - `unavailable`: new chats can't use it at all (its name is struck through): it has an Error and
+ *   no saved version that runs, or it can't run (`runtime`, such as a model the account can't use);
  * - `not-in-use`: it has an Error, and its last good save stays in use instead of this edit;
  * - `hidden`: a level above has the same name;
  * - `notes`: it works, with warnings.
  * A package-level Error (a broken `mars.toml`) is the package's to say, not each file's.
  */
 export type FileTrouble =
-  | { kind: "unavailable" | "not-in-use"; problems: string[] }
+  | { kind: "unavailable" | "not-in-use"; problems: string[]; runtime: boolean }
   | { kind: "hidden"; by: AgentLevel }
   | { kind: "notes"; notes: string[] };
 
@@ -89,12 +71,13 @@ export function fileTrouble(
 ): FileTrouble | null {
   const own = file.path.slice(packageFolderOf(file.path).length);
   const findings = status ? findingsOfFile(status.findings, own) : [];
-  const packageFails = status !== undefined && failsSave(status);
-  const errors = errorsOf(findings);
-  if (!packageFails && (errors.length > 0 || file.unavailableReasons.length > 0)) {
+  const errors = status && failsSave(status) ? [] : errorsOf(findings);
+  const runtime = file.unavailableReasons;
+  if (errors.length > 0 || runtime.length > 0) {
     return {
-      kind: file.savedVersionInUse ? "not-in-use" : "unavailable",
-      problems: errors.length ? errors.map(findingSentence) : file.unavailableReasons,
+      kind: errors.length > 0 && file.savedVersionInUse ? "not-in-use" : "unavailable",
+      problems: [...errors.map(findingSentence), ...runtime],
+      runtime: errors.length === 0,
     };
   }
   if (file.hiddenBy) return { kind: "hidden", by: file.hiddenBy };

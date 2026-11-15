@@ -24,7 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
 import { FindingsChip, SentenceList } from "./FindingsChip";
-import { findingSentence, findingsOfFile, rootFindings } from "./findings";
+import { findingSentence, findingsOfFile } from "./findings";
 import {
   failsSave,
   type PackageRef,
@@ -96,7 +96,7 @@ function StateAndSave({
           one: "# file differs from the version new chats use.",
           other: "# files differ from the version new chats use.",
         });
-  const problems = rootFindings(packageErrorsOf(status.findings));
+  const problems = packageErrorsOf(status.findings);
   return (
     <>
       {failsSave(status) ? (
@@ -225,18 +225,27 @@ function Word({
       );
     }
     case "failed": {
-      const problems = rootFindings(word.outcome.findings);
+      const problems = word.outcome.findings;
       return (
         <PackageProblems
           projectId={projectId}
           pkg={pkg}
           findings={problems}
-          word={plural(problems.length, {
-            one: "Not saved: # problem",
-            other: "Not saved: # problems",
-          })}
+          word={
+            // On a 264px package row the longer word pushes the package's name out.
+            look === "package"
+              ? plural(problems.length, { one: "# problem", other: "# problems" })
+              : plural(problems.length, {
+                  one: "Not saved: # problem",
+                  other: "Not saved: # problems",
+                })
+          }
           heading={t`${label} wasn't saved`}
-          sub={t`Your edits are in the files. New chats keep the version saved before until these are fixed and it is saved again.`}
+          sub={
+            word.outcome.savedBefore
+              ? t`Your edits are in the files. New chats keep the version saved before until these are fixed and it is saved again.`
+              : t`Your edits are in the files. New chats can't use ${label} until these are fixed and it is saved.`
+          }
         />
       );
     }
@@ -390,9 +399,9 @@ function listOf(items: string[]): string {
 }
 
 /**
- * Findings by file, in the order they came: each file's path (struck through when a Save left it
- * out, with "Your latest edit isn't in use" when it kept the last good save), then each finding
- * in Flow's words. A press on the path opens the file.
+ * Findings by file, in the order they came: each file's path, then what a Save did with it ("Left
+ * out:", the path struck through, or "Your latest edit isn't in use:"), then each finding in Flow's
+ * words. A press on the path opens the file.
  */
 export function FindingList({
   pkg,
@@ -437,6 +446,10 @@ export function FindingList({
             {held?.kept.includes(file) ? (
               <span className="block text-muted-foreground">
                 <Trans>Your latest edit isn't in use:</Trans>
+              </span>
+            ) : held?.leftOut.includes(file) ? (
+              <span className="block text-muted-foreground">
+                <Trans>Left out:</Trans>
               </span>
             ) : null}
             <SentenceList

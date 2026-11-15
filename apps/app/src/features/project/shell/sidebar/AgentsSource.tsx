@@ -106,11 +106,12 @@ export function AgentsSource({
     (scheme: ProjectContextTreeScheme) => (dir: TreeDirectory, open: boolean) => {
       const at = agentsLocationOf(scheme, dir.path.slice(1));
       if (!at) return null;
-      const inside = open ? null : outOfUseInside(files, at);
       const pkg = /^packages\/[^/]+$/.test(at.path)
         ? { level: at.level, folder: `${at.path}/` }
         : null;
       const status = pkg ? statusOf(packages, pkg) : undefined;
+      // A failing package's problem chip is the row's one mark: a count beside it pushes the name out.
+      const inside = open || (status && failsSave(status)) ? null : outOfUseInside(files, at);
       // The slot takes the row's trailing marks' place, so it is filled only with something to say.
       const save = writable && pkg && saves.shows(pkg, status) ? pkg : null;
       if (!inside && !save) return null;

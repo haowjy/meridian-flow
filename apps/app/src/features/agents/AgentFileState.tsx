@@ -8,11 +8,9 @@ import {
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, EyeOff, FileCog, TriangleAlert } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { useEffect } from "react";
 import { invalidateAgentReads, useAgentFiles } from "@/client/query/useAgentFiles";
 import type { OpenDocument } from "@/client/stores";
-import { DocumentNotice } from "@/components/app/DocumentNotice";
 import {
   useAccountId,
   useLiveDocumentSessionRegistry,
@@ -78,85 +76,6 @@ export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[])
 }
 
 /**
- * Mars's verdict on one Agent or skill file: whose level it is at, whether chats can use it and,
- * if not, Mars's reasons; and what it hides or what hides it.
- */
-export function AgentFileStatusNotice({
-  file,
-  action,
-  className,
-}: {
-  file: AgentFileStatus;
-  /** Its package's Save state and Save. */
-  action?: ReactNode;
-  className?: string;
-}) {
-  useLingui();
-  const agent = file.kind === "agent";
-  const level =
-    file.level === "project"
-      ? agent
-        ? t`Project Agent`
-        : t`Project skill`
-      : file.level === "user"
-        ? agent
-          ? t`Your Agent, in every project`
-          : t`Your skill, in every project`
-        : agent
-          ? t`Built-in Agent, read-only`
-          : t`Built-in skill, read-only`;
-  const hides = file.shadows.length
-    ? listOf(file.shadows.map((below) => whose(below, file.slug)))
-    : null;
-  const unavailable = file.unavailableReasons.length > 0;
-  const status = file.hiddenBy
-    ? t`Not used: ${whose(file.hiddenBy, file.slug)} hides it.`
-    : unavailable
-      ? file.savedVersionInUse
-        ? t`Your latest edit isn't in use; the last saved version is:`
-        : hides
-          ? t`Unavailable, and it still hides ${hides}:`
-          : t`Unavailable:`
-      : !file.saved
-        ? t`Not in use until it is saved.`
-        : `${
-            file.pickable
-              ? t`Available.`
-              : agent
-                ? t`Available to other Agents; it isn't in the picker.`
-                : t`Available to Agents; it isn't in the / menu.`
-          }${hides ? ` ${t`It hides ${hides}.`}` : ""}`;
-  return (
-    <DocumentNotice
-      className={className}
-      action={action}
-      icon={
-        file.hiddenBy ? (
-          <EyeOff aria-hidden className="size-4" />
-        ) : unavailable ? (
-          <TriangleAlert aria-hidden className="size-4 text-destructive" />
-        ) : file.saved ? (
-          <CircleCheck aria-hidden className="size-4" />
-        ) : (
-          <FileCog aria-hidden className="size-4" />
-        )
-      }
-    >
-      <span className="font-medium text-foreground">{level}.</span> {status}
-      {unavailable ? (
-        <span className="mt-1 block space-y-0.5 text-foreground">
-          {file.unavailableReasons.map((reason) => (
-            <span key={reason} className="block whitespace-pre-line break-words">
-              {reason}
-            </span>
-          ))}
-        </span>
-      ) : null}
-    </DocumentNotice>
-  );
-}
-
-/**
  * An open file of an Agents level, at the end of its toolbar row: what keeps it from use (its
  * problems, or a level above that hides it), its notes, and its package's Save state with Save.
  * Read again each time the server acknowledges the writer's edits, so it follows the typing. A
@@ -214,14 +133,15 @@ function LevelFileState({
   );
 }
 
-function TroubleChip({
+/** What keeps a file from use, as a chip that opens its problems; also the built-in dialog's. */
+export function TroubleChip({
   file,
   trouble,
   touch,
 }: {
   file: AgentFileStatus;
   trouble: FileTrouble;
-  touch: boolean;
+  touch?: boolean;
 }) {
   const name = file.slug;
   switch (trouble.kind) {
@@ -233,9 +153,11 @@ function TroubleChip({
           word={t`Unavailable`}
           heading={t`${name} is unavailable`}
           sub={
-            file.saved
-              ? t`The last Save left it out. Fix these and save again.`
-              : t`Save leaves it out until these are fixed.`
+            trouble.runtime
+              ? t`New chats can't start it until these are fixed.`
+              : file.saved
+                ? t`The last Save left it out. Fix these and save again.`
+                : t`Save leaves it out until these are fixed.`
           }
         >
           {() => <SentenceList items={trouble.problems} />}

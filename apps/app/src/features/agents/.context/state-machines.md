@@ -34,8 +34,9 @@ stateDiagram-v2
   shows nothing, the state says it. Each Save's Undo (`pending`, `failed`, `undone`, `nothing`) is
   kept by `saveId`, not on the word, so the AI's Save card and the notice show one state.
 - **A word holds while the package is as the word speaks of it** (its state, `saveId`, changes
-  and findings): for a settled `saved` or `undone`, as the files read after it; for the rest, as
-  the writer pressed it. Typing after a Save ends the word even when the same file changes again,
+  and findings): for a settled `saved` or `undone`, as the files read after it, and the word holds
+  until that read lands (judged against the package as pressed, the fresh files dropped it for a
+  frame); for the rest, as the writer pressed it. Typing after a Save ends the word even when the same file changes again,
   and so does putting a file back by hand. Holding `saved` on the state alone left "1 not in use"
   up after a hand revert made the package read `saved`.
 - **Retry sends the Save again with nothing to match it by.** That is safe: a Save of files

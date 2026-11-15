@@ -68,7 +68,11 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
     .map((item) => {
       if (item.outcome === "failed") {
         return [
-          `Not saved: ${where(item)}. Nothing in it can be read, so new chats keep the version saved before. Your edits are in the files.`,
+          `Not saved: ${where(item)}. Nothing in it can be read, so ${
+            item.savedBefore
+              ? "new chats keep the version saved before"
+              : "new chats can't use it until it is saved"
+          }. Your edits are in the files.`,
           ...byFile(item.findings, () => "fails the check"),
           "Fix these and save again.",
         ].join("\n");
@@ -87,7 +91,7 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
         ),
         ...(held.length ? ["Fix these and save again."] : []),
         item.outcome === "unchanged"
-          ? `Already saved: ${where(item)} has no other changes since its saved version.`
+          ? `Already saved: ${where(item)} has no ${held.length ? "other " : ""}changes since its saved version.`
           : `Saved ${where(item)}: ${count(item.changes.length, "file")} changed. New chats use it; this chat keeps the version it started with.`,
         ...(warnings.length
           ? ["Warnings (they don't stop a Save):", ...byFile(warnings, () => "has")]

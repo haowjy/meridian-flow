@@ -12,7 +12,6 @@ export function AgentFileDialog({
   title,
   titleExtra,
   description,
-  notice,
   text,
 }: {
   open: boolean;
@@ -20,7 +19,6 @@ export function AgentFileDialog({
   title: string;
   titleExtra?: ReactNode;
   description: string;
-  notice?: ReactNode;
   text: { isError: boolean; data: string | undefined };
 }) {
   return (
@@ -31,7 +29,6 @@ export function AgentFileDialog({
       titleExtra={titleExtra}
       description={description}
     >
-      {notice}
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
         {text.isError ? (
           <InlineErrorRow message={t`Couldn't load this file.`} className="p-0" />
