@@ -113,11 +113,15 @@ export function compilePackage(
     drafts.set(
       slug,
       Object.hasOwn(problems, path)
-        ? problemAgent(slug, path, problems[path], packageErrors)
+        ? problemAgent(slug, path, [
+            ...packageErrors,
+            flow(path, "file-unreadable", problems[path]),
+          ])
         : draftAgent(slug, path, prepared, packageErrors, skills),
     );
   }
   rejectBrokenSubagents(drafts);
+  noteSharedNames(drafts);
 
   const agents = [...drafts.values()].map((draft) => ({
     slug: draft.slug,
@@ -140,6 +144,34 @@ export function compilePackage(
       ...[...skills.values()].flat(),
     ]),
   };
+}
+
+/**
+ * Two Agents of a package may share a name: both work, and each says which other file has it,
+ * since the picker shows them by that name.
+ */
+function noteSharedNames(drafts: Map<string, Draft>) {
+  const byName = new Map<string, Draft[]>();
+  for (const draft of drafts.values()) {
+    const key = (draft.fields?.name ?? draft.slug).normalize("NFC").toLowerCase();
+    byName.set(key, [...(byName.get(key) ?? []), draft]);
+  }
+  for (const group of byName.values()) {
+    if (group.length < 2) continue;
+    for (const draft of group) {
+      const name = draft.fields?.name ?? draft.slug;
+      const others = group.filter((other) => other !== draft).map((other) => other.file);
+      draft.warnings.push(
+        flow(
+          draft.file,
+          "name-shared",
+          `Another Agent is also named "${name}": ${others.join(", ")}`,
+          "warning",
+          ["name"],
+        ),
+      );
+    }
+  }
 }
 
 function distinct(items: PackageDiagnostic[]): PackageDiagnostic[] {
@@ -233,7 +265,11 @@ function manifestFindings(
     fromMars(MANIFEST_PATH, item),
   );
   const { classification } = prepared;
-  if (classification.kind !== "schema-1") {
+  // TOML that doesn't parse has no schema to read; its error is the whole story.
+  if (
+    classification.kind !== "schema-1" &&
+    !findings.some((item) => item.code === "toml.invalid")
+  ) {
     const schema = classification.kind === "schema-newer" ? ` ${classification.schema}` : "";
     findings.push(
       flow(
@@ -284,19 +320,14 @@ interface Draft {
   optIn: Set<string>;
 }
 
-/** An Agent path whose file cannot be read: the Agent is in the package, unavailable. */
-function problemAgent(
-  slug: string,
-  file: string,
-  message: string,
-  packageErrors: PackageDiagnostic[],
-): Draft {
+/** An Agent path whose file cannot be read: the Agent is in the package, unavailable for `errors`. */
+function problemAgent(slug: string, file: string, errors: PackageDiagnostic[]): Draft {
   return {
     slug,
     file,
     fields: null,
     body: "",
-    errors: [...packageErrors, flow(file, "file-unreadable", message)],
+    errors,
     warnings: [],
     permission: undefined,
     tools: undefined,
@@ -313,7 +344,14 @@ function draftAgent(
 ): Draft {
   const definition = prepared.definitions.find((item) => item.source_path === file);
   if (definition?.kind !== "agent") {
-    return problemAgent(slug, file, "Mars did not read this file as an Agent", packageErrors);
+    // Mars reads no file of a package whose mars.toml has an Error; that Error says why.
+    return problemAgent(
+      slug,
+      file,
+      packageErrors.length
+        ? packageErrors
+        : [flow(file, "file-unreadable", "Mars did not read this file as an Agent")],
+    );
   }
   const { reading } = definition;
   const draft: Draft = {

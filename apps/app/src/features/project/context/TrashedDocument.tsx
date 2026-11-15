@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import { roomContent } from "@/features/draft-review/review-frame";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
 import { useAccountId } from "./account-feature-context";
@@ -63,18 +64,12 @@ export function TrashedDocument({
   const text = useSessionText(
     binding.state.kind === "opened" ? binding.state.session.document : null,
   );
-  const { states, restore } = useDocumentTrashRestore();
-  const state = states.get(documentId);
-  const openFailed = useOpenOnceLiving(
-    projectId,
-    documentId,
-    state?.kind,
-    standing.kind === "in-tree",
-  );
+  const { restore } = useDocumentTrashRestore();
+  useOpenOnceLiving(projectId, documentId, standing.kind === "in-tree");
 
   if (standing.kind === "purged" || standing.kind === "not-in-list") {
     return (
-      <div className="p-4">
+      <MainSurface joined className="p-4">
         <p className={role.emptyLine}>
           {standing.kind === "purged" ? (
             <Trans>Gone for good: this document was emptied from Trash.</Trans>
@@ -82,7 +77,7 @@ export function TrashedDocument({
             <Trans>No longer available</Trans>
           )}
         </p>
-      </div>
+      </MainSurface>
     );
   }
   if (standing.kind === "waiting" || binding.state.kind === "opening") {
@@ -94,53 +89,51 @@ export function TrashedDocument({
   }
   if (binding.state.kind === "failed") {
     return (
-      <div className="p-4">
+      <MainSurface joined className="p-4">
         <InlineErrorRow message={t`Couldn't load this document.`} onRetry={binding.retry} />
-      </div>
+      </MainSurface>
     );
   }
   const name = standing.kind === "in-trash" ? standing.node.displayName : "";
-  const failure = openFailed
-    ? t`Restored ${name}, but couldn't open it. Try again from the file list.`
-    : null;
   return (
-    <ReadOnlyViewerFrame className="bg-transparent">
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="shrink-0 px-4 pt-3">
-          <DocumentNotice
-            icon={<ArchiveRestore className="size-4" aria-hidden />}
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  standing.kind === "in-trash" &&
-                  restore([{ ref: { kind: "file", id: documentId }, name }])
-                }
-              >
-                <Trans>Restore</Trans>
-              </Button>
-            }
-          >
-            {details ? trashSentence(details, i18n.locale, accountId) : null}
-          </DocumentNotice>
-          {failure ? <InlineErrorRow message={failure} className="px-0 pt-2 pb-0" /> : null}
+    <MainSurface joined className="flex h-full min-h-0 flex-col">
+      <ReadOnlyViewerFrame className="bg-transparent">
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="shrink-0 px-4 pt-3">
+            <DocumentNotice
+              icon={<ArchiveRestore className="size-4" aria-hidden />}
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    standing.kind === "in-trash" &&
+                    restore([{ ref: { kind: "file", id: documentId }, name }])
+                  }
+                >
+                  <Trans>Restore</Trans>
+                </Button>
+              }
+            >
+              {details ? trashSentence(details, i18n.locale, accountId) : null}
+            </DocumentNotice>
+          </div>
+          {file ? (
+            <div className="grid min-h-0 flex-1 place-items-center px-6 py-10">
+              <FileCard
+                name={name}
+                mimeType={file.blob?.mime ?? ""}
+                sizeBytes={file.blob?.size ?? null}
+              />
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1">
+              <TextViewer source={{ content: text }} name={name} markdown />
+            </div>
+          )}
         </div>
-        {file ? (
-          <div className="grid min-h-0 flex-1 place-items-center px-6 py-10">
-            <FileCard
-              name={name}
-              mimeType={file.blob?.mime ?? ""}
-              sizeBytes={file.blob?.size ?? null}
-            />
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1">
-            <TextViewer source={{ content: text }} name={name} markdown />
-          </div>
-        )}
-      </div>
-    </ReadOnlyViewerFrame>
+      </ReadOnlyViewerFrame>
+    </MainSurface>
   );
 }
 
@@ -165,33 +158,16 @@ function useSessionText(document: Y.Doc | null): string {
  * Main follows the document out of Trash, wherever it was restored from (this Restore, the
  * sidebar's, a drag out), and an address naming a document no longer in Trash goes to it once.
  * One open leaves the view: the list changing again must not start another, which would cancel
- * this one and lose its failure. Returns whether that open failed.
+ * this one. A refusal is the opener's to say.
  */
-function useOpenOnceLiving(
-  projectId: string,
-  documentId: string,
-  restore: "restored" | undefined,
-  living: boolean,
-): boolean {
+function useOpenOnceLiving(projectId: string, documentId: string, living: boolean): void {
   const openDocument = useOpenProjectDocument(projectId);
-  const [failed, setFailed] = useState(false);
   const leaving = useRef(false);
-  const mounted = useRef(false);
   useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  useEffect(() => {
-    const restored = restore === "restored";
-    if (leaving.current || (!restored && !living)) return;
+    if (leaving.current || !living) return;
     leaving.current = true;
-    void openDocument({ documentId, replace: true }).then((outcome) => {
-      if (restored && mounted.current && outcome.kind === "refused") setFailed(true);
-    });
-  }, [restore, living, documentId, openDocument]);
-  return failed;
+    void openDocument({ documentId, replace: true });
+  }, [living, documentId, openDocument]);
 }
 
 /** What the page says of the removal: the list's place, and the server's author, time and retention once it has answered. */

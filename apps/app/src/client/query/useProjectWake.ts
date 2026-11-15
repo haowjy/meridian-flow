@@ -2,20 +2,24 @@
  * The project's one live subscription to the server's wake hints. A hint carries no state: it says
  * a read is stale, and the read comes again. The tree itself is not read this way (the project's
  * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and,
- * for a Work, its row in the Works list: its count and its lifecycle) and the project's sources.
+ * for a Work, its row in the Works list: its count and its lifecycle), the project's sources, and
+ * what Mars reads of the Agent files.
  * Hints sent while the socket was down are lost, so a reconnect makes every one of those stale.
  */
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
+import { useAccountId } from "@/features/project/context/account-feature-context";
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
+import { invalidateAgentReads } from "./useAgentFiles";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
 
 export function useProjectWake(projectId: string): void {
   const queryClient = useQueryClient();
   const transport = useOptionalThreadTransport();
+  const accountId = useAccountId();
   useEffect(() => {
     if (!projectId || !transport) return;
     // Another client's reply or question: the chat list's marks and the chat feed's rows follow
@@ -86,17 +90,21 @@ export function useProjectWake(projectId: string): void {
         if (hint.recheckTabs) {
           refreshDrafts();
           refreshSources();
+          void invalidateAgentReads(queryClient, projectId, accountId);
         }
       } else if (hint.type === "draft-owner-hint") {
         refreshDrafts(hint.owner);
-      } else if ((hint.type as string) === "context-sources-hint") {
+      } else if (hint.type === "context-sources-hint") {
         // A chat or a lineage gained or lost a source (Scratch, uploads): which trees exist changed.
         refreshSources();
+      } else if (hint.type === "agent-files-hint") {
+        // An Agent file's text changed elsewhere (another tab, the AI): its verdict is read again.
+        void invalidateAgentReads(queryClient, projectId, accountId);
       }
     });
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [projectId, queryClient, transport]);
+  }, [projectId, queryClient, transport, accountId]);
 }

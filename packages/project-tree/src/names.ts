@@ -1,5 +1,9 @@
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
-import { firstFreeName, parseDocumentFilename } from "@meridian/contracts/protocol";
+import {
+  firstFreeCopy,
+  parseDocumentFilename,
+  splitCopyNumber,
+} from "@meridian/contracts/protocol";
 import type { NodeKind } from "./record.js";
 
 const MAX_NAME = 255;
@@ -40,10 +44,12 @@ function partsOf(kind: NodeKind, name: string): { name: string; extension: strin
  */
 export function freeName(kind: NodeKind, name: string, taken: ReadonlySet<string>): string {
   if (!taken.has(name)) return name;
-  const { name: base, extension } = partsOf(kind, name);
+  const { name: stored, extension } = partsOf(kind, name);
+  const { base, copy } = splitCopyNumber(stored);
   const letters = [...base];
   for (;;) {
-    const { filename } = firstFreeName({ name: letters.join("").trimEnd(), extension }, taken);
+    const kept = letters.join("").trimEnd();
+    const { filename } = firstFreeCopy(kept, copy, extension, taken);
     if (filename.length <= MAX_NAME || letters.length <= 1) return filename;
     letters.pop();
   }

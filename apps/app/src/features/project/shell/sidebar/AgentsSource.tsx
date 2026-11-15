@@ -4,13 +4,14 @@
  * `packages/`) ends its heading or folder row with its Save state and Save; each file with what
  * keeps it from use or from the saved version.
  */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
   type AgentFileStatus,
   type AgentFiles,
   type AgentPackageStatus,
   type AgentsLevel,
+  type AgentsLocation,
   agentsLocationOf,
 } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -34,21 +35,24 @@ import {
   ListRowField,
 } from "@/components/ui/list-row";
 import { ListSectionHeader } from "@/components/ui/list-section";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useInlineEdit } from "@/components/ui/use-inline-edit";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
-import { agentFileAt, agentFileMark } from "@/features/agents/AgentFileNotice";
+import { agentFileAt } from "@/features/agents/AgentFileState";
 import { writeFirstAgentText } from "@/features/agents/agent-file-template";
 import { BuiltinAgentFileDialog } from "@/features/agents/BuiltinAgentFileDialog";
+import { fileTrouble, outOfUseUnder, outOfUseWord } from "@/features/agents/findings";
 import { PackageSave, savedNotes } from "@/features/agents/PackageSave";
 import {
-  errorsOf,
+  failsSave,
   importName,
   type PackageRef,
   packageFolderOf,
   statusOf,
   usePackageSaves,
 } from "@/features/agents/package-save";
+import { cn } from "@/lib/utils";
 import { useLiveDocumentSessionRegistry } from "../../context/account-feature-context";
 import { type ContextTree, ContextTreeBody, useContextTree } from "../../context/ContextTreePanel";
 import { validateContextEntryName } from "../../context/context-entry-name";
@@ -87,7 +91,7 @@ export function AgentsSource({
     (scheme: ProjectContextTreeScheme) => (file: TreeFile) => {
       const mark = levelFileMark(files, scheme, file.path);
       return mark ? (
-        <span className={mark.error ? "text-destructive" : "text-muted-foreground"}>
+        <span className={mark.gone ? "text-destructive" : "text-muted-foreground"}>
           {mark.word}
         </span>
       ) : null;
@@ -96,23 +100,32 @@ export function AgentsSource({
   );
   const crossedOutOf = useCallback(
     (scheme: ProjectContextTreeScheme) => (file: TreeFile) =>
-      Boolean(levelFileMark(files, scheme, file.path)?.error),
+      Boolean(levelFileMark(files, scheme, file.path)?.gone),
     [files],
   );
   const packages = files?.packages;
   const folderEndOf = useCallback(
-    (scheme: ProjectContextTreeScheme) => (dir: TreeDirectory) => {
-      const at = writable ? agentsLocationOf(scheme, dir.path.slice(1)) : null;
-      if (!at || !/^packages\/[^/]+$/.test(at.path)) return null;
-      const pkg = { level: at.level, folder: `${at.path}/` };
-      const status = statusOf(packages, pkg);
+    (scheme: ProjectContextTreeScheme) => (dir: TreeDirectory, open: boolean) => {
+      const at = agentsLocationOf(scheme, dir.path.slice(1));
+      if (!at) return null;
+      const pkg = /^packages\/[^/]+$/.test(at.path)
+        ? { level: at.level, folder: `${at.path}/` }
+        : null;
+      const status = pkg ? statusOf(packages, pkg) : undefined;
+      // A failing package's problem chip is the row's one mark: a count beside it pushes the name out.
+      const inside = open || (status && failsSave(status)) ? null : outOfUseInside(files, at);
       // The slot takes the row's trailing marks' place, so it is filled only with something to say.
-      return saves.shows(pkg, status) ? (
-        <PackageSave projectId={projectId} pkg={pkg} status={status} />
-      ) : null;
+      const save = writable && pkg && saves.shows(pkg, status) ? pkg : null;
+      if (!inside && !save) return null;
+      return (
+        <span className="flex min-w-0 shrink-0 items-center gap-1">
+          {inside ? <InsideCount inside={inside} short={save !== null} /> : null}
+          {save ? <PackageSave projectId={projectId} pkg={save} status={status} /> : null}
+        </span>
+      );
     },
     // `revision`: a Save or Undo changes what `shows` answers.
-    [projectId, packages, writable, saves.revision],
+    [projectId, files, packages, writable, saves.revision],
   );
   const shared = { writable, projectId, editorWorkId, activeDocumentId, onSelectFile, onPicked };
   const project = useContextTree({
@@ -180,7 +193,7 @@ export function AgentsSource({
               key={file.path}
               icon={file.kind === "agent" ? Bot : BookOpen}
               title={file.slug}
-              meta={agentFileMark(file)}
+              meta={file.hiddenBy ? t`Hidden` : undefined}
               onOpen={() => setBuiltin(file)}
             />
           ))
@@ -192,33 +205,95 @@ export function AgentsSource({
 }
 
 /**
- * What a level's file row says after its name, the first that applies: Error (Mars can't use
- * it, so a Save leaves it out, or it fails the package's Save; the row is struck through), Edit not
- * in use (the same, but the item's last saved version still is),
- * Unsaved (it differs from the saved version), Hidden.
+ * What a level's file row says after its name, the first that applies (`fileTrouble`):
+ * Unavailable (no good save is in use; the name is struck through), Not in use (its edit has an
+ * Error, its last good save is used instead), Unsaved (it differs from the saved version),
+ * Hidden. A package-level Error is said on the package's row, not on each file.
  */
 function levelFileMark(
   files: AgentFiles | null,
   scheme: ProjectContextTreeScheme,
   treePath: string,
-): { word: string; error: boolean } | null {
+): { word: string; gone: boolean } | null {
   const at = agentsLocationOf(scheme, treePath.replace(/^\//, ""));
   if (!at || !files) return null;
-  const folder = packageFolderOf(at.path);
-  const status = statusOf(files.packages, { level: at.level, folder });
-  const inPackage = at.path.slice(folder.length);
+  const status = statusOf(files.packages, { level: at.level, folder: packageFolderOf(at.path) });
   const verdict = agentFileAt(files.files, scheme, treePath);
-  if (
-    (verdict && verdict.unavailableReasons.length > 0) ||
-    (status && errorsOf(status.findings).some((finding) => finding.file === inPackage))
-  )
-    return verdict?.savedVersionInUse
-      ? { word: t`Edit not in use`, error: false }
-      : { word: t`Error`, error: true };
+  const trouble = verdict ? fileTrouble(verdict, status) : null;
+  if (trouble?.kind === "unavailable") return { word: t`Unavailable`, gone: true };
+  if (trouble?.kind === "not-in-use") return { word: t`Not in use`, gone: false };
   if (status?.changes.some((change) => change.path === at.path && change.change !== "deleted"))
-    return { word: t`Unsaved`, error: false };
-  const word = agentFileMark(verdict);
-  return word ? { word, error: false } : null;
+    return { word: t`Unsaved`, gone: false };
+  return trouble?.kind === "hidden" ? { word: t`Hidden`, gone: false } : null;
+}
+
+/**
+ * What a closed folder holds out of use, so closing it hides no problem: the count every level
+ * says (`outOfUseWord`), else a package that can't be saved.
+ */
+function outOfUseInside(
+  files: AgentFiles | null,
+  at: AgentsLocation,
+): { word: string; tone: "destructive" | "warning" | "muted"; count: number } | null {
+  if (!files) return null;
+  const prefix = at.path ? `${at.path}/` : "";
+  const out = outOfUseWord(outOfUseUnder(files.files, files.packages, { level: at.level, prefix }));
+  if (out) return out;
+  // A package's own row says its problem; a folder above it says it holds one.
+  const failing = files.packages.filter(
+    (item) =>
+      item.level === at.level &&
+      item.folder.startsWith(prefix) &&
+      item.folder !== prefix &&
+      failsSave(item),
+  ).length;
+  return failing
+    ? {
+        word: plural(failing, { one: "# can't be saved", other: "# can't be saved" }),
+        tone: "muted",
+        count: failing,
+      }
+    : null;
+}
+
+/**
+ * A closed folder's count. Beside a package's Save it gives way to the name: a dot and the
+ * number, said in full to a screen reader and in its tooltip.
+ */
+function InsideCount({
+  inside,
+  short,
+}: {
+  inside: NonNullable<ReturnType<typeof outOfUseInside>>;
+  short: boolean;
+}) {
+  if (!short)
+    return <span className="shrink-0 px-1 text-muted-foreground text-xs">{inside.word}</span>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="flex shrink-0 items-center gap-1 px-1 text-muted-foreground text-xs tabular-nums"
+          aria-label={inside.word}
+          role="img"
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "size-1.5 rounded-full",
+              inside.tone === "destructive"
+                ? "bg-destructive"
+                : inside.tone === "warning"
+                  ? "bg-warning"
+                  : "bg-current",
+            )}
+          />
+          {inside.count}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{inside.word}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 /** One level's heading, its New menu, and its rows. */
@@ -358,12 +433,7 @@ function LevelSection({
                   )}
                 </span>
                 {writable ? (
-                  <PackageSave
-                    projectId={projectId}
-                    pkg={pkg}
-                    status={statusOf(packages, pkg)}
-                    look="bare"
-                  />
+                  <PackageSave projectId={projectId} pkg={pkg} status={statusOf(packages, pkg)} />
                 ) : null}
               </div>
             );

@@ -5,7 +5,7 @@
 import { type AgentFiles, agentsLocationOf } from "@meridian/contracts/agents";
 import { keepPreviousData, type QueryClient, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { listAgentFiles, readBuiltinAgentFile } from "@/client/api/agents-api";
+import { listAgentFiles, readBuiltinAgentFile, readThreadAgent } from "@/client/api/agents-api";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -83,5 +83,18 @@ export function useBuiltinAgentFile(path: string | null) {
       readBuiltinAgentFile(AbortSignal.any([accountSignal, signal]), path ?? ""),
     enabled: path !== null,
     staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** The Agent file a chat is bound to; read when the view opens, so its stale mark is current. */
+export function useThreadAgent(threadId: string | null) {
+  const accountSignal = useAccountEpochSignal();
+  const accountId = useAccountId();
+  return useQuery({
+    queryKey: ["thread-agent", accountId, threadId],
+    queryFn: ({ signal }) =>
+      readThreadAgent(AbortSignal.any([accountSignal, signal]), threadId ?? ""),
+    enabled: threadId !== null,
+    staleTime: 0,
   });
 }

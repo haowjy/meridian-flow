@@ -259,6 +259,7 @@ export type WsServerMessage =
   | import("./context-catalog.js").DraftOwnerHint
   | import("./context-catalog.js").ProjectChatsHint
   | import("./context-sources.js").ContextSourcesHint
+  | import("./context-catalog.js").AgentFilesHint
   | AskAnswerReply
   | {
       type: "error";
@@ -313,6 +314,10 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
   }),
   z.object({
     type: z.literal("context-sources-hint"),
+    projectId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("agent-files-hint"),
     projectId: z.string().min(1),
   }),
   z.object({

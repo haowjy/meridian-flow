@@ -66,14 +66,14 @@ export interface AgentFileStatus {
   level: AgentLevel;
   /** Relative to the level's root (`agentsRootOf`): `agents/critic.md`, `packages/x/skills/y/SKILL.md`. */
   path: string;
-  /** Why these files can't be used, in Mars's words; empty when they can. */
+  /**
+   * Why the Agent can't run though Mars reads it (a model the account can't use): this text's, or
+   * while this text has an Error, its saved version's. Its Errors are its package's findings.
+   */
   unavailableReasons: string[];
   /** The saved version has this file; without it, new chats do not see the item at all. */
   saved: boolean;
-  /**
-   * With `unavailableReasons`: the last saved version of this item has no such problem and stays
-   * in use, so only the latest edit is not.
-   */
+  /** The saved version of this item runs, so new chats use it even while this text has an Error. */
   savedVersionInUse: boolean;
   /**
    * Whether the writer picks it: from the Agent picker for an Agent, the `/` menu for a skill.
@@ -112,6 +112,14 @@ export const agentFilesSchema = z.object({
 }) satisfies z.ZodType<AgentFiles>;
 /** A built-in file's text: built-ins are not documents, so they are read here. */
 export const agentBuiltinFileSchema = z.object({ text: z.string() });
+
+/** The Agent file a chat is bound to, as saved; `stale` when a newer save exists. */
+export const threadAgentSchema = z.object({
+  name: z.string(),
+  text: z.string(),
+  stale: z.boolean(),
+});
+export type ThreadAgent = z.infer<typeof threadAgentSchema>;
 
 /** Raw overlay retained for inspection/export; effective values live in `configuration`. */
 export interface InvocationOverlay {

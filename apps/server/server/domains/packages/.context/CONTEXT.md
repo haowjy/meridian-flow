@@ -12,7 +12,10 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   for `compilePackage`: it adds the package's `[package.tools]` to each Agent that does not name
   the key, and Flow adds no tool rule itself. `prepare` upgrades a pre-v1 package and translates a
   foreign one in memory, so a package whose classification is not `schema-1` makes every Agent
-  unavailable (`flow.package-not-schema-1`). A `changes` entry on an Agent's file
+  unavailable (`flow.package-not-schema-1`, left out when the TOML doesn't parse). Findings are
+  causes only: an Agent of a package whose `mars.toml` has an Error carries that Error and nothing
+  of its own about not being read, so every reader (the Agents tab, the Save result, `save_agents`)
+  shows them as they are. A `changes` entry on an Agent's file
   (`field.restriction-lost` above all) is a warning, not an error. A manifest error reaches each Agent as Mars's
   `package-tools.unreadable`. A lone file (a skill's listing, a package name) is still read with
   `read`.
@@ -20,6 +23,8 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   file is not a skill, and a `mars.toml` with one makes every Agent of the package unavailable. A
   `warning` or `info` doesn't: it is shown and the Agent runs as its file reads (a restriction
   `prepare` dropped, `field.restriction-lost`, is a warning). `compilePackage` holds the table.
+  Two Agents of one package with the same name both run; each carries a `flow.name-shared`
+  warning naming the other's file, since the picker shows them by that name.
   `checkPackage` (`domain/check-package.ts`) is the one place Save asks whether files can be
   published: it returns the package's errors and warnings, and later calls Mars's `check()`.
 - An unavailable Agent is stored with its diagnostics and no definition, so
@@ -93,7 +98,8 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   broken), what it hides and what hides it (`layerByName`; `combineByName` is its winners), and every package's Save state. A
   file's own findings drop the file name. `builtinFile` reads a built-in's text by that path.
   Routes: `GET /api/agents/files`, `GET /api/agents/builtin`.
-- A chat's binding keeps its revision whatever is saved later. A skill invoked with `/` pins the files it was first read from; invoking it again reads the pin.
+- A chat's binding keeps its revision whatever is saved later, until the chat compacts. A skill invoked with `/` pins the files it was first read from; invoking it again reads the pin.
+- `refreshBinding(userId, projectId, thread)` reads the binding a **top-level** chat moves onto at a compaction: the newest save of its Agent's name, only when what the chat would run differs: the compiled definition and configuration compared without package-version ids, so a Save that touched other files of the package moves nothing (an Agent that is gone, or whose newest save can't run, resolves to the bound revision), and each invoked skill pinned again when its own files' digest changed, whether or not the Agent moved (a skill no longer saved keeps its pin). A thread with a parent never refreshes: its configuration came from `resolveChildInvocation` with the parent's overrides, and `resolvePrimary` would rebuild it without them. So a subagent, and an Agent only ever spawned as one, stays on the version it started with. It writes no binding (it can install a package row, which is idempotent); the runtime writes the result with `replaceThreadBinding` inside the compaction's transaction, which leaves the invocation overlay and the chat's per-chat model override alone. A catalog read that fails during a compaction keeps the current binding and logs `binding_refresh.failed`. There is no Reload. `boundAgent` backs the chat's read-only definition view (`GET /api/threads/:id/agent`) and says `stale` when a refresh would change the binding, a skill's newer save included.
 - A level root with no `mars.toml` is a package named for the level. When package-wide tool
   rules are supported, deleting that manifest drops them.
 - The adapter reads files one by one, so a multi-file Apply can be seen half done; an Agent's

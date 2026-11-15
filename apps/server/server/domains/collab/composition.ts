@@ -176,6 +176,8 @@ type CollabDomainDeps = {
   treeLists: TreeListStore;
   /** What took a document out of live (its Trash entry), for a pin or a room that lost it. */
   removals: DocumentRemovals;
+  /** A live document's text changed, through its room or a direct write (the AI, Apply). */
+  onLiveTextChanged?(documentId: DocumentId): void;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -245,6 +247,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const documentLastAddress = createDocumentLastAddress(deps.db);
+  const resolveLastDocumentUri = async (documentId: string, branchId?: BranchId) =>
+    (await documentLastAddress(documentId as DocumentId, branchId))?.uri ?? null;
   const lookups = createDrizzleCollabLookups(deps.db);
   const projectionEffects = createDrizzleDocumentProjectionEffects(
     deps.db,
@@ -287,10 +291,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         payload: projectionDiagnostics.payload(cause),
       }),
   });
-  const documentWriteHook = createProjectionEffectsDocumentWriteHook(
+  const projectionHook = createProjectionEffectsDocumentWriteHook(
     projectionEffects,
     derivations.derive,
   );
+  const documentWriteHook: typeof projectionHook = async (event) => {
+    deps.onLiveTextChanged?.(event.documentId);
+    await projectionHook(event);
+  };
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: documentWriteHook,
     diagnostics: projectionDiagnostics,
@@ -417,6 +425,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onLiveUpdatePersisted: (documentId) => {
       draftPulls.scheduleLivePull(documentId);
       derivations.schedule(documentId);
+      deps.onLiveTextChanged?.(documentId);
     },
     onDraftWriterUpdateAdmitted: (draftId) => draftAheads.schedule(draftId),
   });
@@ -434,14 +443,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri: documentUriResolver,
-    resolveLastDocumentUri: async (documentId) =>
-      (await documentLastAddress(documentId))?.uri ?? null,
+    resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
     flushLivePull: draftPulls.flushLivePull,
     notices: deps.notices
       ? createReversalNoticePort({
           notices: deps.notices,
-          documentUriResolver,
+          resolveLastDocumentUri,
           diagnostics: noticeDiagnostics,
         })
       : SILENT_TURN_INVERSE_NOTICES,
@@ -595,8 +603,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: lineageStore,
     receiptStore: turnInverse,
     resolveDocumentUri: documentUriResolver,
-    resolveLastDocumentUri: async (documentId) =>
-      (await documentLastAddress(documentId))?.uri ?? null,
+    resolveLastDocumentUri,
   });
   const turnReversal = createTurnReversalService({
     turnInverse,

@@ -183,6 +183,32 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.readThreadBinding(THREAD)).toBeUndefined();
     });
 
+    it("replaces a binding with the owning transaction, keeping the overlay and later pins", async () => {
+      const [first, second] = [source("One."), source("Two.")].map(
+        async (files) => (await store.installSource(files)).definitions[0],
+      );
+      const [one, two] = [await first, await second];
+      const overlay = { appendSystemPrompt: "Be brief." };
+      await store.bindThread(THREAD, one.id, bindingConfiguration, overlay);
+      const pin = { packageRevisionId: "p", path: "skills/voice/SKILL.md", contentDigest: "d" };
+      await store.recordInvokedSkill(THREAD, "voice", pin);
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await store.replaceThreadBinding(THREAD, two.id, bindingConfiguration, {});
+          throw new Error("Injected boundary failure");
+        }),
+      ).rejects.toThrow("Injected boundary failure");
+      expect((await store.readThreadBinding(THREAD))?.revision?.id).toBe(one.id);
+      await store.replaceThreadBinding(THREAD, two.id, bindingConfiguration, {
+        voice: { ...pin, contentDigest: "e" },
+      });
+      expect(await store.readThreadBinding(THREAD)).toMatchObject({
+        revision: { id: two.id },
+        invocationOverlay: overlay,
+        invokedSkills: { voice: { contentDigest: "e" } },
+      });
+    });
+
     describe("Saves", () => {
       const owner = { userId: USER };
       const retain = async (body: string) =>

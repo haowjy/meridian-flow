@@ -32,7 +32,7 @@ export type LinkableScopes = {
    */
   rootThreadId: string | null;
   /** The chat whose uploads the index holds: a subagent's top chat. Null outside a chat. */
-  chatId: string | null;
+  chatThreadId: string | null;
 };
 
 /** Null without a project: nothing internal can be resolved there. */
@@ -40,13 +40,18 @@ export function linkableScopes({
   projectId,
   workId,
   rootThreadId,
-  chatId,
+  chatThreadId,
 }: {
   projectId: string | null;
   workId: string | null;
   rootThreadId?: string | null;
-  chatId?: string | null;
+  chatThreadId?: string | null;
 }): LinkableScopes | null {
   if (!projectId || !workId) return null;
-  return { projectId, workId, rootThreadId: rootThreadId ?? null, chatId: chatId ?? null };
+  return {
+    projectId,
+    workId,
+    rootThreadId: rootThreadId ?? null,
+    chatThreadId: chatThreadId ?? null,
+  };
 }

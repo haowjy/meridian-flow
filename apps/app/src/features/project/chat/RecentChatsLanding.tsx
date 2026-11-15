@@ -16,6 +16,8 @@ import { role } from "@/components/ui/roles";
 import { SettledSearchField } from "@/components/ui/search-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
+import { focusMain } from "@/features/editor/focus-on-open";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
@@ -24,7 +26,16 @@ import { relativeTime } from "../relative-time";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { projectAddressHref } from "../routing/project-address";
 
+/** Main's recent chats: main's surface, so the focus main gives lands on its first row. */
 export function RecentChatsLanding({ projectId }: { projectId: string }) {
+  return (
+    <MainSurface joined className="flex min-h-0 flex-1 flex-col">
+      <ChatsLanding projectId={projectId} />
+    </MainSurface>
+  );
+}
+
+function ChatsLanding({ projectId }: { projectId: string }) {
   const chat = useChatNavigation();
   const [search, setSearch] = useState<string | null>(null);
   const feed = useProjectChatFeed(projectId, false, search);
@@ -72,7 +83,11 @@ export function RecentChatsLanding({ projectId }: { projectId: string }) {
             feed={feed}
             search={search}
             now={now}
-            onOpen={(chatId) => void chat.openChat(chatId)}
+            onOpen={(chatId) => {
+              // The landing gives way to the chat: main's focus follows to its composer.
+              focusMain();
+              void chat.openChat(chatId);
+            }}
           />
         </div>
       </div>

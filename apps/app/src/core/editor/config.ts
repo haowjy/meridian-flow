@@ -7,10 +7,11 @@
  * not the session lifecycle (see `document-session.ts`).
  */
 
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
@@ -86,6 +87,11 @@ export type CreateEditorExtensionsOptions = {
   history: DocumentHistory;
   schemaType?: YjsTrackedSchemaType;
   /**
+   * A code document's filetype, which is its fence's language: it paints the fence, and the
+   * fence an empty file is filled with stores it, as the one the server writes does.
+   */
+  filetype?: Filetype;
+  /**
    * This client's presence, held by whatever decides when it is on the wire —
    * normally the `DocumentSession`'s (`local-presence.ts`).
    *
@@ -125,6 +131,27 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 };
 
 const lowlight = createLowlight(common);
+
+/**
+ * The lowlight grammar a filetype paints with, where its name differs: lowlight's `shell` is a
+ * terminal session (`#` is a prompt), and CSV has no grammar, so it would be detected as code.
+ */
+const GRAMMAR_FOR_FILETYPE: Partial<Record<Filetype, string>> = {
+  shell: "bash",
+  csv: "plaintext",
+};
+
+/**
+ * What a code file's fence is painted with: its filetype, whatever `language` the block stores,
+ * so a rename to another type repaints and a file stored with no or another language reads as
+ * its type. A filetype lowlight doesn't know is detected from the text.
+ */
+function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
+  const grammar = filetype && (GRAMMAR_FOR_FILETYPE[filetype] ?? filetype);
+  if (!grammar || !lowlight.registered(grammar)) return lowlight;
+  const paint = (value: string) => lowlight.highlight(grammar, value);
+  return { ...lowlight, highlight: (_language, value) => paint(value), highlightAuto: paint };
+}
 
 /**
  * Chrome extension registration list — the append-only seam every surface
@@ -222,6 +249,30 @@ const CodeDocument = Node.create({
   name: "doc",
   topNode: true,
   content: "code_block",
+
+  // The only block is the whole document, so no selection belongs at the doc
+  // level: Ctrl+A would make paste split into paragraphs (a code-only doc keeps
+  // the first) and typing replace the block, dropping its language and id.
+  // Select-all becomes the text of the block instead. Tiptap's clearDocument
+  // resets the block to defaults when the whole text goes, and a default
+  // block has a new id, so every edit opts out of it.
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        filterTransaction(transaction) {
+          transaction.setMeta("preventClearDocument", true);
+          return true;
+        },
+        appendTransaction(_trs, _old, state) {
+          const { $from, $to } = state.selection;
+          if ($from.depth > 0 && $to.depth > 0) return null;
+          return state.tr.setSelection(
+            TextSelection.create(state.doc, 1, state.doc.content.size - 1),
+          );
+        },
+      }),
+    ];
+  },
 });
 
 function createCollaborationExtensions({
@@ -274,6 +325,7 @@ export function createEditorExtensions({
   document,
   history,
   schemaType = "document",
+  filetype,
   presence,
   user,
   assetRenderContext,
@@ -297,6 +349,7 @@ export function createEditorExtensions({
   return [
     ...createStandaloneEditorExtensions({
       schemaType,
+      filetype,
       assetRenderContext,
       slashCommands,
       atReferences,
@@ -325,6 +378,7 @@ export function createEditorExtensions({
 /** Meridian's canonical editor schema without transport or shared state. */
 export function createStandaloneEditorExtensions({
   schemaType = "document",
+  filetype,
   assetRenderContext,
   slashCommands,
   atReferences,
@@ -333,6 +387,7 @@ export function createStandaloneEditorExtensions({
 }: Pick<
   CreateEditorExtensionsOptions,
   | "schemaType"
+  | "filetype"
   | "assetRenderContext"
   | "slashCommands"
   | "atReferences"
@@ -344,7 +399,10 @@ export function createStandaloneEditorExtensions({
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
       BlockIdExtension,
-      MeridianCodeBlockLowlight.configure({ lowlight }),
+      MeridianCodeBlockLowlight.configure({
+        lowlight: lowlightAs(filetype),
+        defaultLanguage: filetype ?? null,
+      }),
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
       AutoPairExtension,
@@ -425,6 +483,7 @@ export function createEditorConfig({
   document,
   history,
   schemaType,
+  filetype,
   presence,
   user,
   assetRenderContext,
@@ -457,6 +516,7 @@ export function createEditorConfig({
         document,
         history,
         schemaType: resolvedSchemaType,
+        filetype,
         presence,
         user,
         assetRenderContext,

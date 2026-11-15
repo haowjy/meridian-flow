@@ -95,7 +95,7 @@ export function createTurnLiveLineageReadModel(deps: {
   receiptStore?: TurnReceiptStateStore;
   resolveDocumentUri(documentId: DocumentId): Promise<string | null>;
   /** The address a document holds or was deleted at: a surviving draft's location. */
-  resolveLastDocumentUri(documentId: DocumentId): Promise<string | null>;
+  resolveLastDocumentUri(documentId: DocumentId, branchId?: BranchId): Promise<string | null>;
 }): TurnLiveLineageReadModel {
   return {
     async listLiveDocumentsForTurn(threadId, turnId) {
@@ -144,7 +144,10 @@ export function createTurnLiveLineageReadModel(deps: {
         const useLastAddress =
           document.scope === "draft" || lines.get(treeLineKey(document))?.op === "delete";
         if (useLastAddress) {
-          const uri = await deps.resolveLastDocumentUri(document.documentId);
+          const uri = await deps.resolveLastDocumentUri(
+            document.documentId,
+            document.scope === "draft" ? document.branchIds[0] : undefined,
+          );
           if (uri) return { ...document, uri };
           const removedAt = createdAt.get(treeLineKey(document));
           return removedAt ? { ...document, uri: removedAt, removed: true } : null;

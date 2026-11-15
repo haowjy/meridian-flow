@@ -19,7 +19,10 @@ not authorization for the requested document.
   the resource owner and commits main's address. Every door opens in main, a chat's included. A
   cancelled decision publishes nothing.
 - **Uploads** have no editor address. Every door opens one in `UploadViewerDialog`, not in main
-  or the side.
+  or the side, text and CSV uploads included (read-only). A link's placement beside is the
+  opener's last step (`placeBeside`), after its one lookup, so an upload never reaches the side.
+- **A refused open** (gone, or its place couldn't be read) is said by the opener in a failure
+  toast, with Retry where trying again can help; no door drops one silently.
 - **A new document** is a node of the list at once, in Unfiled: its address is its placement, and
   the route is bound to its id, so a rename or a move repairs the URL to the same document.
 

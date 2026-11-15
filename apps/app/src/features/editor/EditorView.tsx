@@ -2,7 +2,7 @@
 
 import { Trans } from "@lingui/react/macro";
 import { canonicalContextUri } from "@meridian/contracts";
-import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { type Filetype, WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
@@ -28,13 +28,14 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   detached?: boolean;
   projectId?: string;
   schemaType?: YjsTrackedSchemaType;
+  filetype?: Filetype;
   showCollaborationDecorations?: boolean;
   /** Requested destination, including while the canonical room is still resolving. */
   reviewItemKey?: string | null;
   /** The hosted document, whose focus-on-open intent the live editor claims. */
   focusKey?: string;
-  /** Main's document: the page load's caret goes to it, not to a side's or a sheet's. */
-  loadFocus?: boolean;
+  /** Main's document: the caret main gives goes to it, not to a side's or a sheet's. */
+  inMain?: boolean;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
@@ -71,6 +72,7 @@ export function EditorView(props: EditorViewProps) {
     projectId: props.projectId,
     viewingOwner: controller.ownerKey || undefined,
     schemaType: props.schemaType ?? "document",
+    filetype: props.filetype,
     collaborationDecorations: props.showCollaborationDecorations ?? true,
   } as const;
   const liveIdentity: EditorMountIdentity = {
@@ -193,7 +195,7 @@ export function EditorView(props: EditorViewProps) {
               }}
               session={liveSession}
               focusKey={props.focusKey}
-              loadFocus={props.loadFocus}
+              inMain={props.inMain}
             />
           </div>
         </PaintScope>

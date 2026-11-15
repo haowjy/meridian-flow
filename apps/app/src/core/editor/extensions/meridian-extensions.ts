@@ -37,7 +37,7 @@ import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { browserPictureSource } from "../images/image-workflow";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
-import { cellInteriorPressPlugin } from "../landing/cell-interior-press";
+import { tablePressPlugin } from "../landing/table-press";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
 import { drawLinkAnswer } from "../links/link-mark-view";
 import { mountedLinks } from "../links/link-storage";
@@ -346,6 +346,9 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
         const { empty, $anchor } = editor.state.selection;
         if (!empty || $anchor.parent.type !== this.type) return false;
         if ($anchor.pos !== 1 && $anchor.parent.textContent.length > 0) return false;
+        // A code document has no paragraph to turn the fence into, and the default
+        // Backspace would clear the fence's language and id: do nothing.
+        if (!editor.schema.nodes.paragraph) return true;
         return editor.commands.setParagraph();
       },
       Enter: ({ editor }) => {
@@ -444,15 +447,11 @@ export const MeridianTable = Table.extend({
 
   // Before the parent's, so the sweep-replace paste answers ahead of
   // prosemirror-tables' rectangle overwrite on the same handlePaste ladder.
-  // The cell press router rides AFTER the parent's for the mirrored reason:
+  // The table press router rides AFTER the parent's for the mirrored reason:
   // a column-resize press must claim first, and the cell-sweep drag must arm
   // its listeners before the router claims an inert padding press.
   addProseMirrorPlugins() {
-    return [
-      tableSweepPastePlugin(),
-      ...(this.parent?.() ?? []),
-      cellInteriorPressPlugin(this.editor),
-    ];
+    return [tableSweepPastePlugin(), ...(this.parent?.() ?? []), tablePressPlugin(this.editor)];
   },
 
   addAttributes() {

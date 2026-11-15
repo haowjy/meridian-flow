@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
+  appliedNodes,
   applyDraft,
   childrenOf,
   discardDraft,
@@ -756,6 +757,91 @@ function reorganisedOnce() {
   return t;
 }
 
+describe("an Apply's copy that a later record undid is no longer in force", () => {
+  const inLive = (t: ReturnType<typeof start>, command: string) => appliedNodes(t.doc, command, []);
+
+  it("a card's Undo of the drafted rename ends the Apply's copy; a Redo brings it back", () => {
+    const t = start();
+    const n = t.chapter("Hall");
+    const drafted = t.w.rename(D, CHAT, n, "Lobby");
+    const { command, copies } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(inLive(t, command)).toEqual([n]);
+    const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
+    expect(t.at(n)?.displayName).toBe("Hall");
+    expect(inLive(t, command)).toEqual([]);
+    expect(undoChange(t.w, LIVE, WRITER, (copies[0] as TreeRecord).id)).toBe("already");
+    expect(undoApply(t.w, command, WRITER, cmd())).toMatchObject({
+      undone: [],
+      left: [{ why: "already" }],
+    });
+    const redo = undoChange(t.w, LIVE, CHAT, undid.id) as TreeRecord;
+    expect(t.at(n)?.displayName).toBe("Lobby");
+    expect(inLive(t, command)).toEqual([n]);
+    expect(undoChange(t.w, LIVE, CHAT, undid.id)).toBe("already");
+    expect(redo.undoes).toBe(undid.id);
+    const result = undoApply(t.w, command, WRITER, cmd());
+    expect(result.left).toEqual([]);
+    expect(t.at(n)?.displayName).toBe("Hall");
+    expect(inLive(t, command)).toEqual([]);
+  });
+
+  it("the same for a move that also set a name", () => {
+    const t = start();
+    const folder = t.folder("Arc");
+    t.chapter("Hall", folder);
+    const n = t.chapter("Hall");
+    const drafted = t.w.move(D, CHAT, n, folder);
+    expect(drafted.name).toBeDefined();
+    const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
+    const moved = { displayName: drafted.name, parent: folder };
+    expect(t.at(n)).toMatchObject(moved);
+    const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
+    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: ROOT });
+    expect(inLive(t, command)).toEqual([]);
+    expect(undoApply(t.w, command, WRITER, cmd()).undone).toEqual([]);
+    undoChange(t.w, LIVE, CHAT, undid.id);
+    expect(t.at(n)).toMatchObject(moved);
+    expect(inLive(t, command)).toEqual([n]);
+    expect(undoApply(t.w, command, WRITER, cmd()).left).toEqual([]);
+    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: ROOT });
+  });
+
+  it("an Apply that only restores lists the node until Un-Apply or a card's Undo takes the restore back", () => {
+    for (const how of ["unapply", "undo"] as const) {
+      const t = start();
+      const n = t.chapter("Hall");
+      t.w.delete(LIVE, WRITER, n);
+      const restore = t.w.restore(LIVE, WRITER, n);
+      const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
+      const mine = [restore.id];
+      expect(appliedNodes(t.doc, command, mine)).toEqual([n]);
+      if (how === "unapply") {
+        const result = undoApply(t.w, command, WRITER, cmd(), { restoredByApply: mine });
+        expect(result.left).toEqual([]);
+      } else undoChange(t.w, LIVE, WRITER, restore.id);
+      expect(t.at(n)?.trashed).toBe(true);
+      expect(appliedNodes(t.doc, command, mine)).toEqual([]);
+    }
+  });
+
+  it("a move's name undone as a rename and redone is still taken back by Undo of the move", () => {
+    const t = start();
+    const folder = t.folder("Arc");
+    const other = t.folder("Elsewhere");
+    t.chapter("Hall", folder);
+    const n = t.chapter("Hall");
+    const moved = t.w.move(LIVE, WRITER, n, folder);
+    t.w.move(LIVE, WRITER, n, other);
+    const undid = undoChange(t.w, LIVE, CHAT, moved.id) as TreeRecord;
+    expect(undid.type).toBe("rename");
+    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: other });
+    undoChange(t.w, LIVE, CHAT, undid.id);
+    expect(t.at(n)?.displayName).toBe(moved.name);
+    expect(undoChange(t.w, LIVE, WRITER, moved.id)).toMatchObject({ type: "rename" });
+    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: other });
+  });
+});
+
 describe("part 5: what a document is, and a move between two lists", () => {
   const MINE = sourceRoot("user-files");
 
@@ -862,7 +948,7 @@ describe("part 5: what a document is, and a move between two lists", () => {
       undoes: renamed.id,
     });
     expect(t.at(ch)?.displayName).toBe("Chapter 1");
-    expect(undoChange(t.w, LIVE, WRITER, renamed.id)).toBe("changed_since");
+    expect(undoChange(t.w, LIVE, WRITER, renamed.id)).toBe("already");
   });
 
   it("34. restores a Discard into another branch: the copies are pending there", () => {
@@ -1051,11 +1137,98 @@ describe("replay rules 9 to 13", () => {
     expect(t.at(ch)?.displayName).toBe("notes");
   });
 
+  it("a clashing name that ends in a number continues it: Notes, Notes (2), Notes (3)", () => {
+    const t = start();
+    const f = t.folder("F");
+    t.chapter("Notes", f);
+    t.chapter("Notes", f);
+    t.chapter("Notes (2)", f);
+    t.chapter("Notes (2)", f);
+    expect(t.names(f)).toEqual(["Notes", "Notes (2)", "Notes (3)", "Notes (4)"]);
+    t.valid();
+  });
+
+  it("only the numbers the numbering writes continue: a huge or zero-led one is part of the name", () => {
+    const t = start();
+    const f = t.folder("F");
+    t.chapter("Notes (9007199254740992)", f);
+    t.chapter("Notes (9007199254740992)", f);
+    t.chapter("Notes (02)", f);
+    t.chapter("Notes (02)", f);
+    expect(t.names(f)).toEqual([
+      "Notes (9007199254740992)",
+      "Notes (9007199254740992) (2)",
+      "Notes (02)",
+      "Notes (02) (2)",
+    ]);
+  });
+
   it("a create the server stamped dropped is in no view and is listed", () => {
     const t = start();
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
     t.w.settle("system", [made.id], "dropped", { reason: "Work was closed" });
     expect(t.at(made.node)).toBeUndefined();
     expect(replayView(t.doc, LIVE).dropped).toEqual([{ record: made, reason: "Work was closed" }]);
+  });
+});
+
+describe("numbered names after a partial Apply", () => {
+  it("a copy is not numbered against a record the Apply leaves out", () => {
+    const t = start();
+    const map = t.chapter("Map");
+    const ch2 = t.folder("Ch2");
+    t.folder("Arc", ch2);
+    t.w.delete(LIVE, WRITER, ch2);
+    t.w.author(D, CHAT, { type: "rename", node: map, name: "Ch2", fromName: "Map" });
+    // Putting Ch2 back would bring Arc back too, which is not in the Work: it stays pending.
+    t.w.author(D, CHAT, {
+      type: "move",
+      node: ch2,
+      parent: ROOT,
+      rank: "a1",
+      from: { parent: ROOT, rank: "a1" },
+    });
+    const { left } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(left.map(({ record }) => record.node)).toEqual([ch2]);
+    // In live the folder is in Trash, so nothing is called Ch2 but this.
+    expect(t.at(map)?.displayName).toBe("Ch2");
+  });
+
+  it("a rename to the name a node has is not baked into a number", () => {
+    const t = start();
+    const first = t.chapter("Notes");
+    const second = t.chapter("Alpha");
+    const third = t.chapter("Beta");
+    // Clients that did not number: each literal name is the one the number would take.
+    t.w.author(LIVE, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Alpha" });
+    t.w.author(LIVE, CHAT, { type: "rename", node: third, name: "Notes (2)", fromName: "Beta" });
+    const shown = () => [first, second, third].map((node) => t.at(node)?.displayName);
+    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (3)"]);
+    t.w.author(D, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Notes" });
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (3)"]);
+  });
+
+  it("a move into another folder keeping its name is numbered against what is there", () => {
+    const t = start();
+    const a = t.folder("A");
+    const b = t.folder("B");
+    const x = t.chapter("Notes", b);
+    const y = t.chapter("Notes", a);
+    t.w.author(D, CHAT, {
+      type: "move",
+      node: y,
+      parent: b,
+      rank: "a5",
+      from: { parent: a, rank: "a1" },
+      name: "Notes",
+    });
+    expect(t.names(b, D)).toEqual(["Notes", "Notes (2)"]);
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    // x goes and comes back: y must keep the number it was shown.
+    t.w.delete(LIVE, WRITER, x);
+    t.w.restore(LIVE, WRITER, x);
+    expect(t.at(y)?.displayName).toBe("Notes (2)");
+    expect(t.at(x)?.displayName).toBe("Notes");
   });
 });

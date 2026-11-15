@@ -16,7 +16,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
-import { AgentFileNotice } from "@/features/agents/AgentFileNotice";
+import { AgentFileState } from "@/features/agents/AgentFileState";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -24,6 +24,7 @@ import {
   DocumentStatePortal,
   DocumentStateSlotProvider,
 } from "@/features/editor/document-state-slot";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { cn } from "@/lib/utils";
 import { DocumentReviewProvider } from "../DocumentReview";
@@ -244,7 +245,11 @@ function DesktopDocumentFrame({
             />
             {document.kind === "viewer" ? (
               <div className="flex min-h-0 flex-1 flex-col">
-                <ContextViewerHost projectId={projectId} document={document} />
+                <ContextViewerHost
+                  projectId={projectId}
+                  document={document}
+                  inMain={place === "main"}
+                />
               </div>
             ) : (
               <div className="relative min-h-0 flex-1">
@@ -252,7 +257,7 @@ function DesktopDocumentFrame({
                   projectId={projectId}
                   document={document}
                   active={onScreen}
-                  loadFocus={place === "main"}
+                  inMain={place === "main"}
                 />
               </div>
             )}
@@ -267,12 +272,12 @@ function EditableDocument({
   projectId,
   document,
   active,
-  loadFocus,
+  inMain,
 }: {
   projectId: string;
   document: EditableOpenDocument;
   active: boolean;
-  loadFocus: boolean;
+  inMain: boolean;
 }) {
   const freeze = useHostFreeze(projectId, document);
   return (
@@ -281,7 +286,7 @@ function EditableDocument({
       document={document}
       active={active}
       readOnly={freeze !== null}
-      loadFocus={loadFocus}
+      inMain={inMain}
     />
   );
 }
@@ -439,6 +444,7 @@ function PhoneEditor({
           its way, shows its own chip in its header. */}
       {review?.documentId === document.documentId ? null : (
         <DocumentStatePortal>
+          <AgentFileState projectId={projectId} document={document} touch />
           <DocumentVersionMenu projectId={projectId} document={document} touch />
         </DocumentStatePortal>
       )}
@@ -449,7 +455,6 @@ function PhoneEditor({
           className="shrink-0 px-2 pt-2"
         />
       ) : null}
-      <AgentFileNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <LiveDraftNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <div className="relative min-h-0 flex-1">
         {children}
@@ -487,10 +492,10 @@ export function MainDocumentStatus({ main }: { main: MainDocument }) {
           <Trans>Opening document…</Trans>
         </div>
       ) : failed ? (
-        <div className="flex items-center gap-2">
+        <MainSurface joined className="flex items-center gap-2">
           <AlertCircle className="size-4" aria-hidden />
           <Trans>Couldn't open this document.</Trans>
-        </div>
+        </MainSurface>
       ) : null}
     </div>
   );

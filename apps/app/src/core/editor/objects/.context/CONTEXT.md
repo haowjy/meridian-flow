@@ -63,3 +63,42 @@ handler, which calls `endComposition` with `restarting` set for a nonempty
 selection. That path deletes a non-inline selection, removing a selected block or
 emptying a selected table's cells. Waiting for `beforeinput` is too late. Ordinary
 text and partial cell selections keep their existing input paths.
+
+Before input starts, `objectSelectionForDOM` gives an editable view a collapsed
+native caret: after an inline object, or at the last visible text position inside
+a text-body object. It skips opaque bodies and never searches outside the selected
+object. Registration `body: "text"` means editable object content (tables);
+`body: "block-drag"` means an opaque block (rules, figures and rendered diagrams).
+Inline images use `body: "inline-drag"` and the trailing-caret rule. The model still
+holds the NodeSelection or full CellSelection, so commands,
+clipboard contents and rings keep selecting the object. Chromium otherwise adopts
+the nonempty native range before `compositionstart` and can restart composition,
+leaving provisional text beside the committed text.
+
+The native caret and the `compositionstart` preparation are both needed. The
+latter finds following prose or creates a paragraph; without it, typing on a
+selected table would land inside its last cell. The rich-document schema permits
+that paragraph. Under a constrained schema whose document can contain only a
+table, the helper cannot prepare prose after it; ProseMirror can then read back
+the projected caret and input lands inside the table instead. Browser selection
+changes can also read that caret into the model, so the projection must always be
+a valid editing position. Read-only views, opaque block objects and partial cell
+selections keep their normal native range.
+
+Shift-extension is a range operation, not typing. The object-scoped keymap prepares
+a directed TextSelection that includes the selected inline object, then leaves the
+extension to the browser. Shift-click uses the same transaction in `mousedown`,
+before ProseMirror starts deferring native selection updates for a drag. Preparing
+it in the later object-press listener would leave the projected caret in the DOM
+and exclude the image. Keys handled by the table plugin keep their cell-grid
+selection behavior. Only after the table plugin and ProseMirror's own key capture
+decline does the Chrome native route restore the selection's `$anchor`/`$head` as a
+text range. These endpoints describe the range ProseMirror would render without
+projection, not the corners of the selected cell rectangle. Modified PageUp/Down
+shortcuts are not converted: some act on browser tabs rather than extending text.
+
+Table pointer preparation sits in [table-press.ts](../../landing/table-press.ts),
+after the stock table handlers and the inert-cell press claim, but before
+ProseMirror's native drag setup. Thus stock Shift-click still selects cells, while
+unclaimed Ctrl/Meta+Shift-click starts from the model's text endpoints. The early inline
+image pointer handler must not convert a cell selection.

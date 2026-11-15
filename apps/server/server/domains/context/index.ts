@@ -17,6 +17,7 @@ export {
 } from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
+export { createAgentFilesHints } from "./agent-files-hints.js";
 export {
   exportFilename,
   joinPath,
