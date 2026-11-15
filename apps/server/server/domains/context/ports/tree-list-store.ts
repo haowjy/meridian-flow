@@ -92,9 +92,10 @@ export interface TreeListStore {
    */
   read<T>(input: { lists: readonly TreeList[]; view: ServerChange<T> }): Promise<T>;
   /**
-   * Takes the lists' keys in list-id order and nothing else: the list step of a command that
-   * takes document keys. Every list the command will write or resync is locked here, before
-   * its first document key; `submit` and `resync` then wait on nothing. Idempotent.
+   * Takes the lists' keys in list-id order, plus the seam Works' locks those lists need: the list
+   * step of a command that takes document keys. Every list the command will write or resync is
+   * locked here, before its first document key; `submit` and `resync` then wait on nothing. The
+   * keys are transaction locks, so call it inside the command's transaction. Idempotent.
    */
   lock(lists: readonly TreeList[]): Promise<void>;
   /**

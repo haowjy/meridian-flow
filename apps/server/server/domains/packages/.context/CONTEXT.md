@@ -80,12 +80,24 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   reads the latest Save row, applies the last-good rule, decides `unchanged` and adds the row in
   one transaction, so a concurrent Save is never put back by a decision made on an older read
   (only the captured file cut is read before the lock). `undoSave` runs in one transaction:
-  after the stale check it merges the previous save's text into each file through the documents'
+  after the stale check it prepares `AgentLevelFiles.prepareFiles` with create and delete off,
+  then calls the prepared `applyFiles` to merge the previous save's text through the documents'
   own write path (`MarkdownDocumentStore.mergeCodeText`, which takes the document's durable
   mutation lock before it reads the live text and merges against what it holds then; base: that Save's text, target: the previous save's text; the writer's
   text wins where both changed the same text) and then adds the row, so a failure changes nothing
   and a stale Undo answers `undone: false`. Undo never creates or deletes a file. The user level's
   documents resolve from the account, not from `projectId`.
+  `prepareFiles` binds creates outside transactions; its returned `applyFiles` runs inside the
+  caller's transaction, after package Save locks. It takes the level's list lock before
+  document mutation locks in id order. Creates share Copy's plan identities, binding and single
+  tree submission, not its allocate-new-name policy: Apply uses the paths it receives unless
+  obstructed. Deletion removes only a source document whose text still equals its base.
+  An obstructed path (a folder, blocked ancestor, prose or binary document) keeps its occupant. With creation enabled a target lands at a settled name beside the obstruction;
+  the result is `landed-elsewhere`, with requested `path`, `actualPath`, and one clash.
+  Deletion at an obstructed path is `skipped`. Import and update callers record `actualPath`
+  and use it next time: the adapter keeps no history of earlier calls. Results carry each file's
+  outcome, resulting text, document identity and clash count. A deleted or newly occupied path
+  between preparation and application is replanned under the list lock.
   A package's state (`saved`, `unsaved`, `cant-save`, `not-saved`, `removed`) is computed in
   `files()` from the files and the latest Save and stored nowhere, so it is not a state machine
   (`cant-save` is only a broken `mars.toml`).

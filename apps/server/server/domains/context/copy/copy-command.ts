@@ -44,10 +44,7 @@ import type {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { PMNode } from "@meridian/markup";
 import { decodeStateVector } from "yjs";
-import {
-  deferUntilDrizzleRollback,
-  runAfterDrizzleCommit,
-} from "../../../shared/drizzle-transaction.js";
+import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { CollabDomain } from "../../collab/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
@@ -59,7 +56,6 @@ import type {
 } from "../ports/context-command-transaction.js";
 import type {
   ContextCopyAdapter,
-  CopiedContent,
   CopyCreatedEntry,
   CopyPlan,
   CopySourceEntry,
@@ -72,15 +68,12 @@ import type {
   ContextScheme,
   CopySourceView,
 } from "../ports/context-port.js";
+import { bindTree, type BoundTree as PlannedCopy } from "./bind-tree.js";
 import type { CopyCommands } from "./copy-commands.js";
 
 /** How long a read waits for the room to receive the edits a client's vector names. */
 const SOURCE_CATCH_UP_MS = 2_000;
 const SOURCE_CATCH_UP_POLL_MS = 100;
-/** Derivations in flight at once after a copy: each takes a pool connection, and the pool is shared. */
-const DERIVE_CONCURRENCY = 4;
-/** Documents bound between yields to the event loop. */
-const BIND_YIELD_EVERY = 25;
 
 /** One selected root, already resolved to its adapter and read view by the route. */
 export interface CopySourceHandoff {
@@ -116,10 +109,7 @@ export interface CopyDestinationHandoff {
 }
 
 export interface ContextCopyCommandDeps {
-  documentSync: Pick<
-    CollabDomain,
-    "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed" | "refreshDocumentProjection"
-  >;
+  documentSync: Pick<CollabDomain, "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed">;
   objectStore: ObjectStorePort;
   release: Pick<ObjectRelease, "keys">;
 }
@@ -272,18 +262,14 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   ): Promise<Result<PlannedCopy, ContextError>> {
     const planned = await destination.copy.planCopy({ dir: destination.dir, roots });
     if (!planned.ok) return Err(adapterFaultToContextError(planned.error, destination.uri));
-    return Ok({ plan: planned.value, contents: await bind(planned.value, documents) });
+    return Ok(await bind(planned.value, documents));
   }
 
-  async function bind(
-    plan: CopyPlan,
-    documents: ReadonlyMap<string, PreparedDocument>,
-  ): Promise<Map<string, CopiedContent>> {
-    const contents = new Map<string, CopiedContent>();
-    for (const { source: file, uri } of plan.documents) {
+  async function bind(plan: CopyPlan, documents: ReadonlyMap<string, PreparedDocument>) {
+    return bindTree(plan, ({ source: file, uri }) => {
       const read = documents.get(file.documentId);
       if (!read) throw new Error(`No content was read for ${file.path}`);
-      contents.set(file.documentId, {
+      return {
         state:
           read.blocks.length === 0
             ? null
@@ -299,11 +285,8 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
                 { type: "system" },
               ),
         copiedFrom: { uri: read.uri, version: read.version, revision: read.revision },
-      });
-      // Binding is CPU the whole way; let other requests run between documents.
-      if (contents.size % BIND_YIELD_EVERY === 0) await delay(0);
-    }
-    return contents;
+      };
+    });
   }
 
   /** Put a copy of each binary's bytes; if any put fails, the ones already put are released. */
@@ -463,36 +446,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       if (replans > 0) throw new Error("A copy planned under the namespace lock did not hold");
       planned = await planAndBind(dest, prepared.ready, prepared.documents);
     }
-    deriveAfterCommit(
-      entries.flatMap((entry) =>
-        entry.kind === "file" && prepared.documents.has(entry.copiedFrom)
-          ? [entry.id as DocumentId]
-          : [],
-      ),
-    );
     return Ok({ status: "copied", entries: entries.map(toEntry), folders });
-  }
-
-  /**
-   * Derive the new documents' projections and link rows once the locks are released: the
-   * derivation reads committed rows, so nothing about it needs the namespace held. The
-   * answer does not wait for it; a failure is logged by the refresher and the stale sweep
-   * recovers the document.
-   */
-  function deriveAfterCommit(documentIds: readonly DocumentId[]): void {
-    if (documentIds.length === 0) return;
-    const derive = async () => {
-      const queue = [...documentIds];
-      const worker = async () => {
-        for (let id = queue.shift(); id; id = queue.shift()) {
-          await deps.documentSync.refreshDocumentProjection({ documentId: id });
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(DERIVE_CONCURRENCY, queue.length) }, worker));
-    };
-    runAfterDrizzleCommit(() => {
-      void derive();
-    });
   }
 
   async function resolvedDestination(
@@ -548,12 +502,6 @@ interface PreparedCopy {
   documents: Map<string, PreparedDocument>;
   /** The destination's plan and the content bound to it; an error is answered once the destination is rechecked. */
   plan: Result<PlannedCopy, ContextError>;
-}
-
-interface PlannedCopy {
-  plan: CopyPlan;
-  /** Bound content by source document id. */
-  contents: Map<string, CopiedContent>;
 }
 
 /**
