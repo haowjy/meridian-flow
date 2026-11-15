@@ -54,7 +54,9 @@ export const readPackage = (files: Record<string, string>): Prepared =>
  * package that declares one comes back with it in `missing_dependencies`. Flow couldn't read the
  * `unreadable` paths, so each goes to Mars as an empty file, which keeps Mars's rules about what
  * the package holds true (a skill ref to it resolves, its folder has a `SKILL.md`), and Mars's
- * findings on those stand-ins are dropped: Flow alone speaks of a file it couldn't read.
+ * findings on those stand-ins are dropped: Flow alone speaks of a file it couldn't read. A stand-in
+ * is not right about its name (Mars names it after its path), so a duplicate name against one is
+ * dropped too.
  */
 export const checkFiles = (files: Record<string, string>, unreadable: string[]): Check => {
   const verdict = check({
@@ -63,6 +65,14 @@ export const checkFiles = (files: Record<string, string>, unreadable: string[]):
     dependencies: {},
   });
   for (const path of unreadable) delete verdict.diagnostics[path];
+  const names = unreadable.map((path) => `\`${path}\``);
+  for (const [path, found] of Object.entries(verdict.diagnostics)) {
+    verdict.diagnostics[path] = found.filter(
+      (item) =>
+        item.code !== "definition.duplicate-name" ||
+        !names.some((name) => item.message.includes(name)),
+    );
+  }
   return verdict;
 };
 

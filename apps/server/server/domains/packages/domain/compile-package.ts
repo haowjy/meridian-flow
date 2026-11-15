@@ -202,7 +202,9 @@ function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
       text.includes("\0") ||
       Buffer.from(text).toString("utf8") !== text
     ) {
-      throw new AgentSourceError(`Agent source ${name} is not valid UTF-8 text`);
+      throw new AgentSourceError(
+        `Agent source ${name} isn't plain text: it holds a NUL byte or isn't valid UTF-8`,
+      );
     }
   }
   return input.files;
