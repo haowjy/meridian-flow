@@ -29,7 +29,6 @@ function thread(): Thread {
     effectiveAiWriteMode: "direct",
     userId: "user-1",
     kind: "primary",
-    status: "idle",
     title: null,
     ref: null,
     initialPromptBakeId: "bake-1" as never,

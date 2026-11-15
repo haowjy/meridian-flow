@@ -119,18 +119,14 @@ export async function expectChatFeedWorkFilterContract(
   const inWorkFavorite = "00000000-0000-4000-8000-00000000f001";
   const inWorkOther = "00000000-0000-4000-8000-00000000f002";
   const inOtherWork = "00000000-0000-4000-8000-00000000f003";
-  const archivedMember = "00000000-0000-4000-8000-00000000f004";
   await createTitledThread(h, inWorkFavorite, "Sect favorite");
   await createTitledThread(h, inWorkOther, "Sect other");
   await createTitledThread(h, inOtherWork, "Sect other Work");
-  await createTitledThread(h, archivedMember, "Archived Work chat");
-  await h.repos.threads.updateStatus(archivedMember as ThreadId, "archived");
   const workId = await h.createWork();
   const otherWorkId = await h.createWork();
   await h.repos.threadWorks.addMembership(inWorkFavorite as ThreadId, workId as WorkId, true);
   await h.repos.threadWorks.addMembership(inWorkOther as ThreadId, workId as WorkId, true);
   await h.repos.threadWorks.addMembership(inOtherWork as ThreadId, otherWorkId as WorkId, true);
-  await h.repos.threadWorks.addMembership(archivedMember as ThreadId, workId as WorkId, true);
   await h.repos.threadUserState.update({
     threadId: inWorkFavorite as ThreadId,
     userId: h.userId as UserId,
