@@ -63,18 +63,21 @@ export function deleteStands(writer: TreeWriter, asked: View, recordId: string):
  * fact, when the folder a move would return to is in Trash, or when the node is gone from the
  * view (purged, or its create is not in force), where the replay would skip the opposite record.
  * A drafted change an Apply landed is taken back in live, where its copy now stands: the
- * opposite record's `draft` says which view it went to.
+ * opposite record's `draft` says which view it went to. With `keepInAsked` it goes to the asked
+ * view instead (a draft that holds the node live now has), for a place where nothing may change
+ * live without the draft's review.
  */
 export function undoChange(
   writer: TreeWriter,
   asked: View,
   actor: Actor,
   recordId: string,
+  options: { keepInAsked?: boolean } = {},
 ): TreeRecord | "superseded" | "unknown" {
   const record = inForce(writer.doc, asked, recordId);
   if (record === "unknown") return record;
   if (!record) return "superseded";
-  const view = record.draft === null ? LIVE : asked;
+  const view = record.draft === null && !options.keepInAsked ? LIVE : asked;
   const projection = writer.view(view);
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "superseded";

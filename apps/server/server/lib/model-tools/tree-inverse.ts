@@ -161,7 +161,10 @@ export async function runTreeInverse(
     if ("isError" in answer && answer.isError) break;
   }
   const last = done.at(-1) as (typeof done)[number];
-  if (chosen.text === 0 || ("isError" in last && last.isError))
+  // A reversed creation took the document and its text steps with it, so nothing is left for the
+  // text engine: it would look for a draft that an Apply has closed.
+  const removed = input.command === "undo" && chosen.receipts.some((each) => each.op === "create");
+  if (chosen.text === 0 || removed || ("isError" in last && last.isError))
     return { kind: "answer", answer: last };
   return {
     kind: "then_text",
@@ -257,7 +260,7 @@ async function reverseReceipt(
       make: (scope) => {
         places.roots.set(parts.area, scope.root);
         return {
-          result: runTreeUndo(scope, places, receipt.records, nodeId, input.path),
+          result: runTreeUndo(scope, places, receipt.records, nodeId, input.path, level !== null),
           arrived: [],
         };
       },

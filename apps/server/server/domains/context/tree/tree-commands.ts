@@ -1037,6 +1037,8 @@ export function runTreeUndo(
   records: readonly MadeRecord[],
   subject: string,
   asked: string,
+  /** Takes an applied change back in the scope's own view, not in live: the draft reviews it. */
+  keepInDraft = false,
 ): UndoneTree {
   const cx: Context = {
     scope,
@@ -1051,7 +1053,9 @@ export function runTreeUndo(
   const outcomes: UndoneTree["outcomes"] = [];
   let inLive = scope.view.draft === null;
   for (const entry of [...records].reverse()) {
-    const back = undoChange(scope.writer, scope.view, scope.actor, entry.record);
+    const back = undoChange(scope.writer, scope.view, scope.actor, entry.record, {
+      keepInAsked: keepInDraft,
+    });
     if (typeof back === "string") outcomes.push(back);
     else {
       if (back.draft === null) inLive = true;
