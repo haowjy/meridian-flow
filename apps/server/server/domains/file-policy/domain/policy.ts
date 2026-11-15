@@ -10,9 +10,11 @@
 
 import { draftOwnerKey } from "@meridian/contracts";
 import { type ContextUriScheme, isDraftedScheme } from "@meridian/contracts/context-uri";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { matchAncestors } from "./ancestors.js";
 import {
   type AgentChain,
+  type AiAccess,
   type BranchOwnerRef,
   type FileAccessDenial,
   type FileAccessLevel,
@@ -45,18 +47,47 @@ export function isDrafted(scheme: ContextUriScheme): boolean {
 }
 
 /**
- * Where an agent's access to a file of this source goes: its draft-mode
- * Work's branch for a drafted source, otherwise live. People always write
- * live. List and view paths ask this per source; tool calls carry it on
- * their grant (`destinationFor`).
+ * The AI access of a source's places that no stored setting names: the floor `placeAccess` falls
+ * back to, evaluated last. Empty: every place auto-applies. A source's rule is a row here.
+ */
+const FIXED_AI_ACCESS: Readonly<Partial<Record<ContextUriScheme, AiAccess>>> = {};
+
+/**
+ * What the AI may do with a write to this file: the nearest stored setting on its live folder
+ * chain, else its source's fixed rule, else `auto-apply`. `ask` on a source that can't hold a
+ * draft would land live without the review it asks for, so it denies.
+ */
+export function placeAccess(facts: FileFacts): AiAccess {
+  const access =
+    facts.aiAccessSettings?.[0]?.access ?? FIXED_AI_ACCESS[facts.contentScheme] ?? "auto-apply";
+  return access === "ask" && !isDrafted(facts.contentScheme) ? "deny" : access;
+}
+
+function destinationAt(
+  writeMode: AiWriteMode,
+  access: AiAccess,
+  scheme: ContextUriScheme,
+  owner: BranchOwnerRef,
+): FileDestination {
+  const draft = access === "ask" || writeMode === "draft";
+  return draft && isDrafted(scheme)
+    ? { kind: "draft", owner: owner.owner, ownerHandle: owner.handle }
+    : { kind: "live" };
+}
+
+/**
+ * Where an agent's access to a file of this source goes, decided per source (the fixed rule):
+ * its chat's branch for a drafted source in draft mode or where the source asks for review,
+ * otherwise live. People always write live. Creates and view paths ask this per source; a
+ * document's decision and a tool call's grant carry their own destination (`destinationFor`),
+ * and a caller that has one reads it from there.
  */
 export function sourceDestination(
+  writeMode: AiWriteMode,
   scheme: ContextUriScheme,
-  branchOwner: BranchOwnerRef | null,
+  owner: BranchOwnerRef,
 ): FileDestination {
-  return branchOwner && isDrafted(scheme)
-    ? { kind: "draft", owner: branchOwner.owner, ownerHandle: branchOwner.handle }
-    : { kind: "live" };
+  return destinationAt(writeMode, FIXED_AI_ACCESS[scheme] ?? "auto-apply", scheme, owner);
 }
 
 /** A grant on a node of the tree; v1 has only the owner's, on the project. */
@@ -67,17 +98,24 @@ export interface NodeGrant {
 
 /**
  * Where this access reads or writes: an explicit draft target is that draft;
- * an agent in draft mode writes a drafted source's document, or creates in a
- * drafted source's folder, through its Work branch.
+ * an agent writes a drafted source's document, or creates in its folder, through its
+ * branch when the chat is in draft mode or the place asks for review.
  */
-function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
+export function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
     return { kind: "draft", owner: target.owner, ownerHandle: facts.branchOwner?.handle ?? null };
   }
   // A deleted document comes back live, where it was.
   if (target.kind === "restore") return { kind: "live" };
-  return sourceDestination(facts.contentScheme, principal.agent?.branchOwner ?? null);
+  return principal.agent
+    ? destinationAt(
+        principal.agent.writeMode,
+        placeAccess(facts),
+        facts.contentScheme,
+        principal.agent.branchOwner,
+      )
+    : { kind: "live" };
 }
 
 /** The whole decision: the destination, then the level there. */
@@ -174,7 +212,7 @@ function workTerms(work: FileWorkFacts): Term[] {
 /**
  * The agent term (§8): the source's cap for every agent, and each link's
  * permission against its own thread. A `read` link may edit only the scratch
- * of its thread's current Work, No Work's included. The minimum wins.
+ * of its thread's current Work, No Work's included. A place set to `deny` reads. The minimum wins.
  */
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
   const sourceLimit = SOURCE_AGENT_LIMITS[facts.contentScheme];
@@ -188,6 +226,7 @@ function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
     const cap = link.permission === "edit" || ownScratch ? "edit" : "read";
     terms.push({ cap, limit: "agent_read_only" });
   }
+  if (placeAccess(facts) === "deny") terms.push({ cap: "read", limit: "ai_access_denied" });
   return terms;
 }
 

@@ -281,6 +281,7 @@ import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
+import { createChatMedia } from "./runtime-host/chat-media.js";
 import { createHostEffects } from "./runtime-host/host-effects.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
@@ -1060,18 +1061,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
+    chatMedia: createChatMedia({
+      identities: ports.uploadIdentity,
+      objects: ports.objectStore,
+      eventSink: ports.eventSink,
+    }),
     runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
-    },
-    async describeImage(documentId) {
-      const identity = await ports.uploadIdentity.lookupDocument(documentId);
-      const mediaType = identity?.mimeType?.split(";")[0]?.trim().toLowerCase();
-      return identity?.sizeBytes != null && mediaType?.startsWith("image/")
-        ? { mediaType, sizeBytes: identity.sizeBytes, name: identity.name }
-        : null;
     },
     verifyDraftUpload: createDraftUploadVerifier({
       identities: ports.uploadIdentity,
@@ -1171,11 +1170,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,
-      availability: ports.projectContextAvailability,
       documents: ports.documentSync,
-      branches: ports.documentSync.branches,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,
+      fileAccess: ports.fileAccess,
+      readAgentChain: ports.readAgentChain,
     }),
     toolExecutor,
     repos: ports.threadRepos,

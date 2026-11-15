@@ -215,7 +215,6 @@ export async function copyBinary(
   }
   // The port's placement decided where the copy landed; only the Work's handle is ours to add.
   const destination = copied.value.placement;
-  const branchOwner = context.resolution.primaryBranchOwner;
   return {
     output: modelResult({
       command: "copy",
@@ -224,7 +223,9 @@ export async function copyBinary(
       payload: {
         path: copied.value.uri,
         destination,
-        ...(destination === "draft" ? { draftWork: branchOwner?.handle ?? "/" } : {}),
+        ...(destination === "draft"
+          ? { draftWork: context.resolution.primaryWorkAuthority?.workHandle ?? "/" }
+          : {}),
         copied: { from: source.uri },
       },
     }),

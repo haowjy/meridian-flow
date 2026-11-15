@@ -214,11 +214,11 @@ export async function projectMediaBlocksForModel(input: {
         continue;
       }
 
-      const readKey = `${unit.part.ref.documentId}\0${unit.part.ref.uri}`;
+      const readKey = `${unit.part.chatCopy?.key ?? ""}\0${unit.part.ref.documentId}\0${unit.part.ref.uri}`;
       let file = reads.get(readKey);
       if (file === undefined) {
         try {
-          file = await input.media.resolve(context, unit.part.ref, input.window);
+          file = await input.media.resolve(context, unit.part, input.window);
         } catch (error) {
           if (!reAdmissionCandidate || !(error instanceof MediaResolutionError)) throw error;
           input.signal?.throwIfAborted();

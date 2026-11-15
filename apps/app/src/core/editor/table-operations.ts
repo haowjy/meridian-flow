@@ -169,22 +169,37 @@ export function moveTableRow(direction: -1 | 1): Command {
       return false;
     }
 
-    const rows: ProseMirrorNode[] = [];
-    selection.table.forEach((row) => {
-      rows.push(row);
-    });
-    const selectedRows = rows.splice(selection.rowFrom, selection.rowTo - selection.rowFrom + 1);
-    const insertAt = direction === -1 ? selection.rowFrom - 1 : selection.rowFrom + 1;
-    rows.splice(insertAt, 0, ...selectedRows);
-    const table = selection.table.copy(Fragment.fromArray(rows));
-    return replaceTable(
-      state,
-      dispatch,
-      selection,
-      table,
-      selection.row + direction,
-      selection.column,
-    );
+    if (!dispatch) return true;
+    // A move, not a rebuilt table: the selected rows are deleted and inserted at their new
+    // place, so the Yjs binding sees which rows moved and the rows they pass keep their
+    // elements (and a collaborator's typing in them).
+    const rowStart = (index: number) => {
+      let pos = selection.tablePos + 1;
+      for (let i = 0; i < index; i++) pos += selection.table.child(i).nodeSize;
+      return pos;
+    };
+    const from = rowStart(selection.rowFrom);
+    const to = rowStart(selection.rowTo + 1);
+    const moved = selection.table.slice(
+      from - selection.tablePos - 1,
+      to - selection.tablePos - 1,
+    ).content;
+    const target =
+      direction === -1 ? rowStart(selection.rowFrom - 1) : rowStart(selection.rowTo + 2);
+    const tr = state.tr.delete(from, to);
+    tr.insert(tr.mapping.map(target), moved);
+    const table = tr.doc.nodeAt(selection.tablePos);
+    if (table) {
+      const cursor = cellTextPosition(
+        table,
+        selection.tablePos,
+        selection.row + direction,
+        selection.column,
+      );
+      tr.setSelection(TextSelection.near(tr.doc.resolve(cursor)));
+    }
+    dispatch(tr.scrollIntoView());
+    return true;
   };
 }
 

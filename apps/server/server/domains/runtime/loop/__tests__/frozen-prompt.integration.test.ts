@@ -324,7 +324,7 @@ describe("frozen prompt provider requests", () => {
       { listModels: () => [model] },
     );
     const rig = await fixture(undefined, undefined, gateway, {
-      async resolve(_context, reference) {
+      async resolve(_context, { ref: reference }) {
         return bytesMedia({
           data: reference.uri,
           sizeBytes: reference.uri.includes("large") ? 10 * 1024 * 1024 : 5,

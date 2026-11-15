@@ -485,7 +485,7 @@ describe("inbox drain", () => {
     let rig: Awaited<ReturnType<typeof setup>>;
     rig = await setup({
       mediaResolver: {
-        async resolve(_context, reference) {
+        async resolve(_context, { ref: reference }) {
           if (blockFirstResolution) {
             blockFirstResolution = false;
             entered.resolve();
@@ -618,7 +618,7 @@ describe("inbox drain", () => {
     rig = await setup({
       notices,
       mediaResolver: {
-        async resolve(_context, reference) {
+        async resolve(_context, { ref: reference }) {
           if (blockFirstResolution) {
             blockFirstResolution = false;
             entered.resolve();
