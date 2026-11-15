@@ -61,6 +61,11 @@ export interface LiveDocumentSessionRegistry {
    */
   observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
+  /**
+   * The room ends for good and its typing is not handed back: its document was never made, and
+   * the tab and the tree row offer those words from the local copy, which stays.
+   */
+  abandonDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(

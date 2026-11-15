@@ -1,7 +1,8 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
 import { plural } from "@lingui/core/macro";
-import type { AccountId } from "@meridian/contracts/protocol";
+import { createdDraftId } from "@meridian/contracts";
+import { type AccountId, draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
@@ -78,7 +79,13 @@ export class AccountFeatureLifetime {
             other: "# changes made on this device couldn't be kept.",
           }),
         }),
-      (documentId) => this.runtime.registry.localText(documentId as DocumentId),
+      {
+        localText: (documentId) => this.runtime.registry.localText(documentId as DocumentId),
+        endCreatedDraftRoom: (documentId) =>
+          void this.runtime.registry
+            .abandonDraftRoom(draftRoomName(createdDraftId(documentId as DocumentId)))
+            .catch(reportError),
+      },
     );
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;

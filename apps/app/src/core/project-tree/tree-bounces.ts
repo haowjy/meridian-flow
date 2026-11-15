@@ -20,17 +20,23 @@ import type * as Y from "yjs";
 import type { TreeListSession } from "../tree-list/tree-list-session";
 import { addBounces, type Bounce, type Was } from "./tree-undo";
 
-/** The text this browser holds of a document, read from its local copy; null with none. */
-export type LocalText = (documentId: string) => Promise<string | null>;
+/** What a bounce reads from, and tells, the document sessions of this browser. */
+export type BounceHost = {
+  /** The text this browser holds of a document, read from its local copy; null with none. */
+  localText(documentId: string): Promise<string | null>;
+  /** A dropped create's draft will never exist: its room ends for good, the typed words kept for Copy. */
+  endCreatedDraftRoom(documentId: string): void;
+};
 
 export function watchBounces(
   session: TreeListSession,
   actor: string,
-  localText: LocalText,
+  host: BounceHost,
 ): () => void {
   let doc: Y.Doc | null = null;
   let settles = 0;
   let seen = new Set<string>();
+  const ended = new Set<string>();
   let read = false;
   const check = () => {
     if (!read) return;
@@ -42,6 +48,13 @@ export function watchBounces(
     doc = now;
     settles = length;
     const own = droppedRecords(now).filter(({ record }) => record.actor === actor);
+    // Whichever tab said it: this one's room for the draft may still be retrying.
+    for (const { record } of own) {
+      if (record.type !== "create" || record.kind !== "document" || record.draft === null) continue;
+      if (ended.has(record.id)) continue;
+      ended.add(record.id);
+      host.endCreatedDraftRoom(record.node);
+    }
     // A copy just read (or a replacement) holds what earlier tabs already said.
     if (fresh) {
       seen = new Set(own.map(({ record }) => record.id));
@@ -49,7 +62,7 @@ export function watchBounces(
     }
     const arrived = own.filter(({ record }) => !seen.has(record.id));
     for (const { record } of arrived) seen.add(record.id);
-    if (arrived.length > 0) void say(session, arrived, localText);
+    if (arrived.length > 0) void say(session, arrived, host.localText);
   };
   const stop = session.subscribe(check);
   void session.loaded.then(() => {
@@ -62,7 +75,7 @@ export function watchBounces(
 async function say(
   session: TreeListSession,
   arrived: readonly DroppedRecord[],
-  localText: LocalText,
+  localText: BounceHost["localText"],
 ): Promise<void> {
   const said = await Promise.all(
     arrived.map(async ({ record }): Promise<Bounce> => {

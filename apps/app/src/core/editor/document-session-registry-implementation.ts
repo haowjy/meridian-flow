@@ -263,6 +263,12 @@ export class DocumentSessionRegistry {
     return this.draftRooms.close(roomKey);
   }
 
+  abandonDraftRoom(roomKey: string): Promise<void> {
+    const session = this.draftRooms.peek(roomKey);
+    if (session) this.handedBack.add(session);
+    return this.draftRooms.close(roomKey);
+  }
+
   getDraftRoom(roomKey: string): DocumentSession {
     return this.draftRooms.get(roomKey);
   }
