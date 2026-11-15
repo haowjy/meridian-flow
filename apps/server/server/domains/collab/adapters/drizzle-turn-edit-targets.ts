@@ -18,11 +18,20 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, documentDrafts } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { branchOwnerSql, ownerKeyOfColumns, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId, TurnTreeFolder } from "../domain/turn-live-lineage.js";
+
+/**
+ * A receipt drafted in a branch whose row a Work purge deleted has no draft left to show: reading
+ * its missing branch as no branch would list the edit as live.
+ */
+export const receiptBranchExists = or(
+  isNull(treeEditReceipts.draftBranchId),
+  isNotNull(branches.id),
+);
 
 export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
@@ -131,6 +140,7 @@ export async function readTurnFolderTargets(
         eq(treeEditReceipts.turnId, query.turnId),
         eq(treeEditReceipts.kind, "write"),
         isNull(documents.id),
+        receiptBranchExists,
       ),
     )
     .orderBy(treeEditReceiptNodes.nodeId);
@@ -178,6 +188,7 @@ export async function readTurnTreeTargets(
         eq(treeEditReceipts.turnId, query.turnId),
         // Write receipts only: a Redo's names where it landed (live after an Apply), not where the turn wrote.
         eq(treeEditReceipts.kind, "write"),
+        receiptBranchExists,
       ),
     );
   const targets = new Map<string, TurnEditedDocumentId>();
