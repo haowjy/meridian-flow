@@ -67,7 +67,6 @@ import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
-import { asLifecycleRefusal } from "./lifecycle-refusal.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -178,6 +177,7 @@ export function createDrizzleApplyClick(
       await testHook("apply.afterLive");
       const baseEffects: { groupId: string; start?: unknown[]; delta: unknown[] }[] = [];
       const write = deps.coordinator.prepareAppend(base, [], {
+        work: "any",
         authorServerRows(prefix) {
           const rows: Uint8Array[] = [];
           let row: Uint8Array | undefined;
@@ -283,16 +283,14 @@ export function createDrizzleApplyClick(
       const applyCommandId = command.request.applyCommandId;
       const by = `user:${command.envelope.accountId}`;
       const closed = (): UnapplyClickResult => ({ status: "closed", commandId });
-      const unapplyRefusal = (raised: unknown): UnapplyClickResult | undefined => {
-        const cause = asLifecycleRefusal(raised);
-        return cause instanceof TreeRefusal
+      const unapplyRefusal = (cause: unknown): UnapplyClickResult | undefined =>
+        cause instanceof TreeRefusal
           ? { status: "refused", commandId, reason: cause.reason }
           : cause instanceof ApplyClickRefused
             ? { status: "refused", commandId }
             : cause instanceof DraftStaleUpdateError
               ? closed()
               : undefined;
-      };
       const lives: Y.Doc[] = [];
       try {
         return await runDocumentCommand(
@@ -470,6 +468,7 @@ export function createDrizzleApplyClick(
                   );
                   let unapplyMerged = { rules: {} as RuleCounts, overrode: 0 };
                   const write = deps.coordinator.prepareAppend(currentBase, [], {
+                    work: "any",
                     authorServerRows(prefix) {
                       let row: Uint8Array | undefined;
                       const capture = (bytes: Uint8Array) => {
@@ -540,7 +539,7 @@ export function createDrizzleApplyClick(
                   ),
                 };
               },
-              { requireActive: true, seam: true },
+              { requireActive: false, seam: true },
             ),
           unapplyRefusal,
         );
@@ -554,14 +553,12 @@ export function createDrizzleApplyClick(
       const { commandId } = envelope;
       const userId = envelope.accountId as UserId;
       const closed = (): ApplyClickResult => ({ status: "closed", commandId });
-      const applyRefusal = (raised: unknown): ApplyClickResult | undefined => {
-        const cause = asLifecycleRefusal(raised);
-        return cause instanceof ApplyClickRefused
+      const applyRefusal = (cause: unknown): ApplyClickResult | undefined =>
+        cause instanceof ApplyClickRefused
           ? { status: "refused", commandId, reason: cause.reason }
           : cause instanceof DraftStaleUpdateError
             ? closed()
             : undefined;
-      };
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
@@ -632,7 +629,7 @@ export function createDrizzleApplyClick(
                     ...(outcome.restored ? { restored: true as const } : {}),
                   };
                 },
-                { requireActive: true, seam: true },
+                { requireActive: false, seam: true },
               );
               if (answer.status === "applied") await treeHalf.recordCreatedHeads(commandId);
               return answer;

@@ -26,10 +26,10 @@ import type { WorkProjectionMutation } from "../../projects/index.js";
 import { ApplyClickRefused } from "../domain/apply-click.js";
 import type { Branches } from "../domain/branches.js";
 import type { UndoDiscardCommand, UndoDiscardStore } from "../domain/undo-discard.js";
+import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
-import { asLifecycleRefusal } from "./lifecycle-refusal.js";
 
 type Refusal = Extract<UndoDiscardResult, { status: "refused" }>["reason"];
 
@@ -39,7 +39,7 @@ class UndoDiscardRefused extends Error {
   }
 }
 
-/** A restore of this command that took effect: stored with the Discard it named. */
+/** A restore of this command that brought something back: stored with the Discard it named. */
 async function restoredBefore(
   tx: ReturnType<typeof currentDrizzleDb>,
   projectId: ProjectId,
@@ -55,6 +55,7 @@ async function restoredBefore(
         eq(commands.kind, "undo_discard"),
         eq(commands.accountId, userId),
         sql`${commands.outcome} -> 'result' ->> 'status' = 'restored'`,
+        sql`(${commands.outcome} -> 'result' ->> 'restored')::int > 0`,
         sql`${commands.outcome} -> 'result' ->> 'discardCommandId' = ${request.discardCommandId}`,
       ),
     )
@@ -244,8 +245,19 @@ export function createDrizzleUndoDiscard(
             { requireActive: true, seam: true },
           );
         },
-        (raised) => {
-          const cause = asLifecycleRefusal(raised);
+        (cause) => {
+          const settled = closedOwnerBounce(cause);
+          if (settled)
+            return {
+              status: "restored",
+              commandId,
+              discardCommandId: request.discardCommandId,
+              branchId,
+              restored: 0,
+              swapped: 0,
+              leftOut: 0,
+              settled,
+            };
           return cause instanceof UndoDiscardRefused
             ? refused(cause.reason)
             : cause instanceof ApplyClickRefused

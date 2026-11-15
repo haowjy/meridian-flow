@@ -913,27 +913,17 @@ try {
     },
   );
   await row(
-    "archived or deleted Work refuses fresh id but never replaces landed result",
+    "an archived or deleted Work's Apply lands, and never replaces a landed result",
     async () => {
       const f = await fixture(["Base."], ["Changed."]);
       const c = f.click();
       await applied(f, c);
       await h.raw`update works set archived_at=now() where id=${f.workId}`;
       await applied(f, c);
-      const archived = f.click();
-      assert.deepEqual(await f.send(archived), {
-        status: "refused",
-        commandId: archived.request.commandId,
-        reason: "work_archived",
-      });
+      assert.equal((await f.send(f.click())).status, "applied");
       await h.raw`update works set deleted_at=now(),archived_at=null where id=${f.workId}`;
       await applied(f, c);
-      const deleted = f.click();
-      assert.deepEqual(await f.send(deleted), {
-        status: "refused",
-        commandId: deleted.request.commandId,
-        reason: "work_deleted",
-      });
+      assert.equal((await f.send(f.click())).status, "applied");
       f.close();
     },
   );

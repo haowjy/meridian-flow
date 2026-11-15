@@ -148,7 +148,7 @@ it("one refusal in the middle removes only its contribution, answers its own cal
   const send = vi.fn(
     async (request: ApplyClick): Promise<ApplyClickAnswer> =>
       request.commandId === "second"
-        ? { status: "refused", commandId: request.commandId, reason: "work_archived" }
+        ? { status: "refused", commandId: request.commandId, reason: "not_found" }
         : { status: "applied", commandId: request.commandId, applied: [] },
   );
   const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
@@ -158,7 +158,7 @@ it("one refusal in the middle removes only its contribution, answers its own cal
   await flush();
   queue.observe("draft", ["first"]);
   await flush();
-  expect(await second).toEqual({ status: "refused", commandId: "second", reason: "work_archived" });
+  expect(await second).toEqual({ status: "refused", commandId: "second", reason: "not_found" });
   expect(send.mock.calls.map(([request]) => request.commandId)).toEqual([
     "first",
     "second",

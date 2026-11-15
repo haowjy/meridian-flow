@@ -1,6 +1,7 @@
 /** Settle a Work's drafted tree records discarded, for chosen items or the whole branch, and close the drafts they end. */
 import type { BranchId, UserId } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
+import type { Settlement } from "@meridian/contracts/commands";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -15,13 +16,15 @@ export type DiscardResult =
   /** `closed`: the selected documents whose item left review (the kernel closed all it held). */
   | { status: "discarded"; branchId: BranchId; branchClosed: false; closed: readonly DocumentId[] }
   | { status: "gone"; branchId: BranchId }
+  /** The drafts' owner is closed: nothing ended. */
+  | { status: "returned"; branchId: BranchId; settled: Settlement[] }
   /** An item's Discard the branch's state no longer allows: nothing ended. */
   | { status: "refused"; branchId: BranchId; reason: DiscardRefusal["refused"] };
 
 export interface BranchDiscard {
   /**
-   * The public command: writer and model. Refuses archived and deleted Works; a lineage
-   * with no live member can still be discarded, so the writer can always clear it.
+   * The public command: writer and model. On drafts whose owner is closed (an archived or
+   * deleted Work, a chat in Trash) it stores a `returned` bounce and ends nothing.
    */
   discardItems(input: {
     branchId: BranchId;
@@ -84,10 +87,16 @@ export type DiscardKernelResult = {
 /** A final answer from the kernel: the branch's state no longer allows this Discard. */
 export type DiscardRefusal = { refused: "stale" | "draft_changed" };
 
+/** A final answer from the Work lock: the drafts' owner is closed, and nothing ended. */
+export type DiscardReturned = { returned: Settlement[] };
+
+/** What a Discard transaction ended with; null: the branch is not active. */
+export type DiscardEnded = DiscardKernelResult | DiscardRefusal | DiscardReturned | null;
+
 /** The writer's command, settled in the kernel's transaction; null: the branch is not active. */
 export type DiscardCommandClaim = {
   envelope: CommandEnvelope;
-  result(ended: DiscardKernelResult | DiscardRefusal | null): DiscardCommandResult;
+  result(ended: DiscardEnded): DiscardCommandResult;
 };
 
 export interface BranchDiscardStore {
@@ -100,7 +109,7 @@ export interface BranchDiscardStore {
   discardLocked(input: {
     kernel: DiscardKernelInput;
     command: DiscardCommandClaim;
-  }): Promise<DiscardKernelResult | DiscardRefusal | null>;
+  }): Promise<DiscardEnded>;
 }
 
 const ATTEMPTS = 4;
@@ -110,9 +119,10 @@ type CommandClaim = NonNullable<Parameters<BranchDiscard["discardItems"]>[0]["co
 function discardResult(
   branchId: BranchId,
   selection: DiscardSelection,
-  ended: DiscardKernelResult | DiscardRefusal | null,
+  ended: DiscardEnded,
 ): DiscardResult {
   if (!ended) return { status: "gone", branchId };
+  if ("returned" in ended) return { status: "returned", branchId, settled: ended.returned };
   if ("refused" in ended) return { status: "refused", branchId, reason: ended.refused };
   return selection.kind === "whole"
     ? { status: "discarded", branchId, branchClosed: true }
@@ -133,9 +143,7 @@ export function createBranchDiscard(deps: {
    * The locked kernel again when the branch moved: each attempt is one command transaction,
    * and a miss rolls it back past its claim before the next attempt.
    */
-  function attempts(
-    run: (attempt: Attempt) => Promise<DiscardKernelResult | DiscardRefusal | null>,
-  ): Promise<DiscardKernelResult | DiscardRefusal | null> {
+  function attempts(run: (attempt: Attempt) => Promise<DiscardEnded>): Promise<DiscardEnded> {
     return runBoundedAttempts({
       bound: ATTEMPTS,
       scope: NO_ATTEMPT_SCOPE,
@@ -152,7 +160,7 @@ export function createBranchDiscard(deps: {
     attempt: Attempt,
     kernel: DiscardKernelInput,
     command: CommandClaim,
-  ): Promise<DiscardKernelResult | DiscardRefusal | null> {
+  ): Promise<DiscardEnded> {
     await testHook("discard.beforeCommitScope");
     return attempt.commit(() =>
       deps.store.discardLocked({

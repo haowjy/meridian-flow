@@ -149,8 +149,10 @@ independent duties:
   under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
   as `landed`, with `restored` unknown.
 
-A `work_archived` refusal stores no failure: the Works query refetches and
-`EndedWorkNotice` explains. Other refusals still move prose in two cases, open in
+A Discard on a closed owner is a `done` that changed nothing (`status: "returned"`, `settled`
+`returned`, `why` `work_archived`, `work_deleted` or `chat_frozen`); the owner reads it as a change
+that was refused with that code. `work_archived` and `work_deleted` store no failure: the Works query
+refetches and `EndedWorkNotice` explains. An Undo of a Discard that returned reports `failed`. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
 leaves subscribe to command records; command callbacks and the project controller don't.
