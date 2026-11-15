@@ -72,14 +72,16 @@ and remain quarantined until their retryable destroy ledger succeeds.
   block rewrites everything after the empty text and duplicates words. The browser
   editor, the server and `packages/agent-edit` all bind through the one patched
   `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
-  is not a dependency). Its forced initial render resolves a text selection between the old
-  offsets: a clamped offset can now be a table boundary rather than text. `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
+  is not a dependency); `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
   rule by addressing units across a block's texts. Stock y-tiptap and y-prosemirror fold the run into
   its first text, delete the rest, and fold again on read (a read that writes).
   To drop the patch when upstream stops doing either, remove the grouping
   changes (`updateYFragment`, `updateYText`, `equalYTextPText`,
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
   read) and keep `refreshProseMirrorDoc` and `sameBlock`.
+- The binding’s forced render replaces the editor’s document before restoring its selection.
+  It resolves offsets from the previous document to nearby text positions in the rendered one;
+  a clamped offset alone can land at a table boundary, where a text selection is invalid.
 - A block keeps its Yjs element: `updateYFragment` pairs the children it can't
   match from either end by block `id` (`pairByBlockId`), deletes an old element
   with no partner, inserts a node with none, and never writes a node into an
