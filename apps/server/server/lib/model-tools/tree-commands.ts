@@ -16,12 +16,15 @@ import {
   type TreeResult,
 } from "../../domains/context/tree/tree-commands.js";
 import {
+  appliesAfterCheck,
   type FileGrant,
   isFileAccessDenied,
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import { agentsLevelOfUri } from "../agents-widening.js";
 import { threadContainerTarget } from "../file-targets.js";
+import { type AgentsCheckTarget, checkAgentsWrite, draftContext } from "./agents-check.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, namesEvidence, shownNamesOf } from "./shown-paths.js";
 import {
@@ -109,12 +112,34 @@ export async function runTreeToolCommand(
   // The file policy decides per source whether the change is the chat's draft or live.
   const grants: FileGrant<"edit">[] = [];
   let draftArea: string | undefined;
+  const checked: AgentsCheckTarget = {};
   for (const area of areas as string[]) {
     const path = paths.find((candidate) => areaOfPath(candidate)?.area === area) as string;
     const target = await threadContainerTarget(deps.works, call.context.resolution, path);
     if (!target) continue;
-    const granted = await deps.fileAccess.authorize(call.principal, target, "edit");
+    let granted = await deps.fileAccess.authorize(call.principal, target, "edit");
     if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);
+    // A change to an Agents level lands in the chat's branch whatever the chat's mode; the
+    // check then decides whether it applies (the same rule `writeUnderGrant` follows).
+    const level = agentsLevelOfUri(uriOfWritten(path));
+    if (level) {
+      if (granted.destination.kind === "live") {
+        const drafted = await deps.fileAccess.authorizeAt(
+          call.principal,
+          target,
+          {
+            kind: "draft",
+            owner: call.execution.branchOwner,
+            ownerHandle: call.execution.scope.workHandle,
+          },
+          "edit",
+        );
+        if (isFileAccessDenied(drafted)) return fileAccessDeniedError(input.command, drafted, path);
+        granted = drafted;
+      }
+      checked.level ??= level;
+      checked.apply = appliesAfterCheck(call.principal, { ...granted.facts, agentsLevel: level });
+    }
     grants.push(granted);
     if (granted.destination.kind === "draft") draftArea ??= area;
   }
@@ -145,14 +170,17 @@ export async function runTreeToolCommand(
     threadId: ctx.threadId,
     turnId: ctx.turnId,
   };
+  // An Agents level drafts whatever the chat's mode, so its port places writes in the branch.
   const port = drafted
-    ? call.context.port
+    ? checked.level
+      ? draftContext(deps, call).port
+      : call.context.port
     : contextPortForThread(deps.contextPorts, call.context.resolution, {
         destination: { kind: "live" },
       });
   let handle: string | undefined;
 
-  return settle(async () => {
+  const result = await settle(async () => {
     const run = await runWithEditGrants(deps.fileAccess, grants, () =>
       port.treeCommand(area, {
         origin,
@@ -244,4 +272,5 @@ export async function runTreeToolCommand(
       evidence: { shown: [], ...namesEvidence(result.delta) },
     };
   });
+  return checkAgentsWrite(deps, call, ctx, checked, result);
 }

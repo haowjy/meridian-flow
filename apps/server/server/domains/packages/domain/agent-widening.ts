@@ -118,7 +118,10 @@ export function newAgents(
  * Agent, so a rename cannot disguise what was widened.
  */
 export function widenedLabel(item: Widened): string {
-  const who = !item.renamed && item.name !== item.slug ? `${item.name} (${item.slug})` : item.slug;
+  const who =
+    !item.renamed && item.name.toLowerCase() !== item.slug
+      ? `${item.name} (${item.slug})`
+      : item.slug;
   const place = item.level !== item.from ? ` (${item.level}, replaces ${item.from})` : "";
   const causes = [
     ...(item.tools.length ? [`can now use ${item.tools.join(", ")}`] : []),

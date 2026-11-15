@@ -47,9 +47,10 @@ import {
   refuseSkillWrite,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
-import { type AgentsCheck, agentsLevelOfUri } from "../agents-widening.js";
+import { agentsLevelOfUri } from "../agents-widening.js";
 import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
+import { type AgentsCheckTarget, checkAgentsWrite, draftContext } from "./agents-check.js";
 import { type ReadPlacement, readBinaryFile } from "./binary-read.js";
 import {
   binaryCopySelectionMessage,
@@ -228,57 +229,6 @@ function withDestination(
       ...outcome.result,
       destination: destination.kind,
       ...(destination.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
-    },
-  };
-}
-
-/** What a write to an Agents level learned while it was granted: the check runs once it lands. */
-type AgentsCheckTarget = { level?: AgentsLevel; apply?: boolean };
-
-/** The context port whose writes all land in the chat's branch, as a create in an Agents level must. */
-function draftContext(deps: ToolWiringDeps, call: ToolCall): ResolvedModelContextPort {
-  return {
-    resolution: call.context.resolution,
-    port: contextPortForThread(deps.contextPorts, call.context.resolution, {
-      destination: {
-        kind: "draft",
-        owner: call.execution.branchOwner,
-        ownerHandle: call.execution.scope.workHandle,
-      },
-    }),
-  };
-}
-
-/** The receipt says what the check did, in the words Changes uses for the same Agents. */
-function withAgentsCheck(
-  result: ModelEditHandlerResult,
-  check: AgentsCheck,
-): ModelEditHandlerResult {
-  const lines = [
-    ...check.created,
-    ...(check.status === "waiting" && check.labels.length > 0
-      ? [`Waiting for review: ${check.labels.join("; ")}`]
-      : []),
-  ];
-  if (lines.length === 0 || result.modelEdit.status === "never") return result;
-  const note = lines.join("\n");
-  const stored = result.modelEdit.result.toolResult;
-  const body = stored.result;
-  return {
-    ...result,
-    modelEdit: {
-      ...result.modelEdit,
-      result: {
-        ...result.modelEdit.result,
-        toolResult: {
-          ...stored,
-          content: [...stored.content, { type: "text", text: note }],
-          result:
-            typeof body === "object" && body !== null && !Array.isArray(body)
-              ? { ...body, message: [body.message, note].filter(Boolean).join("\n") }
-              : body,
-        },
-      },
     },
   };
 }
@@ -736,7 +686,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         },
       };
     };
-    let result = await settle(effect);
+    const result = await settle(effect);
     // The projection catches up once the edit is durable, whoever stored it.
     if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
       await deps.documentSync.refreshDocumentProjection({
@@ -744,18 +694,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         threadId: ctx.threadId,
       });
     // The check reads the branch, which holds the write once the projection has caught up.
-    if (checked.level && isCommandResult(result) && result.modelEdit.status === "done") {
-      const thread = context.resolution.thread;
-      const check = await deps.agentsWidening.settle({
-        thread: { id: thread.id, userId: thread.userId, projectId: thread.projectId },
-        owner: call.execution.branchOwner,
-        level: checked.level,
-        callId: ctx.toolCallId ?? randomUUID(),
-        apply: checked.apply === true,
-      });
-      result = withAgentsCheck(result, check);
-    }
-    return result;
+    return checkAgentsWrite(deps, call, ctx, checked, result);
   };
 }
 
