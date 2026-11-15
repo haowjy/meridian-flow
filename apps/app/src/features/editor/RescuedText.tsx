@@ -52,18 +52,20 @@ export function RescuedText({
 }: {
   /** Each passage's words; null for one that couldn't be recovered. */
   passages: readonly (string | null)[];
-  /** Beside Dismiss: what happened, or why. */
+  /** Beside Dismiss: what happened, or why. None when there are no words to say it about. */
   note: ReactNode;
   onDismiss: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <ol className="flex flex-col gap-2">
-        {passages.map((text, index) => (
-          // Passages have no identity beyond their order; a rescue's never reorder.
-          <RescuedPassage key={index} text={text} />
-        ))}
-      </ol>
+      {passages.length > 0 ? (
+        <ol className="flex flex-col gap-2">
+          {passages.map((text, index) => (
+            // Passages have no identity beyond their order; a rescue's never reorder.
+            <RescuedPassage key={index} text={text} />
+          ))}
+        </ol>
+      ) : null}
       <div className="flex items-center gap-3">
         <p className="min-w-0 flex-1 text-muted-foreground">{note}</p>
         <Button
@@ -162,7 +164,7 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
     {
       occurrenceId: `unsent:${typing.id}`,
       rescue: { kind: "unsent-typing" as const, cause: typing.cause },
-      passages: [typing.text],
+      passages: typing.text === null ? [] : [typing.text],
     },
   ]);
   useCountRescues(counted);
@@ -176,8 +178,8 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
         <UnsentTypingSentence cause={typing.cause} />
       </p>
       <RescuedText
-        passages={[typing.text]}
-        note={<Trans>It isn't in the document.</Trans>}
+        passages={typing.text === null ? [] : [typing.text]}
+        note={typing.text === null ? null : <Trans>It isn't in the document.</Trans>}
         onDismiss={onDismiss}
       />
     </div>
@@ -191,6 +193,12 @@ function UnsentTypingSentence({ cause }: { cause: UnsentTyping["cause"] }) {
     case "removed":
       return (
         <Trans>Your latest typing didn't reach the server before the document was removed.</Trans>
+      );
+    case "owner-closed":
+      return (
+        <Trans>
+          Your latest typing didn't reach the server before this document became read-only.
+        </Trans>
       );
   }
 }

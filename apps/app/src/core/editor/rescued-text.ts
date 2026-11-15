@@ -171,3 +171,25 @@ export function typedText(
   );
   return text || null;
 }
+
+/**
+ * The live words of `copy` (an update) that `known` lacks: what an older incarnation of a room's
+ * copy held that the server never got, once `known` has the server's state.
+ */
+export function missingText(copy: Uint8Array, known: Y.Doc): string | null {
+  const scratch = new Y.Doc();
+  try {
+    Y.applyUpdate(scratch, copy);
+    const missing = new Map<number, { clock: number; len: number }[]>();
+    for (const struct of Y.decodeUpdate(Y.encodeStateAsUpdate(scratch, Y.encodeStateVector(known)))
+      .structs) {
+      if (!(struct instanceof Y.Item)) continue;
+      const ranges = missing.get(struct.id.client) ?? [];
+      ranges.push({ clock: struct.id.clock, len: struct.length });
+      missing.set(struct.id.client, ranges);
+    }
+    return typedText(scratch, missing);
+  } finally {
+    scratch.destroy();
+  }
+}

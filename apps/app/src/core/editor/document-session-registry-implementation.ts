@@ -26,6 +26,7 @@ import {
   draftRoomPersistenceKey,
   LocalDocumentCopies,
 } from "./local-document-copies";
+import { missingText } from "./rescued-text";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
 const LIVE_DOC_SOFT_CAP = 50;
@@ -102,14 +103,13 @@ export class DocumentSessionRegistry {
   ) {
     this.copies = copies;
     this.draftRooms = new DraftRoomPool({
-      hold: (documentId) => this.copies.hold(documentId as DocumentId),
-      openSession: (roomKey, documentId) => {
-        const session = this.createSession(roomKey, {
-          kind: "indexeddb",
-          key: draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
-        });
+      open: (roomKey, documentId) => {
+        const { session, hold } = this.openCopy(
+          roomKey,
+          draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
+        );
         this.attachSessionTransport(session);
-        return session;
+        return { session, hold };
       },
       teardownOwner: this.teardownOwner,
       teardownGraceMs,
@@ -362,15 +362,50 @@ export class DocumentSessionRegistry {
       }
       return state.session;
     }
-    state.hold = this.copies.hold(lease.documentId);
-    const session = this.createSession(lease.documentId, {
-      kind: "indexeddb",
-      key: documentSessionPersistenceKey(lease.accountId, lease.documentId),
-    });
+    const { session, hold } = this.openCopy(
+      lease.documentId,
+      documentSessionPersistenceKey(lease.accountId, lease.documentId),
+    );
+    state.hold = hold;
     state.session = session;
     if (attach) this.attachSessionTransport(session);
     this.maybeWarnLiveDocCap();
     return session;
+  }
+
+  /**
+   * A session on the room's current incarnation, and the hold on it. The words an older incarnation
+   * held that the server lacks are handed back once the session has synced, and it goes.
+   */
+  private openCopy(
+    roomKey: string,
+    copyKey: string,
+  ): { session: DocumentSession; hold: Promise<CopyHold> } {
+    const incarnation = this.copies.current(copyKey);
+    const name = this.copies.nameOf(copyKey);
+    const hold = this.copies.hold(name);
+    const session = this.createSession(roomKey, { kind: "indexeddb", key: name });
+    if (incarnation > 0) void this.handBackOlder(session, copyKey, incarnation).catch(reportError);
+    return { session, hold };
+  }
+
+  private async handBackOlder(
+    session: DocumentSession,
+    copyKey: string,
+    incarnation: number,
+  ): Promise<void> {
+    const older = await this.copies.openOlder(copyKey, incarnation);
+    if (older.length === 0) return;
+    // Until the first handshake the document is not the server's, and everything would look unsent.
+    await session.whenSynced();
+    const settled = session.getSnapshot().status !== "destroyed";
+    try {
+      if (settled)
+        for (const { update } of older)
+          this.handBack(missingText(update, session.document), "owner-closed");
+    } finally {
+      await Promise.all(older.map((copy) => copy.finish(!settled)));
+    }
   }
 
   private createSession(
@@ -426,6 +461,12 @@ export class DocumentSessionRegistry {
     const text = session.unsentText();
     if (!text) return;
     this.handedBack.add(session);
+    this.handBack(text, cause);
+  }
+
+  /** `text` is null for a change that has no words (a deletion, a format change). */
+  private handBack(text: string | null, cause: UnsentTypingCause): void {
+    if (text === null && cause !== "owner-closed") return;
     const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
     for (const observer of this.unsentTypingObservers) observer(typing);
   }

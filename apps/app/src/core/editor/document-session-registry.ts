@@ -16,11 +16,17 @@ export type LiveDocumentSessionLease = Readonly<{
   documentId: DocumentId;
 }>;
 
-/** Why a room's unsent typing could not be delivered. */
-export type UnsentTypingCause = "closed" | "removed";
+/**
+ * Why a room's unsent typing could not be delivered: its draft closed, its document was removed,
+ * or the room's owner closed and the server admitted it read-only (`owner-closed`).
+ */
+export type UnsentTypingCause = "closed" | "removed" | "owner-closed";
 
-/** Typing a room ended with before the server acknowledged it, handed back once. */
-export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text: string }>;
+/**
+ * Typing a room ended with before the server acknowledged it, handed back once. `text` is null for
+ * an `owner-closed` change that has no words (a deletion, a format change).
+ */
+export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text: string | null }>;
 
 export interface LiveDocumentSessionRegistry {
   admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;

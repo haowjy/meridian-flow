@@ -33,10 +33,14 @@ export class DraftRoomPool {
 
   constructor(
     private readonly deps: {
-      /** A new session for the room, published to its observers with its transport attached. */
-      openSession(roomKey: string, documentId: string): DocumentSession;
-      /** The shared hold on the document's local copies, taken while a room is open. */
-      hold(documentId: string): Promise<CopyHold>;
+      /**
+       * A new session for the room, published to its observers with its transport attached, and
+       * the shared hold on its local copy, taken while the session is open.
+       */
+      open(
+        roomKey: string,
+        documentId: string,
+      ): { session: DocumentSession; hold: Promise<CopyHold> };
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
     },
@@ -91,8 +95,8 @@ export class DraftRoomPool {
     if (existing) return existing;
     const documentId = this.documents.get(roomKey);
     if (!documentId) throw new Error(`Draft room was never retained: ${roomKey}`);
-    this.holds.set(roomKey, this.deps.hold(documentId));
-    const session = this.deps.openSession(roomKey, documentId);
+    const { session, hold } = this.deps.open(roomKey, documentId);
+    this.holds.set(roomKey, hold);
     this.rooms.set(roomKey, session);
     session.subscribe(() => {
       if (this.rooms.get(roomKey) !== session) return;
