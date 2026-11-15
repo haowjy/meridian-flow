@@ -118,6 +118,7 @@ export async function readTurnFolderTargets(
     .selectDistinct({
       nodeId: treeEditReceiptNodes.nodeId,
       shownAt: treeEditReceipts.shownAt,
+      branchId: branches.id,
       workId: owner.workId,
       rootThreadId: owner.rootThreadId,
     })
@@ -140,6 +141,7 @@ export async function readTurnFolderTargets(
       folders.set(`${row.nodeId}:${row.workId}:${row.rootThreadId}`, {
         nodeId: row.nodeId,
         ownerKey: ownerKeyOfColumns({ workId: row.workId, rootThreadId: row.rootThreadId }),
+        branchId: row.branchId,
         shownAt: row.shownAt,
       });
   return [...folders.values()];

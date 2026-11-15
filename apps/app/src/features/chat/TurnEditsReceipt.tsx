@@ -11,6 +11,7 @@ import type {
   TurnLiveLineageDocumentItem,
   TurnReceiptChip,
   TurnTreeLine,
+  TurnTreeState,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
@@ -454,7 +455,7 @@ function useDocumentRowDrag(document: TurnEditDocument) {
 }
 
 /** What became of a row's drafted text (`text`) and tree change (`tree`), each when the turn drafted it. */
-type Halves = { text?: TurnDraftState; tree?: TurnDraftState };
+type Halves = { text?: TurnDraftState; tree?: TurnTreeState };
 
 function halvesOf(
   document: TurnEditDocument,
@@ -468,10 +469,10 @@ function halvesOf(
 }
 
 /** One state for a row: waiting while a half waits; else applied when a half landed. */
-function stateOf({ text, tree }: Halves): TurnDraftState | undefined {
+function stateOf({ text, tree }: Halves): TurnTreeState | undefined {
   if (text === "pending" || tree === "pending") return "pending";
   if (text === "applied" || tree === "applied") return "applied";
-  return text ?? tree;
+  return tree === "replaced" ? tree : (text ?? tree);
 }
 
 /**
@@ -495,15 +496,17 @@ function DraftStateWord({ halves, op }: { halves: Halves; op: TurnTreeLine["op"]
   );
 }
 
-function stateWord(state: TurnDraftState | undefined): string | null {
+function stateWord(state: TurnTreeState | undefined): string | null {
   if (state === "applied") return t`Applied`;
   if (state === "discarded") return t`Discarded`;
+  if (state === "replaced") return t`Replaced by a later change`;
   return null;
 }
 
-function halfState(state: TurnDraftState): string {
+function halfState(state: TurnTreeState): string {
   if (state === "applied") return t`applied`;
   if (state === "discarded") return t`discarded`;
+  if (state === "replaced") return t`replaced by a later one`;
   return t`still a draft`;
 }
 
@@ -587,26 +590,28 @@ function documentCountLabel(
   const what =
     counted(true) === 0 ? files : counted(false) === 0 ? folders : t`${files} and ${folders}`;
   if (documents.every((document) => document.scope === "draft")) {
-    const states = new Map<string, TurnDraftState | undefined>(
+    const states = new Map<string, TurnTreeState | undefined>(
       documents.map((document) => [
         document.documentId,
         stateOf(halvesOf(document, drafts, trees)),
       ]),
     );
-    const count = (state: TurnDraftState) =>
+    const count = (state: TurnTreeState) =>
       [...states.values()].filter((value) => value === state).length;
     const applied = count("applied");
+    const replaced = count("replaced");
     const discarded = count("discarded");
-    const waiting = states.size - applied - discarded;
-    if (applied && !discarded && !waiting) return t`Applied ${what}`;
-    if (discarded && !applied && !waiting) return t`Discarded ${what}`;
-    if (applied && discarded && waiting)
-      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded, ${waiting} still a draft`;
-    if (applied && discarded) return t`Drafted ${what}: ${applied} applied, ${discarded} discarded`;
-    if (applied && waiting) return t`Drafted ${what}: ${applied} applied, ${waiting} still a draft`;
-    if (discarded && waiting)
-      return t`Drafted ${what}: ${discarded} discarded, ${waiting} still a draft`;
-    return t`Drafted ${what}`;
+    const waiting = states.size - applied - replaced - discarded;
+    if (applied === states.size) return t`Applied ${what}`;
+    if (discarded === states.size) return t`Discarded ${what}`;
+    if (waiting === states.size) return t`Drafted ${what}`;
+    const parts = [
+      applied ? t`${applied} applied` : null,
+      replaced ? t`${replaced} replaced by a later change` : null,
+      discarded ? t`${discarded} discarded` : null,
+      waiting ? t`${waiting} still a draft` : null,
+    ].filter((part) => part !== null);
+    return t`Drafted ${what}: ${parts.join(", ")}`;
   }
   if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
     return t`Changed ${what}`;

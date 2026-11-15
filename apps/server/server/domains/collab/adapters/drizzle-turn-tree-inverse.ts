@@ -7,7 +7,7 @@
  */
 
 import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
-import type { TurnDraftState, TurnInverseSkip } from "@meridian/contracts/protocol";
+import type { TurnInverseSkip, TurnTreeState } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   documents,
@@ -17,10 +17,10 @@ import {
   treeNodes,
 } from "@meridian/database/schema";
 import {
+  type DraftedFate,
   deleteStands,
+  draftedFates,
   LIVE,
-  lastSettlements,
-  listRecords,
   undoChange,
   type View,
 } from "@meridian/project-tree";
@@ -34,7 +34,7 @@ import type {
   TreeReceipt,
   TreeReceiptInput,
 } from "../contracts.js";
-import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
+import { treeListOfNode, treeListsOfNodes } from "./drizzle-branch-tree-lists.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
 export type TreePlan = {
@@ -91,14 +91,15 @@ export function createTurnTreeInverse(deps: {
   }
 
   /**
-   * What became of each node's tree change the turn drafted, read from its records in the list
-   * that holds the node: `pending` while one still waits in its Work, else `applied` when an Apply
-   * took one, else `discarded` (a Discard took them, or the Work's purge did).
+   * What became of each node's tree change the turn drafted (`draftedFates`, which follows a
+   * restored Discard's copies): `pending` while one of the node's records still waits, else
+   * `applied` when one landed, else `replaced` or `discarded`. The lists are found once for the
+   * turn's nodes, and each list is read once for the turn's own record ids.
    */
   async function draftStates(
     threadId: ThreadId,
     turnId: TurnId,
-  ): Promise<Record<string, TurnDraftState>> {
+  ): Promise<Record<string, TurnTreeState>> {
     const receipts = await db()
       .select({ records: treeEditReceipts.records })
       .from(treeEditReceipts)
@@ -110,42 +111,37 @@ export function createTurnTreeInverse(deps: {
           isNotNull(treeEditReceipts.draftBranchId),
         ),
       );
+    const entries = receipts.flatMap((receipt) => receipt.records);
+    const listOf = await treeListsOfNodes(deps.db, [...new Set(entries.map((e) => e.node))]);
     const byList = new Map<
       string,
       { list: TreeList; records: { record: string; node: string }[] }
     >();
-    for (const entry of receipts.flatMap((receipt) => receipt.records)) {
-      const list = await treeListOfNode(deps.db, entry.node);
+    for (const entry of entries) {
+      const list = listOf.get(entry.node);
       if (!list) continue;
       const key = JSON.stringify(list);
       const known = byList.get(key) ?? { list, records: [] };
       known.records.push(entry);
       byList.set(key, known);
     }
-    const states: Record<string, TurnDraftState> = {};
-    const rank = { discarded: 0, applied: 1, pending: 2 } as const;
+    const states: Record<string, TurnTreeState> = {};
+    const rank = { discarded: 0, replaced: 1, applied: 2, pending: 3 } as const;
     for (const { list, records } of byList.values()) {
-      const read = await deps.treeLists.read({
+      const fates = await deps.treeLists.read<Map<string, DraftedFate>>({
         lists: [list],
-        view: ([end]) => {
-          if (!end) return [];
-          const present = new Set(listRecords(end.writer.doc).map((record) => record.id));
-          const last = lastSettlements(end.writer.doc);
-          return records.map(({ record, node }) => {
-            const to = present.has(record) ? (last.get(record)?.to ?? null) : "discarded";
-            const state: TurnDraftState =
-              to === null
-                ? "pending"
-                : to === "applied" || to === "superseded"
-                  ? "applied"
-                  : "discarded";
-            return [node, state] as const;
-          });
-        },
+        view: ([end]) =>
+          end
+            ? draftedFates(
+                end.writer.doc,
+                records.map((entry) => entry.record),
+              )
+            : new Map(),
       });
-      for (const [node, state] of read) {
+      for (const { record, node } of records) {
+        const fate = fates.get(record) ?? "discarded";
         const was = states[node];
-        if (!was || rank[state] > rank[was]) states[node] = state;
+        if (!was || rank[fate] > rank[was]) states[node] = fate;
       }
     }
     return states;

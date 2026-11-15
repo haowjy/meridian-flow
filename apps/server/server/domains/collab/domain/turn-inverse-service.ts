@@ -18,10 +18,10 @@ import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
   ReversalOutcome,
-  TurnDraftState,
   TurnInverseSkip,
   TurnInverseSkipCause,
   TurnReceiptChip,
+  TurnTreeState,
 } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
@@ -137,7 +137,7 @@ export interface TurnInverseStore {
     direction: "undo" | "redo",
   ): Promise<{ acting: number; gone: number }>;
   /** What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`). */
-  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnDraftState>>;
+  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnTreeState>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */

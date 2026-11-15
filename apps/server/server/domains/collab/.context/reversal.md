@@ -179,12 +179,14 @@ turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurn
 a folder has no document, so the item carries the node id with `folder: true` and no door), and
 the receipt chip counts the tree steps. Every row's words come from the turn's write receipts:
 its line (moved, copied, deleted, a folder's too) from each node's `before_at` and `after_at`, a
-folder's name where the change left it (a clash's " (2)" included), the rows in tree order, and
-the same words after the card's Undo (only the model's own undo takes a change off the card). A
-drafted change says each half: `drafts` the text, from the turn's parts, and `trees` the tree,
-from the receipt's records in the list that holds the node (pending, else applied, else
-discarded; `draftStates` in `drizzle-turn-tree-inverse.ts`); the card's label and row word read
-both. Its lists' keys are taken before the documents' (in
+folder's name where the change left it (a clash's " (2)" included), the rows in the file tree's
+order (rank, then id, at each level of the view that shows the row: `placementsOf`), and the same
+words after the card's Undo (a change leaves the card only when the newest reversal in its chain
+is the model's own undo). A drafted change says each half: `drafts` the text, from the turn's
+parts, and `trees` the tree, from `draftedFates` in `@meridian/project-tree` over the receipt's
+records (it follows a restored Discard's copies, and a record a later change landed over reads
+`replaced`); per node, pending, else applied, else replaced, else discarded. The card's label and
+row word read both. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in
 Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call

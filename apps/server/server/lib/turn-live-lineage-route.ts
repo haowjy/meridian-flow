@@ -8,6 +8,7 @@ import type {
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import {
+  type TreePlacement,
   type TurnEditedDocument,
   type TurnTreeFolder,
   turnEditDestination,
@@ -71,11 +72,13 @@ export async function handleTurnLiveLineageRequest(
       ? ({ state: "work-reversed", control: "redo" } as const)
       : null;
   return {
-    documents: inTreeOrder([
-      ...visibleDocuments.map(serializeLiveLineageDocument),
+    documents: inTreeOrder<TurnEditedDocument | TurnTreeFolder>([
+      ...visibleDocuments,
       // The thread's owner has proven the turn is theirs; a folder has no file grant of its own.
-      ...folders.map(serializeLiveLineageFolder),
-    ]),
+      ...folders,
+    ]).map((row) =>
+      "nodeId" in row ? serializeLiveLineageFolder(row) : serializeLiveLineageDocument(row),
+    ),
     receipt: receipt ?? workReceipt,
   };
 }
@@ -157,17 +160,19 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
  * The rows as the tree lists them, by where each row says the node is now (a move's
  * destination, a delete's old place): a folder before what it holds, siblings by name.
  */
-function inTreeOrder(rows: TurnLiveLineageDocumentItem[]): TurnLiveLineageDocumentItem[] {
-  const place = (row: TurnLiveLineageDocumentItem) =>
-    (row.tree ? (row.tree.op === "delete" ? row.tree.from : row.tree.to) : row.uri).split("/");
-  const places = new Map(rows.map((row) => [row, place(row)]));
+/**
+ * The file tree's order (rank, then id, at each level, from `placement`); a row its view no
+ * longer places goes last, in the order it came.
+ */
+function inTreeOrder<Row extends { placement?: TreePlacement }>(rows: Row[]): Row[] {
   return [...rows].sort((a, b) => {
-    const left = places.get(a) ?? [];
-    const right = places.get(b) ?? [];
-    for (let at = 0; at < Math.min(left.length, right.length); at++) {
-      const order = (left[at] ?? "").localeCompare(right[at] ?? "", undefined, { numeric: true });
-      if (order) return order;
+    if (!a.placement || !b.placement) return a.placement ? -1 : b.placement ? 1 : 0;
+    const depth = Math.min(a.placement.length, b.placement.length);
+    for (let at = 0; at < depth; at++) {
+      const left = a.placement[at] ?? "";
+      const right = b.placement[at] ?? "";
+      if (left !== right) return left < right ? -1 : 1;
     }
-    return left.length - right.length;
+    return a.placement.length - b.placement.length;
   });
 }

@@ -37,6 +37,36 @@ export async function treeListOfNode(db: DrizzleDb, nodeId: string): Promise<Tre
   return null;
 }
 
+/** The list that holds each of `nodeIds`, in one read; a node no list holds is absent. */
+export async function treeListsOfNodes(
+  db: DrizzleDb,
+  nodeIds: readonly string[],
+): Promise<Map<string, TreeList>> {
+  if (nodeIds.length === 0) return new Map();
+  const rows = await currentDrizzleDb(db).execute<{
+    id: string;
+    project_id: string | null;
+    user_id: string | null;
+  }>(sql`
+    SELECT n.id::text AS id, p.id::text AS project_id, u.id::text AS user_id
+    FROM tree_node_ids n
+      LEFT JOIN projects p ON p.tree_list_id = n.list_id
+      LEFT JOIN users u ON u.tree_list_id = n.list_id
+    WHERE n.id IN (${sql.join(
+      nodeIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})`);
+  return new Map(
+    rows.flatMap((row): [string, TreeList][] =>
+      row.project_id
+        ? [[row.id, { kind: "project", projectId: row.project_id }]]
+        : row.user_id
+          ? [[row.id, { kind: "account", userId: row.user_id }]]
+          : [],
+    ),
+  );
+}
+
 /**
  * The cut a review list is drawn at: each of the branch's lists, its journal id and state vector
  * at the journal's head. Read before the rows, at READ COMMITTED: the copy is never ahead of what

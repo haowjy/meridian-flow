@@ -32,6 +32,7 @@ export type TurnEditedDocumentId =
 export type TurnEditedDocument = TurnEditedDocumentId & {
   uri: string;
   tree?: TurnTreeLine;
+  placement?: TreePlacement;
   /** The current destination is gone; authorize this immutable target where it restores. */
   removed?: true;
 };
@@ -72,10 +73,23 @@ export type TurnTreeFolder = {
   ownerKey: DraftOwnerKey | null;
   at: string;
   tree?: TurnTreeLine;
+  placement?: TreePlacement;
 };
 
-/** A folder the turn changed, by the path the model gave. */
-export type TurnFolderTarget = { nodeId: string; ownerKey: DraftOwnerKey | null; shownAt: string };
+/** A folder the turn changed, by the path the model gave, and the branch it was drafted in. */
+export type TurnFolderTarget = {
+  nodeId: string;
+  ownerKey: DraftOwnerKey | null;
+  branchId: string | null;
+  shownAt: string;
+};
+
+/**
+ * Where a row's node sits in the tree that shows it (live, or a Work's branch): the rank and id
+ * of each node on its path, from the top of its source down. Compared in order, it is the file
+ * tree's own order. Absent for a node that view doesn't place.
+ */
+export type TreePlacement = readonly string[];
 
 /** The file-policy destination a turn's edit is read and reversed at. */
 export function turnEditDestination(target: TurnEditedDocumentId): FileDestination {
@@ -88,6 +102,10 @@ export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
   listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnFolderTarget[]>;
+  /** Each node's placement in the view `branchId` names (null: live), keyed `node:branch`. */
+  placementsOf(
+    nodes: readonly { nodeId: string; branchId: string | null }[],
+  ): Promise<Map<string, TreePlacement>>;
   /** The turn's tree entries, live and drafted, ordered by `seq`. */
   listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
 };
@@ -129,9 +147,22 @@ export function createTurnLiveLineageReadModel(deps: {
       ]);
       const lines = treeLines(entries);
       const documents = await resolveDocuments(targets, lines, createAddresses(entries));
+      const branchOf = (document: TurnEditedDocument) =>
+        document.scope === "draft" ? (document.branchIds.at(-1) ?? null) : null;
+      const placements = await deps.store.placementsOf(
+        documents.map((document) => ({
+          nodeId: document.documentId,
+          branchId: branchOf(document),
+        })),
+      );
       return documents.map((document) => {
         const tree = lines.get(treeLineKey(document));
-        return tree ? { ...document, tree } : document;
+        const placement = placements.get(`${document.documentId}:${branchOf(document)}`);
+        return {
+          ...document,
+          ...(tree ? { tree } : {}),
+          ...(placement ? { placement } : {}),
+        };
       });
     },
 
@@ -142,11 +173,13 @@ export function createTurnLiveLineageReadModel(deps: {
       ]);
       const lines = treeLines(entries);
       const made = createAddresses(entries);
-      return folders.map(({ shownAt, ...folder }) => {
+      const placements = await deps.store.placementsOf(folders);
+      return folders.map(({ shownAt, branchId, ...folder }) => {
         const key = treeLineKey({ documentId: folder.nodeId, ownerKey: folder.ownerKey });
         const tree = lines.get(key);
         const at = tree ? (tree.op === "delete" ? tree.from : tree.to) : (made.get(key) ?? shownAt);
-        return tree ? { ...folder, at, tree } : { ...folder, at };
+        const placement = placements.get(`${folder.nodeId}:${branchId}`);
+        return { ...folder, at, ...(tree ? { tree } : {}), ...(placement ? { placement } : {}) };
       });
     },
 

@@ -398,8 +398,8 @@ msgid "{answered, plural, one {# answered} other {# answered}}"
 msgstr "{answered, plural, other {# 个已回答}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "{applied} applied"
-#~ msgstr ""
+msgid "{applied} applied"
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -531,8 +531,8 @@ msgid "{days}d"
 msgstr "{days}天"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "{discarded} discarded"
-#~ msgstr ""
+msgid "{discarded} discarded"
+msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{documents, plural, one {# document} other {# documents}}"
@@ -822,6 +822,10 @@ msgstr "{position} / {count}"
 msgid "{remainingPercent}% remaining"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{replaced} replaced by a later change"
+msgstr ""
+
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "{seconds, plural, one {Continues in # second} other {Continues in # seconds}}"
 msgstr "{seconds, plural, other {# 秒后继续}}"
@@ -891,8 +895,8 @@ msgid "{unanswered, plural, one {# unanswered} other {# unanswered}}"
 msgstr "{unanswered, plural, other {# 个未回答}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "{waiting} still a draft"
-#~ msgstr ""
+msgid "{waiting} still a draft"
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} deleted {name} before this change could be made."
@@ -3260,24 +3264,24 @@ msgstr ""
 
 #. placeholder {0}: parts.join(", ")
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Drafted {what}: {0}"
+msgid "Drafted {what}: {0}"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Drafted {what}: {applied} applied, {discarded} discarded"
 #~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Drafted {what}: {applied} applied, {discarded} discarded"
-msgstr ""
+#~ msgid "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still a draft"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still a draft"
-msgstr ""
+#~ msgid "Drafted {what}: {applied} applied, {waiting} still a draft"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Drafted {what}: {applied} applied, {waiting} still a draft"
-msgstr ""
-
-#: src/features/chat/TurnEditsReceipt.tsx
-msgid "Drafted {what}: {discarded} discarded, {waiting} still a draft"
-msgstr ""
+#~ msgid "Drafted {what}: {discarded} discarded, {waiting} still a draft"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #~ msgid "Drafted 1 document"
@@ -5396,6 +5400,14 @@ msgstr "切换设备时，会重新打开你之前打开的文档。"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Replaced by a later change"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "replaced by a later one"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
