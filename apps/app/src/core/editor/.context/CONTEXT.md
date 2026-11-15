@@ -91,15 +91,13 @@ and remain quarantined until their retryable destroy ledger succeeds.
   only retyped, or replaced in place by a copy with its id, stays in place, and
   nothing inside a block replaced in place counts as moved. So a command that
   moves blocks writes the move as a delete and an insert of the moved nodes
-  (`moveTableRow` in `table-operations.ts`), never as a rebuilt parent: a
-  rebuilt table tells the binding nothing about which row moved, and a tie can
-  re-create the row a collaborator is typing in. The rule holds only under a
+  (`moveTableRow` and `moveTableColumn` in `table-operations.ts`), never as a rebuilt parent: a
+  rebuilt table tells the binding nothing about which row or cell moved, and a tie can
+  re-create one a collaborator is typing in. The rule holds only under a
   parent that stays the same block (its id before the write is the node's id) or
-  the document. A table cell has no id, so what is in a cell, paragraphs or a
-  nested container, pairs by position as in stock y-tiptap, and so does
-  everything inside a container that was rewritten in place as another block. A
-  column move or an Enter inside a cell can move an element to its neighbour,
-  keeping the text but in the wrong cell, until cells get ids (#1541). Stock y-tiptap pairs by position and
+  the document. Cells and headers carry ids too, so their paragraphs and nested containers
+  pair by id. Children inside a container rewritten in place as another block still pair
+  by position. Stock y-tiptap pairs by position and
   child equality: Enter at the end of a paragraph followed by an empty one moved
   the empty one's element to the new paragraph. Yjs has no move, so typing a
   peer puts into a block while it is dragged is lost, and two peers dragging one
