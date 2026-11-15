@@ -81,7 +81,7 @@ type Dependencies = {
   onDraftCommitted(draftId: string): void;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   /** Where a document in Trash last stood, which names it while a Redo brings it back. */
-  resolveLastDocumentUri(documentId: string): Promise<string | null>;
+  resolveLastDocumentUri(documentId: string, branchId?: BranchId): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
@@ -891,6 +891,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (kind !== "revert" && !query.model && query.turnId)
         await input.notices.record({
           docId: document.documentId,
+          branchId: [...landed]
+            .map((draftId) =>
+              draftId ? document.drafts.get(draftId)?.documentDraft.branchId : undefined,
+            )
+            .find(Boolean),
           threadId: query.threadId,
           direction: kind,
           turnId: query.turnId,

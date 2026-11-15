@@ -245,8 +245,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const documentLastAddress = createDocumentLastAddress(deps.db);
-  const resolveLastDocumentUri = async (documentId: string) =>
-    (await documentLastAddress(documentId as DocumentId))?.uri ?? null;
+  const resolveLastDocumentUri = async (documentId: string, branchId?: BranchId) =>
+    (await documentLastAddress(documentId as DocumentId, branchId))?.uri ?? null;
   const lookups = createDrizzleCollabLookups(deps.db);
   const projectionEffects = createDrizzleDocumentProjectionEffects(
     deps.db,

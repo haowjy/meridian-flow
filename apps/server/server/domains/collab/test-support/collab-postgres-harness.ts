@@ -7,6 +7,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -319,8 +320,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const resolveDocumentUri = async (documentId: string) =>
     `manuscript/${documentName(documentId as DocumentId)}.md`;
   const documentLastAddress = createDocumentLastAddress(db);
-  const resolveLastDocumentUri = async (documentId: string) =>
-    (await documentLastAddress(documentId as DocumentId))?.uri ?? null;
+  const resolveLastDocumentUri = async (documentId: string, branchId?: BranchId) =>
+    (await documentLastAddress(documentId as DocumentId, branchId))?.uri ?? null;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},

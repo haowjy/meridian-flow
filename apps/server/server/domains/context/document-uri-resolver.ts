@@ -1,4 +1,5 @@
 /** Document ids to canonical URIs, answered by the one document-address owner (L32). */
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branchTreeNodes } from "@meridian/database/schema";
@@ -16,6 +17,7 @@ export type DocumentUriResolver = (documentId: string) => Promise<string | null>
  */
 export type DocumentLastAddress = (
   documentId: DocumentId,
+  branchId?: BranchId,
 ) => Promise<{ uri: string; deleted: boolean } | null>;
 
 export function createDocumentUriResolver(db: Database): DocumentUriResolver {
@@ -24,17 +26,22 @@ export function createDocumentUriResolver(db: Database): DocumentUriResolver {
 }
 
 export function createDocumentLastAddress(db: Database): DocumentLastAddress {
-  return async (documentId) => {
+  return async (documentId, branchId) => {
     const [live] = await loadDocumentAddresses(db, { ids: [documentId] });
     if (live) return live;
-    const [placed] = await currentDrizzleDb(db)
-      .select({ branchId: branchTreeNodes.branchId })
-      .from(branchTreeNodes)
-      .where(eq(branchTreeNodes.id, documentId))
-      .orderBy(branchTreeNodes.branchId)
-      .limit(1);
-    if (!placed) return null;
-    const view = { kind: "branch", branchId: placed.branchId } as const;
+    // A caller that knows the Work's branch reads that one; otherwise any branch that placed it.
+    const placedIn =
+      branchId ??
+      (
+        await currentDrizzleDb(db)
+          .select({ branchId: branchTreeNodes.branchId })
+          .from(branchTreeNodes)
+          .where(eq(branchTreeNodes.id, documentId))
+          .orderBy(branchTreeNodes.branchId)
+          .limit(1)
+      )[0]?.branchId;
+    if (!placedIn) return null;
+    const view = { kind: "branch", branchId: placedIn } as const;
     return (await loadDocumentAddresses(db, { ids: [documentId] }, view))[0] ?? null;
   };
 }
