@@ -190,7 +190,8 @@ document keys; a caller holds no document or namespace key when it submits. `con
   `submit` on both lists, live only, documents and files only (a folder or a Work's draft answers
   `invalid_operation`), and the browser reaches it at `POST /api/projects/:id/context/move`.
   `undoMoveBetweenLists` takes the pair back across both lists. A destination name taken by
-  another node answers `conflict`.
+  another node is numbered, as in a list. The model's `move` sends a folder across as its
+  documents under the same folders and then deletes it (`lib/model-tools/tree-across-lists.ts`).
 - **Delete.** `port.delete` is the live one-record delete the upload remove uses (`SourceTree.delete`): the node and its subtree go to Trash together; the result
   lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
   that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.

@@ -636,6 +636,29 @@ export function reachPath(
 }
 
 /**
+ * The documents and files in a folder and the folders below it, in tree order, each with the
+ * folders between it and `folder`: what a folder crossing to another list carries, to be remade
+ * under the same folders there. A folder in Trash carries what is in it (a move restores); in a
+ * live folder, what is already in Trash stays.
+ */
+export function documentsBelow(
+  scope: Pick<TreeScope, "writer" | "view">,
+  area: string,
+  folder: string,
+): Array<{ id: string; uri: string; dir: string[] }> {
+  const projection = scope.writer.view(scope.view);
+  const inTrash = projection.nodes.get(folder)?.trashed ?? false;
+  const base = pathNames(projection, folder).length;
+  const walk = (parent: string): Array<{ id: string; uri: string; dir: string[] }> =>
+    childrenOf(projection, parent, inTrash).flatMap((node) => {
+      if (node.kind === "folder") return walk(node.id);
+      const names = pathNames(projection, node.id);
+      return [{ id: node.id, uri: `${area}${names.join("/")}`, dir: names.slice(base, -1) }];
+    });
+  return walk(folder);
+}
+
+/**
  * What stayed standing in a folder after a delete or an Undo took only what the model saw or
  * made: the folder with what is in it, and who put that there (the last record to set its place).
  */

@@ -151,6 +151,30 @@ export async function runTreeInverse(
     const answer = await reverseReceipt(deps, call, input, ctx, receipt, node.id);
     done.push(answer);
     if ("isError" in answer && answer.isError) break;
+    // A folder that crossed lists is its documents' moves and then its own delete, one command:
+    // taking the delete back takes the moves back with it.
+    if (receipt.op === "delete" && receipt.commandId && receipt.turnId) {
+      const crossed = (await treeHistory.turnSteps(threadId, receipt.turnId as TurnId, "undo"))
+        .filter(
+          (step) => step.commandId === receipt.commandId && step.across && step.kind === "write",
+        )
+        // Oldest first, so they come back in the order they stood.
+        .reverse();
+      for (const step of crossed) {
+        const back = await reverseReceipt(
+          deps,
+          call,
+          { ...input, path: step.across?.to ?? input.path },
+          ctx,
+          step,
+          step.subject,
+        );
+        if ("isError" in back && back.isError) {
+          done.push(back);
+          break;
+        }
+      }
+    }
   }
   const last = done.at(-1) as (typeof done)[number];
   if (chosen.text === 0 || ("isError" in last && last.isError))

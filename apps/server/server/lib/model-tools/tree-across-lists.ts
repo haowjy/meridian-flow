@@ -3,7 +3,7 @@
  * They are two lists, so the move is the server's (`port.moveAcrossLists`: one transaction on
  * both, the pair of records `moveBetweenLists` makes); taking it back is the same move the other
  * way, which finds the node by id and refuses when it is no longer where the move put it. Each
- * document is its own move with its own receipt. Only documents and files cross; a folder stays.
+ * document is its own move with its own receipt; a folder crosses as its documents.
  */
 
 import { modelResult } from "@meridian/agent-edit/integration";
@@ -16,13 +16,14 @@ import type {
   ContextMoveAcrossListsChange,
   ContextPort,
 } from "../../domains/context/ports/context-port.js";
-import { reachPath } from "../../domains/context/tree/tree-commands.js";
+import { documentsBelow, reachPath } from "../../domains/context/tree/tree-commands.js";
 import { type FileGrant, runWithEditGrants } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, namesEvidence, printedNames, shownNamesOf } from "./shown-paths.js";
 import {
   contextErrorMessage,
+  isToolError,
   type ToolCall,
   type ToolWiringDeps,
   writeToolError,
@@ -137,76 +138,108 @@ async function moveOne(
   };
 }
 
-/** The `move` that leaves a list: each of `from` into the folder or name `path` gives, in the other. */
+/**
+ * The `move` that leaves a list: each of `from` into the folder or name `path` gives, in the
+ * other. A document crosses as itself; a folder crosses as its documents, under the same folders
+ * made in the other list, and then leaves this one (`leave` deletes it). One in Trash crosses
+ * live: a move restores it.
+ */
 export async function runMoveAcrossLists(
   deps: ToolWiringDeps,
   call: ToolCall,
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
   command: { from: readonly string[]; path: string; many: boolean },
+  leave: (folder: string) => Promise<unknown>,
   /** Runs the moves as the call's command. */
   settle: (effect: () => Promise<unknown>) => Promise<unknown>,
 ) {
   const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
-  const sources = command.from.map((from) => areaOfPath(from));
-  if (command.from.some((from) => from.endsWith("/")))
-    return writeToolError(
-      "move",
-      "A folder can't move between a project's files and the account's files; move its documents.",
-    );
-  if (sources.some((source) => !source || !crossesLists(source.area, to.area)))
-    return writeToolError(
-      "move",
-      "One move can't both stay in a list and leave it: move them in separate calls.",
-    );
   return settle(async () => {
     const shown = await shownNamesOf(ctx);
     const moved: Moved[] = [];
     const notMoved: string[] = [];
+    let made = 0;
     let handle: string | undefined;
     let landed: string | undefined;
     for (const from of command.from) {
       const source = areaOfPath(from) as NonNullable<ReturnType<typeof areaOfPath>>;
       const found = await call.context.port.readTree(source.area, {
-        read: (scope) => reachPath(scope, source.area, shown, source.rest),
+        read: (scope) => {
+          const reach = reachPath(scope, source.area, shown, source.rest, { deleted: true });
+          return {
+            reach,
+            documents:
+              reach.kind === "node" && reach.node.kind === "folder"
+                ? documentsBelow(scope, source.area, reach.node.id)
+                : [],
+          };
+        },
       });
-      const reached = found.ok ? found.value : undefined;
-      if (reached?.kind !== "node" || reached.node.kind === "folder") {
-        const why =
-          reached?.kind === "node"
-            ? "a folder"
-            : reached?.kind === "gone" && reached.why === "deleted"
-              ? "in Trash"
-              : "not found";
-        if (!command.many) return writeToolError("move", `Nothing moved: ${from} (${why}).`);
-        notMoved.push(`${from} (${why})`);
+      const reached = found.ok ? found.value.reach : undefined;
+      if (reached?.kind !== "node") {
+        if (!command.many) return writeToolError("move", `Nothing moved: ${from} (not found).`);
+        notMoved.push(`${from} (not found)`);
         continue;
       }
+      const isFolder = reached.node.kind === "folder";
       // A path ending in `/` is the folder it goes into, under its own name; else the leaf renames it.
       const intoFolder = command.many || command.path.endsWith("/");
       const leaf = lastSegment(to.rest);
-      const renamed =
-        !intoFolder && canonicalLeaf(leaf) !== canonicalLeaf(lastSegment(source.rest));
-      const folderUri = joinContextUri(to.area, intoFolder ? to.rest : folderPart(to.rest));
-      const result = await moveOne(deps, call, ctx, grants, {
-        node: reached.node.id,
-        fromUri: reached.uri,
-        fromArea: source.area,
-        folderUri,
-        ...(renamed ? { name: leaf } : {}),
-        shownAt: `${source.area}${source.rest}`,
-      });
-      if (result.refused) {
-        if (!command.many) return result.refused;
-        notMoved.push(`${from} (not moved)`);
+      const sourceName = lastSegment(source.rest);
+      const renamed = !intoFolder && canonicalLeaf(leaf) !== canonicalLeaf(sourceName);
+      const units = isFolder
+        ? (found.ok ? found.value.documents : []).map((unit) => ({ ...unit, rename: false }))
+        : [{ id: reached.node.id, uri: reached.uri, dir: [] as string[], rename: renamed }];
+      // A folder lands under its own name, or the leaf the model gave it.
+      const folderName = intoFolder ? sourceName : leaf;
+      const landedIn = (dir: string[]) =>
+        isFolder
+          ? joinContextUri(
+              to.area,
+              [intoFolder ? to.rest : folderPart(to.rest), folderName, ...dir].join("/"),
+            )
+          : joinContextUri(to.area, intoFolder ? to.rest : folderPart(to.rest));
+      if (units.length === 0) {
+        if (!command.many) return writeToolError("move", `Nothing moved: ${from} (nothing in it).`);
+        notMoved.push(`${from} (nothing in it)`);
         continue;
       }
-      moved.push(result.moved);
-      handle = result.handle;
-      const expected = intoFolder
-        ? joinContextUri(folderUri, canonicalLeaf(lastSegment(source.rest)))
-        : `${to.area}${to.rest}`;
-      if (canonicalLeaf(result.moved.uri) !== canonicalLeaf(expected)) landed = result.moved.uri;
+      let crossed = 0;
+      for (const unit of units) {
+        const result = await moveOne(deps, call, ctx, grants, {
+          node: unit.id,
+          fromUri: unit.uri,
+          fromArea: source.area,
+          folderUri: landedIn(unit.dir),
+          ...(unit.rename ? { name: leaf } : {}),
+          shownAt: unit.uri,
+        });
+        if (result.refused) {
+          if (!command.many && !isFolder) return result.refused;
+          notMoved.push(`${unit.uri} (not moved)`);
+          continue;
+        }
+        crossed += 1;
+        moved.push(result.moved);
+        handle = result.handle;
+        if (!isFolder) {
+          const expected = intoFolder
+            ? joinContextUri(landedIn([]), canonicalLeaf(sourceName))
+            : `${to.area}${to.rest}`;
+          if (canonicalLeaf(result.moved.uri) !== canonicalLeaf(expected))
+            landed = result.moved.uri;
+        }
+      }
+      // The folder leaves once everything in it has crossed; what stayed keeps it standing.
+      if (isFolder && crossed === units.length) {
+        const left = await leave(from);
+        if (isToolError(left)) {
+          notMoved.push(`${from} (its documents crossed; the folder stayed)`);
+          continue;
+        }
+      }
+      if (crossed === units.length) made += 1;
     }
     if (moved.length === 0) return writeToolError("move", `Nothing moved: ${notMoved.join("; ")}`);
     const names = await printedNames(
@@ -224,7 +257,7 @@ export async function runMoveAcrossLists(
           destination: "live" as const,
           ...(handle ? { write: { id: handle } } : {}),
           tree: {
-            ...(command.many ? { moved: { made: moved.length, of: command.from.length } } : {}),
+            ...(command.many ? { moved: { made, of: command.from.length } } : {}),
             ...(notMoved.length > 0 ? { notMoved } : {}),
           },
         },

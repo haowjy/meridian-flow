@@ -9,6 +9,7 @@ import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts";
 import { contextPortForThread } from "../../domains/context/index.js";
+import { decodeDelta } from "../../domains/context/tree/names-shown.js";
 import {
   type Placement,
   runTreeCommand,
@@ -65,6 +66,56 @@ function uriOfWritten(path: string): string {
   return at ? `${at.area}${at.rest}` : path;
 }
 
+type MoveAnswer = {
+  isError?: true;
+  output: ReturnType<typeof modelResult>;
+  metadata?: unknown;
+  evidence?: { shown: unknown[]; names?: unknown };
+};
+
+/**
+ * The one answer for a move whose sources went two ways: what each part moved and left, added up.
+ * A part that moved nothing says why among the ones not moved; only when both did is the call refused.
+ */
+function joinMoves(stayed: unknown, crossed: unknown, of: number) {
+  const parts = [stayed, crossed] as MoveAnswer[];
+  const done = parts.filter((part) => !part.isError);
+  if (done.length === 0) return parts[0];
+  const tree = (part: MoveAnswer) =>
+    (part.output.tree ?? {}) as NonNullable<typeof part.output.tree>;
+  const notMoved = parts.flatMap((part) =>
+    part.isError ? [part.output.message ?? "not moved"] : (tree(part).notMoved ?? []),
+  );
+  const handle = done.map((part) => part.output.write?.id).findLast(Boolean);
+  const shown = done.flatMap((part) => {
+    const names = part.evidence?.names as { snapshot: Uint8Array } | undefined;
+    return names ? [decodeDelta(names.snapshot)] : [];
+  });
+  return {
+    output: modelResult({
+      command: "move",
+      status: "success",
+      phase: "committed",
+      payload: {
+        destination: "live" as const,
+        ...(handle ? { write: { id: handle } } : {}),
+        tree: {
+          moved: { made: done.reduce((sum, part) => sum + (tree(part).moved?.made ?? 0), 0), of },
+          ...(notMoved.length > 0 ? { notMoved } : {}),
+        },
+      },
+    }),
+    metadata: { treeWrite: true },
+    evidence: {
+      shown: [],
+      ...namesEvidence({
+        whole: shown.flatMap((delta) => delta.whole),
+        names: shown.flatMap((delta) => delta.names),
+      }),
+    },
+  };
+}
+
 function refusalOf(input: TreeToolInput, result: Extract<TreeResult, { ok: false }>) {
   return {
     isError: true as const,
@@ -87,7 +138,7 @@ export async function runTreeToolCommand(
   ctx: ToolHandlerContext,
   /** Runs the part that changes things as the call's command. */
   settle: (effect: () => Promise<unknown>) => Promise<unknown>,
-) {
+): Promise<unknown> {
   const command = commandOf(input);
   if (isToolError(command)) return command;
   const paths = command.command === "move" ? [...command.from, command.path] : [command.path];
@@ -114,15 +165,45 @@ export async function runTreeToolCommand(
     grants.push(granted);
     if (granted.destination.kind === "draft") draftArea ??= area;
   }
-  const crossing =
-    command.command === "move" &&
-    command.from.some((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary));
-  if (crossing && draftArea !== undefined)
+  const leaving =
+    command.command === "move"
+      ? command.from.filter((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary))
+      : [];
+  if (leaving.length > 0 && draftArea !== undefined)
     return writeToolError(
       input.command,
       "A change in a Work's draft can't move files between a project and the account's files.",
     );
-  if (crossing) return runMoveAcrossLists(deps, call, ctx, grants, command as never, settle);
+  if (leaving.length > 0 && command.command === "move") {
+    // Each source goes the way its own area says: the ones that stay in their list through the
+    // in-list move, the rest across, and the call has one answer.
+    const staying = command.from.filter((from) => !leaving.includes(from));
+    const now = (effect: () => Promise<unknown>) => effect();
+    const across = (run: typeof settle) =>
+      runMoveAcrossLists(
+        deps,
+        call,
+        ctx,
+        grants,
+        { ...command, from: leaving },
+        (folder) => runTreeToolCommand(deps, call, { command: "delete", path: folder }, ctx, now),
+        run,
+      );
+    if (staying.length === 0) return across(settle);
+    return settle(async () =>
+      joinMoves(
+        await runTreeToolCommand(
+          deps,
+          call,
+          { ...(input as MoveInput), from: { paths: staying } },
+          ctx,
+          now,
+        ),
+        await across(now),
+        command.from.length,
+      ),
+    );
+  }
   const drafted = draftArea !== undefined;
   const destination = (grants.find((granted) => granted.destination.kind === "draft") ?? grants[0])
     ?.destination;

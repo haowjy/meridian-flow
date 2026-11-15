@@ -339,6 +339,7 @@ export type ListEnd = { writer: TreeWriter; list: string };
  * other list, and a `create` for the same node id in the list it enters, under `parent` there.
  * `name` and `filetype` are what it is called and typed as where it enters, when that differs.
  * Moving back is the same pair the other way. A folder stays: what is inside it has no pair.
+ * A node in Trash crosses as live: leaving drops its Trash entries and the create is live (rule 9).
  */
 export function moveBetweenLists(
   out: ListEnd,
@@ -347,7 +348,7 @@ export function moveBetweenLists(
   node: string,
 ): { left: MoveRecord; entered: CreateRecord } {
   const was = out.writer.view(LIVE).nodes.get(node);
-  if (!was || was.trashed || was.kind === "folder")
+  if (!was || was.purged || was.kind === "folder")
     throw new Error(`${node} is not a document that can leave its list`);
   const arrives = into.writer.view(LIVE);
   const source = isSourceRoot(into.parent)

@@ -267,7 +267,8 @@ export interface SourceTree {
    * Moves a document or file from the list of `fromSourceId` into `dir` of this source, which
    * is in another list (a project's and the account's `user://`): one transaction on both
    * lists, the pair of records `moveBetweenLists` makes. The node is found by id; `leaf` is
-   * the name the writer typed, else it keeps its own. Live only; a folder does not cross.
+   * the name the writer typed, else it keeps its own; a taken name is numbered. Live only; a folder does not
+   * cross here (the model's move sends its documents).
    */
   moveAcrossLists(
     target: TreeWriteTarget,
@@ -436,7 +437,7 @@ export function createSourceTree(deps: {
       return write<MovedAcrossLists>([here, from], ([dest, origin = dest]) => {
         const { writer } = dest;
         const node = origin.writer.view(LIVE).nodes.get(input.node);
-        if (!node || node.trashed || node.purged) return Err({ code: "not_found" } as AdapterFault);
+        if (!node || node.purged) return Err({ code: "not_found" } as AdapterFault);
         if (node.kind === "folder")
           return Err({
             code: "invalid_operation",
@@ -468,9 +469,7 @@ export function createSourceTree(deps: {
           const refused = typeConversion(node, filename, filetype);
           if (refused) return Err(refused);
         }
-        const occupant = childNamed(projection, parent.value, filename);
-        if (occupant) return Err(conflict(occupantKindOf(occupant)));
-
+        // A name taken in the folder is numbered where it lands: both stay.
         const moved = moveBetweenLists(
           origin,
           {
