@@ -9,27 +9,19 @@ import type {
   AgentFileChange,
   AgentFinding,
   AgentPackageStatus,
-  AgentsLevel,
   SaveOutcome,
 } from "@meridian/contracts/agents";
-import {
-  agentsFileOf,
-  agentsLocationOf,
-  agentsRootOf,
-  shownFindings,
-} from "@meridian/contracts/agents";
+import { agentsFileOf, agentsLocationOf, shownFindings } from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
-import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { RowWord } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
+import { useOpenAgentFile } from "./agent-file-document";
 import { FindingsChip, SentenceList } from "./FindingsChip";
 import { findingSentence, type OutOfUse, outOfUseAfterSave, outOfUseWord } from "./findings";
+import { PackageChanges } from "./PackageChanges";
 import {
   failsSave,
   importName,
@@ -73,9 +65,17 @@ export function PackageSave({
     <StateAndSave projectId={projectId} pkg={pkg} status={status} look={look} onSave={save} />
   ) : null;
   if (!content) return null;
+  // The files changed since the last save, as a count before the state. An open file's
+  // "Unsaved" is that list itself (`StateAndSave`); a 264px row has no room for the count beside
+  // a Save's word, so there it waits for the word to go; after a Save there is nothing to list.
+  const counted =
+    look === "package" ? !word : word ? word.kind !== "saved" : status && failsSave(status);
+  const changes =
+    status && counted ? <PackageChanges projectId={projectId} pkg={pkg} status={status} /> : null;
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1" data-package-save>
       {before}
+      {changes}
       {content}
     </span>
   );
@@ -95,13 +95,6 @@ function StateAndSave({
   onSave: (() => void) | undefined;
 }) {
   const label = packageLabel(pkg);
-  const differs =
-    status.state === "not-saved"
-      ? t`New chats can't use ${label} until it is saved.`
-      : plural(status.changes.length, {
-          one: "# file differs from the version new chats use.",
-          other: "# files differ from the version new chats use.",
-        });
   const problems = packageErrorsOf(status.findings);
   return (
     <>
@@ -119,36 +112,25 @@ function StateAndSave({
           }
         />
       ) : look === "file" ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Chip tabIndex={0} className="focus-ring" data-package-state={status.state}>
+        <PackageChanges
+          projectId={projectId}
+          pkg={pkg}
+          status={status}
+          word={
+            <span data-package-state={status.state}>
               {status.state === "not-saved" ? <Trans>Not saved yet</Trans> : <Trans>Unsaved</Trans>}
-            </Chip>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-64">
-            {differs}
-          </TooltipContent>
-        </Tooltip>
+            </span>
+          }
+        />
       ) : null}
       {/* A Save of a package nothing of which can be read can only fail. */}
-      {failsSave(status) ? null : (
-        <SaveButton label={label} onSave={onSave} tip={look === "package" ? differs : undefined} />
-      )}
+      {failsSave(status) ? null : <SaveButton label={label} onSave={onSave} />}
     </>
   );
 }
 
-function SaveButton({
-  label,
-  onSave,
-  tip,
-}: {
-  label: string;
-  onSave: (() => void) | undefined;
-  /** Where Save stands alone, what there is to save. */
-  tip?: string;
-}) {
-  const button = (
+function SaveButton({ label, onSave }: { label: string; onSave: (() => void) | undefined }) {
+  return (
     <Button
       type="button"
       variant="quiet"
@@ -163,15 +145,6 @@ function SaveButton({
     >
       <Trans>Save</Trans>
     </Button>
-  );
-  if (!tip) return button;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-64">
-        {tip}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -588,20 +561,6 @@ export function heldBack(outcome: SaveOutcome): AgentFinding[] {
       (outcome.kept.includes(finding.file) || outcome.leftOut.includes(finding.file)),
   );
 }
-
-/** Opens a level's file by its level-relative path, once the trees list it. */
-export function useOpenAgentFile(projectId: string) {
-  const trees = useProjectTreeViews(projectId, AGENTS_SCHEMES, {});
-  const open = useOpenProjectDocument(projectId);
-  return (level: AgentsLevel, path: string) => {
-    const root = agentsRootOf(level);
-    const tree = root.scheme === "user" ? trees.user.tree : trees.agents.tree;
-    const entry = tree?.findPath(`/${[root.path, path].filter(Boolean).join("/")}`);
-    if (entry?.kind === "file") void open({ documentId: entry.documentId, focus: true });
-  };
-}
-
-const AGENTS_SCHEMES = ["agents", "user"] as const;
 
 /**
  * The Save state of the package one file is in, for a place that speaks of that file (an open
