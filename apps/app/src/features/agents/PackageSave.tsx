@@ -72,7 +72,14 @@ export function PackageSave({
         ? word.kind !== "saved"
         : status && failsSave(status);
   const changes =
-    status && counted ? <PackageChanges projectId={projectId} pkg={pkg} status={status} /> : null;
+    status && counted ? (
+      <PackageChanges
+        projectId={projectId}
+        pkg={pkg}
+        status={status}
+        undone={look === "package" && word?.kind === "undone"}
+      />
+    ) : null;
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1" data-package-save>
       {before}
@@ -226,11 +233,13 @@ function Word({
     case "undone":
       return (
         <>
-          <RowWord
-            tone="done"
-            word={<Trans>Undone</Trans>}
-            sentence={t`Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved.`}
-          />
+          {look === "file" ? (
+            <RowWord
+              tone="done"
+              word={<Trans>Undone</Trans>}
+              sentence={t`Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved.`}
+            />
+          ) : null}
           <SaveButton label={label} onSave={onSave} />
         </>
       );

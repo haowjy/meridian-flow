@@ -177,6 +177,7 @@ function Row({ row, sides }: { row: DiffRow; sides: { saved: boolean; now: boole
       {sides.saved ? (
         <Cell
           cell={row.saved}
+          labelNarrow={both}
           tone={same ? null : "removed"}
           hideNarrow={both && (same || row.saved === null)}
         />
@@ -184,6 +185,7 @@ function Row({ row, sides }: { row: DiffRow; sides: { saved: boolean; now: boole
       {sides.now ? (
         <Cell
           cell={row.now}
+          labelNarrow={both}
           tone={same ? null : "added"}
           divider={both}
           hideNarrow={both && row.now === null}
@@ -198,11 +200,13 @@ function Cell({
   tone,
   divider,
   hideNarrow,
+  labelNarrow,
 }: {
   cell: DiffCell | null;
   tone: "added" | "removed" | null;
   divider?: boolean;
   hideNarrow: boolean;
+  labelNarrow: boolean;
 }) {
   const tint =
     cell === null
@@ -233,6 +237,11 @@ function Cell({
           hideNarrow && "max-sm:hidden",
         )}
       >
+        {labelNarrow && cell && tone !== null ? (
+          <span className="block font-sans text-muted-foreground sm:hidden">
+            {tone === "added" ? <Trans>Now</Trans> : <Trans>Saved</Trans>}
+          </span>
+        ) : null}
         {cell?.empty ? (
           <Trans>Empty file</Trans>
         ) : cell === null ? null : tone === null ? (

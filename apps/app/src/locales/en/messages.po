@@ -7616,6 +7616,10 @@ msgstr "Undone"
 #~ msgid "Undone: {label} is back to its previous saved version."
 #~ msgstr "Undone: {label} is back to its previous saved version."
 
+#: src/features/agents/PackageChanges.tsx
+msgid "Undone. Back to the previous saved version, with its text merged into your files. What you changed since is kept."
+msgstr "Undone. Back to the previous saved version, with its text merged into your files. What you changed since is kept."
+
 #: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"

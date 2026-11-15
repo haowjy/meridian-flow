@@ -47,7 +47,8 @@ revisions.
   `SavedDiffDialog`: the saved text (`GET /api/agents/saved-file`, keyed by the package's latest
   Save, which never changes) against the document's text now (the context read), two columns
   from `sm` up and stacked below it. An added file shows only the new side, a deleted one only
-  the saved side.
+  the saved side. Stacked changed lines each name their side (Saved or Now); colour
+  is not the only cue.
 - The line diff is `diffKeys` over lines, and a paired changed line marks its words with
   `wordDiff`, both from `@meridian/agent-edit/diff` (`saved-diff.ts`). Unchanged stretches fold
   to three lines of context each side.
@@ -67,7 +68,8 @@ revisions.
   with what keeps it out ("Left out:", "Your latest edit isn't in use:", "New chats can't start
   it:"), then what was saved and the Save's notes. A failed Save reads "2 problems" on a sidebar
   row and "cw-skills can't be saved: 2 problems" elsewhere, opening each finding with a way to
-  its file; then "Undone", or Retry when the request got no answer. The word is shown at once
+  its file; then "Undone" (inside the changes count’s popover on package rows to keep
+  the name readable), or Retry when the request got no answer. The word is shown at once
   from what the files query holds and replaced by the server's outcome.
 - **Words** (`findings.ts`): "Unavailable" only for an item with no saved version that runs; an
   edit with an Error, or one that can't run (such as a model the account can't use), over a saved

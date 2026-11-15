@@ -18,11 +18,13 @@ export function PackageChanges({
   pkg,
   status,
   word,
+  undone = false,
 }: {
   projectId: string;
   pkg: PackageRef;
   status: AgentPackageStatus;
   word?: ReactNode;
+  undone?: boolean;
 }) {
   const [opened, setOpened] = useState<AgentFileChange | null>(null);
   const documentOf = useAgentFileDocument(projectId);
@@ -54,9 +56,11 @@ export function PackageChanges({
         label={word ? undefined : count}
         heading={count}
         sub={
-          status.state === "not-saved"
-            ? t`New chats can't use ${label} until it is saved.`
-            : t`New chats use the saved version until you save.`
+          undone
+            ? t`Undone. Back to the previous saved version, with its text merged into your files. What you changed since is kept.`
+            : status.state === "not-saved"
+              ? t`New chats can't use ${label} until it is saved.`
+              : t`New chats use the saved version until you save.`
         }
       >
         {(close) => (
