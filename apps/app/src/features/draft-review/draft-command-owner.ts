@@ -191,6 +191,8 @@ export class DraftCommandOwner {
         ref: DraftRef,
         draftId: string,
       ): Promise<Exclude<DraftEnd, "here"> | "open" | null>;
+      /** Settles once the draft's document has left Trash (restored), however that happened. */
+      documentBack?(ref: DraftRef): Promise<void>;
       closeCreated?(ref: DraftRef): void;
     } = {},
   ) {}
@@ -573,6 +575,12 @@ export class DraftCommandOwner {
     const entry = this.entries.get(id);
     this.endedAt.set(id, Date.now());
     this.setState(ref.itemKey, { ended: end, checkingClose: false }, id);
+    // Its document's restore brings back no draft: the page then leaves for the document.
+    if (end === "document")
+      void this.lifecycle.documentBack?.(ref).then(() => {
+        if (this.active && this.records.get(id)?.ended === "document")
+          this.setState(ref.itemKey, { ended: "other" }, id);
+      });
     if (entry?.binding) for (const stop of entry.binding.notices) stop();
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);

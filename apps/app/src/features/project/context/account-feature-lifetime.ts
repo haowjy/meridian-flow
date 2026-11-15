@@ -86,6 +86,22 @@ export class AccountFeatureLifetime {
             ? "document"
             : "other";
       },
+      documentBack: (ref) =>
+        new Promise<void>((resolve) => {
+          const back = () => {
+            const kind = this.standings.standing(ref.projectId, ref.documentId).kind;
+            return kind !== "in-trash" && kind !== "waiting";
+          };
+          const stop = this.standings.watch(ref.projectId, () => {
+            if (!back()) return;
+            stop();
+            resolve();
+          });
+          if (back()) {
+            stop();
+            resolve();
+          }
+        }),
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },

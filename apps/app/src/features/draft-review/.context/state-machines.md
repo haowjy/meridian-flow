@@ -59,6 +59,7 @@ stateDiagram-v2
   document --> open: fresh metadata shows it active
   here --> open: fresh metadata shows it active
   other --> open: fresh metadata shows it active
+  document --> other: its document left Trash (restored), which brings back no draft
 ```
 
 - **`checking` asks the server, never the order things arrived in** (`resolveEnd`, answered by
