@@ -23,13 +23,13 @@ describe("a picked folder", () => {
     expect(root.meridianExport).toBe('{"version":1}');
   });
 
-  it("puts a file Meridian cannot name in the report as unreadable instead of refusing the import", async () => {
+  it("imports a file whose name has characters a path once could not carry", async () => {
     const selection = await readPicked([
       pickedFile("vault/Fine.md", "x"),
       pickedFile("vault/Who? What.md", "x"),
     ]);
-    expect(selection.roots[0].files.map((file) => file.path)).toEqual(["Fine.md"]);
-    expect(selection.roots[0].unreadable).toEqual([{ path: "Who? What.md", reason: "unreadable" }]);
+    expect(selection.roots[0].files.map((file) => file.path)).toEqual(["Fine.md", "Who? What.md"]);
+    expect(selection.roots[0].unreadable).toEqual([]);
   });
 });
 

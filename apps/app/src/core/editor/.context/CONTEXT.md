@@ -124,6 +124,10 @@ and remain quarantined until their retryable destroy ledger succeeds.
   copy goes with its document at the list's purge (`local-document-copies.ts`). `closeDraftRoom`
   retires the room when the review owner learns closure through authoritative metadata before
   the socket frame, and the pool refuses to reopen that closed id for the rest of the page.
+  `abandonDraftRoom` does the same for a document's create the server dropped (its draft was
+  never made, so the room would only retry `DOCUMENT_UNKNOWN`): the tree list's dropped stamp
+  calls it (`watchBounces`), and the room's typing is not handed back, because the tab and the
+  tree row offer those words from the local copy.
 - Typing a closed draft's room never sent is handed back, not dropped (see "Unsent typing handed
   back"). A close never deletes the draft's local copy: an Undo that reopens the same draft row
   delivers it on the room's next open.

@@ -1,7 +1,7 @@
 /**
- * The one way a tree Move, Copy or delete runs and fails when no list could take it: a failure is
- * data with its own key, one function titles it, one shows it and one retries it. A refusal the
- * server makes later is not here: it comes back as a settlement and shows on the row it concerns.
+ * How a tree Move, Copy or delete runs. A Move or delete is appended to the copy of the list and
+ * cannot fail; the server's later `dropped` comes back as a settlement and shows on the row it
+ * concerns. A Copy is a route, and its failure is a toast with Retry.
  */
 import { plural, t } from "@lingui/core/macro";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
@@ -33,72 +33,26 @@ export type EntryContext = {
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
-export type EntryFailure = { key: string } & (
-  | { kind: "move"; rows: readonly MoveRow[]; destination: string | null }
-  | { kind: "delete"; entry: EntryRef; name: string }
-  | {
-      kind: "copy";
-      sources: readonly string[];
-      destination: string | null;
-      /** The route's answer, in its words, when it gave one. */
-      reason: string | null;
-      copy: ReadyCopy;
-    }
-);
+/** A Copy the route refused: it has its own key, and Retry runs it again. */
+export type CopyFailure = {
+  key: string;
+  sources: readonly string[];
+  destination: string | null;
+  /** The route's answer, in its words, when it gave one. */
+  reason: string | null;
+  copy: ReadyCopy;
+};
 
 /** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
 export const entryToast = (projectId: string, failure = "") => `entry:${projectId}:${failure}`;
 
-export function failureTitle(failure: EntryFailure): string {
-  if (failure.kind === "copy")
-    return copyFailureTitle(failure.sources, failure.destination, failure.reason);
-  if (failure.kind === "delete") return t`Couldn't delete ${failure.name}.`;
-  const { rows, destination } = failure;
-  const [only] = rows;
-  if (rows.length === 1 && only)
-    return destination
-      ? t`Couldn't move ${only.name} to ${destination}.`
-      : t`Couldn't move ${only.name}.`;
-  return destination
-    ? plural(rows.length, {
-        one: `Couldn't move # item to ${destination}.`,
-        other: `Couldn't move # items to ${destination}.`,
-      })
-    : plural(rows.length, { one: "Couldn't move # item.", other: "Couldn't move # items." });
-}
-
-/** Toasts a failure; Retry runs it again. */
-export function showFailure(context: EntryContext, failure: EntryFailure): void {
-  notifyFailure({
-    key: failure.key,
-    title: failureTitle(failure),
-    onRetry: () => retryFailure(context, failure),
-  });
-}
-
-async function retryFailure(context: EntryContext, failure: EntryFailure): Promise<void> {
-  if (failure.kind === "move") await runMove(context, failure.rows, failure.destination);
-  else if (failure.kind === "delete")
-    await runDelete(context, [{ ...failure.entry, name: failure.name }]);
-  else await runCopy(context, failure.copy);
-}
-
-export async function runMove(
+/** Moves and deletes are appended to the copy of the list and cannot fail here; a Copy is a route. */
+export function runMove(
   context: EntryContext,
   rows: readonly MoveRow[],
-  destination: string | null,
   onMoved?: (moved: readonly EntryRef[]) => void,
-): Promise<void> {
-  const { moved, failed } = moveRows(rows, context.actions);
-  onMoved?.(moved);
-  if (failed.length === 0) return;
-  const refused = new Set(failed.map(({ entry }) => entry));
-  showFailure(context, {
-    key: entryToast(context.projectId, crypto.randomUUID()),
-    kind: "move",
-    rows: rows.filter(({ entry }) => refused.has(entry)),
-    destination,
-  });
+): void {
+  onMoved?.(moveRows(rows, context.actions));
 }
 
 /** What the route said was wrong, when it said. */
@@ -147,6 +101,15 @@ function copyFailureTitle(
   return reason ? `${said} ${reason}` : said;
 }
 
+/** Toasts a refused Copy; Retry runs it again. */
+function showCopyFailure(context: EntryContext, failure: CopyFailure): void {
+  notifyFailure({
+    key: failure.key,
+    title: copyFailureTitle(failure.sources, failure.destination, failure.reason),
+    onRetry: () => void runCopy(context, failure.copy),
+  });
+}
+
 export async function runCopy(
   context: EntryContext,
   copy: ReadyCopy,
@@ -155,9 +118,8 @@ export async function runCopy(
   try {
     onCopied?.(await copyRows(context.projectId, copy));
   } catch (error) {
-    showFailure(context, {
+    showCopyFailure(context, {
       key: entryToast(context.projectId, crypto.randomUUID()),
-      kind: "copy",
       sources: copy.copies.map(({ name }) => name),
       destination: copy.destinationName,
       reason: reasonOf(error),
@@ -177,8 +139,7 @@ export function ownRemovals(projection: TreeProjection | null, entry: EntryRef):
 /**
  * Deletes one gesture's entries: one own removal covers every document they take away, so main's
  * go-back skips all of them. An entry inside another one's folder goes with that folder, never on
- * its own. Each list takes its entries as one update; a list that cannot toasts and keeps its
- * documents.
+ * its own. Each list takes its entries as one update.
  */
 export async function runDelete(
   context: EntryContext,
@@ -216,20 +177,8 @@ export async function runDelete(
   const taken: { list: EntryActions["project"]; step: TreeStep; names: string[] }[] = [];
   for (const list of new Set(entries.map((item) => item.list))) {
     const mine = entries.filter((item) => item.list === list);
-    const removed = list.remove(mine.map(({ entry }) => entry.id));
-    if (removed.ok) {
-      taken.push({ list, step: removed.step, names: mine.map(({ entry }) => entry.name) });
-      continue;
-    }
-    for (const item of mine) {
-      const { name, ...entry } = item.entry;
-      showFailure(context, {
-        key: entryToast(projectId, crypto.randomUUID()),
-        kind: "delete",
-        entry,
-        name,
-      });
-    }
+    const step = list.remove(mine.map(({ entry }) => entry.id));
+    taken.push({ list, step, names: mine.map(({ entry }) => entry.name) });
   }
   // In the sidebar the rows carry the delete's Undo (`TreeNotice`); a line shows only where no row
   // does: on main's Recently opened, or where main went back to when the delete took its document.

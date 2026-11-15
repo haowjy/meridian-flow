@@ -9,7 +9,7 @@ stateDiagram-v2
   [*] --> shown: a create in live, or a Work's drafted create
   shown --> in_trash: a delete in force (live)
   in_trash --> shown: Restore, or Undo of the delete
-  shown --> in_no_view: a Discard of the drafted create, or a refused create not kept
+  shown --> in_no_view: a Discard of the drafted create, or a create stamped `dropped` (its Work was closed)
   in_no_view --> shown: Undo of the Discard
   in_trash --> released: the entry's 30 days pass and nothing holds it, or Trash is emptied
   in_no_view --> released: 30 days since `in_no_view_since` and nothing holds it

@@ -81,8 +81,6 @@ export type CreateRecord = RecordBase & {
   /** It has imported properties to show, which load by id. Server only. */
   hasProperties?: true;
   blob?: BlobRef;
-  /** On a create the server appended for a node whose client create it refused: that create. */
-  replaces?: string;
 };
 export type MoveRecord = RecordBase & {
   type: "move";
@@ -108,9 +106,11 @@ export type DeleteRecord = RecordBase & { type: "delete"; cascade: string[] };
 export type RestoreRecord = RecordBase & { type: "restore" };
 /**
  * One Trash entry emptied: `delete` is the id of the delete record that put it there (`node` is
- * that delete's node), and what that delete took is gone for good. Only the server writes one.
+ * that delete's node), and `nodes` exactly what the server found that delete covering when it
+ * purged (the content it released). Those are gone for good; anything else standing under a
+ * purged node goes to the top of its source. Only the server writes one.
  */
-export type PurgeRecord = RecordBase & { type: "purge"; delete: string };
+export type PurgeRecord = RecordBase & { type: "purge"; delete: string; nodes: string[] };
 
 export type TreeRecord =
   | CreateRecord
@@ -134,7 +134,12 @@ export function nameSet(record: TreeRecord): string | undefined {
   return record.type === "rename" || record.type === "move" ? record.name : undefined;
 }
 
-export type Settlement = "applied" | "discarded" | "undone" | "superseded" | "refused";
+export type Settlement =
+  | "applied"
+  | "discarded"
+  | "superseded"
+  /** A create the server stamped at admission: its Work or source was closed. In no view. */
+  | "dropped";
 
 /**
  * A settlement is a record too, appended and never changed. A record's state is its last

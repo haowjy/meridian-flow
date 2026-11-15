@@ -42,12 +42,19 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    with every row it lacks still in the journal, reads only the rows after it; a copy behind
    the head's `retired_through_seq` (rows folded into a checkpoint) is reloaded from the
    checkpoint;
-2. for `admit`: read `Connection` (`tree-list-facts.ts`) and run the package's `admit`, which
-   checks the update, applies it to the copy and appends the verdicts. A refusal stores
-   nothing and returns `ok: false`;
-3. claim the node ids the admitted records create (`claimNodeIds`): one insert into
-   `tree_node_ids`, whose key is the claim. A conflict, or an id a document or a list's
-   journal has, rolls the whole transaction back and `admit` returns `ok: false`;
+2. for `admit`: read `Connection` (`tree-list-facts.ts`: the open branches and the sources of
+   closed Works) and run the package's `admit`: the guard, which throws `CopyFault` on a copy
+   that does something an honest client's never does (nothing is stored, the copy reloads, the
+   room closes the connection with `COPY_BROKEN`), then the update is applied to the copy and
+   each record that changes a closed Work (a create, rename, move, delete or restore in its draft
+   or its Scratch) is stamped `dropped` ("Work was closed"). Nothing else is judged: a name, a
+   type, a place or an actor is never refused;
+3. claim the node ids the admitted creates name, each on its own (`claimNodeIdsEach`): one insert
+   into `tree_node_ids`, whose key is the claim. An id that is not a uuid, or that a document,
+   a list's journal or another list has, is a failed claim: no row, no claim, and the rest of
+   the update commits. A `dropped` record makes no claim or row change either. `syncRows` also drops
+   from the rows any node the list holds no claim on (`dropUnowned`) and any node under a
+   source that is not the list's project's, so a forged id can't overwrite another's row;
 4. append what the copy gained to the journal through its system path (`origin: "system"`;
    a person's path would read the whole list to record an edit);
 5. `syncRows` (`tree-list-rows.ts`): replay live and every kept Work (a branch that has not
@@ -96,10 +103,10 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
   submission.
 - **Every document create states its type** (the package requires it), so a document's row
   has one and no default is filled in here.
-- **Admission claims every create's node id, a refused one included.** The package's
-  `takenElsewhere` answers false because the database is asked after `admit`, in the
-  admitting transaction (`claimNodeIds`); a taken id rolls the whole update back. A refused
-  create's kept create reuses its node, so the records claim it once.
+- **A client create's node id is claimed per create, and a failed claim is no refusal.** The node
+  stays in the list (its writer sees it, a ghost that opens nothing) and has no row; the server's
+  own creates (`submit`) still claim all-or-nothing (`claimNodeIds`) and a taken id rolls them
+  back.
 - **A trashed row's `trash_record` is the first delete in force that took it; `trashed_at` is
   when the server admitted it,** not when the record's author made it.
 - **The `documents` row of a created document is inserted by the admission** from the
@@ -121,16 +128,21 @@ readers' walks with the `LATERAL`.
 ## The list's room
 
 `lib/yjs-tree-room.ts`, mounted in `lib/yjs-ws-handler.ts` beside the document rooms (same
-gateway, same Hocuspocus, hooks branch on the room's kind). `open` names the access (the
-project's owner: `edit` when the account can write a source, else `read`) and the journal id;
+gateway, same Hocuspocus, hooks branch on the room's kind). `open` names the journal id (null unless the project or account is the signed-in account's);
 `readSince` gives the room its state, and each catch-up the rows past the room's `seq`. The
 protocol and the machine are in `lib/.context/state-machines.md`, "Tree list room connection".
 
 What a change must keep:
 
 - **The room's document is never written by a client's frame.** `beforeSync` admits through the
-  store first, and a refusal throws before Hocuspocus applies anything; what reaches the
-  document is `onCommitted`'s update, so a refused update is in no copy.
+  store first, and a `CopyFault` closes the connection (`COPY_BROKEN`, which the client does not
+  reconnect on) before Hocuspocus applies anything; what reaches the document is
+  `onCommitted`'s update, so a turned-away copy is in no room. One connection's messages are
+  admitted in the order they arrive (`TreeRoomConnection.queue`), so a part is never admitted
+  before the one it follows; a message whose turn comes after a refusal finds the connection
+  shut and reaches no store. The guard trusts that order: the client sends no live update before
+  its SyncStep2 (`packages/tree-list-sync`, "The handshake"), so an honest reconnect never
+  sends a record beside one the server lacks.
 - **`seq` is a journal row id, global across lists**, so a room cannot tell a gap from the next
   row. A commit applies its update to the process's own room at once; the `NOTIFY` it sent in
   its transaction then reaches every process (this one too), whose room reads the rows past

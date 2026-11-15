@@ -125,6 +125,8 @@ type YjsConnectionContext = {
   userId: UserId;
   traceId: string;
   clientSchemaVersion: CollabSchemaVersion;
+  /** On a tree list's room: the list id the client's stored copy was made of (`?list=`). */
+  storedListId: string | null;
   draftSyncState: Map<string, DraftHandshakeState>;
   admissionTarget?: YjsAdmissionTarget;
   access?: YjsRoomAccess;
@@ -357,7 +359,13 @@ async function classifyYjsConnectionAdmission(input: {
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
     const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
-    if (!documentDraft) refuse(WS_CLOSE.DRAFT_CLOSED);
+    if (!documentDraft) {
+      // A browser connects as soon as it appends a document's `create` in a Work, which names the
+      // draft the server may not have made yet: it retries. A draft that was made and closed is
+      // refused for good.
+      if (await services.documentSync.draftExists(room.draftId)) refuse(WS_CLOSE.DRAFT_CLOSED);
+      refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
+    }
     documentId = documentDraft.documentId;
     headSchemaVersion = documentDraft.schemaVersion;
     fileTarget = { kind: "draft", documentId, owner: documentDraft.owner };
@@ -584,7 +592,7 @@ export function createHocuspocus(
             treeRooms.connect({
               list: anyRoom.list,
               accountId: userId,
-              connectionConfig,
+              storedListId: context.storedListId,
               register: (key) => rooms.register(context.registration, [key]),
             }),
           );
@@ -738,7 +746,11 @@ export function createHocuspocus(
     },
     async connected({ documentName, connection, context }) {
       const room = parseAnyRoomOrDeny(documentName);
-      if (room.kind === "tree") return;
+      if (room.kind === "tree") {
+        // A copy with no list id yet learns the room's, so a later connect can say which list it is of.
+        if (context.tree) connection.sendStateless(JSON.stringify({ list: context.tree.listId }));
+        return;
+      }
       // This hook's refusal also closes the connection Hocuspocus has already made.
       const closing = {
         closeTransport(close: RoomClose) {
@@ -828,6 +840,7 @@ export function createYjsGateway(services: YjsGatewayServices) {
           userId: peer.userId,
           traceId: peer.traceId,
           clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
+          storedListId: new URL(peer.request.url, "http://gateway").searchParams.get("list"),
           draftSyncState,
           registration,
           closeTransport: ({ code, reason }: { code: number; reason: string }) =>

@@ -71,6 +71,7 @@ type HocuspocusPersistenceDeps = {
 export type HocuspocusPersistenceService = Pick<
   CollabTransport,
   | "resolveDraftHocuspocusRoom"
+  | "draftExists"
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraftState"
   | "admitLiveWriterUpdate"
@@ -317,6 +318,10 @@ export function createHocuspocusPersistenceService(
         schemaVersion: documentDraft.schemaVersion,
         status: documentDraft.status,
       };
+    },
+
+    async draftExists(draftId) {
+      return (await requireDraftStore().getDraft(draftId)) !== null;
     },
 
     async loadHocuspocusDocument(documentId, document) {

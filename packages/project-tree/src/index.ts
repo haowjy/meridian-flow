@@ -2,7 +2,9 @@ export {
   type Admission,
   admit,
   type Connection,
-  type KeptCreate,
+  CopyFault,
+  clientMayWrite,
+  guard,
   MAX_RECORDS,
 } from "./admission.js";
 export {
@@ -16,7 +18,7 @@ export {
   undoApply,
 } from "./apply.js";
 export { changedFolders, type LandingFault, landingFaults } from "./changes.js";
-export { nameFault } from "./names.js";
+export { shownName } from "./names.js";
 export {
   type Actor,
   type BlobRef,
@@ -43,10 +45,13 @@ export {
   type TreeRecordInput,
 } from "./record.js";
 export {
+  type DroppedRecord,
+  deleteCovering,
   type LabelBefore,
   type NodeSetters,
   type PlaceBefore,
   placeIn,
+  recordsOfItem,
   replay,
   type Setter,
   type SkipReason,
@@ -69,12 +74,14 @@ export {
   type RankedSibling,
 } from "./siblings.js";
 export { deleteStands, undoChange } from "./undo.js";
-export { type ReadRecord, readRecord } from "./validate.js";
+export type { ReadRecord } from "./validate.js";
 export {
+  droppedRecords,
   LIVE,
   lastSettlements,
   listRecords,
   pendingRecords,
+  readRecords,
   replayView,
   settlementsOf,
   type View,

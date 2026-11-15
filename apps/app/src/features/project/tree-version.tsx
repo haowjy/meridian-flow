@@ -17,6 +17,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import {
+  draftTreeVersion,
   LIVE_VERSION,
   type TreeVersion,
   TreeVersionContext,
@@ -70,36 +71,6 @@ export function reviewCount(shell: ShellTreeVersion | null, work: Work): number 
 
 export function useWorkReviewCount(work: Work): number {
   return reviewCount(useShellTreeVersion(), work);
-}
-
-/**
- * A Work's tree: live, then the branch's pending records, keeping what it holds text on. One
- * value per branch while what it holds is unchanged, whoever reads it (the shell, a review's
- * route, an Apply's Undo step): the list replays a view once per change only for one set.
- */
-export function draftTreeVersion(
-  branchId: string,
-  rows: readonly ThreadDraftListItem[] | null,
-  lifecycle: WorkLifecycleState = "active",
-): TreeVersion {
-  const pendingText = new Set(rows?.flatMap((row) => (row.hasDraft ? [row.documentId] : [])));
-  const ended = lifecycle !== "active" ? lifecycle : undefined;
-  const held = draftVersions.get(branchId);
-  if (held && held.ended === ended && sameSet(held.pendingText, pendingText)) return held;
-  const version: TreeVersion = {
-    view: { draft: branchId },
-    pendingText,
-    ...(ended ? { ended } : {}),
-  };
-  draftVersions.set(branchId, version);
-  return version;
-}
-const draftVersions = new Map<string, TreeVersion>();
-
-function sameSet(a: ReadonlySet<string> | undefined, b: ReadonlySet<string>): boolean {
-  if (a?.size !== b.size) return false;
-  for (const id of b) if (!a.has(id)) return false;
-  return true;
 }
 
 export function useDraftTreeVersion(

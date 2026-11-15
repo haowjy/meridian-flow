@@ -5,16 +5,13 @@ import { Folder } from "lucide-react";
 import { useMemo } from "react";
 import { useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { RowWord, withGone } from "@/components/app/RowWord";
+import { withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { useEntryMenu } from "../../context/ContextEntryActions";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { documentPlace } from "../../context/context-schemes";
-import {
-  type TrashRestoreState,
-  useDocumentTrashRestore,
-} from "../../context/DocumentTrashRestoreProvider";
+import { useDocumentTrashRestore } from "../../context/DocumentTrashRestoreProvider";
 import { trashDragEntry, trashRef } from "../../context/entry-drag/entry";
 import { useEntryRow } from "../../context/entry-drag/use-entry-row";
 import {
@@ -41,7 +38,7 @@ export function TrashSource({
   drop: SourceDrop;
 }) {
   const query = useDocumentTrash(projectId);
-  const { states, restored, restore } = useDocumentTrashRestore();
+  const { restored, restore } = useDocumentTrashRestore();
   const trash = useTrashNavigation();
   const now = useMinuteClock();
   const listed = query.data?.entries;
@@ -77,7 +74,6 @@ export function TrashSource({
                 entry={entry}
                 now={now}
                 active={entry.nodeId === trash.shown}
-                state={states.get(entry.nodeId)}
                 notices={notices}
                 onOpen={() => {
                   notices.end();
@@ -124,7 +120,6 @@ function TrashRow({
   entry,
   now,
   active,
-  state,
   notices,
   onOpen,
   onRestore,
@@ -132,7 +127,6 @@ function TrashRow({
   entry: TrashEntry;
   now: number;
   active: boolean;
-  state?: TrashRestoreState;
   notices: TreeNoticeWords;
   onOpen: () => void;
   /** Restores these entries by node id: this row, or the selection its menu acted on. */
@@ -156,13 +150,7 @@ function TrashRow({
       controlProps={row.rowProps}
       menu={menu}
       revealActions
-      notice={
-        state?.kind === "failed" ? (
-          <RowWord tone="warning" word={<Trans>Not restored</Trans>} sentence={state.message} />
-        ) : (
-          notices.word(entry.nodeId)
-        )
-      }
+      notice={notices.word(entry.nodeId)}
     />
   );
 }

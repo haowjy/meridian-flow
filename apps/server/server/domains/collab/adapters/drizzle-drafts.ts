@@ -11,7 +11,7 @@ import {
   type ObservationFrontier,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
-import type { BranchId, DraftOwner } from "@meridian/contracts";
+import { type BranchId, createdDraftId, type DraftOwner } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -188,6 +188,8 @@ export function createDrizzleDraftStore(
     liveDoc: Y.Doc;
     liveRoom: string | null;
     livePosition?: number;
+    /** The draft's id when its creator named it (`createdDraftId`); a new one otherwise. */
+    draftId?: string;
   };
 
   async function ensureDocumentDraft(input: DraftSeed): Promise<DraftSnapshot> {
@@ -220,11 +222,23 @@ export function createDrizzleDraftStore(
     await requireLivingDocument(currentDrizzleDb(db), input.documentId);
     await testHook("draft.ensure.afterDocumentLock");
     await assertDraftableInBranch(input.documentId, input.branchId);
+    // The named draft can be a closed one a restored Discard is about to reopen: this one then
+    // takes a new id, and the reopen closes it.
+    const named =
+      input.draftId &&
+      (
+        await currentDrizzleDb(db)
+          .select({ id: documentDrafts.id })
+          .from(documentDrafts)
+          .where(eq(documentDrafts.id, input.draftId))
+      ).length === 0
+        ? input.draftId
+        : null;
     // Racing ensures of one document's draft get one draft.
     const [inserted] = await currentDrizzleDb(db)
       .insert(documentDrafts)
       .values({
-        id: `draft_${randomUUID()}`,
+        id: named ?? `draft_${randomUUID()}`,
         documentId: input.documentId,
         kind: "work_draft",
         branchId: input.branchId,
@@ -288,6 +302,7 @@ export function createDrizzleDraftStore(
     return withJournalDocument(input.documentId, (liveDoc, snapshot) =>
       insertDocumentDraft({
         ...input,
+        draftId: createdDraftId(input.documentId),
         liveDoc,
         liveRoom: null,
         livePosition: snapshot.persistenceWatermark ?? 0,
