@@ -106,6 +106,7 @@ function inverseService(harness: Harness, handle: string) {
     workProjection: harness.projection,
     removals: createTestRemovalDeps(harness.db).removals,
     treeLists: createTestRemovalDeps(harness.db).treeLists,
+    close: createTestRemovalDeps(harness.db).draftClose,
   });
 }
 

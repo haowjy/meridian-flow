@@ -509,6 +509,7 @@ try {
       workProjection: h.projection,
       removals: createTestRemovalDeps(h.db).removals,
       treeLists: createTestRemovalDeps(h.db).treeLists,
+      close: createTestRemovalDeps(h.db).draftClose,
     });
     const result = await runWithEditConfirmation(workGrant(h, s.workId), () =>
       inverse.modelInverse(

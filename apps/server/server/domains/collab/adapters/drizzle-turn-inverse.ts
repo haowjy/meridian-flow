@@ -61,6 +61,7 @@ import {
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
 import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
+import type { DraftClose } from "./drizzle-draft-close.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 import { commitRewriteWithinTx, insertJournalRows } from "./drizzle-draft-storage.js";
 import { createDrizzleTreeHistory } from "./drizzle-tree-history.js";
@@ -89,6 +90,8 @@ type Dependencies = {
   removals: DocumentRemovals;
   /** The tree half of a card's reversal: the reply's tree receipts, in the lists that hold them. */
   treeLists: Pick<TreeListStore, "lock" | "submit">;
+  /** The one draft close: an Undo of an applied create closes that document's text draft. */
+  close: Pick<DraftClose, "closeDrafts">;
   fileAccess: Pick<
     FileAccess,
     "authorizeAt" | "authorize" | "confirmEdit" | "destinationAvailability"
@@ -100,6 +103,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   const treeInverse = createTurnTreeInverse({
     db: input.db,
     treeLists: input.treeLists,
+    close: input.close,
     // The receipts' own adapter; its text stack is this service's, read once it exists.
     history: () => treeHistory,
   });

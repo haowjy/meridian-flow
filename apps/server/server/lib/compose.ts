@@ -1934,9 +1934,6 @@ export function createInMemoryAppServices(): AppServices {
       async sweepAbandoned() {
         return 0;
       },
-      async deleteDraft() {
-        return { kind: "identity_mismatch" };
-      },
       async consume() {},
     },
     chatUploads: {

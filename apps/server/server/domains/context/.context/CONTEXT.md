@@ -308,9 +308,9 @@ a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
   subscription through `ProjectHintPort`, after commit. A lost hint leaves the browser stale
   until its next read.
 - A chat's uploads add what the list does not hold, `GET .../context/chat-uploads?chatId=`
-  (`ChatUploadsResult`): `attachedAt` and `used` per document id. Deleting an unused upload is
-  `DELETE .../context/uploads/upload?chatId=` with `{ documentId }`, refused once a sent message
-  used it; the document id is the node's id.
+  (`ChatUploadsResult`): `attachedAt` per document id. Deleting an upload is a tree `delete`
+  record like a document's, used or not: a sent picture has the chat's own copy
+  (`chat-media/<threadId>/`), and Trash and the 30-day purge treat it as any document.
 
 A delete or a move across lists is addressed by entry id: the router takes the node
 (`{kind, nodeId}`) and an area; the area only decides which adapter to ask. The adapter finds the

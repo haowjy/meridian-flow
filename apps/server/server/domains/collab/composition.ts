@@ -424,6 +424,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     (threadId, documentId) => turnInverse.modelStack(documentId as DocumentId, threadId),
   );
   const turnInverse = createDrizzleTurnInverseService({
+    close: deps.draftClose,
     onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db: deps.db,
     journal: persistence.journal,

@@ -6,7 +6,7 @@
  * reversal is recorded as a receipt in turn, so the model's `undo` and the card's see one order.
  */
 
-import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { BranchId, DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
@@ -22,6 +22,7 @@ import type {
   TreeReceiptInput,
 } from "../contracts.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
+import type { DraftClose } from "./drizzle-draft-close.js";
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
 export type TreePlan = {
@@ -50,6 +51,7 @@ export type TurnTreeInverse = ReturnType<typeof createTurnTreeInverse>;
 export function createTurnTreeInverse(deps: {
   db: Database;
   treeLists: Pick<TreeListStore, "submit">;
+  close: Pick<DraftClose, "closeDrafts">;
   history: () => Pick<AgentTreeHistory, "turnSteps" | "recordAgentTreeChange">;
 }) {
   const db = () => currentDrizzleDb(deps.db);
@@ -214,6 +216,17 @@ export function createTurnTreeInverse(deps: {
         if (failed > 0) skips.push(skip(receipt, "superseded"));
         if (made.length === 0) continue;
         reversed++;
+        // An applied create taken back in live leaves its Work's text draft on a document that
+        // is gone: it closes with the Undo, so the Work holds no change to a deleted document.
+        if (direction === "undo" && receipt.op === "create" && receipt.draftBranchId && inLive)
+          await deps.close.closeDrafts(
+            db(),
+            {
+              documentIds: [receipt.subject as DocumentId],
+              branchId: receipt.draftBranchId as BranchId,
+            },
+            "document_discarded",
+          );
         await record(receipt, {
           nodes: receipt.nodes.map((nodeId) => ({ nodeId, beforeAt: null, afterAt: null })),
           records: made,

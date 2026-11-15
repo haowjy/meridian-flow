@@ -419,6 +419,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   );
   const readAuthorityGeneration = createDrizzleAuthorityGenerationReader(db);
   const turnInverse = createDrizzleTurnInverseService({
+    close: draftClose,
     onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db,
     journal: persistence.journal,

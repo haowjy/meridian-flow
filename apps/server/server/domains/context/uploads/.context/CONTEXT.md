@@ -34,12 +34,9 @@ dropped into a document (see Source uploads) share the routes' flow.
 
 Nothing is compensated. A finish that fails after the claim leaves `object_stored` and
 the checked object, and a retry reclassifies from it and resumes. A finish that finds no
-incoming object answers `not_uploaded` and keeps the row. Delete during finish: `deleteDraft`
-always releases both keys, and a finish that then finds the row `deleted` (at the claim or
-under the final lock) releases what it made and answers `idempotency_conflict`. The delete
-route authorizes by the chat's uploads container, not the document, because an unfinished
-upload has none, and `deleteDraft` matches the intake to that project and chat. Work purge
-releases both the final and the incoming key of each upload.
+incoming object answers `not_uploaded` and keeps the row. A finished upload is deleted through
+the tree like any document (Trash, Restore, the 30-day purge); the intake has no delete of its
+own. Work purge releases both the final and the incoming key of each upload.
 
 `sweepAbandoned` (scheduler lane `upload-sweep`, hourly) drops `reserved` and `object_stored`
 rows untouched for 24 hours, in batches of 50 until one comes back short, behind a partial index.
@@ -117,10 +114,8 @@ The server does not say whether a source upload is still being sent: a `doc:` re
 nothing yet resolves `gone`. The sending tab announces it over presence, and other tabs' chips
 read "Uploading" from that (`apps/app/src/core/uploads/upload-store.ts`).
 
-A source intake is never released through the delete route, which is a chat attach's undo and is
-scoped to the chat (`ChatUploadOwner`). A writer's undo mid-upload aborts the PUT and leaves the row
-`reserved` for the sweep; once finalized the file is an ordinary document in `assets/` and is
-deleted as one. A name `start` refuses (`invalid_filename`) is final, on the client too
+A writer's undo mid-upload aborts the PUT and leaves the row `reserved` for the sweep; once
+finalized the file is an ordinary document, in `assets/` or a chat's uploads, and is deleted as one. A name `start` refuses (`invalid_filename`) is final, on the client too
 (`UploadRefusedError`); the name loop only renumbers on a collision, so it never changes a name
 `start` accepted into one it would refuse.
 
@@ -130,10 +125,7 @@ objects of its intakes first, as Work purge does.
 
 Uploads are flat and cannot be created through general ContextFS operations.
 Catalog visibility and finalized intake state commit in the ambient ContextFS
-transaction. `consume()` is the singular admission seam for defeating
-delete-after-send races, and explicit delete is identity-bound so it cannot
-target a replacement at the same path. When admission and delete race, the loser
-gets a factual refusal: `already_used` (a sent message consumed it) or
-`already_deleted`.
+transaction. `consume()` stamps `consumed_at` on a sent message's uploads; nothing reads it
+now that a used upload can be deleted.
 
 [uploads]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/chat/uploads.md

@@ -11,8 +11,7 @@ export interface ChatUploads {
 }
 
 /**
- * What the chat's own query adds to its uploads in the tree list. `used` is the intake's
- * `already_used` rule: a sent message consumed the upload.
+ * What the chat's own query adds to its uploads in the tree list: when each was attached.
  */
 export function createDrizzleChatUploads(db: Database): ChatUploads {
   return {
@@ -22,7 +21,6 @@ export function createDrizzleChatUploads(db: Database): ChatUploads {
         .select({
           documentId: uploadIntakes.documentId,
           createdAt: uploadIntakes.createdAt,
-          consumedAt: uploadIntakes.consumedAt,
         })
         .from(uploadIntakes)
         .innerJoin(
@@ -52,7 +50,6 @@ export function createDrizzleChatUploads(db: Database): ChatUploads {
         uploads: rows.map((row) => ({
           documentId: row.documentId,
           attachedAt: row.createdAt.toISOString(),
-          used: row.consumedAt !== null,
         })),
       };
     },

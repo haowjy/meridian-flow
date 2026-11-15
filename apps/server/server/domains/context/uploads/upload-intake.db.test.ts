@@ -10,7 +10,6 @@ import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   projects,
   threads,
   treeNodes,
@@ -22,7 +21,6 @@ import { describe, expect, it } from "vitest";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
-import { treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleJournal } from "../../collab/adapters/drizzle-journal.js";
 import { createCollabDomain } from "../../collab/composition.js";
@@ -60,7 +58,6 @@ if (!RUN) {
     const NEW_CHAT = "00000000-0000-4000-8000-000000000a03";
     /** A chat whose row, and so whose handle `c1`, exists. */
     const CHAT = "00000000-0000-4000-8000-000000000a04";
-    const NEW_OWNER = { kind: "chat" as const, projectId: PROJECT, chatId: NEW_CHAT };
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -78,28 +75,6 @@ if (!RUN) {
         ref: "c1",
       });
       return createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS);
-    }
-
-    /** Deletion through the aggregate; `removed` records arrived uploads it soft-deleted. */
-    function deletion(repository: ReturnType<typeof createDrizzleUploadIntakeRepository>) {
-      const removed: string[] = [];
-      const intakeStore = createInMemoryObjectStore();
-      const intake = createUploadIntake({
-        repository,
-        content: {
-          names: async () => new Set(),
-          bind: async () => ({ ok: true, bound: null }),
-          persist: async () => ({ ok: true }),
-          async remove({ reservation }) {
-            removed.push(reservation.documentId);
-            return { ok: true };
-          },
-        },
-        objectStore: intakeStore,
-        release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
-        eventSink: createNoopEventSink(),
-      });
-      return { removed, deleteDraft: intake.deleteDraft };
     }
 
     const reservation = (intakeId: string, chatId: string, filename = "chapter.md") => ({
@@ -269,41 +244,6 @@ if (!RUN) {
       );
     });
 
-    it("deletes only the chat's own unused upload", async () => {
-      const repo = await seed();
-      const reserved = await repo.reserve(reservation("delete", NEW_CHAT));
-      if (reserved.kind === "conflict" || reserved.kind === "owner_unavailable") {
-        throw new Error("reservation failed");
-      }
-      const claimed = await repo.claim(claimInput("delete"));
-      if (claimed.kind !== "claimed") throw new Error(claimed.kind);
-      const { documentId } = claimed.reservation;
-      const [intake] = await database.current
-        .select()
-        .from(uploadIntakes)
-        .where(eq(uploadIntakes.documentId, documentId as never));
-      if (!intake) throw new Error("intake missing");
-      await treeSeeder(database.current).document(intake.contextSourceId as string, "chapter", {
-        id: documentId,
-      });
-      await repo.finalize(PROJECT, "delete", "chapter");
-      const base = { documentId };
-      const { removed, deleteDraft } = deletion(repo);
-      expect(await deleteDraft({ documentId: crypto.randomUUID() }, USER, NEW_OWNER)).toEqual({
-        kind: "identity_mismatch",
-      });
-      expect(await deleteDraft(base, USER, NEW_OWNER)).toEqual({ kind: "deleted" });
-      expect(await deleteDraft(base, USER, NEW_OWNER)).toEqual({ kind: "already_deleted" });
-      // An arrived upload leaves through the canonical soft delete, never a hard delete.
-      expect(removed).toEqual([documentId]);
-      expect(
-        await database.current
-          .select({ id: documents.id })
-          .from(documents)
-          .where(eq(documents.id, documentId as never)),
-      ).toHaveLength(1);
-    });
-
     it("stores writer names, preserves original filenames and parses all prose as markdown", async () => {
       const db = createDb(DATABASE_URL);
       try {
@@ -468,27 +408,9 @@ if (!RUN) {
       const noop = () => ({ ok: true as const });
       type Content = UploadContentPort<null>;
 
-      async function flow(
-        overrides: { content?: Partial<Content>; afterHead?: () => Promise<void> } = {},
-      ) {
+      async function flow(overrides: { content?: Partial<Content> } = {}) {
         const repo = await seed();
         const store = createInMemoryObjectStore();
-        const hooked: ObjectStorePort = {
-          ...store,
-          put: store.put.bind(store),
-          get: store.get.bind(store),
-          delete: store.delete.bind(store),
-          list: store.list.bind(store),
-          copy: store.copy.bind(store),
-          signPut: store.signPut.bind(store),
-          getStream: store.getStream.bind(store),
-          getSignedUrl: store.getSignedUrl.bind(store),
-          async readHead(key, bytes) {
-            const head = await store.readHead(key, bytes);
-            await overrides.afterHead?.();
-            return head;
-          },
-        };
         const bound: string[] = [];
         const content: Content = {
           names: async () => new Set(),
@@ -497,13 +419,12 @@ if (!RUN) {
             return { ok: true, bound: null };
           },
           persist: async () => noop(),
-          remove: async () => noop(),
           ...overrides.content,
         };
         const intake: UploadIntake = createUploadIntake({
           repository: repo,
           content,
-          objectStore: hooked,
+          objectStore: store,
           release: createObjectRelease({ objectStore: store, onFailure() {} }),
           eventSink: createNoopEventSink(),
         });
@@ -598,48 +519,6 @@ if (!RUN) {
         await f.put(second.documentId, new TextEncoder().encode(text), "text/markdown");
         expect((await f.finish("honest")).ok).toBe(true);
         expect(f.bound.at(-1)).toBe(text);
-      });
-
-      it("a delete after finish read the bytes, before the name is claimed, leaves nothing behind and the intake deleted", async () => {
-        let deleteNow: () => Promise<unknown> = async () => {};
-        const f = await flow({ afterHead: () => deleteNow().then(() => {}) });
-        const first = reservedOf(await f.start("race", 8));
-        await f.put(first.documentId, f.bytesOf(8));
-        deleteNow = () =>
-          f.intake.deleteDraft({ documentId: first.documentId }, USER, {
-            kind: "chat",
-            projectId: PROJECT,
-            chatId: NEW_CHAT,
-          });
-        expect(await f.finish("race")).toEqual({
-          ok: false,
-          error: { code: "idempotency_conflict" },
-        });
-        expect(await f.keys()).toEqual([]);
-        expect(await f.start("race", 8)).toEqual({
-          ok: false,
-          error: { code: "idempotency_conflict" },
-        });
-      });
-
-      it("a delete after the name is claimed, before the commit, is not undone by finish", async () => {
-        let deleteNow: () => Promise<unknown> = async () => {};
-        const f = await flow({
-          content: { bind: async () => (await deleteNow(), { ok: true, bound: null }) },
-        });
-        const first = reservedOf(await f.start("late", 8));
-        await f.put(first.documentId, f.bytesOf(8));
-        deleteNow = () =>
-          f.intake.deleteDraft({ documentId: first.documentId }, USER, {
-            kind: "chat",
-            projectId: PROJECT,
-            chatId: NEW_CHAT,
-          });
-        expect(await f.finish("late")).toEqual({
-          ok: false,
-          error: { code: "idempotency_conflict" },
-        });
-        expect(await f.keys()).toEqual([]);
       });
 
       it("resumes from the stored object when persisting fails, without deleting anything", async () => {

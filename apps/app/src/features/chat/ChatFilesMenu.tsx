@@ -5,8 +5,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
 import { FileImage, FileText, FileType, Paperclip, Trash2 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { deleteChatUpload } from "@/client/api/context-upload-api";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { topChatOf } from "@/client/query/useTopChat";
@@ -19,12 +18,14 @@ import { ListLine, ListRow } from "@/components/ui/list-row";
 import { PickerResults, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
+import { LIVE_VIEW } from "@/features/project/context/entry-drag/entry";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import {
   type EntriesRoute,
   TreeDropScope,
   useTreeDropTarget,
 } from "@/features/project/context/tree-drop/tree-drop";
+import { useDeleteContextEntries } from "@/features/project/context/use-delete-context-entries";
 import { cn } from "@/lib/utils";
 import { attachedAgo, uploadTypeLabel } from "./chat-upload-display";
 import { insertIntoChatComposer, removeFromChatComposer } from "./composer-insertion";
@@ -74,21 +75,9 @@ function FilesDropdown({
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
-  // Rows the writer deleted stay gone at once. A refused delete brings its row back: a file a sent
-  // message used loses its delete action (the catalog catches up), a failed one says so in the
-  // row's own second line.
-  const [deleted, setDeleted] = useState<ReadonlySet<string>>(new Set());
-  const [used, setUsed] = useState<ReadonlySet<string>>(new Set());
-  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
+  const deleteEntries = useDeleteContextEntries(projectId, "main");
   const contentRef = useRef<HTMLDivElement>(null);
   const focusHandoff = useRef(false);
-
-  // A failure belongs to one opening of the menu.
-  useEffect(() => {
-    if (open) setFailed(new Set());
-  }, [open]);
-
-  const rows = uploads.filter((upload) => !deleted.has(upload.documentId));
 
   const close = (returnFocusToComposer: boolean) => {
     focusHandoff.current = returnFocusToComposer;
@@ -100,26 +89,14 @@ function FilesDropdown({
     if (upload.reference) insertIntoChatComposer(threadId, upload.reference, upload.fileKind);
   };
 
+  // A deleted upload goes to Trash like a document: its row leaves the list at once, and Undo
+  // shows in a notice.
   const remove = (upload: ChatUpload) => {
-    if (!upload.deletable) return;
-    setDeleted((current) => new Set(current).add(upload.documentId));
-    setFailed((current) => without(current, upload.documentId));
-    const bringBack = (reason: "used" | "failed") => {
-      setDeleted((current) => without(current, upload.documentId));
-      const mark = reason === "used" ? setUsed : setFailed;
-      mark((current) => new Set(current).add(upload.documentId));
-    };
-    void deleteChatUpload({ projectId, chatId }, { documentId: upload.documentId }).then(
-      (result) => {
-        if (result.kind === "deleted" || result.kind === "already_deleted") {
-          // A gone file must not ride along on the message being written.
-          removeFromChatComposer(threadId, upload.documentId);
-          return;
-        }
-        bringBack(result.kind === "already_used" ? "used" : "failed");
-      },
-      () => bringBack("failed"),
-    );
+    deleteEntries([
+      { ref: { kind: "file", id: upload.documentId }, name: upload.name, view: LIVE_VIEW },
+    ]);
+    // A gone file must not ride along on the message being written.
+    removeFromChatComposer(threadId, upload.documentId);
   };
 
   return (
@@ -174,20 +151,18 @@ function FilesDropdown({
             <PickerSection
               label={t`Uploads`}
               state={
-                rows.length === 0 ? (
+                uploads.length === 0 ? (
                   <ListLine density="menu" iconSlot>
                     <Trans>No files attached in this chat yet.</Trans>
                   </ListLine>
                 ) : null
               }
             >
-              {rows.map((upload) => (
+              {uploads.map((upload) => (
                 <UploadRow
                   key={upload.documentId}
                   upload={upload}
                   now={now}
-                  canDelete={upload.deletable && !used.has(upload.documentId)}
-                  failed={failed.has(upload.documentId)}
                   onInsert={() => insert(upload)}
                   onDelete={() => remove(upload)}
                 />
@@ -203,22 +178,17 @@ function FilesDropdown({
 function UploadRow({
   upload,
   now,
-  canDelete,
-  failed,
   onInsert,
   onDelete,
 }: {
   upload: ChatUpload;
   now: number;
-  canDelete: boolean;
-  failed: boolean;
   onInsert: () => void;
   onDelete: () => void;
 }) {
   const Icon = iconFor(upload);
   const name = upload.name;
   const drag = useReferenceDrag({ ref: { kind: "file", id: upload.documentId }, name });
-  const failure = failed ? t`Couldn’t delete this file. Try again.` : null;
   return (
     <li>
       <ListRow
@@ -227,28 +197,12 @@ function UploadRow({
         controlProps={{ ...drag, "aria-label": t`Add ${name} to your message` }}
         leading={<Icon aria-hidden className="text-muted-foreground" />}
         title={name}
-        detail={
-          failure ? (
-            <span aria-hidden="true" className="text-destructive">
-              {failure}
-            </span>
-          ) : (
-            uploadTypeLabel(upload.fileType)
-          )
-        }
-        meta={failure ? null : attachedAgo(upload.attachedAt, now)}
+        detail={uploadTypeLabel(upload.fileType)}
+        meta={attachedAgo(upload.attachedAt, now)}
         actions={
-          canDelete ? (
-            <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete} className="mr-1">
-              <Trash2 aria-hidden />
-            </IconButton>
-          ) : null
-        }
-        // The failure replaces the row's second line; this announces it without adding layout.
-        below={
-          <span role="status" className="sr-only">
-            {failure}
-          </span>
+          <IconButton size="xs" label={t`Delete ${name}`} onClick={onDelete} className="mr-1">
+            <Trash2 aria-hidden />
+          </IconButton>
         }
       />
     </li>
@@ -282,12 +236,6 @@ function UploadsRefuseDrops({ children }: { children: ReactNode }) {
 function UploadsDropArea({ children }: { children: ReactNode }) {
   const { dropProps } = useTreeDropTarget(UPLOADS_TARGET);
   return <div {...dropProps}>{children}</div>;
-}
-
-function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
-  const next = new Set(set);
-  next.delete(id);
-  return next;
 }
 
 function iconFor(upload: ChatUpload) {

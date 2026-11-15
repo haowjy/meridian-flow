@@ -140,7 +140,9 @@ A chat card's Undo or Redo of a turn takes the reply's tree receipts back too, i
 steps, newest receipt first; a Redo takes the receipts the card's Undo reversed, oldest first: a
 receipt the model's own `undo` reversed in the reply is part of what the reply did, and gives the
 card no Redo). The receipts one list holds go back in one update of that list, so a browser showing
-it redraws once for the whole Undo, not once a receipt. It
+it redraws once for the whole Undo, not once a receipt. A create's receipt holds the folders the
+create made on the way (outermost first), so its Undo takes them back with it, and an applied
+create taken back in live also closes the Work's text draft on that document in the same command. It
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`

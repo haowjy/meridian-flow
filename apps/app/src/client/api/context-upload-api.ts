@@ -4,8 +4,6 @@
  * own source (and a Work's id for its Scratch). Removing a reference never deletes the file.
  */
 import {
-  type DeleteDraftUploadInput,
-  type DeleteDraftUploadResult,
   MAX_UPLOAD_BYTES,
   type StartUploadInput,
   type UploadIntakeResult,
@@ -82,20 +80,3 @@ export const chatUploadPort: ComposerUploadPort = {
       signal,
     }),
 };
-
-/**
- * Deletes one unused upload the writer attached to a chat. The server refuses a file a sent
- * message has used (`already_used`) and one whose identity no longer stands (`identity_mismatch`).
- */
-export function deleteChatUpload(
-  scope: { projectId: string; chatId: string },
-  identity: DeleteDraftUploadInput,
-): Promise<DeleteDraftUploadResult> {
-  return uploadResponse<DeleteDraftUploadResult>(
-    fetch(url({ projectId: scope.projectId, scheme: "uploads", query: { chatId: scope.chatId } }), {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(identity),
-    }),
-  );
-}
