@@ -20,7 +20,7 @@ export type DocumentLiveness = "live" | "draft-only" | "pending";
 
 const subscribeNothing = () => () => undefined;
 
-/** The pinned draft's evidence that live lacks the document; `pending` while its row is unread. */
+/** The pinned draft's evidence that live lacks the document; `pending` while its row is unread or unlisted. */
 function usePinnedDraftEvidence(
   projectId: string,
   tab: OpenDocument | null,
@@ -32,10 +32,12 @@ function usePinnedDraftEvidence(
   const rows = useOwnerDraftRows(projectId, pin?.ownerKey ?? null);
   const row = pin ? rows.rows.find((candidate) => candidate.itemKey === pin.itemKey) : undefined;
   const held = !!pin && !!tab && isDraftOnly(tab.documentId);
+  // A pinned item the list lacks waits, as its paint does: the row can still be on its way (a
+  // reader that just mounted, a draft just made), and a stale pin ends (`verifyPin`).
   return {
     pin,
     evidence: !!pin && (!!row?.isNew || !!row?.deletedLive || held),
-    pending: !!pin && rows.status === "loading",
+    pending: !!pin && (rows.status === "loading" || (rows.status === "ready" && !row)),
   };
 }
 

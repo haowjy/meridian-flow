@@ -9,9 +9,12 @@
  *
  * Each list also holds the notice its rows show (`treeNotice`): the writer's latest gesture with
  * its Undo, or what a press skipped or couldn't take back. It ends at the next gesture or press,
- * or when its step leaves the stack.
+ * or when its step leaves the stack. Beside it, the writer's changes the server bounced since
+ * (`treeBounces`: their Work was closed), each said on the row it was made on; they end at the
+ * writer's next gesture, press or action elsewhere in the list, as the notice does.
  */
 import {
+  type DroppedRecord,
   deleteStands,
   isSourceRoot,
   LIVE,
@@ -87,6 +90,18 @@ export type Said =
   /** An Apply's Un-Apply didn't reach the server; `step` is still on the stack. */
   | { kind: "failed"; name: string; nodes: readonly string[]; step: ApplyStep };
 
+/**
+ * A change of the writer's that the server bounced (it changed a Work that was closed): the row
+ * stands as it was before it, and says so.
+ */
+export type Bounce = {
+  record: DroppedRecord["record"];
+  /** What Copy takes: a created document's typed text, or a rename's name; null when there is none. */
+  typed: string | null;
+  /** A create's row as the writer made it, which stays struck through where it was. */
+  made?: Was;
+};
+
 export type UndoOutcome =
   /** `partial`: an Apply taken back but for text changes edited since, which stay applied. */
   | {
@@ -126,6 +141,7 @@ function saidOf(outcome: UndoOutcome): TreeNotice | null {
 
 const stacks = new WeakMap<TreeListSession, UndoStep[]>();
 const notices = new WeakMap<TreeListSession, TreeNotice>();
+const bounces = new WeakMap<TreeListSession, readonly Bounce[]>();
 const listeners = new Set<() => void>();
 let revision = 0;
 
@@ -143,16 +159,38 @@ export function subscribeTreeNotices(listener: () => void): () => void {
   };
 }
 
-function show(session: TreeListSession, notice: TreeNotice | null) {
-  if (notice === (notices.get(session) ?? null)) return;
-  if (notice) notices.set(session, notice);
-  else notices.delete(session);
+function changed() {
   revision += 1;
   for (const listener of [...listeners]) listener();
 }
 
+function show(session: TreeListSession, notice: TreeNotice | null) {
+  if (notice === (notices.get(session) ?? null)) return;
+  if (notice) notices.set(session, notice);
+  else notices.delete(session);
+  changed();
+}
+
+/** The writer's changes the server bounced since their last action in the list, oldest first. */
+export function treeBounces(session: TreeListSession | null): readonly Bounce[] {
+  return (session && bounces.get(session)) ?? [];
+}
+
+/** The server bounced these changes of the writer's: their rows say so until the writer acts. */
+export function addBounces(session: TreeListSession, added: readonly Bounce[]): void {
+  if (added.length === 0) return;
+  bounces.set(session, [...treeBounces(session), ...added]);
+  changed();
+}
+
+/** The writer acted in the list: what its rows said of bounced changes ends. */
+function actedIn(session: TreeListSession) {
+  if (bounces.delete(session)) changed();
+}
+
 /** The writer acted elsewhere in the list (opened a document): its notice ends. */
 export function endTreeNotice(session: TreeListSession): void {
+  actedIn(session);
   show(session, null);
 }
 
@@ -184,6 +222,7 @@ export function shownSourceOf(projection: TreeProjection, node: string): string 
 export function pushUndoStep(session: TreeListSession, step: UndoStep): void {
   if (step.kind === "tree" && step.records.length === 0) return;
   stackOf(session).push(step);
+  actedIn(session);
   // A gesture in the list is the writer's next action there; an Apply is made in Changes.
   if (step.kind === "tree")
     show(session, step.gesture === "create" ? null : { kind: "step", step });
@@ -207,6 +246,7 @@ export async function undoLatest(
   actor: string,
   pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
+  actedIn(session);
   show(session, null);
   const outcome = await takeLatest(session, source, view, actor, pendingText);
   show(session, saidOf(outcome));
@@ -268,6 +308,7 @@ export async function undoStep(
   const at = stack.indexOf(step);
   if (at < 0) return false;
   stack.splice(at, 1);
+  actedIn(session);
   show(session, null);
   step.ended?.();
   const view = step.draft === null ? LIVE : { draft: step.draft };

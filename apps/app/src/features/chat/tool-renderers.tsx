@@ -28,9 +28,7 @@ import {
   toolActivityPhrase,
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
-import type { OwnerNames } from "./document-display-name";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
-import { namespaceRefusalCopy } from "./namespace-refusal-copy";
 import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
 import {
@@ -265,7 +263,7 @@ export function toolRowFailed(tool: ToolView): boolean {
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
-export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): string {
+export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
@@ -328,23 +326,13 @@ export function documentToolFailureCopy(tool: ToolView, names?: OwnerNames): str
         : t`Some changes couldn't be completed.`;
     case "returned":
       return returnedWriteCopy(documentFailureReturned(tool).why, name, tool);
-    case "invalid_write": {
-      const refused = namespaceRefusalCopy(inputObject(tool), documentFailureRefusal(tool), names);
-      if (refused) return refused;
+    case "invalid_write":
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
-    }
     default:
       return name
         ? t`Something went wrong while changing ${name}.`
         : t`Something went wrong while making that change.`;
   }
-}
-
-/** Why a `move` or `delete` was refused, from its typed result. */
-function documentFailureRefusal(tool: ToolView): string | null {
-  const result = tool.result;
-  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
-  return asString(result.refusal) ?? null;
 }
 
 /** The `returned` block of a returned write's typed result: why, and the removal record if any. */
@@ -523,7 +511,6 @@ function fileGivenLine(file: ReadFile): string {
 }
 
 function DocumentFailureText({ tool }: { tool: ToolView }) {
-  const names = useOwnerNames();
   return (
     <div
       className={
@@ -532,7 +519,7 @@ function DocumentFailureText({ tool }: { tool: ToolView }) {
           : "text-compact text-destructive"
       }
     >
-      {documentToolFailureCopy(tool, names)}
+      {documentToolFailureCopy(tool)}
     </div>
   );
 }

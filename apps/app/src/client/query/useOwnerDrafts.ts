@@ -13,6 +13,7 @@ import { useCallback, useMemo } from "react";
 
 import { listOwnerDrafts } from "@/client/api/branches-api";
 import { projectReadEnabled } from "@/client/creation/project-read-gate";
+import { useCreatedDrafts } from "./created-drafts";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { useProjectTreeViews } from "./useProjectTree";
@@ -103,6 +104,30 @@ export function useOwnerDraftsFrozen(projectId: string, owner: string): boolean 
   );
 }
 
+/**
+ * The owner's draft list as this browser knows it: the server's rows, then the drafts its Work's
+ * pending creates make that the server has not listed yet (`useCreatedDrafts`).
+ */
+export function useOwnerDraftList(projectId: string, owner: string, enabled: boolean) {
+  const query = useQuery({
+    ...ownerDraftsQueryOptions(projectId, owner),
+    enabled: projectReadEnabled(enabled),
+  });
+  const created = useCreatedDrafts(
+    projectId,
+    enabled ? (query.data?.branchId ?? null) : null,
+    query.data?.items,
+  );
+  const data = useMemo(
+    () =>
+      query.data && created.length > 0
+        ? { ...query.data, items: [...query.data.items, ...created] }
+        : query.data,
+    [query.data, created],
+  );
+  return { ...query, data, created };
+}
+
 export function useOwnerDrafts(
   projectId: string | null,
   owner: string | null,
@@ -110,10 +135,7 @@ export function useOwnerDrafts(
 ): OwnerDraftListStatus {
   const callerEnabled = options?.enabled ?? true;
   const enabled = callerEnabled && Boolean(projectId) && Boolean(owner);
-  const query = useQuery({
-    ...ownerDraftsQueryOptions(projectId ?? "", owner ?? ""),
-    enabled: projectReadEnabled(enabled),
-  });
+  const query = useOwnerDraftList(projectId ?? "", owner ?? "", enabled);
   const result = unwrapListQuery({ ...query, data: query.data?.items });
 
   const schemes = useMemo(

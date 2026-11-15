@@ -3,7 +3,7 @@ import {
   contextReadResponseSchema,
   parseDocumentFilename,
 } from "@meridian/contracts/protocol";
-import { type CreateRecord, LIVE, nameFault, newId } from "@meridian/project-tree";
+import { type CreateRecord, LIVE, newId } from "@meridian/project-tree";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -51,14 +51,6 @@ export async function putDocument(
     );
   const stem = parsedName.value.name;
   const folders = segments.slice(0, -1);
-  for (const [kind, name] of [
-    ...folders.map((folder) => ["folder", folder] as const),
-    ["document", parsedName.value.name] as const,
-  ]) {
-    if (nameFault(kind, name) !== null)
-      throw usageError(`${name} is not a name a ${kind} may have in ${target.uri}`);
-  }
-
   const trees = new Trees(session, input.projectId);
   try {
     const opened = await trees.at(target);

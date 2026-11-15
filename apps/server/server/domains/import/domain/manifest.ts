@@ -6,7 +6,7 @@ import {
   type ImportSelection,
   overFileBudget,
 } from "@meridian/contracts";
-import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
+import { normalEntryName } from "@meridian/contracts/context-entry-validation";
 import { z } from "zod";
 
 export const IMPORT_LIMITS = {
@@ -38,7 +38,7 @@ const name = z
   .string()
   .min(1)
   .refine(
-    (value) => value === value.normalize("NFC") && validateContextEntryName(value).ok,
+    (value) => value === value.normalize("NFC") && normalEntryName("folder", value) === value,
     "Invalid name",
   );
 // Bounds run before segment validation so a deep path is never split and walked.

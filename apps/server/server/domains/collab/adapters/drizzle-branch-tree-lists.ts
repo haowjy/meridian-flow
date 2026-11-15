@@ -1,14 +1,11 @@
 /**
- * Which tree lists a Work's tree spans, and the Work's pending records in them. A Work's drafted
- * records are in the list of the source they were made in: its project's list, or the account's
- * for `user://`. The lists are read through the store's `read`, at the journal's head.
+ * Which tree lists a Work's tree spans. A Work's drafted records are in the list of the source
+ * they were made in: its project's list, or the account's for `user://`.
  */
-import type { BranchId, DocumentId } from "@meridian/contracts";
-import type { Database } from "@meridian/database";
-import { pendingRecords, type TreeRecord } from "@meridian/project-tree";
+import type { BranchId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
+import type { TreeList } from "../../context/ports/tree-list-store.js";
 
 /** The lists a Work's branch can hold records in: its project's, and its owner's account list. */
 export async function treeListsOfBranch(db: DrizzleDb, branchId: BranchId): Promise<TreeList[]> {
@@ -36,41 +33,4 @@ export async function treeListOfNode(db: DrizzleDb, nodeId: string): Promise<Tre
   if (row?.project_id) return { kind: "project", projectId: row.project_id };
   if (row?.user_id) return { kind: "account", userId: row.user_id };
   return null;
-}
-
-/** A pending record with the list that holds it. */
-export type PendingTreeRecord = { list: TreeList; record: TreeRecord };
-
-/** The Work's pending tree records in every list it spans, each list in list order. */
-export async function readPendingTreeRecords(
-  db: Database,
-  store: Pick<TreeListStore, "read">,
-  branchId: BranchId,
-): Promise<PendingTreeRecord[]> {
-  const lists = await treeListsOfBranch(db, branchId);
-  return store.read({
-    lists,
-    view: (copies) =>
-      copies.flatMap(({ writer }, at) =>
-        pendingRecords(writer.doc, branchId).map((record) => ({
-          list: lists[at] as TreeList,
-          record,
-        })),
-      ),
-  });
-}
-
-/**
- * The pending records that are one document's item: the ones made on it, and a drafted delete
- * of a folder above it that took it along.
- */
-export function recordsOfItem(
-  records: readonly TreeRecord[],
-  documentId: DocumentId,
-): TreeRecord[] {
-  return records.filter(
-    (record) =>
-      record.node === documentId ||
-      (record.type === "delete" && record.cascade.includes(documentId)),
-  );
 }
