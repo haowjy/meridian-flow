@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /** Apply committed migrations and surface the exact file and PostgreSQL failure. */
 import path from "node:path";
 import { resolveDatabaseAdminTarget } from "./lib/dev-db-target";

@@ -129,7 +129,7 @@ export function createDevSessionCommand({
     const localStackEnv = productionApp ? "env APP_ENV=dev MERIDIAN_LOCAL_DEV_STACK=1 " : "";
     // with-dev-env fills every key from .env.local and the main .env, so no
     // secret travels in this command line.
-    return `pnpm exec tsx tools/dev/with-dev-env.ts -- pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} ${localStackEnv}pnpm --filter ${pkg} ${script}`;
+    return `bun tools/dev/with-dev-env.ts -- pnpm exec portless --name ${shellQuote(name)}${force ? " --force" : ""}${appPortFlag} ${localStackEnv}pnpm --filter ${pkg} ${script}`;
   });
 
   // A tmux server started from another checkout can leave that checkout's

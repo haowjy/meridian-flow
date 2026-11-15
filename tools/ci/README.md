@@ -7,6 +7,9 @@
 - `quality-test-1` and `quality-test-2`: the default unit test projects, using
   Vitest `--shard=1/2` and `--shard=2/2` on the same `test` script.
 
+Each job installs Node (pinned in the workflow), pnpm, and Bun (`oven-sh/setup-bun` reading
+`.tool-versions`): Bun runs the TypeScript scripts the checks invoke.
+
 Lint and the small checks share a runner because together they take seconds,
 not minutes. The `quality` required status depends on all four jobs, runs
 under `always()`, and fails unless every dependency succeeded. The jobs are explicit rather

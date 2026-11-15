@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 import { ensureDatabaseForUrl, formatPgError } from "./lib/dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES } from "./lib/dev-env";
 

@@ -1,10 +1,10 @@
 /**
  * Summarize Yjs journal update rows without reconstructing manuscript content.
  *
- * File: pnpm tsx packages/yjs-inspect/examples/decode-journal.ts updates.txt
- * Stdin: cat updates.txt | pnpm tsx packages/yjs-inspect/examples/decode-journal.ts
+ * File: bun packages/yjs-inspect/examples/decode-journal.ts updates.txt
+ * Stdin: cat updates.txt | bun packages/yjs-inspect/examples/decode-journal.ts
  * Database:
- * psql "$DATABASE_URL" -X -A -t -c "SELECT encode(update_data, 'hex') FROM document_yjs_updates WHERE document_id = '<document-id>' ORDER BY id, batch_ordinal" | pnpm tsx packages/yjs-inspect/examples/decode-journal.ts
+ * psql "$DATABASE_URL" -X -A -t -c "SELECT encode(update_data, 'hex') FROM document_yjs_updates WHERE document_id = '<document-id>' ORDER BY id, batch_ordinal" | bun packages/yjs-inspect/examples/decode-journal.ts
  *
  * Input may be one hex row per line, `sequence<TAB>hex`, psql expanded output
  * containing `update_hex | ...`, or an explicit `base64:<data>` row.
@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import type { InvalidUpdate, UpdateSummary } from "../src/index.js";
 import { summarizeUpdate } from "../src/index.js";
 
-const usage = `Usage: pnpm tsx packages/yjs-inspect/examples/decode-journal.ts [file]
+const usage = `Usage: bun packages/yjs-inspect/examples/decode-journal.ts [file]
 
 Read update rows from a file, or from stdin when no file is given.
 Rows may be bare hex, hex:<hex>, base64:<base64>, sequence<TAB>hex,
