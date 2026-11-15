@@ -319,10 +319,14 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       ? placeTrees.find(closingDocumentId)
       : null;
   // A draft a Discard closed anywhere but here stays addressed, in Trash: its document is found
-  // where live has it, since the Work's tree no longer lists the draft.
+  // where live has it, since the Work's tree no longer lists the draft. So is one whose end is
+  // still being asked: a page that let go of it then would not have it to keep.
   const inTrash = staysOnScreen(closeState.ended);
+  const endUndecided = reviewed?.status === "gone" && !closeState.ended;
   const trashedPlace =
-    addressKind === "review" && inTrash && closingDocumentId ? trees.find(closingDocumentId) : null;
+    addressKind === "review" && (inTrash || endUndecided) && closingDocumentId
+      ? trees.find(closingDocumentId)
+      : null;
   const reviewAddress = useMemo((): ReplayAddress | undefined => {
     if (addressKind !== "review") return undefined;
     if (!closingDocumentId) return { kind: "absent" };
