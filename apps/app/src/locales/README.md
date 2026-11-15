@@ -70,7 +70,7 @@ contents, including the existing header timestamp.
 
 1. Add the locale code to `lingui.config.ts`:
    ```ts
-   locales: ["en", "de"],
+   locales: ["en", "zh", "de"],
    ```
 2. Run extract to seed the catalog file:
    ```bash
@@ -87,8 +87,12 @@ contents, including the existing header timestamp.
    `src/lib/i18n.ts` — add it to the `CATALOGS` map:
    ```ts
    import { messages as deMessages } from "@/locales/de/messages";
-   const CATALOGS = { en: enMessages, de: deMessages } as const;
+   const CATALOGS = { en: enMessages, zh: zhMessages, de: deMessages };
    ```
+
+6. Add the code to `ACCOUNT_LANGUAGES` in
+   `packages/contracts/src/preferences/index.ts` and its display name to
+   `LOCALE_LABELS` in `src/lib/i18n.ts`, so account settings can select it.
 
 That's it. **No component-site code changes** are required — every user-facing
 string already routes through a Lingui macro.
@@ -115,5 +119,4 @@ import { i18n } from "@/lib/i18n";
 new Intl.DateTimeFormat(i18n.locale, { month: "short", day: "numeric" }).format(d);
 ```
 
-This is the pattern documented in `src/lib/thread-groups.ts`. Phase 4 / 5
-should follow it.
+Use this pattern wherever the app formats dates or numbers.
