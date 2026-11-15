@@ -98,7 +98,6 @@ export function createWorkBranchFixture(db: Database) {
       createdByUserId: USER_ID,
       title: "Thread",
       kind: "primary",
-      status: "idle",
       aiWriteMode: "draft",
     });
     await db.insert(turns).values([

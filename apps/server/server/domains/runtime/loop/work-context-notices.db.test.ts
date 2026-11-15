@@ -166,7 +166,6 @@ else
         createdByUserId: ids.userId,
         title: "Other Work thread",
         kind: "primary",
-        status: "idle",
       });
       await repos.threadWorks.addMembership(otherThreadId, ids.targetWorkId, true);
 
@@ -209,7 +208,6 @@ else
 
     it.each([
       "deleted",
-      "archived",
       "project-deleted",
     ])("parks %s targets, including new mutations, until restore", async (hidden) => {
       if (hidden === "project-deleted")
@@ -220,7 +218,7 @@ else
       else
         await db
           .update(schema.threads)
-          .set(hidden === "deleted" ? { deletedAt: new Date() } : { status: "archived" })
+          .set({ deletedAt: new Date() })
           .where(eq(schema.threads.id, ids.threadId));
       await delivery().workChanged(ids.workId);
       await delivery().sweepWorkNotices();
@@ -232,7 +230,7 @@ else
         .where(eq(schema.projects.id, ids.projectId));
       await db
         .update(schema.threads)
-        .set({ deletedAt: null, status: "idle" })
+        .set({ deletedAt: null })
         .where(eq(schema.threads.id, ids.threadId));
       await delivery().sweepWorkNotices();
       expect(await updates()).toHaveLength(1);

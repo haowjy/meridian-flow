@@ -230,7 +230,7 @@
     "apps/server/server/domains/runtime/loop/stop-rule.test.ts": 14,
     "apps/server/server/domains/runtime/loop/turn-context-assembly.test.ts": 2,
     "apps/server/server/domains/runtime/loop/wake-scheduling.test.ts": 4,
-    "apps/server/server/domains/runtime/loop/work-context-notices.db.test.ts": 10,
+    "apps/server/server/domains/runtime/loop/work-context-notices.db.test.ts": 9,
     "apps/server/server/domains/runtime/shown-links.db.test.ts": 1,
     "apps/server/server/domains/runtime/shown-links.test.ts": 1,
     "apps/server/server/domains/runtime/spawn/apply-invocation-patch.test.ts": 2,

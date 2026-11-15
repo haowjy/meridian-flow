@@ -41,7 +41,7 @@ text never enters event logs.
 - Work deletion marks live primary chats and descendants with `deletedByWorkId` in the
   same transaction; independently trashed chats are not marked, and a cascaded chat
   can't be restored until its Work is.
-- `threads.status` is lifecycle-only. Run liveness is read from the lease alone, and
+- Run liveness is read from the lease alone, and
   the snapshot's `liveState.runState` is the chat's whole `RunState` record
   ([run state](../../runtime/.context/delivery.md#run-state)).
 - The thread snapshot builder reads rows, live state, watermark and journal head in
@@ -109,8 +109,8 @@ handle minting through the project advisory lock.
 - The owner-aware trash command is the only soft-delete/restore boundary. Missing,
   foreign or concealed rows don't leak existence. A fully owned deleted thread gets the
   attested `thread_deleted` response; WebSocket subscribe still conceals it as
-  `not_found`. Delete and archive end the chat's run, asks and subagent subtree inside
-  the delete or archive transaction, before taking the thread row lock (`stopThreads`, see
+  `not_found`. Delete ends the chat's run, asks and subagent subtree inside
+  the delete transaction, before taking the thread row lock (`stopThreads`, see
   [spawn](../../runtime/.context/spawn.md)).
 - `rootThreadId` is non-null and authoritative. Organic primaries and handoffs root at
   themselves; spawn and fork copy the source root. A missing root is an integrity

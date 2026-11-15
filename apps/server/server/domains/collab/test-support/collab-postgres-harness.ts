@@ -208,7 +208,6 @@ export async function seedDatabase(
     createdByUserId: USER_ID,
     title: "Thread",
     kind: "primary",
-    status: "idle",
     aiWriteMode: "draft",
   });
   await db.insert(schema.turns).values({

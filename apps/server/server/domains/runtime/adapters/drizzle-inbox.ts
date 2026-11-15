@@ -6,7 +6,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
 import type { DeliveryStore } from "./delivery-ports.js";
@@ -103,7 +103,6 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
             eq(schema.threads.id, threadId),
             isNull(schema.threads.deletedAt),
             isNull(schema.projects.deletedAt),
-            ne(schema.threads.status, "archived"),
           ),
         )
         .for("no key update", { of: schema.threads });
@@ -119,7 +118,6 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
           and(
             isNull(schema.threads.deletedAt),
             isNull(schema.projects.deletedAt),
-            ne(schema.threads.status, "archived"),
             sql`${schema.threadInboxMessages.body}->>'kind' = 'work_context_refresh'`,
             isNull(schema.threadInboxMessages.deliveredAt),
             afterThreadId ? gt(schema.threadInboxMessages.threadId, afterThreadId) : undefined,

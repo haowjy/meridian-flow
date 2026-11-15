@@ -73,7 +73,6 @@ export {
   type ThreadTrashState,
   type ThreadTrashTransition,
   ThreadTrashUnavailableError,
-  transitionThreadArchive,
   transitionThreadTrash,
 } from "./domain/thread-trash-lifecycle.js";
 export {
