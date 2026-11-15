@@ -158,9 +158,21 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
  * then a reload offers the words again. Done in another tab, it leaves this one too.
  */
 export const unsentTypingToasts: UnsentTypingObserver = {
-  show: notifyUnsentTyping,
-  withdraw: (id) => toast.dismiss(`unsent:${id}`),
+  show: (typing) =>
+    notifyUnsentTyping({
+      ...typing,
+      done: () => {
+        actedHere.add(typing.id);
+        typing.done();
+      },
+    }),
+  // The toaster is the page's: a toast acted on here stays, showing "Copied", whoever withdraws it.
+  withdraw: (id) => {
+    if (!actedHere.has(id)) toast.dismiss(`unsent:${id}`);
+  },
 };
+
+const actedHere = new Set<string>();
 
 function notifyUnsentTyping(typing: UnsentTyping) {
   toast.custom(
