@@ -41,7 +41,6 @@ import {
   type DiscardUndo,
   type DiscardUndoAnswer,
   type NoticeSurface,
-  type RestoreReturned,
   returnedOf,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
