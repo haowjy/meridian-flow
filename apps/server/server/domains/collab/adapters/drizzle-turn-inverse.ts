@@ -155,6 +155,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           frontier: documentEditParts.frontier,
           aliases: documentEditParts.aliases,
           origin: documentEditParts.origin,
+          purgedDisposition: documentEditParts.purgedDisposition,
         },
         edit: documentEdits,
       })
@@ -208,10 +209,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    */
   async function capture(query: TurnInverseQuery): Promise<InverseCapture> {
     const facts: unknown[] = [];
+    /** A part whose draft the Trash purge deleted: what it recorded became of the part. */
+    const purged = new Map<number, "applied" | "discarded">();
     const captured = await (async () => {
       const { restoring, leavingLive } = await treeEffects(query);
       const ids = await selectedDocuments(query, restoring);
       const rows = await history(ids);
+      for (const row of rows) if (row.purgedDisposition) purged.set(row.id, row.purgedDisposition);
       const draftIds = inverseDraftIds(query, rows);
       const parts: StoredInversePart[] = rows.map((part) => ({
         ...part,
@@ -370,7 +374,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 ? classified
                 : destination.kind === "draft" && destination.state !== "gone"
                   ? "pending"
-                  : (classified ?? "discarded"),
+                  : (classified ?? purged.get(part.id) ?? "discarded"),
           };
         });
         facts.push({

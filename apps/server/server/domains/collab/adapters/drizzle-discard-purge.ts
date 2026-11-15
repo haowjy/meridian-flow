@@ -3,7 +3,8 @@
  * draft out): the command row and the closed drafts that name it, in one transaction. This is the
  * only reader of the clock for them: Trash lists and Restore reopens whatever still exists, so
  * what is listed is exactly what restores, and a Restore after the purge finds no command and
- * answers `left_out purged`.
+ * answers `left_out purged`. A draft's bytes are the only record of which of its parts were
+ * applied, so each part's answer is written to its edit part before the draft goes.
  *
  * A drafted create's draft is not ours: the tree purges the create on its own clock
  * (`purgeUnviewed`), settling and releasing its drafts and content, and browsers delete their
@@ -19,13 +20,19 @@
 import type { CommandId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { commands, documentDrafts, observationFrontiers } from "@meridian/database/schema";
+import {
+  commands,
+  documentDrafts,
+  documentEditParts,
+  observationFrontiers,
+} from "@meridian/database/schema";
 import { discardedBy } from "@meridian/project-tree";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
+import type { DraftDispositionView } from "../domain/draft-disposition.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { ENTRY_KINDS } from "./drizzle-discard-entries.js";
 
@@ -36,8 +43,21 @@ export function createDrizzleDiscardPurge(
   deps: {
     workProjection: Pick<WorkProjectionMutation, "mutate">;
     treeLists: Pick<TreeListStore, "read">;
+    /** What became of each of a draft's parts, read from its bytes. */
+    readDisposition(draftId: string): Promise<Pick<DraftDispositionView, "parts"> | null>;
   },
 ) {
+  /**
+   * Each closed draft's parts as their bytes answer them, read before the locks: a closed draft
+   * changes only when a Restore reopens it, and the purge then leaves it alone.
+   */
+  async function dispositionsOf(ids: readonly string[]) {
+    const out = new Map<string, Pick<DraftDispositionView, "parts">["parts"]>();
+    for (const draft of await closedDrafts(ids))
+      out.set(draft.id, (await deps.readDisposition(draft.id))?.parts ?? []);
+    return out;
+  }
+
   /** The drafts still closed by these commands. */
   async function closedDrafts(ids: readonly string[]) {
     return currentDrizzleDb(db)
@@ -62,6 +82,7 @@ export function createDrizzleDiscardPurge(
   }
 
   async function purgeBranch(branchId: string | null, ids: readonly string[]): Promise<void> {
+    const dispositions = await dispositionsOf(ids);
     await deps.workProjection.mutate(
       branchId ? { branches: [branchId as never] } : {},
       async () => {
@@ -74,6 +95,19 @@ export function createDrizzleDiscardPurge(
           .filter((draft) => !created.has(draft.documentId))
           .map((draft) => draft.id);
         if (doomed.length > 0) {
+          // The turn's card reads what became of each part from here once the bytes are gone.
+          for (const id of doomed)
+            for (const part of dispositions.get(id) ?? [])
+              if (part.disposition !== "pending")
+                await tx
+                  .update(documentEditParts)
+                  .set({ purgedDisposition: part.disposition })
+                  .where(
+                    and(
+                      eq(documentEditParts.editId, part.editId),
+                      eq(documentEditParts.ordinal, part.ordinal),
+                    ),
+                  );
           await tx.delete(documentDrafts).where(inArray(documentDrafts.id, doomed));
           // A frontier has no draft foreign key; its room key is the only ownership.
           await tx.delete(observationFrontiers).where(

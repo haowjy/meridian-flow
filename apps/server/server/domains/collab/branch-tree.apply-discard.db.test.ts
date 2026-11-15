@@ -564,6 +564,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           state: Buffer.from(Y.encodeStateAsUpdate(doc)),
           stateVector: Buffer.from(Y.encodeStateVector(doc)),
+          // Judged at its revision: it holds a change, as the effect projection would say.
+          hasEffect: true,
+          hasEffectRevision: 0,
         });
         return id;
       }

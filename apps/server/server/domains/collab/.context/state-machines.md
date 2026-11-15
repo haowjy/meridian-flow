@@ -31,8 +31,10 @@ stateDiagram-v2
 - **A closed draft ends when its Trash entry is purged.** At day 30 the discard purge
   (`adapters/drizzle-discard-purge.ts`) deletes the entry's command row and the closed drafts
   that name it (a drafted create's draft is left to the tree's own purge). A Restore after that
-  finds nothing and answers `left_out purged`; the turn's card finds the draft's owner from
-  `document_edit_parts.draft_branch_id` and reads it `discarded`.
+  finds nothing and answers `left_out purged`. Before it deletes a draft, the purge writes what
+  became of each of its parts (`document_edit_parts.purged_disposition`, read from the draft's
+  bytes), and the turn's card finds the draft's owner from `draft_branch_id`: a purged draft
+  reads `applied` or `discarded` as it did before the purge, never as a live edit.
 - **A closed branch never reopens; a closed draft reopens only through `reopenDrafts`.** A Discard
   stamps each draft it closes with `closed_by`, its command id. Restoring that Discard
   (`undo_discard`, from the notice or Trash) sets the same row `active` again in the Work's

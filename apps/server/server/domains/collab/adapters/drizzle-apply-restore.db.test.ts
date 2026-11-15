@@ -21,7 +21,14 @@ import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contract
 import type { ApplyClick } from "@meridian/contracts/branches";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { branches, contextSources, projects, users, works } from "@meridian/database/schema";
+import {
+  branches,
+  contextSources,
+  documentDrafts,
+  projects,
+  users,
+  works,
+} from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -355,20 +362,23 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
     async function discard(f: Fixture) {
       const commandId = randomUUID();
+      // A Restore of Discard all reopens the draft on the Work's new branch.
+      const [{ branchId }] = await db
+        .select({ branchId: documentDrafts.branchId })
+        .from(documentDrafts)
+        .where(eq(documentDrafts.id, f.draftId));
       const out = await discardKernel.discardItems({
-        branchId: f.branchId,
+        branchId,
         userId: USER,
-        selection: {
-          kind: "items",
-          items: [{ documentId: f.documentId, origin: "edited", ends: "item" }],
-        },
+        // Whole: an item Discard takes nothing from a draft its Applies emptied (it answers
+        // `overtaken applied`), and Discard all closes every draft of the branch.
+        selection: { kind: "whole" },
         command: {
           envelope: envelope("discard", commandId),
-          result: () => ({ status: "discarded", branchId: f.branchId }) as never,
+          result: () => ({ status: "discarded", branchId }) as never,
         },
       });
-      expect(out.settled).toEqual([]);
-      expect(out.closed).toEqual([f.documentId]);
+      expect(out).toMatchObject({ branchClosed: true, settled: [] });
       return commandId;
     }
     const envelope = (kind: string, commandId: string) =>

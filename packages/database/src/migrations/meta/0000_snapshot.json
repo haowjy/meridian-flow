@@ -5367,6 +5367,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "purged_disposition": {
+          "name": "purged_disposition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -5450,6 +5456,10 @@
         "document_edit_parts_origin_valid": {
           "name": "document_edit_parts_origin_valid",
           "value": "\"document_edit_parts\".\"origin\"->>'kind' IN ('pending','live')"
+        },
+        "document_edit_parts_purged_disposition_valid": {
+          "name": "document_edit_parts_purged_disposition_valid",
+          "value": "\"document_edit_parts\".\"purged_disposition\" IN ('applied','discarded')"
         },
         "document_edit_parts_draft_branch_valid": {
           "name": "document_edit_parts_draft_branch_valid",

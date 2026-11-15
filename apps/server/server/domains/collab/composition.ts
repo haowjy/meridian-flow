@@ -122,6 +122,7 @@ import {
 import { createDraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { AttemptScope } from "./domain/draft-attempts.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
+import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createDraftProjection } from "./domain/draft-projection.js";
 import { createDraftProvenanceReader } from "./domain/draft-provenance.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
@@ -558,6 +559,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const discardPurge = createDrizzleDiscardPurge(deps.db, {
     workProjection: deps.workProjectionMutation,
     treeLists: deps.treeLists,
+    readDisposition: createDraftDispositionReader(createDrizzleDraftDispositionStore(deps.db)),
   });
   const undoDiscard = createUndoDiscardService({
     commands,
