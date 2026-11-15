@@ -20,13 +20,7 @@ import { composeAppServices, createProductionAppPorts } from "../../lib/compose.
 import { processDetachedWork } from "../../shared/detached-work.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { deleteAt, entryAt, moveTo } from "../../test-support/entry-ref.js";
-import { NO_PROJECT_HINTS } from "../../test-support/project-hints.js";
 import { createNoopEventSink } from "../observability/index.js";
-import { createInMemoryObjectStore, createObjectRelease } from "../storage/index.js";
-import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
-import { createDrizzleUploadIntakeRepository } from "./uploads/drizzle-upload-intake.js";
-import { createUploadIntake } from "./uploads/upload-intake.js";
-import { uploadBytes } from "./uploads/upload-test-support.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
@@ -126,52 +120,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         .from(treeNodes)
         .where(and(eq(treeNodes.name, "map.png")));
       expect(await settlement(image)).toBe(map?.id);
-
-      // Deleting a finalized upload keeps the identity it settled; a new upload at the same
-      // address never captures the ref.
-      const intakeStore = createInMemoryObjectStore();
-      const intake = createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS),
-        content: createContextUploadContentPort(app.contextPorts),
-        objectStore: intakeStore,
-        release: createObjectRelease({ objectStore: intakeStore, onFailure() {} }),
-        eventSink: createNoopEventSink(),
-      });
-      for (const [filename, mimeType] of [
-        ["delete-target.toml", "application/toml"],
-        ["delete-target.png", "image/png"],
-      ] as const) {
-        const deletedRef = await register(`uploads://@c1/${filename}`);
-        const bytes = new TextEncoder().encode(`Upload ${filename}`);
-        const uploadOnce = async () => {
-          const uploaded = await uploadBytes(intake, intakeStore, {
-            actorUserId: userId,
-            projectId,
-            chatId,
-            filename,
-            mimeType,
-            bytes,
-          });
-          if (!uploaded.ok) throw new Error(uploaded.error.code);
-          return uploaded.value;
-        };
-        const firstUpload = await uploadOnce();
-        expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
-        expect
-          .soft(
-            await intake.deleteDraft({ documentId: firstUpload.documentId }, userId, {
-              kind: "chat",
-              projectId,
-              chatId,
-            }),
-            filename,
-          )
-          .toEqual({ kind: "deleted" });
-        expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
-        const replacement = await uploadOnce();
-        expect.soft(replacement.uri, filename).toBe(firstUpload.uri);
-        expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
-      }
 
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
       const moved = await create("manuscript://branches/ch2.toml");

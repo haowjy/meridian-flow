@@ -108,6 +108,11 @@ msgstr ""
 msgid "“{name}” doesn't exist yet"
 msgstr ""
 
+#. placeholder {0}: held.length
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "{0, plural, one {{label}: # edit not in use} other {{label}: # edits not in use}}"
+msgstr ""
+
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
@@ -133,6 +138,16 @@ msgstr ""
 msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
 msgstr ""
 
+#. placeholder {0}: held.length
+#: src/features/agents/PackageSave.tsx
+msgid "{0, plural, one {# edit not in use} other {# edits not in use}}"
+msgstr ""
+
+#. placeholder {0}: status.changes.length
+#: src/features/agents/PackageSave.tsx
+msgid "{0, plural, one {# file differs from the version new chats use.} other {# files differ from the version new chats use.}}"
+msgstr ""
+
 #. placeholder {0}: local.missing?.length ?? 0
 #: src/features/import/import-presentation.ts
 msgid "{0, plural, one {# file wasn't in the folder you picked} other {# files weren't in the folder you picked}}"
@@ -151,6 +166,11 @@ msgstr ""
 #. placeholder {0}: result.outsideLinks.count
 #: src/features/export/ExportProjectDialog.tsx
 msgid "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
+msgstr ""
+
+#. placeholder {0}: errors.length
+#: src/features/agents/PackageSave.tsx
+msgid "{0, plural, one {# problem} other {# problems}}"
 msgstr ""
 
 #. placeholder {0}: said.textLeft
@@ -278,6 +298,12 @@ msgstr ""
 msgid "{0} is text, so it was added as a document in assets. The chip links to it."
 msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 
+#. placeholder {0}: finding.file
+#. placeholder {1}: finding.message
+#: src/features/agents/PackageSave.tsx
+msgid "{0} isn't in use: {1}"
+msgstr ""
+
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0} items deleted."
@@ -319,6 +345,12 @@ msgstr "{0} 词元/秒"
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{0} will be renamed {1}"
+msgstr ""
+
+#. placeholder {0}: finding.file
+#. placeholder {1}: finding.message
+#: src/features/agents/PackageSave.tsx
+msgid "{0}: your latest edit isn't in use: {1}"
 msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
@@ -433,6 +465,14 @@ msgstr "{count, plural, other {# 个问题：}}"
 msgid "{count, plural, one {# text change} other {# text changes}}"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "{count, plural, one {Not saved: # problem} other {Not saved: # problems}}"
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
 msgstr ""
@@ -534,6 +574,10 @@ msgstr ""
 msgid "{full}, summary"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "{head} and {last}"
+msgstr ""
+
 #: src/features/chat/chat-upload-display.ts
 msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
 msgstr ""
@@ -541,6 +585,18 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "{hours}h"
 msgstr "{hours}小时"
+
+#: src/features/agents/PackageSave.tsx
+msgid "{label} has nothing new to save, and these edits aren't in use"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "{label} was already saved"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "{label} was not saved"
+msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "{label}…"
@@ -675,6 +731,14 @@ msgstr ""
 msgid "{name} was discarded from the draft before this change could be made."
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "{name} was removed."
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "{name} was removed. Save to stop using it."
+msgstr ""
+
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "{name}, {count} to review"
 msgstr ""
@@ -727,6 +791,18 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "{needsYou} waiting on you"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "{path} added"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "{path} changed"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "{path} deleted"
 msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
@@ -981,6 +1057,10 @@ msgstr "图片不能放在这里。"
 msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "A skill named {name} is already here."
+msgstr ""
+
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source is no longer there."
 msgstr ""
@@ -1089,6 +1169,10 @@ msgstr ""
 msgid "Agent"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Agent name"
+msgstr ""
+
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Agent:"
 msgstr ""
@@ -1100,6 +1184,15 @@ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {name}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Agents"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Agents not saved"
 msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
@@ -1185,6 +1278,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "An Agent named {name} is already here."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -1334,6 +1431,18 @@ msgstr ""
 msgid "Auto-apply"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Available to Agents; it isn't in the / menu."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Available to other Agents; it isn't in the picker."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Available."
+msgstr ""
+
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
@@ -1362,6 +1471,10 @@ msgstr ""
 #: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/editor/EditorView.tsx
 msgid "Back to live"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved."
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -1406,6 +1519,21 @@ msgstr "一起头脑风暴吧"
 
 #: src/features/project/mobile/MobileBreadcrumb.tsx
 msgid "Breadcrumb"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Built-in"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/BuiltinAgentFileDialog.tsx
+msgid "Built-in Agent, read-only"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/BuiltinAgentFileDialog.tsx
+msgid "Built-in skill, read-only"
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2230,8 +2358,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
-msgid "Couldn’t delete this file. Try again."
-msgstr ""
+#~ msgid "Couldn’t delete this file. Try again."
+#~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "Couldn't delete this folder."
@@ -2317,6 +2445,7 @@ msgstr ""
 msgid "Couldn't load this draft."
 msgstr ""
 
+#: src/features/agents/BuiltinAgentFileDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -2402,8 +2531,21 @@ msgstr ""
 msgid "Couldn't queue the compaction."
 msgstr ""
 
+#: src/features/agents/PackageSave.tsx
+msgid "Couldn't reach the server, so nothing was saved. Retry tries again."
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+#~ msgid "Couldn't reach the server."
+#~ msgstr ""
+
 #: src/client/api/upload-request.ts
 msgid "Couldn't reach the server. Check your connection."
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+#: src/features/agents/PackageSave.tsx
+msgid "Couldn't reach the server. Undo tries again."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2495,6 +2637,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't save Agents"
 msgstr ""
 
 #: src/client/commands/submit.ts
@@ -3115,6 +3261,14 @@ msgstr "拖放以插入"
 msgid "Duplicate"
 msgstr ""
 
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "Each Error stops its edit from being used. Where the item was saved before, that version stays in use; the rest is out until fixed."
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Each Error stops its edit from being used. Where the item was saved before, that version stays in use; the rest is out until the Error is fixed and the package is saved again."
+msgstr ""
+
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Earlier"
 msgstr ""
@@ -3138,6 +3292,11 @@ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Edit not in use"
 msgstr ""
 
 #: src/core/editor/diagrams/DiagramBody.tsx
@@ -3222,6 +3381,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "epigraph"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Error"
 msgstr ""
 
 #. placeholder {0}: artifact.expiresAt
@@ -3508,6 +3671,10 @@ msgstr ""
 #~ msgid "Heading 3"
 #~ msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Hidden"
+msgstr ""
+
 #: src/features/import/reason-copy.ts
 msgid "Hidden file."
 msgstr ""
@@ -3706,6 +3873,10 @@ msgstr ""
 msgid "It finished before it could stop."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "It hides {hides}."
+msgstr ""
+
 #: src/features/editor/RescuedText.tsx
 msgid "It isn't in the document."
 msgstr ""
@@ -3891,6 +4062,10 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Loading Agents…"
+msgstr ""
+
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Loading changes…"
 msgstr ""
@@ -3961,6 +4136,7 @@ msgstr ""
 msgid "Loading Works…"
 msgstr ""
 
+#: src/features/agents/BuiltinAgentFileDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -4259,6 +4435,10 @@ msgstr ""
 msgid "New"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "New Agent"
+msgstr ""
+
 #: src/features/chat/ChatThreadTitle.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -4279,6 +4459,10 @@ msgstr ""
 msgid "New chat about {mainName}"
 msgstr ""
 
+#: src/features/agents/PackageSave.tsx
+msgid "New chats can't use {label} until it is saved."
+msgstr ""
+
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "New document"
@@ -4286,16 +4470,26 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "New file"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "New folder"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "New in {address}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "New in {place}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "New skill"
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
@@ -4320,6 +4514,10 @@ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "No Agents or skills in this project yet."
 msgstr ""
 
 #: src/features/chat/ask/AskReceipt.tsx
@@ -4445,6 +4643,10 @@ msgstr ""
 msgid "None"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "None of your own yet. Yours show in every project."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Not applied to"
 msgstr ""
@@ -4480,6 +4682,10 @@ msgstr ""
 msgid "Not in the folder you picked."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Not in use until it is saved."
+msgstr ""
+
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not moved"
 msgstr ""
@@ -4511,6 +4717,14 @@ msgstr ""
 msgid "Not run before compaction"
 msgstr ""
 
+#: src/features/agents/PackageSave.tsx
+msgid "Not saved yet"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "Not saved: {label}"
+msgstr ""
+
 #: src/components/app/NotSentYet.tsx
 msgid "Not sent"
 msgstr ""
@@ -4522,6 +4736,15 @@ msgstr ""
 #. placeholder {0}: answer.text
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Not sent: {0}"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+#~ msgid "Not undone: {label} was saved again since."
+#~ msgstr ""
+
+#. placeholder {0}: whose(file.hiddenBy, file.slug)
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Not used: {0} hides it."
 msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
@@ -4538,6 +4761,10 @@ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "Nothing in it could be read. New chats keep the previous saved version until this is fixed."
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
@@ -4771,9 +4998,9 @@ msgstr ""
 msgid "Paragraph"
 msgstr ""
 
-#: src/features/project/context/entry-drag/entry-failure.ts
-#~ msgid "Part of it is gone for good, so it wasn't copied."
-#~ msgstr ""
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Part of {label}."
+msgstr ""
 
 #: src/features/chat/ReportContent.tsx
 msgid "Partial result"
@@ -4864,12 +5091,25 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Project"
+msgstr ""
+
 #: src/features/project/shell/ProjectMenu.tsx
 msgid "Project actions"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Project Agent"
+msgstr ""
+
 #: src/features/project/ProjectCreationNotice.tsx
 msgid "Project creation failed."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Project skill"
 msgstr ""
 
 #: src/features/project/shell/InlineProjectTitle.tsx
@@ -5246,6 +5486,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
+#: src/features/agents/PackageSave.tsx
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -5301,6 +5542,10 @@ msgstr ""
 msgid "Retry save"
 msgstr ""
 
+#: src/features/agents/PackageSave.tsx
+msgid "Retry saving {label}"
+msgstr ""
+
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Retry the handoff brief"
 msgstr ""
@@ -5343,8 +5588,17 @@ msgstr ""
 msgid "Running"
 msgstr "运行中"
 
+#: src/features/agents/PackageSave.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Save"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Save {label}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Save all"
 msgstr ""
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
@@ -5364,8 +5618,44 @@ msgstr ""
 msgid "Save name and location"
 msgstr ""
 
+#: src/features/agents/PackageSave.tsx
+msgid "Saved"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+msgid "Saved {label}"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Saved {label}, but these edits aren't in use"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Saved Agents"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Saved Agents, some not saved"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Saved just now. New chats use it; chats already running keep the version they started with."
+msgstr ""
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Saving {label} fails until these are fixed"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Saving Agents…"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Saving. New chats will use it; chats already running keep the version they started with."
 msgstr ""
 
 #: src/features/project/work/WorkDetail.tsx
@@ -5598,6 +5888,10 @@ msgstr ""
 #: src/features/account/AccountMenu.tsx
 msgid "Signed in"
 msgstr "已登录"
+
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Skill name"
+msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Skills"
@@ -6167,6 +6461,14 @@ msgstr "助手在这里无法使用这个工具。"
 msgid "The browser blocked the clipboard. Check this site's permissions."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "the built-in {slug}"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "the built-in one"
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The change could not be confirmed. Try again."
@@ -6222,6 +6524,10 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "the project's"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -6677,6 +6983,14 @@ msgstr ""
 msgid "This project was deleted."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "this project's {slug}"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "This project's own; it hides {below}."
+msgstr ""
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."
 msgstr ""
@@ -6891,6 +7205,7 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/DesktopProject.tsx
 msgid "Unavailable"
@@ -6898,6 +7213,14 @@ msgstr ""
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Unavailable Work"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Unavailable, and it still hides {hides}:"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Unavailable:"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -6913,6 +7236,8 @@ msgstr ""
 msgid "Undid change to Work {0}."
 msgstr ""
 
+#: src/features/agents/AgentSavesReceipt.tsx
+#: src/features/agents/PackageSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
@@ -6949,6 +7274,10 @@ msgstr ""
 msgid "Undo discard of {name}"
 msgstr ""
 
+#: src/features/agents/PackageSave.tsx
+msgid "Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays."
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Undo is no longer available."
 msgstr ""
@@ -6971,6 +7300,11 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Undo restore of {title}"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+#: src/features/agents/PackageSave.tsx
+msgid "Undo save of {label}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
@@ -7006,6 +7340,15 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
+#: src/features/agents/AgentSavesReceipt.tsx
+#: src/features/agents/PackageSave.tsx
+msgid "Undone"
+msgstr ""
+
+#: src/features/agents/AgentSavesReceipt.tsx
+#~ msgid "Undone: {label} is back to its previous saved version."
+#~ msgstr ""
+
 #: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
@@ -7029,6 +7372,15 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Unpinned {title}"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Unsaved"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Unsaved changes"
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -7360,6 +7712,18 @@ msgstr ""
 msgid "You’re signed out of this account. Sign in again and the changes will be sent."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "your {slug}"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Your Agent, in every project"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Your edits are in the files. New chats keep the saved version until these are fixed and it is saved again."
+msgstr ""
+
 #: src/features/import/ImportProvider.tsx
 msgid "your files"
 msgstr ""
@@ -7370,6 +7734,14 @@ msgstr ""
 
 #: src/features/import/ImportPanel.tsx
 msgid "Your imports in this project, with their controls."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Your latest edit isn't in use; the last saved version is:"
+msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+msgid "Your latest edit isn't in use: {message}"
 msgstr ""
 
 #: src/features/editor/RescuedText.tsx
@@ -7408,6 +7780,10 @@ msgstr ""
 msgid "Your own answer"
 msgstr "你自己的回答"
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Your own; it hides {below}."
+msgstr ""
+
 #: src/features/home/ProjectLibrary.tsx
 msgid "Your projects"
 msgstr ""
@@ -7428,12 +7804,25 @@ msgstr ""
 msgid "Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost."
 msgstr ""
 
+#: src/features/agents/AgentFileNotice.tsx
+msgid "Your skill, in every project"
+msgstr ""
+
 #: src/features/export/ExportProjectDialog.tsx
 msgid "your User files"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+msgid "yours"
+msgstr ""
+
+#: src/features/agents/AgentFileNotice.tsx
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+msgid "Yours"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ViewerCanvas.tsx

@@ -4,6 +4,7 @@ import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -318,6 +319,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     initialDocumentSeeds: persistence.seeds,
     deferUntilCommit: deferUntilDrizzleCommit,
+    lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(deps.db), documentId),
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,
@@ -339,6 +341,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftJournal: replayJournal,
     model: runtime.model,
     codec: runtime.codec,
+    codecFor: runtime.codecFor,
     links: deps.links,
     aheadRefs: deps.aheadRefs,
     observability,
@@ -432,6 +435,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri: documentUriResolver,
+    resolveLastDocumentUri: async (documentId) =>
+      (await documentLastAddress(documentId))?.uri ?? null,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
     flushLivePull: draftPulls.flushLivePull,
     notices: deps.notices
@@ -666,6 +671,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       encodeSeed: runtime.markdownDocuments.encodeSeed,
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      mergeCodeText: runtime.markdownDocuments.mergeCodeText,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,

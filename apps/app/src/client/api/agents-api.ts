@@ -1,54 +1,59 @@
-/** Account/system Agent catalog; exact selections remain stable after a catalog update. */
-
 import type {
-  AgentCatalogCursor,
   AgentCatalogItem,
-  AgentCatalogPage,
-  AgentSelection,
+  AgentFiles,
+  AgentsLevel,
+  SaveAgentsRequest,
+  SaveOutcome,
 } from "@meridian/contracts/agents";
-import { agentCatalogPageSchema } from "@meridian/contracts/agents";
+import {
+  agentBuiltinFileSchema,
+  agentCatalogSchema,
+  agentFilesSchema,
+  saveAgentsResponseSchema,
+  undoSaveResponseSchema,
+} from "@meridian/contracts/agents";
 import { getJson, postJson } from "./http-client";
 
-export async function listAgents(
-  after?: AgentCatalogCursor,
-  signal?: AbortSignal,
-  projectId?: string,
-): Promise<AgentCatalogPage> {
-  const query = new URLSearchParams({ limit: "100" });
-  if (projectId) query.set("projectId", projectId);
-  if (after) {
-    query.set("afterId", after.id);
-    query.set("afterNameSortKey", after.nameSortKey);
-  }
-  return getJson<AgentCatalogPage>(`/api/agents?${query}`, {
-    signal,
-    schema: agentCatalogPageSchema,
-  });
-}
-
-/** Acquire the complete visible catalog before treating a missing choice as unavailable. */
 export async function listAgentCatalog(
   signal: AbortSignal,
   projectId?: string,
 ): Promise<AgentCatalogItem[]> {
-  const agents: AgentCatalogItem[] = [];
-  let after: AgentCatalogCursor | undefined;
-  do {
-    signal.throwIfAborted();
-    const page = await listAgents(after, signal, projectId);
-    signal.throwIfAborted();
-    agents.push(...page.agents);
-    after = page.nextCursor ?? undefined;
-  } while (after);
-  return agents;
+  const query = projectId ? `?${new URLSearchParams({ projectId })}` : "";
+  const catalog = await getJson(`/api/agents${query}`, { signal, schema: agentCatalogSchema });
+  return catalog.agents;
 }
 
-export function removeProjectAgent(
+export async function listAgentFiles(signal: AbortSignal, projectId: string): Promise<AgentFiles> {
+  const query = new URLSearchParams({ projectId });
+  return getJson(`/api/agents/files?${query}`, { signal, schema: agentFilesSchema });
+}
+
+/** A package whose check fails comes back as a `failed` outcome, never as an HTTP error. */
+export async function saveAgentPackages(
   projectId: string,
-  selection: AgentSelection,
-  signal: AbortSignal,
-) {
-  return postJson<{ removed: true }>(`/api/projects/${projectId}/agents/remove`, selection, {
-    signal,
-  });
+  packages: SaveAgentsRequest["packages"],
+): Promise<SaveOutcome[]> {
+  const body: SaveAgentsRequest = { projectId, packages };
+  return (await postJson("/api/agents/save", body, { schema: saveAgentsResponseSchema })).outcomes;
+}
+
+/** False when a later Save of the package exists: nothing changed. */
+export async function undoAgentSave(
+  projectId: string,
+  level: AgentsLevel,
+  saveId: string,
+): Promise<boolean> {
+  return (
+    await postJson(
+      "/api/agents/save/undo",
+      { projectId, level, saveId },
+      { schema: undoSaveResponseSchema },
+    )
+  ).undone;
+}
+
+export async function readBuiltinAgentFile(signal: AbortSignal, path: string): Promise<string> {
+  const query = new URLSearchParams({ path });
+  return (await getJson(`/api/agents/builtin?${query}`, { signal, schema: agentBuiltinFileSchema }))
+    .text;
 }

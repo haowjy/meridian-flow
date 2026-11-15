@@ -11,10 +11,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
-import { skipToken, useQuery } from "@tanstack/react-query";
-
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
+import { useThreadSnapshotCache } from "@/client/query/thread-snapshot-query";
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
@@ -82,11 +79,7 @@ function ExistingThreadTitle({
 /** A chat's live title: its row in the project's chat list, else the open chat's snapshot (a subagent's chat has no row). */
 export function useChatTitle(projectId: string, threadId: string | null): string {
   const { threadById } = useProjectThreadGroups(projectId);
-  const opened = useQuery({
-    queryKey: threadQueryKeys.snapshot(threadId ?? ""),
-    queryFn: skipToken,
-    select: (snapshot: DeserializedThreadSnapshot) => snapshot.thread,
-  }).data;
+  const opened = useThreadSnapshotCache(threadId)?.data?.thread;
   return displayThreadTitle(
     (threadId ? threadById.get(threadId)?.title : null) ??
       opened?.title ??

@@ -22,7 +22,7 @@ import {
 import type { TreeProjection } from "./replay.js";
 import { childrenOf, descendantsOf, nameAmong, rankAmong, rankAt } from "./shape.js";
 import { writable } from "./validate.js";
-import { inForce, LIVE, replayView, type View } from "./view.js";
+import { LIVE, lastOfFamily, replayView, type View } from "./view.js";
 
 /**
  * Makes records in one copy of the list, against what that copy's own view shows. The browser
@@ -138,7 +138,7 @@ export class TreeWriter {
         }
         const name = freeName(
           input.kind,
-          shownName(input.kind, input.name),
+          shownName(input.kind, input.name, input.kind === "document" ? input.filetype : undefined),
           new Set(kids.map((kid) => kid.name)),
         );
         const at = Math.max(0, Math.min(input.index ?? kids.length, kids.length));
@@ -248,7 +248,13 @@ export class TreeWriter {
       type: "rename",
       node,
       name: current
-        ? nameAmong(projection, current.parent, current.kind, shownName(current.kind, name), node)
+        ? nameAmong(
+            projection,
+            current.parent,
+            current.kind,
+            shownName(current.kind, name, filetype ?? current.filetype),
+            node,
+          )
         : name,
       fromName: current?.name ?? "",
       ...(filetype ? { filetype } : {}),
@@ -303,7 +309,7 @@ export class TreeWriter {
    * entries, and restoring one must not undo the other.
    */
   restoreEntry(view: View, actor: Actor, deleteId: string): RestoreRecord | "unknown" {
-    const entry = inForce(this.doc, view, deleteId);
+    const entry = lastOfFamily(this.doc, view, deleteId);
     if (entry === "unknown" || entry?.type !== "delete") return "unknown";
     return this.author(
       view,

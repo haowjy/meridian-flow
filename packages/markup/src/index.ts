@@ -44,3 +44,4 @@ export type {
   SerializedBlock,
   SpelledHref,
 } from "./types.js";
+export { verbatimCodec } from "./verbatim.js";

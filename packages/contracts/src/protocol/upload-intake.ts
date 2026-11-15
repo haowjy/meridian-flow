@@ -59,21 +59,9 @@ export type UploadIntakeError =
   | { code: "not_uploaded" }
   | { code: "invalid_filename"; reason: ContextEntryValidationReason };
 
-/** An upload's document id is its node's id in the list: the one name the browser has for it. */
-export interface DeleteDraftUploadInput {
-  documentId: string;
-}
-
 /**
- * What a chat's uploads query says that its tree list does not: when each file was attached and
- * whether a sent message has used it. Only an unused upload can be deleted.
+ * What a chat's uploads query says that its tree list does not: when each file was attached.
  */
 export type ChatUploadsResult = {
-  uploads: readonly { documentId: string; attachedAt: string; used: boolean }[];
+  uploads: readonly { documentId: string; attachedAt: string }[];
 };
-
-export type DeleteDraftUploadResult =
-  | { kind: "deleted" }
-  | { kind: "already_deleted" }
-  | { kind: "already_used" }
-  | { kind: "identity_mismatch" };

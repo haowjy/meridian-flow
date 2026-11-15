@@ -26,6 +26,8 @@ export interface CreateWriteToolOptions {
   coordinator: DocumentCoordinator;
   /** Parses purely; each command takes its codec for its prepared holder scope. */
   codec: AgentEditCodecFactory;
+  /** A document's own codec where it is not `codec`: a code document's text is not Markdown. */
+  codecFor?(documentId: string): Promise<AgentEditCodecFactory>;
   /** The host's link scope: prepare, holder scope, ahead registration and view revision. */
   links: DocumentLinksPort;
   model: AgentEditModel;

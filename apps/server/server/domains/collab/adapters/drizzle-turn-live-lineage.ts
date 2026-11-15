@@ -7,8 +7,7 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches } from "@meridian/database/schema";
-import { and, eq, ne, notExists, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TurnLiveLineageDocumentStore } from "../domain/turn-live-lineage.js";
@@ -35,7 +34,6 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
     listFolderTargetsForTurn: (threadId, turnId) =>
       readTurnFolderTargets(currentDrizzleDb(db), { threadId, turnId }),
     async listTreeEntriesForTurn(threadId, turnId) {
-      const receipts = alias(treeEditReceipts, "reversed");
       const rows = await currentDrizzleDb(db)
         .select({
           documentId: treeEditReceiptNodes.nodeId,
@@ -50,6 +48,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           landedAt: treeEditReceiptNodes.afterAt,
           // A copy's create names the document it read, so the turn can say it copied.
           copiedFrom: sql<string | null>`${documents.metadata}->'copiedFrom'->>'uri'`,
+          undone: sql<boolean>`exists (select 1 from tree_edit_receipts r where r.reverses = ${treeEditReceipts.id})`,
         })
         .from(treeEditReceipts)
         .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
@@ -61,14 +60,9 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           and(
             eq(treeEditReceipts.threadId, threadId),
             eq(treeEditReceipts.turnId, turnId),
+            // The standing change, a Redo included: a line says where the document is now, and
+            // `readTurnTreeTargets` alone says where the turn wrote.
             ne(treeEditReceipts.kind, "undo"),
-            // The turn didn't leave a change its own Undo took back.
-            notExists(
-              currentDrizzleDb(db)
-                .select({ one: sql`1` })
-                .from(receipts)
-                .where(eq(receipts.reverses, treeEditReceipts.id)),
-            ),
           ),
         )
         .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);

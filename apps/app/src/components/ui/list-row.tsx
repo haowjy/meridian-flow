@@ -68,6 +68,8 @@ type ListRowProps = {
    * `notice` can still bring it back: the name is struck through and the row opens nothing.
    */
   gone?: boolean;
+  /** What the row names is left out of use but still opens (an Agent file with an Error): struck through. */
+  crossedOut?: boolean;
   /** Indent steps for a row nested under another, the file tree's step. */
   depth?: number;
   /** The main control, when it is a button. */
@@ -122,6 +124,7 @@ export function ListRow({
   selected = false,
   disabled: disabledProp,
   gone = false,
+  crossedOut = false,
   depth = 0,
   ref,
   icon: Icon,
@@ -156,7 +159,9 @@ export function ListRow({
       {leading}
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className={cn("truncate", gone && "text-muted-foreground line-through")}>
+          <span
+            className={cn("truncate", (gone || crossedOut) && "text-muted-foreground line-through")}
+          >
             {title}
             {/* A link can't be pressed or selected; its name says it joined the selection. */}
             {selected && href ? <span className="sr-only">{t`, selected`}</span> : null}

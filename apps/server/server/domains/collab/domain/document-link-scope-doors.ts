@@ -41,6 +41,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    mergeCodeText: (input) =>
+      scopes.within(by(input.documentId), () => engine.mergeCodeText(input)),
     // None spells a link: a seed is encoded from bound blocks, and authority repair seeds an
     // empty document.
     encodeSeed: engine.encodeSeed,
@@ -116,6 +118,8 @@ export function scopeDraftPeer(
     flushDraftLivePull: access.flushDraftLivePull,
     readStoredGrepTexts: access.readStoredGrepTexts,
     readStoredWordCounts: access.readStoredWordCounts,
+    readOwnerMarkdown: (command) =>
+      scopes.within(by(command), () => access.readOwnerMarkdown(command)),
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>

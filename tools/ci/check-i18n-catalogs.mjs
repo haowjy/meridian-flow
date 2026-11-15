@@ -1,58 +1,79 @@
 #!/usr/bin/env node
-/**
- * Fails when the committed locale catalogs no longer match the source.
- *
- * Writer-facing copy reaches the browser through the COMPILED catalogs
- * (`messages.ts`), not the `.po` files. A `t` macro added without running
- * extract and compile therefore ships as a raw message id — "9vVTAg" where a
- * sentence should be — and nothing else in the toolchain notices. This runs
- * both generators over the working tree, formats their output the way the
- * commit hook does, and reports any file they would change — restoring the
- * tree either way so the check has no side effects.
- */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import config from "../../apps/app/lingui.config.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const appDir = join(repoRoot, "apps/app");
-const compiledCatalogs = ["en", "zh"].map((locale) =>
-  join(appDir, `src/locales/${locale}/messages.ts`),
-);
-const catalogs = [
-  ...["en", "zh"].map((locale) => join(appDir, `src/locales/${locale}/messages.po`)),
-  ...compiledCatalogs,
-];
 
-const before = new Map(catalogs.map((path) => [path, readFileSync(path, "utf8")]));
-
-function runLingui(command) {
-  execFileSync("pnpm", ["exec", "lingui", command], {
-    cwd: appDir,
-    stdio: ["ignore", "pipe", "inherit"],
-  });
+function readCatalog(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
-function formatCompiledCatalogs() {
-  // `lingui compile` emits one long line; the commit hook reformats it, so the
-  // committed file is the formatted one and only that comparison is fair.
-  execFileSync("pnpm", ["exec", "biome", "check", "--write", ...compiledCatalogs], {
-    cwd: repoRoot,
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-}
-
+const scratch = mkdtempSync(join(tmpdir(), "meridian-i18n-"));
+const scratchApp = join(scratch, "app");
 let drifted = [];
 try {
-  runLingui("extract");
-  runLingui("compile");
-  formatCompiledCatalogs();
-  drifted = catalogs.filter((path) => readFileSync(path, "utf8") !== before.get(path));
-} finally {
-  for (const [path, contents] of before) {
-    if (readFileSync(path, "utf8") !== contents) writeFileSync(path, contents);
+  const catalogs = config.catalogs.map((catalog) => ({
+    ...catalog,
+    path: join(scratchApp, relative(appDir, resolve(appDir, catalog.path))),
+  }));
+  for (const catalog of config.catalogs) {
+    for (const locale of config.locales) {
+      const path = resolve(
+        appDir,
+        catalog.path.replaceAll("{locale}", locale) + config.format.catalogExtension,
+      );
+      const contents = readCatalog(path);
+      if (contents === null) continue;
+      const target = join(scratchApp, relative(appDir, path));
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, contents);
+    }
   }
+
+  // Keep source roots and origins unchanged; only catalog output moves to scratch.
+  const configPath = join(scratch, "lingui.config.mjs");
+  writeFileSync(
+    configPath,
+    `import config from ${JSON.stringify(pathToFileURL(join(appDir, "lingui.config.ts")).href)};
+export default { ...config, rootDir: ${JSON.stringify(appDir)}, catalogs: ${JSON.stringify(catalogs)} };\n`,
+  );
+  for (const command of ["extract", "compile"]) {
+    execFileSync("pnpm", ["exec", "lingui", command, "--config", configPath], {
+      cwd: appDir,
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+  }
+
+  drifted = readdirSync(scratchApp, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const generatedPath = join(entry.parentPath, entry.name);
+      const path = join(appDir, relative(scratchApp, generatedPath));
+      let contents = readFileSync(generatedPath, "utf8");
+      if (path.endsWith(".ts")) {
+        // Match the commit hook's formatting without writing a watched file.
+        contents = execFileSync(
+          "pnpm",
+          ["exec", "biome", "check", "--write", "--stdin-file-path", path],
+          { cwd: repoRoot, input: contents, encoding: "utf8" },
+        );
+      }
+      return contents === readCatalog(path) ? null : path;
+    })
+    .filter((path) => path !== null)
+    .sort();
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
 }
 
 if (drifted.length > 0) {

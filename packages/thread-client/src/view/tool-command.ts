@@ -1,4 +1,5 @@
 /** Maps tool views to writer-facing commands and labels. */
+import { type SaveOutcome, saveOutcomeSchema } from "@meridian/contracts/agents";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import { parseWorkReceipt, type WorkReceipt } from "@meridian/contracts/works";
 import type { ToolView } from "./group-delivery-segments";
@@ -21,6 +22,7 @@ export type ToolCommand =
   | "work-update"
   | "work-delete"
   | "work-switch"
+  | "save-agents"
   | "unknown";
 
 export function toolCommand(tool: ToolView): ToolCommand {
@@ -37,6 +39,8 @@ export function toolCommand(tool: ToolView): ToolCommand {
       return "skill";
     case "work":
       return workToolCommand(tool);
+    case "save_agents":
+      return "save-agents";
     default:
       return "unknown";
   }
@@ -47,6 +51,16 @@ export type { WorkReceipt } from "@meridian/contracts/works";
 
 export function workReceipt(tool: ToolView): WorkReceipt | null {
   return parseWorkReceipt(tool.metadata?.workReceipt);
+}
+
+/** One outcome per package a `save_agents` call saved or failed to save (set by the server on the result). */
+export function agentsSaved(tool: ToolView): SaveOutcome[] {
+  const outcomes = tool.metadata?.agentsSaved;
+  if (!Array.isArray(outcomes)) return [];
+  return outcomes.flatMap((outcome) => {
+    const parsed = saveOutcomeSchema.safeParse(outcome);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 function workToolCommand(tool: ToolView): ToolCommand {

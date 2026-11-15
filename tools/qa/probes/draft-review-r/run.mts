@@ -503,6 +503,7 @@ try {
       draftCoordinator: coordinator,
       onDraftCommitted: (id) => effect.markDirty(id),
       resolveDocumentUri: async () => "probe.md",
+      resolveLastDocumentUri: async () => null,
       refreshDocument: async () => {},
       flushLivePull: (id) => pulls.flushLivePull(id),
       notices: { record: async () => {} },

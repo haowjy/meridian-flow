@@ -91,8 +91,13 @@ function referencedMedia(block: Block): StoredMediaPart | null {
         sizeBytes: file.sizeBytes as number,
         ...(typeof file.pageCount === "number" ? { pageCount: file.pageCount } : {}),
         name: file.name as string,
+        ...(isChatCopy(file.chatCopy) ? { chatCopy: file.chatCopy } : {}),
       }
     : null;
+}
+
+function isChatCopy(value: unknown): value is { key: string } {
+  return !!value && typeof (value as { key?: unknown }).key === "string";
 }
 
 /**

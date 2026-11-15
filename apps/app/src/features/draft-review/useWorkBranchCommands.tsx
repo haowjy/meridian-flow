@@ -14,6 +14,7 @@ import {
   ownerDraftsQueryOptions,
   patchOwnerDrafts,
   relistedOwnerDraft,
+  useOwnerDraftList,
   useOwnerDraftsFrozen,
 } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
@@ -82,12 +83,17 @@ export function useWorkBranchCommands({
   const removal = useOptionalContextRemovalCoordinator();
   const treeLists = useOptionalTreeLists();
   const draftOnly = useOptionalDraftOnlyPresentations();
+  // The Work's own creates the server has not listed (`useCreatedDrafts`) are rows too: a
+  // command on one finds no row in the query cache, and a missing row is blocked silently.
+  const { created } = useOwnerDraftList(projectId, ownerKey, Boolean(ownerKey));
   return useMemo(() => {
     const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
+    const listed = () => {
+      const cached = cachedOwnerDrafts(queryClient, projectId, ownerKey);
+      return cached || created.length > 0 ? [...(cached ?? []), ...created] : null;
+    };
     const row = (draft: DraftReviewSelection) =>
-      cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
-        (item) => item.itemKey === draft.itemKey,
-      );
+      listed()?.find((item) => item.itemKey === draft.itemKey);
     // The Work's list re-reads with the touched documents' own reads: the route reads a
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
@@ -224,7 +230,7 @@ export function useWorkBranchCommands({
       // The Work's tree shows every node the Apply took, before it and after.
       const { view, pendingText } = draftTreeVersion(
         branchId,
-        cachedOwnerDrafts(queryClient, projectId, ownerKey) ?? null,
+        listed(),
         work ? workLifecycleState(work) : "active",
       );
       const shown = session.replay(view, pendingText);
@@ -754,6 +760,7 @@ export function useWorkBranchCommands({
     reviewEditor,
     queryClient,
     work,
+    created,
   ]);
 }
 

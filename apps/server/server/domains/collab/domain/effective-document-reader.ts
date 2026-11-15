@@ -132,6 +132,26 @@ export function createEffectiveDocumentReader(input: {
     flushDraftLivePull(documentId) {
       return input.draftPulls.flushLivePull(documentId);
     },
+    async readOwnerMarkdown({ documentId, owner }) {
+      await input.draftPulls.flushLivePull(documentId);
+      const draft = await input.drafts.findOwnerDraft(documentId, owner);
+      if (!draft)
+        return readEffective({ documentId, destination: "live" }, async (doc) =>
+          input.documents.serializeVersionedDocument(documentId, unwrapDoc(doc), { kind: "live" }),
+        );
+      const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
+      try {
+        return Ok(
+          await input.documents.serializeVersionedDocument(
+            documentId,
+            doc,
+            await input.branches.viewForOwner(owner),
+          ),
+        );
+      } finally {
+        doc.destroy();
+      }
+    },
     readEffectiveMarkdown(command) {
       return readEffective(command, async (doc) =>
         input.documents.serializeVersionedDocument(

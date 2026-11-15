@@ -11,6 +11,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
@@ -222,6 +223,30 @@ const CodeDocument = Node.create({
   name: "doc",
   topNode: true,
   content: "code_block",
+
+  // The only block is the whole document, so no selection belongs at the doc
+  // level: Ctrl+A would make paste split into paragraphs (a code-only doc keeps
+  // the first) and typing replace the block, dropping its language and id.
+  // Select-all becomes the text of the block instead. Tiptap's clearDocument
+  // resets the block to defaults when the whole text goes; the server sets
+  // `language` only at create, so every edit opts out of it.
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        filterTransaction(transaction) {
+          transaction.setMeta("preventClearDocument", true);
+          return true;
+        },
+        appendTransaction(_trs, _old, state) {
+          const { $from, $to } = state.selection;
+          if ($from.depth > 0 && $to.depth > 0) return null;
+          return state.tr.setSelection(
+            TextSelection.create(state.doc, 1, state.doc.content.size - 1),
+          );
+        },
+      }),
+    ];
+  },
 });
 
 function createCollaborationExtensions({

@@ -11,7 +11,7 @@ import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { Composer, type ComposerDraftChange, type ComposerHandle } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
-import { DEFAULT_AGENT_SLUG } from "@/features/agents";
+import { DEFAULT_AGENT_SLUG, pickableAgents } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
@@ -53,8 +53,8 @@ export function CreationComposer({
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
-  const defaultAgent = agents.agents?.find(
-    (agent) => agent.ownership === "system" && agent.slug === DEFAULT_AGENT_SLUG,
+  const defaultAgent = pickableAgents(agents.agents ?? []).find(
+    (agent) => agent.slug === DEFAULT_AGENT_SLUG,
   );
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
@@ -99,15 +99,10 @@ export function CreationComposer({
       : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
-  const catalogAgent = agents.agents?.find(
-    (item) => item.selection.catalogEntryId === agent?.selection.catalogEntryId,
-  );
+  const catalogAgent = agents.agents?.find((item) => item.slug === agent?.selection.slug);
   const unavailableAgent =
     (agents.status === "ready" || agents.status === "empty") &&
-    (!agent ||
-      !catalogAgent ||
-      (catalogAgent.selection.definitionRevisionId === agent.selection.definitionRevisionId &&
-        catalogAgent.unavailableReasons.length > 0));
+    (!catalogAgent || catalogAgent.unavailableReasons.length > 0);
   const unavailableChoice = unavailableWork || unavailableAgent;
   const unavailableMessage = !unavailableChoice
     ? null

@@ -33,6 +33,7 @@ export {
   renderInvalidArguments,
 } from "./invalid-arguments.js";
 export { type LsEntry, type LsResult, sortLsEntries } from "./ls-result.js";
+export { modelToolSchema } from "./model-tool-schema.js";
 export {
   createSkillToolRegistrations,
   readSkill,
@@ -48,6 +49,7 @@ export {
   type ThreadMessageMode,
   type ThreadReportArgs,
 } from "./spawn-tools.js";
+export { renderAsText } from "./tool-content.js";
 export {
   createToolExecutor,
   didNotRunResult,

@@ -109,14 +109,15 @@ function extensionOf(node: TreeNode): string {
 }
 
 /**
- * Folders along `dir` from `from` (the source's root by default), made where missing. A document
- * or file on the way refuses with the occupant's kind.
+ * Folders along `dir` from `from`, made where missing, each pushed to `made`. A document or file
+ * on the way refuses with the occupant's kind.
  */
 function ensureFolders(
   writer: TreeWriter,
   target: TreeWriteTarget,
   dir: readonly string[],
   from: string,
+  made: MadeFolder[] = [],
 ): Result<string, AdapterFault> {
   let parent = from;
   for (const name of dir) {
@@ -126,7 +127,9 @@ function ensureFolders(
       parent = existing.id;
       continue;
     }
-    parent = writer.create(target.view, target.actor, { kind: "folder", name, parent }).node;
+    const created = writer.create(target.view, target.actor, { kind: "folder", name, parent });
+    made.push({ record: created.id, node: created.node });
+    parent = created.node;
   }
   return Ok(parent);
 }
@@ -195,7 +198,17 @@ function typeConversion(
 }
 
 /** `record` is the create record, which a receipt names for Undo. */
-export type CreatedNode = { id: string; record: string; name: string; path: string[] };
+/** A folder a create made on the way: part of that create's change, so its Undo takes it back. */
+export type MadeFolder = { record: string; node: string };
+
+export type CreatedNode = {
+  id: string;
+  record: string;
+  /** The folders made for it, outermost first. */
+  folders: MadeFolder[];
+  name: string;
+  path: string[];
+};
 
 /** A document or file that left one list for another: the pair of records, one in each list. */
 export type MovedAcrossLists = {
@@ -369,9 +382,10 @@ export function createSourceTree(deps: {
     async create(target, input) {
       const sourceId = await deps.sourceId();
       const result = await write<CreatedNode>([await list()], ([{ writer }]) => {
+        const folders: MadeFolder[] = [];
         const parent =
           input.into === undefined
-            ? ensureFolders(writer, target, input.dir, sourceRoot(sourceId))
+            ? ensureFolders(writer, target, input.dir, sourceRoot(sourceId), folders)
             : Ok(input.into);
         if (!parent.ok) return parent;
         const occupant = childNamed(writer.view(target.view), parent.value, input.filename);
@@ -392,6 +406,7 @@ export function createSourceTree(deps: {
         return Ok({
           id: created.node,
           record: created.id,
+          folders,
           name: shown.nodes.get(created.node)?.displayName ?? input.filename,
           path: pathOf(shown, created.node),
         });
@@ -463,6 +478,7 @@ export function createSourceTree(deps: {
           const parsed = storedFilename(input.leaf, {
             extension: extensionOf(node),
             editable: node.kind === "document",
+            filetype: node.filetype,
           });
           if (!parsed.ok) return Err(parsed.error);
           filename = parsed.name;

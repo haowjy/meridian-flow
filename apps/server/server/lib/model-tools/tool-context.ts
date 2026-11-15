@@ -43,6 +43,7 @@ import type { UnifiedContextPortFactory } from "../../domains/context/unified-co
 import type { AgentChain, FileAccess, Principal } from "../../domains/file-policy/index.js";
 import type { NoticePort } from "../../domains/notices/index.js";
 import type { EventSink } from "../../domains/observability/index.js";
+import type { BoundAgentCatalog } from "../../domains/packages/index.js";
 import type {
   ProjectWorkAuthorityResolver,
   WorkContextNotices,
@@ -71,6 +72,8 @@ export interface ToolWiringDeps {
   /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
+  /** `save_agents` saves through the same path as the writer's Save. */
+  agentCatalog: Pick<BoundAgentCatalog, "savePackages">;
   eventSink: EventSink;
   /** Binary copies duplicate the stored object. */
   objectStore: ObjectStorePort;

@@ -44,7 +44,9 @@ Whole Discard retires only the addressed draft.
 The immutable block-origin map travels with every room copy, snapshot planning view
 and inverse cut, including deleted-block listings. A command takes one scoped codec
 at entry and passes it to every serialization door; the package has no default
-Meridian schema.
+Meridian schema. The host's `codecFor(documentId)` picks the codec per document: a code
+document's is `verbatimCodec` (`@meridian/markup`), whose text is one code block and never
+Markdown, for reads, parses and echoes alike.
 
 ## `DocumentLinksPort`
 

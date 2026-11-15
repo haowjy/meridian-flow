@@ -100,9 +100,9 @@ included, goes through `ObjectRelease`, so a derived file never outlives its ori
 
 ## Chat media
 
-`chatMediaPrefix(threadId)` (`chat-media/<threadId>/`) holds a thread's own copies of the pictures
-its writer sent, each with its `.preview` beside it. They belong to the thread, not to the upload
-they came from: the Work purge lists the prefix and releases it after commit, and no document
+`chatMediaPrefix(threadId)` (`chat-media/<threadId>/`) holds a thread's own copies of the files it
+was sent as media (pictures, each with its `.preview` beside it, and PDFs). They belong to the
+thread, not to the file they came from: the Work purge lists the prefix and releases it after commit, and no document
 release touches it.
 
 ## Derived files

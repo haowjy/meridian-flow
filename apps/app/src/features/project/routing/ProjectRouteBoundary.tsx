@@ -5,6 +5,7 @@ import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton"
 import { Button } from "@/components/ui/button";
 import type { Bounce } from "@/core/project-tree/tree-undo";
 import { DraftNoticeLine, useDiscardingNotice } from "@/features/draft-review/CommandNotice";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { type Removal, RemovedDocumentSentence } from "../context/RemovedDocumentNotice";
 import { bounceSaying } from "../context/use-tree-notice-words";
 import { useShellTreeVersion } from "../tree-version";
@@ -61,7 +62,8 @@ export function ProjectRouteBoundary({
         {issue === "loading" ? (
           blocked && <DelayedContentSkeleton key={destinationKey} className="absolute inset-0" />
         ) : issue ? (
-          <div
+          <MainSurface
+            joined
             className="absolute inset-0 grid place-items-center bg-background px-6 text-center text-sm text-muted-foreground"
             role="status"
           >
@@ -86,7 +88,7 @@ export function ProjectRouteBoundary({
             ) : (
               <Trans>This destination is unavailable.</Trans>
             )}
-          </div>
+          </MainSurface>
         ) : null}
       </div>
     </div>

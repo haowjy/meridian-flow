@@ -37,7 +37,13 @@ import { errorResponse, mutationMeta, parseFileAddress, readSuccess } from "./wr
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    "model" | "codec" | "coordinator" | "links" | "onLinkSpliceFallback" | "onObservationFailed"
+    | "model"
+    | "codec"
+    | "codecFor"
+    | "coordinator"
+    | "links"
+    | "onLinkSpliceFallback"
+    | "onObservationFailed"
   >;
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
@@ -212,7 +218,10 @@ export function createWriteCommands(deps: {
     const given = copiedNodes ?? boundNodes;
     const parsed: ParseForCommandResult = given
       ? { ok: true, parsed: { blocks: [...given] } }
-      : renderer.parseForCommand(content);
+      : renderer.parseForCommand(
+          (await options.codecFor?.(address.documentId)) ?? options.codec,
+          content,
+        );
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
     const alreadyExists = status(

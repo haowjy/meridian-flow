@@ -177,11 +177,12 @@ export function ownRemovals(projection: TreeProjection | null, entry: EntryRef):
  * its own. Each list takes its entries as one update.
  */
 export async function runDelete(
-  context: EntryContext,
-  requested: readonly (EntryRef & { name: string })[],
+  context: Omit<EntryContext, "actions">,
+  /** Each entry with the actions of the tree it was shown in: one gesture can span several. */
+  requested: readonly (EntryRef & { name: string; actions: EntryActions })[],
 ): Promise<void> {
-  const { actions, projectId, removal } = context;
-  const held = requested.map((entry) => ({ entry, ...actions.holding(entry.id) }));
+  const { projectId, removal } = context;
+  const held = requested.map((entry) => ({ entry, ...entry.actions.holding(entry.id) }));
   const entries = held.filter(({ entry, replay }) => {
     if (!replay) return true;
     return !held.some(

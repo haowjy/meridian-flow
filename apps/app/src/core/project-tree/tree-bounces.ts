@@ -100,7 +100,7 @@ function madeAt(
   const top = isSourceRoot(record.parent);
   const before = childrenOf(projection, record.parent).filter((child) => child.rank < record.rank);
   return {
-    name: shownName(record.kind, record.name),
+    name: shownName(record.kind, record.name, record.filetype),
     kind: record.kind === "folder" ? "folder" : "document",
     folder: top ? null : (projection.nodes.get(record.parent)?.displayName ?? null),
     parent: top ? sourceIdOf(record.parent) : record.parent,
