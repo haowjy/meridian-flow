@@ -1,6 +1,6 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
-import { ToolCallPairing } from "@meridian-flow/gateway";
+import { ToolCallPairing } from "@meridian-flow/runtime/gateway";
 import { modelEditIds } from "../../../shared/model-edit-ids.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CommandResolver } from "../ports/command-resolver.js";

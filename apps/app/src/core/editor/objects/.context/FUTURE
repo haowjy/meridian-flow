@@ -40,8 +40,8 @@ commit. This does not verify Android InputConnection or an operating-system IME.
   select a whole table that is last in its document, then Shift+PageDown or
   Ctrl+Shift+Right. The selection narrows to the head cell's text; no text changes.
   CellSelection covers all selected cells, but its native endpoints cover only
-  that cell. The [selection representation task](../../.context/TODO.md#cell-selection-restoration)
-  tracks this mismatch alongside peer restoration; a shared fix is not yet proved.
+  that cell. The [selection representation task](../../.context/TODO.md#whole-table-selection-extent)
+  tracks the remaining mismatch between the cell rectangle and native text range.
   Do not add a key-specific edge guard or a delayed selection rollback.
 
 - A whole selected table at the end of a document can leave provisional `n` when

@@ -47,13 +47,11 @@ export type TurnTreeEntry = {
   shownAt: string | null;
   landedAt: string | null;
   /**
-   * The source document a create copied (`documents.metadata.copiedFrom.uri`), so the turn's
-   * line can say it copied rather than only naming where the document ended up. Null on
+   * The source a create copied, from its receipt or document metadata, so the turn's line can
+   * say it copied rather than only naming where it ended up. Null on
    * every other entry: a copy moved later in the same turn keeps this on its create.
    */
   copiedFrom: string | null;
-  /** The turn's own Undo took this change back: it names an address but is no longer a change. */
-  undone: boolean;
 };
 
 export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
@@ -66,6 +64,7 @@ export type TurnTreeFolder = {
   nodeId: string;
   ownerKey: DraftOwnerKey | null;
   shownAt: string;
+  tree?: TurnTreeLine;
 };
 
 /** The file-policy destination a turn's edit is read and reversed at. */
@@ -126,7 +125,19 @@ export function createTurnLiveLineageReadModel(deps: {
       });
     },
 
-    listFoldersForTurn: (threadId, turnId) => deps.store.listFolderTargetsForTurn(threadId, turnId),
+    async listFoldersForTurn(threadId, turnId) {
+      const [folders, entries] = await Promise.all([
+        deps.store.listFolderTargetsForTurn(threadId, turnId),
+        deps.store.listTreeEntriesForTurn(threadId, turnId),
+      ]);
+      const lines = treeLines(entries);
+      return folders.map((folder) => {
+        const tree = lines.get(
+          treeLineKey({ documentId: folder.nodeId as DocumentId, ownerKey: folder.ownerKey }),
+        );
+        return tree ? { ...folder, tree } : folder;
+      });
+    },
 
     async getTurnReceiptChip(threadId, turnId) {
       return deps.receiptStore?.getTurnReceiptChip(threadId, turnId) ?? null;
@@ -174,7 +185,9 @@ function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string,
 }
 
 /** A document's tree line is per destination: live, or one owner's branch. */
-function treeLineKey(target: TurnEditedDocumentId | TurnTreeEntry): string {
+function treeLineKey(
+  target: TurnEditedDocumentId | Pick<TurnTreeEntry, "documentId" | "ownerKey">,
+): string {
   const ownerKey =
     "ownerKey" in target
       ? target.ownerKey
@@ -185,7 +198,7 @@ function treeLineKey(target: TurnEditedDocumentId | TurnTreeEntry): string {
 }
 
 /**
- * Each document's net tree line, per destination: deleted when the turn left it deleted, copied
+ * Each node's net tree line, per destination: deleted when the turn left it deleted, copied
  * when the turn created it from another document, moved when it left it living somewhere other
  * than where the turn found it, or moved in place when it only changed position (`to` equals
  * `from`). A destination the entry didn't record (a restore's) leaves the location as it was.
@@ -196,7 +209,6 @@ function treeLines(entries: readonly TurnTreeEntry[]): Map<string, TurnTreeLine>
     { from: string; at: string; living: boolean; repositioned: boolean; copiedFrom: string | null }
   >();
   for (const entry of entries) {
-    if (entry.undone) continue;
     const key = treeLineKey(entry);
     const state = folded.get(key) ?? {
       from: entry.shownAt ?? "",

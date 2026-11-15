@@ -39,7 +39,6 @@ import type {
   AdapterFileRef,
   AdapterGrepFile,
   AdapterGrepResult,
-  AdapterMovedAcrossLists,
   ContextEnsureTrackedOptions,
   ContextSchemeAdapter,
   ContextTreeAdapter,
@@ -151,7 +150,6 @@ export class ContextFS implements ContextSchemeAdapter {
 
   readonly tree: ContextTreeAdapter = {
     sourceId: () => this.store.contextSourceId(),
-    moveAcrossLists: (input) => this.moveAcrossLists(input),
     delete: (input) => this.deleteNode(input),
     command: (input) => this.treeCommand(input),
     read: (input) => this.treeRead(input),
@@ -723,31 +721,6 @@ export class ContextFS implements ContextSchemeAdapter {
         input.read,
       ),
     );
-  }
-
-  private moveAcrossLists(
-    input: Parameters<ContextTreeAdapter["moveAcrossLists"]>[0],
-  ): Promise<Result<AdapterMovedAcrossLists, AdapterFault>> {
-    return this.inTreeCommand({ ...input, fromSourceId: input.fromSourceId }, async (target) => {
-      const moved = await this.writes.moveAcrossLists(target, {
-        node: input.node.nodeId,
-        fromSourceId: input.fromSourceId,
-        dir: input.dir,
-        ...(input.leaf !== undefined ? { leaf: input.leaf } : {}),
-        ...(input.position ? { position: input.position } : {}),
-        ...(input.onlyAt !== undefined ? { onlyAt: input.onlyAt } : {}),
-      });
-      if (!moved.ok) return moved;
-      const result: AdapterMovedAcrossLists = {
-        node: input.node.nodeId,
-        path: moved.value.path.join("/"),
-        records: { left: moved.value.left.id, entered: moved.value.entered.id },
-      };
-      await input.afterWrite?.(result);
-      // Arriving at a live address: once per move, against the tree it entered (contract §9.3).
-      await this.liveCreate.arrive([input.node.nodeId as DocumentId]);
-      return Ok(result);
-    });
   }
 
   private deleteNode(

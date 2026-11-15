@@ -1,7 +1,12 @@
 /** Warm prefix reuse and rolling cold summaries, with every attempted call returned for settlement. */
 
 import type { Usage } from "@meridian/contracts/runtime";
-import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "@meridian-flow/gateway";
+import type {
+  Gateway,
+  GenerateRequest,
+  GenerateResult,
+  ModelInfo,
+} from "@meridian-flow/runtime/gateway";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";

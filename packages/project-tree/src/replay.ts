@@ -3,7 +3,6 @@ import { freeName, shownName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
-  isListRoot,
   isSourceRoot,
   type NodeKind,
   type PurgeRecord,
@@ -511,12 +510,6 @@ export function replay(
     }
     switch (record.type) {
       case "move": {
-        // Out to another list: the node is in no view of this one, and its Trash entries go.
-        if (isListRoot(record.parent)) {
-          nodes.delete(record.node);
-          take(record, index);
-          break;
-        }
         if (record.undoes !== undefined) {
           if (!turn(record, node, index)) continue;
           const back = lifted.get(record.undoes);

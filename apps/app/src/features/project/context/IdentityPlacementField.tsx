@@ -126,14 +126,21 @@ export function IdentityPlacementField({
   );
   const ownerOfScheme = (scheme: ProjectContextTreeScheme): ContextOwner =>
     isWorkScopedScheme(scheme) ? owner : { workId: null };
+  // Filing moves the document, so it offers the places in its own list: the project's files, or
+  // the account's Your files.
+  const inAccount = location.scheme === "user";
+  const destinations = useMemo(
+    () => WRITABLE_IDENTITY_DESTINATIONS.filter((scheme) => (scheme === "user") === inAccount),
+    [inAccount],
+  );
   const allEntries = useFileSuggestions(
     projectId,
-    [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],
+    [...new Set([...destinations, location.scheme])],
     owner,
   );
   const rootRows: AnnotatedFileSuggestion[] = useMemo(
     () =>
-      WRITABLE_IDENTITY_DESTINATIONS.map((scheme) => ({
+      destinations.map((scheme) => ({
         entryId: `root:${scheme}`,
         scheme,
         path: "/",
@@ -141,7 +148,7 @@ export function IdentityPlacementField({
         kind: "dir" as const,
         parents: [],
       })),
-    [],
+    [destinations],
   );
   const rows = destination
     ? folderChildren(allEntries, destination.scheme, destination.folderPath)

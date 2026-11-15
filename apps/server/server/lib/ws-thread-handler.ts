@@ -20,8 +20,7 @@ import {
 } from "../domains/threads/thread-event-hub.js";
 import { parseRequestId } from "../shared/uuid.js";
 import type { AppServices } from "./app.js";
-
-const SERVER_VERSION = "0.0.0";
+import { RELEASE_ID, serverProtocol } from "./release.js";
 
 export type WsAuthenticatedContext = Readonly<{
   app: Pick<
@@ -335,7 +334,8 @@ export function createThreadWebSocketSession(peer: WsPeer) {
           type: "connected",
           userId: auth.userId,
           scope: { type: "standalone" },
-          serverVersion: SERVER_VERSION,
+          serverVersion: RELEASE_ID,
+          protocol: serverProtocol(),
           connectionToken,
         });
         return sent;

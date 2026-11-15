@@ -16,7 +16,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { type ModelInfo, placeMedia } from "@meridian-flow/gateway";
+import { type ModelInfo, placeMedia } from "@meridian-flow/runtime/gateway";
 import type { BinaryFileRef } from "../../domains/context/index.js";
 import { PREVIEW_MIME_TYPE } from "../../domains/file-intake/image-preview.js";
 import { countPdfPages } from "../../domains/file-intake/text/convert.js";

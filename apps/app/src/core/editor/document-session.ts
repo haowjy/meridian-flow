@@ -50,8 +50,10 @@ import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
-import type * as Y from "yjs";
+import * as Y from "yjs";
+import { requireReload } from "@/client/release/release";
 import { DocumentHistory } from "./editor-history";
+import { insertedBy, type Ranges } from "./item-ranges";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -62,13 +64,8 @@ import {
   type LocalPresence,
   type LocalPresenceFields,
 } from "./local-presence";
-import { unsentText } from "./rescued-text";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
-import {
-  attemptClientSchemaReload,
-  clearClientSchemaReloadGuard,
-  type SchemaFence,
-} from "./schema-fence";
+import type { SchemaFence } from "./schema-fence";
 import {
   createSchemaRepairWitness,
   type SchemaRepairEvent,
@@ -78,6 +75,7 @@ import {
 export type { SchemaFence } from "./schema-fence";
 
 import { SessionMarkerStore } from "./session-marker-store";
+import { UnsentEdits } from "./unsent-edits";
 
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
@@ -109,7 +107,15 @@ export type DocumentSessionSnapshot = {
   localPersistenceSynced: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
+  /**
+   * The room was admitted read-only and its last handshake found the writer's edits in the
+   * document that the server lacks: it can never deliver them.
+   */
+  holdsUndeliverableEdits: boolean;
 };
+
+/** What one read-admitted handshake found: the update the server lacks, and its snapshot (state vector and delete set), encoded. */
+export type HandshakeDifference = { lacking: Uint8Array; server: Uint8Array };
 
 export type DocumentSessionAccess = "edit" | "read";
 
@@ -195,6 +201,15 @@ export type DocumentSessionTransportProvider = {
    */
   subscribeStatus?: (listener: (state: DocumentSessionConnectionState) => void) => () => void;
   /**
+   * Each handshake of a read-admitted connection says what the document holds that the server
+   * lacks (null when nothing). Never called on an edit admission.
+   */
+  subscribeDifference?: (listener: (difference: HandshakeDifference | null) => void) => () => void;
+  /** The origin of the updates the server's answers apply; every other origin is a local change. */
+  readonly serverOrigin?: unknown;
+  /** On a read-admitted connection, one more handshake; the server's answer is the verdict. */
+  requestHandshake?: () => void;
+  /**
    * Every scope the server names for this room, and on subscribe the one it
    * last named. Nothing until it names one: a transport never invents a scope.
    */
@@ -221,6 +236,8 @@ export type DocumentSessionOptions = {
   /** Registry-owned persistence hook for the first fence transition. */
   persistSchemaFence?: (fence: SchemaFence) => void;
   ownUserId?: string | null;
+  /** The scope of a room this session replaces: the editor is read-only from its first frame. */
+  access?: DocumentSessionAccess | null;
 };
 
 const noop = () => {};
@@ -238,6 +255,8 @@ export class DocumentSession {
   readonly markerStore: SessionMarkerStore;
   /** The writer's undo, kept with the document: editors attach to it while mounted. */
   readonly history: DocumentHistory;
+  /** What the document holds that a read-admitting server lacks, and which of it is the writer's. */
+  private readonly unsent: UnsentEdits;
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
@@ -252,6 +271,7 @@ export class DocumentSession {
   private unsubscribeTransportAccess: (() => void) | null = null;
   private unsubscribeChangeEvents: (() => void) | null = null;
   private unsubscribeAcknowledgement: (() => void) | null = null;
+  private unsubscribeDifference: (() => void) | null = null;
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
   private destroyStages: DestroyStage[] | null = null;
@@ -263,6 +283,7 @@ export class DocumentSession {
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private observedOutboxPresence = false;
+  private observedHolds = false;
   // Distinct connection states can share a status (`disconnected` and
   // `terminal` are both `offline`); subscribers still need the new one.
   private emittedTransportState: DocumentSessionConnectionState | null = null;
@@ -273,6 +294,20 @@ export class DocumentSession {
    */
   private transportState: DocumentSessionConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
+  /**
+   * Read admission only: whether this connection's last handshake found the writer's edits the
+   * server lacks. `differenceAnswered` is false from a connection's start, and from any change
+   * that is not a display write, until the next handshake answers.
+   */
+  private holdsUndeliverable = false;
+  private differenceAnswered = false;
+  private lastDifference: HandshakeDifference | null = null;
+  /** Called when a handshake answers, or the verdict is forgotten. */
+  private readonly verdictWaiters = new Set<() => void>();
+  /** Replaced by another session: nothing more goes to the server or to other tabs. */
+  private inert = false;
+  private boundEditors = 0;
+  private readonly unbound = new Set<() => void>();
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
   private schemaRepairWitness: SchemaRepairWitness | null = null;
@@ -304,14 +339,18 @@ export class DocumentSession {
     transportFactory,
     persistSchemaFence,
     ownUserId = null,
+    access = null,
   }: DocumentSessionOptions) {
     const room = parseYjsRoomName(roomKey);
     if (!room || room.kind === "tree") throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
+    this.access = access;
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
     this.history = DocumentHistory.forDocument(this.document);
+    this.unsent = new UnsentEdits(this.document, () => this.persistence?.db ?? null);
+    this.document.on("update", this.onDocumentUpdate);
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
@@ -342,6 +381,8 @@ export class DocumentSession {
   attachTransport(transportFactory: DocumentSessionTransportFactory): void {
     if (this.destroyed)
       throw new Error(`Cannot attach transport to destroyed room: ${this.roomKey}`);
+    // A replaced session never reaches the server again: the words it handed back stay out of it.
+    if (this.inert) return;
     if (this.transportProvider || this.transportAttachmentPending) {
       throw new Error(`Transport already attached to room: ${this.roomKey}`);
     }
@@ -355,7 +396,7 @@ export class DocumentSession {
           ? this.waitForLocalPersistenceTransportGate()
           : null,
       ]).then(() => {
-        if (!this.destroyed) this.connectTransport(transportFactory);
+        if (!this.destroyed && !this.inert) this.connectTransport(transportFactory);
       });
       return;
     }
@@ -387,12 +428,13 @@ export class DocumentSession {
         // A close learned first from the server's answer stands: the socket's later news can't reopen it.
         if (draftClosed(this.transportState)) return;
         this.transportState = state;
+        if (state.kind !== "connected") this.forgetDifference();
         if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
           this.localPeers?.stop();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
-          if (!attemptClientSchemaReload(this.roomKey)) {
-            this.raiseSchemaFence({ reason: "client-superseded" });
-          }
+          // Editing stops here; the app-wide reload (one per release) is what lifts it.
+          requireReload();
+          this.raiseSchemaFence({ reason: "client-superseded" });
         }
         this.recomputeStatus();
       }) ?? null;
@@ -400,7 +442,16 @@ export class DocumentSession {
       this.transportProvider.subscribeAccess?.((access) => {
         if (access === this.access) return;
         this.access = access;
+        this.forgetDifference();
         this.emit();
+      }) ?? null;
+    this.unsubscribeDifference =
+      this.transportProvider.subscribeDifference?.((difference) => {
+        this.differenceAnswered = true;
+        this.lastDifference = difference;
+        this.holdsUndeliverable = difference !== null && this.unsent.holdsUndeliverable(difference);
+        this.recomputeStatus();
+        for (const waiter of [...this.verdictWaiters]) waiter();
       }) ?? null;
     this.unsubscribeChangeEvents =
       this.room.kind === "live"
@@ -430,10 +481,13 @@ export class DocumentSession {
     this.unsubscribeTransportAccess?.();
     this.unsubscribeChangeEvents?.();
     this.unsubscribeAcknowledgement?.();
+    this.unsubscribeDifference?.();
     this.unsubscribeTransportStatus = null;
     this.unsubscribeTransportAccess = null;
     this.unsubscribeChangeEvents = null;
     this.unsubscribeAcknowledgement = null;
+    this.unsubscribeDifference = null;
+    this.forgetDifference();
     // The provider never destroys this session's Awareness, so presence is held here and put
     // back on attach.
     if (!this.presenceHeldForTransport) {
@@ -506,7 +560,9 @@ export class DocumentSession {
       stop = this.subscribe((snapshot) => {
         if (this.isRoomEnded())
           finish(new Error("Document session can no longer acknowledge this cut"));
-        else if (!prefix && snapshot.serverHasLocalChanges) finish();
+        // A read-admitted connection acknowledges nothing: its verdict is the handshake's.
+        else if ((!prefix || snapshot.access === "read") && snapshot.serverHasLocalChanges)
+          finish();
       });
       if (settled) stop();
       void prefix?.then(
@@ -516,14 +572,70 @@ export class DocumentSession {
     });
   }
 
+  /**
+   * Reads the local copy (words another tab stored that this tab never received) and takes one
+   * more handshake, so the verdict is the whole browser's. Resolves whether the room still holds
+   * edits the server will not take; false when the connection ended or turned editable meanwhile.
+   */
+  async decideAgain(): Promise<boolean> {
+    await this.localPeers?.catchUp().catch((error) => reportError(error));
+    const provider = this.transportProvider;
+    if (!provider || this.access !== "read") return false;
+    const answered = new Promise<boolean>((resolve) => {
+      const waiter = () => {
+        this.verdictWaiters.delete(waiter);
+        resolve(this.holdsUndeliverable);
+      };
+      this.verdictWaiters.add(waiter);
+    });
+    this.differenceAnswered = false;
+    provider.requestHandshake?.();
+    return answered;
+  }
+
+  /**
+   * The typing the last read-admitted handshake found the server lacks (`UnsentEdits.undeliverable`),
+   * as the items (`lacking`) and the document they live in, encoded so it can be read after the
+   * session is made inert, and whether this session wrote any of it, or a deletion the server
+   * lacks, through an editor or its Undo. Null when the room holds none.
+   */
+  undeliverableEdits(): { copy: Uint8Array; lacking: Ranges; own: boolean } | null {
+    const difference = this.lastDifference;
+    if (!difference || !this.holdsUndeliverable) return null;
+    const { typing, own } = this.unsent.undeliverable(difference);
+    return { copy: Y.encodeStateAsUpdate(this.document), lacking: typing, own };
+  }
+
+  /**
+   * Another session replaces this room: stop offering anything to the server and other tabs. The
+   * document stays readable until its editors have gone and it is destroyed.
+   */
+  get replaced(): boolean {
+    return this.inert;
+  }
+
+  makeInert(): Promise<void> {
+    this.inert = true;
+    this.transportAttachmentPending = false;
+    this.localPeers?.stop();
+    this.recomputeStatus();
+    return this.detachTransport();
+  }
+
   hasUnacknowledgedEdits(): boolean {
     return this.unacknowledgedUpdates() !== null;
   }
 
-  /** The words typed here that the server has not acknowledged; null when there are none. */
-  unsentText(): string | null {
+  /**
+   * The typing here the server has not acknowledged, as the items it inserted (`lacking`) and the
+   * document they live in, encoded so it can be read after the session is destroyed; null when
+   * there is none.
+   */
+  unsentEdits(): { copy: Uint8Array; lacking: Ranges } | null {
     const updates = this.unacknowledgedUpdates();
-    return updates ? unsentText(this.document, updates) : null;
+    return updates
+      ? { copy: Y.encodeStateAsUpdate(this.document), lacking: insertedBy(updates) }
+      : null;
   }
 
   /**
@@ -548,6 +660,36 @@ export class DocumentSession {
       connectionState?.kind === "terminal"
     );
   }
+
+  /**
+   * A new connection, or a new scope, starts with no verdict. Called before each recompute that
+   * follows one, so a stale verdict never reads as the new connection's.
+   */
+  private forgetDifference(): void {
+    this.differenceAnswered = false;
+    this.holdsUndeliverable = false;
+    this.lastDifference = null;
+    for (const waiter of [...this.verdictWaiters]) waiter();
+  }
+
+  /**
+   * On a read-admitted connection a local change that is not a display write makes the verdict
+   * unknown, and one handshake decides again. Changes the server's answers apply carry the
+   * transport's origin and never get here.
+   */
+  private readonly onDocumentUpdate = (
+    _update: Uint8Array,
+    origin: unknown,
+    _document: Y.Doc,
+    transaction: Y.Transaction,
+  ): void => {
+    const provider = this.transportProvider;
+    if (this.access !== "read" || !provider || origin === provider.serverOrigin) return;
+    if (this.unsent.isDisplayWrite(transaction)) return;
+    this.differenceAnswered = false;
+    provider.requestHandshake?.();
+    this.recomputeStatus();
+  };
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {
     return new Promise((resolve) => {
@@ -575,6 +717,7 @@ export class DocumentSession {
       localPersistenceSynced: this.localPersistenceSynced,
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
+      holdsUndeliverableEdits: this.holdsUndeliverable,
     };
   }
 
@@ -600,7 +743,19 @@ export class DocumentSession {
     const witness = this.schemaRepairWitness;
     try {
       const editor = construct();
-      return { editor, release: witness.enterLive(editor) };
+      const leave = witness.enterLive(editor);
+      this.boundEditors += 1;
+      let released = false;
+      return {
+        editor,
+        release: () => {
+          leave();
+          if (released) return;
+          released = true;
+          this.boundEditors -= 1;
+          if (this.boundEditors === 0) for (const done of [...this.unbound]) done();
+        },
+      };
     } catch (error) {
       if (firstBinding) {
         witness.destroy();
@@ -608,6 +763,18 @@ export class DocumentSession {
       }
       throw error;
     }
+  }
+
+  /** Resolves once no editor is bound to this session: the moment it can be destroyed. */
+  whenUnbound(): Promise<void> {
+    if (this.boundEditors === 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        this.unbound.delete(done);
+        resolve();
+      };
+      this.unbound.add(done);
+    });
   }
 
   /** Append one session-scoped repair verdict and notify every report surface. */
@@ -777,6 +944,7 @@ export class DocumentSession {
         { settled: false, run: () => this.unsubscribeTransportAccess?.() },
         { settled: false, run: () => this.unsubscribeChangeEvents?.() },
         { settled: false, run: () => this.unsubscribeAcknowledgement?.() },
+        { settled: false, run: () => this.unsubscribeDifference?.() },
         { settled: false, run: () => this.transportProvider?.destroy() },
         { settled: false, run: () => this.localPeers?.drain() },
         {
@@ -791,6 +959,7 @@ export class DocumentSession {
         },
         { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },
+        { settled: false, run: () => this.unsent.destroy() },
         { settled: false, run: () => this.history.destroy() },
         { settled: false, run: () => this.document.destroy() },
         { settled: false, run: () => this.listeners.clear() },
@@ -820,6 +989,8 @@ export class DocumentSession {
 
   private async watchLocalPersistence(): Promise<void> {
     await this.persistence?.whenSynced;
+    // The copy's updates are in the document; its display records are read after them.
+    await this.unsent.readRecords().catch((error) => reportError(error));
     if (this.destroyed) return;
     this.localPersistenceSynced = true;
     this.startLocalPeers();
@@ -830,6 +1001,7 @@ export class DocumentSession {
     if (
       this.localPersistenceSynced &&
       !this.destroyed &&
+      !this.inert &&
       !this.localPeers &&
       this.persistence &&
       !this.schemaFence &&
@@ -839,7 +1011,12 @@ export class DocumentSession {
       typeof BroadcastChannel === "function"
     )
       try {
-        this.localPeers = new LocalDocumentPeers(this.document, this.persistence, this.awareness);
+        this.localPeers = new LocalDocumentPeers(
+          this.document,
+          this.persistence,
+          this.awareness,
+          this.unsent,
+        );
       } catch (error) {
         // A denied peer channel must not make successfully loaded writing unavailable.
         reportError(error);
@@ -851,7 +1028,6 @@ export class DocumentSession {
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
     if (provider.whenSynced) this.establishContentInitialization();
-    clearClientSchemaReloadGuard(this.roomKey);
     this.recomputeStatus();
   }
 
@@ -870,16 +1046,22 @@ export class DocumentSession {
   private recomputeStatus(): void {
     if (this.destroyed) return;
     const next = this.deriveStatus();
-    const acknowledged = next === "synced" && this.transportAcknowledged;
+    const acknowledged =
+      next === "synced" &&
+      (this.access === "read"
+        ? this.differenceAnswered && !this.holdsUndeliverable
+        : this.transportAcknowledged);
     const outboxPresent = this.hasUnacknowledgedEdits();
     if (
       next === this.status &&
       acknowledged === this.serverHasLocalChanges &&
+      this.holdsUndeliverable === this.observedHolds &&
       outboxPresent === this.observedOutboxPresence &&
       this.transportState === this.emittedTransportState
     )
       return;
     this.observedOutboxPresence = outboxPresent;
+    this.observedHolds = this.holdsUndeliverable;
     this.emittedTransportState = this.transportState;
     this.status = next;
     this.serverHasLocalChanges = acknowledged;

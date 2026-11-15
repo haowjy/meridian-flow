@@ -15,6 +15,7 @@ import {
   readTurnEditTargets,
   readTurnFolderTargets,
   readTurnTreeTargets,
+  receiptBranchExists,
 } from "./drizzle-turn-edit-targets.js";
 
 export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineageDocumentStore {
@@ -47,13 +48,14 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           >`coalesce(${treeEditReceiptNodes.beforeAt}, ${treeEditReceiptNodes.afterAt})`,
           landedAt: treeEditReceiptNodes.afterAt,
           // A copy's create names the document it read, so the turn can say it copied.
-          copiedFrom: sql<string | null>`${documents.metadata}->'copiedFrom'->>'uri'`,
-          undone: sql<boolean>`exists (select 1 from tree_edit_receipts r where r.reverses = ${treeEditReceipts.id})`,
+          copiedFrom: sql<
+            string | null
+          >`coalesce(${treeEditReceiptNodes.copiedFrom}, ${documents.metadata}->'copiedFrom'->>'uri')`,
         })
         .from(treeEditReceipts)
         .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
-        // A folder has no document, and a folder's change is not a document's line.
-        .innerJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
+        // Folders have no document metadata, but their receipt still carries a tree line.
+        .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
         // A drafted entry's owner: the branch it was drafted in.
         .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))
         .where(
@@ -63,6 +65,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
             // The standing change, a Redo included: a line says where the document is now, and
             // `readTurnTreeTargets` alone says where the turn wrote.
             ne(treeEditReceipts.kind, "undo"),
+            receiptBranchExists,
           ),
         )
         .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);

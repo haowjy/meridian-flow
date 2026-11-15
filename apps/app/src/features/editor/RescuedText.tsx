@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { useFailureLog } from "@/client/failures/failure-log";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import type { UnsentTyping } from "@/core/editor/document-session-registry";
+import type { UnsentTyping, UnsentTypingObserver } from "@/core/editor/document-session-registry";
 import { writeClipboardText } from "./clipboard";
 
 const COPIED_RESET_MS = 1500;
@@ -49,21 +49,26 @@ export function RescuedText({
   passages,
   note,
   onDismiss,
+  onCopied,
 }: {
   /** Each passage's words; null for one that couldn't be recovered. */
   passages: readonly (string | null)[];
-  /** Beside Dismiss: what happened, or why. */
+  /** Beside Dismiss: what happened, or why. None when there are no words to say it about. */
   note: ReactNode;
   onDismiss: () => void;
+  /** A passage reached the clipboard. */
+  onCopied?: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <ol className="flex flex-col gap-2">
-        {passages.map((text, index) => (
-          // Passages have no identity beyond their order; a rescue's never reorder.
-          <RescuedPassage key={index} text={text} />
-        ))}
-      </ol>
+      {passages.length > 0 ? (
+        <ol className="flex flex-col gap-2">
+          {passages.map((text, index) => (
+            // Passages have no identity beyond their order; a rescue's never reorder.
+            <RescuedPassage key={index} text={text} onCopied={onCopied} />
+          ))}
+        </ol>
+      ) : null}
       <div className="flex items-center gap-3">
         <p className="min-w-0 flex-1 text-muted-foreground">{note}</p>
         <Button
@@ -80,7 +85,7 @@ export function RescuedText({
   );
 }
 
-function RescuedPassage({ text }: { text: string | null }) {
+function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: () => void }) {
   const [copy, setCopy] = useState<"idle" | "copied" | "blocked">("idle");
   const resetRef = useRef<number | null>(null);
   useEffect(
@@ -127,6 +132,7 @@ function RescuedPassage({ text }: { text: string | null }) {
                 return;
               }
               setCopy("copied");
+              onCopied?.();
               resetRef.current = window.setTimeout(() => setCopy("idle"), COPIED_RESET_MS);
             });
           }}
@@ -147,22 +153,76 @@ function RescuedPassage({ text }: { text: string | null }) {
 
 /**
  * Typing a room ended with, handed back in the app's toaster: the room is gone or reopened on the
- * server's text, so there is no place on screen to show it. It stays until dismissed.
+ * server's text, so there is no place on screen to show it. It stays until dismissed, never timing
+ * out: the writer is done with it once they copy its words or dismiss it (`typing.done`), and until
+ * then a reload offers the words again. Done in another tab, it leaves this one too.
  */
-export function notifyUnsentTyping(typing: UnsentTyping) {
-  toast.custom(
-    (id) => <UnsentTypingToast typing={typing} onDismiss={() => toast.dismiss(id)} />,
-    // Swiping it away would clear words the writer never read.
-    { id: `unsent:${typing.id}`, duration: Number.POSITIVE_INFINITY, dismissible: false },
-  );
+export const unsentTypingToasts: UnsentTypingObserver = {
+  show: notifyUnsentTyping,
+  // The toaster is the page's: a toast acted on here stays, showing "Copied", whoever withdraws it.
+  withdraw: (id) => {
+    if (!actedHere.has(id)) toast.dismiss(`unsent:${id}`);
+  },
+};
+
+const actedHere = new Set<string>();
+
+/**
+ * Copy shows "Copied" at once; Dismiss closes the toast once its local write commits, a moment
+ * later. A press that couldn't be stored keeps the toast with the failure line, to press again.
+ */
+function notifyUnsentTyping(typing: UnsentTyping) {
+  const id = `unsent:${typing.id}`;
+  let failed = false;
+  const act = () => {
+    actedHere.add(typing.id);
+    return typing.done().then(
+      () => {
+        if (failed) render(false);
+        return true;
+      },
+      () => {
+        actedHere.delete(typing.id);
+        render(true);
+        return false;
+      },
+    );
+  };
+  const render = (failing: boolean) => {
+    failed = failing;
+    toast.custom(
+      () => (
+        <UnsentTypingToast
+          typing={typing}
+          failed={failing}
+          onCopied={() => void act()}
+          onDismiss={() => void act().then((stored) => stored && toast.dismiss(id))}
+        />
+      ),
+      // Swiping it away would clear words the writer never read.
+      { id, duration: Number.POSITIVE_INFINITY, dismissible: false },
+    );
+  };
+  render(false);
 }
 
-function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDismiss: () => void }) {
+function UnsentTypingToast({
+  typing,
+  failed,
+  onCopied,
+  onDismiss,
+}: {
+  typing: UnsentTyping;
+  /** Copy or Dismiss was pressed and couldn't be stored, so a reload would offer it again. */
+  failed: boolean;
+  onCopied: () => void;
+  onDismiss: () => void;
+}) {
   const [counted] = useState(() => [
     {
       occurrenceId: `unsent:${typing.id}`,
       rescue: { kind: "unsent-typing" as const, cause: typing.cause },
-      passages: [typing.text],
+      passages: typing.text === null ? [] : [typing.text],
     },
   ]);
   useCountRescues(counted);
@@ -176,10 +236,14 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
         <UnsentTypingSentence cause={typing.cause} />
       </p>
       <RescuedText
-        passages={[typing.text]}
-        note={<Trans>It isn't in the document.</Trans>}
+        passages={typing.text === null ? [] : [typing.text]}
+        note={typing.text === null ? null : <Trans>It isn't in the document.</Trans>}
         onDismiss={onDismiss}
+        onCopied={onCopied}
       />
+      {failed ? (
+        <InlineErrorRow message={<Trans>Didn't go through. Try again.</Trans>} className="p-0" />
+      ) : null}
     </div>
   );
 }
@@ -187,10 +251,16 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
 function UnsentTypingSentence({ cause }: { cause: UnsentTyping["cause"] }) {
   switch (cause) {
     case "closed":
-      return <Trans>Your latest typing didn't reach the server before the draft closed.</Trans>;
+      return <Trans>Your latest changes didn't reach the server before the draft closed.</Trans>;
     case "removed":
       return (
-        <Trans>Your latest typing didn't reach the server before the document was removed.</Trans>
+        <Trans>Your latest changes didn't reach the server before the document was removed.</Trans>
+      );
+    case "owner-closed":
+      return (
+        <Trans>
+          Your latest changes didn't reach the server before this document became read-only.
+        </Trans>
       );
   }
 }

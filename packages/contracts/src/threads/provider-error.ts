@@ -3,7 +3,7 @@
  * failed reply keeps as `turn.metadata.providerError`. Shared by server, app, and dev CLI.
  */
 
-import type { JsonValue, ProviderErrorResponse } from "@meridian-flow/gateway/shapes";
+import type { JsonValue, ProviderErrorResponse } from "@meridian-flow/runtime/gateway/shapes";
 import { z } from "zod";
 
 const ProviderErrorResponseCodec: z.ZodType<ProviderErrorResponse> = z.object({

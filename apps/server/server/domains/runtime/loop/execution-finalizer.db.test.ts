@@ -72,7 +72,7 @@ else
       const authority = createDrizzleRunClaim(db);
       const producer = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority });
       const controller = new AbortController();
-      const requests: import("@meridian-flow/gateway").GenerateRequest[] = [];
+      const requests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
       const messageIds: string[] = [];
       let selector: TurnId;
       let terminal: TurnId | null = null;

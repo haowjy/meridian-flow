@@ -15,7 +15,7 @@ page says where each part lives and what the code decided where the design left 
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
 | `replay.ts` | `replay`: rules 1 to 13, then one pass over the nodes for Trash, kept folders and names |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
-| `writer.ts` | `TreeWriter`: makes records in one copy of the list; `moveBetweenLists` |
+| `writer.ts` | `TreeWriter`: makes records in one copy of the list |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
 | `admission.ts` | `guard` (the faults that close a copy), `clientMayWrite`, `admit`: guard, integrate, stamp `dropped` |
 | `rows.ts` | `projectedRows`, `branchRows`, `changedRows`: what to write to SQL after a replay, with each node's type and extension |
@@ -70,7 +70,7 @@ the replay uses them (package `AGENTS.md`).
 - **`guard` closes a copy that does what an honest client never does**: a deletion, content
   outside `ops`, a struct whose position cannot be decided (a gap in a writer's own clock, a
   pending struct), a client id below 1,000, a record kind or field only the server writes
-  (`clientMayWrite`: `purge`, a file create, `carries`, `blob`, `list:` parents), more than
+  (`clientMayWrite`: `purge`, a file create, `carries`, `blob`), more than
   `MAX_RECORDS` records. It throws `CopyFault`; nothing is stored, and the room closes the
   connection with the one terminal code. Names, sources, drafts and types are not its business.
 - **`admit` stamps `dropped`** (`Admission.dropped`, settled by `system`, reason "Work was
@@ -211,7 +211,7 @@ the replay uses them (package `AGENTS.md`).
   22,000 records: the first replay of a decoded list is about 120 ms, later ones about 40 ms
   (they read the cached copies).
 - **What the package writes it reads back.** Every record it makes (`TreeWriter`, Apply's copies,
-  restore copies, kept creates, both halves of `moveBetweenLists`) is built through `writable`,
+  restore copies, kept creates) is built through `writable`,
   which runs `readStored` on it and throws, saying why, when the reader would drop it. A name
   with a `/` or over 255 characters is thrown at the caller, not stored and then lost from every
   view. `freeName` takes the room for a number and the extension from the end of the base, so a
@@ -226,7 +226,9 @@ the replay uses them (package `AGENTS.md`).
   lock; it changes that copy in place, so reload the copy from the journal if anything throws
   (`CopyFault` included). Write the records and the `dropped` stamps to the journal and the rows.
 - Fill `Connection` with the open drafts and the closed Works' sources: the package knows no Work.
-- Move a document between two lists with `moveBetweenLists`, writing both updates in one
-  transaction. In the list it left the node is in no view and in no Trash entry.
+- Nothing moves between two lists (a project's and the account's): a list is the unit of
+  history, so between two the server copies, and the copy is new nodes in the list it lands in.
+  A `move` whose parent is no node of the list (an old `list:<id>` leave record in a dev
+  database) is skipped as `missing-parent`, so the node stands where it was before it.
 - Replay live and the views a record can change, then `changedRows` against the last rows.
 - Give the writer `pendingText` for views it replays: this package cannot see text.

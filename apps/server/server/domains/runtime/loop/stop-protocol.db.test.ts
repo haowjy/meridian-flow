@@ -7,8 +7,8 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
-import type { GenerateRequest, ModelInfo, StreamEvent } from "@meridian-flow/gateway";
-import { createGateway } from "@meridian-flow/gateway";
+import type { GenerateRequest, ModelInfo, StreamEvent } from "@meridian-flow/runtime/gateway";
+import { createGateway } from "@meridian-flow/runtime/gateway";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";

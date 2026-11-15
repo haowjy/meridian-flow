@@ -166,11 +166,9 @@ create made on the way (outermost first), so its Undo takes them back with it. I
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`
-(a skip, as `cant_undo_changed` is the model's answer); a move between a project and `user://`
-goes back by the model's own move the other way (`moveBackAcrossLists`, the context port's
-`moveAcrossLists`, which the reverse route builds from the thread's context and hands down as
-`moveBackAcrossLists`; locking both lists), and is `superseded` once a later change moved or
-renamed the node. A reply that only changed the tree has a card: its documents are listed from the
+(a skip, as `cant_undo_changed` is the model's answer). A reply that touched both a project's
+files and `user://` locks both lists; nothing moves between them, so each receipt goes back in
+its own list. A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
 a folder has no document, so the item carries the node id with `folder: true` and no door), and
 the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
@@ -190,9 +188,9 @@ own stack gives, `modelStack`). Model `undo` takes the newest `count` of them ac
 the handle names. Tree records go back through the package's `undoChange`, which finds the live
 copy of an applied or restored change by `carries`, and takes back only what the receipt did:
 what others put in a folder it made stands and keeps it standing. The records an Undo makes name
-what they take back (`undoes`), a Redo's included. A move between a project and `user://` is two
-lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
-way. A model `undo` that takes tree and text steps together is one command (the tree receipts
+what they take back (`undoes`), a Redo's included. A model `move` between a project and `user://`
+is a copy into the other list: its receipt is the copy's `create`, and its Undo deletes the copy.
+A model `undo` that takes tree and text steps together is one command (the tree receipts
 first, then the text engine's), so a refusal of the text half takes the tree half back with it.
 The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do,
 and Undo counts by it: the steps of one command (a create with content is a node and its text)

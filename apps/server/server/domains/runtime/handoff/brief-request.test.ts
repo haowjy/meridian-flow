@@ -5,7 +5,7 @@
  */
 
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { ModelInfo, Tool } from "@meridian-flow/gateway";
+import type { ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";

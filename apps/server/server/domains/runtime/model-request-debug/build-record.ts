@@ -4,7 +4,7 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRequest,
 } from "@meridian/contracts/threads";
-import type { GenerateRequest, Tool } from "@meridian-flow/gateway";
+import type { GenerateRequest, Tool } from "@meridian-flow/runtime/gateway";
 import type { ToolRegistry } from "../tools/index.js";
 
 /** A signed link is a credential and changes each window; the record keeps that it was a link. */
@@ -19,8 +19,13 @@ function omitLinks(_key: string, value: unknown): unknown {
 }
 
 function serializeCanonicalRequest(request: GenerateRequest): string {
-  const { signal: _signal, correlation: _correlation, ...canonicalRequest } = request;
-  const serialized = JSON.stringify(canonicalRequest, omitLinks);
+  // Named fields, not the request minus a denylist: a field the gateway adds later (as it added
+  // `auth`, a credential) stays out of the capture until someone adds it here.
+  const { model, messages, tools, reasoning, promptCacheKey, promptCacheRetention } = request;
+  const serialized = JSON.stringify(
+    { model, messages, tools, reasoning, promptCacheKey, promptCacheRetention },
+    omitLinks,
+  );
   if (serialized === undefined) throw new Error("Model request debug capture expected an object");
   return serialized;
 }

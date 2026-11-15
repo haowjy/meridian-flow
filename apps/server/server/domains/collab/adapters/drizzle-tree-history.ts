@@ -14,7 +14,7 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
 import { boundCommandId } from "./drizzle-document-edits.js";
@@ -61,7 +61,6 @@ export function createDrizzleTreeHistory(
           kind: input.reverses?.kind ?? "write",
           reverses: input.reverses?.receipt ?? null,
           draftBranchId: input.draftBranchId ?? null,
-          acrossLists: input.acrossLists ?? false,
           shownAt: input.shownAt,
         })
         .returning({ id: treeEditReceipts.id });
@@ -86,6 +85,7 @@ export function createDrizzleTreeHistory(
           wId,
           beforeAt: node.beforeAt,
           afterAt: node.afterAt,
+          copiedFrom: node.copiedFrom ?? null,
         });
       }
       await tx().insert(treeEditReceiptNodes).values(reserved);
@@ -152,8 +152,6 @@ export function createDrizzleTreeHistory(
         .select({
           receiptId: treeEditReceiptNodes.receiptId,
           nodeId: treeEditReceiptNodes.nodeId,
-          beforeAt: treeEditReceiptNodes.beforeAt,
-          afterAt: treeEditReceiptNodes.afterAt,
         })
         .from(treeEditReceiptNodes)
         .where(
@@ -164,24 +162,81 @@ export function createDrizzleTreeHistory(
         );
       return chosen.map((row) => {
         const own = touched.filter((node) => node.receiptId === row.id);
-        const subject = own.find((node) => node.nodeId === row.nodeId);
         return receiptOf(
           row,
           own.map((node) => node.nodeId),
           0,
-          0,
-          acrossOf(row, subject),
         );
       });
     },
 
-    async receiptsAt(threadId, shownAt) {
-      const rows = await tx()
-        .select()
+    async nodeLeftAt(threadId, at, holds) {
+      const [written] = await tx()
+        .select({ node: treeEditReceipts.nodeId })
         .from(treeEditReceipts)
-        .where(and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.shownAt, shownAt)))
-        .orderBy(desc(treeEditReceipts.seq));
-      return rows.map((row) => receiptOf(row, [], 0));
+        .where(
+          and(
+            eq(treeEditReceipts.threadId, threadId),
+            eq(treeEditReceipts.shownAt, at),
+            or(
+              eq(treeEditReceipts.op, "delete"),
+              and(eq(treeEditReceipts.op, "create"), eq(treeEditReceipts.kind, "undo")),
+            ),
+          ),
+        )
+        .orderBy(desc(treeEditReceipts.seq))
+        .limit(1);
+      // What a receipt took from the path it was written at comes first: a blocker moved aside
+      // from a path never stands in for what was deleted there.
+      if (written) return { node: written.node, folder: at.endsWith("/") };
+      // A folder's move writes a row for the folder only, so what was inside it is found by the
+      // folder's address above `at` (a folder's address ends in "/"). A folder's row touched `at`
+      // only when that folder holds a node at the rest of `at` now; the rows that touched it are
+      // walked in order, carrying what stood at `at`.
+      const touched = (address: string | null, node: string) =>
+        address === at ||
+        (address !== null &&
+          address.endsWith("/") &&
+          at.startsWith(address) &&
+          holds(node, at.slice(address.length)));
+      const rows = await tx()
+        .select({
+          node: treeEditReceiptNodes.nodeId,
+          beforeAt: treeEditReceiptNodes.beforeAt,
+          afterAt: treeEditReceiptNodes.afterAt,
+        })
+        .from(treeEditReceiptNodes)
+        .innerJoin(treeEditReceipts, eq(treeEditReceipts.id, treeEditReceiptNodes.receiptId))
+        .where(
+          and(
+            eq(treeEditReceiptNodes.threadId, threadId),
+            or(
+              eq(treeEditReceiptNodes.beforeAt, at),
+              eq(treeEditReceiptNodes.afterAt, at),
+              and(
+                like(treeEditReceiptNodes.beforeAt, "%/"),
+                sql`starts_with(${at}, ${treeEditReceiptNodes.beforeAt})`,
+              ),
+              and(
+                like(treeEditReceiptNodes.afterAt, "%/"),
+                sql`starts_with(${at}, ${treeEditReceiptNodes.afterAt})`,
+              ),
+            ),
+          ),
+        )
+        .orderBy(treeEditReceipts.seq, desc(sql`length(${treeEditReceiptNodes.beforeAt})`));
+      // Before the chat's first row, something may stand at `at`.
+      let standing = true;
+      let left: { node: string; folder: boolean } | null = null;
+      for (const row of rows) {
+        if (row.beforeAt === row.afterAt) continue;
+        if (standing && touched(row.beforeAt, row.node)) {
+          left = { node: row.node, folder: (row.beforeAt as string).endsWith("/") };
+          standing = false;
+        }
+        if (touched(row.afterAt, row.node)) standing = true;
+      }
+      return left;
     },
 
     async historyOf(threadId, nodeId, isDocument) {
@@ -207,8 +262,6 @@ export function createDrizzleTreeHistory(
           receiptId: treeEditReceiptNodes.receiptId,
           nodeId: treeEditReceiptNodes.nodeId,
           wId: treeEditReceiptNodes.wId,
-          beforeAt: treeEditReceiptNodes.beforeAt,
-          afterAt: treeEditReceiptNodes.afterAt,
         })
         .from(treeEditReceiptNodes)
         .where(inArray(treeEditReceiptNodes.receiptId, ids));
@@ -224,7 +277,6 @@ export function createDrizzleTreeHistory(
             own.map((node) => node.nodeId),
             entry.wId,
             subject?.wId ?? entry.wId,
-            acrossOf(row, subject),
           ),
         ];
       });
@@ -259,25 +311,13 @@ export function createDrizzleTreeHistory(
   };
 }
 
-/** A move between two lists: the subject's address before and after. */
-function acrossOf(
-  row: typeof treeEditReceipts.$inferSelect,
-  subject: { beforeAt: string | null; afterAt: string | null } | undefined,
-): { from: string; to: string } | undefined {
-  return row.acrossLists && subject?.beforeAt && subject.afterAt
-    ? { from: subject.beforeAt, to: subject.afterAt }
-    : undefined;
-}
-
 function receiptOf(
   row: typeof treeEditReceipts.$inferSelect,
   nodes: string[],
   wId: number,
   handle = wId,
-  across?: { from: string; to: string },
 ): TreeReceipt {
   return {
-    ...(across ? { across } : {}),
     id: row.id,
     subject: row.nodeId,
     records: row.records,

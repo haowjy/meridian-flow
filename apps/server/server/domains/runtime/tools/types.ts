@@ -11,7 +11,7 @@ import type {
   SpawnResult,
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue, ToolContentPart } from "@meridian/contracts/threads";
-import type { ModelInfo, Tool } from "@meridian-flow/gateway";
+import type { ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import type { z } from "zod";
 import type { ResultEvidence } from "../../../shared/model-evidence.js";
 import type { FrontierLookups } from "../ports/document-evidence.js";
