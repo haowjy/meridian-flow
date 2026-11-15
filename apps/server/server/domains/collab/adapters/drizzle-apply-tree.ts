@@ -232,7 +232,12 @@ export function createApplyTreeOperations(input: {
     );
     if (deleting.length > 0) {
       // Their live rooms stay open: a document in Trash still takes text until it is purged.
-      await input.close.closeDrafts(tx, { documentIds: deleting, branchId }, "document_discarded");
+      await input.close.closeDrafts(
+        tx,
+        { documentIds: deleting, branchId },
+        "document_discarded",
+        click.commandId,
+      );
     }
     await input.arrivals?.settle(documents);
     for (const documentId of documents)

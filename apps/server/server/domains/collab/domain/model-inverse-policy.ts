@@ -97,7 +97,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           }
         : {
             status: "nothing_to_undo",
-            message: `You have no edits to undo in ${document.uri}. Read it and make a new replace if needed.`,
+            message: `You have no edits to undo in ${document.uri}. Nothing was changed.`,
           };
     try {
       /**
@@ -201,12 +201,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (!textPlan.selection.length)
           return {
             status: "nothing_to_revert",
-            message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} for current text.`,
+            message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}`,
           };
         if (!apply(entry, textPlan.selection, "revert", [], textPlan.destination))
           return {
             status: "nothing_to_revert",
-            message: `Nothing is left to reverse in ${document.uri}. Read it and make a new replace.`,
+            message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
           };
       } else
         for (let n = 0; n < count; n++) {
@@ -222,7 +222,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
               return {
                 status: "cant_undo_changed",
-                message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+                message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
               };
             handles.push(entry.handle);
           } else {
@@ -235,7 +235,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             if (!action)
               return {
                 status: "nothing_to_redo",
-                message: `Nothing of yours to redo in ${document.uri}. A new edit clears redo here. Read it and make a new replace if needed.`,
+                message: `Nothing of yours to redo in ${document.uri}. A new edit clears redo here. Nothing was changed.`,
               };
             const targets = own.flatMap((entry) =>
               entryKeys(entry)
@@ -249,7 +249,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
               return {
                 status: "cant_redo_users_undo",
-                message: `The user undid ${[...new Set(targets.map((target) => target.handle))].join(", ")}. Only they can redo it. Read ${document.uri} and make a new replace if needed.`,
+                message: `The user undid ${[...new Set(targets.map((target) => target.handle))].join(", ")}. Only they can redo it. Nothing was changed.`,
               };
             // Card actions may span edits; model undo actions each target one edit.
             // Restore overlapping originals oldest first within an action.
@@ -276,12 +276,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               if (!textPlan.selection.length)
                 return {
                   status: "cant_redo_changed",
-                  message: `Can't redo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+                  message: `Can't redo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
                 };
               if (!apply(entry, textPlan.selection, "redo", [action.id], textPlan.destination))
                 return {
                   status: "cant_redo_changed",
-                  message: `Can't redo ${entry.handle}: none of that edit remains unchanged. Read ${document.uri} for current text.`,
+                  message: `Can't redo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
                 };
             }
             handles.push(...[...new Set(targets.map((target) => target.handle))]);
@@ -291,7 +291,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (!steps.length)
         return {
           status: "nothing_to_revert",
-          message: `Nothing is left to reverse in ${document.uri}. Read it and make a new replace.`,
+          message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
         };
       const text = steps.map((step) => step.edit);
       // The cuts are taken before the commit, which applies the inverse to the view.

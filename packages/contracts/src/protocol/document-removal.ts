@@ -4,7 +4,7 @@ import type { UserId } from "../ids.js";
 type DocumentRemovalActor =
   | { kind: "user"; userId: UserId; displayName: string | null }
   /** A chat's model deleted it; null `chatTitle` when the chat has none yet. */
-  | { kind: "agent"; chatTitle: string | null };
+  | { kind: "agent"; chatTitle: string | null; chatId?: string };
 
 export type DocumentRemovalRecord = {
   reason: "deleted" | "discarded";
