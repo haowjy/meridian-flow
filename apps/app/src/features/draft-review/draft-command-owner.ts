@@ -466,11 +466,12 @@ export class DraftCommandOwner {
   }
 
   /**
-   * Only the typed metadata `gone` answer enters here, never a failed read or list omission.
-   * It retires the generation known when it arrives: a draft bound while the answer resolves
-   * is a newer one, and stays open.
+   * Ask what became of the draft: its metadata answered `gone`, or a page holding it saw it
+   * leave its list. The one check that asks the server, and asks again while a surface holds
+   * the draft; it settles once the draft ended or the server holds it open. It concerns the
+   * generation known when asked: a draft bound meanwhile is a newer one, and stays open.
    */
-  metadataGone(ref: DraftRef): Promise<void> {
+  askEnd(ref: DraftRef): Promise<void> {
     return this.resolveEnd(ref, this.generation(ref.itemKey));
   }
 

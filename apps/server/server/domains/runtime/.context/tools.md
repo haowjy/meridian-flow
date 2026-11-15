@@ -143,8 +143,9 @@ its records admitted at the call; nothing waits for the reply's save, and a fail
 what its calls did. A path resolves through the
 names the model was shown: `ls` and every tree result record, per chat, which name meant
 which node (host-only evidence, `observation_frontiers` room `tree`, never shown to the
-model), so a stale path reaches the node the model meant and a name reused for another
-document is refused as `path_changed`. Every tool that prints a path
+model), so a stale path reaches the node the model meant, wherever it is now (the call says in
+`concurrent` what others did to it), and a call's end that is already true is `already`.
+A name shown in the other view and reused in this one names nothing. Every tool that prints a path
 records exactly the names it printed, from the nodes that produced them (`printedDelta`), and
 a name shown in the other view still means its node in this one. The call keeps a receipt
 (`tree_edit_receipts` and one row per node it changed, `collab/.context/reversal.md`); `undo`,
@@ -167,7 +168,7 @@ Command details the model sees:
   AI-marked and leave comments, authorship and hashes behind. Document copy
   keeps the source's type; a binary copy duplicates its storage object live,
   with no write handle, and refuses an existing destination.
-- `move`: a `path` that names an existing folder (always, for a document; for a folder, one that is not the folder moved) is the folder the node goes into under its own name; any other `path` is where the node itself ends up, name included, and the same `path` with `position` is a reorder. `position.sibling` is looked up by name in the destination folder. Moves into a folder deleted since are made and the folder stands (`kept:`). A document also moves between a project's files and `user://` (`lib/model-tools/tree-across-lists.ts`, `port.moveAcrossLists`: two lists, one transaction); a folder does not.
+- `move`: a `path` that names an existing folder (always, for a document; for a folder, one that is not the folder moved) is the folder the node goes into under its own name; any other `path` is where the node itself ends up, name included, and the same `path` with `position` is a reorder. `position.sibling` is looked up by name in the destination folder. Moves into a folder deleted since are made and the folder stands (`kept:`). A document also moves between a project's files and `user://` (`lib/model-tools/tree-across-lists.ts`, `port.moveAcrossLists`: two lists, one transaction); a folder does not. A move or rename of a node in Trash restores it (replay rule 9); a move that would put a folder inside itself, or of a node deleted for good, is a success that made nothing and says `left out` (`would_loop`, `purged`); a path with `/` in a name is tried as the name with `∕` where the split path names nothing.
 - When a deleted document and a moved one both left a path, `undo` on that path
   picks the deleted one, so moving a blocker aside never makes `undo` pick the
   blocker.

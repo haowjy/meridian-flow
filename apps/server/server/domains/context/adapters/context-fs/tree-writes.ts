@@ -244,6 +244,8 @@ export interface SourceTree {
       blob?: BlobRef;
       /** A node id the caller reserved. */
       id?: string;
+      /** The folder node it goes in, found already (`ContextEnsureTrackedOptions.into`); else `dir` is. */
+      into?: string;
       provisional?: boolean;
       position?: ContextSiblingPosition;
       /** Stored on the document's row beside the tree (`documents.metadata`, `has_preview`). */
@@ -259,6 +261,7 @@ export interface SourceTree {
     target: TreeWriteTarget,
     dir: readonly string[],
     filename: string,
+    into?: string,
   ): Promise<{ id: string; kind: "document" | "file" | "folder" } | null>;
   /**
    * Moves a document or file from the list of `fromSourceId` into `dir` of this source, which
@@ -364,7 +367,10 @@ export function createSourceTree(deps: {
     async create(target, input) {
       const sourceId = await deps.sourceId();
       const result = await write<CreatedNode>([await list()], ([{ writer }]) => {
-        const parent = ensureFolders(writer, target, sourceId, input.dir);
+        const parent =
+          input.into === undefined
+            ? ensureFolders(writer, target, sourceId, input.dir)
+            : Ok(input.into);
         if (!parent.ok) return parent;
         const occupant = childNamed(writer.view(target.view), parent.value, input.filename);
         if (occupant) return Err(conflict(occupantKindOf(occupant)));
@@ -399,13 +405,13 @@ export function createSourceTree(deps: {
       return result;
     },
 
-    async find(target, dir, filename) {
+    async find(target, dir, filename, into) {
       const sourceId = await deps.sourceId();
       return deps.store.read({
         lists: [await list()],
         view: ([{ writer }]) => {
           const projection = writer.view(target.view);
-          const parent = findFolder(projection, sourceId, dir);
+          const parent = into ?? findFolder(projection, sourceId, dir);
           const found = parent === null ? undefined : childNamed(projection, parent, filename);
           return found ? { id: found.id, kind: found.kind } : null;
         },

@@ -31,6 +31,12 @@ function replica(clientID: number): TreeWriter {
   return new TreeWriter(doc);
 }
 
+/** Empties a Trash entry as the server does: the purge names what the entry covers now. */
+function purge(w: TreeWriter, removal: { id: string; node: string }) {
+  const entry = w.view(LIVE).trash.find((each) => each.id === removal.id);
+  return w.purge("system", removal, entry ? [entry.node, ...entry.cascade] : []);
+}
+
 function sync(...writers: TreeWriter[]) {
   for (const from of writers)
     for (const to of writers)
@@ -272,7 +278,7 @@ describe("file tree as a Yjs operation log", () => {
     expect(after.nodes.get(ch)).toMatchObject({ parent: f, rank: before.nodes.get(ch)?.rank });
     const again = a.move(LIVE, A, ch, g);
     a.move(LIVE, W, ch, ROOT);
-    expect(undoChange(a, LIVE, W, again.id)).toBe("superseded");
+    expect(undoChange(a, LIVE, W, again.id)).toBe("changed_since");
   });
 
   it("undo of a folder delete brings back the folder and what it held", () => {
@@ -467,7 +473,7 @@ describe("file tree log: cases found in review", () => {
     }).node;
     const move = a.move(LIVE, A, ch, ROOT);
     a.delete(LIVE, W, f);
-    expect(undoChange(a, LIVE, W, move.id)).toBe("superseded");
+    expect(undoChange(a, LIVE, W, move.id)).toMatchObject({ type: "move", undoes: move.id });
   });
 
   it("an applied copy names who drafted it and who applied it", () => {
@@ -492,7 +498,7 @@ describe("file tree log: cases found in review", () => {
     }).node;
     const removal = a.delete(LIVE, W, ch);
     expect(replayView(a.doc, LIVE).trash.map((entry) => entry.node)).toEqual([ch]);
-    a.purge("system", removal);
+    purge(a, removal);
     a.restore(LIVE, W, ch);
     a.rename(LIVE, W, ch, "Back");
     const live = replayView(a.doc, LIVE);
@@ -515,7 +521,7 @@ describe("file tree log: cases found in review", () => {
     a.rename({ draft: "w" }, A, ch, "Newer name");
     expect(names(a, ROOT, "w")).toEqual(["Newer name"]);
     const result = restoreDiscard(a, "cmd-1", A, "w", "restore-1");
-    if (result === "superseded") throw new Error("expected copies");
+    if (result === "already") throw new Error("expected copies");
     expect(result.copies).toHaveLength(1);
     expect(result.copies[0]).toMatchObject({
       type: "rename",
@@ -532,7 +538,7 @@ describe("file tree log: cases found in review", () => {
       records: [{ id: renamed.id }],
       restored: true,
     });
-    expect(restoreDiscard(a, "cmd-1", A, "w", "restore-2")).toBe("superseded");
+    expect(restoreDiscard(a, "cmd-1", A, "w", "restore-2")).toBe("already");
   });
 
   it("restoring a Discard leaves out a record whose node was purged, and reports it", () => {
@@ -540,9 +546,9 @@ describe("file tree log: cases found in review", () => {
     const arc = a.create(LIVE, A, { kind: "folder", name: "Arc", parent: ROOT }).node;
     const renamed = a.rename({ draft: "w" }, A, arc, "Act 1");
     discardDraft(a, "w", W, "cmd-1");
-    a.purge("system", a.delete(LIVE, A, arc));
+    purge(a, a.delete(LIVE, A, arc));
     const result = restoreDiscard(a, "cmd-1", A, "w", "restore-3");
-    expect(result).toEqual({ copies: [], leftOut: [renamed] });
+    expect(result).toEqual({ copies: [], leftOut: [{ record: renamed, why: "purged" }] });
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {

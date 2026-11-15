@@ -51,7 +51,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
   useEffect(() => {
     for (const [index, result] of metadata.entries()) {
       const { data } = result;
-      if (data?.status === "gone") void owner.metadataGone(drafts[index]);
+      if (data?.status === "gone") void owner.askEnd(drafts[index]);
       // A restore reopened a draft this tab saw end: its room joins again under the same id.
       else if (
         data?.status === "active" &&

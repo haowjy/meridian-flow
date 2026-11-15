@@ -130,8 +130,6 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "ambiguous_path" ||
     status === "invalid_write" ||
     status === "document_not_found" ||
-    status === "gone" ||
-    status === "path_changed" ||
     status === "partial_failure" ||
     status === "work_archived" ||
     status === "binary_file" ||

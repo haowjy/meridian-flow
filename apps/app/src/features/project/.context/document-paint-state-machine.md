@@ -21,9 +21,10 @@ stateDiagram-v2
 ```
 
 - **`asking` paints the draft, not Live**: a draft that left its list is either in Trash (keep
-  it) or open with nothing to show (let it go), and only the server says which. The page reads
-  current metadata once (`fetchCurrentDraftMetadata`); `gone` closes it through the command
-  owner, which then says whether it stays.
+  it) or open with nothing to show (let it go), and only the server says which. The page asks
+  the command owner (`askEnd`), the one check that reads the server and asks again after a
+  failed read while the draft is held; an end says whether it stays, and an answer that holds it
+  open lets the page go on.
 - **`held` is state, not a ref read during render**: the effect that follows the list sets it,
   and the next render paints from it.
 - **The writer's choice ends the hold**: the key is the pin and the sidebar's Live/Draft choice

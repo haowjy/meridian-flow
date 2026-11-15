@@ -6,7 +6,7 @@ import {
   settleLogOf,
   type TreeRecord,
 } from "./record.js";
-import { replay, type TreeProjection } from "./replay.js";
+import { type DroppedRecord, replay, type TreeProjection } from "./replay.js";
 import { readStored } from "./validate.js";
 
 /** Live (`draft: null`), or live and then one Work's pending records. */
@@ -28,14 +28,17 @@ export function settlementsOf(doc: Y.Doc): Map<string, Settlement> {
   return new Map([...lastSettlements(doc)].map(([id, settle]) => [id, settle.to]));
 }
 
-/** The list's records in order, each read through `readStored`. A value that is no record is not among them: `viewValues` keeps it, for the replay to report. */
+/** The values that are records, each read through `readStored`, in order. */
+export function readRecords(values: readonly unknown[]): TreeRecord[] {
+  return values.flatMap((value) => {
+    const read = readStored(value);
+    return read.ok ? [read.record] : [];
+  });
+}
+
+/** The list's records in order. A value that is no record is not among them: `viewValues` keeps it, for the replay to report. */
 export function listRecords(doc: Y.Doc): TreeRecord[] {
-  return recordsOf(doc)
-    .toArray()
-    .flatMap((value) => {
-      const read = readStored(value);
-      return read.ok ? [read.record] : [];
-    });
+  return readRecords(recordsOf(doc).toArray());
 }
 
 const isRecord = (value: unknown): value is TreeRecord => readStored(value).ok;
@@ -43,7 +46,7 @@ const isRecord = (value: unknown): value is TreeRecord => readStored(value).ok;
 /**
  * What a view replays, in replay order: the live records, then the Work's pending ones. A record
  * id counts once (a client that sends a record again after rebuilding its copy adds nothing). A
- * refused record is in no view, and nor is a live copy whose Apply was taken back. `settled` is
+ * dropped create is in no view. `settled` is
  * what each record's last settlement is, for reading the view as a settlement would leave it. A
  * value that is no record is kept where it stands in the list, in every view, and the replay
  * reports it as `unreadable`: nobody can tell which Work it belonged to.
@@ -64,11 +67,7 @@ export function viewValues(
     }
   }
   const live = all.filter(
-    (value) =>
-      !isRecord(value) ||
-      (value.draft === null &&
-        settled.get(value.id) !== "undone" &&
-        settled.get(value.id) !== "refused"),
+    (value) => !isRecord(value) || (value.draft === null && settled.get(value.id) !== "dropped"),
   );
   if (view.draft === null) return live;
   return [
@@ -108,11 +107,30 @@ export function pendingRecords(doc: Y.Doc, draft: string): TreeRecord[] {
   return viewRecords(doc, { draft }).filter((record) => record.draft === draft);
 }
 
+/**
+ * The records the server stamped `dropped` at admission, in list order, for the row each changed
+ * to say so ("Work was closed") and hand back what the writer typed. The settle log and the
+ * records together say it: the replay never sees a dropped record.
+ */
+export function droppedRecords(doc: Y.Doc): DroppedRecord[] {
+  const dropped = new Map(
+    [...lastSettlements(doc)].filter(([, settle]) => settle.to === "dropped"),
+  );
+  if (dropped.size === 0) return [];
+  return listRecords(doc).flatMap((record) => {
+    const settle = dropped.get(record.id);
+    return settle && record.type !== "purge" ? [{ record, reason: settle.reason ?? "" }] : [];
+  });
+}
+
 /** `pendingText`: documents the Work holds a pending text draft of, which the list cannot see. */
 export function replayView(
   doc: Y.Doc,
   view: View,
   pendingText?: ReadonlySet<string>,
 ): TreeProjection {
-  return replay(viewValues(doc, view), { draft: view.draft, pendingText });
+  return {
+    ...replay(viewValues(doc, view), { draft: view.draft, pendingText }),
+    dropped: droppedRecords(doc),
+  };
 }

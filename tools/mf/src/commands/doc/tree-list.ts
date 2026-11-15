@@ -14,7 +14,12 @@ import {
   type TreeRecord,
   TreeWriter,
 } from "@meridian/project-tree";
-import { connectTreeList, type ListCopy, type ListSyncState } from "@meridian/tree-list-sync";
+import {
+  connectTreeList,
+  type ListCopy,
+  type ListSyncState,
+  type Replacement,
+} from "@meridian/tree-list-sync";
 import * as Y from "yjs";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
@@ -33,14 +38,22 @@ function newDoc(): Y.Doc {
   return doc;
 }
 
-/** A copy that lives as long as the command: the records a rebuild carries are kept in memory. */
+/** A copy that lives as long as the command: the records a replacement carries are kept in memory. */
 class MemoryCopy implements ListCopy {
   doc = newDoc();
   private held: readonly TreeRecord[] = [];
 
-  async replace(carried: readonly TreeRecord[]) {
+  private list: string | null = null;
+  listId() {
+    return this.list;
+  }
+  async setListId(id: string) {
+    this.list = id;
+  }
+  async replace(replacement: Replacement) {
     this.doc = newDoc();
-    this.held = carried;
+    this.held = replacement.kind === "recover" ? replacement.carried : [];
+    this.list = replacement.listId;
   }
   carried() {
     return this.held;
@@ -52,17 +65,17 @@ class MemoryCopy implements ListCopy {
 
 type Connection = {
   copy: MemoryCopy;
-  /** Settles when the copy holds the server's list: `read-only` when the account cannot write it. */
-  synced: Promise<"synced" | "read-only">;
-  rejected: TreeRecord[];
+  /** Settles when the copy holds the server's list. */
+  synced: Promise<"synced">;
+  dropped: TreeRecord[];
   close(): void;
 };
 
 function connect(session: Session, list: TreeListRef): Connection {
   const copy = new MemoryCopy();
-  const rejected: TreeRecord[] = [];
-  let settle!: (result: "synced" | "read-only" | CliError) => void;
-  const outcome = new Promise<"synced" | "read-only" | CliError>((resolve) => {
+  const dropped: TreeRecord[] = [];
+  let settle!: (result: "synced" | CliError) => void;
+  const outcome = new Promise<"synced" | CliError>((resolve) => {
     settle = resolve;
   });
   const timer = setTimeout(
@@ -79,21 +92,24 @@ function connect(session: Session, list: TreeListRef): Connection {
     SYNC_TIMEOUT_MS,
   );
   const onState = (state: ListSyncState) => {
-    if (state === "synced" || state === "read-only") settle(state);
+    if (state === "synced") settle(state);
+    if (state === "broken")
+      settle(new CliError("unavailable", "The server broke the connection for this copy twice"));
     if (state === "denied")
       settle(new CliError("unavailable", "This account has no access to the tree list"));
   };
   const socket = yjsSocketOptions(session);
   const connection = connectTreeList({
     roomName: treeRoomName(list),
-    ...socket,
+    url: () => socket.url,
+    WebSocketPolyfill: socket.WebSocketPolyfill,
     copy,
     onState,
-    onRejected: (records) => rejected.push(...records),
+    onDropped: (records) => dropped.push(...records),
   });
   return {
     copy,
-    rejected,
+    dropped,
     synced: outcome.then((result) => {
       clearTimeout(timer);
       if (result instanceof CliError) throw result;
@@ -111,7 +127,6 @@ export class TreeList {
     private readonly session: Session,
     private readonly list: TreeListRef,
     private readonly main: Connection,
-    private readonly readOnly: boolean,
     /** `user:<id>`: the only actor an admission accepts from this account. */
     readonly actor: string,
   ) {}
@@ -119,7 +134,8 @@ export class TreeList {
   static async open(session: Session, list: TreeListRef, actor: string): Promise<TreeList> {
     const main = connect(session, list);
     try {
-      return new TreeList(session, list, main, (await main.synced) === "read-only", actor);
+      await main.synced;
+      return new TreeList(session, list, main, actor);
     } catch (error) {
       main.close();
       throw error;
@@ -133,12 +149,10 @@ export class TreeList {
 
   /**
    * Makes records with the package's writer on the copy, then waits until the server holds them:
-   * a second copy, synced after the append, must have each one and none refused. A refusal is the
+   * a second copy, synced after the append, must have each one and none dropped. A drop is the
    * server's whole answer for that record, with its reason.
    */
   async append(make: (writer: TreeWriter) => readonly TreeRecord[]): Promise<TreeRecord[]> {
-    if (this.readOnly)
-      throw new CliError("http_error", "This account may read the tree list, not write it");
     const records = [...make(new TreeWriter(this.main.copy.doc))];
     await this.admitted(records);
     return records;
@@ -150,8 +164,8 @@ export class TreeList {
       await check.synced;
       const deadline = Date.now() + ADMISSION_TIMEOUT_MS;
       for (;;) {
-        const given = this.main.rejected.find((record) => records.some((r) => r.id === record.id));
-        if (given) throw refusal(given, "the list kept refusing it");
+        const given = this.main.dropped.find((record) => records.some((r) => r.id === record.id));
+        if (given) throw refusal(given, "this build of the client does not write it");
         const settled = lastSettlements(check.copy.doc);
         const held = new Set(
           recordsOf(check.copy.doc)
@@ -160,7 +174,7 @@ export class TreeList {
         );
         for (const record of records) {
           const answer = settled.get(record.id);
-          if (answer?.to === "refused") throw refusal(record, answer.reason ?? "no reason given");
+          if (answer?.to === "dropped") throw refusal(record, answer.reason ?? "no reason given");
         }
         if (records.every((record) => held.has(record.id))) return;
         if (Date.now() > deadline)

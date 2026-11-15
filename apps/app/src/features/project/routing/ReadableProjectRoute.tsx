@@ -35,6 +35,7 @@ import {
 } from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useDocumentStanding } from "../context/use-document-standing";
+import { useDroppedCreate } from "../context/use-dropped-create";
 import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
 import { useDraftTreeVersion } from "../tree-version";
@@ -246,8 +247,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   useSyncExternalStore(draftCommands.subscribe, closeSnapshot, closeSnapshot);
   const closeState = draftCommands.state(address.itemKey ?? "");
   useLayoutEffect(() => {
-    if (closingRef && closeMetadata?.data?.status === "gone")
-      void draftCommands.metadataGone(closingRef);
+    if (closingRef && closeMetadata?.data?.status === "gone") void draftCommands.askEnd(closingRef);
   }, [draftCommands, closingRef?.itemKey, closeMetadata?.dataUpdatedAt]);
   // A review's item names its document; a plain address is the document its history entry
   // last resolved.
@@ -501,6 +501,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
   const removedDocumentId =
     documentIssue === "unavailable" && address.itemKey ? (closingDocumentId ?? null) : null;
   const removedDestination = useRemovalRecord(projectId, removedDocumentId);
+  const notCreated = useDroppedCreate(projectId, removedDocumentId);
   const reviewGone =
     !!address.itemKey &&
     (closingDocumentId == null ||
@@ -687,6 +688,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
                       documentId: removedDocumentId,
                       title: removedTitle,
                       record: removedDestination.record,
+                      ...(notCreated ? { bounce: notCreated } : {}),
                     }
                   : undefined,
             }}

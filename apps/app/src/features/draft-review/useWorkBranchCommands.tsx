@@ -20,13 +20,13 @@ import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename, type ReviewFileTarget } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
 import { pushUndoStep, shownSourceOf } from "@/core/project-tree/tree-undo";
+import { draftTreeVersion } from "@/core/project-tree/tree-version";
 import {
   useDraftCommandOwner,
   useOptionalContextRemovalCoordinator,
   useOptionalDraftOnlyPresentations,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
-import { draftTreeVersion } from "@/features/project/tree-version";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import type {

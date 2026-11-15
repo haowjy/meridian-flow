@@ -23,7 +23,7 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
@@ -34,7 +34,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import {
   type DocumentView,
   type DraftPin,
@@ -43,9 +42,9 @@ import {
   verifyPin,
 } from "@/client/project-shell/document-views";
 import { type TreeVersionChoice, useTreeVersionChoice } from "@/client/project-shell/store";
+import { useCreatesDraft } from "@/client/query/created-drafts";
 import { unwrapListQuery } from "@/client/query/list-query";
-import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
-import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
+import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
 import { staysOnScreen } from "@/features/draft-review/draft-command-owner";
@@ -76,13 +75,8 @@ const NO_ROWS: readonly ThreadDraftListItem[] = [];
 
 /** One owner's draft rows; a null owner has none. */
 export function useOwnerDraftRows(projectId: string, ownerKey: string | null): Rows {
-  const list = unwrapListQuery(
-    useQuery({
-      ...ownerDraftsQueryOptions(projectId, ownerKey ?? ""),
-      select: (response) => response.items,
-      enabled: projectReadEnabled(ownerKey !== null),
-    }),
-  );
+  const query = useOwnerDraftList(projectId, ownerKey ?? "", ownerKey !== null);
+  const list = unwrapListQuery({ ...query, data: query.data?.items });
   return useMemo(
     () =>
       ownerKey === null || list.status === "disabled"
@@ -228,14 +222,9 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     if (!askKey || !held || !documentId || fate !== "open") return;
     const ref = { projectId, ownerKey: held.ownerKey, documentId, itemKey: held.itemKey };
     let current = true;
-    fetchCurrentDraftMetadata(queryClient, ref).then(
-      (answer) => {
-        if (!current) return;
-        if (answer.status === "gone") void commands.metadataGone(ref);
-        else setAnswered(ref.itemKey);
-      },
-      () => current && setAnswered(ref.itemKey),
-    );
+    void commands.askEnd(ref).then(() => {
+      if (current && !commands.state(ref.itemKey).ended) setAnswered(ref.itemKey);
+    });
     return () => {
       current = false;
     };
@@ -243,6 +232,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const pinMissing =
     pin !== undefined && pinList.status === "ready" && !pinListed && unlisted === null;
 
+  const createsDraft = useCreatesDraft(projectId);
   const missingKey = pinMissing ? JSON.stringify([pin.ownerKey, pin.itemKey]) : null;
   // A document live lacks shows "removed" only when the scope has no draft of it either: its view
   // moves to the scope's draft when the pinned one ends.
@@ -254,11 +244,11 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   latestSuccessor.current = successor;
   useEffect(() => {
     if (!pin || !missingKey) return;
-    verifyPin(queryClient, accountId, projectId, pin, (id) => {
+    verifyPin(queryClient, accountId, projectId, pin, createsDraft, (id) => {
       const next = latestSuccessor.current;
       return next?.documentId === id && next.pin.itemKey !== pin.itemKey ? next.pin : null;
     });
-  }, [missingKey, queryClient, accountId, projectId]);
+  }, [missingKey, queryClient, accountId, projectId, createsDraft]);
 
   const pinOwner = pin?.ownerKey;
   const pinItem = pin?.itemKey;

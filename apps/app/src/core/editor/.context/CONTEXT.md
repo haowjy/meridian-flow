@@ -128,6 +128,11 @@ and remain quarantined until their retryable destroy ledger succeeds.
   answers open). A room an owner still retains keeps its session, read-only (`endClosed`), so a
   draft that ended on screen stays readable; a restore restarts that same session's transport
   rather than opening a new one. Only an unretained closed room retires.
+  `abandonDraftRoom` ends the room of a document's create the server dropped (its draft was
+  never made, so the room would only retry `DOCUMENT_UNKNOWN`): the tree list's dropped stamp
+  calls it (`watchBounces`). Its session is marked handed back, so its retire offers no typing:
+  the tab and the tree row offer those words from the local copy. Such a draft never answers
+  active, so it never reopens.
 - Typing a closed draft's room never sent is handed back, not dropped (see "Unsent typing handed
   back"). A close never deletes the draft's local copy: an Undo that reopens the same draft row
   delivers it on the room's next open.

@@ -96,12 +96,12 @@ function DocumentInTrash({ documentId }: { documentId: string }) {
   return (
     <Pill
       action={{
-        label: state?.kind === "failed" ? t`Try again` : t`Restore`,
+        label: t`Restore`,
         pending: state?.kind === "restored",
         onClick: () => restore([{ ref: { kind: "file", id: documentId }, name: t`this document` }]),
       }}
     >
-      {state?.kind === "failed" ? state.message : <Trans>This document is in Trash</Trans>}
+      <Trans>This document is in Trash</Trans>
     </Pill>
   );
 }

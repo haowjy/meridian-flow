@@ -9,7 +9,7 @@ import { Hocuspocus } from "@hocuspocus/server";
 import { toolContentText } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { modelResponses, observationFrontiers, threads } from "@meridian/database/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { afterEach } from "vitest";
 import * as Y from "yjs";
 import { convergedReview } from "../domains/collab/test-support/converged-review.js";
@@ -128,24 +128,31 @@ export function useComposedRuntimes(db: () => Database) {
    * tool calls through the executor.
    */
   function script(runtime: ComposedRuntime, thread: RuntimeThread) {
-    // What the conversation was shown of the tree: the names a stored result recorded, and those
-    // a refused one carried back (a refusal stores none).
-    const refusedNames: Uint8Array[] = [];
-    const shownNames = async () => [
-      ...(
-        await db()
-          .select({ snapshot: observationFrontiers.snapshot })
-          .from(observationFrontiers)
-          .where(
-            and(
-              eq(observationFrontiers.threadId, thread.threadId),
-              eq(observationFrontiers.roomKey, TREE_NAMES_ROOM),
-            ),
-          )
-          .orderBy(asc(observationFrontiers.recordedSeq))
-      ).map((row) => new Uint8Array(row.snapshot)),
-      ...refusedNames,
-    ];
+    // What the conversation was shown of the tree, in call order: the names a stored result
+    // recorded, then those a result that stores none carried back (a read, a listing, a refusal).
+    const names: Uint8Array[] = [];
+    let recorded = 0;
+    const takeRecorded = async () => {
+      const rows = await db()
+        .select({ seq: observationFrontiers.recordedSeq, snapshot: observationFrontiers.snapshot })
+        .from(observationFrontiers)
+        .where(
+          and(
+            eq(observationFrontiers.threadId, thread.threadId),
+            eq(observationFrontiers.roomKey, TREE_NAMES_ROOM),
+            gt(observationFrontiers.recordedSeq, recorded),
+          ),
+        )
+        .orderBy(asc(observationFrontiers.recordedSeq));
+      for (const row of rows) {
+        names.push(new Uint8Array(row.snapshot));
+        recorded = row.seq;
+      }
+    };
+    const shownNames = async () => {
+      await takeRecorded();
+      return [...names];
+    };
     const begin = async () => {
       await bindEditAgent(runtime, thread.threadId);
       const responseId = await insertModelResponse(thread);
@@ -169,7 +176,8 @@ export function useComposedRuntimes(db: () => Database) {
             }),
           },
         );
-        if (result.evidence?.names) refusedNames.push(result.evidence.names.snapshot);
+        await takeRecorded();
+        if (result.evidence?.names) names.push(result.evidence.names.snapshot);
         return result;
       };
       return { responseId, call };
