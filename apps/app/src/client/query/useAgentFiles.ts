@@ -6,11 +6,11 @@ import { type AgentFiles, agentsLocationOf } from "@meridian/contracts/agents";
 import { keepPreviousData, type QueryClient, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { listAgentFiles, readBuiltinAgentFile } from "@/client/api/agents-api";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
+import { projectReadEnabled } from "./project-read-gate";
 import { agentCatalogQueryKey } from "./useAgentCatalog";
 import { useProjectTreeViews } from "./useProjectTree";
 

@@ -87,7 +87,7 @@ export function isAheadFilename(filename: string): boolean {
  */
 export function aheadAddress(uri: string, kind: "link" | "source"): string | null {
   const parsed = parseContextUri(uri);
-  if (!parsed.ok || !parsed.value.path || !/^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) return null;
+  if (!parsed.ok || !parsed.value.path) return null;
   const slash = parsed.value.normalized.lastIndexOf("/");
   const filename = parsed.value.normalized.slice(slash + 1);
   if (kind === "source" && !/^[^/]*[^/.][^/]*\.[^/.]+$/.test(filename)) return null;

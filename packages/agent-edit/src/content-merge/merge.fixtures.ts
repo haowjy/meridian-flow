@@ -730,7 +730,9 @@ export function toPM(schema: Schema, doc: GBlock[]): PMNode[] {
             { id: b.rowIds[r / b.cols] },
             b.units
               .slice(r, r + b.cols)
-              .map((u, k) => nodes.table_cell.create(null, para(u, r + k))),
+              .map((u, k) =>
+                nodes.table_cell.create({ id: `cell-${b.unitIds[r + k]}` }, para(u, r + k)),
+              ),
           ),
         );
       return nodes.table.create({ align: b.attrs.align, id: b.id }, rows);

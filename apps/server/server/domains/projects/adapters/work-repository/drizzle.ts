@@ -52,6 +52,7 @@ function mapWork(row: WorkRow): Work {
     defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
     pendingDocumentCount: row.pendingDocumentCount,
+    pendingFolderCount: row.pendingFolderCount,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -247,7 +248,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     },
     async snapshotIdentity(projectId: ProjectId) {
       // Every Work change raises that Work's revision and none lowers it, so the sum orders
-      // snapshots of the project. Read in the snapshot's own transaction, beside the Works.
+      // snapshots of the project. A purge deletes a row, so it raises the No Work row by what
+      // the row held (`drizzle-work-purge.ts`) and this sum never falls. Read in the snapshot's
+      // own transaction, beside the Works.
       const [project] = await currentDrizzleDb(db)
         .select({ revision: sql<string>`coalesce(sum(${works.entityRevision}), 0)::text` })
         .from(works)

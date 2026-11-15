@@ -1,126 +1,68 @@
-/** Navigate-first project creation and destination-owned recovery state. */
+/** Navigate-first project creation: the `project_create` command's record is the creation. */
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type { CreateProjectRequest } from "@meridian/contracts/protocol";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
-import { createProject, getProject } from "@/client/api/projects-api";
-import {
-  type CreationRecord,
-  createWithRecovery,
-  creationRecordKey,
-  readCreationRecord,
-  removeCreationRecord,
-  useCreationRecord,
-  useCurrentCreationRecord,
-  writeCreationRecord,
-} from "@/client/creation/creation-registry";
-import { useProjectActions } from "@/client/stores";
+import { useCommandDriver, useCommands } from "@/client/commands/driver-context";
+import { submitCommand } from "@/client/commands/submit";
 import { useAccountId } from "@/features/project/context/account-feature-context";
+import {
+  PROJECT_CREATE_KIND,
+  type ProjectCreateBody,
+  pendingProject,
+  projectCreationFor,
+  projectLane,
+} from "./project-commands";
 import { projectQueryKeys } from "./project-query-keys";
 
-type ProjectCreationPayload = { id: string; title: string; userId: string };
-export type ProjectCreationRecord = CreationRecord<ProjectCreationPayload, Project>;
-type CreateProjectVariables = ProjectCreationPayload;
+export { readPendingProjectCreation } from "./project-commands";
 
-function projectCreationKey(projectId: string): string {
-  return creationRecordKey("project", projectId);
-}
-
-function pendingProject(
-  id: string,
-  title: string,
-  userId: string,
-  now = new Date().toISOString(),
-): Project {
-  return {
-    id,
-    userId,
-    title,
-    slug: "",
-    description: null,
-    settings: {},
-    isPersonal: false,
-    lastActivityAt: now,
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-  };
-}
-
-/** Loader short-circuit authority; browser history state is never creation state. */
-export function readPendingProjectCreation(projectId: string): ProjectCreationRecord | undefined {
-  const record = readCreationRecord<ProjectCreationPayload, Project>(projectCreationKey(projectId));
-  return record?.status === "pending" || record?.status === "failed" ? record : undefined;
-}
-
-function useProjectCreationMutation(userId: string, accountSignal: AbortSignal) {
-  const client = useQueryClient();
-  const { ensureProject } = useProjectActions();
-
-  return useMutation<Project, Error, CreateProjectVariables>({
-    mutationKey: ["projects", "create"],
-    mutationFn: ({ id, title }) =>
-      createWithRecovery(
-        () =>
-          createProject({ id, title } satisfies CreateProjectRequest, { signal: accountSignal }),
-        async () => getProject(id, { signal: accountSignal }),
-      ),
-    onSuccess: async (project, variables) => {
-      const key = projectCreationKey(variables.id);
-      const record = readCreationRecord<ProjectCreationPayload, Project>(key, userId);
-      if (!record) return;
-      ensureProject(project);
-      client.setQueryData(projectQueryKeys.detail(project.id), project);
-      writeCreationRecord(userId, {
-        ...record,
-        status: "confirmed",
-        result: project,
-        error: null,
-      });
-    },
-    onError: (error, variables) => {
-      const record = readCreationRecord<ProjectCreationPayload, Project>(
-        projectCreationKey(variables.id),
-        userId,
-      );
-      if (record)
-        writeCreationRecord(userId, { ...record, status: "failed", error: error.message });
-    },
-  });
-}
-
-/** The create command inserts, navigates, then dispatches without waiting for the server. */
-export function useCreateProject(userId: string, accountSignal: AbortSignal) {
+/**
+ * Journals the create, then opens the project: the destination only opens on a project that has
+ * a record, and the POST follows. Resolves to the id, or `null` when the device could not keep
+ * the command (the writer was told, nothing opened).
+ */
+export function useCreateProject() {
+  const userId = useAccountId();
+  const driver = useCommandDriver();
   const client = useQueryClient();
   const router = useRouter();
-  const mutation = useProjectCreationMutation(userId, accountSignal);
 
+  // One press creates one project: a press while the record is being saved shares its result.
+  const submitting = useRef<Promise<string | null> | null>(null);
   const create = useCallback(
-    (input: { title: string }): string => {
+    (input: { title: string }): Promise<string | null> => {
       const title = input.title.trim();
-      if (!title) throw new Error("Project title is required");
+      if (!title) return Promise.reject(new Error("Project title is required"));
+      if (!driver) return Promise.reject(new Error("Commands are not available yet"));
+      if (submitting.current) return submitting.current;
       const id = crypto.randomUUID();
-      const payload = { id, title, userId };
-      writeCreationRecord(userId, {
-        key: projectCreationKey(id),
-        payload,
-        result: null,
-        status: "pending",
-        error: null,
+      const body: ProjectCreateBody = { id, title, userId };
+      const submit = submitCommand(driver, {
+        kind: PROJECT_CREATE_KIND,
+        lanes: [projectLane(id)],
+        body,
+      }).then((record) => {
+        if (!record) return null;
+        client.setQueryData(projectQueryKeys.detail(id), pendingProject(body));
+        void router.navigate({
+          to: "/p/$projectId/$",
+          params: { projectId: id, _splat: "chats" },
+          // Created from the /projects/new dialog: Back returns to the library.
+          replace: true,
+        });
+        return id;
       });
-      client.setQueryData(projectQueryKeys.detail(id), pendingProject(id, title, userId));
-      void router.navigate({
-        to: "/p/$projectId/$",
-        params: { projectId: id, _splat: "chats" },
-        // Created from the /projects/new dialog: Back returns to the library.
-        replace: true,
-      });
-      mutation.mutate(payload);
-      return id;
+      // Kept after a success: the dialog is on its way out. A failure frees the next press.
+      submitting.current = submit;
+      const release = () => {
+        submitting.current = null;
+      };
+      submit.then((id) => id === null && release(), release);
+      return submit;
     },
-    [client, mutation, router, userId],
+    [client, driver, router, userId],
   );
 
   return { create };
@@ -134,57 +76,59 @@ export type ProjectCreationState = {
   discard: () => void;
 };
 
-export function useProjectCreationState(
-  projectId: string,
-  accountSignal: AbortSignal,
-): ProjectCreationState {
-  const accountId = useAccountId();
+export function useProjectCreationState(projectId: string): ProjectCreationState {
+  const driver = useCommandDriver();
   const client = useQueryClient();
-  const mutation = useProjectCreationMutation(accountId, accountSignal);
-  const record = useCreationRecord<ProjectCreationPayload, Project>(
-    accountId,
-    projectCreationKey(projectId),
-  );
+  const records = useCommands({ kind: PROJECT_CREATE_KIND });
+  const userId = useAccountId();
+  const creation = projectCreationFor(records, projectId);
 
   const retry = useCallback(() => {
-    if (record?.status !== "failed") return;
-    writeCreationRecord(accountId, { ...record, status: "pending", error: null });
-    mutation.mutate(record.payload);
-  }, [accountId, mutation, record]);
+    if (driver && creation?.state === "never") void driver.retry(creation.recordId);
+  }, [driver, creation]);
   const discard = useCallback(() => {
-    if (!record || (record.status !== "failed" && record.status !== "pending")) return;
+    if (!driver || creation?.state !== "never") return;
     client.removeQueries({ queryKey: projectQueryKeys.detail(projectId), exact: true });
-    removeCreationRecord(projectCreationKey(projectId), accountId);
-  }, [accountId, client, projectId, record]);
+    void driver.dismiss(creation.recordId);
+  }, [client, driver, creation, projectId]);
 
+  if (!creation) return { status: "none", project: null, error: null, retry, discard };
   return {
-    status: record?.status ?? "none",
-    project: record
-      ? (record.result ??
-        pendingProject(record.payload.id, record.payload.title, record.payload.userId))
-      : null,
-    error: record?.error ? new Error(record.error) : null,
+    status: { sending: "pending", never: "failed", done: "confirmed" }[creation.state] as
+      | "pending"
+      | "failed"
+      | "confirmed",
+    project: creation.project ?? pendingProject({ id: projectId, title: creation.title, userId }),
+    error:
+      creation.state === "never" ? new Error(creation.code ?? "Project creation failed") : null,
     retry,
     discard,
   };
 }
 
 /**
- * A confirmed record stands in for the project until the route has loaded its
- * own data, then goes. The reload runs from the rendered route, never from the
- * mutation: an invalidate that lands while the first navigation is still
- * loading is absorbed by it, and the record would go with no data behind it.
+ * A confirmed create stands in for the project until the route has loaded its own data. When it
+ * has, a read that started after the create settled has included it, and the driver may let the
+ * record go.
  */
 export function useSettleConfirmedCreation(projectId: string, hasRouteData: boolean): void {
-  const accountId = useAccountId();
+  const driver = useCommandDriver();
   const router = useRouter();
-  const confirmed =
-    useCreationRecord(accountId, projectCreationKey(projectId))?.status === "confirmed";
+  const records = useCommands({ kind: PROJECT_CREATE_KIND });
+  const confirmed = projectCreationFor(records, projectId)?.state === "done";
   useEffect(() => {
-    if (!confirmed) return;
-    if (hasRouteData) removeCreationRecord(projectCreationKey(projectId), accountId);
-    else void router.invalidate();
-  }, [accountId, confirmed, hasRouteData, projectId, router]);
+    if (!confirmed || !driver) return;
+    if (!hasRouteData) {
+      void router.invalidate();
+      return;
+    }
+    void driver.observe(
+      (record) =>
+        record.kind === PROJECT_CREATE_KIND &&
+        (record.body as ProjectCreateBody).id === projectId &&
+        record.state === "done",
+    );
+  }, [confirmed, driver, hasRouteData, projectId, router]);
 }
 
 /**
@@ -192,8 +136,7 @@ export function useSettleConfirmedCreation(projectId: string, hasRouteData: bool
  * `projectReadEnabled` instead.
  */
 export function useIsProjectPendingCreation(projectId: string | null | undefined): boolean {
-  const record = useCurrentCreationRecord<ProjectCreationPayload, Project>(
-    projectId ? projectCreationKey(projectId) : "",
-  );
-  return record?.status === "pending" || record?.status === "failed";
+  const records = useCommands({ kind: PROJECT_CREATE_KIND });
+  const state = projectId ? projectCreationFor(records, projectId)?.state : undefined;
+  return state === "sending" || state === "never";
 }

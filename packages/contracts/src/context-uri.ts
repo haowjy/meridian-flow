@@ -216,7 +216,11 @@ function aliasedScheme(
   return null;
 }
 
-/** Strict serializer, lenient parser; bare paths resolve to `manuscript://`, bar the aliases above. */
+/**
+ * Strict serializer, lenient parser; bare paths resolve to `manuscript://`, bar the aliases above.
+ * A scheme is `name://`, in any letter case: `Prologue: Dawn` is a chapter name, not a malformed
+ * address.
+ */
 export function parseContextUri(
   raw: string,
   options: ParseContextUriOptions = {},
@@ -228,9 +232,9 @@ export function parseContextUri(
 
   let scheme: ContextUriScheme;
   let rawPath: string;
-  const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):\/{2}(.*)$/);
-  if (schemeMatch) {
-    const parsedScheme = schemeMatch[1] ?? "";
+  const prefix = schemePrefix(trimmed);
+  if (prefix) {
+    const parsedScheme = prefix.name;
     if (!isContextScheme(parsedScheme, schemes)) {
       return {
         ok: false,
@@ -242,9 +246,7 @@ export function parseContextUri(
       };
     }
     scheme = parsedScheme;
-    rawPath = schemeMatch[2] ?? "";
-  } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
-    return invalidContextUri(raw, 'Malformed URI: expected "scheme://path"');
+    rawPath = trimmed.slice(prefix.length);
   } else {
     const alias = aliasedScheme(trimmed, schemes);
     scheme = alias?.scheme ?? bareDefault;
@@ -294,6 +296,55 @@ export function parseUnifiedContextUri(raw: string): ContextUriParseResult {
 }
 
 export const UNIFIED_CONTEXT_SCHEMES = CONTEXT_URI_SCHEMES;
+
+const SCHEME_PREFIX = /^([a-z][a-z0-9+.-]*):(\/+)/i;
+
+/**
+ * How a written address begins: `name://`, lowercased, and its length. A context scheme may take
+ * any number of slashes (`kb:/Lore`); another name needs `//`, so `Note: x` is a path.
+ */
+function schemePrefix(raw: string): { name: string; length: number } | null {
+  const match = SCHEME_PREFIX.exec(raw);
+  const name = (match?.[1] ?? "").toLowerCase();
+  if (!match || (match[2] && match[2].length < 2 && !isContextUriScheme(name))) return null;
+  return { name, length: match[0].length };
+}
+
+/** The area `raw` addresses, as the parser reads it (a bare path is the manuscript); null when it does not parse. */
+export function addressScheme(raw: string): ContextUriScheme | null {
+  const parsed = parseUnifiedContextUri(raw);
+  return parsed.ok ? parsed.value.scheme : null;
+}
+
+/** Whether `raw` is already the serializer's spelling of the address it parses to. */
+export function isCanonicalAddress(raw: string): boolean {
+  const parsed = parseUnifiedContextUri(raw);
+  return parsed.ok && parsed.value.normalized === raw;
+}
+
+/**
+ * How a writer wrote `raw`: as a context address, as another scheme's (`https://`, `mailto:`),
+ * or as a path with no scheme.
+ */
+export function writtenForm(raw: string): "address" | "foreign" | "path" {
+  const trimmed = raw.trim();
+  const prefix = schemePrefix(trimmed);
+  if (prefix) return isContextUriScheme(prefix.name) ? "address" : "foreign";
+  return /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? "foreign" : "path";
+}
+
+/** `base` (a folder address, with or without its trailing slash) with `rest` beneath it. */
+export function joinContextUri(base: string, rest: string): string {
+  const parsed = parseUnifiedContextUri(base);
+  if (!parsed.ok) throw new RangeError(`Not a context address: ${base}`);
+  const { scheme, authority, path } = parsed.value;
+  return formatParsedContextUri(scheme, [path, rest].filter(Boolean).join("/"), authority);
+}
+
+/** The root address of a scheme (`kb://`): where its documents begin. */
+export function contextRootUri(scheme: ContextUriScheme): string {
+  return formatParsedContextUri(scheme, "", { kind: "contextual" });
+}
 
 export function isContextUriScheme(value: unknown): value is ContextUriScheme {
   return typeof value === "string" && (CONTEXT_URI_SCHEMES as readonly string[]).includes(value);
@@ -568,9 +619,8 @@ export function splitDocumentHrefSuffix(value: string): { path: string; suffix: 
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
-  const schemeSeparator = uri.indexOf("://");
-  const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
-  const segment = path.split("/").filter(Boolean).at(-1);
+  const parsed = parseUnifiedContextUri(uri);
+  const segment = (parsed.ok ? parsed.value.path : uri).split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   return canonicalLeaf(segment);
 }

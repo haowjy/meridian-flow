@@ -23,8 +23,9 @@ export interface Work {
   defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Documents this Work's active branch changes (the Works badge), as the server stores it; never derive from visible rows. */
+  /** Documents and folders this Work's active branch changes (the Works badge is their sum), as the server stores them; never derive from visible rows. */
   pendingDocumentCount: number;
+  pendingFolderCount: number;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -54,7 +55,8 @@ export type WorksSnapshot = {
   projectId: ProjectId;
   /**
    * The total order for complete snapshots: the sum of the project's Works' `entityRevision`s,
-   * which every Work change raises and no change lowers.
+   * which every Work change raises and no change lowers. A purge deletes a Work, so it raises
+   * the No Work row by that Work's revision plus one, so the sum rises by one.
    */
   authorityRevision: string;
   /** Correlates one acquisition response; it is not ordering authority. */
@@ -82,6 +84,7 @@ export const workSchema = z.object({
   defaultAiWriteMode: z.enum(["draft", "direct"]),
   entityRevision: z.string().regex(/^(0|[1-9]\d*)$/),
   pendingDocumentCount: z.number().int().nonnegative(),
+  pendingFolderCount: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastActivityAt: z.string(),

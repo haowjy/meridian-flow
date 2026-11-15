@@ -59,7 +59,6 @@ id.
 |---|---|---|
 | [Command driver](../../packages/command-driver/.context/state-machines.md) | package | `sending`, delivered until the server's stored outcome is known |
 | [Chat submission](../../apps/app/src/client/chat-submissions/.context/state-machines.md) | App | `posted`, with no answer |
-| [Creation record](../../apps/app/src/client/creation/.context/state-machines.md) | App | resolved inside the request by `createWithRecovery` |
 | [Import creation](../../apps/app/src/features/import/.context/state-machines.md) | App | `uncertain` |
 | [Apply click command](../../apps/app/src/features/draft-review/.context/state-machines.md) | App | `retrying`, then `stalled` |
 | [Queued control](../../apps/app/src/features/chat/.context/state-machines.md) | App | `failed`, retried under the same id |

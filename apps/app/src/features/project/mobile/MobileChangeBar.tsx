@@ -40,7 +40,6 @@ export function MobileChangeBar({
         canApply={canApply}
         onApply={() => void view.apply(change)}
         onDiscard={() => void view.discard(change)}
-        discardAsks={view.discardAsks(change)}
         className="rounded-xl"
       />
     </div>

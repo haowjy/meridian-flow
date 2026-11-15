@@ -4,9 +4,9 @@
  * the model meant, and what the call's path showed is recorded with its result. This is the one place the tools that read or write inside a
  * document do it; the tree commands resolve inside their own command.
  */
+
 import { removerName, splitDocumentFile } from "@meridian/agent-edit/integration";
-import type { AgentsLevel } from "@meridian/contracts/agents";
-import { formatParsedContextUri } from "@meridian/contracts/context-uri";
+import { formatParsedContextUri, joinContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseActor } from "../../domains/context/adapters/context-fs/tree-writes.js";
 import { parseUnifiedContextUri } from "../../domains/context/index.js";
@@ -60,14 +60,12 @@ export async function printedNames(
 
 /** The area a path names (`manuscript://`, a Work's, a chat's) and the path below it. */
 export function areaOfPath(path: string): { area: string; rest: string } | null {
-  // The parser reads every spelling a model writes (a bare path, `.agents/…`, `~/…`, a scheme).
   const parsed = parseUnifiedContextUri(path);
   if (!parsed.ok) return null;
-  const { scheme, authority, path: inside } = parsed.value;
-  const folder = inside !== "" && path.trim().endsWith("/");
+  const { path: rest } = parsed.value;
   return {
-    area: formatParsedContextUri(scheme, "", authority),
-    rest: folder ? `${inside}/` : inside,
+    area: formatParsedContextUri(parsed.value.scheme, "", parsed.value.authority),
+    rest: rest && path.trimEnd().endsWith("/") ? `${rest}/` : rest,
   };
 }
 
@@ -153,7 +151,7 @@ export async function reachShown(
   }
   const value = reached.value;
   return {
-    path: `${value.uri}${leaf}${fragment === undefined ? "" : `#${fragment}`}`,
+    path: `${joinContextUri(value.uri, leaf)}${fragment === undefined ? "" : `#${fragment}`}`,
     delta: value.delta,
     node: value.node,
     ...(value.kept ? { kept: value.kept } : {}),

@@ -104,6 +104,8 @@ export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: Re
 export type TextTarget =
   | { kind: "groups"; frame: ReviewFrame; groupIds: string[]; tree?: true }
   | { kind: "draft" };
+/** Some of a draft's changes, which a Discard writes back in the draft's room. */
+export type GroupsTarget = Extract<TextTarget, { kind: "groups" }>;
 export type ChangeTarget = TextTarget | { kind: "tree" };
 export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget {
   const text = changes.filter((change) => !change.tree);

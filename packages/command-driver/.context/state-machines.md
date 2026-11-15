@@ -26,7 +26,13 @@ stateDiagram-v2
   resume. A `wrong_account` or 401 pauses the account and releases the lock until a tab shows
   again.
 - **Lanes.** Only the earliest `sending` record of a lane is sent; a record with several lanes
-  waits to head all of them. A `done` or `never` record releases its lane.
+  waits to head all of them. A `done` or `never` record releases its lane, except a `never` of
+  a kind with `holdsLane`, which keeps its lanes closed until it is retried (same place) or
+  dismissed (the unsent records behind it are dismissed with it: they depended on it). A
+  caller may pass lanes as a function of the journal's records, so they are chosen inside the
+  transaction that saves the record, not from a snapshot taken before it.
+- **An unread journal is not an empty one.** If the first read fails, the driver still asks for the
+  lock; the read is tried again when the lock is held, on a nudge, and by any successful write.
 - **A lost answer is resent under the same `sendId`** with backoff (1 s doubling to 30 s); a 500
   is resent slowly (30 s to 5 min) and logged. After a reload a `sent` record is looked up
   (`GET /api/commands/:id`) before it is sent again.
@@ -36,6 +42,6 @@ stateDiagram-v2
 - **Every tab runs `onSettled` once per record it sees settle**, so it must be safe to run twice.
 - **Not sent yet.** `notSent` is true while a record has been unanswered for 10 s, or the
   browser is offline with one waiting. It is the app's only marker of an unsent change.
-- The Work kinds (`work_create` ... `work_restore`) are the first instances: `apps/app/src/client/query/work-commands.ts`.
+- The Work kinds (`work_create` ... `work_restore`) are the first instances: `apps/app/src/client/query/work-commands.ts`. `project_create` is the second (`project-commands.ts`): its record is the unsent project, it has `holdsLane`, and a Work command submitted while the project's create is unsettled (judged inside the saving transaction) also queues on its lane `project:<id>`, so it waits through a refusal and Retry of the create. The loader (by account) and the read gate read it through `awaitPendingProjectCreation` and `readPendingProjectCreation`.
 
 Pattern: [a command that may have landed](../../../.context/state-machines/command-that-may-have-landed.md).

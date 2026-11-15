@@ -6,7 +6,7 @@
  */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { formatParsedContextUri } from "@meridian/contracts/context-uri";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -21,6 +21,7 @@ export interface ModelWork {
   updatedAt: string;
   lastActivityAt: string | null;
   pendingDocumentCount: number;
+  pendingFolderCount: number;
 }
 
 /** `work show`: the Work, its recent chats and its drafts. */
@@ -109,10 +110,9 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
         "Drafts:",
         ...result.drafts.map((draft) => {
           const name = draft.contextLocation
-            ? formatParsedContextUri(
+            ? canonicalContextUri(
                 draft.contextLocation.scheme,
                 draft.contextLocation.path.replace(/^\/+/, ""),
-                { kind: "contextual" },
               )
             : (draft.documentName ?? "Untitled");
           return `  ${name}${draft.createdDocument ? " (new document)" : ""}`;
@@ -125,7 +125,7 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
 
 /**
  * One Work: handle, name, status, then the goal cut to `goalLength` (0 omits it),
- * how many documents have pending changes only when some do, and archived. `verbose` adds a line of dates.
+ * what waits for review (documents and folders) only when something does, and archived. `verbose` adds a line of dates.
  */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
   const name = work.status ? `${work.name} (${work.status})` : work.name;
@@ -133,7 +133,7 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
     workRef(work),
     name,
     goalLength > 0 && work.goal ? clip(work.goal, goalLength) : undefined,
-    work.pendingDocumentCount ? pending(work.pendingDocumentCount) : undefined,
+    pending(work.pendingDocumentCount, work.pendingFolderCount),
     work.archivedAt ? "(archived)" : undefined,
   ].filter((fact) => fact !== undefined);
   const line = facts.join("  ");
@@ -152,10 +152,13 @@ function workRef(work: Pick<ModelWork, "handle">): string {
   return work.handle ?? "none";
 }
 
-function pending(count: number): string {
-  return count === 1
-    ? "1 document with pending changes"
-    : `${count} documents with pending changes`;
+/** "3 documents and 1 folder to review": each count keeps its noun, nothing says "changes". */
+function pending(documents: number, folders: number): string | undefined {
+  const parts = [
+    documents > 0 ? (documents === 1 ? "1 document" : `${documents} documents`) : null,
+    folders > 0 ? (folders === 1 ? "1 folder" : `${folders} folders`) : null,
+  ].filter((part) => part !== null);
+  return parts.length > 0 ? `${parts.join(" and ")} to review` : undefined;
 }
 
 /** The text cut to `length` at a word boundary, marked with `…`. */

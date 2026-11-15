@@ -78,12 +78,15 @@ its newest known generation, advanced by `bind` and `reconcileClosed`, never by 
 A close retires the generation it was issued for, so a late answer about the old draft
 can't close a newer one.
 
-While the item's known draft is closed, the review address port and the route's address
-clearing ask the server first (`reconcileClosed`). `gone`, the same closed draft or a
-failed read refuse admission, because the room owner just ended that review and admitting
-it again would loop; a different active draft is the replacement. While a command hides
-the item (a Discard in flight), the port refuses it outright for the same reason; the end of the hide is a new port, so a refused Discard restores the
-review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
+While the item's known draft is closed, or this tab's Discard hid it, the review address port
+and the route's address clearing ask the server first (`reconcileClosed`), with a read that goes
+to the server rather than joining the cached query (a restore's invalidation would cancel it).
+`gone` or a failed read refuse admission, because the room owner just ended that review and
+admitting it again would loop; the same draft active again, read after the end, is a restore,
+which reopens it (`metadataActive`) whether or not any surface holds its room; a different
+active draft is the replacement. While a Discard is still in flight the port refuses the item
+outright for the same reason; the end of the hide is a new port, so a refused Discard restores
+the review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
 that gave it, so a replacement that becomes known later is retried once.
 
 The server answers `gone` from the Work's ownership and the item key alone, before any
@@ -186,9 +189,12 @@ the surface it was made on (Changes list, a chat's strip, a document's band) and
 there. In the Changes list a notice is said on its rows, never as a line (`useDraftNoticeWords`,
 `RowWord`): every row a Discard took stays struck through with Undo, in the place the list
 showed it when the writer pressed (the list is held at the press, per owner, so a switch of list
-keeps it), and each Apply fact (where a
-document landed, the name a clash gave it, that it came back to the manuscript) sits on its
-document's row as "Applied" or "Renamed" with the sentence. A band notice shows on that document's review line (above the toolbar, in place of the
+keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedFact.step`): the
+sentence says it was applied, with where it landed, the name a clash gave it or that it came back
+to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
+takes (`undoApply`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
+answers ends the applied notice, so its result ("Skipped", "Partly undone", "Retry") shows on the
+rows as a press's does. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
@@ -214,12 +220,12 @@ the `prosemirror` fragment (writer typing, a model write), the room closing or r
 (`binding.notices`), or Ctrl+Z popping the item from the reviewing editor ends it silently. So
 the notice and Ctrl+Z can never undo the same Discard twice. While the reviewing editor lives and
 the item is on top of its stack, the notice's Undo is that editor's Undo; once the editor is gone
-(a band Discard sends the page to Live) the item is undone alone through a short-lived manager.
+the item is undone alone through a short-lived manager.
 Both paths record restorations, so marks after an Undo match marks before the Discard. Each Undo
 handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
 kept open; `DraftCommandOwner.close()` ends every notice.
 
-A whole-draft Discard on a draft-only page (live deleted it elsewhere), local or on the server,
+A whole-draft Discard (always a server command) on a draft-only page (live deleted it elsewhere)
 sends main back through `ContextRemovalCoordinator.beginOwnRemoval` once the Discard is written,
 so a refused Discard leaves main on the page that shows the refusal; the go-back reports where
 main landed, and an Undo while main is still there returns it to the draft's review address.
@@ -238,16 +244,36 @@ editors never install it. A side or Work notice owns a separate manager and pool
 The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-One rule decides where a Discard runs (`discardsLocally` in `useWorkBranchCommands`): a
-change in a read frame, or a whole text draft that is not a whole item (created document,
-picture), has no move or delete, and whose room is read now
-(`DraftCommandOwner.canDiscardLocally`), is a local text Discard, whose Undo the room holds.
-Anything else goes to the server under a command id the client mints: a whole draft as an item
-Discard (`discardOnServer`, everything the branch holds on the document), a move or delete as
-`discardItem`. Every Discard shows the owner's notice, and its Undo takes back each share: a
-room's text locally, a server Discard by Undo of a Discard (`undo-discard`, both halves onto
-the Work's current branch); `leftOut` stays on the notice as what couldn't come back. Only a
-frozen owner's Discard asks first (`discardAsks`): its Undo would be refused. A Discard of a
+What a closed draft does on screen follows what closed it (`ended`, Draft end and reopen in
+[state-machines.md](state-machines.md)), never which message arrived first. A Discard made
+anywhere but in this tab (`in-trash`), or its document going to Trash (`document`, an Apply of a
+delete included), keeps the draft on screen: the review keeps its room's session read-only, the
+route keeps its address, and the page keeps painting it while the list no longer has it
+(`useDocumentPaint`, until the writer chooses another version). The editor's status pill says
+"This draft is in Trash" with the Discard's Restore, or "This document is in Trash" with the
+document's (`InTrashStatus`). This tab's own Discard (`here`) leaves for Live, where its notice
+has the Undo; any other close (`other`, a purge) leaves too. Restore, the notice's Undo and Trash's
+Restore send the one `restoreDiscard`; every tab learns of it from fresh draft metadata (the
+owner hint re-reads it), and `metadataActive` clears what the tab held as ended and lets the
+room join again under the same id: the session on screen rejoins in place, and every reader whose
+read of the room failed while it was closed asks again, whichever reader brought the answer. While closed, the
+review keeps the room its metadata last named (`useRoomBindings`), and the band and change
+bars offer nothing to act on (`useOpenReviewChanges` reads `gone`).
+
+Every Discard of a whole draft is a server command under an id the client mints, so Trash
+lists it and Restore brings it back: one document's draft as an item Discard
+(`discardOnServer`, everything the branch holds on the document), a move or delete as
+`discardItem`. Only a Discard of some changes in a read frame is a local text Discard, whose
+Undo the room holds. Every Discard shows the owner's notice, and its Undo takes back each share:
+a room's text locally, a server Discard by Undo of a Discard (`restoreDiscard`, both halves onto
+the Work's current branch), the one command Trash's Restore and the editor's Restore send too.
+Each Discard's restore has one progress, whatever sent it (`DiscardRestores` on the command
+owner): the notice, Trash's row and the editor's pill all read it, so a restore from Trash ends
+the notice, and a notice's refused Undo clears once a later restore lands. `leftOut` stays on the
+notice as what couldn't come back, and a restore answered with nothing done says why ("Work was
+closed.", "Its chat is in Trash.", "Gone from Trash."). No Discard asks first. A Discard row Trash shows restored has Undo, a new Discard of everything
+the entry took: its drafts' documents and every node its tree half settled (`tree.nodes`), so
+one that only moved, renamed or deleted goes back too. A Discard of a
 selection (a folder group's ×, a folder changed alone) is one server command over exactly those
 documents and folders, both halves, with what stands on them (`discardSelection`,
 `BranchDiscardRequest.items`); only Discard all sends `all`, the one command that closes the

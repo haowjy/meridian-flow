@@ -37,7 +37,7 @@ The root screen after sign-in: the project list and the new-project view.
 
 The dialog for creating a project.
 
-The record that lets the app open a new project before the server answers is in `client/creation`.
+The command that lets the app open a new project before the server answers is the driver's `project_create` kind (`client/query/project-commands.ts`).
 
 - Kind: feature
 - Paths: `apps/app/src/features/creation`

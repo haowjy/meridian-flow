@@ -10,6 +10,7 @@ import {
   type DriverSnapshot,
 } from "@meridian/command-driver";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import {
   createContext,
   type ReactNode,
@@ -35,8 +36,21 @@ const noSubscription = () => () => undefined;
  */
 export type CommandDomain = {
   kinds: Record<string, CommandKind>;
-  bind(driver: CommandDriver): () => void;
+  bind(driver: CommandDriver, accountId: string, opened?: Promise<void>): () => void;
 };
+
+/** One domain out of several: their kinds side by side, and every binding. */
+export function combineDomains(...domains: CommandDomain[]): CommandDomain {
+  return {
+    kinds: Object.assign({}, ...domains.map((domain) => domain.kinds)),
+    bind: (driver, accountId, opened) => {
+      const unbinds = domains.map((domain) => domain.bind(driver, accountId, opened));
+      return () => {
+        for (const unbind of unbinds) unbind();
+      };
+    },
+  };
+}
 
 export function CommandDriverProvider({
   domains,
@@ -48,6 +62,7 @@ export function CommandDriverProvider({
 }) {
   const accountId = useAccountId();
   const client = useQueryClient();
+  const router = useRouter();
   const [{ driver, domain }] = useState(() => {
     if (typeof window === "undefined") return { driver: null, domain: null };
     const made = domains(client);
@@ -77,8 +92,20 @@ export function CommandDriverProvider({
   });
   useEffect(() => {
     if (!driver || !domain) return;
-    void driver.open();
-    const unbind = domain.bind(driver);
+    const opened = driver.open();
+    // A project route loaded before the journal could be read took an unsent project for a missing
+    // one: load it again once a read succeeds.
+    let stopWaiting = () => {};
+    opened.catch(() => {
+      stopWaiting = driver.subscribe(() => {
+        if (!driver.hasRead) return;
+        stopWaiting();
+        void router.invalidate({
+          filter: (match) => match.routeId === "/_authenticated/p/$projectId",
+        });
+      });
+    });
+    const unbind = domain.bind(driver, accountId, opened);
     const nudge = () => driver.nudge();
     const visible = () => {
       if (document.visibilityState !== "visible") return;
@@ -104,10 +131,11 @@ export function CommandDriverProvider({
       document.removeEventListener("freeze", suspend);
       document.removeEventListener("resume", resume);
       document.removeEventListener("visibilitychange", visible);
+      stopWaiting();
       unbind();
       driver.stop();
     };
-  }, [driver, domain]);
+  }, [driver, domain, accountId, router]);
   return <CommandDriverContext.Provider value={driver}>{children}</CommandDriverContext.Provider>;
 }
 

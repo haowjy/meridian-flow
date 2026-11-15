@@ -579,6 +579,7 @@ export async function createProductionAppPorts(input: {
     journal: createDrizzleJournal(db),
     // Collab is composed below, before anything can submit or admit a record.
     draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
+    recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
   });
   const draftClose = createDraftClose({ treeLists });
   const documentLinks = createDrizzleDocumentLinkScopes({

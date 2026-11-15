@@ -2,12 +2,12 @@
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { listAgentCatalog } from "@/client/api/agents-api";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
+import { projectReadEnabled } from "./project-read-gate";
 
 /** A project's catalog lives under the project key so the creation gate covers it. */
 export const agentCatalogQueryKey = (accountId: string, projectId?: string) =>

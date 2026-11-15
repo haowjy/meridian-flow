@@ -138,7 +138,7 @@ export type Settlement =
   | "applied"
   | "discarded"
   | "superseded"
-  /** A create the server stamped at admission: its Work or source was closed. In no view. */
+  /** A change the server stamped at admission: its Work's draft or source was closed. In no view. */
   | "dropped";
 
 /**

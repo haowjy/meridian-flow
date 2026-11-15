@@ -2,19 +2,17 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { pendingRecords } from "@meridian/project-tree";
+import type { LandingFault } from "@meridian/project-tree";
 import { Folder as FolderIcon, Layers } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { useProjectTreeViews, useTreeList } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { type GoneRow, withGone } from "@/components/app/RowWord";
 import { contentInset, ICON_SLOT_PX, ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
-import type { TreeEntry } from "@/core/project-tree/tree-view";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import {
   ApplyAllQuestion,
@@ -32,14 +30,14 @@ import {
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
-import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
   groupByChangedFolder,
-  type LandingFault,
+  groupFiles,
+  groupsOf,
   landingFaultSentence,
-  landingFaults,
 } from "@/features/draft-review/tree-groups";
 import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
@@ -49,12 +47,12 @@ import { escapeCssIdent } from "@/lib/css-selector";
 import { useFocusSuccession } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../../context/context-file-icon";
-import { EDITOR_CONTEXT_SCHEMES, schemeLabel } from "../../context/context-schemes";
+import { schemeLabel } from "../../context/context-schemes";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "../../context/open-project-document";
 import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
 import { useAiDraftLauncher } from "../../review-launch";
-import { useShellTreeVersion } from "../../tree-version";
+import { reviewCount, useShellTreeVersion } from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
 
@@ -87,19 +85,19 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   }).drafts?.length;
   const { works } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
-  // The shell reads the Work's list and its tree: every document and folder it changes, each
-  // once, as the rows show them. The Work's own count, from the Works list, counts documents.
+  // The shell's count is the Changes list's: the Work's changed documents and folders, from its
+  // open list. The Works list's stored count is the same count for a Work whose list is not open.
   const shell = useShellTreeVersion();
-  const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changed.size : null;
+  const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changeCount : null;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
-    const count = changed ?? (picked ? picked.pendingDocumentCount : (lineageCount ?? 0));
+    const count = picked ? reviewCount(shell, picked) : (changed ?? lineageCount ?? 0);
     const others = (works ?? [])
       .filter((other) => other.id !== work?.id && !isWorkArchived(other))
-      .filter((other) => other.pendingDocumentCount > 0)
+      .filter((other) => reviewCount(shell, other) > 0)
       .sort((a, b) => Number(b.id === chatWorkId) - Number(a.id === chatWorkId));
     const other = count === 0 ? others[0] : undefined;
-    const elsewhere = other ? { work: other, count: other.pendingDocumentCount } : null;
+    const elsewhere = other ? { work: other, count: reviewCount(shell, other) } : null;
     // Under No Work the chat on screen's Work, when it has one, is followed like a pick.
     const named = picked ?? (work && !work.isNoWork ? work : null);
     if (named) {
@@ -123,7 +121,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       offered: Boolean(ownerKey) && count > 0,
       elsewhere,
     };
-  }, [picked, work, ownerKey, lineageCount, works, chatWorkId, changed]);
+  }, [picked, work, ownerKey, lineageCount, works, chatWorkId, changed, shell]);
 }
 
 /**
@@ -132,7 +130,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * folder's apply or discard everything under it, the folder's own change included. Discard all
  * and Apply all act on every change of the scope, new documents, folders, moves and deletes
  * included. Each Apply is one command, which sidebar Undo takes back whole, and each Discard's
- * notice has its Undo; only a frozen owner's Discard asks first (`discardAsks`). An Apply of
+ * notice has its Undo. An Apply of
  * several asks when it would delete documents or bring back documents deleted from the
  * manuscript, naming each, and again for any a newer delete held back. A question takes the
  * place of the buttons that asked it. A Discard made here shows its notice in the row's place
@@ -192,7 +190,8 @@ export function ChangesSource({
       state.failure
     );
   });
-  const tree = useWorkTree(projectId, ownerKey);
+  const shell = useShellTreeVersion();
+  const tree = shell?.ownerKey === ownerKey ? shell.tree : null;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const fold = (id: string) =>
     setFolded((current) => {
@@ -201,10 +200,10 @@ export function ChangesSource({
       return next;
     });
   const groups = tree
-    ? groupByChangedFolder(listedFiles, tree.work, tree.pending, tree.faults)
-    : [{ folder: null, files: listedFiles }];
+    ? groupByChangedFolder(listedFiles, tree)
+    : [{ folder: null, files: listedFiles, inner: [] }];
   // Grouped, the list's order is the groups' order: every index below reads this one.
-  const files = groups.flatMap((group) => group.files);
+  const files = groups.flatMap(groupFiles);
   // Apply needs what it would apply: a new file, a move or delete, or a read draft's changes.
   const applicable = (file: ReviewFileTarget) =>
     (!file.draft.hasDraft && file.draft.isNew) ||
@@ -220,8 +219,8 @@ export function ChangesSource({
     restoring: readonly ReviewFileTarget[];
   } | null>(null);
   // The folder changes Apply all takes along: every one that can land.
-  const changedFolders = groups.flatMap((group) =>
-    group.folder && !group.folder.fault ? group.folder.folders : [],
+  const changedFolders = groupsOf(groups).flatMap((group) =>
+    group.folder && !group.folder.fault ? [group.folder.id] : [],
   );
   // A folder changed alone lists no document, and is still a change to review.
   const hasFiles = files.length > 0 || groups.some((group) => group.folder);
@@ -300,45 +299,57 @@ export function ChangesSource({
   // What undoing an Apply skipped or couldn't take back is said on the rows it concerns here too.
   const drawn = useMemo<NoticePlace>(() => {
     const folderOf = new Map<string, string | null>();
-    for (const group of groups) {
-      if (group.folder) folderOf.set(group.folder.id, null);
-      for (const file of group.files) folderOf.set(file.documentId, group.folder?.id ?? null);
-    }
+    const walk = (group: ChangeGroup<ReviewFileTarget>, parent: string | null) => {
+      const here = group.folder?.id ?? null;
+      if (here) folderOf.set(here, parent);
+      for (const file of group.files) folderOf.set(file.documentId, here);
+      for (const inner of group.inner) walk(inner, here);
+    };
+    for (const group of groups) walk(group, null);
+    // A row the Apply took stays drawn while a word speaks for it, so what undoing the Apply
+    // skipped or left (an edit made since) has a row to show on.
+    for (const { key } of taken.get(ownerKey) ?? [])
+      if (!folderOf.has(key)) folderOf.set(key, null);
     return {
       holds: (node) => folderOf.has(node),
       parent: (node) => folderOf.get(node) ?? null,
       open: (folder) => !folded.has(folder),
     };
-  }, [groups, folded]);
+  }, [groups, folded, ownerKey]);
   const treeWords = useTreeNoticeWords(projectId, drawn);
   const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
-  // One list of the rows as shown, folders heading theirs.
-  const items: ChangeItem[] = groups.flatMap((group) => [
+  // One list of the rows as shown: a folder heads its documents, then the folders inside it.
+  const itemsOf = (group: ChangeGroup<ReviewFileTarget>, depth: number): ChangeItem[] => [
     ...(group.folder
       ? [
           {
             key: group.folder.id,
             kind: "folder" as const,
             group,
-            name: tree?.entry(group.folder.id)?.name ?? t`Folder`,
+            name: group.folder.name,
             detail: folderSummary(group.folder),
+            depth,
           },
         ]
       : []),
     ...(group.folder && folded.has(group.folder.id)
       ? []
-      : group.files.map((file) => ({
-          key: file.documentId,
-          kind: "file" as const,
-          file,
-          name: file.documentName || file.contextLocation?.path || t`Untitled document`,
-          detail: changeSummary(
+      : [
+          ...group.files.map((file) => ({
+            key: file.documentId,
+            kind: "file" as const,
             file,
-            readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined,
-          ),
-          depth: group.folder ? 1 : 0,
-        }))),
-  ]);
+            name: file.documentName || file.contextLocation?.path || t`Untitled document`,
+            detail: changeSummary(
+              file,
+              readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined,
+            ),
+            depth: group.folder ? depth + 1 : 0,
+          })),
+          ...group.inner.flatMap((inner) => itemsOf(inner, depth + 1)),
+        ]),
+  ];
+  const items: ChangeItem[] = groups.flatMap((group) => itemsOf(group, 0));
   // A Discard or an Apply holds the list as the writer saw it: a row it took stays in its place,
   // saying so, while the notice speaks for it.
   const hold = () => {
@@ -351,7 +362,7 @@ export function ChangesSource({
   const shown = withGone(
     items,
     changeKey,
-    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key)),
+    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
   const goneRows = shown.some((item) => item.gone);
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
@@ -386,12 +397,20 @@ export function ChangesSource({
               density="full"
               touch={touch}
               disabled={archived}
-              discardAsks={controller.frozen}
               onDiscard={
                 everyDraft.length > 0 || changedFolders.length > 0
                   ? () => {
                       hold();
-                      void controller.discardAll(everyDraft);
+                      void controller.discardAll(
+                        everyDraft,
+                        changedFolders,
+                        // A lone folder change names itself in the notice.
+                        everyDraft.length === 0 && changedFolders.length === 1
+                          ? (groupsOf(groups).find(
+                              (group) => group.folder?.id === changedFolders[0],
+                            )?.folder?.name ?? null)
+                          : null,
+                      );
                     }
                   : undefined
               }
@@ -439,8 +458,8 @@ export function ChangesSource({
                 return (
                   <li key={item.key} data-change-row={item.key} data-command-notice="row">
                     <ListRow
-                      depth={item.kind === "file" ? item.depth : 0}
-                      gone={notice?.kind !== "applied"}
+                      depth={item.depth}
+                      gone={notice?.kind === "discarded"}
                       disabled={item.kind !== "file"}
                       onOpen={() => void openDocument({ documentId: item.key })}
                       icon={
@@ -474,24 +493,25 @@ export function ChangesSource({
                 const { group } = item;
                 const folder = item.group.folder;
                 if (!folder) return null;
+                const own = groupFiles(group);
                 return (
                   <FolderGroupRow
                     key={`folder:${folder.id}`}
                     branchId={drafts.branchId}
                     folder={folder}
+                    depth={item.depth}
                     open={!folded.has(folder.id)}
                     onToggle={() => fold(folder.id)}
-                    entry={tree?.entry(folder.id) ?? null}
-                    files={group.files}
+                    files={own}
                     controller={controller}
                     touch={touch}
                     notice={wordOf(folder.id)}
-                    canApply={controller.canApply && !folder.fault && group.files.every(applicable)}
-                    onApply={(name) => startApply(group.files, folder.folders, name)}
+                    canApply={controller.canApply && !folder.fault && own.every(applicable)}
+                    onApply={(name) => startApply(own, folder.folders, name)}
                     onDiscard={(name) => {
                       hold();
                       void controller.discardSelection({
-                        drafts: draftsOf(group.files),
+                        drafts: draftsOf(own),
                         folders: folder.folders,
                         name,
                       });
@@ -552,7 +572,7 @@ export function ChangesSource({
 }
 
 type ChangeItem = { key: string; name: string; detail: ReactNode } & (
-  | { kind: "folder"; group: ChangeGroup<ReviewFileTarget> }
+  | { kind: "folder"; group: ChangeGroup<ReviewFileTarget>; depth: number }
   | { kind: "file"; file: ReviewFileTarget; depth: number }
 );
 
@@ -604,9 +624,6 @@ function ChangeRow({
 }) {
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
-  // A row's actions are too narrow for its question: it asks on the line under the name.
-  const [asking, setAsking] = useState(false);
-  const draft = { documentId: file.documentId, itemKey: file.draft.itemKey };
   const discard = () => {
     onCommand();
     void controller.discard(file.documentId, file.draft.itemKey);
@@ -655,7 +672,7 @@ function ChangeRow({
             touch={touch}
             disabled={command.pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
-            onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
+            onDiscard={discard}
             onApply={
               canApply
                 ? () => {
@@ -668,16 +685,6 @@ function ChangeRow({
         }
         below={
           <div className="pl-1">
-            {asking && !controller.dispositionLocked ? (
-              <DiscardQuestion
-                scope="document"
-                onKeep={() => setAsking(false)}
-                onConfirm={() => {
-                  setAsking(false);
-                  discard();
-                }}
-              />
-            ) : null}
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
@@ -735,34 +742,6 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
   return [source, ...folders].filter(Boolean).join("/");
 }
 
-/** The Work's view, its pending records and what cannot land, read from the list. */
-function useWorkTree(projectId: string, ownerKey: string) {
-  const shell = useShellTreeVersion();
-  const version = shell?.ownerKey === ownerKey ? shell.draftVersion : null;
-  const { session, snapshot } = useTreeList({ kind: "project", projectId });
-  const schemes = useMemo(() => [...EDITOR_CONTEXT_SCHEMES], []);
-  const trees = useProjectTreeViews(projectId, schemes, {
-    enabled: version !== null,
-    ...(version ? { version } : {}),
-  });
-  const docVersion = snapshot?.version;
-  return useMemo(() => {
-    if (!version || !session || !snapshot || version.view.draft === null) return null;
-    const work = session.replay(version.view, version.pendingText);
-    const pending = pendingRecords(snapshot.doc, version.view.draft);
-    return {
-      work,
-      pending,
-      faults: landingFaults(work, pending),
-      entry: (id: string) =>
-        Object.values(trees)
-          .flatMap(({ tree }) => tree?.entry(id) ?? [])
-          .at(0) ?? null,
-    };
-    // `version` of the copy is what changes the replay.
-  }, [version, session, snapshot, docVersion, trees]);
-}
-
 /**
  * A folder the Work changes, heading what it holds: its name, what the Work does to it, why it
  * cannot land if it cannot, and × ✓ for it and everything listed under it; a click folds its
@@ -773,7 +752,7 @@ function useWorkTree(projectId: string, ownerKey: string) {
 function FolderGroupRow({
   branchId,
   folder,
-  entry,
+  depth,
   open,
   onToggle,
   files,
@@ -787,7 +766,8 @@ function FolderGroupRow({
   /** What the owner's notice says on this row. */
   notice: ReactNode;
   folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder"]>;
-  entry: TreeEntry | null;
+  /** Under its changed folder's row. */
+  depth: number;
   /** Its rows show; a click folds them. */
   open: boolean;
   onToggle: () => void;
@@ -808,12 +788,12 @@ function FolderGroupRow({
     controller.owner.snapshot,
   );
   const pending = keys.some((key) => controller.owner.state(key).pending);
-  const name = entry?.name ?? t`Folder`;
-  const { change } = folder;
+  const { name, change } = folder;
   return (
     <li data-change-folder={folder.id}>
       <ListRow
         icon={FolderIcon}
+        depth={depth}
         onOpen={onToggle}
         controlProps={files.length > 0 ? { "aria-expanded": open } : undefined}
         trailing={files.length > 0 ? <DisclosureMark open={open} /> : undefined}

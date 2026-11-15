@@ -25,17 +25,12 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 
 const artifactUriSchema = z.string().transform((uri, context): ArtifactRef => {
   const parsed = parseContextUri(uri);
-  // A bare path is a manuscript path; the Agents spellings the model reads (`.agents/…`,
-  // `~/.agents/…`) are addresses too.
-  const explicit = uri.includes("://") || /^(\.agents(\/|$)|~\/)/.test(uri);
-  if (!explicit || !parsed.ok || !parsed.value.path) {
-    context.addIssue({
-      code: "custom",
-      message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
-    });
-    return z.NEVER;
-  }
-  return { type: "object", uri: parsed.value.normalized };
+  if (parsed.ok && parsed.value.path) return { type: "object", uri: parsed.value.normalized };
+  context.addIssue({
+    code: "custom",
+    message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
+  });
+  return z.NEVER;
 });
 
 /** Candidate content supplied by return_result, before terminal cause is known. */
