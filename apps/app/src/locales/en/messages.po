@@ -334,6 +334,12 @@ msgstr "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} is text, so it was added as a document in assets. The chip links to it."
 msgstr "{0} is text, so it was added as a document in assets. The chip links to it."
 
+#. placeholder {0}: modelName(models, runsOn)
+#. placeholder {1}: agent.model ? modelName(models, agent.model) : t`the default model`
+#: src/features/agents/AgentPicker.tsx
+msgid "{0} isn't available now, so replies use {1}."
+msgstr "{0} isn't available now, so replies use {1}."
+
 #. placeholder {0}: finding.file
 #. placeholder {1}: finding.message
 #: src/features/agents/PackageSave.tsx
@@ -520,8 +526,8 @@ msgid "{count, plural, one {# text change} other {# text changes}}"
 msgstr "{count, plural, one {# text change} other {# text changes}}"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
-msgstr "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
+#~ msgid "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
+#~ msgstr "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
 
 #: src/features/agents/PackageSave.tsx
 #~ msgid "{count, plural, one {Not saved: # problem} other {Not saved: # problems}}"
@@ -797,6 +803,10 @@ msgstr "{name} is over {LIMIT_MB} MB, so it can't be added."
 #: src/features/agents/AgentFileState.tsx
 msgid "{name} is unavailable"
 msgstr "{name} is unavailable"
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{name} on {modelLabel}"
+msgstr "{name} on {modelLabel}"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -1305,6 +1315,11 @@ msgstr "Agent:"
 msgid "Agent: {name}"
 msgstr "Agent: {name}"
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Agent: {value}"
+msgstr "Agent: {value}"
+
+#: src/features/agents/AgentPicker.tsx
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Agents"
@@ -1678,6 +1693,10 @@ msgstr "Cache resets"
 msgid "Calls"
 msgstr "Calls"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Can't be used right now."
+msgstr "Can't be used right now."
+
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't copy these"
 msgstr "Can't copy these"
@@ -1935,6 +1954,10 @@ msgstr "Changes in this chat"
 msgid "Changing position"
 msgstr "Changing position"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Changing the model rebuilds this chat's cache on the next reply."
+msgstr "Changing the model rebuilds this chat's cache on the next reply."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Changing the position of {source}…"
 msgstr "Changing the position of {source}…"
@@ -2028,8 +2051,12 @@ msgstr "Choose agent"
 #~ msgstr "Choose agent, currently {0}"
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Choose agent, currently {name}"
-msgstr "Choose agent, currently {name}"
+#~ msgid "Choose agent, currently {name}"
+#~ msgstr "Choose agent, currently {name}"
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose agent, currently {value}"
+msgstr "Choose agent, currently {value}"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Choose tabs"
@@ -3778,12 +3805,11 @@ msgstr "grid"
 msgid "Hand off from here"
 msgstr "Hand off from here"
 
-#: src/features/agents/ComposerAgentControl.tsx
+#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to"
 msgstr "Hand off to"
 
-#: src/features/agents/ComposerAgentControl.tsx
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to an Agent"
 msgstr "Hand off to an Agent"
@@ -4068,6 +4094,10 @@ msgstr "Its document wasn't restored"
 msgid "Its folder is gone"
 msgstr "Its folder is gone"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "its own"
+msgstr "its own"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
 msgstr "Its paragraph was removed"
@@ -4236,6 +4266,10 @@ msgstr "Loading files…"
 msgid "Loading image"
 msgstr "Loading image"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Loading models…"
+msgstr "Loading models…"
+
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Loading more…"
@@ -4312,6 +4346,10 @@ msgstr "Logging out…"
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Looking for the document this link names."
 msgstr "Looking for the document this link names."
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Manage Agents"
+msgstr "Manage Agents"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
@@ -4809,8 +4847,8 @@ msgid "No matches found before the search stopped"
 msgstr "No matches found before the search stopped"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "No model"
-msgstr "No model"
+#~ msgid "No model"
+#~ msgstr "No model"
 
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "No newline at end of file"
@@ -5089,7 +5127,9 @@ msgstr "Open"
 msgid "Open \"{name}\""
 msgstr "Open \"{name}\""
 
+#. placeholder {0}: fileName(agent)
 #. placeholder {0}: work.name
+#: src/features/agents/AgentPicker.tsx
 #: src/features/project/work/WorkRow.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
@@ -5839,6 +5879,10 @@ msgstr "rule"
 #: src/features/chat/SubagentHeader.tsx
 msgid "Running"
 msgstr "Running"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Runs on"
+msgstr "Runs on"
 
 #: src/features/agents/PackageSave.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -6752,6 +6796,10 @@ msgstr "The change could not be confirmed. Try again."
 #~ msgid "The change didn't fit the current draft. The AI will read it again."
 #~ msgstr "The change didn't fit the current draft. The AI will read it again."
 
+#: src/features/agents/AgentPicker.tsx
+msgid "the default model"
+msgstr "the default model"
+
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The destination is no longer there."
 msgstr "The destination is no longer there."
@@ -6970,6 +7018,10 @@ msgstr "This change only applies together with the rest of the document. Apply t
 msgid "This chapter is temporarily unavailable"
 msgstr "This chapter is temporarily unavailable"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "This chat"
+msgstr "This chat"
+
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
 msgstr "This chat continues without a brief."
@@ -6988,6 +7040,10 @@ msgstr "This chat is in Trash. Restore it to edit or apply its drafts."
 msgid "This chat now uses {0}."
 msgstr "This chat now uses {0}."
 
+#: src/features/agents/AgentPicker.tsx
+msgid "This chat runs on"
+msgstr "This chat runs on"
+
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 #~ msgid "This chat uses {0}."
@@ -7000,6 +7056,10 @@ msgstr "This chat uses {name}."
 #: src/client/api/meridian-error.ts
 msgid "This chat was deleted."
 msgstr "This chat was deleted."
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat's Agent"
+msgstr "This chat's Agent"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
