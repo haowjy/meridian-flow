@@ -145,11 +145,14 @@ export function createDrizzleDocumentLinkScopes(deps: {
   const storage = new AsyncLocalStorage<Snapshot>();
 
   /**
-   * The project a scope reads in: the key's, its thread's, or its document's owner. A home
-   * document has no project, so it reads in the viewer thread's (its project links resolve where
-   * the document they name can be named, and show gone elsewhere).
+   * Who a scope reads as: the project it reads in (the key's, its thread's, or its document's
+   * owner) and the account reading. A home document has no project, so it reads in the viewer
+   * thread's, or the enclosing one's; with neither it reads in none, as its own account.
    */
-  async function resolveProject(key: LinkScopeKey, threadId: string | null) {
+  async function resolveReader(
+    key: LinkScopeKey,
+    threadId: string | null,
+  ): Promise<{ projectId: string | null; viewer: string | null } | null> {
     const id =
       "projectId" in key ? key.projectId : "threadId" in key ? key.threadId : key.documentId;
     if (!isUuid(id)) return null;
@@ -166,6 +169,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const owner = await tree.ownerOfDocument(id as DocumentId);
       if (owner?.kind === "project") project = sql`${owner.projectId}::uuid`;
       else if (owner && viewerThread) project = threadProject(viewerThread);
+      else if (owner) return { projectId: null, viewer: owner.userId };
       else return null;
     }
     const [row] = await currentDrizzleDb(db).execute<{
@@ -175,7 +179,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     }>(sql`
       SELECT p.id::text AS project_id, p.user_id::text AS owner, ${threadUser} AS thread_user
       FROM projects p WHERE p.id = ${project}`);
-    return row ?? null;
+    return row ? { projectId: row.project_id, viewer: row.thread_user ?? row.owner } : null;
   }
 
   async function prepare(request: ScopePrepareRequest): Promise<void> {
@@ -545,18 +549,26 @@ export function createDrizzleDocumentLinkScopes(deps: {
         for (const each of members) outer.members.add(each);
         return operation();
       }
-      const project = await resolveProject(key, threadId);
-      // One whose project can't be found has nothing of its own to load.
-      if (outer && project === null) return operation();
-      if (outer && outer.projectId === project?.project_id && joins(outer)) {
+      const reader = await resolveReader(key, threadId);
+      // One whose project can't be found has nothing of its own to load; a home document
+      // with none of its own reads in the enclosing project, when its account is reading.
+      if (outer && reader === null) return operation();
+      const fits = (snapshot: Snapshot) =>
+        reader?.projectId === null
+          ? snapshot.viewer === reader.viewer
+          : snapshot.projectId === reader?.projectId;
+      if (outer && fits(outer) && joins(outer)) {
         for (const each of members) outer.members.add(each);
         return operation();
       }
       const opened: Snapshot = {
-        projectId: project?.project_id ?? null,
-        viewer: key.viewer?.accountId ?? project?.thread_user ?? project?.owner ?? null,
+        projectId: reader?.projectId ?? null,
+        viewer: key.viewer?.accountId ?? reader?.viewer ?? null,
         viewerThreadId: threadId,
-        members: new Set([...members, ...(project ? [`project:${project.project_id}`] : [])]),
+        members: new Set([
+          ...members,
+          ...(reader?.projectId ? [`project:${reader.projectId}`] : []),
+        ]),
         open: true,
         prepared: false,
         rows: new Map(),
