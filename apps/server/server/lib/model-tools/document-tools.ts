@@ -15,6 +15,7 @@ import type {
 } from "@meridian/agent-edit/integration";
 import {
   documentNotFoundMessage,
+  EDIT_FAILED_MESSAGE,
   formatDocumentFile,
   isDocumentNotFoundError,
   modelResult,
@@ -533,7 +534,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     if (skillRefusal) return skillRefusal;
     const call = await resolveToolCall(deps, ctx);
     if (isToolError(call)) return writeToolError(written.command, call.output.message);
-    const settle = effectSettler(deps, ctx, edit);
+    const settle = effectSettler(deps, ctx, edit, written.command);
     if (
       written.command === "move" ||
       written.command === "delete" ||
@@ -809,13 +810,14 @@ class TransientEditFailure extends Error {}
  * back with it. A returned edit is a done command: nothing changed, and its row says why.
  *
  * A server failure (an apply or a commit that failed, or an effect that threw) is the server's
- * to get past: the effect runs once more under the same id, and only a second failure is the
- * model's answer, worded as a failure that did not land.
+ * to get past: the effect runs once more under the same command id, and only a second failure
+ * is the model's answer, worded as an edit that did not land and asking for no retry.
  */
 function effectSettler(
   deps: ToolWiringDeps,
   ctx: ToolHandlerContext,
   edit: NonNullable<ToolHandlerContext["modelEdit"]>,
+  command: WriteToolInput["command"],
 ): (effect: () => Promise<unknown>) => Promise<unknown> {
   const run = (effect: () => Promise<unknown>, retried: boolean) =>
     deps.documentSync.modelEdits().run({
@@ -833,11 +835,28 @@ function effectSettler(
           : rendered;
       },
     });
-  return async (effect): Promise<ModelEditHandlerResult> => {
-    const { outcome, evidence } = await run(effect, false).catch((cause) => {
-      if (ctx.signal.aborted) throw cause;
-      return run(effect, true);
+  const failed = () =>
+    deps.documentSync.modelEdits().run({
+      key: edit.key,
+      owner: { threadId: ctx.threadId, turnId: ctx.turnId },
+      signal: ctx.signal,
+      async effect() {
+        const rendered = edit.render(
+          writeToolError(command, EDIT_FAILED_MESSAGE, "internal_error"),
+        );
+        throw new ModelEditRefusal(rendered.toolResult, rendered.evidence);
+      },
     });
+  return async (effect): Promise<ModelEditHandlerResult> => {
+    const { outcome, evidence } = await run(effect, false)
+      .catch((cause) => {
+        if (ctx.signal.aborted) throw cause;
+        return run(effect, true);
+      })
+      .catch((cause) => {
+        if (ctx.signal.aborted) throw cause;
+        return failed();
+      });
     return { modelEdit: outcome, ...(evidence ? { evidence } : {}) };
   };
 }

@@ -145,6 +145,16 @@ a paragraph alone never joins independent writes. A live write merges one update
   would be visible). The list never tells the model to read again: the write landed, and the
   next write plans on what the result showed. Authors come from Yjs identities joined
   to the host's provenance, never a text diff. Every person prints as `the user`.
+- A result never tells the model to read again or to retry. A write that cannot land because the
+  document changed under its view answers `returned` (`returnedWriteResult`): the block it named
+  is gone (`block_gone`, decided by `hasMissingTarget` against the room copy), or the host found
+  its draft closed, its Work closed or its document removed. The result carries the document as
+  it stands, recorded as the model's latest view, so its next write plans on it. A hash or
+  number the view does not hold (`not_found`) carries the current text for the same reason. An
+  insert whose anchor block was deleted is not missing its target: it is new words, applied on
+  the view, and Yjs places it after the anchor's tombstone, where the anchor was. An undo, redo
+  or revert that finds its text applied, discarded or changed since is `done` and says what was
+  left (`cant_*`, `insufficient_*`, `nothing_to_revert` are outcomes, not errors).
 - Provider tool IDs are response-local: the host keys a write by response and tool call, so
   a later response reusing an ID is a new attempt. The package keeps no idempotency of its own.
 - Copies pass nodes from host read results rather than reading source documents inside

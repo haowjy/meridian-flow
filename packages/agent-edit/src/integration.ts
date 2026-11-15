@@ -128,6 +128,7 @@ export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-ed
 export { returnedWriteResult } from "./tool/receipt.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";
+export { EDIT_FAILED_MESSAGE } from "./tool/write-helpers.js";
 export type {
   CapturedPart,
   ComputedInverse,

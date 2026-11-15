@@ -18,7 +18,9 @@ import {
   recordStoredResult,
   shownNamesLookup,
 } from "../domains/runtime/loop/frontier-recording.js";
+import { setTestHook } from "../shared/test-hooks.js";
 import { treeListOfSource, treeSeeder } from "../test-support/tree-seed.js";
+import { reverseTurnCard } from "./work-receipt-reversal.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -64,6 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     beforeEach(async () => {
       await deleteDrizzleRows(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "model-returned"));
+      await db.execute(sql`UPDATE users SET name = 'Ana' WHERE id = ${USER_ID}`);
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
         userId: USER_ID,
@@ -139,9 +142,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const owner = { projectId: PROJECT_ID as never, ...correlation };
       const responseId = await runtimes.insertModelResponse(chat);
       const mutations = createReplyMutations();
-      const call = async (name: string, args: Record<string, unknown>) => {
+      const call = async (name: string, args: Record<string, unknown>, id = randomUUID()) => {
         const result = await runtime.app.toolExecutor.executeTool(
-          { id: randomUUID(), name, arguments: args },
+          { id, name, arguments: args },
           {
             ...chat,
             responseIdentity: { modelResponseId: responseId },
@@ -216,12 +219,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const drafts = await draftRows();
       const branches = await branchRows();
 
-      const returned = await call("write", {
+      const replayId = randomUUID();
+      const returnArgs = {
         command: "replace",
         path: "ch1",
         find: "Charlie three.",
         content: "Charlie, edited.",
-      });
+      };
+      const returned = await call("write", returnArgs, replayId);
       console.log("RETURNED RESULT >>>\n" + returned.text);
       expect(returned.isError).toBeFalsy();
       expect(returned.text).toContain("status: returned");
@@ -248,6 +253,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
         ),
       );
+      // A crash between the row's commit and the answer: the call, sent again under its id,
+      // reads the same row and the same text.
+      const replayed = await call("write", returnArgs, replayId);
+      expect(replayed.text).toBe(returned.text);
+      expect((await modelEditRows()).length).toBe(rows.length);
       // The model's view is now the current text: its next edit lands.
       const landed = await call("write", {
         command: "replace",
@@ -361,6 +371,141 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const [last] = (await modelEditRows()).slice(-1);
       expect(JSON.stringify(last?.outcome)).toContain("work_archived");
       void and;
+    });
+
+    it("a failed apply or commit runs once more under the same id; a second failure says the edit did not land", async () => {
+      const { call } = await reply(LIVE_CHAT);
+      await call("read", { path: "ch1" });
+      let failures = 0;
+      const remove = setTestHook("command.afterClaim", async () => {
+        failures += 1;
+        if (failures === 1) throw new Error("transient");
+      });
+      const once = await call("write", {
+        command: "replace",
+        path: "ch1",
+        find: "Alpha one.",
+        content: "Alpha, edited.",
+      });
+      remove();
+      expect(once.isError, once.text).toBeFalsy();
+      expect(once.text).toContain("status: success");
+      expect(failures).toBe(2);
+      const rows = await modelEditRows();
+      expect(rows).toHaveLength(1);
+
+      let attempts = 0;
+      const always = setTestHook("command.afterClaim", async () => {
+        attempts += 1;
+        if (attempts <= 2) throw new Error("down");
+      });
+      const twice = await call("write", {
+        command: "replace",
+        path: "ch1",
+        find: "Bravo two.",
+        content: "Bravo, edited.",
+      });
+      always();
+      console.log("FAILED TWICE >>>\n" + twice.text);
+      expect(twice.isError).toBe(true);
+      expect(twice.text).toContain("did not land");
+      expect(twice.text).not.toMatch(/retry|again|re-?read/i);
+    });
+
+    it("after the model deletes a document itself, a write on its path says it is deleted, by it", async () => {
+      const { call } = await reply(LIVE_CHAT);
+      await call("read", { path: "ch1" });
+      const deleted = await call("write", { command: "delete", path: "ch1" });
+      expect(deleted.isError, deleted.text).toBeFalsy();
+      const again = await call("write", {
+        command: "replace",
+        path: "ch1",
+        find: "Alpha one.",
+        content: "Alpha, edited.",
+      });
+      console.log("OWN DELETE >>>\n" + again.text);
+      expect(again.isError, again.text).toBeFalsy();
+      expect(again.text).toContain("status: returned");
+      expect(again.text).toContain("deleted by you");
+    });
+
+    it("a block number or hash the view does not hold answers with the document, not 'run read'", async () => {
+      const { call } = await reply(LIVE_CHAT);
+      await call("read", { path: "ch1" });
+      const missed = await call("write", {
+        command: "replace",
+        path: "ch1",
+        in: "dead",
+        content: "Nope.",
+      });
+      console.log("STALE HASH >>>\n" + missed.text);
+      expect(missed.text).toContain("Alpha one.");
+      expect(missed.text).not.toMatch(/re-sync|run read/i);
+    });
+
+    it("the turn's Undo takes back what landed and leaves the returned edit out cleanly", async () => {
+      const { runtime, call } = await reply(LIVE_CHAT);
+      const read = await call("read", { path: "ch1" });
+      const landed = await call("write", {
+        command: "replace",
+        path: "ch1",
+        find: "Alpha one.",
+        content: "Alpha, edited.",
+      });
+      expect(landed.isError, landed.text).toBeFalsy();
+      await writeMarkdown(runtime.ports.documentSync, {
+        documentId: CH1,
+        markdown: "Alpha, edited.\n\nCharlie three.",
+        origin: { type: "user", actorUserId: USER_ID },
+        threadId: LIVE_CHAT.threadId,
+      });
+      const returned = await call("write", {
+        command: "replace",
+        path: "ch1",
+        in: hashOf(read.text, "Bravo"),
+        content: "Bravo, edited.",
+      });
+      expect(returned.text).toContain("status: returned");
+      const undone = await reverseTurnCard(
+        {
+          ...runtime.ports,
+          workContextNotices: { workChanged: async () => {} },
+          stopThreads: async () => {},
+        },
+        {
+          threadId: LIVE_CHAT.threadId as never,
+          turnId: LIVE_CHAT.turnId as never,
+          userId: USER_ID as never,
+          direction: "undo",
+          commandId: randomUUID() as never,
+        },
+      );
+      console.log("TURN UNDO >>>", JSON.stringify(undone).slice(0, 600));
+      expect(undone.status).toBe("reversed");
+      const now = await call("read", { path: "ch1" });
+      expect(now.text).toContain("Alpha one.");
+      expect(now.text).toContain("Charlie three.");
+    });
+
+    it("an undo of text the writer rewrote since answers done, saying what was left and why", async () => {
+      const { runtime, call } = await reply(LIVE_CHAT);
+      await call("read", { path: "ch1" });
+      await call("write", {
+        command: "replace",
+        path: "ch1",
+        find: "Alpha one.",
+        content: "Alpha, edited.",
+      });
+      await writeMarkdown(runtime.ports.documentSync, {
+        documentId: CH1,
+        markdown: "Zulu.\n\nBravo two.\n\nCharlie three.",
+        origin: { type: "user", actorUserId: USER_ID },
+        threadId: LIVE_CHAT.threadId,
+      });
+      const undone = await call("write", { command: "undo", path: "ch1" });
+      console.log("UNDO >>>\n" + undone.text);
+      expect(undone.isError, undone.text).toBeFalsy();
+      expect(undone.text).not.toMatch(/\bread\b.*(again|replace)/i);
     });
   });
 }

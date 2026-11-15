@@ -64,10 +64,13 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
   };
 }
 
+/** What the model reads when an edit did not land because the server failed; it asks for no retry. */
+export const EDIT_FAILED_MESSAGE = "The edit did not land: the server failed while applying it.";
+
 /** A write that threw, as the model's answer: a file gone under it is `document_not_found`. */
 export function writeError(cause: unknown, commandName: DocumentCommandName): InternalWriteResult {
   if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, cause);
-  return status("internal_error", "The edit did not land: the server failed while applying it.");
+  return status("internal_error", EDIT_FAILED_MESSAGE);
 }
 
 export function errorMessage(cause: unknown): string {
