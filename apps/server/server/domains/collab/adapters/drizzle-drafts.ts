@@ -48,7 +48,7 @@ import {
   loadDocumentOwner,
 } from "../../context/tree/branch-ownership.js";
 import { requireLivingDocument } from "../../context/tree/living-document.js";
-import { isDrafted } from "../../file-policy/index.js";
+import { holdsDrafts } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
@@ -363,8 +363,8 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * Callers route scratch and uploads live, and pick a branch that may hold the
-   * document (`branchMayHold`); reaching here otherwise is a routing or authorization bug.
+   * Callers route uploads live, and pick a branch that may hold the document
+   * (`branchMayHold`); reaching here otherwise is a routing or authorization bug.
    * Every document draft is created here, so no entry point can pair a document with a
    * branch that may not hold it.
    */
@@ -374,7 +374,7 @@ export function createDrizzleDraftStore(
   ): Promise<void> {
     const tx = currentDrizzleDb(db);
     const owner = await loadDocumentOwner(tx, documentId);
-    if (owner && isContextUriScheme(owner.scheme) && !isDrafted(owner.scheme)) {
+    if (owner && isContextUriScheme(owner.scheme) && !holdsDrafts(owner.scheme)) {
       throw new Error(
         `Document ${documentId} is in ${contextRootUri(owner.scheme)}, which is never drafted`,
       );

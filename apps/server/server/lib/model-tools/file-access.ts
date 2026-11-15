@@ -19,7 +19,8 @@ import {
   type FileGrant,
   type FileNeed,
   type FileTarget,
-  isDrafted,
+  holdsDrafts,
+  inOthersNotes,
   isFileAccessDenied,
   type Principal,
   runWithEditGrants,
@@ -70,12 +71,27 @@ export async function keptDraft(
   documentId: string,
   execution: ThreadExecutionContext,
 ): Promise<FileDestination | null> {
-  if (!isDrafted(grant.facts.contentScheme)) return null;
+  if (!holdsDrafts(grant.facts.contentScheme)) return null;
   const owner = execution.branchOwner;
   const drafts = await deps.branches.draftReview.list({ owner });
   return drafts.some((draft) => draft.documentId === documentId)
     ? { kind: "draft", owner, ownerHandle: execution.scope.workHandle }
     : null;
+}
+
+export const HELD_IN_OTHERS_NOTES =
+  "These are another owner's notes: your change is held in this chat's Changes until the writer applies it.";
+
+/** Whether a call's change to another owner's Scratch lands as the chat's draft: the result says so. */
+export function heldInOthersNotes(
+  principal: Principal,
+  grants: readonly Pick<FileGrant, "destination" | "facts">[],
+): boolean {
+  const agent = principal.agent;
+  return (
+    !!agent &&
+    grants.some((grant) => grant.destination.kind === "draft" && inOthersNotes(agent, grant.facts))
+  );
 }
 
 /**

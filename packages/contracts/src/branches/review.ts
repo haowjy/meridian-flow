@@ -282,6 +282,15 @@ export type ModelEditCommandResult = {
 };
 
 /**
+ * Where a review item's document is: its scheme and path, and the Work or conversation whose
+ * Scratch holds it when the address names one (a note the chat wrote in another owner's Scratch
+ * is held in the chat's branch, so the row says whose notes it changes).
+ */
+export type ReviewContextLocation = Pick<ParsedContextUri, "scheme" | "path"> & {
+  scratchOwner?: { kind: "work"; workHandle: string } | { kind: "lineage"; rootThreadRef: string };
+};
+
+/**
  * One review item of the Work's active branch: a created or edited document, text or binary.
  * The list, Work counts and the open review all read this one row.
  */
@@ -301,7 +310,7 @@ export interface ThreadDraftListItem {
   wholeItem: boolean;
   documentName: string | null;
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
-  contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
+  contextLocation: ReviewContextLocation | null;
   /**
    * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
    * Apply brings it back at its prior or next free leaf name before merging.

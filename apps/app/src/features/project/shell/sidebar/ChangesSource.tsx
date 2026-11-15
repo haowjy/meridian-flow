@@ -157,6 +157,7 @@ export function ChangesSource({
   onPicked?: () => void;
 }) {
   const { ownerKey } = scope;
+  const notesOwner = useNotesOwner(projectId, scope.work);
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -328,6 +329,7 @@ export function ChangesSource({
             detail: changeSummary(
               file,
               readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined,
+              notesOwner(file),
             ),
             depth: group.folder ? depth + 1 : 0,
           })),
@@ -503,6 +505,7 @@ export function ChangesSource({
                   key={file.documentId}
                   projectId={projectId}
                   ownerKey={ownerKey}
+                  notesOwner={notesOwner(file)}
                   file={file}
                   depth={item.depth}
                   fault={tree?.faults.get(file.documentId) ?? null}
@@ -569,6 +572,7 @@ const NOTHING = () => {};
 function ChangeRow({
   projectId,
   ownerKey,
+  notesOwner,
   file,
   depth,
   fault,
@@ -583,6 +587,8 @@ function ChangeRow({
 }: {
   projectId: string;
   ownerKey: string;
+  /** Whose notes a held Scratch draft changes, when they aren't this list's own. */
+  notesOwner: string | null;
   file: ReviewFileTarget;
   /** Right before this row's Discard or Apply: the list holds what it shows. */
   onCommand: () => void;
@@ -639,7 +645,7 @@ function ChangeRow({
             <DeletedFromManuscriptTag item={file.draft} />
           </span>
         }
-        detail={changeSummary(file, textChanges)}
+        detail={changeSummary(file, textChanges, notesOwner)}
         notice={notice}
         revealActions={!touch}
         actions={
@@ -682,9 +688,13 @@ function ChangeRow({
  * What the draft does to the document, in a quiet line under its name; nothing to say, no line.
  * The row's name is already the draft's, so a rename says what it was.
  */
-function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) {
+function changeSummary(
+  file: ReviewFileTarget,
+  textChanges: number | undefined,
+  notesOwner: string | null,
+) {
   const line = treeLineOf(file.draft);
-  const place = file.contextLocation ? folderPlace(file.contextLocation) : null;
+  const place = file.contextLocation ? folderPlace(file.contextLocation, notesOwner) : null;
   const tree = file.draft.isNew
     ? place
       ? t`New in ${place}`
@@ -698,12 +708,15 @@ function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) 
           : line?.kind === "reorder"
             ? t`Changing position`
             : null;
+  // A new document's place already names the owner; any other change says whose notes it is.
+  const owner = file.draft.isNew ? null : notesOwner;
   // A new or deleted document is the whole change: its text needs no count.
   const count = !file.draft.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
-  if (!tree && count === null) return null;
+  if (!tree && !owner && count === null) return null;
   return (
     <span className="flex min-w-0 flex-wrap gap-x-2">
       {tree ? <span className="min-w-0 truncate">{tree}</span> : null}
+      {owner ? <span className="min-w-0 truncate">{owner}</span> : null}
       {count !== null ? (
         // A row word and the ✕ ✓ can leave less than the count's width: it breaks between words.
         <span className="whitespace-normal">
@@ -714,10 +727,38 @@ function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) 
   );
 }
 
+/** "Tea Notes'" and "Cup Draft's". */
+const possessive = (name: string) => (name.endsWith("s") ? `${name}'` : `${name}'s`);
+
+/**
+ * Whose notes a held Scratch draft changes, as the row says it ("Tea Notes' notes"); null for
+ * anything but another owner's notes. Under a Work, a conversation's notes are named by its chat
+ * ref; under No Work a conversation's address can't be told from the chat's own, so it stays plain.
+ */
+function useNotesOwner(
+  projectId: string,
+  scopeWork: Work | null,
+): (file: ReviewFileTarget) => string | null {
+  const { works } = useWorks(projectId);
+  return (file) => {
+    const owner = file.draft.contextLocation?.scratchOwner;
+    if (!owner) return null;
+    if (owner.kind === "lineage") {
+      return scopeWork?.isNoWork ? null : t`${possessive(owner.rootThreadRef)} notes`;
+    }
+    if (owner.workHandle === scopeWork?.handle) return null;
+    const name = works?.find((work) => work.handle === owner.workHandle)?.name;
+    return name ? t`${possessive(name)} notes` : null;
+  };
+}
+
 /** "Manuscript/Arc 3": the source and folder a document lands in. */
-function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>): string {
+function folderPlace(
+  location: NonNullable<ReviewFileTarget["contextLocation"]>,
+  notesOwner: string | null,
+): string {
   const folders = location.path.split("/").filter(Boolean).slice(0, -1);
-  const source = location.scheme ? schemeLabel(location.scheme) : null;
+  const source = notesOwner ?? (location.scheme ? schemeLabel(location.scheme) : null);
   return [source, ...folders].filter(Boolean).join("/");
 }
 

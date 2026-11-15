@@ -330,7 +330,7 @@
     "packages/agent-edit/src/undo/forward-inverse.test.ts": 29,
     "packages/command-driver/src/driver.test.ts": 24,
     "packages/contracts/src/context-entry-validation.test.ts": 26,
-    "packages/contracts/src/context-uri.test.ts": 19,
+    "packages/contracts/src/context-uri.test.ts": 17,
     "packages/contracts/src/contract-boundaries.test.ts": 2,
     "packages/contracts/src/dev-auth.test.ts": 23,
     "packages/contracts/src/document-href.test.ts": 27,

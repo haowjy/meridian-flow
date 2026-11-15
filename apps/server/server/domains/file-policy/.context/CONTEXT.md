@@ -15,16 +15,21 @@ built-ins take the default `edit`.
 
 ## AI access
 
-`placeAccess(facts)` is what a place does with an AI write: `auto-apply`, `ask` or `deny`. It takes
-the nearest stored setting on the file's *live* folder chain (`FileFacts.aiAccessSettings`, nearest
-first, never from a draft's view, or a draft move of a file out of a `deny` folder escapes it), then
-the source's fixed rule (`FIXED_AI_ACCESS`, empty), then `auto-apply`. `ask` on a source that can't
-hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the review it asks for.
+`placeAccess(agent, facts)` is what a place does with an AI write: `auto-apply`, `ask` or `deny`. It
+takes the nearest stored setting on the file's *live* folder chain (`FileFacts.aiAccessSettings`,
+nearest first, never from a draft's view, or a draft move of a file out of a `deny` folder escapes
+it), then the fixed rule (`fixedAccess`), then `auto-apply`. The fixed rule reads the calling link
+(`chain[0].scratchOwner`): a Scratch note it doesn't own (another Work's, or another conversation's)
+is `ask`; the chat's own Scratch is `auto-apply`. `ownsScratch` is the one own test, shared with
+`agentTerms`. `ask` on a source that can't hold a draft (`holdsDrafts`: every source but `uploads`)
+reads as `deny`, since landing it live would skip the review it asks for.
 
 - **Destination.** `Principal.agent` always has `branchOwner` and `writeMode`. A write goes to a draft
-  when the chat's mode is draft or the place asks, and the source is drafted; otherwise live.
-  `destinationFor` decides it per document from facts; `sourceDestination` decides it per source for
-  creates and tree views, from the fixed rule alone. Everything that has a document (revisions,
+  when the place asks and the source `holdsDrafts`, or the chat's mode is draft and the source
+  `followsWriteMode` (every source but Scratch and uploads: a chat's own Scratch is live in both
+  modes); otherwise live. `destinationFor` decides it per document from facts; `sourceDestination`
+  decides it per source for creates and tree views, from the fixed rule alone, taking the source's
+  owner (`ScratchPlace`) because a Scratch source has one. Everything that has a document (revisions,
   reads, lists) reads the destination from its decision or grant, never from the chat's mode. A stored per-folder setting needs creates to ask per path, and `placementFor`
   (context) must change before then.
 - **Facts follow the destination.** An auto-apply chat loads live facts. Only a place whose
@@ -39,7 +44,7 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
   used by no chat until a Save; a writer who wants review sets the folder to `ask` through the
   general setting. Undo is the normal receipt Undo.
 - **Not built yet.** Stored settings (written only by the writer's tree command, never a model tool);
-  a rule for another Work's Scratch; a setting that changes
+  a setting that changes
   between authorize and confirm (`confirmEdit` re-checks the level at the grant's destination, not the
   destination: that waits for the executor's rerun of a failed effect).
 

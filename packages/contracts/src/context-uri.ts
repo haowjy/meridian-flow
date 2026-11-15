@@ -16,17 +16,6 @@ export const CONTEXT_URI_SCHEMES = [
 ] as const;
 export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
 
-/** Sources whose documents receive drafts in a draft-mode Work's branch. */
-export function isDraftedScheme(scheme: ContextUriScheme): boolean {
-  return (
-    scheme === "manuscript" ||
-    scheme === "kb" ||
-    scheme === "user" ||
-    scheme === "unfiled" ||
-    scheme === "agents"
-  );
-}
-
 export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = [
   "manuscript",
   "kb",

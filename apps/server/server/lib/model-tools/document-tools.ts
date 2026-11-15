@@ -67,6 +67,8 @@ import {
   documentNotFoundError,
   fileAccessDeniedError,
   firstRefusal,
+  HELD_IN_OTHERS_NOTES,
+  heldInOthersNotes,
   inContainer,
   keptDraft,
   removalBehind,
@@ -219,11 +221,15 @@ function buildAgentWriteCommand(
   };
 }
 
-/** Writes report where they landed; a drafted write names its Work. */
+/**
+ * Writes report where they landed; a drafted write names its Work, and one into another owner's
+ * notes says it is held (the model's other drafts are the chat's mode, which it knows).
+ */
 function withDestination(
   outcome: WriteOutcome,
   destination: FileDestination,
   command: EngineWriteInput["command"],
+  held: boolean,
 ): WriteOutcome {
   if (outcome.isError) return outcome;
   // Inverses can follow an edit away from the chat's current destination. Their owner reports
@@ -235,6 +241,11 @@ function withDestination(
       ...outcome.result,
       destination: destination.kind,
       ...(destination.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
+      ...(held
+        ? {
+            notice: [HELD_IN_OTHERS_NOTES, outcome.result.notice].filter(Boolean).join("\n"),
+          }
+        : {}),
     },
   };
 }
@@ -435,7 +446,12 @@ async function writeUnderGrant(
   // Showing and frontier are host-only: they leave here only as `evidence`.
   const { showing: _showing, frontier: _frontier, ...outcome } = written;
   return {
-    ...withDestination(outcome, grant.destination, parsed.command),
+    ...withDestination(
+      outcome,
+      grant.destination,
+      parsed.command,
+      heldInOthersNotes(principal, [grant]),
+    ),
     evidence,
   } as WriteOutcome & {
     isError: false;

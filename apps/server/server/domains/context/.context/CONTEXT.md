@@ -179,10 +179,11 @@ document keys; a caller holds no document or namespace key when it submits. `con
 - **Placement.** People write live (`LIVE`), and so does an auto-apply chat in a place whose AI access
   is auto-apply. A chat whose write mode is draft, or whose place asks for review, writes a drafted
   source to the chat's branch (`{ draft: branchId }`; the owner is set in both modes and
-  `sourceDestination(writeMode, scheme, owner)` decides); the command transaction ensures and
+  `sourceDestination(thread, scheme, place)` decides; `place` is whose Scratch the source is); the command transaction ensures and
   locks the branch (`runInBranch`). A port built with a `destination` (a person's write, an Undo, a
-  tool call holding its grants) places every write there and ignores the chat's mode. Scratch content writes stay live in draft mode, while its tree
-  writes are drafted, so one drafted move can cross Scratch and a drafted source. A draft never
+  tool call holding its grants) places every write there and ignores the chat's mode. A chat's own Scratch content writes stay live in draft mode, while its tree
+  writes are drafted; another owner's Scratch asks, so its creates and edits are drafted in both
+  modes (Changes names the owner: "New in Tea Notes' notes"), so one drafted move can cross Scratch and a drafted source. A draft never
   seeds live Yjs: whole-file seed is a live-only command.
 - **Text reads take the document's destination.** A document's address scheme is where it was found;
   a branch move can leave its content in another source. Grep's `readable` returns each document's

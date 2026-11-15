@@ -22,7 +22,12 @@ import {
 } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
-import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
+import {
+  fileAccessDeniedError,
+  firstRefusal,
+  HELD_IN_OTHERS_NOTES,
+  heldInOthersNotes,
+} from "./file-access.js";
 import { areaOfPath, namesEvidence, shownNamesOf } from "./shown-paths.js";
 import {
   contextErrorMessage,
@@ -208,6 +213,7 @@ export async function runTreeToolCommand(
       ...(destination ? { destination: destination.kind } : {}),
       ...(destination?.kind === "draft" ? { draftWork: destination.ownerHandle ?? "/" } : {}),
       ...(handle ? { write: { id: handle } } : {}),
+      ...(heldInOthersNotes(call.principal, grants) ? { notice: HELD_IN_OTHERS_NOTES } : {}),
       tree: {
         ...(result.moved ? { moved: result.moved } : {}),
         ...(result.notMoved.length > 0 ? { notMoved: result.notMoved } : {}),

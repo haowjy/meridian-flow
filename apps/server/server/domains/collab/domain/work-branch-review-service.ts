@@ -196,7 +196,10 @@ const notesOf = (ended: DiscardResult) =>
 export function reviewContextLocation(uri: string | null): ThreadDraftListItem["contextLocation"] {
   if (!uri) return null;
   const parsed = parseUnifiedContextUri(uri);
-  return parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
-    ? { scheme: parsed.value.scheme, path: `/${parsed.value.path}` }
-    : null;
+  if (!parsed.ok || !isProjectContextTreeScheme(parsed.value.scheme)) return null;
+  const { scheme, path, authority } = parsed.value;
+  const location = { scheme, path: `/${path}` };
+  if (authority.kind === "work") return { ...location, scratchOwner: authority };
+  if (authority.kind === "lineage") return { ...location, scratchOwner: authority };
+  return location;
 }
