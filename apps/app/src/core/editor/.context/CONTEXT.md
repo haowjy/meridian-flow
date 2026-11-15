@@ -602,17 +602,27 @@ from the wire alone, with nothing stored between handshakes.
   older-copy read below (the whole copy), and a closing or removing retirement (the session's
   unacknowledged typing, above). The registry's one way to show a notice, `handBack`, takes the
   copy's name and an `Offer`, which only `offer` makes, so no notice can skip the records. A copy is deletable only when nothing it holds beyond
-  the server has words outside its acted-on sets, so a notice still showing keeps it.
-- **A notice not acted on comes back at the next start, wherever its document is.** `handBack`
-  keeps each notice with words in `localStorage`, one key per notice under the account
-  (`LocalDocumentCopies.keep`: its copy's name, cause, ranges and words), and `done` forgets it
-  once the record is written. The registry's first `observeUnsentTyping` (the account's start in
-  a tab) offers every kept notice again through `offer` against its copy, read without opening
-  the document, under the same id; a copy that is gone (the `removed` cause's purge) leaves the
-  words the notice kept (`keptOffer`). A closed draft or an older incarnation is rarely opened
-  again, so its document's next open can't be what offers them. A tab that starts while another
-  still shows a notice shows it too; acting in either is enough. Sign-out forgets the account's
-  kept notices with its copies. Wordless notices are not kept: they have nothing to lose.
+  the server has words outside its acted-on sets, so a notice still showing keeps it. Every read of
+  a copy checks it exists under the lock it reads under and never creates one.
+- **A notice not acted on comes back at the next start, wherever its document is.** The copy is
+  the one store: a notice with words also writes what it offered into its copy as it shows
+  (`recordOffered`: cause and item ranges, no words), beside the acted-on records. Unacted is
+  offered minus acted, read from the same database under the same lock, so the two can't
+  disagree. The registry, as it is made (the account's start in a tab, before any session), reads every
+  copy of the account no tab holds (`openUnacted`: `indexedDB.databases()` under the account's
+  prefixes, each locked exclusively if available, records first and the document only when some
+  offer is unacted) and offers each record again under its own id, overlapping records once, without
+  opening the document. A copy another tab holds is that tab's to offer from; the older-copy read
+  and a removal wait for this read, which locks what it reads. The server's state
+  can't be the measure here: what it lacks is known only to a connected session (the transport's
+  unacknowledged updates, in memory), and an empty one would offer a purged document's whole
+  text. A copy with an unacted offer is never deleted: a removal (`clear`) marks it retired and
+  it goes when the last offer is acted on (`recordHandedBack`) or at a start that finds nothing
+  left. A removal whose offer the copy could not record does not clear it. A closed draft or an
+  older incarnation is rarely opened again, so its document's next open can't be what offers
+  them. A tab that starts while another still shows a notice shows it too; acting in either is
+  enough. Sign-out deletes the copies, offers with them. Wordless notices record nothing: they
+  have nothing to lose.
 - So a
   reload or crash offers again every notice's words the writer has not acted on, acting on one
   notice consumes only its own words, and once acted on, in any tab, no reader offers them
