@@ -4,7 +4,7 @@
  * file), a word. Pure over the document and, for an atom, the `Geometry` port.
  */
 
-import type { Fragment, Mark, Node as PMNode } from "@tiptap/pm/model";
+import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
 
 import { chipLinkTarget } from "../links/link-chip";
 
@@ -86,21 +86,54 @@ export function snapOutOfUnits(doc: PMNode, pos: number): number {
 }
 
 /**
- * Where `content` inserted at `pos` lands. Text joins the run it is put into,
- * so pasting a word inside a chip edits the chip's label; content carrying a
- * unit of its own (a picture, a chip) goes beside the chip or code span.
+ * Where `slice` inserted at `pos` lands, and as what. Content carrying a unit
+ * of its own (a picture, a chip) goes beside a chip or code span `pos` is
+ * inside. Text stays at `pos`, and strictly inside a chip it takes the chip's
+ * link, as typing there does, so it edits the label instead of splitting it.
  */
-export function insertionPos(doc: PMNode, pos: number, content: Fragment): number {
-  return carriesUnit(content) ? snapOutOfUnits(doc, pos) : pos;
+export function inlineLanding(
+  doc: PMNode,
+  pos: number,
+  slice: Slice,
+): { pos: number; slice: Slice } {
+  const chip = chipAround(doc, pos);
+  if (carriesUnit(slice.content, chip)) return { pos: snapOutOfUnits(doc, pos), slice };
+  if (!chip) return { pos, slice };
+  return { pos, slice: new Slice(withMark(slice.content, chip), slice.openStart, slice.openEnd) };
 }
 
-function carriesUnit(content: Fragment): boolean {
+/** The chip link on both sides of `pos`, or null at a chip's edge or outside one. */
+function chipAround(doc: PMNode, pos: number): Mark | null {
+  const $pos = doc.resolve(pos);
+  if (!$pos.parent.isTextblock || !$pos.nodeBefore || !$pos.nodeAfter) return null;
+  const before = chipLink($pos.nodeBefore);
+  const after = chipLink($pos.nodeAfter);
+  return before && after && before.eq(after) ? before : null;
+}
+
+// The same address counts as the same chip: the paste pipeline may give the
+// pasted copy a ref the chip in the document doesn't carry yet.
+function isOtherChip(link: Mark | null, around: Mark | null): boolean {
+  return link !== null && !(around !== null && link.attrs.href === around.attrs.href);
+}
+
+function withMark(content: Fragment, mark: Mark): Fragment {
+  const nodes: PMNode[] = [];
+  content.forEach((node) => {
+    if (node.isText) nodes.push(node.mark(mark.addToSet(node.marks)));
+    else nodes.push(node.copy(withMark(node.content, mark)));
+  });
+  return Fragment.fromArray(nodes);
+}
+
+/** Text already linked to `around`'s address (a plain-text paste takes the caret's marks) is its label, not a chip. */
+function carriesUnit(content: Fragment, around: Mark | null): boolean {
   let found = false;
   content.descendants((node) => {
     if (found) return false;
     found =
       (node.isInline && !node.isText && !node.type.spec.linebreakReplacement) ||
-      (node.isText && chipLink(node) !== null);
+      (node.isText && isOtherChip(chipLink(node), around));
     return !found;
   });
   return found;

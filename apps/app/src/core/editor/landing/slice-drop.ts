@@ -20,7 +20,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import { sliceForDestination } from "../extensions/meridian-extensions";
 import { landSlice } from "../extensions/nesting";
 import type { DropDoor, DropPlan } from "./drop-plan";
-import { insertionPos } from "./inline-snap";
+import { inlineLanding } from "./inline-snap";
 import { isTable, isTableCell, type Landing } from "./point-landing";
 import { crossesTextblocks, removeRange } from "./range-removal";
 
@@ -140,12 +140,11 @@ function slicePlan(
 
   // A block slice settles where ProseMirror's own fit would put it, so the
   // caret draws that position.
-  const pos =
-    landing.kind === "inline"
-      ? (dropPoint(state.doc, insertionPos(state.doc, landing.pos, slice.content), slice) ??
-        landing.pos)
-      : landing.pos;
-  const built = sliceDropTransaction(state, pos, slice, source);
+  const inline = landing.kind === "inline" ? inlineLanding(state.doc, landing.pos, slice) : null;
+  const pos = inline
+    ? (dropPoint(state.doc, inline.pos, inline.slice) ?? landing.pos)
+    : landing.pos;
+  const built = sliceDropTransaction(state, pos, inline?.slice ?? slice, source);
   if (!built) return { kind: "refuse" };
   const broken = tableRefusal(state, pos, built);
   if (broken) return { kind: "refuse", hint: broken };
