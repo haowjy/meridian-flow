@@ -24,7 +24,6 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import {
   type DocumentView,
   type DraftPin,
@@ -34,6 +33,7 @@ import {
 } from "@/client/project-shell/document-views";
 import { type TreeVersionChoice, useTreeVersionChoice } from "@/client/project-shell/store";
 import { unwrapListQuery } from "@/client/query/list-query";
+import { projectReadEnabled } from "@/client/query/project-read-gate";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";

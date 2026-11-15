@@ -81,9 +81,15 @@ export class CommandDriver {
   async open(): Promise<void> {
     this.stopped = false;
     this.suspended = false;
-    this.cleanup.push(this.ports.changes.subscribe(() => void this.reload()));
-    await this.reload();
-    this.acquireLock();
+    this.cleanup.push(this.ports.changes.subscribe(() => this.refresh()));
+    // An unread journal is not an empty one: ask for the right to deliver even when the first
+    // read failed. The read is tried again when the lock is held, on a nudge, and by every
+    // successful write.
+    try {
+      await this.reload();
+    } finally {
+      this.acquireLock();
+    }
   }
 
   stop(): void {
@@ -229,6 +235,7 @@ export class CommandDriver {
 
   /** Something that may let a send through changed: back online, tab visible. */
   nudge(): void {
+    if (this.installedRead === 0) this.refresh();
     this.retryAt.clear();
     this.publish();
     this.wake();
@@ -269,7 +276,7 @@ export class CommandDriver {
         this.release = release;
         this.delivery = new AbortController();
         // Another tab may have settled or removed records while this one waited.
-        void this.reload();
+        this.refresh();
       },
       () => {
         if (this.acquiring === acquiring) this.acquiring = null;
@@ -305,6 +312,13 @@ export class CommandDriver {
   private async changed(): Promise<void> {
     this.ports.changes.post();
     await this.reload().then(undefined, (cause) =>
+      this.ports.log({ id: "", kind: "journal", attempt: 0, failure: `read: ${String(cause)}` }),
+    );
+  }
+
+  /** Reads again where no caller can act on a failed read: the next one is tried at the next event. */
+  private refresh(): void {
+    this.reload().then(undefined, (cause) =>
       this.ports.log({ id: "", kind: "journal", attempt: 0, failure: `read: ${String(cause)}` }),
     );
   }
@@ -403,10 +417,21 @@ export class CommandDriver {
   /** Each sending record that is the earliest of every lane it names. */
   private heads(): CommandRecord[] {
     const first = new Map<string, string>();
-    const sending = this.records.filter((record) => record.state === "sending");
-    for (const record of sending)
-      for (const lane of record.lanes) if (!first.has(lane)) first.set(lane, record.id);
-    return sending.filter((record) => record.lanes.every((lane) => first.get(lane) === record.id));
+    for (const record of this.records)
+      if (this.holdsLanes(record))
+        for (const lane of record.lanes) if (!first.has(lane)) first.set(lane, record.id);
+    return this.records.filter(
+      (record) =>
+        record.state === "sending" && record.lanes.every((lane) => first.get(lane) === record.id),
+    );
+  }
+
+  /** Whether later records of its lanes wait for it: it is sending, or refused and held. */
+  private holdsLanes(record: CommandRecord): boolean {
+    return (
+      record.state === "sending" ||
+      (record.state === "never" && this.ports.kinds[record.kind]?.holdsLane === true)
+    );
   }
 
   private prune(now: number): void {
@@ -516,7 +541,7 @@ export class CommandDriver {
       if (stored?.state !== "sending" || stored.sendId !== record.sendId)
         return { change: {}, result: null };
       // Another tab may have put an earlier record of a lane back since this one was chosen.
-      if (!headsItsLanes(records, stored)) return { change: {}, result: null };
+      if (!this.headsItsLanes(records, stored)) return { change: {}, result: null };
       if (stored.sent) {
         const again = { ...stored, attempts: stored.attempts + 1 };
         return { change: { put: [again] }, result: again };
@@ -544,6 +569,16 @@ export class CommandDriver {
     });
   }
 
+  /** Whether no earlier record that holds its lanes shares a lane with this one. */
+  private headsItsLanes(records: readonly CommandRecord[], record: CommandRecord): boolean {
+    return !records.some(
+      (other) =>
+        this.holdsLanes(other) &&
+        other.seq < record.seq &&
+        other.lanes.some((lane) => record.lanes.includes(lane)),
+    );
+  }
+
   private async settle(record: CommandRecord, outcome: Outcome): Promise<void> {
     await this.mutate(({ records }) => {
       const stored = records.find((candidate) => candidate.id === record.id);
@@ -553,16 +588,6 @@ export class CommandDriver {
     });
     this.retryAt.delete(record.id);
   }
-}
-
-/** Whether no earlier `sending` record shares a lane with this one. */
-function headsItsLanes(records: readonly CommandRecord[], record: CommandRecord): boolean {
-  return !records.some(
-    (other) =>
-      other.state === "sending" &&
-      other.seq < record.seq &&
-      other.lanes.some((lane) => record.lanes.includes(lane)),
-  );
 }
 
 /** When a settled record may go: observed `done` after a minute, a `never` after thirty days. */

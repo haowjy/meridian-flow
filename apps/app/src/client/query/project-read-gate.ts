@@ -11,7 +11,7 @@
  */
 import type { Query } from "@tanstack/react-query";
 
-import { readPendingProjectCreation } from "@/client/query/project-commands";
+import { readPendingProjectCreation } from "./project-commands";
 
 export function isProjectReadPaused(queryKey: readonly unknown[]): boolean {
   // The project detail key is ["projects", "detail", id].

@@ -35,15 +35,15 @@ const noSubscription = () => () => undefined;
  */
 export type CommandDomain = {
   kinds: Record<string, CommandKind>;
-  bind(driver: CommandDriver, opened?: Promise<void>): () => void;
+  bind(driver: CommandDriver, accountId: string, opened?: Promise<void>): () => void;
 };
 
 /** One domain out of several: their kinds side by side, and every binding. */
 export function combineDomains(...domains: CommandDomain[]): CommandDomain {
   return {
     kinds: Object.assign({}, ...domains.map((domain) => domain.kinds)),
-    bind: (driver, opened) => {
-      const unbinds = domains.map((domain) => domain.bind(driver, opened));
+    bind: (driver, accountId, opened) => {
+      const unbinds = domains.map((domain) => domain.bind(driver, accountId, opened));
       return () => {
         for (const unbind of unbinds) unbind();
       };
@@ -91,7 +91,7 @@ export function CommandDriverProvider({
   useEffect(() => {
     if (!driver || !domain) return;
     const opened = driver.open();
-    const unbind = domain.bind(driver, opened);
+    const unbind = domain.bind(driver, accountId, opened);
     const nudge = () => driver.nudge();
     const visible = () => {
       if (document.visibilityState !== "visible") return;
@@ -120,7 +120,7 @@ export function CommandDriverProvider({
       unbind();
       driver.stop();
     };
-  }, [driver, domain]);
+  }, [driver, domain, accountId]);
   return <CommandDriverContext.Provider value={driver}>{children}</CommandDriverContext.Provider>;
 }
 

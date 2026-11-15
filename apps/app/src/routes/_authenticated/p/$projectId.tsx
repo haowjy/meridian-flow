@@ -2,6 +2,7 @@
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
+import { httpErrorStatus } from "@/client/api/http-client";
 import { awaitPendingProjectCreation } from "@/client/query/project-commands";
 import { loadProjectEntry } from "@/client/query/project-route-data";
 import {
@@ -20,14 +21,16 @@ export const Route = createFileRoute("/_authenticated/p/$projectId")({
   // A creation this account has not had confirmed owns the destination: the shell renders from
   // its record while the POST is in flight. The server renders without the journal, so a project
   // it cannot find is left for the client to decide (`unresolved`).
-  loader: async ({ params }) => {
+  loader: async ({ params, parentMatchPromise }) => {
     const { projectId } = params;
-    if (await awaitPendingProjectCreation(projectId))
+    // The account this load is for, not the one whose provider happens to be mounted.
+    const { user } = (await parentMatchPromise).loaderData ?? {};
+    if (user && (await awaitPendingProjectCreation(user.userId, projectId)))
       return { projectId, project: null, data: null, unresolved: false };
     try {
       return { projectId, ...(await loadProjectEntry(projectId)), unresolved: false };
     } catch (cause) {
-      if (typeof window !== "undefined" || !isNotFound(cause)) throw cause;
+      if (typeof window !== "undefined" || httpErrorStatus(cause) !== 404) throw cause;
       return { projectId, project: null, data: null, unresolved: true };
     }
   },
@@ -37,10 +40,6 @@ export const Route = createFileRoute("/_authenticated/p/$projectId")({
   errorComponent: ProjectLoadError,
   component: ProjectRoute,
 });
-
-function isNotFound(cause: unknown): boolean {
-  return typeof cause === "object" && cause !== null && "status" in cause && cause.status === 404;
-}
 
 function PendingProject() {
   return (
@@ -79,7 +78,7 @@ function ProjectRoute() {
   const router = useRouter();
   const unresolved = loaderData.unresolved;
   useEffect(() => {
-    if (unresolved) void router.invalidate();
+    if (unresolved) void router.invalidate({ filter: (match) => match.routeId === Route.id });
   }, [unresolved, router]);
   const project = useProject(projectId, loaderData.project ?? creation.project);
   // A project being created has no route data yet; the creation stands in.

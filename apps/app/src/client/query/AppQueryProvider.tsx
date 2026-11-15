@@ -1,9 +1,8 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
-
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 
 export type AppQueryProviderProps = {
   /** From `_authenticated` loader — `null` triggers client fetch. */

@@ -2,7 +2,7 @@
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useCommandDriver, useCommands } from "@/client/commands/driver-context";
 import { submitCommand } from "@/client/commands/submit";
@@ -29,27 +29,38 @@ export function useCreateProject() {
   const client = useQueryClient();
   const router = useRouter();
 
+  // One press creates one project: a press while the record is being saved shares its result.
+  const submitting = useRef<Promise<string | null> | null>(null);
   const create = useCallback(
-    async (input: { title: string }): Promise<string | null> => {
+    (input: { title: string }): Promise<string | null> => {
       const title = input.title.trim();
-      if (!title) throw new Error("Project title is required");
-      if (!driver) throw new Error("Commands are not available yet");
+      if (!title) return Promise.reject(new Error("Project title is required"));
+      if (!driver) return Promise.reject(new Error("Commands are not available yet"));
+      if (submitting.current) return submitting.current;
       const id = crypto.randomUUID();
       const body: ProjectCreateBody = { id, title, userId };
-      const record = await submitCommand(driver, {
+      const submit = submitCommand(driver, {
         kind: PROJECT_CREATE_KIND,
         lanes: [projectLane(id)],
         body,
+      }).then((record) => {
+        if (!record) return null;
+        client.setQueryData(projectQueryKeys.detail(id), pendingProject(body));
+        void router.navigate({
+          to: "/p/$projectId/$",
+          params: { projectId: id, _splat: "chats" },
+          // Created from the /projects/new dialog: Back returns to the library.
+          replace: true,
+        });
+        return id;
       });
-      if (!record) return null;
-      client.setQueryData(projectQueryKeys.detail(id), pendingProject(body));
-      void router.navigate({
-        to: "/p/$projectId/$",
-        params: { projectId: id, _splat: "chats" },
-        // Created from the /projects/new dialog: Back returns to the library.
-        replace: true,
-      });
-      return id;
+      // Kept after a success: the dialog is on its way out. A failure frees the next press.
+      submitting.current = submit;
+      const release = () => {
+        submitting.current = null;
+      };
+      submit.then((id) => id === null && release(), release);
+      return submit;
     },
     [client, driver, router, userId],
   );

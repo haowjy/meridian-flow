@@ -73,40 +73,13 @@ export function pendingProject(
   };
 }
 
-/** The driver this tab runs, for the loader and the read gate, which run outside React. */
-let bound: CommandDriver | null = null;
-
-/** Settles once the bound driver has read its journal; replaced when the driver is unbound. */
-let journalOpen = deferred();
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
-/** The create of this project the server has not taken yet, if this account has one. */
-export function readPendingProjectCreation(projectId: string): ProjectCreation | undefined {
-  for (const record of bound?.getSnapshot().records ?? []) {
-    const creation = projectCreationOf(record);
-    if (creation?.projectId === projectId && creation.state !== "done") return creation;
-  }
-  return undefined;
-}
-
-/**
- * For the route loader: the project's unsent create, read once the journal has opened (it is
- * local and quick), so a reload shows the project as pending the way the first load did. The
- * server has no journal: there the answer is "unknown" (`undefined`).
- */
-export async function awaitPendingProjectCreation(
+/** The project's create the server has not taken: on its way, or refused and not yet retried or discarded. */
+export function unsettledProjectCreation(
+  records: readonly CommandRecord[],
   projectId: string,
-): Promise<ProjectCreation | undefined> {
-  if (typeof window === "undefined") return undefined;
-  await journalOpen.promise;
-  return readPendingProjectCreation(projectId);
+): ProjectCreation | undefined {
+  const creation = projectCreationFor(records, projectId);
+  return creation?.state === "done" ? undefined : creation;
 }
 
 /** The project's create, in whatever state the driver holds it. */
@@ -122,11 +95,68 @@ export function projectCreationFor(
   return found;
 }
 
+/**
+ * The driver each account runs in this tab, for the loader and the read gate, which run outside
+ * React. The loader asks for its own account's: during an account switch it runs before the new
+ * provider mounts, while the old account's driver is still the mounted one.
+ */
+type AccountJournal = { driver: CommandDriver | null; opened: Deferred };
+type Deferred = { promise: Promise<void>; resolve: () => void };
+
+const journals = new Map<string, AccountJournal>();
+/** The account whose provider is mounted: the one the read gate's queries belong to. */
+let mountedAccount: string | null = null;
+
+function deferred(): Deferred {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function journalOf(accountId: string): AccountJournal {
+  const known = journals.get(accountId);
+  if (known) return known;
+  const journal: AccountJournal = { driver: null, opened: deferred() };
+  journals.set(accountId, journal);
+  return journal;
+}
+
+/** The account's unsent create of this project, if its driver is bound. */
+function pendingCreationIn(
+  accountId: string | null,
+  projectId: string,
+): ProjectCreation | undefined {
+  const driver = accountId === null ? undefined : journals.get(accountId)?.driver;
+  return driver ? unsettledProjectCreation(driver.getSnapshot().records, projectId) : undefined;
+}
+
+/** For the read gate: the mounted account's create of this project the server has not taken. */
+export const readPendingProjectCreation = (projectId: string) =>
+  pendingCreationIn(mountedAccount, projectId);
+
+/**
+ * For the route loader: the account's unsent create of the project, read once that account's
+ * journal has opened (it is local and quick), so a reload shows the project as pending the way
+ * the first load did. The server has no journal: there the answer is "unknown" (`undefined`).
+ */
+export async function awaitPendingProjectCreation(
+  accountId: string,
+  projectId: string,
+): Promise<ProjectCreation | undefined> {
+  if (typeof window === "undefined") return undefined;
+  await journalOf(accountId).opened.promise;
+  return pendingCreationIn(accountId, projectId);
+}
+
 export function projectDomain(client: QueryClient): CommandDomain {
   const kinds: Record<string, CommandKind> = {
     [PROJECT_CREATE_KIND]: {
       version: 1,
       migrate: (body) => body as ProjectCreateBody,
+      // The project's Work commands wait for it to succeed, through a refusal and its Retry.
+      holdsLane: true,
       request: ({ body }) => {
         const { id, title } = body as ProjectCreateBody;
         return { method: "POST", path: API_PROJECTS_PATH, body: { id, title } };
@@ -148,15 +178,18 @@ export function projectDomain(client: QueryClient): CommandDomain {
   };
   return {
     kinds,
-    bind: (driver, opened = Promise.resolve()) => {
-      bound = driver;
-      const open = journalOpen;
+    bind: (driver, accountId, opened = Promise.resolve()) => {
+      const journal = journalOf(accountId);
+      journal.driver = driver;
+      mountedAccount = accountId;
       // A journal that cannot be read leaves no creations to find, and the loader goes on.
-      void opened.then(open.resolve, open.resolve);
+      const { resolve } = journal.opened;
+      void opened.then(resolve, resolve);
       return () => {
-        if (bound !== driver) return;
-        bound = null;
-        journalOpen = deferred();
+        if (journal.driver !== driver) return;
+        journal.driver = null;
+        journal.opened = deferred();
+        if (mountedAccount === accountId) mountedAccount = null;
       };
     },
   };

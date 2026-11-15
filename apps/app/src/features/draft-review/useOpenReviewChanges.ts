@@ -5,7 +5,7 @@
  * changes (`changes`) alone; a tree line has no place in the text.
  */
 import { useQuery } from "@tanstack/react-query";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
+import { projectReadEnabled } from "@/client/query/project-read-gate";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useChangeItems, useDraftCommandState } from "./draft-changes";

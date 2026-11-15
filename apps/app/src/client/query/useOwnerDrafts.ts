@@ -12,9 +12,9 @@ import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import { listOwnerDrafts } from "@/client/api/branches-api";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 import { useProjectTreeViews } from "./useProjectTree";
 import { projectWorkBranchFiles, type ReviewFileTarget } from "./work-branch-files";
 

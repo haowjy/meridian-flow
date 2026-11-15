@@ -162,13 +162,21 @@ const workCommands = {
 export const workCommandSpecs: { [Op in WorkOperation]: WorkCommandSpec<Op> } = workCommands;
 
 /**
- * What a Work command waits behind: its Work's earlier commands, and its project's, so the
- * project's commands go one at a time and none reaches the server before the project's own create
- * (`project:<id>`, shared with `project_create`).
+ * What a Work command waits behind. Every one waits for its Work's earlier commands; the
+ * lifecycle moves (archive, unarchive, delete, restore) also take their project's turn, so they
+ * run one at a time per project. While the project's own create has not succeeded
+ * (`projectCreating`), the command also waits on its lane: the server has no such project, and a
+ * refused create keeps the lane closed until it is retried or discarded.
  */
-export const workLanes = (projectId: string, workId: string): string[] => [
+export const workLanes = (
+  operation: WorkOperation,
+  projectId: string,
+  workId: string,
+  projectCreating: boolean,
+): string[] => [
   `work:${workId}`,
-  projectLane(projectId),
+  ...(operation === "create" || operation === "update" ? [] : [`project-works:${projectId}`]),
+  ...(projectCreating ? [projectLane(projectId)] : []),
 ];
 
 /** The kind a Work operation is stored and delivered as. */
