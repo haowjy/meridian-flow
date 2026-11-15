@@ -288,7 +288,6 @@ async function harness(
     documentSync,
     shownLinks: store,
     contextPorts: { chatFiles: emptyOwnerLookup },
-    branches: { draftReview: { resolveItemByDocument: async () => null } },
     fileAccess: {
       // The hidden document's hit is filtered before the model sees it.
       listAccess: async (_principal: unknown, ids: readonly string[]) =>
