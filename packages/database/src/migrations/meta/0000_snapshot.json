@@ -5878,13 +5878,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "across_lists": {
-          "name": "across_lists",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "shown_at": {
           "name": "shown_at",
           "type": "text",

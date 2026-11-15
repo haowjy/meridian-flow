@@ -61,7 +61,6 @@ export function createDrizzleTreeHistory(
           kind: input.reverses?.kind ?? "write",
           reverses: input.reverses?.receipt ?? null,
           draftBranchId: input.draftBranchId ?? null,
-          acrossLists: input.acrossLists ?? false,
           shownAt: input.shownAt,
         })
         .returning({ id: treeEditReceipts.id });
@@ -152,8 +151,6 @@ export function createDrizzleTreeHistory(
         .select({
           receiptId: treeEditReceiptNodes.receiptId,
           nodeId: treeEditReceiptNodes.nodeId,
-          beforeAt: treeEditReceiptNodes.beforeAt,
-          afterAt: treeEditReceiptNodes.afterAt,
         })
         .from(treeEditReceiptNodes)
         .where(
@@ -164,13 +161,10 @@ export function createDrizzleTreeHistory(
         );
       return chosen.map((row) => {
         const own = touched.filter((node) => node.receiptId === row.id);
-        const subject = own.find((node) => node.nodeId === row.nodeId);
         return receiptOf(
           row,
           own.map((node) => node.nodeId),
           0,
-          0,
-          acrossOf(row, subject),
         );
       });
     },
@@ -267,8 +261,6 @@ export function createDrizzleTreeHistory(
           receiptId: treeEditReceiptNodes.receiptId,
           nodeId: treeEditReceiptNodes.nodeId,
           wId: treeEditReceiptNodes.wId,
-          beforeAt: treeEditReceiptNodes.beforeAt,
-          afterAt: treeEditReceiptNodes.afterAt,
         })
         .from(treeEditReceiptNodes)
         .where(inArray(treeEditReceiptNodes.receiptId, ids));
@@ -284,7 +276,6 @@ export function createDrizzleTreeHistory(
             own.map((node) => node.nodeId),
             entry.wId,
             subject?.wId ?? entry.wId,
-            acrossOf(row, subject),
           ),
         ];
       });
@@ -319,25 +310,13 @@ export function createDrizzleTreeHistory(
   };
 }
 
-/** A move between two lists: the subject's address before and after. */
-function acrossOf(
-  row: typeof treeEditReceipts.$inferSelect,
-  subject: { beforeAt: string | null; afterAt: string | null } | undefined,
-): { from: string; to: string } | undefined {
-  return row.acrossLists && subject?.beforeAt && subject.afterAt
-    ? { from: subject.beforeAt, to: subject.afterAt }
-    : undefined;
-}
-
 function receiptOf(
   row: typeof treeEditReceipts.$inferSelect,
   nodes: string[],
   wId: number,
   handle = wId,
-  across?: { from: string; to: string },
 ): TreeReceipt {
   return {
-    ...(across ? { across } : {}),
     id: row.id,
     subject: row.nodeId,
     records: row.records,

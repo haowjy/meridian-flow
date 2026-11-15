@@ -166,11 +166,9 @@ create made on the way (outermost first), so its Undo takes them back with it. I
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`
-(a skip, as `cant_undo_changed` is the model's answer); a move between a project and `user://`
-goes back by the model's own move the other way (`moveBackAcrossLists`, the context port's
-`moveAcrossLists`, which the reverse route builds from the thread's context and hands down as
-`moveBackAcrossLists`; locking both lists), and is `superseded` once a later change moved or
-renamed the node. A reply that only changed the tree has a card: its documents are listed from the
+(a skip, as `cant_undo_changed` is the model's answer). A reply that touched both a project's
+files and `user://` locks both lists; nothing moves between them, so each receipt goes back in
+its own list. A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
 a folder has no document, so the item carries the node id with `folder: true` and no door), and
 the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in

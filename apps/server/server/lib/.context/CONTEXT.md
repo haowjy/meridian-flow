@@ -126,14 +126,10 @@ join's forward. It answers from that row (`fileRefOfVisible`, the mapping `Conte
 shares), so it never resolves a path and never sees a draft.
 
 A move inside one list, and every rename, delete and create in it, is a record the browser
-writes in the tree's room (`yjs-tree-room.ts`); no route takes those. The one move route is
-`POST /api/projects/:projectId/context/move` (`context-move-route.ts`), for a document crossing
-between a project's files and the account's: edit is granted on both ends, and the port writes
-both lists' records in one transaction. Owner resolution and the edit recheck are
+writes in the tree's room (`yjs-tree-room.ts`); no route takes those, and nothing moves between
+a project's files and the account's: between the two the action is Copy. Owner resolution and the edit recheck are
 `context-locator.ts`'s `resolveLocator` and `canEditContextUri`, shared with Copy, and the
-destination parsers are in `context-destination.ts`. The model goes through the port with the
-same node and an `at` destination: the folder it typed, validated by the mover with the reasons
-`resolveMutation` gives.
+destination parsers are in `context-destination.ts`.
 
 Move and Copy run inside `withDurableIntentInterruptBoundary` (`shared/interrupt-boundary.ts`),
 which turns any bare Nitro `HTTPError` 4xx (one thrown without the envelope, such as a parse or

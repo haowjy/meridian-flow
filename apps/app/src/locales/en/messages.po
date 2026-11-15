@@ -2259,8 +2259,8 @@ msgid "Copy the name you typed"
 msgstr "Copy the name you typed"
 
 #: src/features/project/context/entry-drag/drop-choice.ts
-msgid "Copy these between your files and a project"
-msgstr "Copy these between your files and a project"
+#~ msgid "Copy these between your files and a project"
+#~ msgstr "Copy these between your files and a project"
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Copy to {destinationName}"
