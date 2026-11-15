@@ -53,11 +53,11 @@ export function openIndexedDbDatabase(
   return {
     async transact(stores, mode, run) {
       const tx = (await open()).transaction(stores, mode);
-      const committed = new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onabort = () => reject(tx.error ?? new DOMException("Aborted", "AbortError"));
+      // Resolves to why it aborted: a `run` that throws first leaves nothing to await it.
+      const finished = new Promise<Error | null>((resolve) => {
+        tx.oncomplete = () => resolve(null);
+        tx.onabort = () => resolve(tx.error ?? new DOMException("Aborted", "AbortError"));
       });
-      committed.catch(() => undefined);
       let result: Awaited<ReturnType<typeof run>>;
       try {
         result = await run(tx);
@@ -66,7 +66,8 @@ export function openIndexedDbDatabase(
         if (!tx.error) tx.abort();
         throw cause;
       }
-      await committed;
+      const failure = await finished;
+      if (failure) throw failure;
       return result;
     },
     close() {
