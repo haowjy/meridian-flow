@@ -162,33 +162,32 @@ function Word({
   switch (word.kind) {
     case "saved": {
       const { saveId } = word.outcome;
+      const undoState = saveId ? saves.undoOf(saveId) : undefined;
+      const held = heldBack(word.outcome);
       return (
         <>
           <RowWord tone="done" word={<Trans>Saved</Trans>} sentence={savedSentence(word)} />
-          {word.outcome.leftOut.length > 0 ? (
+          {held.length > 0 ? (
             <ProblemsButton
               projectId={projectId}
               pkg={pkg}
-              findings={leftOutErrors(word.outcome)}
-              word={plural(word.outcome.leftOut.length, {
-                one: "# left out",
-                other: "# left out",
-              })}
-              heading={t`Saved ${label} without these`}
-              crossedOut
-              note={t`New chats can't use them until each Error is fixed and the package is saved again.`}
+              findings={held}
+              word={plural(held.length, { one: "# edit not in use", other: "# edits not in use" })}
+              heading={t`Saved ${label}, but these edits aren't in use`}
+              held={word.outcome}
+              note={t`Each Error stops its edit from being used. Where the item was saved before, that version stays in use; the rest is out until the Error is fixed and the package is saved again.`}
             />
           ) : null}
           <RowWord
-            tone={word.undo === "failed" ? "warning" : "action"}
+            tone={undoState === "failed" ? "warning" : "action"}
             word={<Trans>Undo</Trans>}
             label={t`Undo save of ${label}`}
             sentence={
-              word.undo === "failed"
+              undoState === "failed"
                 ? t`Couldn't reach the server. Undo tries again.`
-                : t`Undo goes back to the previous saved version and puts its files back. An edit made since is kept.`
+                : t`Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays.`
             }
-            pending={!saveId || word.undo === "pending"}
+            pending={!saveId || undoState === "pending"}
             onAction={saveId ? () => void saves.undo(pkg, saveId) : undefined}
           />
         </>
@@ -213,7 +212,7 @@ function Word({
           <RowWord
             tone="done"
             word={<Trans>Undone</Trans>}
-            sentence={t`Back to the previous saved version, and its files are restored. An edit made since is kept, so the package reads Unsaved until it is saved.`}
+            sentence={t`Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved.`}
           />
           <SaveButton label={label} onSave={onSave} />
         </>
@@ -256,7 +255,7 @@ function ProblemsButton({
   word,
   heading,
   note,
-  crossedOut,
+  held,
 }: {
   projectId: string;
   pkg: PackageRef;
@@ -264,7 +263,7 @@ function ProblemsButton({
   word: string;
   heading: string;
   note?: string;
-  crossedOut?: boolean;
+  held?: Pick<SaveOutcome, "kept" | "leftOut">;
 }) {
   const [open, setOpen] = useState(false);
   const openFile = useOpenAgentFile(projectId);
@@ -287,7 +286,7 @@ function ProblemsButton({
         <FindingList
           pkg={pkg}
           findings={findings}
-          crossedOut={crossedOut}
+          held={held}
           onOpen={(finding) => {
             setOpen(false);
             openFile(pkg.level, `${pkg.folder}${finding.file}`);
@@ -303,26 +302,39 @@ export function FindingList({
   pkg,
   findings,
   onOpen,
-  crossedOut = false,
+  held,
   className,
 }: {
   pkg: PackageRef;
   findings: readonly AgentFinding[];
   onOpen: ((finding: AgentFinding) => void) | null;
-  /** The files are left out of use: struck through. */
-  crossedOut?: boolean;
+  /**
+   * What a Save did with the files: one with no saved version in use is struck through, one that
+   * keeps its last saved version says its latest edit isn't in use.
+   */
+  held?: Pick<SaveOutcome, "kept" | "leftOut">;
   className?: string;
 }) {
   return (
     <ul className={cn("flex flex-col", className)}>
       {findings.map((finding, index) => {
         const where = `${pkg.folder}${finding.file}`;
+        const message = finding.message;
         const body = (
           <>
-            <span className={cn("block truncate text-foreground", crossedOut && "line-through")}>
+            <span
+              className={cn(
+                "block truncate text-foreground",
+                held?.leftOut.includes(finding.file) && "line-through",
+              )}
+            >
               {where}
             </span>
-            <span className="block text-muted-foreground">{finding.message}</span>
+            <span className="block text-muted-foreground">
+              {held?.kept.includes(finding.file)
+                ? t`Your latest edit isn't in use: ${message}`
+                : message}
+            </span>
           </>
         );
         return (
@@ -346,15 +358,17 @@ export function FindingList({
 }
 
 /**
- * What a settled Save left out, renamed or warned of, as lines, the left-out files first: `null`
- * when it said none. The Save's Undo stays beside its word.
+ * What a settled Save said beyond "Saved", as lines: the edits an Error keeps out of use first,
+ * then renames and warnings; `null` when it said none. The Save's Undo stays beside its word.
  */
 export function savedNotes(word: PackageWord | null): string[] | null {
   if (word?.kind !== "saved" || !word.settled) return null;
-  const { renamed, findings } = word.outcome;
+  const { renamed, findings, kept } = word.outcome;
   const lines = [
-    ...leftOutErrors(word.outcome).map(
-      (finding) => t`${finding.file} left out: ${finding.message}`,
+    ...heldBack(word.outcome).map((finding) =>
+      kept.includes(finding.file)
+        ? t`${finding.file}: your latest edit isn't in use: ${finding.message}`
+        : t`${finding.file} isn't in use: ${finding.message}`,
     ),
     ...renamed,
     ...findings
@@ -364,10 +378,12 @@ export function savedNotes(word: PackageWord | null): string[] | null {
   return lines.length ? lines : null;
 }
 
-/** The errors of the files a Save left out, in the order it listed them. */
-export function leftOutErrors(outcome: SaveOutcome): AgentFinding[] {
+/** The errors of the Agent and skill files a Save did not use, in the order it listed them. */
+export function heldBack(outcome: SaveOutcome): AgentFinding[] {
   return outcome.findings.filter(
-    (finding) => finding.severity === "error" && outcome.leftOut.includes(finding.file),
+    (finding) =>
+      finding.severity === "error" &&
+      (outcome.kept.includes(finding.file) || outcome.leftOut.includes(finding.file)),
   );
 }
 

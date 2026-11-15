@@ -49,7 +49,7 @@ const line = (finding: SaveOutcome["findings"][number]) => {
   return `  ${finding.file} [${finding.code}]${key}: ${finding.message}`;
 };
 
-/** What the model reads: left-out items and their errors first, then what changed, then warnings. */
+/** What the model reads: the items an error keeps out of use and their errors first, then what changed, then warnings. */
 export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
   if (outcomes.length === 0)
     return "Nothing to save: those packages have no files and no saved version.";
@@ -65,12 +65,17 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
       const errors = item.findings.filter((finding) => finding.severity === "error");
       const warnings = item.findings.filter((finding) => finding.severity !== "error");
       return [
-        ...(item.leftOut.length
+        ...(item.kept.length
           ? [
-              `Left out of ${where(item)} until fixed (not used by any chat): ${item.leftOut.join(", ")}`,
-              ...errors.map(line),
+              `Edits with an error are not in use in ${where(item)}; the last saved version of each stays in use: ${item.kept.join(", ")}`,
             ]
           : []),
+        ...(item.leftOut.length
+          ? [
+              `Not in use in ${where(item)}, which has no saved version without an error: ${item.leftOut.join(", ")}`,
+            ]
+          : []),
+        ...(item.kept.length || item.leftOut.length ? errors.map(line) : []),
         item.outcome === "unchanged"
           ? `Already saved: ${where(item)} has no changes since its saved version.`
           : `Saved ${where(item)}: ${count(item.changes.length, "file")} changed. New chats use it; this chat keeps the version it started with.`,
@@ -92,7 +97,7 @@ export function createSaveAgentsRegistration(
       type: "function",
       name: "save_agents",
       description:
-        "Save Agent packages so new chats use them. Edits to Agent files are not used until saved. An Agent or skill with an error is left out of the saved version and the result says what to fix; save again after fixing. Chats already running keep the version they started with.",
+        "Save Agent packages so new chats use them. Edits to Agent files are not used until saved. An Agent or skill with an error keeps its last saved version (or is not in use if it never had one) and the result says what to fix; save again after fixing. Chats already running keep the version they started with.",
       inputSchema: modelToolSchema(SaveAgentsInputSchema),
     },
     input: SaveAgentsInputSchema,

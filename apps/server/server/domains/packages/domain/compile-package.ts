@@ -4,9 +4,10 @@
  * The rule this keeps: a finding of severity `error`, Mars's or Flow's, on an Agent's file makes
  * that Agent unavailable, and an unavailable Agent has no definition for anything to run. A
  * `warning` or `info` doesn't: it is shown, and the Agent runs as its file reads (a restriction
- * `prepare` dropped, `field.restriction-lost`, is such a warning). Save fails on an error in the
- * package's own files and publishes with warnings (`checkPackage`), so no saved Agent is one an
- * Error made unavailable, unless a newer reader finds one.
+ * `prepare` dropped, `field.restriction-lost`, is such a warning). Save installs, for an item with
+ * an error, the files of its last saved version when that was usable (`save-packages.ts`), and
+ * fails only on a broken `mars.toml`; a saved Agent can still be unavailable, because a newer
+ * reader finds an error the older one did not, or the item was never saved without one.
  */
 import { OPT_IN_TOOLS, TOOL_CATALOG } from "@meridian/contracts/agents";
 import { canonicalizeJsonObject, sha256 } from "./helpers.js";
@@ -392,16 +393,20 @@ function projectTools(rules: AgentFields["tools"], file: string, draft: Draft): 
     } else if (rule.action === "deny") draft.optIn.delete(rule.capability);
     else draft.optIn.add(rule.capability);
   });
+  // Mars sees only the rules left after the opt-in ones; its findings name them by position there.
+  const sent = rules.flatMap((rule, index) => (isOptIn(rule) ? [] : [{ rule, index }]));
   const projection = projectRules(
-    rules.filter((rule) => !isOptIn(rule)),
+    sent.map((item) => item.rule),
     "meridian-flow",
   );
-  projection.rules.forEach((projected, index) => {
+  projection.rules.forEach((projected, position) => {
     if (projected.status !== "unscopable" && projected.status !== "unknown") return;
     const { capability, pattern, action } = projected.rule;
     const named = `${capability}${pattern === null ? "" : `(${pattern})`}: ${action}`;
     const message = `Tool rule ${named}: ${projected.note ?? projected.status}`;
-    draft.errors.push(flow(file, `tools-${projected.status}`, message, "error", ["tools", index]));
+    draft.errors.push(
+      flow(file, `tools-${projected.status}`, message, "error", ["tools", sent[position].index]),
+    );
   });
   if (projection.ask.length || projection.default === "ask") {
     const named = projection.default === "ask" ? ["*", ...projection.ask] : projection.ask;

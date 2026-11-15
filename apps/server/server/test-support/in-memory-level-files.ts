@@ -13,10 +13,10 @@ export function createInMemoryLevelFiles(): InMemoryLevelFiles {
     async read({ level }) {
       return { files: { ...levels[level] }, problems: {} };
     },
-    async writeFiles({ level, files }) {
-      for (const [path, text] of Object.entries(files)) {
-        if (text === null) delete levels[level][path];
-        else levels[level][path] = text;
+    async mergeFiles({ level, files }) {
+      for (const [path, { base, target }] of Object.entries(files)) {
+        // A test's files are whole texts: the writer's text stays unless it is still the base.
+        if (levels[level][path] === base) levels[level][path] = target;
       }
     },
     write(level, path, text) {

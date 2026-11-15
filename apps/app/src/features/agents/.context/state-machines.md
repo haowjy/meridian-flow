@@ -27,10 +27,12 @@ stateDiagram-v2
 
 - **`saving` is predicted from the files query**: a package-level Error (state `cant-save`, or
   an Error in a file that defines no Agent or skill) shows "Not saved"; anything else "Saved",
-  with the Agent and skill files that have an Error as left out, and Undo inert until the server
+  with the Agent and skill files that have an Error as not in use, and Undo inert until the server
   gives a `saveId`. The server's outcome replaces it.
-- **Undo restores files too**, so `undone` waits for the files to be read again and then holds
-  while the package is as Undo left it, Saved or Unsaved.
+- **Undo merges the previous text into the files**, so `undone` waits for the files to be read
+  again and then holds while the package is as Undo left it and reads Unsaved; one that reads Saved
+  shows nothing, the state says it. Each Save's Undo (`pending`, `failed`, `undone`, `nothing`) is
+  kept by `saveId`, not on the word, so the AI's Save card and the notice show one state.
 - **A word holds while the package is as the writer pressed it** (its state, `saveId`, changes
   and findings), or, for `saved`, while it reads `saved`. The Save moves `saveId`, so typing after
   it ends the word even when the same file changes again. Dropping that comparison leaves

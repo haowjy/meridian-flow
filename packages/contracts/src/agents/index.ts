@@ -66,8 +66,13 @@ export interface AgentFileStatus {
   level: AgentLevel;
   /** Relative to the level's root (`agentsRootOf`): `agents/critic.md`, `packages/x/skills/y/SKILL.md`. */
   path: string;
-  /** Why it can't be used, in Mars's words; empty when it can. */
+  /** Why these files can't be used, in Mars's words; empty when they can. */
   unavailableReasons: string[];
+  /**
+   * With `unavailableReasons`: the last saved version of this item has no such problem and stays
+   * in use, so only the latest edit is not.
+   */
+  savedVersionInUse: boolean;
   /**
    * Whether the writer picks it: from the Agent picker for an Agent, the `/` menu for a skill.
    * False for one only Agents use (a subagent, a skill the model loads).
@@ -93,6 +98,7 @@ export const agentFilesSchema = z.object({
       level: agentLevelSchema,
       path: z.string().min(1),
       unavailableReasons: z.array(z.string()),
+      savedVersionInUse: z.boolean(),
       pickable: z.boolean(),
       shadows: z.array(agentLevelSchema),
       hiddenBy: agentLevelSchema.nullable(),

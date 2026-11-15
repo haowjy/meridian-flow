@@ -38,6 +38,7 @@ import {
   type AgentEntry,
   agentsOf,
   createPackageLevels,
+  folderOf,
   type PackageLevels,
   type SkillEntry,
   skillsOf,
@@ -207,13 +208,20 @@ export function createBoundAgentCatalog(input: {
       const current = winners(agentsOf(await levels.saved(userId, projectId))).find(
         (entry) => entry.slug === selection.slug,
       )?.value;
-      let row = current && (await rowOf(current.package, current.agent.slug));
-      if (!row) {
-        // The name is no longer saved (removed or renamed): bind the version the picker showed.
-        const builtin = builtinShown.get(selection.definitionRevisionId);
-        row = builtin
-          ? await rowOf(builtin.package, builtin.slug)
-          : await store.readSavedRevision(userId, projectId, selection.definitionRevisionId);
+      const newest = current ? await rowOf(current.package, current.agent.slug) : undefined;
+      // The name is no longer saved (removed or renamed) or its newest version cannot run: the
+      // version the picker showed still can, so a chat is not refused over a later Save.
+      const builtin = builtinShown.get(selection.definitionRevisionId);
+      const shown = async () =>
+        builtin
+          ? rowOf(builtin.package, builtin.slug)
+          : store.readSavedRevision(userId, projectId, selection.definitionRevisionId);
+      const runs = (candidate: CatalogRevision | undefined) =>
+        Boolean(candidate?.definition) && reasonsOf(candidate as CatalogRevision).length === 0;
+      let row = newest;
+      if (!runs(row)) {
+        const fallback = await shown();
+        row = runs(fallback) ? fallback : (row ?? fallback);
       }
       if (!row) return { ok: false, reason: "not-found", details: [] };
       const reasons = reasonsOf(row);
@@ -241,6 +249,25 @@ export function createBoundAgentCatalog(input: {
         levels.readSaves(userId, projectId),
       ]);
       const packages = await statuses(all, saves);
+      // Items whose last saved version is usable: an Error in the files does not take them away.
+      const savedUsable = new Set(
+        (await levels.fromSaves(saves)).flatMap((level) =>
+          [
+            ...(level.root ? [{ folder: "", package: level.root }] : []),
+            ...level.imports.map((item) => ({
+              folder: folderOf(item.name),
+              package: item.package,
+            })),
+          ].flatMap(({ folder, package: pkg }) => [
+            ...pkg.agents
+              .filter((agent) => agent.definition)
+              .map((agent) => `${level.level}:${folder}${agentPath(agent.slug)}`),
+            ...pkg.skills
+              .filter((skill) => !skill.diagnostics.some(isError))
+              .map((skill) => `${level.level}:${folder}${skillPath(skill.slug)}`),
+          ]),
+        ),
+      );
       const changed = new Map<string, string>(
         packages.flatMap((item) =>
           item.changes.map((change): [string, string] => [
@@ -264,6 +291,7 @@ export function createBoundAgentCatalog(input: {
             level: entry.level,
             path,
             unavailableReasons: reasonsOf(entry.value.agent, file, false),
+            savedVersionInUse: savedUsable.has(`${entry.level}:${path}`),
             pickable: entry.value.agent.definition ? isPrimary(entry.value.agent.definition) : true,
             shadows: entry.shadows,
             hiddenBy: entry.hiddenBy,
@@ -284,6 +312,7 @@ export function createBoundAgentCatalog(input: {
             unavailableReasons: entry.value.diagnostics
               .filter(isError)
               .map((item) => (item.file === file ? item.message : `${item.file}: ${item.message}`)),
+            savedVersionInUse: savedUsable.has(`${entry.level}:${path}`),
             pickable: listingOf(entry)?.userInvocable ?? true,
             shadows: entry.shadows,
             hiddenBy: entry.hiddenBy,

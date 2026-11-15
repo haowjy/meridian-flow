@@ -72,11 +72,14 @@ export interface AgentRevisionStore {
   /**
    * Saves the version before `saveId` again, unless a later Save of that package exists, which
    * leaves everything as it is. `undone` is the Save that was undone, with the new row as
-   * `current`. Undefined when `owner` has no such row.
+   * `current`. Undefined when `owner` has no such row. `restore` runs after the check and before
+   * the row is added, under the package's one ordering and in the same transaction, with the
+   * Save and the version before it (null: none); if it throws, nothing changed.
    */
   undoSave(
     owner: SaveOwner,
     saveId: string,
+    restore: (undone: PackageSave, target: PackageSave | null) => Promise<void>,
   ): Promise<{ current: PackageSave; undone: PackageSave | null } | undefined>;
   /**
    * The Agent revision, only when a Save of `userId`, or of `projectId` (which the caller has

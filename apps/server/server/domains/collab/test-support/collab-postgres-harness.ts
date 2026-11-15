@@ -537,6 +537,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     reversalOwners: turnInverse.reversalOwners,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
+    mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...branches,
   };

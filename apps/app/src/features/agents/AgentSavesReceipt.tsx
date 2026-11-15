@@ -1,16 +1,15 @@
 /**
- * What the AI's `save_agents` calls in a turn did, one part per package: the files it left out
- * for an Error first, struck through, then what changed, renames, warnings, and Undo; or, for a
- * package not saved, its problems.
+ * What the AI's `save_agents` calls in a turn did, one part per package: the edits an Error keeps
+ * out of use first, then what changed, renames, warnings, and Undo; or, for a package not saved,
+ * its problems.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AgentFileChange, AgentFinding, SaveOutcome } from "@meridian/contracts/agents";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
-import { FindingList, leftOutErrors, useOpenAgentFile } from "./PackageSave";
-import { packageLabel, type UndoAnswer, usePackageSaves } from "./package-save";
+import { FindingList, heldBack, useOpenAgentFile } from "./PackageSave";
+import { packageLabel, usePackageSaves } from "./package-save";
 
 export function AgentSavesReceipt({ outcomes }: { outcomes: readonly SaveOutcome[] }) {
   const projectId = useProjectDocumentNavigationProjectId();
@@ -36,7 +35,7 @@ export function AgentSavesReceipt({ outcomes }: { outcomes: readonly SaveOutcome
 
 function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: string | null }) {
   const label = packageLabel(outcome);
-  const leftOut = leftOutErrors(outcome);
+  const held = heldBack(outcome);
   const warnings = outcome.findings.filter((finding) => finding.severity === "warning");
   return (
     <div className="py-[var(--chat-card-pad-y)]">
@@ -66,12 +65,15 @@ function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: 
         </>
       ) : (
         <>
-          {leftOut.length > 0 ? (
+          {held.length > 0 ? (
             <>
               <p className="px-[var(--chat-card-pad-x)] text-foreground">
-                <Trans>Left out, each with an Error: new chats can't use them yet.</Trans>
+                <Trans>
+                  Each Error stops its edit from being used. Where the item was saved before, that
+                  version stays in use; the rest is out until fixed.
+                </Trans>
               </p>
-              <Findings projectId={projectId} outcome={outcome} findings={leftOut} crossedOut />
+              <Findings projectId={projectId} outcome={outcome} findings={held} />
             </>
           ) : null}
           {outcome.changes.length > 0 ? (
@@ -101,19 +103,17 @@ function Findings({
   projectId,
   outcome,
   findings,
-  crossedOut,
 }: {
   projectId: string | null;
   outcome: SaveOutcome;
   findings: readonly AgentFinding[];
-  crossedOut?: boolean;
 }) {
   const openFile = useOpenAgentFile(projectId ?? "");
   return (
     <FindingList
       pkg={outcome}
       findings={findings}
-      crossedOut={crossedOut}
+      held={outcome}
       className="px-[calc(var(--chat-card-pad-x)-0.5rem)]"
       onOpen={
         projectId ? (finding) => openFile(outcome.level, `${outcome.folder}${finding.file}`) : null
@@ -134,8 +134,8 @@ function changeLine({ path, change }: AgentFileChange): string {
 }
 
 /**
- * Undo of one Save, said in the card: the package goes back to the version before, its files
- * restored with any edit made since kept.
+ * Undo of one Save, said in the card from the state every surface shares: the package goes back
+ * to the version before, its text merged into the files with any edit made since kept.
  */
 function UndoSave({
   projectId,
@@ -147,13 +147,13 @@ function UndoSave({
   saveId: string;
 }) {
   const saves = usePackageSaves(projectId);
-  const [answer, setAnswer] = useState<UndoAnswer | "pending" | null>(null);
+  const state = saves.undoOf(saveId);
   const label = packageLabel(outcome);
-  if (answer === "undone" || answer === "nothing")
+  if (state === "undone" || state === "nothing")
     return (
       <span className="shrink-0 text-muted-foreground" role="status">
-        {answer === "undone" ? (
-          <Trans>Undone: {label} is back to its previous saved version and files.</Trans>
+        {state === "undone" ? (
+          <Trans>Undone: {label} is back to its previous saved version.</Trans>
         ) : (
           <Trans>Not undone: {label} was saved again since.</Trans>
         )}
@@ -161,7 +161,7 @@ function UndoSave({
     );
   return (
     <>
-      {answer === "failed" ? (
+      {state === "failed" ? (
         <span className="shrink-0 text-destructive" role="status">
           <Trans>Couldn't reach the server.</Trans>
         </span>
@@ -172,13 +172,10 @@ function UndoSave({
         size="meta"
         className="shrink-0 text-jade-text"
         aria-label={t`Undo save of ${label}`}
-        disabled={answer === "pending"}
-        onClick={() => {
-          setAnswer("pending");
-          void saves.undo({ level: outcome.level, folder: outcome.folder }, saveId).then(setAnswer);
-        }}
+        disabled={state === "pending"}
+        onClick={() => void saves.undo({ level: outcome.level, folder: outcome.folder }, saveId)}
       >
-        {answer === "pending" ? <Trans>Undoing…</Trans> : <Trans>Undo</Trans>}
+        {state === "pending" ? <Trans>Undoing…</Trans> : <Trans>Undo</Trans>}
       </Button>
     </>
   );

@@ -20,11 +20,12 @@ export type PackageRef = { level: AgentsLevel; folder: string };
 
 export type PackageWord =
   /** `settled` false: shown at once, before the server answers. */
-  | { kind: "saved"; outcome: SaveOutcome; settled: boolean; undo: "ready" | "pending" | "failed" }
+  | { kind: "saved"; outcome: SaveOutcome; settled: boolean }
   | { kind: "failed"; outcome: SaveOutcome; settled: boolean }
   /**
    * New chats are back on the version before and its files are back, an edit made since kept.
-   * `settled` false until the files have been read again.
+   * `settled` false until the files have been read again. Shown only while the package reads
+   * Unsaved: when it reads Saved, the saved state says it all.
    */
   | { kind: "undone"; settled: boolean }
   /** The request never got an answer: nothing changed. */
@@ -57,10 +58,10 @@ export const errorsOf = (findings: readonly AgentFinding[]) =>
   findings.filter((finding) => finding.severity === "error");
 
 /**
- * The package-relative files a Save leaves out: an Agent or skill file with an Error. Any other
- * Error (a broken `mars.toml`) fails the whole Save.
+ * The package-relative Agent and skill files with an Error, whose edit a Save does not use. Any
+ * other Error (a broken `mars.toml`) fails the whole Save.
  */
-export function leftOutOf(findings: readonly AgentFinding[]): string[] {
+export function itemsWithErrors(findings: readonly AgentFinding[]): string[] {
   return [
     ...new Set(
       errorsOf(findings)
@@ -126,7 +127,7 @@ function heldWord(entry: Entry, status: AgentPackageStatus | undefined): Package
     case "failed":
       return !word.settled || unchanged ? word : null;
     case "undone":
-      return !word.settled || unchanged ? word : null;
+      return !word.settled || (unchanged && status.state !== "saved") ? word : null;
     case "unreached":
       return unchanged ? word : null;
   }
@@ -134,7 +135,8 @@ function heldWord(entry: Entry, status: AgentPackageStatus | undefined): Package
 
 /**
  * What a Save of these files will answer, said before it does: a package-level Error fails it;
- * an Agent or skill file with an Error is left out, its errors listed first.
+ * an Agent or skill file with an Error is not used, its errors listed first. Whether that item
+ * keeps an earlier saved version is the server's to say, so the prediction holds none.
  */
 function predicted(status: AgentPackageStatus): PackageWord {
   const errors = errorsOf(status.findings);
@@ -147,12 +149,13 @@ function predicted(status: AgentPackageStatus): PackageWord {
     findings: fails
       ? errors
       : [...errors, ...status.findings.filter((finding) => finding.severity === "warning")],
-    leftOut: fails ? [] : leftOutOf(status.findings),
+    kept: [],
+    leftOut: fails ? [] : itemsWithErrors(status.findings),
     renamed: [],
   };
   return fails
     ? { kind: "failed", outcome, settled: false }
-    : { kind: "saved", outcome, settled: false, undo: "pending" };
+    : { kind: "saved", outcome, settled: false };
 }
 
 async function save(
@@ -194,7 +197,7 @@ async function save(
         removed: before?.removed ?? false,
         word:
           outcome.outcome === "saved"
-            ? { kind: "saved", outcome, settled: true, undo: "ready" }
+            ? { kind: "saved", outcome, settled: true }
             : { kind: "failed", outcome, settled: true },
       });
       bases.delete(key);
@@ -211,6 +214,9 @@ async function save(
 /** `nothing`: a later Save of the package exists, so the Undo changed nothing. */
 export type UndoAnswer = "undone" | "nothing" | "failed";
 
+/** Each Save's Undo, by `saveId`: the one state the notice and the AI's card both show. */
+const undoStates = new Map<string, UndoAnswer | "pending">();
+
 async function undo(
   queryClient: QueryClient,
   accountId: string,
@@ -221,9 +227,8 @@ async function undo(
   const key = keyOf(projectId, ref);
   const held = entries.get(key);
   const holds = held?.word.kind === "saved" && held.word.outcome.saveId === saveId ? held : null;
-  const mark = (undoState: "ready" | "pending" | "failed") => {
-    if (holds?.word.kind === "saved")
-      set(projectId, { ...holds, word: { ...holds.word, undo: undoState } });
+  const mark = (state: UndoAnswer | "pending") => {
+    undoStates.set(saveId, state);
     publish();
   };
   mark("pending");
@@ -232,11 +237,10 @@ async function undo(
     const removed = holds?.removed ?? false;
     if (undone) {
       set(projectId, { ref, basis: null, removed, word: { kind: "undone", settled: false } });
-      publish();
     } else if (holds) {
       entries.delete(key);
-      publish();
     }
+    mark(undone ? "undone" : "nothing");
     await invalidateAgentReads(queryClient, projectId, accountId);
     // The word speaks of the package as Undo left it: its files may read Saved or Unsaved now.
     if (undone && entries.get(key)?.word.kind === "undone") {
@@ -290,5 +294,7 @@ export function usePackageSaves(projectId: string) {
     save: (statuses: readonly AgentPackageStatus[]) =>
       save(queryClient, accountId, projectId, statuses),
     undo: (ref: PackageRef, saveId: string) => undo(queryClient, accountId, projectId, ref, saveId),
+    /** What the Save's Undo has done: nothing yet (`undefined`), pending, or its answer. */
+    undoOf: (saveId: string) => undoStates.get(saveId),
   };
 }

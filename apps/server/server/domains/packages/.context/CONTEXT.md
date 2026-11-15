@@ -12,8 +12,8 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   for `compilePackage`: it adds the package's `[package.tools]` to each Agent that does not name
   the key, and Flow adds no tool rule itself. `prepare` upgrades a pre-v1 package and translates a
   foreign one in memory, so a package whose classification is not `schema-1` makes every Agent
-  unavailable (`flow.package-not-schema-1`), and so does any `changes` entry on an Agent's file
-  (`field.restriction-lost` above all). A manifest error reaches each Agent as Mars's
+  unavailable (`flow.package-not-schema-1`). A `changes` entry on an Agent's file
+  (`field.restriction-lost` above all) is a warning, not an error. A manifest error reaches each Agent as Mars's
   `package-tools.unreadable`. A lone file (a skill's listing, a package name) is still read with
   `read`.
 - An `error` finding on a file, Mars's or Flow's, defines nothing: its Agent is unavailable, a skill
@@ -47,23 +47,31 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   a level's own files (folder `""`) or one import (`packages/<name>/`, `splitLevel`).
 - `save-packages.ts` is the one Save path, behind `POST /api/agents/save` (the writer) and the
   `save_agents` tool (the AI, `lib/model-tools/save-agents.ts`). Per package, independently:
-  `checkPackage`. An error in one Agent's or skill's file leaves that item out of what runs
-  (`leftOut`, its error listed first on the result) and the rest saves, with transitive refs
-  re-checked by the compile (an Agent whose subagent or skill is out is out too). Only an error in
-  `mars.toml`, which leaves nothing readable, fails the Save (`failed`, nothing written, the
-  previous version stays). No change is `unchanged`; otherwise `installSource` and a Save row. A
-  failed Save is a result, never a refused write. `undoSave` adds a row with the version before it,
-  unless a later Save exists, and puts the package's files back by a three-way merge (base: that
-  Save's text, live: the files now, target: the previous save's text) through the content merge
-  Apply and Un-Apply use (`merge-text.ts`: an Agent file is a code document, one code block), so an
-  edit made since survives and the package then reads Unsaved.
+  `checkPackage`. An error in one Agent's or skill's file stops that edit from being used and the
+  rest saves: `keepLastGood` installs, for such an item, the files of its last saved version when
+  that was usable (`kept` on the result; an Agent whose subagent or skill is broken is kept too
+  when that does not fix it), and an item with no usable saved version is out (`leftOut`). The
+  errors are listed first on the result. Only an error in `mars.toml`, which leaves nothing
+  readable, fails the Save (`failed`, nothing written, the previous version stays). A Save installs
+  exactly the cut `AgentLevelFiles.read` returned, which is one repeatable-read snapshot of the
+  tree and of each document's admitted text, so the files are a state the level was in. No change
+  is `unchanged`; otherwise `installSource` and a Save row. A failed Save is a result, never a
+  refused write. A package's Saves and Undos are ordered by one transaction-scoped advisory lock
+  per (owner, folder) taken by `savePackage` and `undoSave`. `undoSave` runs in one transaction:
+  after the stale check it merges the previous save's text into each file through the documents'
+  own write path (`MarkdownDocumentStore.mergeCodeText`, which merges under the document's lock
+  against what it holds then; base: that Save's text, target: the previous save's text; the writer's
+  text wins where both changed the same text) and then adds the row, so a failure changes nothing
+  and a stale Undo answers `undone: false`. Undo never creates or deletes a file. The user level's
+  documents resolve from the account, not from `projectId`.
   A package's state (`saved`, `unsaved`, `cant-save`, `not-saved`, `removed`) is computed in
   `files()` from the files and the latest Save and stored nowhere, so it is not a state machine
   (`cant-save` is only a broken `mars.toml`).
 - `list`, `resolvePrimary`, `userSkills` and `resolveSkill` read saved versions. A new chat binds the
   newest saved Agent of the selection's name; the selection's revision id is used only when that
   name is no longer saved, and then only if a Save of the account or the project (the caller has
-  authorized it) points at its package (`readSavedRevision`), or it is a built-in. Definition rows
+  authorized it) points at its package (`readSavedRevision`), or it is a built-in. The same
+  version also stands in when the newest one cannot run, so Send is not refused over a later Save. Definition rows
   are written when a chat binds or a skill is invoked, never when the picker lists; the picker's ids
   are computed (`agentRevisionId`) from the saved packages compiled in memory. Rows are immutable and
   shared by every account that has the same bytes; they are not collected yet.

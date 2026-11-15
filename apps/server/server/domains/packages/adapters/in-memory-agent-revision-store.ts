@@ -130,7 +130,7 @@ export function createInMemoryAgentRevisionStore(input: {
       }
       return copy([...latest.values()]);
     },
-    async undoSave(owner, saveId) {
+    async undoSave(owner, saveId, restore) {
       const rows = [...state().saves.values()].filter((save) => save.owner === ownerKey(owner));
       const index = rows.findIndex((save) => save.id === saveId);
       if (index < 0) return undefined;
@@ -138,6 +138,7 @@ export function createInMemoryAgentRevisionStore(input: {
       const latest = same[same.length - 1];
       if (latest.id !== saveId) return { current: copy(latest), undone: null };
       const before = same[same.length - 2];
+      await restore(copy(latest), before ? copy(before) : null);
       return {
         current: await store.savePackage(owner, latest.folder, before?.packageRevisionId ?? null),
         undone: copy(latest),

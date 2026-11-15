@@ -14,17 +14,23 @@ export interface LevelFiles {
 
 export interface AgentLevelFiles {
   read(input: { level: AgentsLevel; userId: string; projectId?: string }): Promise<LevelFiles>;
-  /** Puts each file's text in the level's documents, creating it; a null text removes the file. */
-  writeFiles(input: {
+  /**
+   * In each file's document, brings in the change from `base` to `target`, merged under the
+   * document's own lock against what it holds then; where the writer changed the same text, their
+   * text stays. Files are named level-relative; one whose document is gone is skipped, and none is
+   * created or removed. Joins the caller's transaction. A user-level file resolves from the
+   * account, so `projectId` is not needed there.
+   */
+  mergeFiles(input: {
     level: AgentsLevel;
     userId: string;
-    projectId: string;
-    files: Record<string, string | null>;
+    projectId?: string;
+    files: Record<string, { base: string; target: string }>;
   }): Promise<void>;
 }
 
 /** A host with no writer documents: only the built-in level exists. */
 export const noLevelFiles: AgentLevelFiles = {
   read: async () => ({ files: {}, problems: {} }),
-  writeFiles: async () => {},
+  mergeFiles: async () => {},
 };

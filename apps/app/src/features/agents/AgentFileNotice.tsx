@@ -79,7 +79,8 @@ export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[])
 /** What a row says after its name of what keeps it from use: a built-in's, or the last word of a level's file. */
 export function agentFileMark(file: AgentFileStatus | null | undefined): string | undefined {
   if (!file) return undefined;
-  if (file.unavailableReasons.length > 0) return t`Unavailable`;
+  if (file.unavailableReasons.length > 0)
+    return file.savedVersionInUse ? t`Edit not in use` : t`Unavailable`;
   return file.hiddenBy ? t`Hidden` : undefined;
 }
 
@@ -118,9 +119,11 @@ export function AgentFileStatusNotice({
   const status = file.hiddenBy
     ? t`Not used: ${whose(file.hiddenBy, file.slug)} hides it.`
     : unavailable
-      ? hides
-        ? t`Unavailable, and it still hides ${hides}:`
-        : t`Unavailable:`
+      ? file.savedVersionInUse
+        ? t`Your latest edit isn't in use; the last saved version is:`
+        : hides
+          ? t`Unavailable, and it still hides ${hides}:`
+          : t`Unavailable:`
       : `${
           file.pickable
             ? t`Available.`

@@ -4,7 +4,8 @@
  * list that is empty now (a dependency's own faults).
  *
  * An error in one Agent's or skill's file leaves that item out of what runs and never fails the
- * Save. Only an error in `mars.toml` does: it leaves nothing in the package readable.
+ * Save. Only an error in `mars.toml` does: it leaves nothing in the package readable. Errors come
+ * first, then warnings that say an Agent may run wider than its file reads.
  */
 
 import { type CompiledPackage, isError, type PackageDiagnostic } from "./compile-package.js";
@@ -21,10 +22,19 @@ export interface PackageCheck {
   dependencyFindings: PackageDiagnostic[];
 }
 
+/** A warning that an Agent may run wider than its file reads: the writer sees these first. */
+const isLostRestriction = (item: PackageDiagnostic) =>
+  /^field\.(restriction-lost|execution-ignored|set-aside)$/.test(item.code);
+
 export function checkPackage(pkg: CompiledPackage): PackageCheck {
   const shown = pkg.findings.filter((item) => item.severity !== "info");
+  const warnings = shown.filter((item) => !isError(item));
   return {
-    findings: [...shown.filter(isError), ...shown.filter((item) => !isError(item))],
+    findings: [
+      ...shown.filter(isError),
+      ...warnings.filter(isLostRestriction),
+      ...warnings.filter((item) => !isLostRestriction(item)),
+    ],
     blocking: shown.filter((item) => isError(item) && item.file === MANIFEST_PATH),
     leftOut: [
       ...pkg.agents.filter((agent) => !agent.definition).map((agent) => agentPath(agent.slug)),

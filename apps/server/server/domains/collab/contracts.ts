@@ -388,6 +388,17 @@ export type MarkdownDocumentStore = LinkBinder & {
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
   /**
+   * Brings the change from `base` to `target` into a code document's text, merged under the
+   * document's lock against what it holds then; where `base` and the live text both changed the
+   * same text, the live text stays. Inside the caller's transaction like any write.
+   */
+  mergeCodeText(input: {
+    documentId: DocumentId;
+    base: string;
+    target: string;
+    origin: DocumentWriteOrigin;
+  }): Promise<Result<void, SyncError>>;
+  /**
    * The live coordinator's lease on a document, taken outside any transaction (contract
    * §6.3 B3): a revealed document's first content is admitted under it.
    */

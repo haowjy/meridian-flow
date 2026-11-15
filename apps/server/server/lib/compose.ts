@@ -648,7 +648,7 @@ export async function createProductionAppPorts(input: {
   });
   const agentCatalog = createBoundAgentCatalog({
     store: agentRevisions,
-    levelFiles: createAgentLevelFiles({ db, documentSync, contextPorts }),
+    levelFiles: createAgentLevelFiles({ db, documentSync }),
     builtins: await readBuiltinPackages(defaultModel),
     defaultModel: () => gateway.getDefaultModel(),
     unavailableReasons: (definition, model) =>

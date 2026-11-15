@@ -193,7 +193,8 @@ export function AgentsSource({
 
 /**
  * What a level's file row says after its name, the first that applies: Error (Mars can't use
- * it, so a Save leaves it out, or it fails the package's Save; the row is struck through),
+ * it, so a Save leaves it out, or it fails the package's Save; the row is struck through), Edit not
+ * in use (the same, but the item's last saved version still is),
  * Unsaved (it differs from the saved version), Hidden.
  */
 function levelFileMark(
@@ -211,7 +212,9 @@ function levelFileMark(
     (verdict && verdict.unavailableReasons.length > 0) ||
     (status && errorsOf(status.findings).some((finding) => finding.file === inPackage))
   )
-    return { word: t`Error`, error: true };
+    return verdict?.savedVersionInUse
+      ? { word: t`Edit not in use`, error: false }
+      : { word: t`Error`, error: true };
   if (status?.changes.some((change) => change.path === at.path && change.change !== "deleted"))
     return { word: t`Unsaved`, error: false };
   const word = agentFileMark(verdict);

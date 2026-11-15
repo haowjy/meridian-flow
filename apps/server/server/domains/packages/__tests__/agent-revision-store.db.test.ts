@@ -1,8 +1,9 @@
 /**
- * Postgres contracts for retained Agent identity and transactional binding.
+ * Postgres contracts for retained Agent identity, transactional binding and a package's Saves.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Agent-less binding overlays
+ * - A package's saved version is its newest Save row; Undo appends the row before it
  */
 import { createDb } from "@meridian/database";
 import {
@@ -11,7 +12,7 @@ import {
 } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
@@ -180,6 +181,80 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       ).rejects.toThrow("Injected admission failure");
       expect(await db.select().from(schema.agentPackageRevisions)).toEqual([]);
       expect(await store.readThreadBinding(THREAD)).toBeUndefined();
+    });
+
+    describe("Saves", () => {
+      const OTHER = "00000000-0000-4000-8000-000000000872";
+      const owner = { userId: USER };
+      const retain = async (body: string) =>
+        (await store.installSource(source(body))).packageRevisionId;
+
+      it("reads a package's newest Save, and Undo adds the row before it", async () => {
+        const [a, b] = [await retain("A"), await retain("B")];
+        await store.savePackage(owner, "", a);
+        const second = await store.savePackage(owner, "", b);
+        expect((await store.readSaved(owner)).map((row) => row.packageRevisionId)).toEqual([b]);
+        const seen: unknown[] = [];
+        const undone = await store.undoSave(owner, second.id, async (was, target) => {
+          seen.push([was.packageRevisionId, target?.packageRevisionId]);
+        });
+        expect(seen).toEqual([[b, a]]);
+        expect(undone?.undone?.id).toBe(second.id);
+        expect((await store.readSaved(owner)).map((row) => row.packageRevisionId)).toEqual([a]);
+        // A Save with a later one on top is no longer the one to undo.
+        expect((await store.undoSave(owner, second.id, async () => {}))?.undone).toBeNull();
+      });
+
+      it("rolls the row back with a restore that throws", async () => {
+        const first = await store.savePackage(owner, "", await retain("A"));
+        await expect(
+          store.undoSave(owner, first.id, async () => {
+            throw new Error("A file would not merge");
+          }),
+        ).rejects.toThrow("A file would not merge");
+        expect((await store.readSaved(owner)).map((row) => row.id)).toEqual([first.id]);
+      });
+
+      it("lets another account bind a revision only by its own Save", async () => {
+        await db.insert(schema.users).values(conformanceUserValues(OTHER, "other-owner"));
+        const installed = await store.installSource(source("Mine"));
+        await store.savePackage(owner, "", installed.packageRevisionId);
+        const id = installed.definitions[0].id;
+        expect((await store.readSavedRevision(USER, undefined, id))?.id).toBe(id);
+        expect(await store.readSavedRevision(OTHER, undefined, id)).toBeUndefined();
+      });
+
+      it("orders a Save that arrives during an Undo after it", async () => {
+        const [a, b, c] = [await retain("A"), await retain("B"), await retain("C")];
+        await store.savePackage(owner, "", a);
+        const latest = await store.savePackage(owner, "", b);
+        const otherDb = createDb(url, { max: 2 });
+        try {
+          const rival = createDrizzleAgentRevisionStore(otherDb);
+          let release = () => {};
+          let inside = () => {};
+          const held = new Promise<void>((resolve) => (release = resolve));
+          const reached = new Promise<void>((resolve) => (inside = resolve));
+          const undo = store.undoSave(owner, latest.id, async () => {
+            inside();
+            await held;
+          });
+          await reached;
+          const save = rival.savePackage(owner, "", c);
+          // The rival is waiting on the package lock the Undo holds.
+          await vi.waitFor(async () => {
+            const waiting =
+              await db.$client`select 1 from pg_locks where locktype = 'advisory' and not granted`;
+            expect(waiting.length).toBeGreaterThan(0);
+          });
+          release();
+          expect((await undo)?.undone?.id).toBe(latest.id);
+          await save;
+          expect((await store.readSaved(owner)).map((row) => row.packageRevisionId)).toEqual([c]);
+        } finally {
+          await otherDb.close();
+        }
+      });
     });
   });
 }
