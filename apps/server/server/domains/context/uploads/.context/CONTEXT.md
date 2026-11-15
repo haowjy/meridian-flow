@@ -16,8 +16,7 @@ dropped into a document (see Source uploads) share the routes' flow.
    to `incoming/<projectId>/<documentId>`. A size over `MAX_UPLOAD_BYTES` (200 MiB,
    `packages/contracts`) is refused with `too_large`. Calling it again resumes by state:
    `reserved` re-signs (and counts as activity for the sweep), `object_stored` answers
-   `stored` (finish, no PUT), `finalized` returns the result, `deleted` is
-   `idempotency_conflict`.
+   `stored` (finish, no PUT), `finalized` returns the result.
 2. The browser PUTs the bytes (`uploadFileDirect`, `apps/app/src/client/api/direct-upload.ts`).
 3. `finish` copies `incoming/…` to the object key first, then reads only the final key,
    because a repeated PUT through the URL can still change the incoming object. It checks
@@ -72,7 +71,7 @@ may be a thread id whose row does not exist yet (a New-chat attach), with no
 foreign key, as for lineage Scratch.
 
 The `(projectId, intakeId)` key binds the actor, chat, name and size, and the lifecycle
-`reserved → object_stored → finalized → deleted`. Reservation allocates the stable
+`reserved → object_stored → finalized`; a finalized upload is deleted as the document it became. Reservation allocates the stable
 document ID, object key, owner chat, and location revision once; the flat
 collision-safe filename is chosen at finish. The address is derived from the owner's handle, never frozen
 before the chat row exists. Tracked text seeds through ContextFS and collab;
@@ -107,8 +106,8 @@ the file itself, so two uploads of one name started before either finishes both 
 and the one that finishes second lands as `notes (2).zip` under a chip labelled `notes.zip` (its
 link still finds it). A guess that the bytes overrule (text past the text cap kept as a file) can
 differ the same way. The label is never rewritten after the file lands: a chip's words are the
-writer's once it stands (see the link identity design). `assets/` is created by that write wherever it has gone missing. Chat-only paths
-(`lockForDelete`, `lookupUpload`) skip these rows.
+writer's once it stands (see the link identity design). `assets/` is created by that write wherever it has gone missing. The chat-only
+`lookupUpload` skips these rows.
 
 The server does not say whether a source upload is still being sent: a `doc:` ref that names
 nothing yet resolves `gone`. The sending tab announces it over presence, and other tabs' chips

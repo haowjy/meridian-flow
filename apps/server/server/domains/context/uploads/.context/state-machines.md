@@ -3,7 +3,7 @@
 One uploaded file, a chat attachment or a file that becomes a document, from a reserved
 address to a file in Context (`upload_intakes.state`; `upload-intake.ts`,
 `drizzle-upload-intake.ts`). The database checks
-only that the value is one of the four (`deleted` is no longer written); the order is enforced by the guards below.
+only that the value is one of the three; the order is enforced by the guards below.
 
 ```mermaid
 stateDiagram-v2
