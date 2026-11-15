@@ -63,9 +63,14 @@ function same(a: ProjectedRow, b: ProjectedRow): boolean {
   );
 }
 
-/** The nodes a Work's pending records create. */
-export function pendingCreates(pending: readonly TreeRecord[]): Set<string> {
-  return new Set(pending.flatMap((r) => (r.type === "create" ? [r.node] : [])));
+/** The nodes a Work's pending records create, in list order; `kind` keeps one kind of them. */
+export function pendingCreates(
+  pending: readonly TreeRecord[],
+  kind?: "document" | "folder",
+): Set<string> {
+  return new Set(
+    pending.flatMap((r) => (r.type === "create" && (!kind || r.kind === kind) ? [r.node] : [])),
+  );
 }
 
 /**

@@ -9,7 +9,7 @@ import { createdDraftId, draftItemKey, parseDraftItemKey } from "@meridian/contr
 import type { DraftMetadataResponse, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { draftRoomName } from "@meridian/contracts/protocol";
-import { pendingRecords } from "@meridian/project-tree";
+import { pendingCreates, pendingRecords } from "@meridian/project-tree";
 import { useCallback, useMemo } from "react";
 import type * as Y from "yjs";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
@@ -35,7 +35,9 @@ export function useCreatedDrafts(
     const known = new Set(listed?.map((row) => row.documentId));
     return [project.snapshot, account.snapshot].flatMap((snapshot) =>
       snapshot
-        ? pendingCreates(snapshot.doc, branchId).filter((documentId) => !known.has(documentId))
+        ? [...createdDocuments(snapshot.doc, branchId)].filter(
+            (documentId) => !known.has(documentId),
+          )
         : [],
     );
   }, [branchId, listed, project.snapshot, account.snapshot]);
@@ -79,11 +81,8 @@ export function useCreatedDrafts(
 
 const NONE: readonly ThreadDraftListItem[] = [];
 
-/** The documents the branch's pending creates make, in list order. */
-function pendingCreates(doc: Y.Doc, branchId: string): string[] {
-  return pendingRecords(doc, branchId).flatMap((record) =>
-    record.type === "create" && record.kind === "document" ? [record.node] : [],
-  );
+function createdDocuments(doc: Y.Doc, branchId: string): Set<string> {
+  return pendingCreates(pendingRecords(doc, branchId), "document");
 }
 
 /**
@@ -105,7 +104,7 @@ export function useCreatesDraft(projectId: string): (itemKey: string) => boolean
         const handle = lists.acquire(ref);
         try {
           const doc = handle.session.getSnapshot().doc;
-          return pendingCreates(doc, item.branchId).includes(item.documentId);
+          return createdDocuments(doc, item.branchId).has(item.documentId);
         } finally {
           handle.release();
         }
