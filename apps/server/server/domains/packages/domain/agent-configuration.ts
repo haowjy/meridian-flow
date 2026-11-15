@@ -11,7 +11,7 @@ import type { SkillFiles } from "./types.js";
 
 export class AgentConfigurationError extends Error {}
 
-function skillReference(
+export function skillReference(
   packageRevisionId: string,
   files: SkillFiles,
   slug: string,

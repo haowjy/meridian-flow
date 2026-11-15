@@ -1,4 +1,4 @@
-/** Available skill listings for composer `/`: bound thread or selected Agent. */
+/** Available skill listings for composer `/`: bound thread, or the Project before a chat exists. */
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { ThreadAvailableSkill } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
@@ -37,20 +37,8 @@ export function useSelectionAvailableSkills(
   const enabled = selection !== null;
   const result = unwrapListQuery(
     useQuery({
-      queryKey: [
-        "available-skills",
-        selection?.catalogEntryId ?? null,
-        selection?.definitionRevisionId ?? null,
-        projectId ?? null,
-      ],
-      queryFn: async () =>
-        (
-          await listSelectionAvailableSkills({
-            catalogEntryId: selection?.catalogEntryId as string,
-            definitionRevisionId: selection?.definitionRevisionId as string,
-            projectId,
-          })
-        ).skills,
+      queryKey: ["available-skills", projectId ?? null],
+      queryFn: async () => (await listSelectionAvailableSkills({ projectId })).skills,
       staleTime: 15_000,
       enabled,
     }),

@@ -80,6 +80,8 @@ type Dependencies = {
   draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
   onDraftCommitted(draftId: string): void;
   resolveDocumentUri(documentId: string): Promise<string | null>;
+  /** Where a document in Trash last stood, which names it while a Redo brings it back. */
+  resolveLastDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
@@ -88,7 +90,7 @@ type Dependencies = {
   /** A removed document's text is not reversed; its record words the refusal. */
   removals: DocumentRemovals;
   /** The tree half of a card's reversal: the reply's tree receipts, in the lists that hold them. */
-  treeLists: Pick<TreeListStore, "lock" | "submit">;
+  treeLists: Pick<TreeListStore, "lock" | "read" | "submit">;
   fileAccess: Pick<
     FileAccess,
     "authorizeAt" | "authorize" | "confirmEdit" | "destinationAvailability"
@@ -111,10 +113,32 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   const readDisposition = createDraftDispositionReader(
     createDrizzleDraftDispositionStore(input.db),
   );
-  async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
+  /**
+   * What the tree half does to the documents' text: a Redo's restores run first, so their text is
+   * planned as standing; an Undo that deletes an applied create in live takes its applied text
+   * with it. A query with no direction (the card's state) reads what an Undo would do.
+   */
+  async function treeEffects(query: TurnInverseQuery) {
+    const direction = query.direction ?? "undo";
+    const tree = await treePlanOf(query, direction);
+    return {
+      restoring: new Set(
+        direction === "redo"
+          ? tree.documents.flatMap((d) => (d.restore && !d.branchId ? [d.documentId] : []))
+          : [],
+      ),
+      leavingLive: new Set(tree.leavingLive),
+    };
+  }
+  async function selectedDocuments(
+    query: TurnInverseQuery,
+    restoring: ReadonlySet<string>,
+  ): Promise<DocumentId[]> {
     if (query.model) return [...new Set(query.documentIds ?? [])].sort();
     return [
-      ...new Set((await readTurnEditTargets(db(), query)).map((target) => target.documentId)),
+      ...new Set(
+        (await readTurnEditTargets(db(), query, [...restoring])).map((target) => target.documentId),
+      ),
     ].sort();
   }
   async function history(documentIds: DocumentId[]) {
@@ -185,7 +209,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   async function capture(query: TurnInverseQuery): Promise<InverseCapture> {
     const facts: unknown[] = [];
     const captured = await (async () => {
-      const ids = await selectedDocuments(query);
+      const { restoring, leavingLive } = await treeEffects(query);
+      const ids = await selectedDocuments(query, restoring);
       const rows = await history(ids);
       const draftIds = inverseDraftIds(query, rows);
       const parts: StoredInversePart[] = rows.map((part) => ({
@@ -210,7 +235,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       );
       try {
         for (const documentId of ids) {
-          const removal = removals.get(documentId) ?? null;
+          const removal = restoring.has(documentId) ? null : (removals.get(documentId) ?? null);
           // A delete keeps the document's bytes, and its drafts that outlived it plan their
           // inverse over the retained live history.
           const { doc: live, room: liveRoomName } = await materialize(documentId);
@@ -221,14 +246,20 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             live: Y.encodeSnapshotV2(Y.snapshot(live)),
             liveRoom: liveRoomName,
             liveClosed: liveAvailability.get(documentId)?.closed ?? null,
+            leavesLive: leavingLive.has(documentId),
           });
           const document: InverseDocument = {
             documentId,
             // A deleted document has no address: the model's path, or where it last stood.
-            uri: (await input.resolveDocumentUri(documentId)) ?? query.path ?? documentId,
+            uri:
+              (await input.resolveDocumentUri(documentId)) ??
+              query.path ??
+              (await input.resolveLastDocumentUri(documentId)) ??
+              documentId,
             live,
             liveRoom: removal ? null : liveRoomName,
             removal,
+            leavesLive: leavingLive.has(documentId),
             history: parts.filter((part) => part.documentId === documentId),
             drafts: new Map(),
             excerptViews: new Map(),
@@ -474,8 +505,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
       return owners;
     },
-    async treeStepCount(query, direction) {
-      return (await treePlanOf(query, direction)).steps.length;
+    async treeSteps(query, direction) {
+      const tree = await treePlanOf(query, direction);
+      return { acting: tree.steps.length, gone: tree.gone.length };
     },
     async readHistory(documentId) {
       return (await history([documentId])).map((part) => ({ ...part, disposition: "pending" }));
@@ -532,16 +564,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const operation = async () => {
         // What each plan was computed against is still what the documents hold.
         await confirmCapture(query, attempt);
-        for (const { plan, step } of sequence) {
-          const entry = planned.get(plan);
-          if (!entry) throw new Error("A step's plan is not among the commit's plans");
-          const outcome = await commitTextStep(entry, step, userId, query);
-          if (typeof outcome === "string") {
-            if (outcome) handles.push(outcome);
-          } else skips.push(outcome);
-        }
-        // After the text: a node a reply made is taken back once the text written into it is.
-        if (tree.steps.length || tree.gone.length) {
+        const runText = async () => {
+          for (const { plan, step } of sequence) {
+            const entry = planned.get(plan);
+            if (!entry) throw new Error("A step's plan is not among the commit's plans");
+            const outcome = await commitTextStep(entry, step, userId, query);
+            if (typeof outcome === "string") {
+              if (outcome) handles.push(outcome);
+            } else skips.push(outcome);
+          }
+        };
+        const runTree = async () => {
+          if (!tree.steps.length && !tree.gone.length) return;
           const now = await treePlanOf(query, direction);
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
@@ -553,6 +587,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           });
           treeReversed = done.reversed;
           skips.push(...done.skips);
+        };
+        // A node a reply made is taken back once the text written into it is, and comes back
+        // before its text does: nothing writes a document in Trash.
+        if (direction === "redo") {
+          await runTree();
+          await runText();
+        } else {
+          await runText();
+          await runTree();
         }
         for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
       };
@@ -592,12 +635,26 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // Every inverse supplies its principal explicitly; an absent one here means a composition
     // bug, not live routing.
     if (!principal) return null;
+    const restoring = new Set(
+      treeDocuments.flatMap((d) => (d.restore && !d.branchId ? [d.documentId] : [])),
+    );
     const requirements = new Map<
       string,
       { documentId: DocumentId; branchId: BranchId | null; restore: boolean }
     >();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
+      // A document this command restores is in Trash when it is admitted, where no draft
+      // outlives it: its text, live or drafted, is admitted as the restore, which a Redo runs
+      // first.
+      if (restoring.has(documentId)) {
+        requirements.set(`${documentId}:live:restore`, {
+          documentId,
+          branchId: null,
+          restore: true,
+        });
+        continue;
+      }
       const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
       requirements.set(`${documentId}:${branchId ?? "live"}:content`, {
         documentId,

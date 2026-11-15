@@ -123,6 +123,7 @@ else
         .from(schema.contextSources)
         .where(eq(schema.contextSources.workId, noWorkId));
       expect(manuscript.map((source) => source.slug).sort()).toEqual([
+        "agents",
         "kb",
         "manuscript",
         "unfiled",

@@ -5,6 +5,7 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import type { AssistantView, ViewItem, ViewRow, ViewRun } from "@meridian/thread-client";
 import { memo, useMemo } from "react";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
+import { AgentSavesReceipt } from "@/features/agents/AgentSavesReceipt";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { AskReceipt } from "./ask/AskReceipt";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
@@ -108,6 +109,8 @@ function AssistantTurnComponent({
           isLive={isLive}
           standIn={standIn}
         />
+        {/* A record of a finished turn, as the edits receipt is: mid-stream it would offer Undo early. */}
+        {isLive || standIn ? null : <AgentSavesReceipt outcomes={view.agentsSaved} />}
 
         <AnchoredCards anchor={{ turn: turn.id }} />
       </div>

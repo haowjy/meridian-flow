@@ -2,3 +2,20 @@
   flowchart, sequence and ER families; surface those to writers before adding a second
   row. KaTeX math for LitRPG stat blocks isn't a diagram provider: inline math is a
   mark or an inline node, not a fence the page draws instead of showing.
+
+## Native selection and composition
+
+Follow-ups from PR #1573, in this order:
+
+1. Full-table selection, a selected diagram before empty prose, and an inline
+   image at the end of its paragraph or alone in it can restart Chromium
+   composition: provisional `ni` survives beside committed `你`. Moving the caret
+   inside `compositionstart` causes the restart. The follow-up should replace
+   that relocation with a valid native caret projection before composition, not
+   filter provisional text or add per-object cases.
+2. A diagram-only or figure-only document can lose its native DOM range after
+   mouseup while ProseMirror keeps a NodeSelection. Chromium then emits no input
+   events. Fix the missing browser input target without per-object event patches.
+
+Reproduce with real selection plus Chromium `Input.imeSetComposition` updates and
+commit. This does not verify Android InputConnection or an operating-system IME.

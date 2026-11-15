@@ -15,6 +15,7 @@ import { isUuid } from "../../../shared/uuid.js";
 import {
   chainPrefix,
   type DocumentCoordinates,
+  type FolderLink,
   loadFolderChains,
   type NodeAddress,
   type NodeLocation,
@@ -107,7 +108,7 @@ export type DocumentLineage = {
   inTrash: boolean;
   contextSourceId: ContextSourceId;
   /** The document's folder and its ancestors, nearest first. */
-  folders: readonly { id: FolderId; deleted: boolean }[];
+  folders: readonly FolderLink[];
 };
 
 export interface TreeReader {
@@ -531,7 +532,7 @@ export function createTreeReader(db: Database): TreeReader {
         status: row.deleted ? "deleted" : "visible",
         inTrash: row.inTrash,
         contextSourceId: row.location.contextSourceId,
-        folders: chain.map((folder) => ({ id: folder.id, deleted: folder.deleted })),
+        folders: chain,
       });
     }
     return out;

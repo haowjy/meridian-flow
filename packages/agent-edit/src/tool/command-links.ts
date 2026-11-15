@@ -12,6 +12,7 @@ export interface CommandLinks {
 
 export interface CommandLinksDeps {
   codec: AgentEditCodecFactory;
+  codecFor?(documentId: string): Promise<AgentEditCodecFactory>;
   links: DocumentLinksPort;
 }
 
@@ -22,5 +23,6 @@ export async function openCommandLinks(
 ): Promise<CommandLinks> {
   await deps.links.prepare(request);
   const scope = deps.links.scopeFor(request.documentId, request.context);
-  return { scope, codec: deps.codec.forScope(scope) };
+  const codecs = (await deps.codecFor?.(request.documentId)) ?? deps.codec;
+  return { scope, codec: codecs.forScope(scope) };
 }

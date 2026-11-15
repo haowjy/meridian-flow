@@ -1,13 +1,15 @@
 /**
  * Reads one package's files with Mars and decides which Agents are available.
  *
- * The rule this keeps: anything Mars reports on an Agent's file, of any severity, makes that
- * Agent unavailable, and an unavailable Agent has no definition for anything to run. An Agent
- * never runs with more access than its file says. Mars's severity says whether `mars sync`
- * goes on, not whether a restriction survived (a misspelled `harness-overrides` is a warning
- * that drops the block), so availability is decided by the table in `agentErrors`, not by
- * filtering on severity.
+ * The rule this keeps: a finding of severity `error`, Mars's or Flow's, on an Agent's file makes
+ * that Agent unavailable, and an unavailable Agent has no definition for anything to run. A
+ * `warning` or `info` doesn't: it is shown, and the Agent runs as its file reads (a restriction
+ * `prepare` dropped, `field.restriction-lost`, is such a warning). Save installs, for an item with
+ * an error, the files of its last saved version when that was usable (`save-packages.ts`), and
+ * fails only on a broken `mars.toml`; a saved Agent can still be unavailable, because a newer
+ * reader finds an error the older one did not, or the item was never saved without one.
  */
+import { OPT_IN_TOOLS, TOOL_CATALOG } from "@meridian/contracts/agents";
 import { canonicalizeJsonObject, sha256 } from "./helpers.js";
 import {
   type AgentFields,
@@ -16,10 +18,9 @@ import {
   type Diagnostic,
   GRAMMAR_VERSION,
   MANIFEST_PATH,
+  type Prepared,
   projectRules,
-  readAgent,
-  readManifest,
-  readSkill,
+  readPackage,
   skillSlugOf,
   type ToolProjection,
 } from "./mars.js";
@@ -30,6 +31,12 @@ export class AgentSourceError extends Error {}
 export interface AgentSourceSnapshot {
   coordinate: string;
   files: SkillFiles;
+  /**
+   * Package paths a file cannot be read from (a prose document, a stored file, two documents).
+   * The path still names its Agent, skill or manifest, which is unavailable for the reason. Not
+   * retained: a revision keeps only the files that were read.
+   */
+  problems?: Record<string, string>;
 }
 
 export interface PackageDiagnostic {
@@ -77,46 +84,95 @@ export interface CompiledPackage {
   grammarVersion: string;
   contentDigest: string;
   files: SkillFiles;
+  /** The source's unreadable paths; part of what the digest identifies. */
+  problems: Record<string, string>;
   agents: CompiledAgent[];
+  /** Skills the package holds; one with an `error` is not offered. */
+  skills: Array<{ slug: string; diagnostics: PackageDiagnostic[] }>;
+  /** Every finding of the package's own files, each once: the manifest's, the Agents' and the skills'. */
+  findings: PackageDiagnostic[];
 }
+
+export const isError = (item: PackageDiagnostic): boolean => item.severity === "error";
 
 export function compilePackage(
   input: AgentSourceSnapshot,
   grammarVersion: string = GRAMMAR_VERSION,
 ): CompiledPackage {
   const files = validatedFiles(input);
-  const packageErrors = manifestErrors(files);
-  const skills = readSkills(files);
+  const problems = input.problems ?? {};
+  const prepared = readPackage(files);
+  const manifest = manifestFindings(prepared, files, problems);
+  const packageErrors = manifest.filter(isError);
+  const skills = readSkills(prepared, problems);
 
   const drafts = new Map<string, Draft>();
-  for (const path of Object.keys(files).sort()) {
+  for (const path of [...Object.keys(files), ...Object.keys(problems)].sort()) {
     const slug = agentSlugOf(path);
     if (slug === undefined) continue;
-    drafts.set(slug, draftAgent(slug, path, files[path], packageErrors, skills));
+    drafts.set(
+      slug,
+      Object.hasOwn(problems, path)
+        ? problemAgent(slug, path, problems[path], packageErrors)
+        : draftAgent(slug, path, prepared, packageErrors, skills),
+    );
   }
   rejectBrokenSubagents(drafts);
 
+  const agents = [...drafts.values()].map((draft) => ({
+    slug: draft.slug,
+    name: draft.fields?.name ?? draft.slug,
+    description: draft.fields?.description ?? "",
+    diagnostics: [...draft.errors, ...draft.warnings],
+    definition: draft.errors.length === 0 ? definitionOf(draft) : null,
+  }));
   return {
     coordinate: input.coordinate,
     grammarVersion,
-    contentDigest: sha256(
-      JSON.stringify(
-        canonicalizeJsonObject({
-          kind: "meridian.agent-source",
-          coordinate: input.coordinate,
-          files,
-        }),
-      ),
-    ),
+    contentDigest: sourceDigest(input),
     files,
-    agents: [...drafts.values()].map((draft) => ({
-      slug: draft.slug,
-      name: draft.fields?.name ?? draft.slug,
-      description: draft.fields?.description ?? "",
-      diagnostics: [...draft.errors, ...draft.warnings],
-      definition: draft.errors.length === 0 ? definitionOf(draft) : null,
-    })),
+    problems,
+    skills: [...skills].map(([slug, diagnostics]) => ({ slug, diagnostics })),
+    agents,
+    findings: distinct([
+      ...manifest,
+      ...agents.flatMap((agent) => agent.diagnostics),
+      ...[...skills.values()].flat(),
+    ]),
   };
+}
+
+function distinct(items: PackageDiagnostic[]): PackageDiagnostic[] {
+  const seen = new Map<string, PackageDiagnostic>();
+  for (const item of items) {
+    seen.set(JSON.stringify([item.file, item.code, item.path, item.message]), item);
+  }
+  return [...seen.values()];
+}
+
+/** What identifies a source: its coordinate, files and problems, in canonical form. */
+export function sourceDigest(input: AgentSourceSnapshot): string {
+  const problems = input.problems ?? {};
+  return sha256(
+    JSON.stringify(
+      canonicalizeJsonObject({
+        kind: "meridian.agent-source",
+        coordinate: input.coordinate,
+        files: input.files,
+        ...(Object.keys(problems).length ? { problems } : {}),
+      }),
+    ),
+  );
+}
+
+/** Whether a package-relative path can name a file of a package. */
+export function isPackagePath(name: string): boolean {
+  return !(
+    name.startsWith("/") ||
+    /^[a-z]:/i.test(name) ||
+    name.includes("\\") ||
+    name.split("/").some((part) => !part || part === "." || part === "..")
+  );
 }
 
 function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
@@ -128,12 +184,7 @@ function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
     throw new AgentSourceError("Agent source coordinate must be nonempty UTF-8 text without NUL");
   }
   for (const [name, text] of Object.entries(input.files)) {
-    if (
-      name.startsWith("/") ||
-      /^[a-z]:/i.test(name) ||
-      name.includes("\\") ||
-      name.split("/").some((part) => !part || part === "." || part === "..")
-    ) {
+    if (!isPackagePath(name)) {
       throw new AgentSourceError(`Invalid Agent source file path: ${name}`);
     }
     if (
@@ -162,32 +213,57 @@ const flow = (
   path: (string | number)[] = [],
 ): PackageDiagnostic => ({ file, code: `flow.${code}`, severity, path, message });
 
-/** Findings on `mars.toml` that make every Agent of the package unavailable. */
-function manifestErrors(files: SkillFiles): PackageDiagnostic[] {
-  const text = files[MANIFEST_PATH];
-  if (text === undefined) {
+/**
+ * Findings on `mars.toml`; its errors make every Agent of the package unavailable. `prepare`
+ * upgrades a pre-v1 package and translates a foreign one in memory, and says so only in its
+ * classification: Flow reads a package as authored, so anything but schema 1 is an error.
+ */
+function manifestFindings(
+  prepared: Prepared,
+  files: SkillFiles,
+  problems: Record<string, string>,
+): PackageDiagnostic[] {
+  if (Object.hasOwn(problems, MANIFEST_PATH)) {
+    return [flow(MANIFEST_PATH, "file-unreadable", problems[MANIFEST_PATH])];
+  }
+  if (files[MANIFEST_PATH] === undefined) {
     return [flow(MANIFEST_PATH, "manifest-missing", "The package has no mars.toml")];
   }
-  const reading = readManifest(text);
-  const errors = reading.diagnostics.map((item) => fromMars(MANIFEST_PATH, item));
-  // Mars merges these into every Agent at sync but its reading does not (mars-agents#376).
-  if (reading.fields?.tools && Object.keys(reading.fields.tools).length) {
-    errors.push(
-      flow(MANIFEST_PATH, "package-tools-unsupported", "[package.tools] is not supported yet"),
+  const findings = (prepared.manifest?.reading.diagnostics ?? []).map((item) =>
+    fromMars(MANIFEST_PATH, item),
+  );
+  const { classification } = prepared;
+  if (classification.kind !== "schema-1") {
+    const schema = classification.kind === "schema-newer" ? ` ${classification.schema}` : "";
+    findings.push(
+      flow(
+        MANIFEST_PATH,
+        "package-not-schema-1",
+        `Mars reads this package as ${classification.kind}${schema}, not schema 1; Flow reads only schema 1 packages as written`,
+      ),
     );
   }
-  return errors;
+  return findings;
 }
 
-/** Skills of the package whose file reads with no diagnostic, by slug; the rest by their reasons. */
-function readSkills(files: SkillFiles): Map<string, PackageDiagnostic[]> {
+/** The package's skills by slug, with every finding on each. */
+function readSkills(
+  prepared: Prepared,
+  problems: Record<string, string>,
+): Map<string, PackageDiagnostic[]> {
   const skills = new Map<string, PackageDiagnostic[]>();
-  for (const [path, text] of Object.entries(files)) {
+  for (const [path, message] of Object.entries(problems)) {
     const slug = skillSlugOf(path);
-    if (slug === undefined) continue;
+    if (slug !== undefined) skills.set(slug, [flow(path, "file-unreadable", message)]);
+  }
+  for (const definition of prepared.definitions) {
+    if (definition.kind !== "skill") continue;
     skills.set(
-      slug,
-      readSkill(slug, text).diagnostics.map((item) => fromMars(path, item)),
+      definition.slug,
+      [
+        ...definition.reading.diagnostics,
+        ...(prepared.changes?.[definition.source_path] ?? []),
+      ].map((item) => fromMars(definition.source_path, item)),
     );
   }
   return skills;
@@ -198,31 +274,63 @@ interface Draft {
   file: string;
   fields: AgentFields | null;
   body: string;
-  /** Blocking: Mars's findings of any severity, and Flow's own errors. */
+  /** Blocking: findings of severity `error`, Mars's and Flow's. */
   errors: PackageDiagnostic[];
+  /** Shown, never blocking: warnings and info. */
   warnings: PackageDiagnostic[];
   permission: "read" | "edit" | undefined;
   tools: ToolProjection | undefined;
+  /** Tools off by default that the file turns on (`OPT_IN_TOOLS`). */
+  optIn: Set<string>;
+}
+
+/** An Agent path whose file cannot be read: the Agent is in the package, unavailable. */
+function problemAgent(
+  slug: string,
+  file: string,
+  message: string,
+  packageErrors: PackageDiagnostic[],
+): Draft {
+  return {
+    slug,
+    file,
+    fields: null,
+    body: "",
+    errors: [...packageErrors, flow(file, "file-unreadable", message)],
+    warnings: [],
+    permission: undefined,
+    tools: undefined,
+    optIn: new Set(),
+  };
 }
 
 function draftAgent(
   slug: string,
   file: string,
-  text: string,
+  prepared: Prepared,
   packageErrors: PackageDiagnostic[],
   skills: Map<string, PackageDiagnostic[]>,
 ): Draft {
-  const reading = readAgent(slug, text);
+  const definition = prepared.definitions.find((item) => item.source_path === file);
+  if (definition?.kind !== "agent") {
+    return problemAgent(slug, file, "Mars did not read this file as an Agent", packageErrors);
+  }
+  const { reading } = definition;
   const draft: Draft = {
     slug,
     file,
     fields: reading.fields,
     body: bodyOf(reading),
-    errors: [...packageErrors, ...reading.diagnostics.map((item) => fromMars(file, item))],
+    errors: [...packageErrors],
     warnings: [],
     permission: undefined,
     tools: undefined,
+    optIn: new Set(),
   };
+  // A change `prepare` made to the file (`field.restriction-lost` above all) is a warning too.
+  for (const item of [...reading.diagnostics, ...(prepared.changes?.[file] ?? [])]) {
+    (item.severity === "error" ? draft.errors : draft.warnings).push(fromMars(file, item));
+  }
   const { fields } = reading;
   if (!fields) return draft;
 
@@ -248,9 +356,13 @@ function draftAgent(
     const skill = skills.get(name);
     if (skill === undefined) {
       draft.errors.push(flow(file, "skill-missing", `Skill "${name}" is not in this package`));
-    } else if (skill.length) {
+    } else if (skill.some(isError)) {
       draft.errors.push(
-        flow(file, "skill-unavailable", `Skill "${name}" has a problem: ${skill[0].message}`),
+        flow(
+          file,
+          "skill-unavailable",
+          `Skill "${name}" has a problem: ${skill.find(isError)?.message}`,
+        ),
       );
     }
   }
@@ -263,13 +375,38 @@ function draftAgent(
  * enforced would leave the Agent with more access than its file says.
  */
 function projectTools(rules: AgentFields["tools"], file: string, draft: Draft): ToolProjection {
-  const projection = projectRules(rules, "meridian-flow");
-  projection.rules.forEach((projected, index) => {
+  // Mars's vocabulary has no name for a tool that is off by default; Flow reads those rules.
+  const isOptIn = (rule: AgentFields["tools"][number]) =>
+    (OPT_IN_TOOLS as readonly string[]).includes(rule.capability);
+  rules.forEach((rule, index) => {
+    if (!isOptIn(rule)) return;
+    if (rule.pattern !== null) {
+      draft.errors.push(
+        flow(
+          file,
+          "tools-unscopable",
+          `Tool rule ${rule.capability}(${rule.pattern}) takes no pattern`,
+          "error",
+          ["tools", index],
+        ),
+      );
+    } else if (rule.action === "deny") draft.optIn.delete(rule.capability);
+    else draft.optIn.add(rule.capability);
+  });
+  // Mars sees only the rules left after the opt-in ones; its findings name them by position there.
+  const sent = rules.flatMap((rule, index) => (isOptIn(rule) ? [] : [{ rule, index }]));
+  const projection = projectRules(
+    sent.map((item) => item.rule),
+    "meridian-flow",
+  );
+  projection.rules.forEach((projected, position) => {
     if (projected.status !== "unscopable" && projected.status !== "unknown") return;
     const { capability, pattern, action } = projected.rule;
     const named = `${capability}${pattern === null ? "" : `(${pattern})`}: ${action}`;
     const message = `Tool rule ${named}: ${projected.note ?? projected.status}`;
-    draft.errors.push(flow(file, `tools-${projected.status}`, message, "error", ["tools", index]));
+    draft.errors.push(
+      flow(file, `tools-${projected.status}`, message, "error", ["tools", sent[position].index]),
+    );
   });
   if (projection.ask.length || projection.default === "ask") {
     const named = projection.default === "ask" ? ["*", ...projection.ask] : projection.ask;
@@ -371,7 +508,7 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),
-    ...toolsOf(draft.tools),
+    ...toolsOf(draft.tools, draft.optIn),
   };
   return { schemaVersion: 1, systemPrompt: draft.body, metadata };
 }
@@ -382,10 +519,19 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
  */
 function toolsOf(
   projection: ToolProjection | undefined,
+  optIn: ReadonlySet<string>,
 ): Pick<NormalizedAgentMetadata, "tools" | "disallowed-tools"> {
   if (!projection) return {};
+  const on = [...optIn];
+  // An opt-in tool beside no allow-list must not turn the file's default (every tool) into just it.
+  const tools =
+    projection.default === "deny"
+      ? [...projection.allow, ...projection.ask, ...on]
+      : on.length
+        ? [...TOOL_CATALOG, ...on]
+        : undefined;
   return {
-    ...(projection.default === "deny" ? { tools: [...projection.allow, ...projection.ask] } : {}),
+    ...(tools ? { tools } : {}),
     ...(projection.deny.length ? { "disallowed-tools": projection.deny } : {}),
   };
 }

@@ -17,7 +17,7 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   type AgentRevision,
   createInMemoryAgentRevisionStore,
-  seedGeneralAgent,
+  generalAgentSource,
 } from "../../packages/index.js";
 import {
   createInMemoryRepositories,
@@ -155,7 +155,7 @@ async function fixture(
     boundAgent: (id) => revisions.boundAgent(id),
   });
 
-  await seedGeneralAgent(revisions, "general-model");
+  await revisions.installSource(generalAgentSource("general-model"));
 
   const installed = await revisions.installSource({
     coordinate: "test/agents",

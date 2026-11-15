@@ -1,16 +1,20 @@
 /**
- * The rule the reader swap keeps, on the real Drizzle store and catalog over a scratch Postgres:
- * anything Mars or Flow reports on an Agent's file makes that Agent unavailable, and an Agent
- * never runs with more access than its file says. Also the built-in package, fixing a broken
- * Agent, and a reader bump.
+ * The rule Save keeps, on the real Drizzle store and the computed catalog over a scratch Postgres:
+ * an error, Mars's or Flow's, in one Agent's or skill's file stops that edit from being used (the
+ * item keeps its last saved version, or is out with none) and the rest saves; an error in
+ * `mars.toml` fails the Save; a warning or info saves with
+ * the finding shown; and an Agent that runs never has more access than
+ * its file says, except by a warning the Save showed. Writer files are fed through the level
+ * reader, as the documents would hold them, and used only once saved. Also the built-in packages,
+ * fixing a broken Agent, a chat keeping its revision, and a reader bump.
  *
  *   pnpm exec tsx tools/qa/probes/agents-through-mars/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a file with any Mars diagnostic, of any severity, defines nothing
- * - an Agent naming a missing, unavailable or non-invocable subagent or skill is unavailable
- * - a tool rule with a pattern, or on a capability Mars has no Flow row for, makes the Agent
- *   unavailable
+ * - an error on an Agent or skill file keeps its saved version or leaves it out; on mars.toml it
+ *   fails the Save; a warning or info does neither
+ * - an Agent naming a missing, unavailable or non-invocable subagent or skill is an error
+ * - a tool rule with a pattern, or on a capability Mars has no Flow row for, is an error
  */
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -21,14 +25,9 @@ import postgres from "postgres";
 import { createDrizzleAgentRevisionStore } from "../../../../apps/server/server/domains/packages/adapters/drizzle-agent-revision-store.ts";
 import { resolveAgentConfiguration } from "../../../../apps/server/server/domains/packages/domain/agent-configuration.ts";
 import { createBoundAgentCatalog } from "../../../../apps/server/server/domains/packages/domain/bound-agent-catalog.ts";
-import {
-  seedGeneralAgent,
-  seedLaunchAgentPackage,
-} from "../../../../apps/server/server/domains/packages/domain/default-package-seeding.ts";
-import {
-  publishAgentSource,
-  recompileStalePackages,
-} from "../../../../apps/server/server/domains/packages/domain/source-publication.ts";
+import { readBuiltinPackages } from "../../../../apps/server/server/domains/packages/domain/default-package-seeding.ts";
+import { GRAMMAR_VERSION } from "../../../../apps/server/server/domains/packages/domain/mars.ts";
+import { createInMemoryLevelFiles } from "../../../../apps/server/server/test-support/in-memory-level-files.ts";
 import {
   dropDatabaseForUrl,
   ensureDatabaseForUrl,
@@ -74,8 +73,12 @@ const scratch = await scratchDatabase();
 const db = createDb(scratch.url, { max: 4 });
 const raw = postgres(scratch.url, { max: 1 });
 const store = createDrizzleAgentRevisionStore(db);
+const levels = createInMemoryLevelFiles();
+const builtins = await readBuiltinPackages("fixture-model");
 const catalog = createBoundAgentCatalog({
   store,
+  levelFiles: levels,
+  builtins,
   defaultModel: () => "fixture-model",
   unavailableReasons: () => [],
 });
@@ -92,25 +95,36 @@ const check = async (name: string, run: () => Promise<void>) => {
 };
 
 let cases = 0;
-/** Publishes one package with its own coordinate; returns the catalog item of every Agent in it. */
-async function publish(files: Record<string, string>, grammarVersion?: string) {
-  const coordinate = `probe/case-${++cases}`;
-  await publishAgentSource({
-    store,
-    ownerUserId: USER,
-    source: { coordinate, files },
-    grammarVersion,
-  });
-  return coordinate;
+/** Puts one package's files in the user level as an imported package; each case is its own package. */
+function publish(files: Record<string, string>) {
+  const name = `case-${++cases}`;
+  for (const [path, text] of Object.entries(files))
+    levels.write("user", `packages/${name}/${path}`, text);
+  return name;
 }
+const savePackage = async (folder: string) => {
+  const [outcome] = await catalog.savePackages(USER, {
+    packages: [{ level: "user", folder }],
+  });
+  assert.ok(outcome, "nothing to save");
+  return outcome;
+};
+/** Publishes the files and Saves them; the Save must go through. */
+const publishSaved = async (files: Record<string, string>) => {
+  const name = publish(files);
+  const outcome = await savePackage(`packages/${name}/`);
+  assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
+  return name;
+};
 const listed = async (slug: string) => {
-  const page = await catalog.list(USER, { limit: 100 });
+  const page = await catalog.list(USER, {});
   const item = page.agents.find((entry) => entry.slug === slug);
   assert.ok(item, `${slug} is not listed`);
   return item;
 };
 const resolved = async (slug: string) => {
   const item = await listed(slug);
+  assert.ok(item.selection, `${slug} has no selection`);
   const result = await catalog.resolvePrimary(USER, item.selection);
   assert.equal(
     result.ok,
@@ -132,10 +146,8 @@ try {
   });
 
   await check(
-    "the built-in package: nine Agents, no diagnostics, read-only stays read-only",
+    "the built-in package: nine Agents at the built-in level, no diagnostics, read-only stays read-only",
     async () => {
-      await seedGeneralAgent(store, "fixture-model");
-      await seedLaunchAgentPackage(store);
       const slugs = [
         "general",
         "critic",
@@ -147,10 +159,12 @@ try {
         "reader-sim",
         "writer-helper",
       ];
+      for (const source of builtins) await store.installSource(source);
       for (const slug of slugs) {
-        const entry = await store.readCatalogEntry(null, slug);
-        assert.ok(entry, `${slug} has no catalog entry`);
-        const row = await store.readCatalogRevision(entry.selectedRevisionId);
+        const item = await listed(slug);
+        assert.equal(item.level, "builtin");
+        assert.ok(item.selection, `${slug} has no selection`);
+        const row = await store.readCatalogRevision(item.selection.definitionRevisionId);
         assert.ok(row?.definition, `${slug} has no definition`);
         assert.deepEqual(row.diagnostics, [], `${slug} has diagnostics`);
         assert.ok(await store.readRevision(row.id));
@@ -158,7 +172,6 @@ try {
       for (const slug of ["general", "critic", "muse", "setup", "spark", "writer"])
         await resolved(slug);
       assert.equal((await resolved("critic")).permission, "read");
-      const muse = await store.readCatalogEntry(null, "muse");
       const museConfiguration = await resolved("muse");
       assert.deepEqual(museConfiguration.namedTargets.map((target) => target.name).sort(), [
         "continuity-checker",
@@ -166,7 +179,6 @@ try {
         "reader-sim",
         "writer-helper",
       ]);
-      assert.ok(muse);
       for (const target of museConfiguration.namedTargets) {
         const revision = await store.readRevision(target.definitionRevisionId);
         assert.ok(revision, `${target.name} is not readable`);
@@ -241,15 +253,15 @@ try {
       }),
     },
     {
-      name: "[package.tools] present",
+      name: "[package.tools] with an action Mars cannot read (package-tools.unreadable)",
       files: (slug) => ({
-        "mars.toml": `${MANIFEST}\n[package.tools]\nwrite = "deny"\n`,
+        "mars.toml": `${MANIFEST}\n[package.tools]\nwrite = "bogus"\n`,
         [`agents/${slug}.md`]: agent("A"),
       }),
     },
     { name: "missing skill", files: fm("skills: [nope]\n") },
     {
-      name: "skill with a diagnostic",
+      name: "skill with a diagnostic (Mars info)",
       files: (slug) => ({
         "mars.toml": MANIFEST,
         [`agents/${slug}.md`]: agent("A", `skills: [${slug}-skill]\n`),
@@ -273,19 +285,76 @@ try {
       }),
     },
   ];
+  /**
+   * Cases Mars grades below `error` (a warning or info) and Flow adds no error to save whole;
+   * `true` when the Save shows a finding. A manifest error fails the Save. Any other error leaves
+   * its Agent out of the saved version and the rest saves.
+   */
+  const saves = new Map([
+    ["misspelled harness-override (Mars info)", false],
+    ["modelInvocable (Mars info)", false],
+    ["Flow namespace misspelled (Mars warning)", true],
+    ["manifest with a misspelled table (Mars info)", false],
+    ["skill with a diagnostic (Mars info)", false],
+  ]);
+  const fails = new Set([
+    "no mars.toml",
+    "manifest without schema = 1",
+    "[package.tools] with an action Mars cannot read (package-tools.unreadable)",
+  ]);
   for (const [index, entry] of unavailable.entries()) {
-    await check(`unavailable: ${entry.name}`, async () => {
+    const kind = saves.has(entry.name)
+      ? "saves with a finding"
+      : fails.has(entry.name)
+        ? "fails Save"
+        : "left out";
+    await check(`${kind}: ${entry.name}`, async () => {
       const slug = `u${index}`;
-      await publish(entry.files(slug));
+      const name = publish(entry.files(slug));
+      const outcome = await savePackage(`packages/${name}/`);
+      const file = (await catalog.files(USER, {})).files.find(
+        (item) => item.slug === slug && item.level === "user",
+      );
+      if (saves.has(entry.name)) {
+        assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
+        // Info is silent; a warning is on the result.
+        assert.equal(outcome.findings.length > 0, saves.get(entry.name));
+        assert.deepEqual(outcome.leftOut, []);
+        assert.deepEqual(file?.unavailableReasons, []);
+        const item = await listed(slug);
+        assert.ok(item.selection, "no selection");
+        assert.equal((await catalog.resolvePrimary(USER, item.selection)).ok, true);
+        return;
+      }
+      assert.ok(file && file.unavailableReasons.length > 0, "the files show no reason");
+      if (fails.has(entry.name)) {
+        assert.equal(outcome.outcome, "failed");
+        assert.ok(
+          outcome.findings.some((item) => item.severity === "error"),
+          "failed with no error",
+        );
+        assert.equal(
+          (await store.readSaved({ userId: USER })).some(
+            (row) => row.folder === `packages/${name}/`,
+          ),
+          false,
+        );
+        assert.equal(
+          (await catalog.list(USER, {})).agents.some((item) => item.slug === slug),
+          false,
+        );
+        return;
+      }
+      assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
+      assert.ok(outcome.leftOut.includes(`agents/${slug}.md`), `not left out: ${outcome.leftOut}`);
+      assert.equal(outcome.findings[0]?.severity, "error", "left-out errors come first");
+      // Left out of what runs: listed unavailable with its reason, and no chat binds it.
       const item = await listed(slug);
       assert.ok(item.unavailableReasons.length > 0, "listed with no reason");
-      const result = await catalog.resolvePrimary(USER, item.selection);
-      assert.equal(result.ok, false);
-      assert.equal(result.ok === false && result.reason, "unavailable");
+      assert.ok(item.selection, "no selection");
+      const bound = await catalog.resolvePrimary(USER, item.selection);
+      assert.equal(bound.ok, false);
       assert.equal(await store.readRevision(item.selection.definitionRevisionId), undefined);
-      const [row] =
-        await raw`select definition from agent_definition_revisions where id=${item.selection.definitionRevisionId}`;
-      assert.equal(row?.definition, null);
     });
   }
 
@@ -350,7 +419,7 @@ try {
   for (const [index, entry] of never.entries()) {
     await check(`never wider: ${entry.name}`, async () => {
       const slug = `n${index}`;
-      await publish({
+      await publishSaved({
         "mars.toml": MANIFEST,
         [`agents/${slug}.md`]: agent("N", entry.frontmatter),
       });
@@ -362,169 +431,175 @@ try {
     });
   }
 
-  await check("never wider: one bad Agent and one good one in a package", async () => {
-    await publish({
-      "mars.toml": MANIFEST,
-      "agents/good1.md": agent("Good"),
-      "agents/bad1.md": agent("Bad", "permission: read\n"),
-    });
-    await resolved("good1");
-    assert.ok((await listed("bad1")).unavailableReasons.length > 0);
+  await check(
+    "never wider: [package.tools] reaches each Agent, an Agent's own key wins",
+    async () => {
+      await publishSaved({
+        "mars.toml": `${MANIFEST}\n[package.tools]\nwrite = "deny"\nread = "allow"\n`,
+        "agents/pt1.md": agent("Plain"),
+        "agents/pt2.md": agent("Own", "tools: {write: allow}\n"),
+        "agents/pt3.md": agent("Other", "tools: {edit: deny}\n"),
+      });
+      assert.deepEqual((await resolved("pt1"))["disallowed-tools"], ["write"]);
+      assert.equal((await resolved("pt2"))["disallowed-tools"], undefined);
+      assert.deepEqual((await resolved("pt3"))["disallowed-tools"], ["write"]);
+    },
+  );
+
+  await check(
+    "one bad Agent is left out of its package's Save; the rest of the package and other packages save",
+    async () => {
+      const name = publish({
+        "mars.toml": MANIFEST,
+        "agents/good1.md": agent("Good"),
+        "agents/bad1.md": agent("Bad", "permission: read\n"),
+      });
+      const outcome = await savePackage(`packages/${name}/`);
+      assert.equal(outcome.outcome, "saved");
+      assert.deepEqual(outcome.leftOut, ["agents/bad1.md"]);
+      await resolved("good1");
+      assert.ok((await listed("bad1")).unavailableReasons.length > 0);
+    },
+  );
+
+  await check("a broken manifest fails the Save and the previous saved version stays", async () => {
+    const name = await publishSaved({ "mars.toml": MANIFEST, "agents/mf1.md": agent("Mf") });
+    levels.write(
+      "user",
+      `packages/${name}/mars.toml`,
+      '[package]\nname = "probe"\nversion = "0.1.0"\n',
+    );
+    levels.write("user", `packages/${name}/agents/mf1.md`, agent("Mf", "model: edited-model\n"));
+    const outcome = await savePackage(`packages/${name}/`);
+    assert.equal(outcome.outcome, "failed");
+    assert.equal((await resolved("mf1")).model, "fixture-model");
   });
 
-  await check("fixing a broken Agent: save a valid file over an unavailable one", async () => {
-    const broken = await catalog.save(USER, {
-      slug: "fix1",
-      content: agent("Fix", "permission: read\n"),
-    });
-    assert.ok(broken.unavailableReasons.length > 0);
-    assert.equal((await catalog.resolvePrimary(USER, broken.selection)).ok, false);
-    const fixed = await catalog.save(USER, {
-      slug: "fix1",
-      content: agent("Fix", "harness-overrides: {meridian-flow: {permission: read}}\n"),
-      expectedRevisionId: broken.selection.definitionRevisionId,
-    });
+  await check("fixing a broken Agent: edit the file, Save, and the name is available", async () => {
+    levels.write("user", "agents/fix1.md", agent("Fix", "permission: read\n"));
+    const broken = await savePackage("");
+    assert.deepEqual(broken.leftOut, ["agents/fix1.md"]);
+    assert.ok((await listed("fix1")).unavailableReasons.length > 0);
+    levels.write(
+      "user",
+      "agents/fix1.md",
+      agent("Fix", "harness-overrides: {meridian-flow: {permission: read}}\n"),
+    );
+    const fixedOutcome = await savePackage("");
+    assert.equal(fixedOutcome.outcome, "saved");
+    assert.deepEqual(fixedOutcome.leftOut, []);
+    const fixed = await listed("fix1");
     assert.deepEqual(fixed.unavailableReasons, []);
+    assert.ok(fixed.selection);
     assert.equal((await catalog.resolvePrimary(USER, fixed.selection)).ok, true);
   });
 
-  await check(
-    "a reader bump: a held selection reaches the current revision, a bound chat keeps resolving, boot recompiles",
-    async () => {
-      const files = {
-        "mars.toml": MANIFEST,
-        "agents/b1.md": agent("B", "subagents: [b1-child]\nskills: [b1-skill]\n"),
-        "agents/b1-child.md": agent("Child", "mode: subagent\n"),
-        "skills/b1-skill/SKILL.md": skill("b1-skill"),
-      };
-      const coordinate = await publish(files, OLD_READER);
-      const oldItem = await listed("b1");
-      const oldRevision = await store.readRevision(oldItem.selection.definitionRevisionId);
-      assert.equal(oldRevision?.grammarVersion, OLD_READER);
-      assert.ok(oldRevision);
-      const configuration = await resolveAgentConfiguration({
-        revision: oldRevision,
-        store,
-        defaultModel: "fixture-model",
-      });
-      assert.equal(await store.bindThread(THREAD, oldRevision.id, configuration, null), true);
+  await check("a bound chat keeps its revision when the file is edited", async () => {
+    levels.write("user", "agents/keep1.md", agent("Keep", "model: first-model\n"));
+    assert.equal((await savePackage("")).outcome, "saved");
+    const before = await resolved("keep1");
+    assert.equal(before.model, "first-model");
+    const item = await listed("keep1");
+    assert.ok(item.selection);
+    const bound = await catalog.resolvePrimary(USER, item.selection);
+    assert.ok(bound.ok);
+    assert.equal(
+      await store.bindThread(THREAD, bound.revision.id, bound.configuration, null),
+      true,
+    );
+    levels.write("user", "agents/keep1.md", agent("Keep", "model: second-model\n"));
+    // Edited, not saved: new chats still get the saved version.
+    assert.equal((await resolved("keep1")).model, "first-model");
+    assert.equal((await savePackage("")).outcome, "saved");
+    assert.equal((await resolved("keep1")).model, "second-model");
+    assert.equal((await store.readThreadBinding(THREAD))?.revision?.id, bound.revision.id);
+    // A new chat binds the newest saved version by name, whatever the picker showed.
+    const again = await catalog.resolvePrimary(USER, item.selection);
+    assert.ok(again.ok);
+    assert.notEqual(again.revision.id, bound.revision.id);
+    assert.equal(again.configuration.model, "second-model");
+  });
 
-      await publishAgentSource({
-        store,
-        ownerUserId: USER,
-        source: { coordinate, files },
-        expectedRevisionId: (await store.listInstallations(USER)).find(
-          (i) => i.coordinate === coordinate,
-        )?.currentRevisionId,
-      });
-      const entry = await store.readCatalogEntry(USER, "b1");
-      assert.ok(entry);
-      assert.notEqual(entry.selectedRevisionId, oldRevision.id);
-      assert.equal(
-        (await store.readCatalogRevision(entry.selectedRevisionId))?.grammarVersion !== OLD_READER,
-        true,
-      );
-      const held = {
-        catalogEntryId: entry.id,
-        definitionRevisionId: oldRevision.id,
+  await check(
+    "a reader bump: a revision an older reader compiled is read again by this one",
+    async () => {
+      const source = {
+        coordinate: "probe/old-reader",
+        files: {
+          "mars.toml": MANIFEST,
+          "agents/b1.md": agent("B", "subagents: [b1-child]\n"),
+          "agents/b1-child.md": agent("Child", "mode: subagent\n"),
+        },
       };
-      const reached = await catalog.resolvePrimary(USER, held);
+      const old = (await store.installSource(source, OLD_READER)).definitions.find(
+        (row) => row.slug === "b1",
+      );
+      assert.ok(old);
+      // The name is saved nowhere, so the picked revision binds: this account's Save holds it.
+      await store.savePackage({ userId: USER }, "packages/old-reader/", old.packageRevisionId);
+      levels.write("user", "packages/old-reader/agents/unrelated.md", agent("Unrelated"));
+      const reached = await catalog.resolvePrimary(USER, {
+        slug: "b1",
+        definitionRevisionId: old.id,
+      });
       assert.ok(reached.ok);
-      assert.equal(reached.revision.id, entry.selectedRevisionId);
-
-      // A stricter reader: the held old revision was valid, the current one is not.
-      const strictCoordinate = await publish(
-        { "mars.toml": MANIFEST, "agents/b3.md": agent("B3") },
-        OLD_READER,
-      );
-      const heldStrict = await listed("b3");
-      await publishAgentSource({
-        store,
-        ownerUserId: USER,
-        source: {
-          coordinate: strictCoordinate,
-          files: { "mars.toml": MANIFEST, "agents/b3.md": agent("B3", "permission: read\n") },
-        },
-        expectedRevisionId: (await store.listInstallations(USER)).find(
-          (i) => i.coordinate === strictCoordinate,
-        )?.currentRevisionId,
-      });
-      const refused = await catalog.resolvePrimary(USER, heldStrict.selection);
-      assert.equal(refused.ok, false);
-      assert.equal(!refused.ok && refused.reason, "unavailable");
-      const binding = await store.readThreadBinding(THREAD);
-      assert.equal(binding?.revision?.id, oldRevision.id);
-      for (const target of binding?.configuration.namedTargets ?? []) {
-        const child = await store.readRevision(target.definitionRevisionId);
-        assert.ok(child);
-        await resolveAgentConfiguration({ revision: child, store, defaultModel: "fixture-model" });
-      }
-
-      const stale = {
-        "mars.toml": MANIFEST,
-        "agents/b2.md": agent("B2"),
-      };
-      await publish(stale, OLD_READER);
-      const before = await store.readCatalogEntry(USER, "b2");
-      assert.ok(before);
-      await recompileStalePackages(store);
-      const after = await store.readCatalogEntry(USER, "b2");
-      assert.ok(after);
-      assert.notEqual(after.selectedRevisionId, before.selectedRevisionId);
-      assert.notEqual(
-        (await store.readCatalogRevision(after.selectedRevisionId))?.grammarVersion,
-        OLD_READER,
-      );
-      assert.equal(
-        (
-          await store.listInstallationsWithoutRows(
-            (await store.readCatalogRevision(after.selectedRevisionId))?.grammarVersion ?? "",
-          )
-        ).length,
-        0,
-      );
+      assert.equal(reached.revision.grammarVersion, GRAMMAR_VERSION);
+      assert.notEqual(reached.revision.id, old.id);
+      assert.equal(reached.revision.packageRevisionId, old.packageRevisionId);
     },
   );
 
   await check(
-    "boot recompile: a head that moved to another old-reader revision is recompiled, not skipped",
+    "a saved Agent of a level hides the built-in of its name, and a later edit with an error leaves its saved version in use",
     async () => {
-      const coordinate = await publish(
-        { "mars.toml": MANIFEST, "agents/b4.md": agent("B4") },
-        OLD_READER,
+      levels.write(
+        "user",
+        "agents/critic.md",
+        agent("Critic", "harness-overrides: {meridian-flow: {permission: read}}\n"),
       );
-      const moving: typeof store = {
-        ...store,
-        async listInstallationsWithoutRows(grammarVersion) {
-          const stale = await store.listInstallationsWithoutRows(grammarVersion);
-          if (!moved) {
-            moved = true;
-            await publishAgentSource({
-              store,
-              ownerUserId: USER,
-              source: {
-                coordinate,
-                files: { "mars.toml": MANIFEST, "agents/b4.md": agent("B4", "model: other\n") },
-              },
-              grammarVersion: OLD_READER,
-              expectedRevisionId: stale.find((i) => i.coordinate === coordinate)?.currentRevisionId,
-            });
-          }
-          return stale;
-        },
-      };
-      let moved = false;
-      await recompileStalePackages(moving);
-      const head = (await store.listInstallations(USER)).find((i) => i.coordinate === coordinate);
-      assert.ok(head);
-      const entry = await store.readCatalogEntry(USER, "b4");
-      assert.ok(entry);
-      assert.notEqual(
-        (await store.readCatalogRevision(entry.selectedRevisionId))?.grammarVersion,
-        OLD_READER,
-      );
+      assert.equal((await savePackage("")).outcome, "saved");
+      const item = await listed("critic");
+      assert.equal(item.level, "user");
+      assert.deepEqual(item.shadows, ["builtin"]);
+      levels.write("user", "agents/critic.md", "---\nname: [x\n---\n");
+      const kept = await savePackage("");
+      assert.deepEqual(kept.kept, ["agents/critic.md"]);
+      assert.deepEqual(kept.leftOut, []);
+      const out = await listed("critic");
+      assert.equal(out.level, "user");
+      assert.deepEqual(out.unavailableReasons, []);
+      levels.remove("user", "agents/critic.md");
+      assert.equal((await savePackage("")).outcome, "saved");
+      assert.equal((await listed("critic")).level, "builtin");
     },
   );
+
+  await check("a stray line above the frontmatter leaves the Agent out", async () => {
+    levels.write("user", "agents/stray.md", `stray\n${agent("Stray", "permission: read\n")}`);
+    const outcome = await savePackage("");
+    assert.deepEqual(outcome.leftOut, ["agents/stray.md"]);
+    assert.match(
+      outcome.findings.map((item) => item.message).join("\n"),
+      /first line that is exactly/,
+    );
+    levels.remove("user", "agents/stray.md");
+  });
+
+  await check("two packages bringing one name rename both and hold the bare name", async () => {
+    for (const pkg of ["pa", "pb"]) {
+      levels.write("user", `packages/${pkg}/mars.toml`, MANIFEST);
+      levels.write("user", `packages/${pkg}/agents/twin.md`, agent("Twin"));
+    }
+    const first = await savePackage("packages/pa/");
+    assert.deepEqual(first.renamed, []);
+    const second = await savePackage("packages/pb/");
+    assert.deepEqual(second.renamed, ["twin is now twin__pa, twin__pb"]);
+    const bare = await listed("twin");
+    assert.ok(bare.unavailableReasons.length > 0);
+    assert.equal(bare.selection, null);
+    await resolved("twin__pa");
+    await resolved("twin__pb");
+  });
 } finally {
   await raw.end();
   await db.close();

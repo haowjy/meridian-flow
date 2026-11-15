@@ -399,10 +399,12 @@ function createCoordinator(
       fn: (doc: Y.Doc) => Promise<T>,
       options?: { timeoutMs?: number; signal?: AbortSignal },
     ): Promise<T> {
+      // A transaction's copy is private: the document's database lock orders it, not the mutex,
+      // which a writer holds while it waits for that lock.
+      if (deps.transactions?.inTransaction()) return inTransaction(docId, fn);
       return mutex.run(
         docId,
         async () => {
-          if (deps.transactions?.inTransaction()) return inTransaction(docId, fn);
           const snapshot = await deps.journal.read(docId);
           if (!liveDoc(docId) && !snapshot.checkpoint && snapshot.updates.length === 0) {
             throw new DocumentNotFoundError(docId);

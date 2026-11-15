@@ -53,6 +53,8 @@ export type TurnInverseQuery = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
+  /** A card reversal's direction: a Redo plans a document it restores as live, not as removed. */
+  direction?: "undo" | "redo";
   draftId?: string | null;
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
@@ -75,6 +77,11 @@ export type InverseDocument = {
   liveRoom: string | null;
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
+  /**
+   * The card's Undo deletes this applied create in live: the text an Apply brought there leaves
+   * with the document, and its Redo's restore brings it back, so neither writes it.
+   */
+  leavesLive: boolean;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,
@@ -120,8 +127,14 @@ export interface TurnInverseStore {
     direction: "undo" | "redo",
     userId: UserId | undefined,
   ): Promise<OwnerLocks>;
-  /** How many tree receipts of the reply this card reversal would take back. */
-  treeStepCount(query: TurnInverseQuery, direction: "undo" | "redo"): Promise<number>;
+  /**
+   * The reply's tree receipts this card reversal would take back (`acting`), and those it finds
+   * with nothing left to act on, which it reports as skipped (`gone`).
+   */
+  treeSteps(
+    query: TurnInverseQuery,
+    direction: "undo" | "redo",
+  ): Promise<{ acting: number; gone: number }>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -190,7 +203,11 @@ function prepare(
   const consumes = selectedAction ? [selectedAction] : [];
   return documents.map((document) => {
     const targets = document.history.filter(
-      (part) => targetsTurn(part, query) && (direction !== "redo" || accepted.has(partKey(part))),
+      (part) =>
+        targetsTurn(part, query) &&
+        (direction === "redo"
+          ? accepted.has(partKey(part))
+          : !(document.leavesLive && part.disposition === "applied")),
     );
     const reversals =
       direction === "undo"
@@ -368,8 +385,8 @@ export function createTurnInverseService(store: TurnInverseStore) {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
         // A reply that only changed the tree has no text to capture, and its card still takes it back.
-        const treeRedo = await store.treeStepCount(query, "redo");
-        const treeUndo = await store.treeStepCount(query, "undo");
+        const treeRedo = (await store.treeSteps(query, "redo")).acting;
+        const treeUndo = (await store.treeSteps(query, "undo")).acting;
         if (!documents.length && !treeRedo && !treeUndo) return null;
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
@@ -423,7 +440,8 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(store, documents, query, query.direction, randomUUID());
-        const treeSteps = await store.treeStepCount(query, query.direction);
+        const tree = await store.treeSteps(query, query.direction);
+        const treeSteps = tree.acting + tree.gone;
         if (!query.documentIds && !plans.length && !treeSteps)
           return {
             status: query.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
@@ -465,8 +483,10 @@ export function createTurnInverseService(store: TurnInverseStore) {
             : onlySuperseded
               ? "superseded"
               : "expired",
-          // One row per destination a document's steps reversed in, or one for its refusal.
+          // One row per destination a document's steps reversed in, or one for its refusal; a
+          // document with no text to reverse (it left, or comes back, with its node) has none.
           documents: plans.flatMap((plan): DocumentReversalResult[] => {
+            if (!plan.steps.length && !plan.skips.length) return [];
             const reversed = reversedAt(plan);
             if (reversed.length)
               return reversed.map((branchId) => ({

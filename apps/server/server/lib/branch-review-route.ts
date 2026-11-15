@@ -13,6 +13,7 @@ import {
   draftOwnerFromKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
+import type { AgentsLevel } from "@meridian/contracts/agents";
 import type {
   ApplyClickAnswer,
   ApplyClickResult,
@@ -465,13 +466,12 @@ export async function handleOwnerDraftListRequest(
   const frozen =
     listed.branchId !== null &&
     (await deps.documentSync.draftReview.branchOwner(listed.branchId))?.lifecycle === "frozen";
+  const visible = listed.items.filter(
+    (item) =>
+      readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
+  );
   return {
-    items: listed.items
-      .filter(
-        (item) =>
-          readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
-      )
-      .map((item) => toWireItem(item, listed.threadTitles)),
+    items: visible.map((item) => toWireItem(item, listed.threadTitles)),
     branchId: listed.branchId,
     folders: listed.folders,
     frozen,

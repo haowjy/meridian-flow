@@ -18,7 +18,7 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, documentDrafts } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { branchOwnerSql, ownerKeyOfColumns, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
@@ -27,6 +27,8 @@ import type { TurnEditedDocumentId, TurnTreeFolder } from "../domain/turn-live-l
 export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
   query: TurnInverseQuery,
+  /** Documents in Trash that the caller's Redo restores first: their text is a target too. */
+  restoring: readonly string[] = [],
 ): Promise<TurnEditedDocumentId[]> {
   const owner = branchOwnerSql(branches);
   const rows = await db
@@ -50,6 +52,7 @@ export async function readTurnEditTargets(
         // A draft-scoped edit keeps its history while the document's content is kept: a delete
         // in live or a discarded creation leaves the draft's bytes to retention.
         sql`(${livingDocumentSql(documentEdits.documentId)}
+          OR ${restoring.length ? inArray(documentEdits.documentId, restoring as DocumentId[]) : sql`false`}
           OR (${documentEditParts.origin}->>'kind' = 'pending'
             AND exists (select 1 from documents d
               where d.id = ${documentEdits.documentId} and d.content_purged_at is null)))`,
@@ -99,7 +102,9 @@ export async function readTurnEditTargets(
 /**
  * The folders the turn's tree receipts changed, live or in the branch the change was drafted in,
  * whether or not the card's Undo has since taken them back: a folder has no document, and the
- * reply's card lists it all the same. Each is named by the path the receipt recorded.
+ * reply's card lists it all the same. Each is named by the path the receipt recorded. Only the
+ * turn's own writes say where it wrote: a Redo of an applied draft lands live, and read as a
+ * target it would list the folder a second time, live.
  */
 export async function readTurnFolderTargets(
   db: Pick<Database, "selectDistinct">,
@@ -124,7 +129,7 @@ export async function readTurnFolderTargets(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
-        ne(treeEditReceipts.kind, "undo"),
+        eq(treeEditReceipts.kind, "write"),
         isNull(documents.id),
       ),
     )
@@ -171,7 +176,8 @@ export async function readTurnTreeTargets(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
-        ne(treeEditReceipts.kind, "undo"),
+        // Write receipts only: a Redo's names where it landed (live after an Apply), not where the turn wrote.
+        eq(treeEditReceipts.kind, "write"),
       ),
     );
   const targets = new Map<string, TurnEditedDocumentId>();

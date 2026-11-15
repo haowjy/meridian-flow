@@ -49,6 +49,7 @@ try {
     } as never,
     draftCoordinator: { async deliverCommitted() {} },
     resolveDocumentUri: async () => "project://probe.md",
+    resolveLastDocumentUri: async () => null,
     async refreshDocument() {},
     async flushLivePull() {},
     notices: { async record() {} },

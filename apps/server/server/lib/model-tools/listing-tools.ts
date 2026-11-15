@@ -75,7 +75,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
       if (result.error.code === "not_found") {
         return toolError({
           code: "not_found",
-          message: `No folder at ${result.error.uri}. Writing a file under this path creates the folder.`,
+          message: `No folder at ${path?.trim().startsWith("~/") ? path.trim() : result.error.uri}. Writing a file under this path creates the folder.`,
           details: result.error,
         });
       }

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
-import { useTreeVersion } from "@/core/project-tree/tree-version";
+import { type TreeVersion, useTreeVersion } from "@/core/project-tree/tree-version";
 import { useAccountId } from "../account-feature-context";
 
 export type EntryActions = {
@@ -14,13 +14,16 @@ export type EntryActions = {
   holding(node: string): { list: TreeActions; replay: TreeProjection | null };
 };
 
-export function useEntryActions(projectId: string): EntryActions {
+/** The actions in the shell's Live/Draft version, or in `version` when the caller names one. */
+export function useEntryActions(projectId: string, version?: TreeVersion): EntryActions {
   const accountId = useAccountId();
-  const project = useTreeActions({ kind: "project", projectId });
-  const account = useTreeActions({ kind: "account" });
+  const shown = useTreeVersion();
+  const acting = version ?? shown;
+  const project = useTreeActions({ kind: "project", projectId }, acting);
+  const account = useTreeActions({ kind: "account" }, acting);
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
-  const { view, pendingText } = useTreeVersion();
+  const { view, pendingText } = acting;
   return useMemo(
     () => ({
       project,

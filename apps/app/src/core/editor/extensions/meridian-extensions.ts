@@ -346,6 +346,9 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
         const { empty, $anchor } = editor.state.selection;
         if (!empty || $anchor.parent.type !== this.type) return false;
         if ($anchor.pos !== 1 && $anchor.parent.textContent.length > 0) return false;
+        // A code document has no paragraph to turn the fence into, and the default
+        // Backspace would clear the fence's language and id: do nothing.
+        if (!editor.schema.nodes.paragraph) return true;
         return editor.commands.setParagraph();
       },
       Enter: ({ editor }) => {

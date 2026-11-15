@@ -57,8 +57,12 @@ A click's tree half is the package's `applyDraft` (`adapters/drizzle-apply-tree.
 `treeListStore.submit` in the list that holds the document (`tree_node_ids.list_id`: the
 project's, or the account's for `user://`), in the click's own transaction. Its `only` is the
 document's item: the pending records made on it, and a drafted delete of a folder above it that
-took it along; the package adds the drafted creates they stand on and earlier records on the
-same facts. The click carries `saw`: the cut the draft list read its rows at (each list's id and
+took it along; the package adds what they stand on (`prerequisites`): the drafted creates of
+the nodes they need, and, for each Work-created folder above where a record acts, that folder's
+last drafted delete or restore before the record, so the folder lands as it stood when the record
+was drafted (a card Undo of its restore then finds it in live). A folder's delete drafted after
+the document left it, or after the record, stays pending. Earlier records on the same facts come
+too. The click carries `saw`: the cut the draft list read its rows at (each list's id and
 state vector, read before the rows; `treeCutOf`). A record admitted after it stays pending
 (`after_press`); a cut naming another list (one rebuilt under a new id) is no cut, and a scope left
 out is the server's own cut. A cut ahead of the server is a 503 that stores nothing. A text-only

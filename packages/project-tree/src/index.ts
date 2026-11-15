@@ -10,6 +10,7 @@ export {
 export {
   type ApplyResult,
   appliedCreates,
+  appliedNodes,
   applyDraft,
   covers,
   type DiscardedBy,
@@ -68,6 +69,7 @@ export {
   branchRows,
   changedRows,
   type ProjectedRow,
+  pendingCreates,
   projectedRows,
 } from "./rows.js";
 export { childrenOf, descendantsOf, fingerprint, rankAt, treeViolations } from "./shape.js";

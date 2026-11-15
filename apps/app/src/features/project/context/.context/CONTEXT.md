@@ -70,7 +70,8 @@ between main and the side doesn't remount it.
 ## Architecture
 
 ```text
-ContextTreePanel (desktop sidebar and the phone's drawer)
+ContextTreePanel / AgentsSource (desktop sidebar and the phone's drawer)
+       ├─ useContextTree + ContextTreeBody (one source's rows, from its top or a folder)
        ├─ useProjectTreeViews (the replay, cut to sources)
        ├─ useCreateEntryForm
        ├─ useEntryInteraction

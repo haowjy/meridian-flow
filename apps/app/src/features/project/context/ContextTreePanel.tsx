@@ -5,7 +5,7 @@ import { Trans } from "@lingui/react/macro";
 import { addressScheme, isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, Folder, FolderPlus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TreeViewResult } from "@/client/query/useProjectTree";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { IconButton } from "@/components/ui/icon-button";
@@ -42,22 +42,7 @@ import { NOWHERE, treePlace, useTreeNoticeWords } from "./use-tree-notice-words"
 /** What a row offers in a tree that takes no change: its documents still copy out. */
 const READ_ONLY: EntryCapabilities = ["copy"];
 
-/**
- * An area's rows under its name, with New file, New folder and Import in the
- * heading. Creation requests come from the shell's `TreeCreationProvider`. A tree that is not
- * `writable` (an ended Work's Scratch) offers none of them, and its rows offer only Copy.
- */
-export function ContextTreePanel({
-  treeState,
-  writable,
-  projectId,
-  editorWorkId,
-  scheme,
-  activeDocumentId,
-  onSelectFile,
-  onPicked,
-  drop,
-}: {
+type ContextTreeInput = {
   treeState: TreeViewResult;
   writable: boolean;
   projectId: string;
@@ -72,15 +57,43 @@ export function ContextTreePanel({
   ) => void;
   /** A file the writer picked opened: the phone's drawer closes. */
   onPicked?: () => void;
-  drop: SourceDrop;
-}) {
+  /** The folder the rows start at (`/.agents`); the source's top when absent. */
+  rootPath?: string;
+  /** A note on a file's row, after its name. */
+  meta?: TreeEnv["meta"];
+  folderEnd?: TreeEnv["folderEnd"];
+  crossedOut?: TreeEnv["crossedOut"];
+};
+
+export type ContextTree = ReturnType<typeof useContextTree>;
+
+/**
+ * One source's rows and what acts on them: expansion, reveal of main's document, inline create,
+ * and import. A pane renders it with `ContextTreeBody` and puts `requestCreate` in its heading.
+ */
+export function useContextTree({
+  treeState,
+  writable,
+  projectId,
+  editorWorkId,
+  scheme,
+  activeDocumentId,
+  onSelectFile,
+  onPicked,
+  rootPath = "",
+  meta,
+  folderEnd,
+  crossedOut,
+}: ContextTreeInput) {
   const controller = useOptionalTreeCreation();
   if (!controller) throw new Error("ContextTreePanel requires a TreeCreationProvider");
   const request = controller.request;
   const creating = useMemo(
     () =>
-      request?.scheme === scheme ? { kind: request.kind, parentPath: request.parentPath } : null,
-    [request, scheme],
+      request?.scheme === scheme && (rootPath === "" || request.parentPath.startsWith(rootPath))
+        ? { kind: request.kind, parentPath: request.parentPath }
+        : null,
+    [request, scheme, rootPath],
   );
   const { requestCreate: requestTreeCreate, completeCreate: onCreateDone } = controller;
   const { tree, isComplete, isError } = treeState;
@@ -201,7 +214,8 @@ export function ContextTreePanel({
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);
-  const importScheme = writable && imports !== null && isImportScheme(scheme) ? scheme : null;
+  const importScheme =
+    writable && imports !== null && rootPath === "" && isImportScheme(scheme) ? scheme : null;
   const creates = writable && schemeAllowsCreation(scheme);
   const importable = importScheme !== null;
   const pickImport = imports?.pick;
@@ -214,11 +228,12 @@ export function ContextTreePanel({
             projectId,
             owner,
             scheme,
-            capabilities: writable
-              ? ["rename", "move", "copy", ...(scheme !== "uploads" ? (["delete"] as const) : [])]
-              : READ_ONLY,
+            capabilities: writable ? ["rename", "move", "copy", "delete"] : READ_ONLY,
             activeDocumentId,
             changed,
+            meta,
+            folderEnd,
+            crossedOut,
             creation: creates
               ? {
                   creating,
@@ -261,6 +276,9 @@ export function ContextTreePanel({
       activeDocumentId,
       activeLocationPath,
       changed,
+      meta,
+      folderEnd,
+      crossedOut,
       creating,
       createdFolder,
       onSelectFile,
@@ -282,8 +300,105 @@ export function ContextTreePanel({
     place && place.activePath === activeLocationPath
       ? place.folderPath
       : activeLocationPath && parentContextEntryPath(activeLocationPath);
-  const here = placed && tree?.findPath(placed)?.kind === "dir" ? placed : "";
-  const actions = creates ? (
+  const inRoot = (path: string | null): path is string =>
+    path !== null && (rootPath === "" || path === rootPath || path.startsWith(`${rootPath}/`));
+  const here = inRoot(placed) && tree?.findPath(placed)?.kind === "dir" ? placed : rootPath;
+  const root = rootPath === "" ? tree?.root : tree?.findPath(rootPath);
+  const rootFolder = root?.kind === "dir" ? root : null;
+  const empty = Boolean(
+    env &&
+      isComplete &&
+      importedTree &&
+      (!rootFolder || importedTree.rows(rootFolder.entryId).length === 0),
+  );
+  return {
+    scheme,
+    env,
+    tree,
+    isComplete,
+    isError,
+    loaded: Boolean(isComplete && importedTree),
+    /** The folder the rows start at; null while it doesn't exist (`.agents` not made yet). */
+    rootFolder: rootFolder && rootPath !== "" ? rootFolder : null,
+    rootPath,
+    creates,
+    creating,
+    here,
+    empty,
+    requestCreate,
+    importScheme,
+    pickImport,
+    openFolder,
+    notices,
+    /** Opens the file made at this path once its row shows. */
+    openWhenListed: setPendingOpenPath,
+  };
+}
+
+/** A tree's rows, or the line that stands in for them: loading, unreadable, empty. */
+export function ContextTreeBody({
+  tree,
+  emptyLine = <Trans>No files yet.</Trans>,
+}: {
+  tree: ContextTree;
+  emptyLine?: ReactNode;
+}) {
+  const { env, rootFolder, rootPath } = tree;
+  return (
+    <>
+      {env && tree.tree && (rootPath === "" || rootFolder) ? (
+        <TreeEnvProvider value={env}>
+          <div className="px-2">
+            <TreeChildren
+              parentId={rootFolder?.entryId ?? tree.tree.root.entryId}
+              parentPath={rootPath}
+              depth={0}
+              parent={
+                rootFolder
+                  ? {
+                      entryId: rootFolder.entryId,
+                      path: rootFolder.path,
+                      uri: rootFolder.uri,
+                      name: rootFolder.name,
+                    }
+                  : null
+              }
+            />
+          </div>
+        </TreeEnvProvider>
+      ) : null}
+      {/* A load still running and a list the account cannot read both leave the list empty; this line says which. */}
+      {tree.isError ? (
+        <InlineErrorRow message={t`You can't open these files.`} />
+      ) : !tree.loaded ? (
+        <div className="px-2">
+          <ListLine iconSlot status>
+            <Trans>Loading files…</Trans>
+          </ListLine>
+        </div>
+      ) : tree.empty && !tree.creating ? (
+        <div className="px-2">
+          <ListLine iconSlot>{emptyLine}</ListLine>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * An area's rows under its name, with New file, New folder and Import in the
+ * heading. Creation requests come from the shell's `TreeCreationProvider`. A tree that is not
+ * `writable` (an ended Work's Scratch) offers none of them, and its rows offer only Copy.
+ */
+export function ContextTreePanel({
+  drop,
+  ...input
+}: Omit<ContextTreeInput, "rootPath" | "meta" | "folderEnd" | "crossedOut"> & {
+  drop: SourceDrop;
+}) {
+  const tree = useContextTree(input);
+  const { scheme, here, requestCreate, importScheme, pickImport, creating } = tree;
+  const actions = tree.creates ? (
     <>
       <IconButton label={t`New file`} onClick={() => requestCreate("file", here)}>
         <FilePlus aria-hidden />
@@ -308,14 +423,11 @@ export function ContextTreePanel({
   useEffect(() => {
     if (creating) setSearch(null);
   }, [creating]);
-  const empty = Boolean(
-    env && isComplete && importedTree && importedTree.rows(importedTree.root.entryId).length === 0,
-  );
   return (
     <SourcePane
       label={schemeLabel(scheme)}
       actions={actions}
-      notice={notices.header}
+      notice={tree.notices.header}
       drop={drop}
       search={
         <SettledSearchField
@@ -326,42 +438,22 @@ export function ContextTreePanel({
         />
       }
     >
-      {search && tree ? (
+      {search && tree.tree ? (
         <FoundEntries
-          tree={tree}
+          tree={tree.tree}
           scheme={scheme}
           search={search}
-          activeDocumentId={activeDocumentId}
-          onOpen={(file) => onSelectFile(scheme, file, { focus: true })}
+          activeDocumentId={input.activeDocumentId}
+          onOpen={(file) => input.onSelectFile(scheme, file, { focus: true })}
           onOpenFolder={(folderId) => {
             setSearch(null);
-            openFolder(folderId);
+            tree.openFolder(folderId);
             focusRow(`folder:${folderId}`);
           }}
         />
-      ) : env && tree ? (
-        <TreeEnvProvider value={env}>
-          <div className="px-2">
-            <TreeChildren parentId={tree.root.entryId} parentPath="" depth={0} />
-          </div>
-        </TreeEnvProvider>
-      ) : null}
-      {/* A load still running and a list the account cannot read both leave the list empty; this line says which. */}
-      {search && tree ? null : isError ? (
-        <InlineErrorRow message={t`You can't open these files.`} />
-      ) : !isComplete || !importedTree ? (
-        <div className="px-2">
-          <ListLine iconSlot status>
-            <Trans>Loading files…</Trans>
-          </ListLine>
-        </div>
-      ) : empty && !creating ? (
-        <div className="px-2">
-          <ListLine iconSlot>
-            <Trans>No files yet.</Trans>
-          </ListLine>
-        </div>
-      ) : null}
+      ) : (
+        <ContextTreeBody tree={tree} />
+      )}
     </SourcePane>
   );
 }

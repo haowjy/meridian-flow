@@ -137,7 +137,7 @@ function isAiWriteMode(value: unknown): value is AiWriteMode {
 function isAgentSelection(value: unknown): value is AgentSelection {
   return (
     isObject(value) &&
-    typeof value.catalogEntryId === "string" &&
+    typeof value.slug === "string" &&
     typeof value.definitionRevisionId === "string"
   );
 }

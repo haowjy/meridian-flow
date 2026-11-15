@@ -1,4 +1,3 @@
-export * from "./account-skill-installs";
 export * from "./agent-definition-revisions";
 export * from "./agent-threads";
 export * from "./billing";
@@ -16,7 +15,6 @@ export * from "./waitlist";
 export * from "./working-sets";
 export * from "./yjs";
 
-import * as accountSkillInstalls from "./account-skill-installs";
 import * as agentDefinitionRevisions from "./agent-definition-revisions";
 import * as agentThreads from "./agent-threads";
 import * as billing from "./billing";
@@ -38,7 +36,6 @@ import * as yjs from "./yjs";
 /** Runtime Drizzle client schema (public tables + views). */
 export const schema = {
   users,
-  ...accountSkillInstalls,
   ...billing,
   ...content,
   ...imports,

@@ -40,6 +40,7 @@ import { createTrashRemovals } from "../domains/context/adapters/trash-removals.
 import {
   type ChatUploads,
   type ContextSources,
+  createAgentLevelFiles,
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
@@ -123,17 +124,13 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
-  type AccountSkillInstallStore,
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
-  createDrizzleAccountSkillInstallStore,
   createDrizzleAgentRevisionStore,
-  createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
-  recompileStalePackages,
-  seedGeneralAgent,
-  seedLaunchAgentPackage,
+  noLevelFiles,
+  readBuiltinPackages,
 } from "../domains/packages/index.js";
 import {
   type AccountSettingsRepository,
@@ -187,7 +184,6 @@ import {
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
-  createHostEffectOutbox,
   createInMemoryInbox,
   createInMemoryRunClaim,
   createInMemoryRunStarter,
@@ -285,7 +281,6 @@ import { createModelToolRegistrations, createReferenceReader } from "./model-too
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { createChatMedia } from "./runtime-host/chat-media.js";
-import { createHostEffects } from "./runtime-host/host-effects.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -321,7 +316,6 @@ export type AppServices = {
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
-  accountSkillInstalls: AccountSkillInstallStore;
   workRepo: ProjectWorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
@@ -349,7 +343,6 @@ export type AppServices = {
     repairOrphans(): Promise<number>;
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
-    deliverHostEffects(signal?: AbortSignal): Promise<number>;
     purgeDocuments(): Promise<number>;
     expireAsks(): Promise<number>;
   };
@@ -422,7 +415,6 @@ export type ProductionAppPorts = {
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
-  accountSkillInstalls: AccountSkillInstallStore;
   workRepo: ProjectWorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   billing: BillingService;
@@ -430,6 +422,7 @@ export type ProductionAppPorts = {
   rateSource: ModelTokenRateSource;
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
+  agentCatalog: BoundAgentCatalog;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -651,11 +644,15 @@ export async function createProductionAppPorts(input: {
     documents: createDrizzleFigureDocumentRepository({ db }),
     signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
   });
-  await seedGeneralAgent(agentRevisions, defaultModel);
-  await seedLaunchAgentPackage(agentRevisions);
-  await recompileStalePackages(agentRevisions);
+  const agentCatalog = createBoundAgentCatalog({
+    store: agentRevisions,
+    levelFiles: createAgentLevelFiles({ db, documentSync }),
+    builtins: await readBuiltinPackages(defaultModel),
+    defaultModel: () => gateway.getDefaultModel(),
+    unavailableReasons: (definition, model) =>
+      agentExecutionUnavailableReasons(definition, gateway, model),
+  });
   const users = createDrizzleUserRepository({ db });
-  const accountSkillInstalls = createDrizzleAccountSkillInstallStore(db);
   const projects = createDrizzleProjectBootstrapRepository({
     db,
     documents: documentSync,
@@ -739,7 +736,6 @@ export async function createProductionAppPorts(input: {
     works: workRepo,
     projectRepo,
     users,
-    accountSkillInstalls,
     workRepo,
     workAuthorityResolver,
     billing: billingDomain.service,
@@ -747,6 +743,7 @@ export async function createProductionAppPorts(input: {
     rateSource: registryTokenRateSource(),
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
+    agentCatalog,
     accountSettings,
     workingSet,
     recentDocuments,
@@ -891,6 +888,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const permissionGrants = createDrizzlePermissionGrantStore(ports.db);
+  const chatMedia = createChatMedia({
+    identities: ports.uploadIdentity,
+    objects: ports.objectStore,
+  });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -915,6 +916,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     shownLinks: ports.documentSync.modelEvidence(),
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
+    agentCatalog: ports.agentCatalog,
   };
   const asks = createAskService({
     repos: ports.threadRepos,
@@ -999,12 +1001,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
-  const hostEffects = createHostEffectOutbox({
-    db: ports.db,
-    host: createHostEffects({ db: ports.db, uploadIntake: ports.uploadIntake }),
-    eventSink: ports.eventSink,
-    backgroundTasks: ports.backgroundTasks,
-  });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
     async scanWakes() {
@@ -1022,7 +1018,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repairOrphans: () => orphanRepair.sweep(WAKE_SWEEP_LIMIT),
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
-    deliverHostEffects: hostEffects.deliver,
     purgeDocuments: () => ports.documentTrash.purge(),
     expireAsks: () => asks.expireDue(),
   };
@@ -1049,24 +1044,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     records: admissionRecords,
     requireWritableThread: (threadId) =>
       requireWritableThread((id) => lockThreadAndWorks(ports.db, id), threadId),
-    async uploadsUsed(documentIds, threadId) {
-      const chat = await topChats.resolveTopPrimaryChat(threadId as ThreadId);
-      if (chat && documentIds.length > 0) {
-        await hostEffects.record(threadId, "uploads.used", {
-          documentIds: [...documentIds],
-          chatId: chat.chatId,
-        });
-      }
-    },
     attachDocument: (threadId, documentId, relationship) =>
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
-    chatMedia: createChatMedia({
-      identities: ports.uploadIdentity,
-      objects: ports.objectStore,
-      eventSink: ports.eventSink,
-    }),
+    chatMedia,
     runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
@@ -1082,8 +1064,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       if (!thread) throw new InvalidAdmissionError("thread is unavailable");
       const available = await resolveThreadUserInvocableSkills({
         thread,
+        agentCatalog: ports.agentCatalog,
         agentRevisions: ports.agentRevisions,
-        accountSkillInstalls: ports.accountSkillInstalls,
       });
       const missing = unavailableActivatedSkillSlugs(available, slugs);
       if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
@@ -1167,7 +1149,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     askRequests: asks,
     reports: { publish: reportPublisher.publish },
     gateway: ports.gateway,
-    referenceReader: createReferenceReader(coreToolDeps),
+    referenceReader: createReferenceReader(coreToolDeps, chatMedia),
     documentEvidence: ports.documentSync.modelEvidence(),
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
@@ -1182,7 +1164,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     agentRevisions: ports.agentRevisions,
-    accountSkillInstalls: ports.accountSkillInstalls,
+    agentCatalog: ports.agentCatalog,
     toolRegistry,
     workContext,
     childRunCoordinator,
@@ -1267,19 +1249,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     works: ports.works,
     projectRepo: ports.projectRepo,
     users: ports.users,
-    accountSkillInstalls: ports.accountSkillInstalls,
     workRepo: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextNotices,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
-    agentCatalog: createBoundAgentCatalog({
-      store: ports.agentRevisions,
-      defaultModel: () => ports.gateway.getDefaultModel(),
-      unavailableReasons: (definition, model) =>
-        agentExecutionUnavailableReasons(definition, ports.gateway, model),
-    }),
+    agentCatalog: ports.agentCatalog,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
@@ -1423,9 +1399,6 @@ export function createInMemoryAppServices(): AppServices {
     async purgeWorks() {
       return 0;
     },
-    async deliverHostEffects() {
-      return 0;
-    },
     async purgeDocuments() {
       return 0;
     },
@@ -1515,6 +1488,14 @@ export function createInMemoryAppServices(): AppServices {
     registerUnregistered: async () => unsupported(),
   };
 
+  const agentCatalog = createBoundAgentCatalog({
+    store: agentRevisions,
+    levelFiles: noLevelFiles,
+    builtins: [],
+    defaultModel: () => "mock-model",
+    unavailableReasons: (definition, model) =>
+      agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
+  });
   return {
     gateway: {
       async *stream(request) {
@@ -1784,7 +1765,6 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory user repository is not implemented");
       },
     },
-    accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     workRepo: {
       async transaction(operation) {
         return operation();
@@ -1843,12 +1823,7 @@ export function createInMemoryAppServices(): AppServices {
     asks,
     billing: billingDomain.service,
     agentRevisions,
-    agentCatalog: createBoundAgentCatalog({
-      store: agentRevisions,
-      defaultModel: () => "mock-model",
-      unavailableReasons: (definition, model) =>
-        agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
-    }),
+    agentCatalog,
     eventSink: createNoopEventSink(),
     accountSettings,
     workingSet,
@@ -1935,10 +1910,6 @@ export function createInMemoryAppServices(): AppServices {
       async sweepAbandoned() {
         return 0;
       },
-      async deleteDraft() {
-        return { kind: "identity_mismatch" };
-      },
-      async consume() {},
     },
     chatUploads: {
       async list() {
