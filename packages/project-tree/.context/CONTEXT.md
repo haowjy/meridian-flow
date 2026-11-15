@@ -115,6 +115,14 @@ the replay uses them (package `AGENTS.md`).
   (`from`) all match by the root. If none is in the view (still discarded, applied away,
   superseded), Undo answers `unknown`. Undo of an Apply and `restoreEntry` use the same match.
   `restores`, `restoredBy`, `appliedBy` and `fromDraft` say who and from where, not which record.
+- **A record is in force while no later record in force undoes its root** (`recordsInForce`, in
+  `undo.ts`; the one reading of it). `undoChange` answers `already` for a record that is not, and
+  `appliedNodes(doc, command)` lists the nodes whose live copies of an Apply are in force, so a
+  tab can tell the Apply's tree half has ended (a card's Undo of the drafted change took the copy
+  back). A Redo (an undo of the undo) puts it back in force, and an Undo of it then undoes the
+  Redo (`redoneAs`) when the Undos in the chain put back exactly what they undid, else it answers
+  `changed_since`. `appliedBy` keeps copies not in force, so `undoApply` reports them `already`;
+  a copy of the Apply's own Undo record may bring one back in force on the way.
 - **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
   numbers only the clashes nobody saw. A move that numbers its arrival carries the name itself,
   not a paired `rename`.
