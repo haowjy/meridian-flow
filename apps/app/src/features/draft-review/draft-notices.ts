@@ -5,6 +5,7 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
+import type { Settlement } from "@meridian/contracts/commands";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DiscardRestores } from "./discard-restores";
 
@@ -30,6 +31,33 @@ export type NoticeSubject =
  * Trash), or Trash no longer holds what the Discard took.
  */
 export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
+
+/**
+ * What a command's `settled` says of one item, for the screen: the one place that reads a
+ * settlement into what is shown. `already` and `restored` paint the result quietly; `overtaken`
+ * names the command that settled the item first (the screen offers its reverse); `left_out`
+ * says why the item stayed out. Null: the answer says nothing of the item.
+ */
+export type SettledView =
+  | { kind: "already"; state: string }
+  | { kind: "restored" }
+  | { kind: "overtaken"; state: string; by: string }
+  | { kind: "left_out"; why: string };
+
+export function settledOf(
+  settled: readonly Settlement[] | undefined,
+  itemId: string,
+): SettledView | null {
+  for (const one of settled ?? []) {
+    if (one.rule === "already" && one.item === itemId) return { kind: "already", state: one.state };
+    if (one.rule === "restored" && one.documentId === itemId) return { kind: "restored" };
+    if (one.rule === "overtaken" && one.item === itemId)
+      return { kind: "overtaken", state: one.state, by: one.by };
+    if (one.rule === "left_out" && one.items.includes(itemId))
+      return { kind: "left_out", why: one.why };
+  }
+  return null;
+}
 
 export type DiscardUndoAnswer = {
   /** `returned`: the restore was answered and did nothing, for `why`. */

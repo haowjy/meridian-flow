@@ -42,7 +42,7 @@ import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
-import { type DiscardUndo, DraftNotices } from "./draft-notices";
+import { type DiscardUndo, DraftNotices, type SettledView, settledOf } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
@@ -98,6 +98,8 @@ export type CommandOutcome =
         renamed?: string;
       }[];
     }
+  /** The server answered for this item without landing it: another command settled it first, or part was left out. */
+  | { kind: "settled"; settled: Extract<SettledView, { kind: "overtaken" | "left_out" }> }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -148,19 +150,9 @@ function discardCode(result: DiscardCommandResult): string {
   if (returned?.rule === "returned") return returned.why;
   return result.status;
 }
-/**
- * What an Apply's answer says became of one item that did not land, as the surfaces' copy keys
- * it: `overtaken_<state>` or `left_out_<why>`. `already` is no failure (the item is applied) and
- * names nothing; null: the item landed or the answer says nothing of it.
- */
-function unsettledCode(answer: ApplyClickOutcome, documentId: string): string | null {
-  if (answer.status !== "applied") return null;
-  for (const one of answer.settled ?? []) {
-    if (one.rule === "overtaken" && one.item === documentId) return `overtaken_${one.state}`;
-    if (one.rule === "left_out" && one.items.includes(documentId)) return `left_out_${one.why}`;
-  }
-  return null;
-}
+/** The unlanded item's failure line key: `overtaken_<state>` or `left_out_<why>`. */
+const unlandedCode = (view: Extract<SettledView, { kind: "overtaken" | "left_out" }>) =>
+  view.kind === "overtaken" ? `overtaken_${view.state}` : `left_out_${view.why}`;
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
@@ -649,18 +641,24 @@ export class DraftCommandOwner {
 
   /** A click's answer, as its caller's outcome and a failure on the generation it was made for. */
   private settled(ref: DraftRef, id: string, answer: ApplyClickOutcome): CommandOutcome {
-    const code = answer.status === "unsent" ? "unsynced" : unsettledCode(answer, ref.documentId);
+    const outcome = this.outcomeOf(ref, answer);
+    const code =
+      outcome.kind === "settled"
+        ? unlandedCode(outcome.settled)
+        : outcome.kind === "change-refused"
+          ? outcome.code
+          : null;
     if (code)
       this.setState(ref.itemKey, { failure: { code: "apply-refused", serverCode: code } }, id);
-    return this.outcomeOf(ref, answer, code);
+    return outcome;
   }
 
-  /** `code`: why this item did not land, when the answer says. */
-  private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome, code: string | null): CommandOutcome {
+  private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
     if (answer.status === "applied") {
-      const restored = answer.settled?.some(
-        (one) => one.rule === "restored" && one.documentId === ref.documentId,
-      );
+      const view = settledOf(answer.settled, ref.documentId);
+      if (view?.kind === "overtaken" || view?.kind === "left_out")
+        return { kind: "settled", settled: view };
+      const restored = view?.kind === "restored";
       if (restored) {
         this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
       }
@@ -671,7 +669,6 @@ export class DraftCommandOwner {
           this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
       }
       if (restored || answer.applied.some((item) => item.renamed)) this.publish();
-      if (code) return { kind: "change-refused", code };
       return {
         kind: "done",
         commandId: answer.commandId,
@@ -685,7 +682,7 @@ export class DraftCommandOwner {
     }
     if (answer.status === "landed") return { kind: "done", commandId: answer.commandId };
     if (answer.status === "cancelled") return { kind: "blocked" };
-    return { kind: "change-refused", code: code ?? "unsynced" };
+    return { kind: "change-refused", code: "unsynced" };
   }
 
   /**
@@ -817,9 +814,17 @@ export class DraftCommandOwner {
             this.setState(entry.ref.itemKey, {
               failure: {
                 code: "apply-refused",
-                serverCode:
-                  unsettledCode(answer, entry.ref.documentId) ??
-                  (answer.status === "applied" ? "text_not_applied" : "unsynced"),
+                serverCode: (() => {
+                  const view =
+                    answer.status === "applied"
+                      ? settledOf(answer.settled, entry.ref.documentId)
+                      : null;
+                  return view?.kind === "overtaken" || view?.kind === "left_out"
+                    ? unlandedCode(view)
+                    : answer.status === "applied"
+                      ? "text_not_applied"
+                      : "unsynced";
+                })(),
               },
             }),
           unapplyRefused: (answer) =>

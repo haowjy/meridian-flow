@@ -89,7 +89,10 @@ export function useReviewChanges(
       // The change is back (or was updated): the writer returns to it, where its
       // reason is shown. Only in the review the command was sent from: the
       // writer may have opened another while it was in flight.
-      if (outcome.kind === "change-refused" && outcome.code !== "gone") {
+      if (
+        outcome.kind === "settled" ||
+        (outcome.kind === "change-refused" && outcome.code !== "gone")
+      ) {
         controller.focusReviewChange(review, change, { scroll: true });
       }
     },
