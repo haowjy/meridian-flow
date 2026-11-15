@@ -10,8 +10,8 @@ import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, projects, threads, treeNodes } from "@meridian/database/schema";
-import { LIVE, undoChange, type View } from "@meridian/project-tree";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { deleteStands, LIVE, undoChange, type View } from "@meridian/project-tree";
+import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { placedNodesSql } from "../../context/tree/tree-addresses.js";
@@ -27,7 +27,11 @@ import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 export type TreePlan = {
   /** The steps to reverse. */
   steps: TreeReceipt[];
-  /** Drafted steps whose Work's branch no longer holds the node (a Discard took it): skipped, never run. */
+  /**
+   * Steps with nothing left to act on, skipped and never run: a drafted Undo whose Work's branch
+   * no longer holds the node (a Discard took it), or a restore in live whose delete no longer
+   * holds the node in Trash (the writer restored it, deleted it again, or the Trash purged it).
+   */
   gone: TreeReceipt[];
   /** The lists that hold the steps' nodes, to be locked before any document key. */
   lists: TreeList[];
@@ -35,6 +39,11 @@ export type TreePlan = {
   branches: BranchId[];
   /** The steps' documents, each where it is reversed, for the edit grants (a restore is its own). */
   documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
+  /**
+   * Documents whose create this Undo takes back in live: text an Apply wrote there has no
+   * inverse of its own and leaves with the document.
+   */
+  leavingLive: string[];
 };
 
 export const NO_TREE_STEPS: TreePlan = {
@@ -43,13 +52,14 @@ export const NO_TREE_STEPS: TreePlan = {
   lists: [],
   branches: [],
   documents: [],
+  leavingLive: [],
 };
 
 export type TurnTreeInverse = ReturnType<typeof createTurnTreeInverse>;
 
 export function createTurnTreeInverse(deps: {
   db: Database;
-  treeLists: Pick<TreeListStore, "submit">;
+  treeLists: Pick<TreeListStore, "read" | "submit">;
   history: () => Pick<AgentTreeHistory, "turnSteps" | "recordAgentTreeChange">;
 }) {
   const db = () => currentDrizzleDb(deps.db);
@@ -74,13 +84,14 @@ export function createTurnTreeInverse(deps: {
   ): Promise<TreePlan> {
     const all = await deps.history().turnSteps(threadId, turnId, direction);
     if (all.length === 0) return NO_TREE_STEPS;
-    // A drafted step is applicable while its branch still places the node; once a Discard took it
-    // out there is no file to ask a grant about and nothing to reverse. Every other denial of a
-    // step's document refuses the reversal.
+    // A drafted Undo is applicable while its branch still places the node; once a Discard took it
+    // out there is no file to ask a grant about and nothing to reverse. A Redo's node is out of
+    // the branch (its Undo took it), and a Discard shows there as a record that no longer
+    // reverses. Every other denial of a step's document refuses the reversal.
     const held = new Set<string>();
     const draftedIn = new Map<string, string[]>();
     for (const step of all)
-      if (step.draftBranchId)
+      if (step.draftBranchId && direction === "undo")
         draftedIn.set(step.draftBranchId, [
           ...(draftedIn.get(step.draftBranchId) ?? []),
           step.subject,
@@ -93,9 +104,51 @@ export function createTurnTreeInverse(deps: {
           sql`, `,
         )})`))
         held.add(`${branchId}:${row.id}`);
-    const gone = all.filter(
-      (step) => step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`),
+    const ids = all.map((step) => step.subject);
+    const subjects = new Set(
+      (
+        await db().select({ id: documents.id }).from(documents).where(inArray(documents.id, ids))
+      ).map((row) => row.id as string),
     );
+    // Each subject's live row: absent for a node only a Work shows, or one the Trash purged.
+    const live = new Map(
+      (
+        await db()
+          .select({ id: treeNodes.id, trashRecord: treeNodes.trashRecord })
+          .from(treeNodes)
+          .where(inArray(treeNodes.id, ids))
+      ).map((row) => [row.id as string, row.trashRecord]),
+    );
+    // What the reversal does to the node: bring it back, or take it away.
+    const restores = (step: TreeReceipt) =>
+      direction === "undo" ? step.op === "delete" : step.op === "create" || step.op === "restore";
+    // A restore in live acts only through deletes that still hold its nodes in Trash: the
+    // writer's restore or later delete, or a purge, leaves a delete nothing to take back.
+    const standing = new Set<string>();
+    const byList = new Map<string, { list: TreeList; records: string[] }>();
+    for (const step of all) {
+      if (step.draftBranchId || !restores(step)) continue;
+      const list = await treeListOfNode(deps.db, step.subject);
+      if (!list) continue;
+      const key = JSON.stringify(list);
+      const entry = byList.get(key) ?? { list, records: [] };
+      entry.records.push(...step.records.map((record) => record.record));
+      byList.set(key, entry);
+    }
+    for (const { list, records } of byList.values())
+      for (const record of await deps.treeLists.read({
+        lists: [list],
+        view: ([end]) => records.filter((id) => end && deleteStands(end.writer, LIVE, id)),
+      }))
+        standing.add(record);
+    const restoresNode = (step: TreeReceipt, node: string) =>
+      step.records.some((entry) => entry.node === node && standing.has(entry.record));
+    const acts = (step: TreeReceipt) => {
+      if (step.draftBranchId)
+        return direction === "redo" || held.has(`${step.draftBranchId}:${step.subject}`);
+      return !restores(step) || step.records.some((entry) => standing.has(entry.record));
+    };
+    const gone = all.filter((step) => !acts(step));
     const steps = all.filter((step) => !gone.includes(step));
     const lists = new Map<string, TreeList>();
     for (const step of steps) {
@@ -105,22 +158,6 @@ export function createTurnTreeInverse(deps: {
       const other = step.across ? await otherList(threadId, list) : null;
       if (other) lists.set(JSON.stringify(other), other);
     }
-    const ids = steps.map((step) => step.subject);
-    const subjects = new Set(
-      (
-        await db().select({ id: documents.id }).from(documents).where(inArray(documents.id, ids))
-      ).map((row) => row.id as string),
-    );
-    // A document in Trash takes no edit grant, but a restore: a step that finds it changed
-    // since is skipped on its own, not a denial of the whole reversal.
-    const standing = new Set(
-      (
-        await db()
-          .select({ id: treeNodes.id })
-          .from(treeNodes)
-          .where(and(inArray(treeNodes.id, ids), isNull(treeNodes.trashRecord)))
-      ).map((row) => row.id as string),
-    );
     return {
       steps,
       gone,
@@ -129,16 +166,30 @@ export function createTurnTreeInverse(deps: {
         ...new Set(steps.flatMap((step) => (step.draftBranchId ? [step.draftBranchId] : []))),
       ] as BranchId[],
       documents: steps.flatMap((step) => {
-        // What the reversal does to the node: bring it back, or take it away.
-        const restore =
-          direction === "undo"
-            ? step.op === "delete"
-            : step.op === "create" || step.op === "restore";
-        const drafted = step.draftBranchId !== null;
-        return subjects.has(step.subject) && (drafted || restore || standing.has(step.subject))
-          ? [{ documentId: step.subject, branchId: step.draftBranchId as BranchId | null, restore }]
+        const restore = restores(step);
+        // A document in Trash takes no edit grant but its own restore: a step that finds it
+        // changed since is skipped.
+        const placed = live.has(step.subject) && live.get(step.subject) === null;
+        return subjects.has(step.subject) &&
+          (step.draftBranchId || (restore ? restoresNode(step, step.subject) : placed))
+          ? [
+              {
+                documentId: step.subject,
+                branchId: step.draftBranchId as BranchId | null,
+                restore,
+              },
+            ]
           : [];
       }),
+      leavingLive: steps.flatMap((step) =>
+        direction === "undo" &&
+        step.op === "create" &&
+        subjects.has(step.subject) &&
+        live.has(step.subject) &&
+        live.get(step.subject) === null
+          ? [step.subject]
+          : [],
+      ),
     };
   }
 

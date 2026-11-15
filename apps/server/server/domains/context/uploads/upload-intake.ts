@@ -2,8 +2,6 @@
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import type {
-  DeleteDraftUploadInput,
-  DeleteDraftUploadResult,
   Filetype,
   ProjectContextTreeScheme,
   StartUploadInput,
@@ -63,9 +61,6 @@ export interface UploadSourceDestination {
 const ABANDONED_AFTER_MS = 24 * 60 * 60 * 1000;
 const SWEEP_BATCH = 50;
 
-/** Deleting a draft is a chat attach's undo; a source upload is deleted as the document it became. */
-type ChatUploadOwner = Extract<UploadOwner, { kind: "chat" }>;
-
 type StartUploadOutcome =
   | { ok: true; value: UploadStart }
   | { ok: false; error: UploadIntakeError };
@@ -86,14 +81,13 @@ export interface UploadReservation {
   /** The length the writer declared; the signed PUT carries exactly this. */
   sizeBytes: number;
   objectKey: string;
-  state: "reserved" | "object_stored" | "finalized" | "deleted";
+  state: "reserved" | "object_stored" | "finalized";
   /** Null while `reserved`: the name and type are chosen when the stored bytes are read. */
   fileType: Filetype | null;
   /** Null until the upload is placed: its name is chosen against the folder it lands in. */
   finalPath: string | null;
   /** A chat upload's address, from the chat's current handle; a source upload's depends on the scope its caller resolved. */
   canonicalUri: string | null;
-  consumed: boolean;
   /** `chatRef` is null until the chat's row, and so its handle, exists. */
   owner: { kind: "chat"; chatId: string; chatRef: string | null } | { kind: "source" };
 }
@@ -164,21 +158,6 @@ export interface UploadIntakeRepository {
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
   /** `finalPath` is the name the upload took. */
   finalize(projectId: string, intakeId: string, finalPath: string): Promise<PlacedUpload>;
-  /** Locks the unused upload a writer asked to delete, in the chat they name. */
-  lockForDelete(
-    input: DeleteDraftUploadInput,
-    actorUserId: string,
-    owner: ChatUploadOwner,
-  ): Promise<
-    | { kind: "claimed"; reservation: UploadReservation }
-    | { kind: "refused"; result: DeleteDraftUploadResult; reservation?: UploadReservation }
-  >;
-  markDeleted(projectId: string, intakeId: string): Promise<void>;
-  /**
-   * Marks the chat's own finalized uploads among `documentIds` as used by a sent message and
-   * returns the sources whose rows changed. Another chat's file named here is left alone.
-   */
-  consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Intakes never finalized and untouched since `cutoff`, oldest first. */
   listAbandoned(
     cutoff: Date,
@@ -224,11 +203,6 @@ export interface UploadContentPort<Bound = unknown> {
     keptAsFile: boolean;
     source?: UploadSourceDestination;
   }): Promise<{ ok: true } | { ok: false; conflict: boolean }>;
-  /** Soft-deletes an arrived chat upload; `stale` when its identity no longer stands at its URI. */
-  remove(input: {
-    reservation: PlacedUpload;
-    actorUserId: string;
-  }): Promise<{ ok: true } | { ok: false; stale: true }>;
 }
 
 export interface UploadIntake {
@@ -248,13 +222,6 @@ export interface UploadIntake {
     owner: UploadOwner;
     source?: UploadSourceDestination;
   }): Promise<UploadIntakeOutcome>;
-  deleteDraft(
-    input: DeleteDraftUploadInput,
-    actorUserId: string,
-    owner: ChatUploadOwner,
-  ): Promise<DeleteDraftUploadResult>;
-  /** Runs in the sending transaction: marks the chat's uploads in these documents used. */
-  consume(documentIds: readonly string[], chatId: string): Promise<void>;
   /** Drops uploads untouched for a day, objects and row. Returns how many it dropped. */
   sweepAbandoned(now?: Date): Promise<number>;
 }
@@ -423,8 +390,6 @@ export function createUploadIntake<Bound>(deps: {
         return firstFreeName(named.value, taken).filename;
       };
       switch (reservation.state) {
-        case "deleted":
-          return conflict;
         case "finalized": {
           const placed = placedOf(claimedOf(reservation));
           return {
@@ -471,7 +436,7 @@ export function createUploadIntake<Bound>(deps: {
         value: resultOf(claimedOf(reservation), source),
       });
       let current = await read();
-      if (!current || current.state === "deleted") return conflict;
+      if (!current) return conflict;
       if (current.state === "finalized") return finalized(current);
 
       const incomingKey = incomingObjectKey(projectId, current.documentId);
@@ -484,7 +449,7 @@ export function createUploadIntake<Bound>(deps: {
           if (copied.error.code !== "not_found") return storageFailed;
           // Another finish may have moved the intake on and removed the incoming object.
           current = await read();
-          if (!current || current.state === "deleted") return conflict;
+          if (!current) return conflict;
           if (current.state === "finalized") return finalized(current);
           if (current.state === "reserved") return { ok: false, error: { code: "not_uploaded" } };
         }
@@ -492,9 +457,9 @@ export function createUploadIntake<Bound>(deps: {
 
       const stored = await deps.objectStore.readHead(current.objectKey, HEAD_BYTES);
       if (!stored.ok) {
-        // A delete releases the final object too, and then there is nothing to read.
+        // The sweep releases the final object with its row, and then there is nothing to read.
         const after = stored.error.code === "not_found" ? await read() : current;
-        return !after || after.state === "deleted" ? conflict : storageFailed;
+        return after ? storageFailed : conflict;
       }
       if (stored.value.sizeBytes !== current.sizeBytes) {
         await releaseAll(current);
@@ -520,10 +485,6 @@ export function createUploadIntake<Bound>(deps: {
         const claim = await deps.repository.claim({ projectId, intakeId: raw.intakeId, fileType });
         if (claim.kind === "gone") {
           await releaseAll(current);
-          return conflict;
-        }
-        if (claim.reservation.state === "deleted") {
-          await releaseAll(claim.reservation);
           return conflict;
         }
         if (claim.reservation.state === "finalized") return finalized(claim.reservation);
@@ -566,7 +527,6 @@ export function createUploadIntake<Bound>(deps: {
         }
         return deps.repository.transaction(async () => {
           const locked = await deps.repository.lockForFinalize(projectId, raw.intakeId);
-          if (locked.state === "deleted") return { kind: "deleted" as const };
           if (locked.state === "finalized")
             return { kind: "finalized" as const, reservation: placedOf(claimedOf(locked)) };
           const persisted = await deps.content.persist({
@@ -610,10 +570,6 @@ export function createUploadIntake<Bound>(deps: {
           name = firstFreeName(parsed.value, taken).filename;
           outcome = await place(placedOf(claimed, folder + name));
         }
-        if (outcome.kind === "deleted") {
-          await releaseAll(claimed);
-          return conflict;
-        }
         await deps.release.keys(tracked ? [incomingKey, claimed.objectKey] : [incomingKey]);
         return { ok: true, value: resultOf(outcome.reservation, source) };
       } catch (error) {
@@ -631,33 +587,6 @@ export function createUploadIntake<Bound>(deps: {
         });
         return storageFailed;
       }
-    },
-
-    async deleteDraft(input, actorUserId, owner) {
-      const deleted = await deps.repository.transaction(async () => {
-        const claim = await deps.repository.lockForDelete(input, actorUserId, owner);
-        if (claim.kind === "refused") return claim;
-        const { reservation } = claim;
-        // An arrived upload keeps its identity through the canonical soft delete, so a ref
-        // settled to it answers gone and never captures a later upload at the same address.
-        // A reservation that never finalized has no document row to remove.
-        if (reservation.state === "finalized") {
-          const removed = await deps.content.remove({
-            reservation: placedOf(claimedOf(reservation)),
-            actorUserId,
-          });
-          if (!removed.ok) return { result: { kind: "identity_mismatch" as const } };
-        }
-        await deps.repository.markDeleted(reservation.projectId, reservation.intakeId);
-        return { result: { kind: "deleted" as const }, reservation };
-      });
-      // A finish that is copying or has copied still finds the row deleted and releases its own.
-      if ("reservation" in deleted && deleted.reservation) await releaseAll(deleted.reservation);
-      return deleted.result;
-    },
-
-    async consume(documentIds, chatId) {
-      await deps.repository.consume(documentIds, chatId);
     },
 
     async sweepAbandoned(now = new Date()) {

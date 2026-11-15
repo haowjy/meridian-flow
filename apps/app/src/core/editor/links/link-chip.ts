@@ -28,7 +28,12 @@ import { fileTypeLabel } from "@/lib/file-type-label";
 import { formatBytes } from "@/lib/format-size";
 
 import type { LinkResolutionEntry } from "./link-resolution";
-import type { LinkTarget } from "./link-target";
+import {
+  classifyLinkTarget,
+  type InternalLinkTarget,
+  isInternalLinkTarget,
+  type LinkTarget,
+} from "./link-target";
 
 /**
  * A document family by scheme. Every internal link knows its family from its
@@ -39,6 +44,16 @@ import type { LinkTarget } from "./link-target";
 export type LinkChipIcon = ContextUriScheme | "file" | "folder";
 
 export type LinkChip = { state: "filled" | "dashed" | "draft"; icon: LinkChipIcon };
+
+/**
+ * The target of a link drawn as a chip, or null for one that stays text: an
+ * internal address draws as a chip, an external one keeps its underline. Every
+ * surface that asks "is this link a chip" reads this.
+ */
+export function chipLinkTarget(href: unknown): InternalLinkTarget | null {
+  const target = typeof href === "string" ? classifyLinkTarget(href) : null;
+  return target && isInternalLinkTarget(target) ? target : null;
+}
 
 /** Every icon a chip can ask for; the app supplies one image per entry. */
 export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [...CONTEXT_URI_SCHEMES, "file", "folder"];

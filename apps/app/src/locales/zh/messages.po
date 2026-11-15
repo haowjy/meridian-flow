@@ -2222,8 +2222,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
-msgid "Couldn’t delete this file. Try again."
-msgstr ""
+#~ msgid "Couldn’t delete this file. Try again."
+#~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "Couldn't delete this folder."

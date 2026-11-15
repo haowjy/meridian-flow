@@ -113,7 +113,10 @@ list that holds it (`TreeActions.remove`, one update per list). The row leaves t
 the document waits in Trash. One own removal covers every document the gesture takes away, and an
 entry inside another entry's folder goes with that folder, never on its own. Nothing refuses a
 delete: the record lands, and the replay settles it with whatever else reached the list.
-Writer deletion has no confirmation step. In the sidebar the deleted row stays where it was,
+A delete lands in the tree the entry was shown in (`useDeleteContextEntries`): a list of live
+documents (Files, Recently opened) deletes in live whichever way the toggle stands, the sidebar and
+a drop onto Trash in the shell's version, and an entry from a draft tab of the shell's Work in that
+Work. Writer deletion has no confirmation step. In the sidebar the deleted row stays where it was,
 struck through, with "Undo" in its trailing place (`RowWord`, from the list's `TreeNotice`), and
 the focus the row had goes to that Undo; after Undo it goes back to the row. The struck-through row
 comes from the step itself (`TreeStep.was`: each node's name, kind, parent and the siblings before
