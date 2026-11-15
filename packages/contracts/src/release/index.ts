@@ -18,10 +18,10 @@ export const UNNAMED_RELEASES: readonly string[] = ["dev", "0.0.0"];
 export const PROTOCOL_HEADER = "x-meridian-protocol";
 
 /** The wire contract this code speaks. Bump on a contract change an older tab would misread. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** The oldest protocol the server still understands. Moves only when a compatibility path is deleted. */
-export const MIN_PROTOCOL_VERSION = 1;
+export const MIN_PROTOCOL_VERSION = 2;
 
 export const serverProtocolSchema = z.object({
   current: z.number().int().nonnegative(),
