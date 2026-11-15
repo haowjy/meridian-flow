@@ -5,6 +5,7 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
+import type { Settlement } from "@meridian/contracts/commands";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DiscardRestores } from "./discard-restores";
 
@@ -30,6 +31,19 @@ export type NoticeSubject =
  * Trash), or Trash no longer holds what the Discard took.
  */
 export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
+
+/**
+ * Why a command answered `done` and changed nothing: its settlement says the owner is closed.
+ * Keyed on `settled`, never on the answer's status. Null: the answer was not a return.
+ */
+export function returnedOf(answer: {
+  status: string;
+  settled?: readonly Settlement[];
+}): RestoreReturned | null {
+  const returned = answer.settled?.find((one) => one.rule === "returned");
+  if (returned?.rule !== "returned") return null;
+  return returned.why === "chat_frozen" ? "chat-in-trash" : "work-closed";
+}
 
 export type DiscardUndoAnswer = {
   /** `returned`: the restore was answered and did nothing, for `why`. */
@@ -90,9 +104,11 @@ export type DraftNotice =
       review: ReviewFileTarget | null;
       /**
        * `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back.
-       * `returned`: the Undo was answered with nothing done, for `returned`.
+       * `returned`: the Undo was answered with nothing done, for `returned`. `bounced`: the
+       * Discard itself came back for `returned` and discarded nothing (no Undo; it ends after
+       * `BOUNCE_SHOWN_MS`).
        */
-      status: "ready" | "undoing" | "failed" | "partial" | "returned";
+      status: "ready" | "undoing" | "failed" | "partial" | "returned" | "bounced";
       leftOut: number;
       returned: RestoreReturned | null;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
@@ -127,7 +143,11 @@ export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
 
 /** A notice with something to say on a line: a plain Apply's is said only on its rows. */
 export const hasLine = (notice: DraftNotice) =>
-  notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
+  notice.kind === "applied"
+    ? notice.facts.some((fact) => fact.kind !== "applied")
+    : notice.status !== "bounced";
+
+const BOUNCE_SHOWN_MS = 6_000;
 
 type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
 
@@ -140,6 +160,7 @@ export class DraftNotices {
    * `DiscardRestores`'.
    */
   private readonly pressed = new Map<number, "undoing" | "failed">();
+  private readonly bounceTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
@@ -250,6 +271,45 @@ export class DraftNotices {
     });
     this.publish();
     return id;
+  }
+
+  /**
+   * A Discard that came back with nothing changed, for `why`: the chip on the control pressed,
+   * for a few seconds. `documentIds` are the rows the press named.
+   */
+  showBounce(input: {
+    projectId: string;
+    ownerKey: string;
+    surface: NoticeSurface;
+    documentIds: readonly string[];
+    why: RestoreReturned;
+  }): void {
+    if (this.closed) return;
+    const held = this.notices.get(input.ownerKey);
+    if (held) this.drop(held);
+    const id = this.nextId++;
+    const { ownerKey } = input;
+    this.notices.set(ownerKey, {
+      kind: "discarded",
+      id,
+      projectId: input.projectId,
+      ownerKey,
+      surface: input.surface,
+      subject: { kind: "drafts", count: input.documentIds.length },
+      documentIds: input.documentIds,
+      review: null,
+      left: null,
+      status: "bounced",
+      leftOut: 0,
+      returned: input.why,
+      undo: async () => "failed",
+      dismiss: () => this.endIf(ownerKey, id),
+    });
+    this.bounceTimers.set(
+      id,
+      setTimeout(() => this.endIf(ownerKey, id), BOUNCE_SHOWN_MS),
+    );
+    this.publish();
   }
 
   /**
@@ -428,6 +488,8 @@ export class DraftNotices {
     const parts = this.parts.get(notice.id) ?? [];
     this.parts.delete(notice.id);
     this.pressed.delete(notice.id);
+    clearTimeout(this.bounceTimers.get(notice.id));
+    this.bounceTimers.delete(notice.id);
     for (const part of parts) part.handle.end();
   }
 

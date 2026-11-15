@@ -11,6 +11,7 @@ import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { RowWord } from "@/components/app/RowWord";
+import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
   useAccountId,
@@ -259,6 +260,26 @@ function useNoticeUndo() {
   };
 }
 
+/**
+ * What a Discard that a closed owner returned leaves on the control pressed, in its trailing
+ * slot so it adds no height (`DraftNotices.showBounce`). Nothing for any other notice.
+ */
+export function BounceChip({ notice }: { notice: DraftNotice | null }) {
+  useLingui();
+  if (notice?.kind !== "discarded" || notice.status !== "bounced") return null;
+  const chat = notice.returned === "chat-in-trash";
+  return (
+    <WorkClosedChip
+      label={chat ? <Trans>Its chat is in Trash</Trans> : undefined}
+      sentence={
+        chat
+          ? t`Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes.`
+          : t`Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes.`
+      }
+    />
+  );
+}
+
 export type DraftNoticeWords = {
   /** The row (a document's or folder's id) is one the notice speaks for. */
   held: (id: string) => boolean;
@@ -326,6 +347,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
     held,
     word: (id) => {
       if (!held(id)) return null;
+      if (notice.status === "bounced") return <BounceChip notice={notice} />;
       if (notice.status === "returned")
         return (
           <RowWord

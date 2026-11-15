@@ -3727,6 +3727,14 @@ msgstr ""
 msgid "Italic"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its chat is in Trash, so this stayed as it is"
 msgstr ""
@@ -6710,8 +6718,8 @@ msgid "This Work is archived."
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is archived. Unarchive it to apply or discard its changes."
-msgstr ""
+#~ msgid "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgstr ""
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "This Work is archived. Unarchive it to change its tree."
@@ -6730,8 +6738,8 @@ msgid "This Work is deleted."
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is deleted. Restore it to apply or discard its changes."
-msgstr ""
+#~ msgid "This Work is deleted. Restore it to apply or discard its changes."
+#~ msgstr ""
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "This Work is deleted. Restore it to change its tree."
@@ -7248,6 +7256,10 @@ msgstr ""
 
 #: src/components/app/WorkClosedChip.tsx
 msgid "Work was closed"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx

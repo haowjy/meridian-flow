@@ -17,6 +17,7 @@ import { DisclosureMark } from "@/components/ui/marks";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
 import {
   ApplyAllQuestion,
+  BounceChip,
   CommandNotice,
   type CommandQuestion,
   noticeAction,
@@ -137,8 +138,9 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * place of the buttons that asked it. A Discard made here shows its notice in the row's place
  * (Discard all: the bar's); an Apply's facts sit below the rows.
  *
- * An archived Work's commands show disabled, with the reason above the rows. A frozen lineage
- * (every chat in Trash) offers no Apply, only Discard.
+ * An archived or deleted Work's commands go through as in any Work: Apply lands, and a Discard
+ * the Work returns shows its chip on the control pressed. A frozen lineage (every chat in Trash)
+ * offers no Apply, only Discard.
  */
 export function ChangesSource({
   projectId,
@@ -156,8 +158,6 @@ export function ChangesSource({
   onPicked?: () => void;
 }) {
   const { ownerKey } = scope;
-  // Locked with rows to show means archived or deleted: no owner key or Work lists nothing.
-  const archived = controller.dispositionLocked;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -295,6 +295,8 @@ export function ChangesSource({
   const owned = useDraftNotice(ownerKey);
   const notice = owned?.surface.kind === "changes" ? owned : null;
   const words = useDraftNoticeWords(notice);
+  // Discard all names no row: its returned Discard says so on the bar.
+  const barBounce = notice?.kind === "discarded" && notice.documentIds.length === 0 ? notice : null;
   const openDocument = useOpenProjectDocument(projectId);
   // What undoing an Apply skipped or couldn't take back is said on the rows it concerns here too.
   const drawn = useMemo<NoticePlace>(() => {
@@ -377,7 +379,7 @@ export function ChangesSource({
     <div ref={list} className="contents">
       <SourcePane
         label={scope.heading}
-        notice={treeWords.header}
+        notice={treeWords.header ?? (barBounce ? <BounceChip notice={barBounce} /> : null)}
         bar={
           question ? (
             <div className="min-w-0 flex-1">
@@ -388,7 +390,6 @@ export function ChangesSource({
               scope="all"
               density="full"
               touch={touch}
-              disabled={archived}
               onDiscard={
                 everyDraft.length > 0 || changedFolders.length > 0
                   ? () => {
@@ -419,16 +420,10 @@ export function ChangesSource({
           ) : null
         }
       >
-        {hasFiles && (archived || controller.frozen) ? (
+        {hasFiles && controller.frozen ? (
           <div className="px-2">
             <ListLine iconSlot>
-              {archived && scope.work?.deletedAt ? (
-                <Trans>This Work is deleted. Restore it to apply or discard its changes.</Trans>
-              ) : archived ? (
-                <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
-              ) : (
-                <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
-              )}
+              <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
             </ListLine>
           </div>
         ) : null}

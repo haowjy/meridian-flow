@@ -40,13 +40,11 @@ export function useDraftDock({
   );
   // The owner's notice, if this chat's strip made it.
   const owned = useDraftNotice(controller.ownerKey);
-  const notice =
-    active &&
-    owned?.surface.kind === "strip" &&
-    owned.surface.threadId === threadId &&
-    hasLine(owned)
-      ? owned
-      : null;
+  const here =
+    active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
+  const notice = here && hasLine(here) ? here : null;
+  // A Discard a closed owner returned: a chip on the strip's controls, no line of its own.
+  const bounce = here && !hasLine(here) ? here : null;
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -187,6 +185,7 @@ export function useDraftDock({
     controller,
     files,
     notice,
+    bounce,
     mounted: files.length > 0 || notice !== null,
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
