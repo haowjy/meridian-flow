@@ -30,6 +30,7 @@ import {
   CopyFault,
   LIVE,
   type ProjectedRow,
+  pendingRecords,
   projectedRows,
   replayView,
   sourceRoot,
@@ -162,7 +163,10 @@ describe("the tree list store (postgres)", () => {
       return rows;
     };
     const live = shown(LIVE);
-    return { live, branch: branchRows(live, shown({ draft: BRANCH })) };
+    return {
+      live,
+      branch: branchRows(live, shown({ draft: BRANCH }), pendingRecords(doc, BRANCH)),
+    };
   }
 
   const pick = (row: ProjectedRow) => ({

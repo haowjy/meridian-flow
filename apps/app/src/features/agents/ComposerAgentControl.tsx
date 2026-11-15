@@ -21,6 +21,7 @@ import {
   type CreationAgent,
   pickableAgents,
 } from "./creation-agent";
+import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
 
 export type ComposerAgentControlProps =
   | {
@@ -32,6 +33,8 @@ export type ComposerAgentControlProps =
   | {
       mode: "handoff";
       projectId: string;
+      /** The chat, whose bound definition the panel can open. */
+      threadId: string;
       bound: BoundAgent;
       /** Null until the server has a turn to hand off from. */
       onHandoff: ((agent: CreationAgent) => void) | null;
@@ -143,6 +146,7 @@ export function useComposerAgentToolbarControl(
               useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
             }}
           />
+          {props.mode === "handoff" ? <ThreadAgentDefinition threadId={props.threadId} /> : null}
         </>
       ),
     },

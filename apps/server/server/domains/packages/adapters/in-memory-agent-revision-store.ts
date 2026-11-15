@@ -209,6 +209,17 @@ export function createInMemoryAgentRevisionStore(input: {
         return true;
       });
     },
+    async replaceThreadBinding(threadId, revisionId, configuration, skillPins) {
+      const binding = state().bindings.get(threadId);
+      if (!binding) return false;
+      state().bindings.set(threadId, {
+        ...binding,
+        revisionId,
+        configuration: copy(configuration),
+        invokedSkills: { ...binding.invokedSkills, ...copy(skillPins) },
+      });
+      return true;
+    },
     async readThreadBinding(threadId) {
       const binding = state().bindings.get(threadId);
       if (!binding) return undefined;

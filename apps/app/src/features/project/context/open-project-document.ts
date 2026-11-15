@@ -167,11 +167,8 @@ export class ProjectDocumentLiveOpener {
   }
 }
 
-export type KnownDocumentIdentity = {
+export type KnownDocumentIdentity = ContextOwner & {
   scheme: ProjectContextTreeScheme;
-  workId?: string | null;
-  rootThreadId?: string;
-  chatId?: string;
   file: TreeFile;
 };
 
@@ -253,11 +250,7 @@ export class ProjectDocumentNavigationAdapter {
       const { identity } = identified;
 
       if (!isEditorScheme(identity.scheme)) {
-        const tab = openDocumentFromFile(
-          identity.scheme,
-          identity.file,
-          identity.chatId ? { chatThreadId: identity.chatId } : {},
-        );
+        const tab = openDocumentFromFile(identity.scheme, identity.file, identity);
         if (tab.kind !== "viewer") return { kind: "refused", reason: "lookup-failed" };
         if (!isCurrent()) return { kind: "cancelled" };
         this.dependencies.viewUpload(tab);
@@ -272,7 +265,6 @@ export class ProjectDocumentNavigationAdapter {
         file: identity.file,
         workId: identity.workId ?? workId,
         rootThreadId: identity.rootThreadId,
-        chatId: identity.chatId,
         focus,
         replace,
         isCurrent,
@@ -384,7 +376,6 @@ export class ProjectDocumentNavigationAdapter {
     file: TreeFile;
     workId: string | undefined;
     rootThreadId?: string;
-    chatId?: string;
     focus?: true;
     replace?: true;
     isCurrent: () => boolean;
