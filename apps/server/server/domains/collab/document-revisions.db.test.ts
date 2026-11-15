@@ -14,7 +14,11 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
+import {
+  drizzleFileAccess,
+  grantInProject,
+  testFileGrant,
+} from "../../test-support/file-grants.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
@@ -60,11 +64,7 @@ async function liveEdit(db: Database, edit: (writer: TreeWriter) => unknown) {
 
 /** The grant names this project and its owner, as the file policy would: the read's scope key. */
 function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
-  return {
-    ...grant,
-    principal: { ...grant.principal, accountId: USER_ID },
-    facts: { ...grant.facts, projectId: PROJECT_ID },
-  };
+  return grantInProject(grant, PROJECT_ID, USER_ID);
 }
 
 const identity = (responseId: string) => ({

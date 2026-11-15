@@ -1,43 +1,40 @@
 /**
- * Which documents a branch may hold: its own project's, and the personal
- * `user://` source of the account that owns its project. A `user://` source lives in that
- * account's personal project, so "same project" alone would refuse it; never widen this to
- * another account's source or another project's documents. Every check that pairs a branch
- * with a document (draft admission, file facts) asks here.
+ * Which documents a branch may hold: its own project's, and the home folder of the account that
+ * owns its project (`ownedByRequest`). Never widen this to another account's home folder or
+ * another project's documents. Every check that pairs a branch with a document (draft
+ * admission, file facts) asks here.
  */
 import type { BranchId, ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
 import { branches, contextSources, projects, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { TreeList } from "../ports/tree-list-store.js";
+import { ownedByRequest, ownerFrom, sourceOwnerProjectId } from "./source-owner.js";
 import { loadDocumentPlacement } from "./tree-addresses.js";
 
 /** A branch as ownership sees it: its project and the account that owns that project. */
 export type BranchHolder = { projectId: ProjectId; accountId: UserId };
 
-/** A source as ownership sees it: its effective project, that project's account, its scheme. */
-export type SourceOwner = { projectId: ProjectId; accountId: UserId; scheme: string };
+/** A source as ownership sees it: its owner, the account that owner answers to, its scheme. */
+export type SourceOwner = { owner: TreeList; accountId: UserId; scheme: string };
 
-/** The one rule: the branch's project, or its account's personal `user://` source. */
+/** The one rule: the branch's project, or its account's home folder. */
 export function branchMayHold(branch: BranchHolder, source: SourceOwner): boolean {
-  return (
-    source.projectId === branch.projectId ||
-    (source.scheme === "user" && source.accountId === branch.accountId)
-  );
+  return ownedByRequest(source.owner, branch);
 }
-
-const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
 
 function sourceOwnerRows(db: DrizzleDb) {
   return currentDrizzleDb(db)
     .select({
       sourceId: contextSources.id,
-      projectId: effectiveProjectId,
-      accountId: projects.userId,
+      projectId: sourceOwnerProjectId,
+      userId: contextSources.userId,
+      accountId: sql<UserId>`coalesce(${contextSources.userId}, ${projects.userId})`,
       scheme: contextSources.slug,
     })
     .from(contextSources)
     .leftJoin(works, eq(works.id, contextSources.workId))
-    .innerJoin(projects, eq(projects.id, effectiveProjectId));
+    .leftJoin(projects, eq(projects.id, sourceOwnerProjectId));
 }
 
 export async function loadSourceOwners(
@@ -49,7 +46,7 @@ export async function loadSourceOwners(
   return new Map(
     rows.map((row) => [
       row.sourceId,
-      { projectId: row.projectId, accountId: row.accountId, scheme: row.scheme },
+      { owner: ownerFrom(row), accountId: row.accountId, scheme: row.scheme },
     ]),
   );
 }

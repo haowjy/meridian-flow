@@ -1,11 +1,11 @@
 /** Durable cuts and atomic certification for live-document derived outputs. */
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
 // Changing the extractor must bump this version to invalidate older output.
 export const DOCUMENT_EXTRACTOR_VERSION = 5;
-export type DerivationScope = { projectId: ProjectId; personalOwnerId?: UserId };
+export type DerivationScope = { projectId: ProjectId };
 export type DerivationWatermark = {
   generation: bigint;
   admissionSequence: bigint;

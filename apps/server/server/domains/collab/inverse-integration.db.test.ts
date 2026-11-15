@@ -5,7 +5,7 @@
  * - durable inverse ownership (kb/wiki/architecture/collaboration/agent-editing-and-reversal.md#reversal-is-a-forward-edit)
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { testFileGrant } from "../../test-support/file-grants.js";
+import { grantInProject, testFileGrant } from "../../test-support/file-grants.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
 import {
@@ -59,11 +59,7 @@ describe("inverse integration (postgres)", () => {
       { kind: "draft", owner: { kind: "work", workId: workId as never }, ownerHandle: slug },
       documentId,
     );
-    return {
-      ...granted,
-      principal: { ...granted.principal, accountId: USER_ID as never },
-      facts: { ...granted.facts, projectId: PROJECT_ID as never },
-    };
+    return grantInProject(granted, PROJECT_ID, USER_ID);
   };
 
   it("6.4: model undo after the chat's Work moved lands in the edit's Work", async () => {

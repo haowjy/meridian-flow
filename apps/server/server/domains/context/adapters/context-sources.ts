@@ -2,7 +2,7 @@ import type { ContextSourceId, DocumentId, ProjectId, WorkId } from "@meridian/c
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { ContextSource, ContextSourceOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { contextSources, projects, threads, works } from "@meridian/database/schema";
+import { contextSources, threads, works } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNotNull, isNull, or, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextSources } from "../ports/context-sources.js";
@@ -26,6 +26,7 @@ export function createDrizzleContextSources(db: Database): ContextSources {
         workHandle: works.handle,
         rootThreadId: contextSources.rootThreadId,
         chatThreadId: contextSources.chatThreadId,
+        account: sql<boolean>`${contextSources.scope} = 'account'`,
         ownerThreadRef: threads.ref,
       })
       .from(contextSources)
@@ -41,13 +42,15 @@ export function createDrizzleContextSources(db: Database): ContextSources {
       .orderBy(asc(contextSources.sortOrder), asc(contextSources.id));
     return rows.map((row): ContextSource => {
       const scheme = row.slug as ContextUriScheme;
-      const owner: ContextSourceOwner = row.chatThreadId
-        ? { kind: "chat", chatId: row.chatThreadId }
-        : row.rootThreadId
-          ? { kind: "lineage", rootThreadId: row.rootThreadId }
-          : row.workId
-            ? { kind: "work", workId: row.workId as WorkId }
-            : { kind: "project" };
+      const owner: ContextSourceOwner = row.account
+        ? { kind: "account" }
+        : row.chatThreadId
+          ? { kind: "chat", chatId: row.chatThreadId }
+          : row.rootThreadId
+            ? { kind: "lineage", rootThreadId: row.rootThreadId }
+            : row.workId
+              ? { kind: "work", workId: row.workId as WorkId }
+              : { kind: "project" };
       return {
         id: row.id as ContextSourceId,
         scheme,
@@ -95,11 +98,7 @@ export function createDrizzleContextSources(db: Database): ContextSources {
       return rows.map((row) => row.id as ContextSourceId);
     },
     ofUser(userId) {
-      return read(
-        sql`${contextSources.slug} = 'user' and ${contextSources.projectId} = (
-          select ${projects.id} from ${projects}
-          where ${projects.userId} = ${userId} and ${projects.isPersonal} and ${isNull(projects.deletedAt)})`,
-      );
+      return read(and(eq(contextSources.scope, "account"), eq(contextSources.userId, userId)));
     },
     async liveDocuments(sourceId) {
       const rows = await currentDrizzleDb(db).execute<{ id: DocumentId; path: string }>(sql`

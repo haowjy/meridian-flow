@@ -13,7 +13,6 @@ import {
   draftOwnerFromKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
-import type { AgentsLevel } from "@meridian/contracts/agents";
 import type {
   ApplyClickAnswer,
   ApplyClickResult,
@@ -46,6 +45,7 @@ import type { DiscardSelection } from "../domains/collab/domain/branch-discard.j
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-branch-pending-store.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
+import { ownedByRequest } from "../domains/context/index.js";
 import {
   type FileAccessDenied,
   type FileGrant,
@@ -701,7 +701,7 @@ async function applyItems(
     if (
       grant.facts?.deleted &&
       grant.facts.ownerAccountId === input.userId &&
-      grant.facts.projectId === input.projectId
+      ownedByRequest(grant.facts.owner, { projectId: input.projectId, accountId: input.userId })
     ) {
       const removed = await deps.documentSync.roomRemoval({ documentId: node });
       if (removed) return (await lookup()) ?? { status: "closed", commandId };

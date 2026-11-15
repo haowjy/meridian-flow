@@ -16,7 +16,7 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import type { MarkdownDocumentStore } from "../../collab/index.js";
+import type { DocumentLinkScopes, MarkdownDocumentStore } from "../../collab/index.js";
 import type { AgentLevelFiles, LevelFiles } from "../../packages/ports/agent-level-files.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import type { ContextDocument } from "../ports/context-document-store.js";
@@ -72,6 +72,7 @@ async function candidatesOf(
 export function createAgentLevelFiles(deps: {
   db: Database;
   documentSync: Pick<MarkdownDocumentStore, "readFrozenMarkdown" | "mergeCodeText">;
+  links: Pick<DocumentLinkScopes, "within">;
 }): AgentLevelFiles {
   const texts = new Map<string, { version: string; text: string }>();
 
@@ -143,14 +144,24 @@ export function createAgentLevelFiles(deps: {
             problems[path] = `${path} is a prose document; package files are plain text`;
           else readable.push(only);
         }
-        const versions = await versionsOf(readable.map((candidate) => candidate.document.id));
-        for (const { document, path } of readable) {
-          const text = await storedText(document, versions.get(document.id));
-          // What the documents hold is untrusted: Mars reads only well-formed UTF-8 text.
-          if (text.includes("\0") || Buffer.from(text).toString("utf8") !== text)
-            problems[path] = `${path} is not valid UTF-8 text`;
-          else files[path] = text;
-        }
+        const ids = readable.map((candidate) => candidate.document.id);
+        const versions = await versionsOf(ids);
+        const readAll = async () => {
+          for (const { document, path } of readable) {
+            const text = await storedText(document, versions.get(document.id));
+            // What the documents hold is untrusted: Mars reads only well-formed UTF-8 text.
+            if (text.includes("\0") || Buffer.from(text).toString("utf8") !== text)
+              problems[path] = `${path} is not valid UTF-8 text`;
+            else files[path] = text;
+          }
+        };
+        // A home document has no project of its own: its links read in the project asking.
+        if (input.projectId)
+          await deps.links.within(
+            { projectId: input.projectId, viewer: { accountId: input.userId } },
+            readAll,
+          );
+        else await readAll();
         return { files, problems };
       });
     },

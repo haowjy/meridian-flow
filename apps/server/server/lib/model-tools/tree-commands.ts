@@ -107,7 +107,7 @@ export async function runTreeToolCommand(
   let draftArea: string | undefined;
   for (const area of areas as string[]) {
     const path = paths.find((candidate) => areaOfPath(candidate)?.area === area) as string;
-    const target = await threadContainerTarget(deps.works, call.context.resolution, path);
+    const target = await threadContainerTarget(call.context.resolution, path);
     if (!target) continue;
     const granted = await deps.fileAccess.authorize(call.principal, target, "edit");
     if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);

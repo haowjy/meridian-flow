@@ -37,7 +37,8 @@ export interface CatalogDocument {
   documentId: string;
   /** Resolved storage owner; project and personal documents have a null Work owner. */
   owner: ResolvedContextOwner;
-  projectId: string;
+  /** The owning project; null for a home document, which its account owns. */
+  projectId: string | null;
   /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;
   /**
@@ -52,7 +53,7 @@ export interface CatalogDocument {
   branch?: { branchId: string; owner: DraftOwnerKey };
   /** The reader may read it (file policy). False is answered exactly like a missing row. */
   readable: boolean;
-  /** Nameable from the holder: same project, or the reader's personal `user://` space. */
+  /** Nameable from the holder: same project, or the reader's own home folder (`user://`). */
   nameable: boolean;
 }
 

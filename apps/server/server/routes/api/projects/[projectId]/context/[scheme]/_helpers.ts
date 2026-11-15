@@ -106,7 +106,7 @@ export async function resolveContextRoute(event: H3Event): Promise<ResolvedConte
     throw createError({ statusCode: 400, message: "Scratch requires a chat or named Work" });
   const container: FileTarget = rootThreadId
     ? { kind: "container", scheme, owner: { scope: "lineage", projectId, rootThreadId } }
-    : await containerTarget(app.workRepo, { projectId, scheme, workId, chatId });
+    : await containerTarget(app.workRepo, { projectId, userId, scheme, workId, chatId });
   const edit = async <T>(targets: readonly FileTarget[], operation: () => Promise<T>) => {
     const grants = [];
     for (const target of targets) {

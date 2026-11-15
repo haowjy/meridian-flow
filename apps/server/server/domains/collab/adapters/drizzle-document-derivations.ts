@@ -1,5 +1,5 @@
 /** Journal-locked cuts and compare-and-set writes of document derived outputs. */
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   documentBlockRooms,
@@ -7,7 +7,6 @@ import {
   documentLinks,
   documents,
   documentYjsHeads,
-  projects,
   treeNodes,
 } from "@meridian/database";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -85,16 +84,6 @@ function chunks<T>(rows: readonly T[]): T[][] {
   return out;
 }
 
-async function documentProjectId(tx: DrizzleDb, documentId: DocumentId): Promise<ProjectId> {
-  const [row] = await tx
-    .select({ projectId: documents.projectId })
-    .from(documents)
-    .where(eq(documents.id, documentId))
-    .limit(1);
-  if (!row) throw new Error(`Document ${documentId} has no project`);
-  return row.projectId;
-}
-
 /**
  * Caller owns the document mutation lock for this transaction. The outputs arrive already
  * normalized and hashed: nothing here reads block text back, and the block diff writes only the
@@ -139,9 +128,6 @@ export async function certifyDocumentDerivation(
     room.extractorVersion === w.extractorVersion
   )
     return true;
-  // A document's project is for good.
-  const projectId = room ? room.projectId : await documentProjectId(tx, cut.documentId);
-
   // A re-derivation that changed no content (an extractor bump, a move) is not an edit:
   // `ls` shows `updatedAt` to the model and the writer.
   const edited = !(room?.documentHash ?? EMPTY_DOCUMENT_HASH).equals(outputs.documentHash);
@@ -157,7 +143,6 @@ export async function certifyDocumentDerivation(
 
   const blockOrder = outputs.blocks.map((block) => block.id);
   const roomValues = {
-    projectId,
     wordCount: outputs.wordCount,
     documentHash: outputs.documentHash,
     cutGeneration: w.generation,
@@ -193,8 +178,6 @@ export async function certifyDocumentDerivation(
       : []
     ).map((row) => [row.blockId, row.contentHash]),
   );
-  if (room && room.projectId !== projectId)
-    await tx.update(documentBlocks).set({ projectId }).where(eq(documentBlocks.roomId, roomId));
   const kept = new Set(blockOrder);
   const removed = [...stored.keys()].filter((id) => !kept.has(id));
   for (const ids of chunks(removed))
@@ -214,7 +197,6 @@ export async function certifyDocumentDerivation(
         rows.map((block) => ({
           roomId,
           blockId: block.id,
-          projectId,
           text: block.text,
           contentHash: block.contentHash,
         })),
@@ -314,17 +296,12 @@ export function createDrizzleDocumentDerivationStore(
         .from(documents)
         .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
         .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
-        .innerJoin(projects, eq(projects.id, documents.projectId))
         .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
         .where(
           and(
             livingDocumentSql(documents.id),
             staleForSweep,
-            scope
-              ? scope.personalOwnerId
-                ? eq(projects.userId, scope.personalOwnerId)
-                : eq(documents.projectId, scope.projectId)
-              : undefined,
+            scope ? eq(documents.projectId, scope.projectId) : undefined,
             page?.after ? gt(documents.id, page.after) : undefined,
           ),
         )

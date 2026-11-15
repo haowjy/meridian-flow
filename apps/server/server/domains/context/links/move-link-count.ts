@@ -9,7 +9,7 @@ import { loadDocumentAddresses } from "../tree/tree-addresses.js";
  * Sums `document_links` occurrences whose target is a moved document or whose ahead ref is settled
  * on one, from live content holders in `projectId` (present where they live now). A holder must be visible in the
  * live tree; one in Trash or in no view is not. A moved holder's own
- * links to unmoved documents are not counted; one moved document naming another is. Personal and
+ * links to unmoved documents are not counted; one moved document naming another is. Home-folder and
  * other-project holders are not counted. Runs inside the move transaction, after settlement, so a
  * ref the move itself settled counts.
  */
@@ -33,7 +33,10 @@ export async function countIncomingLinks(
   `);
   const links = new Map(sums.map((row) => [row.holder, row.links]));
   const counted = (await loadDocumentAddresses(db, { ids: [...links.keys()] })).filter(
-    (holder) => !holder.deleted && holder.projectId === input.projectId,
+    (holder) =>
+      !holder.deleted &&
+      holder.owner.kind === "project" &&
+      holder.owner.projectId === input.projectId,
   );
   return {
     links: counted.reduce((sum, holder) => sum + (links.get(holder.documentId) ?? 0), 0),

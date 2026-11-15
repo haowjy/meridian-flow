@@ -35,7 +35,13 @@ import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/documen
 import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
 import { releaseDocumentContent } from "./release-document-content.js";
 import { retentionHolds } from "./retention-holds.js";
-import { loadDocumentAddresses, loadFolderAddresses } from "./tree-addresses.js";
+import {
+  ownedByRequestSql,
+  ownerFrom,
+  ownerProjectIdSql,
+  sourceOwnerProjectId,
+} from "./source-owner.js";
+import { loadDocumentAddresses, loadFolderAddresses, ownerOfDocument } from "./tree-addresses.js";
 
 /** Documents released in one run: bounds how long one run holds the database. */
 const DOCUMENT_PURGE_BATCH_LIMIT = 100;
@@ -43,11 +49,12 @@ const ENTRY_PAGE = 100;
 const sourceProjects = alias(projects, "document_trash_source_projects");
 const requestProjects = alias(projects, "document_trash_request_projects");
 
-/** A project owns its own sources plus its account's personal user:// source. */
+/** A project's Trash holds its own sources' nodes and its account's home folder's. */
 function projectTrashMember() {
-  return sql<boolean>`(${eq(sourceProjects.id, requestProjects.id)}
-    OR (${eq(contextSources.slug, "user")}
-      AND ${eq(sourceProjects.userId, requestProjects.userId)}))`;
+  return ownedByRequestSql(
+    { projectId: sourceOwnerProjectId, userId: sql`${contextSources.userId}` },
+    { projectId: sql`${requestProjects.id}`, accountId: sql`${requestProjects.userId}` },
+  );
 }
 
 /** An unsettled drafted record on one of the nodes, or one that creates or moves under them. */
@@ -97,10 +104,7 @@ export function createDrizzleDocumentTrash(deps: {
       .innerJoin(documents, eq(documents.id, treeNodes.id))
       .innerJoin(contextSources, eq(contextSources.id, treeNodes.contextSourceId))
       .leftJoin(works, eq(works.id, contextSources.workId))
-      .innerJoin(
-        sourceProjects,
-        eq(sourceProjects.id, sql`coalesce(${contextSources.projectId}, ${works.projectId})`),
-      )
+      .leftJoin(sourceProjects, eq(sourceProjects.id, sourceOwnerProjectId))
       .innerJoin(requestProjects, eq(requestProjects.id, projectId))
       .where(
         and(
@@ -138,13 +142,13 @@ export function createDrizzleDocumentTrash(deps: {
         LEFT JOIN ${documents} d ON d.id = t.id
         JOIN ${contextSources} cs ON cs.id = t.context_source_id
         LEFT JOIN ${works} w ON w.id = cs.work_id
-        JOIN ${projects} sp ON sp.id = coalesce(cs.project_id, w.project_id)
+        LEFT JOIN ${projects} sp ON sp.id = ${ownerProjectIdSql("cs", "w")}
         JOIN ${projects} rp ON rp.id = ${projectId}::uuid
       WHERE t.trash_record IS NOT NULL AND t.trashed_at IS NOT NULL
         AND (p.id IS NULL OR p.trash_record IS DISTINCT FROM t.trash_record)
         AND (t.kind = 'folder' OR (t.kind = 'document' AND d.id IS NOT NULL AND d.content_purged_at IS NULL))
         AND cs.deleted_at IS NULL AND sp.deleted_at IS NULL AND rp.deleted_at IS NULL
-        AND (sp.id = rp.id OR (cs.slug = 'user' AND sp.user_id = rp.user_id))
+        AND ${ownedByRequestSql({ projectId: sql`sp.id`, userId: sql`cs.user_id` }, { projectId: sql`rp.id`, accountId: sql`rp.user_id` })}
       ORDER BY t.trashed_at DESC, t.id DESC`);
 
   /** The Works whose changes keep each document in Trash past its window. */
@@ -394,9 +398,7 @@ export function createDrizzleDocumentTrash(deps: {
     return rowsDue.map((row) => ({
       deleteId: row.deleteId,
       at: row.at,
-      list: (row.projectId
-        ? { kind: "project", projectId: row.projectId }
-        : { kind: "account", userId: row.userId as string }) as TreeList,
+      list: ownerFrom(row),
     }));
   }
 
@@ -410,17 +412,13 @@ export function createDrizzleDocumentTrash(deps: {
     const tx = () => currentDrizzleDb(deps.db);
     try {
       return await runInDrizzleTransaction(deps.db, async () => {
-        const [owner] = await tx().execute<{ project: string; user: string }>(sql`
-          SELECT p.id::text AS project, p.user_id::text AS "user"
-          FROM documents d JOIN projects p ON p.id = d.project_id
-          WHERE d.id = ${documentId}::uuid`);
+        const owner = await ownerOfDocument(tx(), documentId);
         if (!owner) return null;
-        // Both lists that can reshow it, under their keys: a read of what is still unsettled.
+        // Its owner's list holds its create (no view shows it, so nothing moved it to another
+        // list) and is the one an Undo of the Discard reshows it from: a read of what is still
+        // unsettled, under the list's key.
         await deps.tree.submit({
-          lists: [
-            { kind: "project", projectId: owner.project },
-            { kind: "account", userId: owner.user },
-          ],
+          lists: [owner],
           make: (copies) => {
             if (copies.some(({ writer }) => unsettledOn(writer.doc, new Set([documentId]))))
               throw new TreeRefusal("held");
@@ -436,10 +434,7 @@ export function createDrizzleDocumentTrash(deps: {
         // The list that holds its create says the content is gone: the browsers keeping a copy
         // of a Discarded document delete it on this record, the one fact they can trust.
         await deps.tree.submit({
-          lists: [
-            { kind: "project", projectId: owner.project },
-            { kind: "account", userId: owner.user },
-          ],
+          lists: [owner],
           make: (copies) => {
             for (const { writer } of copies) {
               const create = listRecords(writer.doc).find(
@@ -498,15 +493,16 @@ export function createDrizzleDocumentTrash(deps: {
       const [row] = await currentDrizzleDb(deps.db)
         .select({ id: documents.id })
         .from(documents)
-        .innerJoin(sourceProjects, eq(sourceProjects.id, documents.projectId))
         .innerJoin(requestProjects, eq(requestProjects.id, projectId))
         .where(
           and(
             eq(documents.id, documentId),
             isNull(requestProjects.deletedAt),
             isNotNull(documents.contentPurgedAt),
-            sql`(${eq(sourceProjects.id, requestProjects.id)}
-              OR (${eq(sourceProjects.userId, requestProjects.userId)} AND ${sourceProjects.isPersonal}))`,
+            ownedByRequestSql(
+              { projectId: sql`${documents.projectId}`, userId: sql`${documents.userId}` },
+              { projectId: sql`${requestProjects.id}`, accountId: sql`${requestProjects.userId}` },
+            ),
           ),
         )
         .limit(1);

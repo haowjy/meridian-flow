@@ -125,7 +125,6 @@ describe("durable document derivations", () => {
       .insert(documentBlockRooms)
       .values({
         documentId,
-        projectId,
         blockOrder: ["prose"],
         wordCount: 0,
         documentHash: outputsOf("last good").documentHash,
@@ -138,7 +137,6 @@ describe("durable document derivations", () => {
     await db.insert(documentBlocks).values({
       roomId: (room as { roomId: number }).roomId,
       blockId: "prose",
-      projectId,
       text: "last good",
       contentHash: proseBlock("last good").contentHash,
     });

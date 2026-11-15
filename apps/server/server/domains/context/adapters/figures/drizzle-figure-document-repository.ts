@@ -1,12 +1,13 @@
 import type { Database } from "@meridian/database";
 import { contextSources, works } from "@meridian/database/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { mapFigureFileType } from "../../figures/figure-file-types.js";
 import type {
   DocumentFileRecord,
   FigureDocumentRepository,
 } from "../../ports/figure-document-repository.js";
+import { ownedByRequestSql, sourceOwnerProjectId } from "../../tree/source-owner.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 
 type DocumentRow = {
@@ -67,7 +68,14 @@ export class DrizzleFigureDocumentRepository implements FigureDocumentRepository
         and(
           eq(contextSources.id, found.document.contextSourceId),
           isNull(contextSources.deletedAt),
-          or(eq(contextSources.projectId, projectId), eq(works.projectId, projectId)),
+          // The project's own files, and its account's home folder's.
+          ownedByRequestSql(
+            { projectId: sourceOwnerProjectId, userId: sql`${contextSources.userId}` },
+            {
+              projectId: sql`${projectId}::uuid`,
+              accountId: sql`(SELECT user_id FROM projects WHERE id = ${projectId}::uuid)`,
+            },
+          ),
         ),
       )
       .limit(1);
