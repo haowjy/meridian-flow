@@ -51,6 +51,7 @@ import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { requireReload } from "@/client/release/release";
 import { DocumentHistory } from "./editor-history";
 import { insertedBy, type Ranges } from "./item-ranges";
 import {
@@ -64,11 +65,7 @@ import {
   type LocalPresenceFields,
 } from "./local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
-import {
-  attemptClientSchemaReload,
-  clearClientSchemaReloadGuard,
-  type SchemaFence,
-} from "./schema-fence";
+import type { SchemaFence } from "./schema-fence";
 import {
   createSchemaRepairWitness,
   type SchemaRepairEvent,
@@ -435,9 +432,9 @@ export class DocumentSession {
         if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
           this.localPeers?.stop();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
-          if (!attemptClientSchemaReload(this.roomKey)) {
-            this.raiseSchemaFence({ reason: "client-superseded" });
-          }
+          // Editing stops here; the app-wide reload (one per release) is what lifts it.
+          requireReload();
+          this.raiseSchemaFence({ reason: "client-superseded" });
         }
         this.recomputeStatus();
       }) ?? null;
@@ -1031,7 +1028,6 @@ export class DocumentSession {
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
     if (provider.whenSynced) this.establishContentInitialization();
-    clearClientSchemaReloadGuard(this.roomKey);
     this.recomputeStatus();
   }
 

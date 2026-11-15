@@ -1,7 +1,8 @@
 # Meridian Flow — Agent Instructions
 
 This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
-Product decisions are the owner's.
+Product decisions are the owner's. Each one, his or recorded anywhere, is the current choice with its reason,
+open to change: when what you find argues against one, tell him and why, and build on it until he changes it.
 
 ## Mission
 
@@ -61,6 +62,16 @@ context. See [Work][work].
 `apps/server/server/domains/`. Domain logic depends on ports, never concrete
 adapters. Use package public exports. Architecture:
 [.context/CONTEXT.md](.context/CONTEXT.md).
+
+**Shared runtime.** Code that other products use as well lives in the `meridian-runtime` repo
+(`../meridian-runtime`). It is a set of packages published separately to npm as `@meridian-flow/*`:
+the model gateway (`@meridian-flow/gateway`, pinned in the pnpm catalog), then the MCP client. Flow
+manages it from here. When Flow needs a change there, make it in that repo as its own PR, then move Flow
+onto the new version. Nothing specific to Flow goes in it, such as the models Flow offers, their
+prices, or the `FLOW_` variables: that stays in `apps/server/server/lib/gateway/`
+([wiring](apps/server/server/lib/gateway/.context/CONTEXT.md)).
+
+To try a gateway change here before it is published, follow [the package's AGENTS.md](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/AGENTS.md#trying-a-change-in-flow-before-it-is-published).
 
 **Diagrams stay current.** The [architecture map](.context/system-architecture/README.md)
 draws the system, the code, the writer journeys and the broken dependency rules; each state

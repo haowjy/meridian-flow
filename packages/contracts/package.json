@@ -24,6 +24,7 @@
     "./preferences": "./src/preferences/index.ts",
     "./branches": "./src/branches/index.ts",
     "./commands": "./src/commands/index.ts",
+    "./release": "./src/release/index.ts",
     "./failures": "./src/failures/index.ts",
     "./errors": "./src/errors/index.ts",
     "./artifacts": "./src/artifacts/index.ts"
@@ -33,7 +34,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@meridian-flow/gateway": "workspace:*",
+    "@meridian-flow/gateway": "catalog:",
     "@ag-ui/core": "0.0.57",
     "@noble/hashes": "2.4.0",
     "zod": "^4.4.3"

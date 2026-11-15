@@ -26,10 +26,11 @@ const mf = (...args: string[]) => {
   return output;
 };
 const serverUrl = () => {
+  if (process.env.MF_SERVER_URL) return process.env.MF_SERVER_URL;
   const out = execFileSync(`${root}/node_modules/.bin/portless`, ["list"], { encoding: "utf8" });
   const match = new RegExp(`https://${basename(root)}\\.server\\.[^\\s]+`).exec(out);
   if (!match) throw new Error("No server route for this checkout; run pnpm dev");
-  return process.env.MF_SERVER_URL ?? match[0];
+  return match[0];
 };
 const http = (method: string, path: string, body?: unknown) => {
   const out = execFileSync(
@@ -70,47 +71,41 @@ const check = async (name: string, run: () => Promise<void>) => {
 const threadId = (created: string) => /([0-9a-f-]{36})/.exec(created)?.[1] as string;
 
 try {
-  await check(
-    "a file with a removed key is left out of the Save and no chat binds it",
-    async () => {
-      const slug = `gate-${Date.now().toString(36)}`;
-      const path = `agents://agents/${slug}.md`;
-      const projectId = mf("project", "default").trim();
-      mf(
-        "doc",
-        "put",
-        path,
-        // `=` form: the parser reads a separate value that starts with a dash as another option.
-        "--text=---\nname: Gate\npermission: read\n---\n\nBody.\n",
+  await check("a file with an Error is left out of the Save and no chat binds it", async () => {
+    const slug = `gate-${Date.now().toString(36)}`;
+    const path = `agents://agents/${slug}.md`;
+    const projectId = mf("project", "default").trim();
+    mf(
+      "doc",
+      "put",
+      path,
+      // `=` form: the parser reads a separate value that starts with a dash as another option.
+      "--text=---\nname: Gate\neffort: 7\n---\n\nBody.\n",
+    );
+    try {
+      const saved = http("POST", "/api/agents/save", {
+        projectId,
+        packages: [{ level: "project", folder: "" }],
+      });
+      assert.equal(saved.status, 200, "a Save is a result, never an HTTP error");
+      const [outcome] = value(saved.body).outcomes;
+      assert.equal(outcome.outcome, "saved");
+      assert.ok(outcome.leftOut.includes(`agents/${slug}.md`), `not left out: ${outcome.leftOut}`);
+      assert.equal(outcome.findings[0]?.severity, "error", "its error is first on the result");
+      const listed = value(http("GET", `/api/agents?projectId=${projectId}`).body).agents.find(
+        (agent: { slug: string }) => agent.slug === slug,
       );
-      try {
-        const saved = http("POST", "/api/agents/save", {
-          projectId,
-          packages: [{ level: "project", folder: "" }],
-        });
-        assert.equal(saved.status, 200, "a Save is a result, never an HTTP error");
-        const [outcome] = value(saved.body).outcomes;
-        assert.equal(outcome.outcome, "saved");
-        assert.ok(
-          outcome.leftOut.includes(`agents/${slug}.md`),
-          `not left out: ${outcome.leftOut}`,
-        );
-        assert.equal(outcome.findings[0]?.severity, "error", "its error is first on the result");
-        const listed = value(http("GET", `/api/agents?projectId=${projectId}`).body).agents.find(
-          (agent: { slug: string }) => agent.slug === slug,
-        );
-        assert.ok(listed?.unavailableReasons.length > 0, "Agent is not listed with reasons");
-        const created = http("POST", "/api/threads", {
-          id: randomUUID(),
-          projectId,
-          agentSelection: listed.selection,
-        });
-        assert.ok(created.status >= 400, `thread creation was not refused: ${created.status}`);
-      } finally {
-        mf("doc", "rm", path);
-      }
-    },
-  );
+      assert.ok(listed?.unavailableReasons.length > 0, "Agent is not listed with reasons");
+      const created = http("POST", "/api/threads", {
+        id: randomUUID(),
+        projectId,
+        agentSelection: listed.selection,
+      });
+      assert.ok(created.status >= 400, `thread creation was not refused: ${created.status}`);
+    } finally {
+      mf("doc", "rm", path);
+    }
+  });
 
   await check(
     "Critic's write to a manuscript is refused and the document does not exist",

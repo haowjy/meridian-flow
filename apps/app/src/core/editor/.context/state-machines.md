@@ -71,7 +71,7 @@ stateDiagram-v2
   [*] --> rebuilding
   rebuilding --> usable: the room is rebuilt and bound
   rebuilding --> error: the rebuild threw
-  usable --> fenced: this tab's document schema no longer fits the room
+  usable --> fenced: this tab's document schema no longer fits the room (also asks the app to reload)
   usable --> fenced: the server refused its updates three times in a row
   usable --> fenced: the server closed the draft (a Discard; 4205, or its answer first)
   usable --> usable: admitted read-only holding the writer's unsent edits; a new session replaces it

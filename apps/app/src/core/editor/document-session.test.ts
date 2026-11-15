@@ -16,6 +16,7 @@
 
 import { type ChangeEventWsMessage, WS_CLOSE } from "@meridian/contracts/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { releaseStore } from "@/client/release/release";
 import { memoryStorage } from "@/test-support/memory-storage";
 import {
   DocumentSession,
@@ -24,7 +25,6 @@ import {
   type DocumentSessionTransportProvider,
   DRAFT_UPDATES_REFUSED,
 } from "./document-session";
-import { clientSchemaReloadGuardKey } from "./schema-fence";
 
 type FakeTransport = DocumentSessionTransportProvider & {
   emit: (state: DocumentSessionConnectionState) => void;
@@ -132,61 +132,10 @@ function installBrowserReloadHarness(reload = vi.fn()) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("DocumentSession status derivation", () => {
-  it("writes the loop guard before silently reloading, then fences a repeated refusal", () => {
-    const guardKey = clientSchemaReloadGuardKey("doc-superseded");
-    let storage!: Storage;
-    const reload = vi.fn(() => {
-      expect(storage.getItem(guardKey)).toBe("1");
-    });
-    ({ storage } = installBrowserReloadHarness(reload));
-    const firstTransport = makeFakeTransport();
-    const firstSession = new DocumentSession({
-      roomKey: "doc-superseded",
-      persistence: { kind: "none" },
-      transportFactory: firstTransport.factory,
-    });
-
-    firstTransport.current().emit({
-      kind: "reset",
-      reason: "client-schema-superseded",
-      disposition: "schema",
-      code: 4406,
-    });
-
-    expect(reload).toHaveBeenCalledOnce();
-    expect(firstSession.getSnapshot().schemaFence).toBeNull();
-    expect(storage.getItem(guardKey)).toBe("1");
-
-    const secondTransport = makeFakeTransport();
-    const secondSession = new DocumentSession({
-      roomKey: "doc-superseded",
-      persistence: { kind: "none" },
-      transportFactory: secondTransport.factory,
-    });
-    secondTransport.current().emit({
-      kind: "reset",
-      reason: "client-schema-superseded",
-      disposition: "schema",
-      code: 4406,
-    });
-
-    expect(reload).toHaveBeenCalledOnce();
-    expect(secondSession.getSnapshot().schemaFence).toEqual({
-      reason: "client-superseded",
-    });
-    void firstSession.destroy();
-    void secondSession.destroy();
-  });
-
-  it("falls through to the client-superseded fence when session storage is blocked", () => {
-    const reload = vi.fn();
-    const { storage } = installBrowserReloadHarness(reload);
-    storage.setItem = () => {
-      throw new Error("blocked");
-    };
+  it("fences the editor and asks the app to reload when the client is superseded", () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "doc-storage-blocked",
+      roomKey: "doc-superseded",
       persistence: { kind: "none" },
       transportFactory: factory,
     });
@@ -198,10 +147,8 @@ describe("DocumentSession status derivation", () => {
       code: 4406,
     });
 
-    expect(reload).not.toHaveBeenCalled();
-    expect(session.getSnapshot().schemaFence).toEqual({
-      reason: "client-superseded",
-    });
+    expect(releaseStore.getSnapshot()).toBe("must-reload");
+    expect(session.getSnapshot().schemaFence).toEqual({ reason: "client-superseded" });
     void session.destroy();
   });
 

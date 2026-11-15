@@ -1,9 +1,11 @@
 /**
- * Reads one package's files with Mars and decides which Agents are available.
+ * Reads one package's files with Mars and decides which Agents are available. Mars's `check()` is
+ * the verdict on the files (`checkFiles`); the findings here are its own, plus the few that only
+ * Flow can make: its tool and permission rules, subagents, unreadable files and dependencies.
  *
  * The rule this keeps: a finding of severity `error`, Mars's or Flow's, on an Agent's file makes
  * that Agent unavailable, and an unavailable Agent has no definition for anything to run. A
- * `warning` or `info` doesn't: it is shown, and the Agent runs as its file reads (a restriction
+ * `warning` or `info` doesn't: it is shown (Info only where `shownFindings` lets it through), and the Agent runs as its file reads (a restriction
  * `prepare` dropped, `field.restriction-lost`, is such a warning). Save installs, for an item with
  * an error, the files of its last saved version when that was usable (`save-packages.ts`), and
  * fails only on a broken `mars.toml`; a saved Agent can still be unavailable, because a newer
@@ -15,6 +17,8 @@ import {
   type AgentFields,
   agentSlugOf,
   bodyOf,
+  type Check,
+  checkFiles,
   type Diagnostic,
   GRAMMAR_VERSION,
   MANIFEST_PATH,
@@ -93,7 +97,7 @@ export interface CompiledPackage {
   findings: PackageDiagnostic[];
 }
 
-export const isError = (item: PackageDiagnostic): boolean => item.severity === "error";
+export const isError = (item: { severity: string }): boolean => item.severity === "error";
 
 export function compilePackage(
   input: AgentSourceSnapshot,
@@ -102,9 +106,10 @@ export function compilePackage(
   const files = validatedFiles(input);
   const problems = input.problems ?? {};
   const prepared = readPackage(files);
-  const manifest = manifestFindings(prepared, files, problems);
+  const verdict = checkFiles(files, Object.keys(problems));
+  const manifest = manifestFindings(prepared, verdict, files, problems);
   const packageErrors = manifest.filter(isError);
-  const skills = readSkills(prepared, problems);
+  const skills = readSkills(prepared, verdict, problems);
 
   const drafts = new Map<string, Draft>();
   for (const path of [...Object.keys(files), ...Object.keys(problems)].sort()) {
@@ -117,11 +122,10 @@ export function compilePackage(
             ...packageErrors,
             flow(path, "file-unreadable", problems[path]),
           ])
-        : draftAgent(slug, path, prepared, packageErrors, skills),
+        : draftAgent(slug, path, prepared, verdict, packageErrors, skills),
     );
   }
   rejectBrokenSubagents(drafts);
-  noteSharedNames(drafts);
 
   const agents = [...drafts.values()].map((draft) => ({
     slug: draft.slug,
@@ -142,36 +146,10 @@ export function compilePackage(
       ...manifest,
       ...agents.flatMap((agent) => agent.diagnostics),
       ...[...skills.values()].flat(),
+      // What Mars says of a folder, such as a skill folder with no SKILL.md, belongs to no item.
+      ...Object.keys(verdict.diagnostics).flatMap((file) => foundIn(verdict, file)),
     ]),
   };
-}
-
-/**
- * Two Agents of a package may share a name: both work, and each says which other file has it,
- * since the picker shows them by that name.
- */
-function noteSharedNames(drafts: Map<string, Draft>) {
-  const byName = new Map<string, Draft[]>();
-  for (const draft of drafts.values()) {
-    const key = (draft.fields?.name ?? draft.slug).normalize("NFC").toLowerCase();
-    byName.set(key, [...(byName.get(key) ?? []), draft]);
-  }
-  for (const group of byName.values()) {
-    if (group.length < 2) continue;
-    for (const draft of group) {
-      const name = draft.fields?.name ?? draft.slug;
-      const others = group.filter((other) => other !== draft).map((other) => other.file);
-      draft.warnings.push(
-        flow(
-          draft.file,
-          "name-shared",
-          `Another Agent is also named "${name}": ${others.join(", ")}`,
-          "warning",
-          ["name"],
-        ),
-      );
-    }
-  }
 }
 
 function distinct(items: PackageDiagnostic[]): PackageDiagnostic[] {
@@ -224,19 +202,64 @@ function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
       text.includes("\0") ||
       Buffer.from(text).toString("utf8") !== text
     ) {
-      throw new AgentSourceError(`Agent source ${name} is not valid UTF-8 text`);
+      throw new AgentSourceError(
+        `Agent source ${name} isn't plain text: it holds a NUL byte or isn't valid UTF-8`,
+      );
     }
   }
   return input.files;
 }
 
-const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => ({
-  file,
-  code: diagnostic.code,
-  severity: diagnostic.severity,
-  path: diagnostic.path,
-  message: diagnostic.message,
-});
+/** Keys of an Agent file whose retirement means the Agent is no longer limited by them. */
+const RESTRICTING_KEYS = new Set(["permission", "disallowed-tools"]);
+
+/** A warning that an Agent may run wider than its file reads: the writer sees these first. */
+export const losesRestriction = (item: PackageDiagnostic): boolean =>
+  item.code === "flow.tools-ask" ||
+  item.code === "field.restriction-lost" ||
+  (item.code === "field.retired" && RESTRICTING_KEYS.has(String(item.path[0])));
+
+const quoted = (message: string, pattern: RegExp) => pattern.exec(message)?.slice(1);
+
+/**
+ * Flow grades some of Mars's findings differently and writes its own message for the grade:
+ * - `definition.duplicate-name`, an error in Mars: two Agents, or two skills, of one name both
+ *   work here (a ref names a skill by its folder, the picker tells Agents apart by file). Mars
+ *   compares names case-sensitively, and so does this;
+ * - `field.retired` says, for a restricting key, that the Agent is not limited by it.
+ * Mars gives the duplicate name no structured parts but the path, so the names come out of its message.
+ */
+const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => {
+  const base = {
+    file,
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    path: diagnostic.path,
+    message: diagnostic.message,
+  };
+  switch (diagnostic.code) {
+    case "definition.duplicate-name": {
+      const [name, other] =
+        quoted(diagnostic.message, /name `([^`]+)` is also the name of `([^`]+)`/) ?? [];
+      return {
+        ...base,
+        severity: "warning",
+        message:
+          name && other
+            ? `\`${file}\` and \`${other}\` are both named \`${name}\`; both work here`
+            : "Another file of this package has this name; both work here",
+      };
+    }
+    case "field.retired": {
+      const key = String(diagnostic.path[0] ?? "");
+      return RESTRICTING_KEYS.has(key)
+        ? { ...base, message: `\`${key}\` is no longer read, so this Agent is not limited by it.` }
+        : base;
+    }
+    default:
+      return base;
+  }
+};
 const flow = (
   file: string,
   code: string,
@@ -245,13 +268,20 @@ const flow = (
   path: (string | number)[] = [],
 ): PackageDiagnostic => ({ file, code: `flow.${code}`, severity, path, message });
 
+/** Mars's findings on one file of the package, in Mars's order, Info included. */
+const foundIn = (verdict: Check, file: string): PackageDiagnostic[] =>
+  (verdict.diagnostics[file] ?? []).map((item) => fromMars(file, item));
+
 /**
  * Findings on `mars.toml`; its errors make every Agent of the package unavailable. `prepare`
  * upgrades a pre-v1 package and translates a foreign one in memory, and says so only in its
- * classification: Flow reads a package as authored, so anything but schema 1 is an error.
+ * classification: Flow reads a package as authored, so anything but schema 1 is an error. A
+ * dependency Mars says it lacks or can't read fails the package the same way: Flow vendors none
+ * yet, so the ref check has no verdict.
  */
 function manifestFindings(
   prepared: Prepared,
+  verdict: Check,
   files: SkillFiles,
   problems: Record<string, string>,
 ): PackageDiagnostic[] {
@@ -261,9 +291,27 @@ function manifestFindings(
   if (files[MANIFEST_PATH] === undefined) {
     return [flow(MANIFEST_PATH, "manifest-missing", "The package has no mars.toml")];
   }
-  const findings = (prepared.manifest?.reading.diagnostics ?? []).map((item) =>
-    fromMars(MANIFEST_PATH, item),
-  );
+  const findings = foundIn(verdict, MANIFEST_PATH);
+  for (const { name } of verdict.missing_dependencies) {
+    findings.push(
+      flow(
+        MANIFEST_PATH,
+        "dependency-missing",
+        `Dependency "${name}" isn't in this package, and Flow can't fetch it`,
+        "error",
+        ["dependencies", name],
+      ),
+    );
+  }
+  // Fires only once imports pass dependencies to `checkFiles`; until then Mars has none to list.
+  for (const { name } of verdict.unreadable_dependencies) {
+    findings.push(
+      flow(MANIFEST_PATH, "dependency-unreadable", `Dependency "${name}" can't be read`, "error", [
+        "dependencies",
+        name,
+      ]),
+    );
+  }
   const { classification } = prepared;
   // TOML that doesn't parse has no schema to read; its error is the whole story.
   if (
@@ -285,6 +333,7 @@ function manifestFindings(
 /** The package's skills by slug, with every finding on each. */
 function readSkills(
   prepared: Prepared,
+  verdict: Check,
   problems: Record<string, string>,
 ): Map<string, PackageDiagnostic[]> {
   const skills = new Map<string, PackageDiagnostic[]>();
@@ -294,13 +343,7 @@ function readSkills(
   }
   for (const definition of prepared.definitions) {
     if (definition.kind !== "skill") continue;
-    skills.set(
-      definition.slug,
-      [
-        ...definition.reading.diagnostics,
-        ...(prepared.changes?.[definition.source_path] ?? []),
-      ].map((item) => fromMars(definition.source_path, item)),
-    );
+    skills.set(definition.slug, foundIn(verdict, definition.source_path));
   }
   return skills;
 }
@@ -312,7 +355,7 @@ interface Draft {
   body: string;
   /** Blocking: findings of severity `error`, Mars's and Flow's. */
   errors: PackageDiagnostic[];
-  /** Shown, never blocking: warnings and info. */
+  /** Never blocking: warnings and info. */
   warnings: PackageDiagnostic[];
   permission: "read" | "edit" | undefined;
   tools: ToolProjection | undefined;
@@ -339,6 +382,7 @@ function draftAgent(
   slug: string,
   file: string,
   prepared: Prepared,
+  verdict: Check,
   packageErrors: PackageDiagnostic[],
   skills: Map<string, PackageDiagnostic[]>,
 ): Draft {
@@ -365,9 +409,8 @@ function draftAgent(
     tools: undefined,
     optIn: new Set(),
   };
-  // A change `prepare` made to the file (`field.restriction-lost` above all) is a warning too.
-  for (const item of [...reading.diagnostics, ...(prepared.changes?.[file] ?? [])]) {
-    (item.severity === "error" ? draft.errors : draft.warnings).push(fromMars(file, item));
+  for (const item of foundIn(verdict, file)) {
+    (isError(item) ? draft.errors : draft.warnings).push(item);
   }
   const { fields } = reading;
   if (!fields) return draft;
@@ -392,9 +435,7 @@ function draftAgent(
   }
   for (const name of [...fields.skills.load, ...fields.skills.available]) {
     const skill = skills.get(name);
-    if (skill === undefined) {
-      draft.errors.push(flow(file, "skill-missing", `Skill "${name}" is not in this package`));
-    } else if (skill.some(isError)) {
+    if (skill?.some(isError)) {
       draft.errors.push(
         flow(
           file,
