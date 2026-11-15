@@ -456,7 +456,9 @@ export type DraftReviewApi = {
    */
   apply(input: {
     branchId: BranchId;
-    request: import("@meridian/contracts/branches").ApplyItemsClick;
+    request: Omit<import("@meridian/contracts/branches").ApplyItemsClick, "saw">;
+    /** The press's cut, decoded at the route. */
+    saw?: import("./domain/apply-click.js").TreeCut;
     envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */
@@ -491,9 +493,11 @@ export type DraftReviewApi = {
   listItems(input: { owner: DraftOwner }): Promise<{
     branchId: BranchId | null;
     items: DraftReviewItem[];
-    /** The folders the branch has a row on, with the revision an Apply of one freezes. */
-    folders: { id: string; revision: string }[];
+    /** The folders the branch has a row on. */
+    folders: { id: string }[];
     threadTitles: ReadonlyMap<string, string>;
+    /** Each list's cut, read before the items. */
+    saw: import("@meridian/contracts/branches").TreeSaw;
   }>;
   /** Pending documents summed over the project's active branches. */
   pendingDocumentCount(projectId: ProjectId): Promise<number>;

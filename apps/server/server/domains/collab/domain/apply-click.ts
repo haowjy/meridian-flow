@@ -15,7 +15,6 @@ import {
 } from "@meridian/agent-edit/diff";
 import type {
   ApplyClickAnswer,
-  ApplyClickRefusalReason,
   ApplyClickResult,
   ApplyTextCut,
   UnapplyClickAnswer,
@@ -32,6 +31,14 @@ import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
 export type ApplyCommand = Parameters<CollabBranches["draftReview"]["apply"]>[0];
+/**
+ * A press's cut as the route decoded it: per list, the list's journal id and the state vector
+ * the draft list read. A scope left out is the server's own cut.
+ */
+export type TreeCut = {
+  project?: { list: string; vector: Uint8Array };
+  account?: { list: string; vector: Uint8Array };
+};
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
 /** What an Un-Apply takes back: the Apply's text effects on each document it wrote, and its tree half. */
 export type PreparedUnapply = {
@@ -49,6 +56,11 @@ export type PreparedUnapply = {
       baseAfter: unknown[];
     }[];
   }[];
+  /**
+   * Documents whose tree half the Apply made, and no list row says so now: the Work's purge took
+   * the rows. Un-Apply answers them `left_out purged`.
+   */
+  treeLost: string[];
   /** One per list the Apply settled records in: the list's state vector it left. */
   trees: {
     scope: "project" | "account";
@@ -74,11 +86,16 @@ type CompiledApplyGroup = {
   patched: readonly PMNode[];
   record: ApplyEntry;
 };
-/** One item of an Apply with its cuts prepared: the text compiled against the draft's replica. */
+/**
+ * One item of an Apply with its cuts prepared: the text compiled against the draft's replica.
+ * `closedDraftId` names a text cut whose draft could not be read (closed, replaced, purged): the
+ * store says what became of it.
+ */
 export type PreparedApplyItem = {
   node: string;
-  tree: TreeCut | null;
+  tree: boolean;
   text: { base: DraftBase; click: CompiledClick } | null;
+  closedDraftId?: string;
 };
 export interface ApplyCommandStore {
   loadBase(input: {
@@ -87,23 +104,40 @@ export interface ApplyCommandStore {
     branchId: import("@meridian/contracts").BranchId;
   }): Promise<DraftBase | null>;
   /**
-   * Applies exactly the command's cuts in one transaction: the tree cuts first (the moves,
-   * deletes and creations their frozen revisions hold), then each item's text cut at the result.
+   * Applies the command's cuts in one transaction: the tree cuts first (the moves, deletes and
+   * creations), then each item's text cut at the result. Every item comes back once, each half
+   * landed or settled on its own evidence.
    */
-  apply(command: ApplyCommand, items: readonly PreparedApplyItem[]): Promise<ApplyClickAnswer>;
+  apply(
+    command: ApplyCommand,
+    items: readonly PreparedApplyItem[],
+    saw: TreeCut | undefined,
+  ): Promise<ApplyClickAnswer>;
+  /** What the Apply left to take back; null when it left nothing (taken back before, or not this account's). */
   loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
-  unapply(command: UnapplyClickCommand, prepared: PreparedUnapply): Promise<UnapplyClickAnswer>;
+  unapply(
+    command: UnapplyClickCommand,
+    prepared: PreparedUnapply | null,
+  ): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
-/** The branch row revision a click froze. */
-export type TreeCut = { revision: string | null };
 const schema = buildDocumentSchema();
 
+/** Undo of a Discard's `not_found`: B4 settles it, and this goes with it. */
 export class ApplyClickRefused extends Error {
-  constructor(readonly reason: ApplyClickRefusalReason) {
+  constructor(readonly reason: "not_found") {
     super(reason);
   }
 }
+
+/** The click's snapshot, patches or groups are not what a client builds: a 400, nothing stored. */
+export class ApplyClickMalformed extends Error {}
+
+/**
+ * The click's cut is ahead of what the server holds (a room's unacknowledged changes, or tree
+ * records not synced yet): a 503, nothing stored, and the client resends the same command.
+ */
+export class ApplyClickUnsynced extends Error {}
 
 /** Snapshot containment includes tombstones: a delete-only key must have been acknowledged too. */
 function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
@@ -126,10 +160,10 @@ export function compileClick(
     if (bytes.toString("base64") !== request.snapshot) throw new Error("Invalid base64");
     snapshot = Y.decodeSnapshotV2(bytes);
   } catch {
-    throw new ApplyClickRefused("malformed");
+    throw new ApplyClickMalformed();
   }
   const current = Y.snapshot(doc);
-  if (!containsSnapshot(current, snapshot)) throw new ApplyClickRefused("unsynced");
+  if (!containsSnapshot(current, snapshot)) throw new ApplyClickUnsynced();
   const cut = Y.equalSnapshots(current, snapshot)
     ? doc
     : Y.createDocFromSnapshot(doc, snapshot, new Y.Doc({ gc: false }));
@@ -143,7 +177,7 @@ export function compileClick(
       }));
       if (validateSpanPatches(schema, base, patches)) throw new Error("Invalid patches");
     } catch {
-      throw new ApplyClickRefused("malformed");
+      throw new ApplyClickMalformed();
     }
     const optimistic = applySpanPatches(base, patches, "base");
     const projection = projectReview(
@@ -155,7 +189,7 @@ export function compileClick(
       new Set(request.groupIds).size !== request.groupIds.length ||
       request.groupIds.some((id) => !known.has(id))
     )
-      throw new ApplyClickRefused("malformed");
+      throw new ApplyClickMalformed();
     const classifications = classifyChanges(
       cut,
       projection,
@@ -166,7 +200,7 @@ export function compileClick(
     let before = optimistic;
     const groups = request.groupIds.map((groupId): CompiledApplyGroup => {
       const group = projection.groups.find((candidate) => candidate.id === groupId);
-      if (!group) throw new ApplyClickRefused("malformed");
+      if (!group) throw new ApplyClickMalformed();
       chosen.push(...group.hunks.map((hunk) => projection.diff.hunks[hunk.index]));
       const patched = applySpanPatches(
         optimistic,
@@ -208,27 +242,30 @@ export function createApplyClickService(input: {
       const { items } = command.request;
       const prepared: PreparedApplyItem[] = [];
       for (const item of items) {
-        const tree = item.tree ?? null;
+        const tree = item.tree === true;
         const cut = item.text;
         if (!cut) {
           // A tree cut alone: a move, a delete or a creation with no text room (design-v2 §4).
-          if (!tree) throw new ApplyClickRefused("malformed");
+          if (!tree) throw new ApplyClickMalformed();
           prepared.push({ node: item.node, tree, text: null });
           continue;
         }
-        if (!cut.groupIds.length) throw new ApplyClickRefused("malformed");
+        if (!cut.groupIds.length) throw new ApplyClickMalformed();
         const start = performance.now();
         const base = await input.store.loadBase({
           draftId: cut.draftId,
           documentId: item.node,
           branchId: command.branchId,
         });
-        if (!base || base.snapshot.status === "closed")
-          return (await lookup()) ?? { status: "closed", commandId };
         // Receipts are captured after this replica, so they cover every item a contained click can name.
-        const captured = await input.evidence.capture(cut.draftId);
-        if (!captured || captured.draft.documentDraft.status === "closed")
-          return (await lookup()) ?? { status: "closed", commandId };
+        const captured =
+          base && base.snapshot.status !== "closed"
+            ? await input.evidence.capture(cut.draftId)
+            : null;
+        if (!base || !captured || captured.draft.documentDraft.status === "closed") {
+          prepared.push({ node: item.node, tree, text: null, closedDraftId: cut.draftId });
+          continue;
+        }
         let click: CompiledClick;
         try {
           click = compileClick(base.replica.doc, { ...cut, commandId }, captured);
@@ -237,14 +274,17 @@ export function createApplyClickService(input: {
         }
         prepared.push({ node: item.node, tree, text: { base, click } });
       }
-      return await input.store.apply(command, prepared);
+      return await input.store.apply(command, prepared, command.saw);
     } catch (cause) {
-      if (cause instanceof CommandExistsError) {
+      // A twin that already stored its answer wins over a refusal to start (LA-1).
+      if (
+        cause instanceof CommandExistsError ||
+        cause instanceof ApplyClickMalformed ||
+        cause instanceof ApplyClickUnsynced
+      ) {
         const winner = await lookup();
         if (winner) return winner;
       }
-      if (cause instanceof ApplyClickRefused)
-        return (await lookup()) ?? { status: "refused", commandId, reason: cause.reason };
       throw cause;
     }
   };
@@ -256,15 +296,12 @@ export function createApplyClickService(input: {
     if (first) return first;
     try {
       const prepared = await input.store.loadUnapply(command);
-      if (!prepared) return (await lookup()) ?? { status: "refused", commandId };
       return await input.store.unapply(command, prepared);
     } catch (cause) {
       if (cause instanceof CommandExistsError) {
         const winner = await lookup();
         if (winner) return winner;
       }
-      if (cause instanceof ApplyClickRefused)
-        return (await lookup()) ?? { status: "refused", commandId };
       throw cause;
     }
   };

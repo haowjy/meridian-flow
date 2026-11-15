@@ -232,35 +232,18 @@ export function ChangesSource({
   const draftsOf = (targets: readonly ReviewFileTarget[]) =>
     targets.map((file) => ({ documentId: file.documentId, itemKey: file.draft.itemKey }));
   const everyDraft = draftsOf(files);
-  const ids = (targets: readonly ReviewFileTarget[]) =>
-    new Set(targets.map((file) => file.documentId));
-  // One command. Brings back only the named documents; a delete the list hadn't shown yet held
-  // it back, and it asks again, naming what live deleted.
+  // One command; it brings back a document live deleted before landing what the Work drafted.
   const applyAll = (
     targets: readonly ReviewFileTarget[],
     folders: readonly string[],
-    restore: ReadonlySet<string>,
     name?: string,
   ) => {
     hold();
-    void controller
-      .applyMany(
-        draftsOf(targets).map((draft) => ({ draft, target: { kind: "draft" as const } })),
-        restore,
-        folders,
-        name,
-      )
-      .then((outcomes) => {
-        const heldBack = targets.filter(
-          (_file, index) => outcomes[index]?.kind === "needs-restore",
-        );
-        const restoring = targets.filter((_file, index) => {
-          const outcome = outcomes[index];
-          return outcome?.kind === "needs-restore" && outcome.deleted === true;
-        });
-        if (heldBack.length > 0)
-          setAsking({ targets: heldBack, folders, deleting: [], restoring, name });
-      });
+    void controller.applyMany(
+      draftsOf(targets).map((draft) => ({ draft, target: { kind: "draft" as const } })),
+      folders,
+      name,
+    );
   };
   const startApply = (
     targets: readonly ReviewFileTarget[],
@@ -271,7 +254,7 @@ export function ChangesSource({
     const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
     if (restoring.length > 0 || deleting.length > 0)
       setAsking({ targets, folders, deleting, restoring, name });
-    else applyAll(targets, folders, new Set(), name);
+    else applyAll(targets, folders, name);
   };
   const untitled = t`Untitled document`;
   const names = (targets: readonly ReviewFileTarget[]) =>
@@ -287,7 +270,7 @@ export function ChangesSource({
         onKeep: () => setAsking(null),
         onConfirm: () => {
           setAsking(null);
-          applyAll(asking.targets, asking.folders, ids(asking.restoring), asking.name);
+          applyAll(asking.targets, asking.folders, asking.name);
         },
         disabled: controller.dispositionLocked,
       }

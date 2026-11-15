@@ -20,8 +20,6 @@ export type BranchDocumentTree = {
   deletedLive: boolean;
   /** The Work's row on the document; null when only its text changed. */
   change: BranchTreeChange | null;
-  /** What an Apply click freezes: changes with anything the Work's row says. */
-  revision: string | null;
   /** The reviewable-pending predicate (`context/tree/pending-documents.ts`). */
   pending: boolean;
   /** Canonical URI in the Work's view (the last address for one the Work deleted). */

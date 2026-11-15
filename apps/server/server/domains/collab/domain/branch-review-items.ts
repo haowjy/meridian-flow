@@ -44,7 +44,7 @@ export type DraftReviewItem = {
    * The branch's row on the document: the revision a tree cut freezes, and what it says.
    * `movedFrom` is where live has a moving document now (`path` is where the branch puts it).
    */
-  tree: { revision: string | null; movedFrom: string | null; deleted: boolean } | null;
+  tree: { movedFrom: string | null; deleted: boolean } | null;
   /** Chats with pending writes on the draft, latest first, then the chats behind its tree row. */
   actorThreadIds: string[];
   updatedAt: Date;
@@ -137,7 +137,6 @@ function toItem(
     wholeItem: node.isNew || node.binary,
     tree: node.change
       ? {
-          revision: node.revision,
           movedFrom: node.change === "moving" ? node.movedFromUri : null,
           deleted: node.change === "deleting",
         }

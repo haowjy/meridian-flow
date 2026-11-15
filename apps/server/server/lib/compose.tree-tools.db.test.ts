@@ -253,7 +253,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               commandId: randomUUID(),
               groupIds: [],
               baseViewDelta: [],
-              tree: { revision: (await item(documentId))?.tree?.revision ?? null },
+              tree: true,
               ...extra,
             },
           } as never),
@@ -330,7 +330,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toMatchObject({ body: { status: "draft_changed" } });
       expect(await writer.item(CH1)).toMatchObject({
         hasDraft: true,
-        tree: { revision: seen?.tree?.revision },
+        tree: expect.anything(),
       });
 
       expect(
@@ -358,16 +358,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await edit("write", { command: "delete", path: "ch1" });
         await edit("write", { command: "create", path: "ch1", content: "New." });
       });
-      expect(await writer.apply(CH1)).toMatchObject({ status: "needs_restore" });
-      expect(await writer.apply(CH1, { restore: true })).toMatchObject({
+      expect(await writer.apply(CH1)).toMatchObject({
         status: "applied",
-        restored: true,
+        items: [
+          { node: CH1, tree: { landed: true, settled: [{ rule: "restored", documentId: CH1 }] } },
+        ],
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
 
       // A drafted delete of a document live deleted too is no change to review: nothing to apply.
       await draft({ command: "delete", path: "ch2" });
-      expect(await writer.item(CH2)).toMatchObject({ tree: { revision: expect.any(String) } });
+      expect(await writer.item(CH2)).toMatchObject({ tree: expect.anything() });
       await script.reply(async (edit) => {
         await edit("write", { command: "delete", path: "ch2" });
       });
@@ -564,7 +565,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             commandId: randomUUID(),
             items: left.map((item) => ({
               node: item.documentId,
-              tree: { revision: item.tree?.revision ?? null },
+              tree: true as const,
             })),
           },
         } as never);

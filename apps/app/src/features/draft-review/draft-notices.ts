@@ -5,10 +5,10 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
+import type { ApplyClickResult, ApplyItemResult } from "@meridian/contracts/branches";
 import {
   CLOSED_OWNER_WHYS,
   type ClosedOwnerWhy,
-  type ReturnedWhy,
   type Settlement,
 } from "@meridian/contracts/commands";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
@@ -40,27 +40,89 @@ export type NoticeSubject =
 export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
 
 /**
- * Why a command answered `done` and changed nothing: its settlement says the owner is closed.
- * Keyed on `settled`, never on the answer's status. Null: the answer was not a return.
+ * What one settlement line says, for the screen. `already` and `restored` paint the result
+ * quietly; `overtaken` names the command that settled the item first (the screen offers its
+ * reverse); `left_out` says why part of it stayed out; `returned`: a closed owner answered and
+ * changed nothing.
  */
-export function returnedOf(answer: {
-  status: string;
-  settled?: readonly Settlement[];
-}): RestoreReturned | null {
-  const returned = answer.settled?.find((one) => one.rule === "returned");
-  return returned?.rule === "returned" ? returnedWhy(returned.why) : null;
+export type SettledView =
+  | { kind: "already"; state: string }
+  | { kind: "restored" }
+  | { kind: "overtaken"; state: string; by: string }
+  | { kind: "left_out"; why: string }
+  | { kind: "returned"; why: RestoreReturned };
+
+/**
+ * The one place a settlement becomes what is shown. Null: a `returned` whose reason names no
+ * closed owner (a model's edit), which no command surface says.
+ */
+export function viewOf(one: Settlement): SettledView | null {
+  switch (one.rule) {
+    case "already":
+      return { kind: "already", state: one.state };
+    case "restored":
+      return { kind: "restored" };
+    case "overtaken":
+      return { kind: "overtaken", state: one.state, by: one.by };
+    case "left_out":
+      return { kind: "left_out", why: one.why };
+    case "returned":
+      return (CLOSED_OWNER_WHYS as readonly string[]).includes(one.why)
+        ? { kind: "returned", why: closedOwnerWord(one.why as ClosedOwnerWhy) }
+        : null;
+  }
+}
+
+/**
+ * Every line of a flat answer (Discard, Restore, Un-Apply) that names `itemId`, or every line
+ * when it is left out. A line that names no item is about the whole command and always counts.
+ */
+export function settledOf(
+  settled: readonly Settlement[] | undefined,
+  itemId?: string,
+): SettledView[] {
+  return (settled ?? []).flatMap((one) => {
+    if (itemId !== undefined && !names(one, itemId)) return [];
+    const view = viewOf(one);
+    return view ? [view] : [];
+  });
+}
+
+function names(one: Settlement, itemId: string): boolean {
+  if (one.rule === "already" || one.rule === "overtaken")
+    return one.item === undefined || one.item === itemId;
+  if (one.rule === "restored") return one.documentId === itemId;
+  if (one.rule === "left_out") return one.items.includes(itemId);
+  return true;
+}
+
+/** Why a command was answered by a closed owner, from its lines; null when it wasn't. */
+export function returnedIn(settled: readonly Settlement[] | undefined): RestoreReturned | null {
+  for (const view of settledOf(settled)) if (view.kind === "returned") return view.why;
+  return null;
+}
+
+/** An Apply's answer for one item: each half landed or settled. */
+export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult | undefined {
+  return answer.items.find((item) => item.node === node);
+}
+
+/** What of an Apply landed, command-wide: its Undo step's two halves. */
+export type ApplyHalves = { text: boolean; tree: boolean; restores: string[] };
+
+export function halvesOf(answer: ApplyClickResult): ApplyHalves {
+  return {
+    text: answer.items.some((item) => item.text?.landed),
+    tree: answer.items.some((item) => item.tree?.landed),
+    restores: answer.items.flatMap((item) =>
+      item.tree?.landed && item.tree.restore ? [item.tree.restore] : [],
+    ),
+  };
 }
 
 /** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
 export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
   return why === "chat_frozen" ? "chat-in-trash" : "work-closed";
-}
-
-/** A `returned` reason's word; null for a reason that does not name a closed owner. */
-export function returnedWhy(why: ReturnedWhy): RestoreReturned | null {
-  return (CLOSED_OWNER_WHYS as readonly string[]).includes(why)
-    ? closedOwnerWord(why as ClosedOwnerWhy)
-    : null;
 }
 
 export type DiscardUndoAnswer = {

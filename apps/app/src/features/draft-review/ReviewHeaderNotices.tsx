@@ -8,6 +8,7 @@ import { useDraftCommandState } from "./draft-changes";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { BranchCommandFailure } from "./review-command-types";
+import { isNote } from "./review-command-types";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
@@ -34,6 +35,7 @@ export function ReviewFailureNotices({
       {commandError ? (
         <InlineErrorRow
           message={<ReviewMessageText failure={commandError} />}
+          note={isNote(commandError)}
           onRetry={
             commandError.code === "unapply-refused" && command.stalled
               ? () => owner.retry(itemKey)

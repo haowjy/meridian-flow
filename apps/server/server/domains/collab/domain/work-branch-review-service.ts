@@ -1,6 +1,10 @@
 /** Work draft listing, idempotent item and whole Discard, and the frozen Apply command. */
 import type { BranchId, DraftOwner } from "@meridian/contracts";
-import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
+import type {
+  DiscardCommandResult,
+  ThreadDraftListItem,
+  TreeSaw,
+} from "@meridian/contracts/branches";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
@@ -28,7 +32,9 @@ export function createWorkBranchReviewService(input: {
   listDiscards: CollabBranches["draftReview"]["listDiscards"];
   commandDocuments: CollabBranches["draftReview"]["commandDocuments"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
-  folderRevisions(branchId: BranchId): Promise<{ id: string; revision: string }[]>;
+  folderIds(branchId: BranchId): Promise<{ id: string }[]>;
+  /** The cut the branch's rows are read at: call it before reading them. */
+  treeCut(branchId: BranchId): Promise<TreeSaw>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument" | "countPendingInProject">;
 }): CollabBranches {
   async function ownerItems(
@@ -95,12 +101,19 @@ export function createWorkBranchReviewService(input: {
         );
       },
       async listItems(command) {
-        const { branchId, items } = await ownerItems(command.owner);
+        const branch = await input.branches.activeForOwner(command.owner);
+        if (!branch)
+          return { branchId: null, items: [], folders: [], threadTitles: new Map(), saw: {} };
+        const branchId = branch.id;
+        // The vector first: rows read after it are at least as new, so a press never lands what
+        // its rows didn't show.
+        const saw = await input.treeCut(branchId);
+        const items = await input.reviewItems.list(branchId);
         const threadTitles = await input.resolveThreadTitles([
           ...new Set(items.flatMap((item) => item.actorThreadIds)),
         ]);
-        const folders = branchId ? await input.folderRevisions(branchId) : [];
-        return { branchId, items, folders, threadTitles };
+        const folders = await input.folderIds(branchId);
+        return { branchId, items, folders, threadTitles, saw };
       },
       pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),

@@ -16,7 +16,7 @@ and names its owner: the chat's Work, or for a chat with no Work
 its lineage (the first chat, its forks and subagents; a handoff starts a new one).
 `shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
 (`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
-writes and Apply are refused and Discard still works. Scratch and upload content is always live.
+writes are refused; Apply, Un-Apply and Discard still work (Apply and Un-Apply land in a closed owner). Scratch and upload content is always live.
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows
 the writes before it. Rebinding is resolved again for each query; a read-only draft query

@@ -175,7 +175,7 @@ function keepsView(
  * The ids of the records in the structs of the list a copy at state `saw` lacks: what was
  * admitted after the press. Read from the encoded update without applying it.
  */
-function recordsAdmittedAfter(doc: Y.Doc, saw: Uint8Array): Set<string> {
+export function recordsAdmittedAfter(doc: Y.Doc, saw: Uint8Array): Set<string> {
   const ids = new Set<string>();
   for (const item of Y.decodeUpdate(Y.encodeStateAsUpdate(doc, saw)).structs)
     if (item instanceof Y.Item && item.content instanceof Y.ContentAny)
@@ -434,7 +434,7 @@ export function appliedCreates(writer: TreeWriter, applied: string): string[] {
 export type UndoLeftWhy = NotUndone | "has_text";
 
 export type UndoApplyResult = {
-  /** The opposite records made, newest first. */
+  /** The opposite records made: the copies' first, newest first, then the restores'. */
   undone: TreeRecord[];
   /**
    * The live copies not taken back, each with why. `fact` is set when the copy was a move that

@@ -32,21 +32,24 @@ export type ApplyClick = {
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
   /**
-   * The writer knew this document was deleted from the manuscript and chose to bring it back:
-   * a per-document Apply on an item showing it deleted, or an Apply all for a document its
-   * confirmation named. Without it, a deleted document answers `needs_restore`.
+   * The click includes the document's tree records: its move, delete or creation. Without it a
+   * text cut leaves a pending move or delete pending. A click with no text cut and no tree cut
+   * is malformed.
    */
-  restore?: true;
-  /**
-   * The tree cut: the revision of the branch's row on the document the writer saw (the
-   * item's `tree.revision`). The click applies the move, delete or creation that revision
-   * holds, and answers `changed` if the row holds another now. A click with no text cut and
-   * no tree cut is malformed; a text cut alone leaves a pending move or delete pending.
-   */
-  tree?: { revision: string | null };
+  tree?: true;
+  saw?: TreeSaw;
 };
 
-export type ApplyClickRefusalReason = "unsynced" | "malformed" | "not_found" | "ancestor_taken";
+/**
+ * The cut the review rows were drawn from: for each list the Work's records are in, the list's
+ * journal id and its Yjs state vector (base64) as the draft list read them. Records admitted
+ * after it are ones the writer had not seen; they stay pending. A cut of another list (one
+ * rebuilt under a new id) is no cut, and a scope left out is the server's own cut.
+ */
+export type TreeSaw = {
+  project?: { list: string; vector: string };
+  account?: { list: string; vector: string };
+};
 
 export type ApplyRenamedNote = {
   code: "renamed";
@@ -63,63 +66,84 @@ export type AppliedReviewItem = {
   renamed?: ApplyRenamedNote;
 };
 
-export type ApplyClickResult =
-  | {
-      status: "applied";
-      commandId: CommandId;
-      /** Every item whose tree or text this click applied, dependency-first. */
-      applied: AppliedReviewItem[];
-      overrode?: number;
-      /**
-       * The document had been deleted from the manuscript, and this Apply, sent with
-       * `restore`, brought it back before merging. The client words the notice from
-       * this flag, per document.
-       */
-      restored?: true;
-      /** A frozen text cut committed, including a cut whose live update was already contained. */
-      textEffect?: true;
-    }
-  /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
-  | { status: "changed"; commandId: CommandId }
+/**
+ * What became of one half of an item. `landed`: this command changed live for it, and Un-Apply
+ * takes that back. `settled` beside `landed: true` names what stayed out of it or came with it
+ * (`left_out`, `restored`). With `landed: false` it says why, and is never empty. A note's own
+ * `item` or `items` always names the entry's node.
+ */
+export type ApplyHalfResult =
+  | { landed: true; settled?: Settlement[] }
+  | { landed: false; settled: Settlement[] };
+
+/** One item of an Apply: a document or a folder, with each of its two halves answered on its own. */
+export type ApplyItemResult = {
+  node: string;
+  /** Present when the tree half ran: the click asked for the item's tree records, or the item has a pending create. */
+  tree?: ApplyHalfResult & {
+    /** Where live had the document before and after this command, when its tree half landed. */
+    transition?: { from: string | null; to: string | null };
+    renamed?: ApplyRenamedNote;
+    /**
+     * The live restore this command made of the document so its text could land: the record
+     * Un-Apply takes back, and what `appliedNodes` reads to tell whether it still stands.
+     */
+    restore?: string;
+  };
+  /** Present when the click carried a text cut for the item. */
+  text?: ApplyHalfResult;
+};
+
+/**
+ * Every item an Apply was sent comes back once in `items`, in the click's order, with each half
+ * landed or settled. Records that land without being asked for (a prerequisite create, the
+ * prefix a selection the Work's tree can't keep falls back to) belong to no entry; Un-Apply
+ * takes them back with the rest.
+ */
+export type ApplyClickResult = {
+  status: "applied";
+  commandId: CommandId;
+  items: ApplyItemResult[];
   /**
-   * The document is deleted from the manuscript and the click did not carry `restore`: the
-   * writer's view did not know (a delete landed after it read the item, or after an Apply
-   * all's confirmation named its documents). Nothing changed and the draft stays pending;
-   * the client asks the writer, then sends a new click with `restore`.
+   * The items with a landed half, derived from `items`. Kept for tabs opened before `items`
+   * (one release) and for Un-Apply's read of stored answers; the app reads `items`.
    */
-  | { status: "needs_restore"; commandId: CommandId }
-  | { status: "closed"; commandId: CommandId }
-  | { status: "refused"; commandId: CommandId; reason: ApplyClickRefusalReason };
+  applied: AppliedReviewItem[];
+  overrode?: number;
+};
 
 export type ApplyClickAnswer = ApplyClickResult | { status: "conflict"; commandId: CommandId };
 export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; commandId: CommandId };
 
 /**
  * Take back one Apply command: the surviving text groups of every document it applied, and
- * everything it settled in the tree (a restore it made included), in one command. The tree half
- * is allowed only while nothing else has changed the list since (`gone`), and refuses as
- * `superseded` when a record it would bring back no longer fits; either refuses the whole
- * command. A text group whose reversal would change a word that holds writing made after the
- * Apply stays applied and is named in `skippedGroupIds`; when every group stays, the tree half
- * still comes back and the answer is `unapplied` with no `reversedGroupIds`.
+ * everything it settled in the tree (a restore it made included), in one command, fact by fact.
+ * A tree fact something changed since stays (`left_out changed_since`), as does a created
+ * document with text written since (`has_text`); a text group whose reversal would change a
+ * word that holds writing made after the Apply stays applied and is named in `skippedGroupIds`.
+ * It took something back when `reversedGroupIds` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
   applyCommandId: CommandId;
 };
-export type UnapplyClickResult =
-  | {
-      status: "unapplied";
-      commandId: CommandId;
-      /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
-      branchId: BranchId;
-      /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
-      draftHalfWaits: boolean;
-      reversedGroupIds: string[];
-      skippedGroupIds: string[];
-    }
-  | { status: "closed"; commandId: CommandId }
-  | { status: "refused"; commandId: CommandId; reason?: "gone" | "superseded" };
+export type UnapplyClickResult = {
+  status: "unapplied";
+  commandId: CommandId;
+  /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
+  branchId: BranchId;
+  /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
+  draftHalfWaits: boolean;
+  reversedGroupIds: string[];
+  skippedGroupIds: string[];
+  /** The nodes with a tree fact this command took back (a restore it undid included). */
+  treeUndone: string[];
+  /**
+   * `left_out` (what could not come back, one line per reason), or `already` (nothing was taken
+   * back and nothing was left: everything was taken back before).
+   */
+  settled?: Settlement[];
+};
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 
 /** The text cut of one document in an Apply: the writer's frozen click on its review room. */
@@ -133,15 +157,13 @@ export type ApplyTextCut = {
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
- * cut (the revision of the branch's row the writer saw; any row that holds another now answers
- * `changed` and nothing applies) and its text cut. An item has at least one of the two. The
- * per-document click is this command with one item.
+ * cut (`tree`: land its pending tree records) and its text cut. An item has at least one of the
+ * two. The per-document click is this command with one item.
  */
 export type ApplyItemsClick = {
   commandId: CommandId;
-  items: { node: string; tree?: { revision: string | null }; text?: ApplyTextCut }[];
-  /** As on `ApplyClick`: the writer knew an item was deleted from the manuscript. */
-  restore?: true;
+  items: { node: string; tree?: true; text?: ApplyTextCut }[];
+  saw?: TreeSaw;
 };
 
 /**
@@ -301,12 +323,10 @@ export interface ThreadDraftListItem {
    */
   deletedLive: boolean;
   /**
-   * The branch's move, delete or creation of the document, when it has one: what a tree cut
-   * applies (`revision`, frozen into the click) and what the row says. `movedFrom` is where
+   * The branch's move, delete or creation of the document, when it has one. `movedFrom` is where
    * live has it now (`contextLocation` is where the branch puts it).
    */
   tree: {
-    revision: string | null;
     movedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
     deleted?: true;
   } | null;
@@ -348,17 +368,19 @@ export interface ThreadDraftListResponse {
    * the browser replays as the Work's tree (a change to a folder alone lists no item).
    */
   branchId: BranchId | null;
-  /**
-   * The folders the Work's tree changes (it has a row on), each with the revision of that row:
-   * the tree cut an Apply of the folder carries, as an item's `tree.revision` is a document's.
-   */
-  folders: { id: string; revision: string }[];
+  /** The folders the Work's tree changes (it has a row on). */
+  folders: { id: string }[];
   /**
    * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
    * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
    * Always false for a Work, whose archive state the Work itself carries.
    */
   frozen: boolean;
+  /**
+   * The cut the items were read at: each list's vector, read before the rows. An Apply pressed on
+   * these rows sends it, so what lands is what the rows showed.
+   */
+  saw: TreeSaw;
 }
 
 /** SQL-only addressed lookup; no text room is loaded or created. */

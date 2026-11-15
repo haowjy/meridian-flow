@@ -40,8 +40,14 @@ import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contrac
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import * as Y from "yjs";
 import { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
+import {
+  ApplyClickMalformed,
+  ApplyClickUnsynced,
+  type TreeCut,
+} from "../domains/collab/domain/apply-click.js";
 import type { DiscardSelection } from "../domains/collab/domain/branch-discard.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-branch-pending-store.js";
@@ -171,6 +177,38 @@ const BaseViewDeltaBody = z.array(
     blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
   }),
 );
+/** A state vector, decoded here once: one that isn't is a 400, and nothing downstream decodes. */
+const VectorBody = z.base64().transform((value, context) => {
+  const bytes = new Uint8Array(Buffer.from(value, "base64"));
+  try {
+    Y.decodeStateVector(bytes);
+    return bytes;
+  } catch {
+    context.addIssue({ code: "custom", message: "Invalid state vector" });
+    return z.NEVER;
+  }
+});
+const ScopeCutBody = z.strictObject({ list: z.string().min(1).max(128), vector: VectorBody });
+const SawBody = z.strictObject({
+  project: ScopeCutBody.optional(),
+  account: ScopeCutBody.optional(),
+});
+/**
+ * `tree: true`, or a tab opened before B3: `tree: { revision }`, read as `true`. With `restore`
+ * (ignored), accepted for one release after B3 deploys; remove both then.
+ */
+const TreeBody = z
+  .union([
+    z.literal(true),
+    z.strictObject({
+      revision: z
+        .string()
+        .regex(/^[0-9a-f]{32}$/)
+        .nullable(),
+    }),
+  ])
+  .transform(() => true as const);
+const OldRestoreBody = z.literal(true).optional();
 const ApplyClickBody = z
   .strictObject({
     draftId: z.string().min(1).max(128).optional(),
@@ -178,15 +216,9 @@ const ApplyClickBody = z
     snapshot: z.string().min(1).optional(),
     baseViewDelta: BaseViewDeltaBody,
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
-    restore: z.literal(true).optional(),
-    tree: z
-      .strictObject({
-        revision: z
-          .string()
-          .regex(/^[0-9a-f]{32}$/)
-          .nullable(),
-      })
-      .optional(),
+    tree: TreeBody.optional(),
+    restore: OldRestoreBody,
+    saw: SawBody.optional(),
   })
   .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 type ApplyClickRequest = z.infer<typeof ApplyClickBody>;
@@ -210,14 +242,7 @@ const ApplyItemsBody = z.strictObject({
       z
         .strictObject({
           node: z.string().uuid(),
-          tree: z
-            .strictObject({
-              revision: z
-                .string()
-                .regex(/^[0-9a-f]{32}$/)
-                .nullable(),
-            })
-            .optional(),
+          tree: TreeBody.optional(),
           text: ApplyTextBody.optional(),
         })
         .refine((item) => item.tree !== undefined || item.text !== undefined),
@@ -225,8 +250,11 @@ const ApplyItemsBody = z.strictObject({
     .min(1)
     .max(2000)
     .refine((items) => new Set(items.map((item) => item.node)).size === items.length),
-  restore: z.literal(true).optional(),
+  restore: OldRestoreBody,
+  saw: SawBody.optional(),
 });
+/** An Apply as the route parsed it: the items, and the press's cut decoded. */
+type ParsedApply = Omit<ApplyItemsClick, "saw"> & { saw?: TreeCut };
 const UndoDiscardBody = z.strictObject({
   commandId: CommandIdSchema,
   discardCommandId: CommandIdSchema,
@@ -447,6 +475,7 @@ export async function handleOwnerDraftListRequest(
     branchId: listed.branchId,
     folders: listed.folders,
     frozen,
+    saw: listed.saw,
   };
 }
 
@@ -597,20 +626,24 @@ async function commandIngress(
 }
 
 /**
- * The per-document click as the one-item Apply it is; null when its cuts are malformed: a text
- * cut needs its room (`draftId`, `snapshot`) and a click needs a text cut or a tree cut.
+ * The per-document click as the one-item Apply it is. A click that is not one a client builds is
+ * a 400: a text cut needs its room (`draftId`, `snapshot`) and a click needs a text cut or a
+ * tree cut.
  */
-function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyItemsClick | null {
+function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ParsedApply {
   const textCut =
     click.snapshot !== undefined || click.groupIds.length > 0 || click.baseViewDelta.length > 0;
-  if (!textCut && !click.tree) return null;
-  if (textCut && (!click.draftId || !click.snapshot || click.groupIds.length === 0)) return null;
+  if (
+    (!textCut && !click.tree) ||
+    (textCut && (!click.draftId || !click.snapshot || click.groupIds.length === 0))
+  )
+    throw createError({ statusCode: 400, message: "Invalid Apply request" });
   return {
     commandId: click.commandId as CommandId,
     items: [
       {
         node: documentId,
-        ...(click.tree ? { tree: click.tree } : {}),
+        ...(click.tree ? { tree: true as const } : {}),
         ...(textCut
           ? {
               text: {
@@ -623,7 +656,7 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyIt
           : {}),
       },
     ],
-    ...(click.restore ? { restore: true as const } : {}),
+    ...(click.saw ? { saw: click.saw } : {}),
   };
 }
 
@@ -632,12 +665,12 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyIt
  * takes the grants every item needs, whatever the route it came by: the draft's grant and the
  * live grant on each document, and a restore grant on one live has deleted (it authorizes at
  * its source through the draft's destination, F9). A folder has no file of its own: the writer
- * owns the project, which the branch's identity proved. `request` null is a malformed click.
+ * owns the project, which the branch's identity proved.
  */
 async function applyItems(
   deps: BranchRouteServices,
   input: CommandScope,
-  request: ApplyItemsClick | null,
+  request: ParsedApply,
   envelope: CommandEnvelope,
   /** Set on the one re-run after a live delete overtook this click's admission. */
   overtaken = false,
@@ -651,12 +684,8 @@ async function applyItems(
     );
   const recorded = await lookup();
   if (recorded) return recorded;
-  const refuse = async (
-    reason: import("@meridian/contracts/branches").ApplyClickRefusalReason,
-  ): Promise<ApplyClickAnswer> => (await lookup()) ?? { status: "refused", commandId, reason };
   const { owner } = access;
-  if (!request) return refuse("malformed");
-  if (!owner) return refuse("not_found");
+  if (!owner) throw createError({ statusCode: 404, message: "Branch not found" });
   const resolved = await Promise.all(
     request.items.map(async (entry) => ({
       node: entry.node as DocumentId,
@@ -667,31 +696,25 @@ async function applyItems(
     })),
   );
   const deletedLive = resolved.some(({ found }) => found?.item.deletedLive);
-  async function deniedAnswer(
-    grant: FileAccessDenied,
-    node: DocumentId,
-  ): Promise<ApplyClickAnswer> {
-    // A known removed identity is a terminal room outcome, not an edit denial.
-    // Never expose its record to a different owner or project.
-    if (
-      grant.facts?.deleted &&
-      grant.facts.ownerAccountId === input.userId &&
-      grant.facts.projectId === input.projectId
-    ) {
-      const removed = await deps.documentSync.roomRemoval({ documentId: node });
-      if (removed) return (await lookup()) ?? { status: "closed", commandId };
-    }
-    return refuse("not_found");
-  }
   // A live delete that committed after the items resolved, at authorization or at the grants'
   // confirmation: nothing was claimed, so the click runs once more, resolves the item as
-  // deleted and authorizes its restore. Every other denial is final.
-  const denied = (denial: FileAccessDenied | undefined, node: DocumentId) =>
-    denial?.facts?.deleted && !deletedLive && !overtaken
-      ? applyItems(deps, input, request, envelope, true)
-      : denial
-        ? deniedAnswer(denial, node)
-        : refuse("not_found");
+  // deleted and authorizes its restore. A document whose room was removed gets no grant and the
+  // command settles it (`left_out purged`). Every other denial is about who is acting: a 404.
+  const denied = async (
+    denial: FileAccessDenied | undefined,
+    node: DocumentId,
+  ): Promise<ApplyClickAnswer | null> => {
+    if (denial?.facts?.deleted && !deletedLive && !overtaken)
+      return applyItems(deps, input, request, envelope, true);
+    if (
+      denial?.facts?.deleted &&
+      denial.facts.ownerAccountId === input.userId &&
+      denial.facts.projectId === input.projectId &&
+      (await deps.documentSync.roomRemoval({ documentId: node }))
+    )
+      return null;
+    throw createError({ statusCode: 404, message: "Not found" });
+  };
   const grants: FileGrant<"edit" | "command">[] = [];
   for (const { node, found } of resolved) {
     if (!found) continue;
@@ -705,7 +728,11 @@ async function applyItems(
         item,
         "command",
       );
-      if (isFileAccessDenied(grant)) return denied(grant, node);
+      if (isFileAccessDenied(grant)) {
+        const answer = await denied(grant, node);
+        if (answer) return answer;
+        continue;
+      }
       grants.push(grant);
     }
     if (!item.isNew && !item.deletedLive) {
@@ -714,18 +741,33 @@ async function applyItems(
         documentTarget(node),
         "edit",
       );
-      if (isFileAccessDenied(live)) return denied(live, node);
+      if (isFileAccessDenied(live)) {
+        const answer = await denied(live, node);
+        if (answer) return answer;
+        continue;
+      }
       grants.push(live);
     }
     if (item.deletedLive)
       grants.push(await restoreGrant(deps, { ...input, owner }, item, "command"));
   }
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
-    deps.documentSync.draftReview.apply({ branchId: input.branchId, request, envelope }),
+    callDraftReview(
+      deps.documentSync.draftReview.apply({
+        branchId: input.branchId,
+        request: { commandId: request.commandId, items: request.items },
+        ...(request.saw ? { saw: request.saw } : {}),
+        envelope,
+      }),
+    ),
   );
-  return result.ok
-    ? result.value
-    : denied(result.refusal.refused[0], (resolved[0]?.node ?? input.branchId) as DocumentId);
+  if (result.ok) return result.value;
+  const answer = await denied(
+    result.refusal.refused[0],
+    (resolved[0]?.node ?? input.branchId) as DocumentId,
+  );
+  if (answer) return answer;
+  throw createError({ statusCode: 404, message: "Not found" });
 }
 
 /** One document's click: the one-item Apply, in the shape the document's review room sends. */
@@ -740,10 +782,11 @@ export async function handleApplyClickRequest(
   );
   if (!parsedId.success) throw createError({ statusCode: 400, message: "Invalid Apply request" });
   const parsed = ApplyClickBody.safeParse(input.request);
+  if (!parsed.success) throw createError({ statusCode: 400, message: "Invalid Apply request" });
   return applyItems(
     deps,
     input,
-    parsed.success ? itemsOfClick(input.documentId, parsed.data) : null,
+    itemsOfClick(input.documentId, parsed.data),
     envelopeOf(input, {
       commandId: parsedId.data,
       kind: "apply",
@@ -787,17 +830,18 @@ export function handleApplyItemsRequest(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
 ): Promise<ApplyClickAnswer> {
-  const request = parseBody(ApplyItemsBody, input.request, "Apply") as ApplyItemsClick;
+  const { restore: _ignored, ...request } = parseBody(ApplyItemsBody, input.request, "Apply");
   return applyItems(
     deps,
     input,
-    request,
+    request as ParsedApply,
     envelopeOf(input, {
       commandId: request.commandId,
       kind: "apply",
       branchId: input.branchId,
       selectors: {},
-      body: request,
+      // As sent: the decoded cut is not what the digest of a resend reads.
+      body: input.request,
     }),
   );
 }
@@ -862,11 +906,10 @@ export function handleUnapplyClickRequest(
         );
       const recorded = await lookup();
       if (recorded) return recorded;
+      // A grant denied here is about who is acting (a purged document has no applied text left to
+      // write back): a 404.
       const refused = async (): Promise<UnapplyClickAnswer> =>
-        (await lookup()) ?? {
-          status: "refused",
-          commandId: request.commandId as CommandId,
-        };
+        (await lookup()) ?? Promise.reject(createError({ statusCode: 404, message: "Not found" }));
       const grants: FileGrant<"edit" | "command">[] = [];
       for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofApply({
         applyCommandId: request.applyCommandId as CommandId,
@@ -1064,7 +1107,6 @@ export function toWireItem(
     wholeItem: item.wholeItem,
     tree: item.tree
       ? {
-          revision: item.tree.revision,
           ...(item.tree.movedFrom
             ? { movedFrom: reviewContextLocation(item.tree.movedFrom) ?? undefined }
             : {}),
@@ -1090,6 +1132,15 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
+    if (cause instanceof ApplyClickMalformed)
+      throw createError({ statusCode: 400, message: "Invalid Apply request" });
+    // The click is ahead of what the server holds; nothing was stored and the client sends it again.
+    if (cause instanceof ApplyClickUnsynced)
+      throw createError({
+        statusCode: 503,
+        message: "Apply is waiting for the draft to sync",
+        data: { retryable: true },
+      });
     if (cause instanceof Error && cause.message === "draft_not_found") {
       throw createError({ statusCode: 404, message: "Draft not found" });
     }

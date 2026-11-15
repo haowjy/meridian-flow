@@ -52,7 +52,7 @@ import { createUndoDiscardService } from "../domain/undo-discard.js";
 import { createDrizzleApplyClick } from "./drizzle-apply-click.js";
 import { createDrizzleBranchDiscard } from "./drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./drizzle-branch-tree-actors.js";
-import { branchRowRevisions, createDrizzleBranchTreeState } from "./drizzle-branch-tree-state.js";
+import { createDrizzleBranchTreeState } from "./drizzle-branch-tree-state.js";
 import { createDrizzleBranchStore, createDrizzleBranchWriteBoundary } from "./drizzle-branches.js";
 import { createDrizzleCommandDocuments } from "./drizzle-command-documents.js";
 import { createDrizzleDocumentCommands } from "./drizzle-document-commands.js";
@@ -129,6 +129,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         onCommitted: async () => {},
         merged: () => {},
         measured: () => {},
+        answeredWithoutLanding: () => {},
       }),
     });
     const discardKernel = createBranchDiscard({
@@ -437,13 +438,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         lists: [await treeListOfSource(db, SOURCE)],
         make: ([{ writer }]) => writer.delete({ draft: f.branchId }, `user:${USER}`, f.documentId),
       });
-      const revision = (await branchRowRevisions(db, f.branchId, [f.documentId])).get(f.documentId);
       const deleteApply = randomUUID();
       const answer = await handleApplyItemsRequest(routeServices, {
         userId: USER,
         projectId: PROJECT,
         branchId: f.branchId,
-        request: { commandId: deleteApply, items: [{ node: f.documentId, tree: { revision } }] },
+        request: { commandId: deleteApply, items: [{ node: f.documentId, tree: true }] },
       } as never);
       expect(answer.status).toBe("applied");
       await f.unapply(textApply);

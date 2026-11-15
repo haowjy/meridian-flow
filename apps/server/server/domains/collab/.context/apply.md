@@ -7,12 +7,9 @@
 blocks: independently built schemas have distinct node and mark types, which the merge
 kernel can't mix. Receipt membership is classified at that cut, not replayed onto live.
 
-The `restore` check runs under the Work's and branch's locks, before the list's, so a
-delete the writer's view didn't show answers `needs_restore`, however late it landed: nothing
-changes, the draft stays pending, and the answer is stored, so a replay returns it. The client
-asks before sending a new click with `restore`; with it, the document's `restore` record and the
-Apply are one `submit`. Apply reads the addressed document's own row in the Work's tree
-(`branch_tree_nodes` against `tree_nodes`), not a branch-wide listing.
+A document live has in Trash comes back whenever the click lands records on it, with no question
+asked: the answer says `restored { documentId }` in `settled`. Apply reads the addressed document's
+own row in the Work's tree (`branch_tree_nodes` against `tree_nodes`), not a branch-wide listing.
 
 The route authorizes a deleted item at its source through the draft destination
 (`restoreGrant`), not a live grant. A drafted delete of a document live deleted too
@@ -34,13 +31,10 @@ when a later one was edited in live.
 
 Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `commands` row (`shared/commands/`, which every kind of request shares; `adapters/drizzle-document-commands.ts` is the document side).
 `runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
-enters the Work boundary after it (`CONTEXT.md`, the lock order). A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
-append door, a Discard's `stale` or `draft_changed`) rolls back to the savepoint and is stored as the
-outcome, so a resend under the same id gets the same refusal and "Try again" needs a new id. A miss
+enters the Work boundary after it (`CONTEXT.md`, the lock order). An Apply or Un-Apply stores no refusal: each item comes back with each half landed or settled (below), and the row is `done`. A draft that closed under the append door can't happen mid-command: the Work's and the document's keys are held. A miss
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
 `BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
-turned away before the transaction (access, malformed, unknown document) stores nothing. Un-Apply
-reads only the effects whose draft's branch is the URL's. `GET /api/commands/:id` returns the stored outcome to the
+turned away before the transaction stores nothing: a malformed click (a bad snapshot, patches or group ids) is a 400, and one whose cut is ahead of what the server holds (`unsynced`: a room's unacknowledged changes, or a tree cut ahead of the server's list, `covers(list, saw)`; a cut the draft list issued is always covered) is a 503 the client sends again with the same id. `GET /api/commands/:id` returns the stored outcome to the
 account that sent it; `POST /api/commands/:id/resolve` (`lib/command-route.ts`) waits on a held key and
 answers the stored outcome, or stores `never` where there is no row (a late request under the id then
 answers `command_conflict` on an old-shape route).
@@ -68,12 +62,54 @@ the nodes they need, and, for each Work-created folder above where a record acts
 last drafted delete or restore before the record, so the folder lands as it stood when the record
 was drafted (a card Undo of its restore then finds it in live). A folder's delete drafted after
 the document left it, or after the record, stays pending. Earlier records on the same facts come
-too. The click carries `tree.revision`, a digest of the Work's row on the document
-(`md5` over its source, parent, name, rank, `deleted` and `exists_only_in_draft`), and answers
-`changed` when the row says something else now. A record that cannot land (a move into itself,
-a move of what live has in Trash) lands nothing of the item: the click is `refused` with
-`ancestor_taken` and the draft stays pending. A text-only click leaves a pending move or delete
-pending, except for a creation only the Work shows, which lands whole.
+too. The click carries `saw`: the cut the draft list read its rows at (each list's id and
+state vector, read before the rows; `treeCutOf`). A record admitted after it stays pending
+(`after_press`); a cut naming another list (one rebuilt under a new id) is no cut, and a scope left
+out is the server's own cut. A cut ahead of the server is a 503 that stores nothing. A text-only
+click leaves a pending move or delete pending, except a creation only the Work shows: the tree half
+runs for any item with a pending create, which lands whole.
+
+**The invariant.** Every item an Apply was sent comes back once in `ApplyClickResult.items`, in the
+click's order, with each of its two halves answered on that half's own evidence: this command
+landed it (`landed: true`, which Un-Apply takes back), or here is what settled it instead
+(`landed: false` with `settled` lines). A line beside `landed: true` names what stayed out of the
+half or came with it (`left_out`, `restored`). `applied` is derived from `items` for tabs opened
+before it. Records that land without being asked for (a prerequisite create, the prefix
+`applyDraft` falls back to) belong to no entry.
+
+`adapters/drizzle-apply-click.ts` `apply` is the one place that decides, in this order, under the
+Work, branch, list and document keys:
+
+1. `settlementOf` (`drizzle-settlement-of.ts`) for every item: whether the Work still holds the
+   node's item (`recordsOfItem`), what settled it last, and the text draft's row. Its tree reading
+   ranks the records the press saw (`recordsAdmittedAfter` drops the rest): the node's own, and a
+   folder delete whose cascade names it while the folder is still above it in the Work's view. No
+   cut (an old tab): the node's own records win. `noteOf` turns a fact into a line (`already` for
+   the asked kind, `overtaken` with `by` for the other, `left_out purged` for none). Discard's
+   per-item answer (B4) reads the same.
+2. The text half is open when its cut compiled and its draft is the open row of this branch;
+   otherwise its line is fixed now.
+3. The tree half (`drizzle-apply-tree.ts`, facts only): per list, the items' records, a restore
+   before the copies for a document whose text is open, that live has in Trash and whose records
+   hold no delete, one `applyDraft`, then a restore for a document whose own delete did not land
+   and that nothing of this command deleted. A document is deleted by this command when a delete
+   copy it appended covers it in live afterwards (`deletesCovering`, every covering delete, at
+   each folder on the way up).
+4. Only those documents' drafts close, under the command's id.
+5. Each open text half lands when its document stands in live: one this command deleted answers
+   `already removed`, one whose create did not land `left_out needs` (its text stays pending with
+   its draft). What the tree half answered never holds text back.
+6. `apply.answered_without_landing` is emitted after the commit when no half landed.
+
+The tree half's lines come from its records' fates in `applyDraft`: `left_out` per reason a record
+stayed, `already applied` when a create live already holds was superseded, and with nothing
+pending, what settled the records. A move or rename that brought the node out of Trash adds
+`restored`; a restore this command made is a tree fact too (the tree half is present and landed),
+and the text half says `restored`. Three things are on purpose: a restore and a delete copy
+covering it can come from one command (`undoApply` takes back both); "records hold no delete" misses
+a folder delete hidden behind the document's own older live delete, which then does not cover it;
+and when `keepsView` fails, the prefix fallback can land a pending delete of a document the click
+asked only text of, whose text then answers `already removed`.
 
 Lock order inside the click: Work, branch, the list's key (`treeLists.lock`), the document's
 mutex, then the writes: the list's records and rows (`submit`), the closed draft's resync, draft
@@ -89,9 +125,8 @@ cut. The per-document click (`.../documents/:documentId/draft/apply`) is the sam
 one item (`itemsOfClick`), and Apply all sends every item at once; a loop of per-document
 commands could be taken back only one at a time. `adapters/drizzle-apply-click.ts` runs the tree
 cuts first (`applyDraft` over all the chosen records in each list), then each document's text
-cut in id order, all in one transaction. A text draft closed under the click answers `closed` for
-the whole command; a row that holds another revision answers `changed` and nothing lands. An item
-that cannot land stays pending; none landing is `refused` `ancestor_taken`.
+cut in id order, all in one transaction. Each item comes back once in `items`, each half landed
+or settled, as above.
 
 The command records its whole effect. Tree half: one `apply_command_trees` row per list, with the
 list's state vector right after, the created documents' journal heads once the text is in, the
@@ -99,8 +134,15 @@ live restore records the Apply made (a "Restore and apply" brings a document out
 its copies), and the nodes it touched. Text half: `apply_command_effects`, one row per group per
 document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
 and the restores leave live), then each document's text groups. It runs the tree half before any
-write and after every check that can end the command quietly, so a refusal (`gone`: the list moved,
-or a created document has text past its heads; `superseded`) stores nothing of either half. A text
+write. A change it cannot take back (`changed_since`, `has_text` for a created document with text past
+its heads, `purged`) stays and is named in `settled` as `left_out`, one line per reason. One
+something else already took back (a chat card's Undo of a rename: the copy is no longer in force)
+is `already { unapplied }` with the item. `treeUndone` names the nodes with a fact it took back, so it took something
+back when that or `reversedGroupIds` is not empty. When nothing was taken back and nothing was left,
+the answer is `already { unapplied }`, and so is a second Un-Apply of a delete. When the tree rows of
+the Apply are gone (`treeHalfLostWithBranch`, read from the stored answer's `applied`), the document
+it moved or deleted is `left_out purged`; the route answers 404 for a purged Work before the command
+runs, so that path is reached only when a chat's lineage branch goes while its Work lives on. A text
 group whose reversal would change a word holding writing made after the Apply (the word rule,
 `reversal.md`) stays applied and is named in `skippedGroupIds`; when every group stays
 and the tree half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
@@ -128,8 +170,8 @@ stored once), and runs the same body as the open path (`reverseBaseHalf`): merge
 out of the base, remove its Apply records. Without it the base keeps text the Un-Apply took out of
 live, and a pull merges that deletion into the draft's own text. `draft_reversed` is what stops a
 second replay of an effect the open path already reversed. Un-Apply runs its tree half first, reopens
-only the drafts whose documents that half restored (a document the writer restored by hand and
-deleted again keeps its draft closed), then reads the bases, so the draft half of its own text
+only the drafts whose closing delete that half took back, a folder's cascade included (a document the
+writer restored by hand and deleted again keeps its draft closed), then reads the bases, so the draft half of its own text
 effects on a draft its delete closed runs on an open draft. A tree refusal throws and the command's
 savepoint takes the reopen back. Every reopen schedules a live pull for the document.
 Where the draft goes: `ensureActiveForWrite` with `{ requireActive: false }`, called only when the

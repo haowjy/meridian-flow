@@ -51,17 +51,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const askingApply = asking !== null && dock.showCommands;
-  const ids = (files: readonly DockFile[]) => new Set(files.map((file) => file.row.documentId));
-  // A delete the strip hadn't shown yet holds those files back; several ask again by name.
-  const apply = (restore: ReadonlySet<string>) =>
-    void dock.apply(restore).then((held) => {
-      if (held.length > 0 && multi) setAsking({ deleting: [], restoring: held });
-    });
   // One file's row shows its delete, so its Apply already says to delete or bring it back.
   const startApply = () =>
     multi && (dock.deletedToApply.length > 0 || dock.deletingToApply.length > 0)
       ? setAsking({ deleting: dock.deletingToApply, restoring: dock.deletedToApply })
-      : apply(ids(dock.deletedToApply));
+      : dock.apply();
   // One question at a time, in the footer below the files: opening it never moves a row.
   const question: CommandQuestion | null = askingApply
     ? {
@@ -77,7 +71,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         onKeep: () => setAsking(null),
         onConfirm: () => {
           setAsking(null);
-          apply(ids(asking.restoring));
+          dock.apply();
         },
         disabled: !dock.canCommand,
       }

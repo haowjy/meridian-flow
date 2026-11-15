@@ -130,23 +130,43 @@ schedule-owned command handle. The handle owns command identity, reversal outcom
 replay selection; the mounted history owns only navigation. Undo moves the history cursor
 synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. The
 schedule retries the targeted Apply before the inverse when its delivery is unknown and
-withholds later commands behind any stalled intent. Redo queues a new Apply for only the
-text groups the server actually reversed, never the original tree cut.
+withholds later commands behind any stalled intent. The Un-Apply goes when either half of
+the Apply landed: a landed rename with settled text still has something to take back. Redo
+queues a new Apply for the text groups the server actually reversed, and the tree cut when
+the Un-Apply's `treeUndone` names the item.
 
 Existence of a deleted document is its own fact, never read from a name conflict.
-`apply(ref, target, restore)` sends `restore` only when the writer knew: an Apply whose
-row showed the delete, or an Apply all for the documents its confirmation named. Without
-it the server answers `needs_restore`, nothing changes, and the row shows the delete.
-The account owner keeps the answer's `restored` and `renamed` facts, so an editor Apply
-keeps its result after navigation.
+An Apply brings a deleted document back to land what the click carries for it: the click
+carries no `restore`, and the item's answer says `restored`. The question a
+strip or Apply all asks first (it names the deletes and restores) is the writer's
+heads-up, not a precondition. The account owner keeps the answer's `restored` and `renamed`
+facts, so an editor Apply keeps its result after navigation.
+
+An Apply never answers refused. The answer is `applied` with one entry per item in `items`,
+each half `landed` or settled with lines (`itemOf`). `outcomeOf` reads them: an item with a
+landed half is `done` (an Undo step and the applied facts) and carries every line of both
+halves beside it, so a landed delete with a left-out rename reads as applied, with the line;
+an item with neither half landed is `settled`. Every `overtaken` or `left_out` line, with its
+half and the command that overtook it, becomes the item's `apply-left-out` state
+(`overtaken_discarded`, `overtaken_removed`, `left_out_<why>`), and the surfaces show one
+sentence per distinct reason: as a note (`InlineErrorRow`'s `note`) when the other half landed,
+as an error when neither did. `already` and `restored` are quiet. `viewOf` is the one place a settlement line becomes what
+is shown, a closed owner's `returned` included; `settledOf` gives every line of a flat answer
+(Discard, Restore, Un-Apply) that names an item. A click whose room cannot acknowledge it
+settles `unsent` on the client. The press sends `saw`, the cut the cached draft list came
+with, frozen with the click; a 503 (the server lacks something the press saw) is an unknown
+delivery the queue retries with the same id. An Apply goes on the Undo stack only when an
+item landed, and a press of its step that reached the server is spent: `already` or nothing
+taken back never falls through to the next older step.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
 Retry. Transient disconnects keep acknowledgement barriers pending. Each click has two
 independent duties:
 
 - *Release* (the head leaves the FIFO and its optimistic contribution ends) happens once:
-  on the room's record or a terminal answer. An applied answer without the record keeps
-  its contribution.
+  on the room's record or a terminal answer. The queue knows its item's node and reads its
+  own entry: an answer whose entry says this item's text landed waits for the record, and one
+  whose text was settled is final, whatever a sibling in the same command landed.
 - *Completion* (the caller's outcome) comes from the full answer, which alone carries
   `restored`. When the answer is missing or lost, the queue reads the stored result back
   under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
@@ -332,9 +352,8 @@ admission, so catalog invalidation can't strand a review after unmounting its ro
 ## Tree lines
 
 An item with a branch row (a creation, move or delete) applies it with a tree cut: the
-item's Apply carries `tree.revision`, and with no text to send it is the tree cut alone, in
-the same item FIFO. The click body's `tree` is `{ revision }` only, because the server's
-schema is strict.
+item's Apply carries `tree: true`, and with no text to send it is the tree cut alone, in
+the same item FIFO.
 
 `discardItem` is the item's one Discard when it has a tree line: the server's tree-only
 Discard (`ends: "tree"`) beside the local text revert. Its notice's Undo takes back both, so
@@ -342,8 +361,8 @@ the text never comes back without its move or delete.
 
 An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack as one step
 (`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
-command's id, and a refusal (`gone`, `superseded`: something changed since) is a skipped step
-with its notice. A band's Apply has its editor's Undo instead.
+command's id; changes it could not take back come back as `left_out` and, with nothing
+reversed, are a skipped step with its notice. A band's Apply has its editor's Undo instead.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

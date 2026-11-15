@@ -748,13 +748,25 @@ function schemaOf(type: string): string | null {
  * two deletes of one node answers.
  */
 export function deleteCovering(projection: TreeProjection, id: string): TrashEntry | undefined {
+  return deletesCovering(projection, id)[0];
+}
+
+/**
+ * Every delete in force that covers a node, nearest first: its own, then each one above it whose
+ * cascade names it, each node's latest first. A nearer delete doesn't hide a farther one,
+ * so a command can ask whether any delete it made covers the node.
+ */
+export function deletesCovering(projection: TreeProjection, id: string): TrashEntry[] {
+  const out: TrashEntry[] = [];
   for (let at = projection.nodes.get(id); at; at = projection.nodes.get(at.parent)) {
-    const entry = projection.trash
-      .filter((each) => each.node === at?.id && (at.id === id || each.cascade.includes(id)))
-      .pop();
-    if (entry) return entry;
+    const node = at.id;
+    out.push(
+      ...projection.trash
+        .filter((each) => each.node === node && (node === id || each.cascade.includes(id)))
+        .reverse(),
+    );
   }
-  return undefined;
+  return out;
 }
 
 /**

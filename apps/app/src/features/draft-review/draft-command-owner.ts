@@ -11,13 +11,20 @@ import {
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
-import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import {
+  type BranchId,
+  type DocumentId,
+  draftItemKey,
+  parseDraftItemKey,
+} from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
+  ApplyItemResult,
   DiscardCommandResult,
   DraftMetadataResponse,
   ThreadDraftListItem,
+  TreeSaw,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
@@ -41,9 +48,18 @@ import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
-import { type DiscardUndo, DraftNotices, type RestoreReturned, returnedOf } from "./draft-notices";
+import {
+  type ApplyHalves,
+  type DiscardUndo,
+  DraftNotices,
+  halvesOf,
+  itemOf,
+  type RestoreReturned,
+  returnedIn,
+  viewOf,
+} from "./draft-notices";
 import { GroupApply } from "./group-apply";
-import type { BranchCommandFailure, DraftRef } from "./review-command-types";
+import type { ApplyLine, BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
@@ -88,6 +104,12 @@ export type CommandOutcome =
       kind: "done";
       /** The Apply command that landed it, which an Un-Apply names. */
       commandId?: string;
+      /** What of the whole command landed; unknown (the answer was never read): both halves. */
+      halves?: ApplyHalves;
+      /** Its tree half landed whole: nothing of its move, delete or creation is still pending. */
+      treeWhole?: boolean;
+      /** Each half's lines for what stayed out beside what landed. */
+      lines?: ApplyLine[];
       /** The document had been deleted from the manuscript and this Apply brought it back. */
       restored?: true;
       /** Per-item facts committed by this click. */
@@ -97,12 +119,9 @@ export type CommandOutcome =
         renamed?: string;
       }[];
     }
-  /**
-   * The document was deleted and the click didn't say the writer knew: nothing changed. In an
-   * Apply of several, every item answers it; `deleted` marks the ones live deleted.
-   */
-  | { kind: "needs-restore"; deleted?: true }
-  /** A closed owner answered and changed nothing (`returnedOf`): the surface says why, once. */
+  /** The server answered for this item and landed neither half: each half's lines say why. */
+  | { kind: "settled"; lines: ApplyLine[] }
+  /** A closed owner answered and changed nothing: the surface says why, once. */
   | { kind: "returned"; why: RestoreReturned }
   | { kind: "change-refused"; code: string };
 type Binding = {
@@ -139,7 +158,7 @@ function notDiscarded(result: DiscardCommandResult): {
   failure: BranchCommandFailure | null;
   outcome: CommandOutcome;
 } {
-  const why = returnedOf(result);
+  const why = returnedIn("settled" in result ? result.settled : undefined);
   return why
     ? { failure: null, outcome: { kind: "returned", why } }
     : {
@@ -147,17 +166,20 @@ function notDiscarded(result: DiscardCommandResult): {
         outcome: { kind: "change-refused", code: result.status },
       };
 }
-/** The server's word for an unapplied click, as the surfaces' refusal copy keys it. */
-function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>): string {
-  switch (answer.status) {
-    case "refused":
-      return answer.reason;
-    case "needs_restore":
-    case "changed":
-      return answer.status;
-    default:
-      return "gone";
-  }
+/**
+ * Every line an item shows for what of it didn't land, each with its half: `overtaken_<state>`
+ * or `left_out_<why>`. `already` and `restored` are painted quietly and give none.
+ */
+function linesOf(item: ApplyItemResult | undefined): ApplyLine[] {
+  return (["tree", "text"] as const).flatMap((half) =>
+    (item?.[half]?.settled ?? []).flatMap((one): ApplyLine[] => {
+      const view = viewOf(one);
+      if (view?.kind === "overtaken")
+        return [{ half, code: `overtaken_${view.state}`, by: view.by }];
+      if (view?.kind === "left_out") return [{ half, code: `left_out_${view.why}` }];
+      return [];
+    }),
+  );
 }
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
@@ -297,6 +319,7 @@ export class DraftCommandOwner {
       rooms: new Set(),
       applyEntries: new Set(),
       queue: new ApplyClickQueue({
+        node: ref.documentId,
         send: (body) => applyDraftClick(ref, body),
         lookup: observeDraftClick,
         unapply: (body) => unapplyDraftClick(ref, body),
@@ -645,96 +668,110 @@ export class DraftCommandOwner {
     item.applyEntries.clear();
   }
 
-  /** A click's answer, as its caller's outcome and a refusal on the generation it was made for. */
-  private settled(
-    ref: DraftRef,
-    id: string,
-    answer: ApplyClickOutcome,
-    restore: boolean,
-  ): CommandOutcome {
-    if (answer.status !== "applied" && answer.status !== "landed" && answer.status !== "cancelled")
-      this.setState(
-        ref.itemKey,
-        { failure: { code: "apply-refused", serverCode: refusalCode(answer) } },
-        id,
-      );
-    return this.outcomeOf(ref, answer, restore);
+  /** A click's answer, as its caller's outcome and a line on the generation it was made for. */
+  private settled(ref: DraftRef, id: string, answer: ApplyClickOutcome): CommandOutcome {
+    const outcome = this.outcomeOf(ref, answer);
+    const failure: BranchCommandFailure | null =
+      (outcome.kind === "settled" || outcome.kind === "done") && outcome.lines?.length
+        ? { code: "apply-left-out", landed: outcome.kind === "done", lines: outcome.lines }
+        : outcome.kind === "change-refused"
+          ? { code: "apply-refused", serverCode: outcome.code }
+          : null;
+    if (failure) this.setState(ref.itemKey, { failure }, id);
+    return outcome;
   }
 
-  /** `restore`: this click brought its document back, as a group's `restored` says of some. */
-  private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome, restore: boolean): CommandOutcome {
+  /**
+   * One item's outcome from its entry in the answer: done when either half landed (it gets the
+   * Undo step and the applied facts), settled when neither did. Every line of both halves goes
+   * with it, so a landed delete with a left-out rename reads as applied, with the line.
+   */
+  private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
     if (answer.status === "applied") {
-      const restored = answer.restored && restore;
-      if (restored) {
-        this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+      const item = itemOf(answer, ref.documentId);
+      const lines = linesOf(item);
+      const tree = item?.tree?.landed === true;
+      if (!tree && item?.text?.landed !== true) return { kind: "settled", lines };
+      const treeWhole = tree && !item?.tree?.settled?.some((one) => one.rule === "left_out");
+      const restored = [...(item?.tree?.settled ?? []), ...(item?.text?.settled ?? [])].some(
+        (one) => one.rule === "restored",
+      );
+      if (restored) this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+      const branchId = parseDraftItemKey(ref.itemKey)?.branchId;
+      let renamed = false;
+      for (const one of answer.items) {
+        if (!one.tree?.landed || !one.tree.renamed) continue;
+        renamed = true;
+        this.renamedDocuments.set(JSON.stringify([ref.projectId, one.node]), one.tree.renamed.path);
       }
-      for (const item of answer.applied) {
-        if (!item.renamed) continue;
-        const documentId = parseDraftItemKey(item.itemKey)?.documentId;
-        if (documentId)
-          this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
-      }
-      if (restored || answer.applied.some((item) => item.renamed)) this.publish();
+      if (restored || renamed) this.publish();
       return {
         kind: "done",
         commandId: answer.commandId,
+        halves: halvesOf(answer),
+        treeWhole,
+        lines,
         ...(restored ? { restored: true as const } : {}),
-        applied: answer.applied.map((item) => ({
-          itemKey: item.itemKey,
-          ...(item.transition ? { transition: item.transition } : {}),
-          ...(item.renamed ? { renamed: item.renamed.path } : {}),
-        })),
+        applied: branchId
+          ? answer.items.flatMap((one) =>
+              one.tree?.landed || one.text?.landed
+                ? [
+                    {
+                      itemKey: draftItemKey(branchId, one.node as DocumentId),
+                      ...(one.tree?.landed && one.tree.transition
+                        ? { transition: one.tree.transition }
+                        : {}),
+                      ...(one.tree?.landed && one.tree.renamed
+                        ? { renamed: one.tree.renamed.path }
+                        : {}),
+                    },
+                  ]
+                : [],
+            )
+          : [],
       };
     }
     if (answer.status === "landed") return { kind: "done", commandId: answer.commandId };
     if (answer.status === "cancelled") return { kind: "blocked" };
-    if (answer.status === "needs_restore") return { kind: "needs-restore" };
-    return { kind: "change-refused", code: refusalCode(answer) };
+    return { kind: "change-refused", code: "unsynced" };
   }
 
   /**
    * No await before snapshot, group validation, O, P and acknowledgement barrier are frozen.
-   * `restore` says the writer saw the document deleted from the manuscript and chose to bring
-   * it back; without it, a deleted document answers `needs-restore` and nothing changes.
    * Every click joins the item's one FIFO, so a tree cut waits behind the text clicks before it.
+   * `saw` is what the tree lists held at the press.
    */
   apply(
     ref: DraftRef,
     target: ChangeTarget,
-    restore = false,
     /**
-     * The item's tree cut, when the click includes its move, delete or creation: the tree line,
-     * a whole-item Apply, or text groups chosen with the tree line.
+     * Whether the click includes the item's tree records, its move, delete or creation: the
+     * tree line, a whole-item Apply, or text groups chosen with the tree line.
      */
-    requested?: { revision: string | null },
+    requested: boolean,
+    saw: TreeSaw | undefined,
     history?: EditorHistoryHandle | null,
     joint?: Joint,
   ): StartedApply | null {
     if (!this.active || this.state(ref.itemKey).discarding) return null;
-    // A tree cut already on its way is not sent twice; the same revision would answer `changed`.
-    const tree = this.items.get(ref.itemKey)?.queue.clicks.some((click) => click.body.tree)
-      ? undefined
-      : requested;
+    // A tree cut already on its way is not sent twice.
+    const tree =
+      requested && !this.items.get(ref.itemKey)?.queue.clicks.some((click) => click.body.tree);
     const entry = this.byItem.get(ref.itemKey);
     // No text to apply with it (no room open, or no change in it): the tree cut alone.
     const textless =
       target.kind === "tree" ||
       (target.kind === "draft" &&
-        requested !== undefined &&
+        requested &&
         !(
           entry?.binding?.runtime.state().ready && entry.binding.runtime.projectNow()?.groups.length
         ));
-    if (textless) return tree ? this.captureTree(ref, tree, restore, joint) : null;
-    return this.captureText(ref, target, restore, tree, history, joint);
+    if (textless) return tree ? this.captureTree(ref, saw, joint) : null;
+    return this.captureText(ref, target, tree, saw, history, joint);
   }
 
   /** A tree cut alone (design-v2 §4): no room, no snapshot, its applied answer settles it. */
-  private captureTree(
-    ref: DraftRef,
-    tree: { revision: string | null },
-    restore: boolean,
-    joint?: Joint,
-  ): StartedApply {
+  private captureTree(ref: DraftRef, saw: TreeSaw | undefined, joint?: Joint): StartedApply {
     const id = this.generation(ref.itemKey);
     const frozen: FrozenApply = {
       ...(joint ? { send: joint.send } : {}),
@@ -742,9 +779,8 @@ export class DraftCommandOwner {
         commandId: joint?.commandId ?? crypto.randomUUID(),
         groupIds: [],
         baseViewDelta: [],
-        // The cut is the revision alone: the list item's `tree` also says what it does.
-        tree: { revision: tree.revision },
-        ...(restore ? { restore: true as const } : {}),
+        tree: true,
+        ...(saw ? { saw } : {}),
       },
       optimistic: [],
       patched: [],
@@ -755,7 +791,7 @@ export class DraftCommandOwner {
       .queue.enqueue(frozen)
       .then((answer) => {
         this.setState(ref.itemKey, { hidden: false }, id);
-        return this.settled(ref, id, answer, restore);
+        return this.settled(ref, id, answer);
       });
     return { sent: true, outcome };
   }
@@ -763,8 +799,8 @@ export class DraftCommandOwner {
   private captureText(
     ref: DraftRef,
     target: TextTarget,
-    restore: boolean,
-    tree: { revision: string | null } | undefined,
+    tree: boolean,
+    saw: TreeSaw | undefined,
     history?: EditorHistoryHandle | null,
     joint?: Joint,
   ): StartedApply | null {
@@ -807,8 +843,8 @@ export class DraftCommandOwner {
         readBase(binding.session.document, schema),
         optimistic,
       ).map((patch) => ({ ...patch, blocks: patch.blocks.map((block) => block.toJSON()) })),
-      ...(restore ? { restore: true as const } : {}),
-      ...(tree ? { tree: { revision: tree.revision } } : {}),
+      ...(tree ? { tree: true as const } : {}),
+      ...(saw ? { saw } : {}),
     };
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     this.setState(ref.itemKey, { failure: null });
@@ -825,13 +861,7 @@ export class DraftCommandOwner {
           patchFor: (groupIds) =>
             applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
           intent: () => this.setState(entry.ref.itemKey, { failure: null }),
-          applyRefused: (answer) =>
-            this.setState(entry.ref.itemKey, {
-              failure: {
-                code: "apply-refused",
-                serverCode: answer.status === "applied" ? "text_not_applied" : refusalCode(answer),
-              },
-            }),
+          replayed: (answer) => void this.settled(entry.ref, entry.draftId, answer),
           unapplyRefused: (answer) =>
             this.setState(entry.ref.itemKey, {
               failure: { code: "unapply-refused", serverCode: answer.status },
@@ -841,9 +871,7 @@ export class DraftCommandOwner {
     if (scheduled.handle && history)
       entry.item.applyEntries.add(history.captureApply(scheduled.handle));
     binding.runtime.projectNow();
-    const outcome = scheduled.outcome.then((answer) =>
-      this.settled(ref, entry.draftId, answer, restore),
-    );
+    const outcome = scheduled.outcome.then((answer) => this.settled(ref, entry.draftId, answer));
     return { sent: true, outcome };
   }
 
@@ -852,8 +880,7 @@ export class DraftCommandOwner {
    * ✓. Every document's click is frozen in this event turn, as a single Apply's is, and waits in
    * its own queue; a folder's is a tree cut in its own item's queue (`folderKey`), so a folder
    * shows pending, refused and unknown delivery as a document does. `members[i]`'s outcome is
-   * `outcomes[i]`, then `folders[j]`'s. `restore` is whether the writer chose to bring back what
-   * live deleted; a member's own `restore` says whether it is one of those.
+   * `outcomes[i]`, then `folders[j]`'s. `saw` is what the tree lists held at the press.
    */
   applyGroup(input: {
     projectId: string;
@@ -862,21 +889,17 @@ export class DraftCommandOwner {
     members: readonly {
       ref: DraftRef;
       target: ChangeTarget;
-      restore: boolean;
-      tree?: { revision: string | null };
+      tree: boolean;
     }[];
     folders: readonly string[];
-    /** The folders' revisions of the Work's row, read once when the command goes. */
-    revisions: () => Promise<ReadonlyMap<string, string>>;
-    restore: boolean;
+    saw: TreeSaw | undefined;
   }): {
     commandId: string;
     answer: Promise<ApplyClickAnswer | null>;
     outcomes: Promise<CommandOutcome>[];
   } {
     const group = new GroupApply(crypto.randomUUID(), {
-      revisions: input.revisions,
-      restore: input.restore,
+      saw: input.saw,
       post: (body) => applyItems(input.projectId, input.branchId, body),
     });
     const joined = (started: StartedApply | null, member: { drop(): void }) => {
@@ -887,10 +910,10 @@ export class DraftCommandOwner {
       void started.outcome.then(member.drop);
       return started.outcome;
     };
-    const outcomes = input.members.map(({ ref, target, restore, tree }) => {
+    const outcomes = input.members.map(({ ref, target, tree }) => {
       const member = group.member(ref.documentId);
       return joined(
-        this.apply(ref, target, restore, tree, null, {
+        this.apply(ref, target, tree, input.saw, null, {
           commandId: group.commandId,
           send: member.send,
         }),
@@ -911,7 +934,7 @@ export class DraftCommandOwner {
         joined(
           busy
             ? null
-            : this.captureTree(ref, { revision: null }, false, {
+            : this.captureTree(ref, input.saw, {
                 commandId: group.commandId,
                 send: member.send,
               }),
