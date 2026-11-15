@@ -52,11 +52,10 @@ export function createAgentsLevelLocks(
       const connection = await Promise.race([pending, timedOut]);
       clearTimeout(timer);
       if (!connection) {
-        // The connection arrives later; it goes straight back.
+        // The connection arrives later and goes straight back; a failed reserve holds nothing.
         void pending.then(
           (late) => late.release(),
-          (error: unknown) =>
-            console.warn("Agents level lock connection failed after its wait ended", error),
+          () => undefined,
         );
         return { held: false };
       }
