@@ -195,7 +195,11 @@ lists' records; its receipt is marked `across_lists`, names every node that cros
 with what stood in it), so an `undo` at any of their paths, old or new, finds it, and is taken
 back by the same move the other way with the receipt's records (`reverses`): each node below the
 root settles on its own, so one renamed or deleted since never refuses the rest. A call that
-moves two folders across has a receipt for each, and Undo of one takes only that one. A model
+moves two folders across has a receipt for each, and Undo of one takes only that one. An `undo`
+at a path nothing stands at now finds what this chat's receipts took from it
+(`AgentTreeHistory.nodeLeftAt`): first what was deleted there, had its create undone or crossed
+from there, else the node a receipt moved from that path, or from a folder above it, so Undo at a
+document's old path inside a moved folder takes back the folder's move. A model
 `undo` that takes tree and text steps together is one command (the tree receipts
 first, then the text engine's), so a refusal of the text half takes the tree half back with it.
 The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do,

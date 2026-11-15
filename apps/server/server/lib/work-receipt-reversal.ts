@@ -130,16 +130,7 @@ export async function reverseTurnCard(
       receipt as Parameters<typeof moveBackAcrossLists>[1],
       { type: "human", userId: input.userId, threadId: input.threadId },
     );
-    if (moved.ok)
-      return {
-        ok: true,
-        records: moved.value.records,
-        nodes: moved.value.nodes.map((each) => ({
-          nodeId: each.node,
-          beforeAt: each.before,
-          afterAt: each.after,
-        })),
-      };
+    if (moved.ok) return { ok: true, records: moved.value.records, nodes: moved.value.nodes };
     return {
       ok: false,
       cause: ["stale_target", "stale_source", "not_found"].includes(moved.error.code)

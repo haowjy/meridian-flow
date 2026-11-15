@@ -16,6 +16,7 @@ import type {
   ContextMoveAcrossListsChange,
   ContextPort,
 } from "../../domains/context/ports/context-port.js";
+import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
 import { movesInto, reachPath } from "../../domains/context/tree/tree-commands.js";
 import { type FileGrant, runWithEditGrants } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -116,11 +117,7 @@ async function moveOne(
         inTransaction: async (moved) => {
           const recorded = await history.recordAgentTreeChange({
             subject: move.node,
-            nodes: moved.nodes.map((each) => ({
-              nodeId: each.node,
-              beforeAt: each.before,
-              afterAt: each.after,
-            })),
+            nodes: moved.nodes,
             records: moved.records,
             op: "move",
             acrossLists: true,
@@ -142,109 +139,107 @@ async function moveOne(
     return { refused: writeToolError("move", contextErrorMessage(run.value.error)) };
   const moved = run.value.value;
   return {
-    moved: { node: move.node, uri: moved.nodes[0]?.after ?? moved.destinationUri } satisfies Moved,
+    moved: {
+      node: move.node,
+      uri: moved.nodes[0]?.afterAt ?? moved.destinationUri,
+    } satisfies Moved,
     handle,
   };
 }
 
 /**
- * The `move` that leaves a list: each of `from` into the folder or name `path` gives in the other,
- * read as a move in one list reads it (`movesInto`). A node in Trash crosses live: a move restores
- * it.
+ * The sources of a `move` that leave their list, one by one: each into the folder or name `path`
+ * gives in the other, read as a move in one list reads it (`movesInto`). A node in Trash crosses
+ * live: a move restores it. One source that can't move refuses the call; of several, it is
+ * listed among those not moved.
  */
-export async function runMoveAcrossLists(
+export async function crossEach(
   deps: ToolWiringDeps,
   call: ToolCall,
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
   command: { from: readonly string[]; path: string; many: boolean },
-  /** Runs the moves as the call's command. */
-  settle: (effect: () => Promise<unknown>) => Promise<unknown>,
-) {
-  const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
-  return settle(async () => {
-    const shown = await shownNamesOf(ctx);
-    const moved: Moved[] = [];
-    const notMoved: string[] = [];
-    let handle: string | undefined;
-    let landed: string | undefined;
-    for (const from of command.from) {
-      const source = areaOfPath(from) as NonNullable<ReturnType<typeof areaOfPath>>;
-      const found = await call.context.port.readTree(source.area, {
-        read: (scope) => reachPath(scope, source.area, shown, source.rest, { deleted: true }),
-      });
-      const reached = found.ok ? found.value : undefined;
-      if (reached?.kind !== "node") {
-        if (!command.many) return writeToolError("move", `Nothing moved: ${from} (not found).`);
-        notMoved.push(`${from} (not found)`);
-        continue;
-      }
-      const folder = reached.node.kind === "folder";
-      const into =
-        command.many ||
-        // The top of a source is a folder that exists.
-        to.rest === "" ||
-        (await (async () => {
-          const there = await call.context.port.readTree(to.area, {
-            read: (scope) => reachPath(scope, to.area, shown, to.rest, { destination: true }),
-          });
-          return movesInto(
-            command.path,
-            folder,
-            () => there.ok && there.value.kind === "node" && there.value.node.kind === "folder",
-          );
-        })());
-      const leaf = lastSegment(to.rest);
-      const sourceName = lastSegment(source.rest);
-      const renamed =
-        !into && (folder ? leaf !== sourceName : canonicalLeaf(leaf) !== canonicalLeaf(sourceName));
-      const result = await moveOne(deps, call, ctx, grants, {
-        node: reached.node.id,
-        folder,
-        fromArea: source.area,
-        change: {
-          folderUri: joinContextUri(to.area, into ? to.rest : folderPart(to.rest)),
-          ...(renamed ? { name: leaf } : {}),
-        },
-        shownAt: reached.uri,
-      });
-      if (result.refused) {
-        if (!command.many) return result.refused;
-        notMoved.push(`${from} (not moved)`);
-        continue;
-      }
-      moved.push(result.moved);
-      handle = result.handle;
-      // Where the model would think it is: said back when a taken name was numbered.
-      const expected = into ? joinContextUri(to.area, `${to.rest}${sourceName}`) : command.path;
-      const plain = (uri: string) => (folder ? uri.replace(/\/$/, "") : canonicalLeaf(uri));
-      if (plain(result.moved.uri) !== plain(expected)) landed = result.moved.uri;
+): Promise<
+  | { refused: unknown }
+  | {
+      moved: number;
+      notMoved: string[];
+      handle?: string;
+      /** Where the one source landed, when a taken name was numbered. */
+      landed?: string;
+      names: ShownDelta | undefined;
     }
-    if (moved.length === 0) return writeToolError("move", `Nothing moved: ${notMoved.join("; ")}`);
-    const names = await printedNames(
+> {
+  const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
+  const shown = await shownNamesOf(ctx);
+  const moved: Moved[] = [];
+  const notMoved: string[] = [];
+  let handle: string | undefined;
+  let landed: string | undefined;
+  for (const from of command.from) {
+    const source = areaOfPath(from) as NonNullable<ReturnType<typeof areaOfPath>>;
+    const found = await call.context.port.readTree(source.area, {
+      read: (scope) => reachPath(scope, source.area, shown, source.rest, { deleted: true }),
+    });
+    const reached = found.ok ? found.value : undefined;
+    if (reached?.kind !== "node") {
+      if (!command.many)
+        return { refused: writeToolError("move", `Nothing moved: ${from} (not found).`) };
+      notMoved.push(`${from} (not found)`);
+      continue;
+    }
+    const folder = reached.node.kind === "folder";
+    const into =
+      command.many ||
+      // The top of a source is a folder that exists.
+      to.rest === "" ||
+      (await (async () => {
+        const there = await call.context.port.readTree(to.area, {
+          read: (scope) => reachPath(scope, to.area, shown, to.rest, { destination: true }),
+        });
+        return movesInto(
+          command.path,
+          folder,
+          () => there.ok && there.value.kind === "node" && there.value.node.kind === "folder",
+        );
+      })());
+    const leaf = lastSegment(to.rest);
+    const sourceName = lastSegment(source.rest);
+    const renamed =
+      !into && (folder ? leaf !== sourceName : canonicalLeaf(leaf) !== canonicalLeaf(sourceName));
+    const result = await moveOne(deps, call, ctx, grants, {
+      node: reached.node.id,
+      folder,
+      fromArea: source.area,
+      change: {
+        folderUri: joinContextUri(to.area, into ? to.rest : folderPart(to.rest)),
+        ...(renamed ? { name: leaf } : {}),
+      },
+      shownAt: reached.uri,
+    });
+    if (result.refused) {
+      if (!command.many) return { refused: result.refused };
+      notMoved.push(`${from} (not moved)`);
+      continue;
+    }
+    moved.push(result.moved);
+    handle = result.handle;
+    // Where the model would think it is: said back when a taken name was numbered.
+    const expected = into ? joinContextUri(to.area, `${to.rest}${sourceName}`) : command.path;
+    const plain = (uri: string) => (folder ? uri.replace(/\/$/, "") : canonicalLeaf(uri));
+    if (plain(result.moved.uri) !== plain(expected)) landed = result.moved.uri;
+  }
+  return {
+    moved: moved.length,
+    notMoved,
+    ...(handle ? { handle } : {}),
+    ...(landed ? { landed } : {}),
+    names: await printedNames(
       call,
       to.area,
       moved.map((entry) => entry.node),
-    );
-    return {
-      output: modelResult({
-        command: "move",
-        status: "success",
-        phase: "committed",
-        payload: {
-          ...(!command.many && landed ? { path: landed } : {}),
-          destination: "live" as const,
-          ...(handle ? { write: { id: handle } } : {}),
-          tree: {
-            ...(command.many ? { moved: { made: moved.length, of: command.from.length } } : {}),
-            ...(notMoved.length > 0 ? { notMoved } : {}),
-          },
-        },
-      }),
-      metadata: { treeWrite: true },
-      evidence: { shown: [], ...namesEvidence(names) },
-    };
-  });
+    ),
+  };
 }
 
 /** Takes a move between lists back (or does an undone one again): the node goes the other way. */

@@ -9,7 +9,7 @@ import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts";
 import { contextPortForThread } from "../../domains/context/index.js";
-import { decodeDelta } from "../../domains/context/tree/names-shown.js";
+import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
 import {
   type Placement,
   runTreeCommand,
@@ -33,7 +33,7 @@ import {
   type WriteToolErrorOutput,
   writeToolError,
 } from "./tool-context.js";
-import { crossesLists, runMoveAcrossLists } from "./tree-across-lists.js";
+import { crossEach, crossesLists } from "./tree-across-lists.js";
 
 type MoveInput = Extract<WriteToolInput, { command: "move" }>;
 type DeleteInput = Extract<WriteToolInput, { command: "delete" }>;
@@ -64,60 +64,6 @@ function commandOf(input: TreeToolInput): TreeCommand | WriteToolErrorOutput {
 function uriOfWritten(path: string): string {
   const at = areaOfPath(path);
   return at ? `${at.area}${at.rest}` : path;
-}
-
-type MoveAnswer = {
-  isError?: true;
-  output: ReturnType<typeof modelResult>;
-  metadata?: unknown;
-  evidence?: { shown: unknown[]; names?: unknown };
-};
-
-/**
- * The one answer for a move whose sources went two ways: what each part moved and left, added up.
- * A part that moved nothing says why among the ones not moved; only when both did is the call refused.
- */
-function joinMoves(stayed: unknown, crossed: unknown, of: number) {
-  const parts = [stayed, crossed] as MoveAnswer[];
-  const done = parts.filter((part) => !part.isError);
-  if (done.length === 0)
-    return writeToolError(
-      "move",
-      parts.map((part) => part.output.message ?? "Nothing moved.").join(" "),
-    );
-  const tree = (part: MoveAnswer) =>
-    (part.output.tree ?? {}) as NonNullable<typeof part.output.tree>;
-  const notMoved = parts.flatMap((part) =>
-    part.isError ? [part.output.message ?? "not moved"] : (tree(part).notMoved ?? []),
-  );
-  const handle = done.map((part) => part.output.write?.id).findLast(Boolean);
-  const shown = done.flatMap((part) => {
-    const names = part.evidence?.names as { snapshot: Uint8Array } | undefined;
-    return names ? [decodeDelta(names.snapshot)] : [];
-  });
-  return {
-    output: modelResult({
-      command: "move",
-      status: "success",
-      phase: "committed",
-      payload: {
-        destination: "live" as const,
-        ...(handle ? { write: { id: handle } } : {}),
-        tree: {
-          moved: { made: done.reduce((sum, part) => sum + (tree(part).moved?.made ?? 0), 0), of },
-          ...(notMoved.length > 0 ? { notMoved } : {}),
-        },
-      },
-    }),
-    metadata: { treeWrite: true },
-    evidence: {
-      shown: [],
-      ...namesEvidence({
-        whole: shown.flatMap((delta) => delta.whole),
-        names: shown.flatMap((delta) => delta.names),
-      }),
-    },
-  };
 }
 
 function refusalOf(input: TreeToolInput, result: Extract<TreeResult, { ok: false }>) {
@@ -178,35 +124,17 @@ export async function runTreeToolCommand(
       input.command,
       "A change in a Work's draft can't move files between a project and the account's files.",
     );
-  if (leaving.length > 0 && command.command === "move") {
-    // Each source goes the way its own area says: the ones that stay in their list through the
-    // in-list move, the rest across, and the call has one answer.
-    const staying = command.from.filter((from) => !leaving.includes(from));
-    const now = (effect: () => Promise<unknown>) => effect();
-    const across = (run: typeof settle) =>
-      runMoveAcrossLists(deps, call, ctx, grants, { ...command, from: leaving }, run);
-    if (staying.length === 0) return across(settle);
-    return settle(async () =>
-      joinMoves(
-        await runTreeToolCommand(
-          deps,
-          call,
-          { ...(input as MoveInput), from: { paths: staying } },
-          ctx,
-          now,
-        ),
-        await across(now),
-        command.from.length,
-      ),
-    );
-  }
+  // Each source goes the way its own area says: the ones that stay in their list by one tree
+  // command, the rest across lists one by one, and the call has one answer.
+  const across = command.command === "move" && leaving.length > 0 ? command : undefined;
+  const staying = across ? across.from.filter((from) => !leaving.includes(from)) : [];
   const drafted = draftArea !== undefined;
   const destination = (grants.find((granted) => granted.destination.kind === "draft") ?? grants[0])
     ?.destination;
   // A drafted change runs in the source that has the chat's draft; a live one in the path's own.
   const area = draftArea ?? primary;
   const places = { area, roots, locate: (path: string) => areaOfPath(path) };
-  const local = command;
+  const local: TreeCommand = across ? { ...across, from: staying } : command;
 
   const shown = await shownNamesOf(ctx);
   const history = deps.documentSync.treeHistory();
@@ -225,7 +153,7 @@ export async function runTreeToolCommand(
       });
   let handle: string | undefined;
 
-  return settle(async () => {
+  const withinList = async (): Promise<InList> => {
     const run = await runWithEditGrants(deps.fileAccess, grants, () =>
       port.treeCommand(area, {
         origin,
@@ -261,11 +189,14 @@ export async function runTreeToolCommand(
       }),
     );
     if (!run.ok)
-      return fileAccessDeniedError(input.command, firstRefusal(run.refusal), paths[0] as string);
+      return refused(
+        fileAccessDeniedError(input.command, firstRefusal(run.refusal), paths[0] as string),
+      );
     const done = run.value;
-    if (!done.ok) return writeToolError(input.command, contextErrorMessage(done.error));
+    if (!done.ok) return refused(writeToolError(input.command, contextErrorMessage(done.error)));
     const result = done.value;
-    if (!result.ok) return refusalOf(input, result);
+    if (!result.ok)
+      return { refused: refusalOf(input, result), notMoved: result.notMoved ?? [result.message] };
 
     // A delete is never refused for its Works: they keep their drafts of what it took.
     const survivingWorks =
@@ -301,15 +232,70 @@ export async function runTreeToolCommand(
         ...(result.concurrent.length > 0 ? { concurrent: result.concurrent } : {}),
       },
     };
-    return {
-      output: modelResult({
-        command: input.command,
-        status: "success",
-        phase: "committed",
-        payload,
-      }),
-      metadata: { treeWrite: true },
-      evidence: { shown: [], ...namesEvidence(result.delta) },
-    };
+    return { payload, delta: result.delta };
+  };
+
+  return settle(async () => {
+    const stayed = staying.length > 0 || !across ? await withinList() : undefined;
+    if (!across) {
+      const only = stayed as InList;
+      return "refused" in only ? only.refused : answerOf(input.command, only.payload, only.delta);
+    }
+    const crossed = await crossEach(deps, call, ctx, grants, { ...across, from: leaving });
+    if ("refused" in crossed) return crossed.refused;
+    const notMoved = [
+      ...(stayed === undefined
+        ? []
+        : "refused" in stayed
+          ? stayed.notMoved
+          : (stayed.payload.tree?.notMoved ?? [])),
+      ...crossed.notMoved,
+    ];
+    const kept = stayed && "payload" in stayed ? stayed : undefined;
+    const made = (kept?.payload.tree?.moved?.made ?? 0) + crossed.moved;
+    if (made === 0) return writeToolError("move", `Nothing moved: ${notMoved.join("; ")}`);
+    const handle = crossed.handle ?? kept?.payload.write?.id;
+    return answerOf(
+      "move",
+      {
+        ...(kept?.payload ?? {}),
+        ...(!across.many && crossed.landed ? { path: crossed.landed } : {}),
+        destination: "live",
+        ...(handle ? { write: { id: handle } } : {}),
+        tree: {
+          ...(kept?.payload.tree ?? {}),
+          ...(across.many ? { moved: { made, of: across.from.length } } : {}),
+          ...(notMoved.length > 0 ? { notMoved } : {}),
+        },
+      },
+      {
+        whole: [...(kept?.delta?.whole ?? []), ...(crossed.names?.whole ?? [])],
+        names: [...(kept?.delta?.names ?? []), ...(crossed.names?.names ?? [])],
+      },
+    );
   });
+}
+
+type Payload = NonNullable<Parameters<typeof modelResult>[0]["payload"]>;
+
+/** What the part of a call that stays in its list did: its answer, or why it moved nothing. */
+type InList =
+  | { refused: unknown; notMoved: string[] }
+  | { payload: Payload; delta: ShownDelta | undefined };
+
+const refused = (answer: { output: { message?: string } }): InList => ({
+  refused: answer,
+  notMoved: [answer.output.message ?? "not moved"],
+});
+
+function answerOf(
+  command: TreeToolInput["command"],
+  payload: Payload,
+  delta: ShownDelta | undefined,
+) {
+  return {
+    output: modelResult({ command, status: "success", phase: "committed", payload }),
+    metadata: { treeWrite: true },
+    evidence: { shown: [], ...namesEvidence(delta) },
+  };
 }

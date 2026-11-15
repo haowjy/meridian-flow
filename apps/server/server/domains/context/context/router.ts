@@ -493,10 +493,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       nodes: written.nodes.map((each) => {
         const slash = each.kind === "folder" ? "/" : "";
         return {
-          node: each.node,
-          kind: each.kind,
-          before: `${uriFor(source.scheme, each.before, source.authority)}${slash}`,
-          after: `${uriFor(destination.scheme, each.after, destination.authority)}${slash}`,
+          nodeId: each.node,
+          beforeAt: `${uriFor(source.scheme, each.before, source.authority)}${slash}`,
+          afterAt: `${uriFor(destination.scheme, each.after, destination.authority)}${slash}`,
         };
       }),
     });

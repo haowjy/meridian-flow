@@ -58,6 +58,8 @@ export type Refused = {
   status: "invalid_write" | "document_not_found";
   path: string;
   message: string;
+  /** A move of several that moved none: each source and why, as the message lists them. */
+  notMoved?: string[];
   delta: ShownDelta;
 };
 
@@ -852,11 +854,11 @@ export function runTreeCommand(
         // Everything was already there or left out: the call is done. Anything else named nothing.
         if (nothingToMake !== undefined && notMoved.length + leftOut.length === command.from.length)
           return finish(nothingDone(nothingToMake, command.path, { notMoved, leftOut }));
-        return refuse(
-          "invalid_write",
-          toUri,
-          `Nothing moved: ${[...notMoved, ...leftOut.map((left) => left.path)].join("; ")}`,
-        );
+        const none = [...notMoved, ...leftOut.map((left) => left.path)];
+        return {
+          ...refuse("invalid_write", toUri, `Nothing moved: ${none.join("; ")}`),
+          notMoved: none,
+        };
       }
       const kept = keptTrashed(cx, projection, folder.destination.trashed);
       return finish({

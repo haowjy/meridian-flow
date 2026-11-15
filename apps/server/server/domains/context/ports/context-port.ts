@@ -339,13 +339,8 @@ export type ContextMovedAcrossLists = {
   node: string;
   /** Every record the move made, in both lists, with the node each acts on. */
   records: Array<{ record: string; node: string }>;
-  /** Each node that crossed, root first, with its address before and after. */
-  nodes: Array<{
-    node: string;
-    kind: "folder" | "document" | "file";
-    before: string;
-    after: string;
-  }>;
+  /** Each node that crossed, root first, with its address before and after: a receipt's nodes. */
+  nodes: Array<{ nodeId: string; beforeAt: string; afterAt: string }>;
 };
 
 export interface ContextMoveAcrossListsChange {
