@@ -2,8 +2,8 @@
  * The sources of a model's `move` that are in another list (a project's files and the account's
  * `user://` files are two lists): each is copied, with the writer's Copy (`port.copy`), and the
  * original stays. A list is the unit of history, so nothing moves between two. The copy is one
- * command for all of them, and each copied root gets a `create` receipt, so `undo` and a card's
- * Undo take the copy away.
+ * command for all of them with one `create` receipt, which holds every copied root and the
+ * folders the copy made to reach its destination, so one `undo` or a card's Undo takes it away.
  */
 
 import { createHash } from "node:crypto";
@@ -83,7 +83,7 @@ export async function copyAcross(
       nodeId: reached.node.id,
     });
   }
-  if (sources.length === 0) return { area: to.area, roots: [], notCopied };
+  if (sources.length === 0) return { area: to.area, roots: [], folders: [], notCopied };
 
   const intoFolder = command.many || command.path.endsWith("/");
   const into = intoFolder ? to.rest : folderPart(to.rest);
@@ -107,7 +107,13 @@ export async function copyAcross(
     return entry ? [{ source, entry }] : [];
   });
   const name = intoFolder ? "" : to.rest.slice(into.length);
-  return { area: to.area, roots, notCopied, ...(name ? { name } : {}) };
+  return {
+    area: to.area,
+    roots,
+    folders: done.value.folders,
+    notCopied,
+    ...(name ? { name } : {}),
+  };
 }
 
 /** What `copyAcross` made: each source's copied root, and the sources not copied with why. */
@@ -117,13 +123,15 @@ export type Copies = {
     source: { from: string; nodeId: string };
     entry: { kind: "file" | "folder"; id: string; path: string };
   }>;
+  /** The folders the copy made to reach its destination, outermost first. */
+  folders: string[];
   notCopied: string[];
   /** The name one source's path gave it; the copy took its original's, and is renamed to this. */
   name?: string;
 };
 
 /**
- * Each copy's `create` receipt, in the call's command: what the model's `undo` and a card's Undo
+ * The copy's `create` receipt, in the call's command: what the model's `undo` and a card's Undo
  * take back. The copy itself ran before the command, as the writer's Copy does: it reads its
  * sources outside any transaction.
  */
@@ -132,64 +140,67 @@ export async function recordCopies(
   call: ToolCall,
   ctx: ToolHandlerContext,
   port: ContextPort,
-  { area, roots, notCopied, name }: Copies,
+  { area, roots, folders, notCopied, name }: Copies,
 ): Promise<CopiedAcross> {
-  const to = { area };
-  // The copy's records: each root's create and every create below it, which its Undo takes back,
-  // and the rename to the name the path gave, which the same Undo takes back first.
-  const made = await port.treeCommand(to.area, {
+  // The copy's records: the folders it made, each root's create and every create below it, and
+  // the rename to the name the path gave, which the same Undo takes back first.
+  const made = await port.treeCommand(area, {
     make: (scope) => {
       const creates = new Map(
         listRecords(scope.writer.doc).flatMap((record) =>
           record.type === "create" ? [[record.node, record.id] as const] : [],
         ),
       );
-      const before = scope.writer.view(scope.view);
-      const result = roots.map(({ entry }) => {
-        const records = [entry.id, ...descendantsOf(before, entry.id)].flatMap((node) => {
+      const recordsOf = (nodes: readonly string[]) =>
+        nodes.flatMap((node) => {
           const record = creates.get(node);
           return record ? [{ record, node }] : [];
         });
+      const before = scope.writer.view(scope.view);
+      const records = recordsOf(folders);
+      const names = roots.map(({ entry }) => {
+        records.push(...recordsOf([entry.id, ...descendantsOf(before, entry.id)]));
         const renamed = name ? renameCopy(scope, entry.id, name) : undefined;
         if (renamed) records.push({ record: renamed, node: entry.id });
-        const node = scope.writer.view(scope.view).nodes.get(entry.id);
-        return { records, name: node?.displayName };
+        return scope.writer.view(scope.view).nodes.get(entry.id)?.displayName;
       });
-      return { result };
+      return { result: { records, names } };
     },
   });
   if (!made.ok) throw new Error(`The copy's tree did not write: ${made.error.code}`);
 
-  const history = deps.documentSync.treeHistory();
-  let handle: string | undefined;
-  const landed: CopiedAcross["landed"] = [];
-  for (const [at, { source, entry }] of roots.entries()) {
+  const landed = roots.map(({ source, entry }, at) => {
     const copiedAt = entry.path.replace(/^\/+|\/+$/g, "");
-    const named = made.value[at]?.name;
+    const named = made.value.names[at];
     const path = named ? `${folderPart(copiedAt)}${named}` : copiedAt;
-    const uri = joinContextUri(to.area, `${path}${entry.kind === "folder" ? "/" : ""}`);
-    landed.push({ from: source.from, to: uri });
-    const recorded = await history.recordAgentTreeChange({
-      subject: entry.id,
-      nodes: [{ nodeId: entry.id, beforeAt: null, afterAt: uri }],
-      records: made.value[at]?.records ?? [],
-      op: "create",
-      threadId: ctx.threadId as ThreadId,
-      ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
-      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-      shownAt: uri,
-    });
-    handle = recorded.handle;
-  }
+    return {
+      from: source.from,
+      to: joinContextUri(area, `${path}${entry.kind === "folder" ? "/" : ""}`),
+      node: entry.id,
+    };
+  });
+  const first = landed[0];
+  const recorded = first
+    ? await deps.documentSync.treeHistory().recordAgentTreeChange({
+        subject: first.node,
+        nodes: landed.map(({ node, to }) => ({ nodeId: node, beforeAt: null, afterAt: to })),
+        records: made.value.records,
+        op: "create",
+        threadId: ctx.threadId as ThreadId,
+        ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
+        ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+        shownAt: first.to,
+      })
+    : undefined;
   return {
     copied: roots.length,
-    landed,
+    landed: landed.map(({ from, to }) => ({ from, to })),
     notCopied,
-    ...(handle ? { handle } : {}),
+    ...(recorded ? { handle: recorded.handle } : {}),
     names: await printedNames(
       call,
-      to.area,
+      area,
       roots.map(({ entry }) => entry.id),
     ),
   };

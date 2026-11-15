@@ -1087,7 +1087,8 @@ export function runTreeUndo(
     outcomes,
     made: cx.made,
     inLive,
-    landedAt: here ? nodeUri(cx, after, here) : asked,
+    // A create taken back leaves its node in Trash: the answer names the path it was asked by.
+    landedAt: here && !here.trashed ? nodeUri(cx, after, here) : asked,
     ...(standing[0] ? { kept: keptStanding(cx, after, standing[0].id, standing[0].children) } : {}),
     touched,
     delta: {

@@ -239,7 +239,7 @@ export interface SourceTree {
       roots: readonly NewNode[];
       position?: ContextSiblingPosition;
     },
-  ): Promise<Result<{ kind: "inserted" } | { kind: "replan" }, AdapterFault>>;
+  ): Promise<Result<{ kind: "inserted"; folders: string[] } | { kind: "replan" }, AdapterFault>>;
   /**
    * One tree command on this source's list: `make` runs under the list's lock on the copy at the
    * journal's head, makes whatever records it decides on and returns its answer. A refused answer
@@ -382,10 +382,11 @@ export function createSourceTree(deps: {
 
     async insertTree(target, input) {
       const sourceId = await deps.sourceId();
-      const result = await write<{ kind: "inserted" } | { kind: "replan" }>(
+      const result = await write<{ kind: "inserted"; folders: string[] } | { kind: "replan" }>(
         [await list()],
         ([{ writer }]) => {
-          const parent = ensureFolders(writer, target, sourceId, input.dir);
+          const made: MadeFolder[] = [];
+          const parent = ensureFolders(writer, target, sourceId, input.dir, made);
           if (!parent.ok) return parent;
           const projection = writer.view(target.view);
           if (input.roots.some((root) => childNamed(projection, parent.value, root.filename)))
@@ -418,7 +419,7 @@ export function createSourceTree(deps: {
           };
           for (const [index, root] of input.roots.entries())
             put(root, parent.value, rootRanks[index] as string);
-          return Ok({ kind: "inserted" as const });
+          return Ok({ kind: "inserted" as const, folders: made.map((folder) => folder.node) });
         },
       );
       if (result.ok && result.value.kind === "inserted") await annotateTree(input.roots);
