@@ -22,12 +22,21 @@ export interface ApplyFilesInput {
   delete: boolean;
 }
 
-export interface FileChange {
-  outcome: "created" | "merged" | "deleted" | "unchanged" | "skipped";
-  clashes: number;
-  documentId?: string;
-  text?: string;
-}
+export type FileChange =
+  | {
+      outcome: "created" | "merged" | "deleted" | "unchanged" | "skipped";
+      clashes: number;
+      documentId?: string;
+      text?: string;
+    }
+  | {
+      outcome: "landed-elsewhere";
+      path: string;
+      actualPath: string;
+      clashes: number;
+      documentId?: string;
+      text?: string;
+    };
 
 export type FileChanges = Record<string, FileChange>;
 
@@ -37,6 +46,10 @@ export interface AgentLevelFiles {
    * Plan and bind before the caller opens its transaction. With creation off no binding is
    * needed, so Undo may prepare inside its transaction. Call the returned applyFiles inside
    * that transaction after the package's Save locks; it takes the list before document locks.
+   * An obstructed path (folder, blocked ancestor, prose or binary) keeps its occupant.
+   * With creation enabled, a target lands at a settled name and reports landed-elsewhere
+   * with requested path and actualPath; deletion is skipped. Calls retain no path history:
+   * import and update callers must record actualPath and pass it on their next call.
    * A deletion keeps a file whose text differs from its base and reports one clash.
    */
   prepareFiles(input: ApplyFilesInput): Promise<{ applyFiles(): Promise<FileChanges> }>;

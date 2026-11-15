@@ -89,9 +89,13 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   documents resolve from the account, not from `projectId`.
   `prepareFiles` binds creates outside transactions; its returned `applyFiles` runs inside the
   caller's transaction, after package Save locks. It takes the level's list lock before
-  document mutation locks in id order. Creates share Copy's plan, binding and single tree
-  submission; deletion removes only a source document whose text still equals its base. A binary or prose
-  replacement is kept and reported as a clash, even when the base was empty. Results carry each file's
+  document mutation locks in id order. Creates share Copy's plan identities, binding and single
+  tree submission, not its allocate-new-name policy: Apply uses the paths it receives unless
+  obstructed. Deletion removes only a source document whose text still equals its base.
+  An obstructed path (a folder, blocked ancestor, prose or binary document) keeps its occupant. With creation enabled a target lands at a settled name beside the obstruction;
+  the result is `landed-elsewhere`, with requested `path`, `actualPath`, and one clash.
+  Deletion at an obstructed path is `skipped`. Import and update callers record `actualPath`
+  and use it next time: the adapter keeps no history of earlier calls. Results carry each file's
   outcome, resulting text, document identity and clash count. A deleted or newly occupied path
   between preparation and application is replanned under the list lock.
   A package's state (`saved`, `unsaved`, `cant-save`, `not-saved`, `removed`) is computed in

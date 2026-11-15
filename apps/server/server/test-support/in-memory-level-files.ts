@@ -33,10 +33,12 @@ export function createInMemoryLevelFiles(): InMemoryLevelFiles {
               const merged = mergeCodeText({ base: base ?? "", live, target });
               levels[level][path] = merged.text;
               results[path] = { ...merged, outcome: merged.text === live ? "unchanged" : "merged" };
+            } else if (live !== undefined && target === undefined && remove) {
+              results[path] = { outcome: "unchanged", text: live, clashes: 1 };
             } else
               results[path] = {
                 outcome: "skipped",
-                clashes: target === undefined && live !== undefined && remove ? 1 : 0,
+                clashes: 0,
               };
           }
           return results;

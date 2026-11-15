@@ -72,6 +72,10 @@ export async function planCopyTree(
     parent.found ? await deps.store.namesAt(LIVE_TREE, parent.id) : new Set(),
     input.roots,
   );
+  return treePlan(input.dir, planned);
+}
+
+export function treePlan(dir: readonly string[], planned: readonly PlannedCopyNode[]): CopyPlan {
   const nodes = flatten(planned);
   const identity = createCopyIdentityMap({
     // Binaries are in the map too: an image inside the copied set must show its copy.
@@ -101,7 +105,7 @@ export async function planCopyTree(
     ),
   });
   return {
-    dir: input.dir,
+    dir,
     roots: planned,
     map: identity,
     documents: nodes.filter(

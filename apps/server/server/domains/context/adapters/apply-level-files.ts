@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import type { UserId } from "@meridian/contracts";
 import { agentsRootOf } from "@meridian/contracts/agents";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
@@ -14,13 +15,13 @@ import type { CollabDomain } from "../../collab/index.js";
 import type { ApplyFilesInput, FileChanges } from "../../packages/ports/agent-level-files.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { type BoundTree, bindTree } from "../copy/bind-tree.js";
-import type { CopySourceFile } from "../ports/context-copy.js";
+import type { CopyPlan, CopySourceFile, PlannedCopyFile } from "../ports/context-copy.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import type { TreeListStore } from "../ports/tree-list-store.js";
-import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./context-fs/copy-tree.js";
+import { type CopyTreeDeps, insertPlannedTrees, treePlan } from "./context-fs/copy-tree.js";
 import { createSourceTree } from "./context-fs/tree-writes.js";
-import { candidatesOf } from "./level-file-candidates.js";
-import { listIdOf, treeListOfSource } from "./tree-list-facts.js";
+import { levelFilePaths } from "./level-file-paths.js";
+import { treeListOfSource } from "./tree-list-facts.js";
 
 export interface ApplyLevelFilesDeps {
   db: Database;
@@ -64,14 +65,22 @@ export async function prepareLevelFiles(deps: ApplyLevelFilesDeps, input: ApplyF
     holderUri,
     folderUri: holderUri,
   };
-  const schemePath = (path: string) => [root.path, path].filter(Boolean).join("/");
-  const plan = async (
-    candidates: Awaited<ReturnType<typeof candidatesOf>>,
-  ): Promise<BoundTree[]> => {
-    const groups = new Map<string, CopySourceFile[]>();
+  const schemePath = (path: string) => posix.join(root.path, path);
+  const classify = async () => {
+    const paths = await levelFilePaths(store);
+    return {
+      paths,
+      files: new Map(
+        Object.keys(input.files).map((path) => [path, paths.classify(schemePath(path))]),
+      ),
+    };
+  };
+  const plan = ({ paths, files }: Awaited<ReturnType<typeof classify>>): CopyPlan[] => {
+    const groups = new Map<string, PlannedCopyFile[]>();
     for (const [path, change] of Object.entries(input.files)) {
-      if (!input.create || change.target === undefined || candidates.has(path)) continue;
-      const full = schemePath(path);
+      if (!input.create || change.target === undefined || files.get(path)?.kind === "source")
+        continue;
+      const full = paths.allocate(schemePath(path));
       const segments = full.split("/");
       const filename = segments.pop() as string;
       const dir = segments.join("/");
@@ -90,12 +99,25 @@ export async function prepareLevelFiles(deps: ApplyLevelFilesDeps, input: ApplyF
         sizeBytes: null,
         hasPreview: false,
       };
-      groups.set(dir, [...(groups.get(dir) ?? []), file]);
+      groups.set(dir, [
+        ...(groups.get(dir) ?? []),
+        {
+          kind: "file",
+          source: file,
+          id: crypto.randomUUID(),
+          name: file.name,
+          extension: file.extension,
+          path: full,
+          uri: holderUri(full),
+        },
+      ]);
     }
-    const plans: BoundTree[] = [];
-    for (const [dir, roots] of groups) {
-      const planned = await planCopyTree(treeDeps, { dir: dir ? dir.split("/") : [], roots });
-      plans.push(
+    return [...groups].map(([dir, roots]) => treePlan(dir ? dir.split("/") : [], roots));
+  };
+  const bind = async (plans: CopyPlan[]): Promise<BoundTree[]> => {
+    const bound: BoundTree[] = [];
+    for (const planned of plans) {
+      bound.push(
         await bindTree(planned, (file) => ({
           state: deps.documentSync.encodeSeed(
             deps.documentSync.bindCopiedBlocks({
@@ -113,9 +135,9 @@ export async function prepareLevelFiles(deps: ApplyLevelFilesDeps, input: ApplyF
         })),
       );
     }
-    return plans;
+    return bound;
   };
-  let planned = input.create ? await plan(await candidatesOf(deps.db, input)) : [];
+  let planned = input.create ? await bind(plan(await classify())) : [];
   return {
     // Caller takes package Save locks first (in Save order), then this level's list lock,
     // then document mutation locks by id. All writes join that caller's transaction.
@@ -123,29 +145,23 @@ export async function prepareLevelFiles(deps: ApplyLevelFilesDeps, input: ApplyF
       if (!isInDrizzleTransaction())
         throw new Error("applyFiles requires the caller's transaction");
       const sourceId = await store.contextSourceId();
-      const listId = await listIdOf(deps.db, await treeListOfSource(deps.db, sourceId));
-      if (!listId) throw new Error("Agent files have no tree list");
-      await lockDocumentMutation(currentDrizzleDb(deps.db), listId);
-      const candidates = await candidatesOf(deps.db, input);
+      await deps.treeLists.lock([await treeListOfSource(deps.db, sourceId)]);
+      const current = await classify();
       const results: FileChanges = {};
-      // A new occupant changes a create into a merge, not a second numbered file.
       if (input.create) {
-        const expected = Object.keys(input.files)
-          .filter((path) => input.files[path]?.target !== undefined && !candidates.has(path))
-          .sort();
-        const prepared = planned
-          .flatMap(({ plan }) => plan.documents.map((file) => file.source.path))
-          .sort();
+        const next = plan(current);
+        const signature = (trees: CopyPlan[]) =>
+          trees.flatMap((plan) => plan.documents.map((file) => [file.source.path, file.path]));
         if (
-          expected.length !== prepared.length ||
-          expected.some((path, index) => path !== prepared[index])
+          JSON.stringify(signature(next)) !==
+          JSON.stringify(signature(planned.map(({ plan }) => plan)))
         )
-          planned = await plan(candidates);
+          planned = await bind(next);
       }
       if (planned.length > 0) {
         let inserted = await insertPlannedTrees(treeDeps, planned);
         if (inserted.ok && inserted.value.kind === "replan") {
-          planned = await plan(candidates);
+          planned = await bind(plan(await classify()));
           inserted = await insertPlannedTrees(treeDeps, planned);
         }
         if (!inserted.ok || inserted.value.kind !== "copied")
@@ -153,8 +169,14 @@ export async function prepareLevelFiles(deps: ApplyLevelFilesDeps, input: ApplyF
         for (const entry of inserted.value.entries) {
           if (entry.kind === "file")
             results[entry.copiedFrom] = {
-              outcome: "created",
-              clashes: 0,
+              ...(entry.path === schemePath(entry.copiedFrom)
+                ? { outcome: "created" as const, clashes: 0 }
+                : {
+                    outcome: "landed-elsewhere" as const,
+                    path: entry.copiedFrom,
+                    actualPath: posix.relative(root.path || ".", entry.path),
+                    clashes: 1,
+                  }),
               documentId: entry.id,
               text: input.files[entry.copiedFrom]?.target,
             };
@@ -163,21 +185,15 @@ export async function prepareLevelFiles(deps: ApplyLevelFilesDeps, input: ApplyF
       const existing = Object.entries(input.files)
         .flatMap(([path, change]) => {
           if (results[path]) return [];
-          const found = candidates.get(path);
-          if (found?.length !== 1 || (change.base === undefined && change.target === undefined)) {
-            results[path] = { outcome: "skipped", clashes: 0 };
-            return [];
-          }
-          const document = found[0].document;
-          // A binary has no text journal; its empty read is not an unchanged empty source file.
+          const found = current.files.get(path);
           if (
-            change.target === undefined &&
-            input.delete &&
-            (document.fileType !== null || document.filetype !== "source")
+            found?.kind !== "source" ||
+            (change.base === undefined && change.target === undefined)
           ) {
-            results[path] = { outcome: "skipped", documentId: document.id, clashes: 1 };
+            results[path] = { outcome: "skipped", clashes: found?.kind === "obstructed" ? 1 : 0 };
             return [];
           }
+          const document = found.document;
           return [{ path, change, id: document.id as DocumentId }];
         })
         .sort((a, b) => a.id.localeCompare(b.id));
