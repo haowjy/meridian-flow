@@ -14,7 +14,7 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
 import { boundCommandId } from "./drizzle-document-edits.js";
@@ -175,13 +175,53 @@ export function createDrizzleTreeHistory(
       });
     },
 
-    async receiptsAt(threadId, shownAt) {
-      const rows = await tx()
-        .select()
+    async nodeLeftAt(threadId, at) {
+      const [written] = await tx()
+        .select({ node: treeEditReceipts.nodeId })
         .from(treeEditReceipts)
-        .where(and(eq(treeEditReceipts.threadId, threadId), eq(treeEditReceipts.shownAt, shownAt)))
-        .orderBy(desc(treeEditReceipts.seq));
-      return rows.map((row) => receiptOf(row, [], 0));
+        .where(
+          and(
+            eq(treeEditReceipts.threadId, threadId),
+            eq(treeEditReceipts.shownAt, at),
+            or(
+              eq(treeEditReceipts.op, "delete"),
+              and(eq(treeEditReceipts.op, "create"), eq(treeEditReceipts.kind, "undo")),
+            ),
+          ),
+        )
+        .orderBy(desc(treeEditReceipts.seq))
+        .limit(1);
+      // What a receipt took from the path it was written at comes first: a blocker moved aside
+      // from a path never stands in for what was deleted there.
+      if (written) return { node: written.node, folder: at.endsWith("/") };
+      // A folder's move writes a row for the folder only, so a document that was inside it is
+      // found by the folder's old address above it. A folder's address ends in "/".
+      const [left] = await tx()
+        .select({
+          node: treeEditReceiptNodes.nodeId,
+          beforeAt: treeEditReceiptNodes.beforeAt,
+        })
+        .from(treeEditReceiptNodes)
+        .innerJoin(treeEditReceipts, eq(treeEditReceipts.id, treeEditReceiptNodes.receiptId))
+        .where(
+          and(
+            eq(treeEditReceiptNodes.threadId, threadId),
+            or(
+              eq(treeEditReceiptNodes.beforeAt, at),
+              and(
+                like(treeEditReceiptNodes.beforeAt, "%/"),
+                sql`starts_with(${at}, ${treeEditReceiptNodes.beforeAt})`,
+              ),
+            ),
+            or(
+              isNull(treeEditReceiptNodes.afterAt),
+              ne(treeEditReceiptNodes.afterAt, treeEditReceiptNodes.beforeAt),
+            ),
+          ),
+        )
+        .orderBy(desc(treeEditReceipts.seq), desc(sql`length(${treeEditReceiptNodes.beforeAt})`))
+        .limit(1);
+      return left ? { node: left.node, folder: (left.beforeAt ?? "").endsWith("/") } : null;
     },
 
     async historyOf(threadId, nodeId, isDocument) {

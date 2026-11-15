@@ -125,13 +125,10 @@ export async function runTreeInverse(
   let node: { id: string; kind: string } | undefined;
   if (reached.ok && reached.value.kind === "node") node = reached.value.node;
   else {
-    // A node gone since (deleted, or a create that was undone), named by the path the model
-    // wrote for it, is found by that receipt.
-    const written = await treeHistory.receiptsAt(threadId, `${parts.area}${parts.rest}`);
-    const gone = written.find(
-      (receipt) => receipt.op === "delete" || (receipt.op === "create" && receipt.kind === "undo"),
-    );
-    if (gone) node = { id: gone.subject, kind: parts.rest.endsWith("/") ? "folder" : "document" };
+    // A node gone since (deleted, a create that was undone, or moved away from this path),
+    // named by a path the model wrote for it, is found by that receipt.
+    const left = await treeHistory.nodeLeftAt(threadId, `${parts.area}${parts.rest}`);
+    if (left) node = { id: left.node, kind: left.folder ? "folder" : "document" };
   }
   if (!node) return null;
   const history = await treeHistory.historyOf(threadId, node.id, node.kind !== "folder");
