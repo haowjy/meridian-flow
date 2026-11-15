@@ -75,8 +75,9 @@ stateDiagram-v2
   notice ends at the next gesture or press, or when the writer opens a document from the tree.
   The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
   refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
-  either view: the press asks the server's Un-Apply, and a refusal (the tree changed since) is
-  skipped the same way; on the Changes tab a press takes the latest step of any source. The
+  either view: the press asks the server's Un-Apply and is spent once the server answered, whatever
+  it took back (all, part, or nothing, `unappliedOf`), so it never falls through to an older step;
+  on the Changes tab a press takes the latest step of any source. The
   applied rows in Changes carry the same step's Undo (`undoApply`). An Apply step has two
   halves, from its answer: its text ends only by an Un-Apply, and its tree half ends by itself
   when `appliedNodes` (over the Apply's command and the restores its answer named) reads empty in
