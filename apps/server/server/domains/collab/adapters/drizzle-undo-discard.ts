@@ -2,9 +2,9 @@
  * Restore of a Discard (design section 7), from the notice or from Trash: both halves of what the
  * command ended, in one command. The records it settled come back as pending copies in each list
  * the Work spans (`restoreDiscard`). Each text draft it closed (`closed_by` still names it) is
- * reopened as the same row in the Work's current branch, so its receipts, authorship and seeds
- * come back with it. A newer draft of the same document closes under this command and becomes a
- * member of its own entry: restoring that entry swaps back.
+ * reopened by `reopenDrafts` as the same row in the Work's current branch, so its receipts,
+ * authorship and seeds come back with it. A newer draft of the same document closes under this
+ * command and becomes a member of its own entry: restoring that entry swaps back.
  *
  * Lock order, after the command's claim: the Work (the Discard's branch names it), the owner's
  * active branch (made when a whole Discard closed the last one), the lists' keys, then the keys of
@@ -15,7 +15,7 @@ import type { BranchId, ProjectId } from "@meridian/contracts";
 import type { UndoDiscardResult } from "@meridian/contracts/branches";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { commands, documentDrafts } from "@meridian/database/schema";
+import { commands } from "@meridian/database/schema";
 import { discardedBy, restoreDiscard } from "@meridian/project-tree";
 import { and, eq, sql } from "drizzle-orm";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
@@ -29,7 +29,10 @@ import type { UndoDiscardCommand, UndoDiscardStore } from "../domain/undo-discar
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
-import type { DraftClose } from "./drizzle-draft-close.js";
+import type { ReopenDrafts } from "./drizzle-reopen-drafts.js";
+
+/** The commands whose id can name closed drafts that Trash lists and Restore reopens. */
+const REOPENABLE: ReadonlySet<string> = new Set(["discard", "undo_discard", "unapply"]);
 
 type Refusal = Extract<UndoDiscardResult, { status: "refused" }>["reason"];
 
@@ -69,7 +72,7 @@ export function createDrizzleUndoDiscard(
     workProjection: Pick<WorkProjectionMutation, "mutate" | "draftMembershipChanged">;
     branches: Pick<Branches, "ownerOf" | "ensureActiveForWrite">;
     treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
-    close: Pick<DraftClose, "closeDrafts">;
+    reopen: ReopenDrafts;
   },
 ): UndoDiscardStore {
   return {
@@ -96,11 +99,7 @@ export function createDrizzleUndoDiscard(
                 .where(
                   and(eq(commands.id, request.discardCommandId), eq(commands.accountId, userId)),
                 );
-              if (
-                !discard ||
-                (discard.kind !== "discard" && discard.kind !== "undo_discard") ||
-                discard.outcome.status !== "done"
-              )
+              if (!discard || !REOPENABLE.has(discard.kind) || discard.outcome.status !== "done")
                 throw new ApplyClickRefused("not_found");
               if (discard.at <= deletionPurgeCutoff(new Date()))
                 throw new UndoDiscardRefused("expired");
@@ -130,15 +129,7 @@ export function createDrizzleUndoDiscard(
                   ),
               });
               // The drafts the command closed on its own branch, still closed under it.
-              const drafts = await tx
-                .select({ draftId: documentDrafts.id, documentId: documentDrafts.documentId })
-                .from(documentDrafts)
-                .where(
-                  and(
-                    eq(documentDrafts.closedBy, request.discardCommandId),
-                    eq(documentDrafts.branchId, branchId),
-                  ),
-                );
+              const drafts = await deps.reopen.closedBy(request.discardCommandId, branchId);
               const documentIds = new Set<string>([
                 ...nodes,
                 ...drafts.map((draft) => draft.documentId),
@@ -172,49 +163,12 @@ export function createDrizzleUndoDiscard(
                 outcome === "already" ? [] : [outcome],
               );
 
-              let reopened = 0;
-              let swapped = 0;
-              for (const draft of drafts) {
-                const [newer] = await tx
-                  .select({ id: documentDrafts.id })
-                  .from(documentDrafts)
-                  .where(
-                    and(
-                      eq(documentDrafts.documentId, draft.documentId),
-                      eq(documentDrafts.branchId, target.id),
-                      eq(documentDrafts.kind, "work_draft"),
-                      eq(documentDrafts.status, "active"),
-                    ),
-                  );
-                if (newer) {
-                  await deps.close.closeDrafts(
-                    tx,
-                    { draftIds: [newer.id] },
-                    "edit_discarded",
-                    commandId,
-                  );
-                  swapped += 1;
-                }
-                // Stale `has_effect` is re-judged by the projection sweep.
-                await tx
-                  .update(documentDrafts)
-                  .set({
-                    status: "active",
-                    closedCause: null,
-                    closedBy: null,
-                    branchId: target.id,
-                    hasEffect: true,
-                    hasEffectRevision: -1,
-                    updatedAt: new Date(),
-                    revision: sql`${documentDrafts.revision} + 1`,
-                  })
-                  .where(eq(documentDrafts.id, draft.draftId));
-                reopened += 1;
-              }
-              if (reopened > 0) {
-                deps.workProjection.draftMembershipChanged(owner);
-                await deps.treeLists.resync(lists);
-              }
+              const { reopened, swapped } = await deps.reopen.reopen({
+                drafts,
+                target: target.id,
+                commandId,
+                owner,
+              });
 
               const leftOut = restoredTree.reduce((sum, one) => sum + one.leftOut.length, 0);
               const treeCopies = restoredTree.reduce((sum, one) => sum + one.copies.length, 0);

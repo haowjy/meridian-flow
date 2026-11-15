@@ -79,6 +79,7 @@ import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence, enterLiveWriteSeam } from "./adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "./adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js";
+import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
@@ -490,6 +491,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
+  const reopen = createReopenDrafts(deps.db, {
+    coordinator: draftCoordinator,
+    close: deps.draftClose,
+    treeLists: deps.treeLists,
+    workProjection: deps.workProjectionMutation,
+    scheduleLivePull: (documentId) => draftPulls.scheduleLivePull(documentId),
+  });
   const applyCommands = createApplyClickService({
     commands,
     evidence: createDrizzleDraftDispositionStore(deps.db),
@@ -497,6 +505,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       coordinator: draftCoordinator,
+      reopen,
       live: persistence.journal,
       liveCoordinator,
       arrivals: deps.arrivals,
@@ -536,7 +545,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       treeLists: deps.treeLists,
-      close: deps.draftClose,
+      reopen,
     }),
   });
   const branches = createWorkBranchReviewService({

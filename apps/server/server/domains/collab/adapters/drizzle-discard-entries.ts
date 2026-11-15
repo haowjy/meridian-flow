@@ -1,6 +1,6 @@
 /**
  * The document half of Trash's Discard entries (design section 7): every Discard, and every
- * restore that swapped a newer draft out, that ran in the project within the retention, with the
+ * restore or Un-Apply that swapped a newer draft out, that ran in the project within the retention, with the
  * text drafts it closed that are still closed. A restore reopens a draft by clearing `closed_by`,
  * so a taken member leaves the entry by itself. A deleted Work's entries are hidden until it is
  * restored, and a purged Work's branches (and so its entries) are gone.
@@ -10,7 +10,7 @@ import type { DiscardEntry } from "@meridian/contracts/branches";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
 export function createDrizzleDiscardEntries(db: Database) {
@@ -28,7 +28,20 @@ export function createDrizzleDiscardEntries(db: Database) {
         .where(
           and(
             eq(commands.projectId, projectId),
-            inArray(commands.kind, ["discard", "undo_discard"]),
+            // An Un-Apply is an entry only through a draft it swapped out, still closed.
+            or(
+              inArray(commands.kind, ["discard", "undo_discard"]),
+              and(
+                eq(commands.kind, "unapply"),
+                inArray(
+                  commands.id,
+                  tx
+                    .select({ id: documentDrafts.closedBy })
+                    .from(documentDrafts)
+                    .where(eq(documentDrafts.status, "closed")),
+                ),
+              ),
+            ),
             gt(commands.createdAt, deletionPurgeCutoff(now)),
             sql`${commands.outcome}->>'status' = 'done'`,
           ),

@@ -2,6 +2,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS btree_gin;
 CREATE EXTENSION IF NOT EXISTS pg_bigm;
 --> statement-breakpoint
+CREATE SEQUENCE "public"."apply_command_effects_unapplied_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE TABLE "account_skill_installs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"owner_user_id" uuid NOT NULL,
@@ -871,6 +872,8 @@ CREATE TABLE "apply_command_effects" (
 	"base_start" jsonb,
 	"base_delta" jsonb NOT NULL,
 	"unapplied_by" uuid,
+	"unapplied_seq" bigint,
+	"draft_reversed" boolean DEFAULT false NOT NULL,
 	CONSTRAINT "apply_command_effects_command_id_ordinal_pk" PRIMARY KEY("command_id","ordinal")
 );
 --> statement-breakpoint
@@ -1266,8 +1269,9 @@ CREATE INDEX "tree_nodes_parent" ON "tree_nodes" USING btree ("parent_id");--> s
 CREATE INDEX "tree_nodes_list" ON "tree_nodes" USING btree ("list_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_trashed" ON "tree_nodes" USING btree ("trashed_at") WHERE "tree_nodes"."trashed_at" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USING btree ("command_id","document_id","group_id");--> statement-breakpoint
+CREATE INDEX "apply_command_effects_unreplayed" ON "apply_command_effects" USING btree ("draft_id") WHERE "apply_command_effects"."unapplied_by" is not null and not "apply_command_effects"."draft_reversed";--> statement-breakpoint
 CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
-CREATE INDEX "commands_discard_project" ON "commands" USING btree ("project_id","created_at") WHERE "commands"."kind" IN ('discard', 'undo_discard');--> statement-breakpoint
+CREATE INDEX "commands_discard_project" ON "commands" USING btree ("project_id","created_at") WHERE "commands"."kind" IN ('discard', 'undo_discard', 'unapply');--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_active_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "document_drafts_closed_by" ON "document_drafts" USING btree ("closed_by") WHERE "document_drafts"."closed_by" IS NOT NULL;--> statement-breakpoint

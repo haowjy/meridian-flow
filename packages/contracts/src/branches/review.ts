@@ -111,6 +111,10 @@ export type UnapplyClickResult =
   | {
       status: "unapplied";
       commandId: CommandId;
+      /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
+      branchId: BranchId;
+      /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
+      draftHalfWaits: boolean;
       reversedGroupIds: string[];
       skippedGroupIds: string[];
     }
@@ -193,7 +197,7 @@ export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; comman
  */
 export type DiscardEntry = {
   commandId: CommandId;
-  kind: "discard" | "undo_discard";
+  kind: "discard" | "undo_discard" | "unapply";
   /** When the command ran: the entry leaves Trash 30 days later. */
   at: string;
   /** The branch the command ran on; Restore names it. */

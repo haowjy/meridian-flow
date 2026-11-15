@@ -456,11 +456,7 @@ export type DraftReviewApi = {
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
   /** The documents a command touched, from its own record: what its routes authorize. */
   commandDocuments: {
-    ofApply(input: {
-      applyCommandId: CommandId;
-      accountId: UserId;
-      branchId: BranchId;
-    }): Promise<DocumentId[]>;
+    ofApply(input: { applyCommandId: CommandId; accountId: UserId }): Promise<DocumentId[]>;
     ofDiscard(input: {
       discardCommandId: CommandId;
       accountId: UserId;

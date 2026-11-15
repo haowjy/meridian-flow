@@ -20,24 +20,20 @@ import {
   baseViewDelta,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
-  removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import type { InversePart, JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
+import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type { ApplyClickResult, UnapplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
 import { appliedCreates, undoApply } from "@meridian/project-tree";
-import {
-  allocateDocumentClient,
-  buildDocumentSchema,
-  PROSEMIRROR_FRAGMENT_NAME,
-} from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -66,13 +62,13 @@ import { branchRowRevisions } from "./drizzle-branch-tree-state.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+import { type ReopenDrafts, reverseBaseHalf } from "./drizzle-reopen-drafts.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
   measured: (input: { commandId: string; holdMs: number }) => void;
 }>();
-const schema = buildDocumentSchema();
 
 /** Uses the append door's actual lock-to-root-commit time, not the server author's CPU time. */
 export function measureApplyAppend(detail: { holdMs: number }): void {
@@ -84,8 +80,9 @@ export function createDrizzleApplyClick(
   db: Database,
   deps: {
     workProjection: WorkProjectionMutation;
-    branches: Pick<Branches, "lockActive">;
+    branches: Pick<Branches, "lockActive" | "ownerOf" | "ensureActiveForWrite">;
     coordinator: Pick<DraftCoordinator, "loadBase" | "prepareAppend">;
+    reopen: ReopenDrafts;
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     arrivals?: Pick<DocumentArrivals, "settle">;
@@ -277,7 +274,7 @@ export function createDrizzleApplyClick(
         throw cause;
       }
     },
-    loadUnapply: (command) => loadPreparedUnapply(db, deps.coordinator, command),
+    loadUnapply: (command) => loadPreparedUnapply(db, command),
     async unapply(command, prepared) {
       const commandId = command.envelope.commandId;
       const applyCommandId = command.request.applyCommandId;
@@ -301,7 +298,28 @@ export function createDrizzleApplyClick(
               { branches: [prepared.branchId] },
               async (): Promise<UnapplyClickResult> => {
                 const tx = currentDrizzleDb(db);
-                if (!(await deps.branches.lockActive(prepared.branchId))) return closed();
+                // The drafts this Apply's delete closed come back before anything reads a base
+                // (`reopenDrafts`). The Work's current branch is made only for them: an Un-Apply
+                // with nothing to reopen must not create one.
+                const closedByApply = await deps.reopen.closedBy(applyCommandId, prepared.branchId);
+                const found = closedByApply.length
+                  ? await deps.branches.ownerOf(prepared.branchId)
+                  : null;
+                // Only the Work is locked so far, as `ensureActiveForWrite` requires.
+                if (found?.owner) approveBranchWriteJoin();
+                const target =
+                  found?.owner &&
+                  (await deps.branches.ensureActiveForWrite(
+                    {
+                      owner: found.owner,
+                      projectId: command.envelope.projectId,
+                      threadId: null,
+                      userId: command.envelope.accountId as UserId,
+                    },
+                    { requireActive: false },
+                  ));
+                // A closed branch still lets the tree half land; the lock only orders it with a Discard's close.
+                if (!target) await deps.branches.lockActive(prepared.branchId);
                 // The lists' keys, then the documents': the text of every document the Apply
                 // created is asked about, and the tree rows are written, under both.
                 const pairs = (await treeListsOfBranch(db, prepared.branchId)).flatMap((list) => {
@@ -319,11 +337,43 @@ export function createDrizzleApplyClick(
                   : [];
                 const documentIds = new Set<string>(created);
                 for (const text of prepared.texts) documentIds.add(text.documentId);
+                for (const draft of closedByApply) documentIds.add(draft.documentId);
                 for (const id of [...documentIds].sort())
                   await lockDocumentMutation(tx, id as DocumentId);
+                // The tree half goes first: a refusal throws, and the command's savepoint takes
+                // the reopen below back with it.
+                const restored = new Set<string>();
+                if (lists.length > 0) {
+                  const written = await textWrittenSince(
+                    db,
+                    Object.assign({}, ...prepared.trees.map((tree) => tree.createdHeads)),
+                  );
+                  await deps.treeLists.submit({
+                    lists,
+                    make: (ends) => {
+                      for (const [at, { writer }] of ends.entries()) {
+                        const { tree } = pairs[at] as (typeof pairs)[number];
+                        const { undone } = undoApply(writer, applyCommandId, by, commandId, {
+                          writtenSince: written,
+                          restoredByApply: tree.restored,
+                        });
+                        for (const record of undone)
+                          if (record.type === "restore") restored.add(record.node);
+                      }
+                    },
+                  });
+                }
+                // Only a draft whose document the tree half brought back reopens: a document the
+                // writer restored by hand and deleted again stays in Trash with its draft closed.
+                if (target && found?.owner)
+                  await deps.reopen.reopen({
+                    drafts: closedByApply.filter((draft) => restored.has(draft.documentId)),
+                    target: target.id,
+                    commandId,
+                    owner: found.owner,
+                  });
 
-                // What each document's text would give back, read before anything is written:
-                // the tree half can still refuse the whole command.
+                // What each document's text would give back, read before any text is written.
                 const stillActive = await tx
                   .select({ ordinal: applyCommandEffects.ordinal })
                   .from(applyCommandEffects)
@@ -336,7 +386,9 @@ export function createDrizzleApplyClick(
                 const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
                 const plans: {
                   documentId: DocumentId;
-                  currentBase: DraftBase;
+                  /** Null: the draft is closed (its Un-Apply waits for a reopen) or purged. */
+                  currentBase: DraftBase | null;
+                  draftGone: boolean;
                   snapshot: JournalSnapshot;
                   live: Y.Doc;
                   inverse: ReturnType<typeof computeInverse>;
@@ -344,13 +396,14 @@ export function createDrizzleApplyClick(
                   skipped: PreparedUnapply["texts"][number]["effects"];
                 }[] = [];
                 for (const text of prepared.texts) {
-                  const currentBase = await deps.coordinator.loadBase(text.base.snapshot.draftId);
-                  if (
-                    currentBase.snapshot.status === "closed" ||
-                    currentBase.snapshot.documentId !== text.documentId ||
-                    currentBase.snapshot.branchId !== prepared.branchId
-                  )
-                    return closed();
+                  const [draft] = await tx
+                    .select({ status: documentDrafts.status })
+                    .from(documentDrafts)
+                    .where(eq(documentDrafts.id, text.draftId));
+                  const currentBase =
+                    draft?.status === "active"
+                      ? await deps.coordinator.loadBase(text.draftId)
+                      : null;
                   const effects = text.effects.filter((effect) =>
                     activeOrdinals.has(effect.ordinal),
                   );
@@ -397,6 +450,7 @@ export function createDrizzleApplyClick(
                   plans.push({
                     documentId: text.documentId,
                     currentBase,
+                    draftGone: !draft,
                     snapshot,
                     live,
                     inverse,
@@ -406,27 +460,9 @@ export function createDrizzleApplyClick(
                 }
                 // Text recorded and none of it left to take back: an earlier Un-Apply took it.
                 if (prepared.texts.length > 0 && plans.length === 0)
-                  return { status: "refused", commandId };
+                  throw new ApplyClickRefused("not_found");
 
-                if (lists.length > 0) {
-                  const written = await textWrittenSince(
-                    db,
-                    Object.assign({}, ...prepared.trees.map((tree) => tree.createdHeads)),
-                  );
-                  await deps.treeLists.submit({
-                    lists,
-                    make: (ends) => {
-                      for (const [at, { writer }] of ends.entries()) {
-                        const { tree } = pairs[at] as (typeof pairs)[number];
-                        undoApply(writer, applyCommandId, by, commandId, {
-                          writtenSince: written,
-                          restoredByApply: tree.restored,
-                        });
-                      }
-                    },
-                  });
-                }
-
+                let unappliedSeq: string | undefined;
                 for (const plan of plans) {
                   if (!plan.reversed.length) continue;
                   const { documentId, live, snapshot, inverse, currentBase } = plan;
@@ -462,57 +498,48 @@ export function createDrizzleApplyClick(
                       receipts,
                     });
 
-                  const groupIds = new Set(plan.reversed.map((effect) => effect.groupId));
-                  const reversedWithLive = plan.reversed.filter(
-                    (effect) => effect.liveUpdateSeq !== null,
-                  );
-                  let unapplyMerged = { rules: {} as RuleCounts, overrode: 0 };
-                  const write = deps.coordinator.prepareAppend(currentBase, [], {
-                    work: "any",
-                    authorServerRows(prefix) {
-                      let row: Uint8Array | undefined;
-                      const capture = (bytes: Uint8Array) => {
-                        row = bytes;
-                      };
-                      prefix.on("update", capture);
-                      try {
-                        prefix.transact(() => {
-                          const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
-                          let current = readBlocks(fragment, schema);
-                          const total = ruleCounter();
-                          let overrode = 0;
-                          for (const effect of [...reversedWithLive].reverse()) {
-                            const merge = contentMerge(
-                              schema,
-                              effect.baseAfter.map((node) => schema.nodeFromJSON(node)),
-                              current,
-                              effect.baseBefore.map((node) => schema.nodeFromJSON(node)),
-                            );
-                            addCounts(total.fire, merge.rules);
-                            overrode += merge.overrode;
-                            current = merge.blocks;
-                          }
-                          unapplyMerged = { rules: total.counts, overrode };
-                          writeBlocks(fragment, schema, current);
-                          removeApplyRecords(prefix, applyCommandId, groupIds);
-                        }, "unapply");
-                        if (!row) throw new Error("Un-Apply must remove its Apply records");
-                        return [row];
-                      } finally {
-                        prefix.off("update", capture);
-                      }
-                    },
-                  });
-                  try {
-                    await write.persist();
-                    write.transfer();
-                  } finally {
-                    write.dispose();
+                  if (currentBase) {
+                    const groupIds = new Set(plan.reversed.map((effect) => effect.groupId));
+                    let reversal: ReturnType<typeof reverseBaseHalf> | undefined;
+                    const write = deps.coordinator.prepareAppend(currentBase, [], {
+                      work: "any",
+                      authorServerRows(prefix) {
+                        reversal = reverseBaseHalf(prefix, [
+                          {
+                            applyCommandId,
+                            groupIds,
+                            merges: plan.reversed.filter((effect) => effect.liveUpdateSeq !== null),
+                          },
+                        ]);
+                        return reversal.rows;
+                      },
+                    });
+                    try {
+                      await write.persist();
+                      write.transfer();
+                    } finally {
+                      write.dispose();
+                    }
+                    deps.merged({
+                      commandId,
+                      kind: "unapply",
+                      rules: reversal?.rules ?? {},
+                      overrode: reversal?.overrode ?? 0,
+                    });
                   }
-                  deps.merged({ commandId, kind: "unapply", ...unapplyMerged });
+                  unappliedSeq ??= (
+                    await tx.execute<{ seq: string }>(
+                      sql`select nextval('apply_command_effects_unapplied_seq')::text as seq`,
+                    )
+                  )[0]?.seq;
                   await tx
                     .update(applyCommandEffects)
-                    .set({ unappliedBy: commandId })
+                    .set({
+                      unappliedBy: commandId,
+                      unappliedSeq: Number(unappliedSeq),
+                      // A closed draft's half waits for its reopen (`reopenDrafts`).
+                      draftReversed: currentBase !== null || plan.draftGone,
+                    })
                     .where(
                       and(
                         eq(applyCommandEffects.commandId, applyCommandId),
@@ -531,6 +558,10 @@ export function createDrizzleApplyClick(
                 return {
                   status: "unapplied",
                   commandId,
+                  branchId: (target ? target.id : prepared.branchId) as BranchId,
+                  draftHalfWaits: plans.some(
+                    (plan) => plan.reversed.length > 0 && !plan.currentBase && !plan.draftGone,
+                  ),
                   reversedGroupIds: plans.flatMap((plan) =>
                     plan.reversed.map((effect) => effect.groupId),
                   ),
