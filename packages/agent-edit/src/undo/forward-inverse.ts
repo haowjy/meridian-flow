@@ -168,7 +168,9 @@ export function captureEditParts(
     };
     // A pair is kept as far as both its sides are this part's effect: a held delete, a transient
     // or a non-prose item is no side of a replacement.
-    const recorded = receipt.replacements ?? (process.env.VITEST ? pendingReplacements(doc) : undefined);
+    const recorded = process.env.NO_RECORD
+      ? undefined
+      : (receipt.replacements ?? (process.env.VITEST ? pendingReplacements(doc) : undefined));
     if (recorded) {
       const within = (side: readonly EditRange[], all: readonly EditRange[]) =>
         intersectLineageRanges(side.map(lineageRange), all.map(lineageRange)).map(editRange);
