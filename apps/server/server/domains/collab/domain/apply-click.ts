@@ -89,11 +89,7 @@ export interface ApplyCommandStore {
    * Applies exactly the command's cuts in one transaction: the tree cuts first (the moves,
    * deletes and creations their frozen revisions hold), then each item's text cut at the result.
    */
-  apply(
-    command: ApplyCommand,
-    items: readonly PreparedApplyItem[],
-    gate?: ApplyGate,
-  ): Promise<ApplyClickAnswer>;
+  apply(command: ApplyCommand, items: readonly PreparedApplyItem[]): Promise<ApplyClickAnswer>;
   loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
   unapply(command: UnapplyClickCommand, prepared: PreparedUnapply): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
@@ -217,22 +213,12 @@ export function wholeDraftCut(
   };
 }
 
-/**
- * A check a server-started Apply passes under the Apply's own locks, after the Work's rows and
- * before any list or document key: it answers whether the Apply may go on. A refusal rolls the
- * whole command back, claim included, and the Apply answers `held`.
- */
-export type ApplyGate = () => Promise<boolean>;
-
-/** Thrown by the store when the command's `ApplyGate` says no. */
-export class ApplyHeld extends Error {}
-
 export function createApplyClickService(input: {
   commands: DocumentCommands;
   evidence: DraftDispositionStore;
   store: ApplyCommandStore;
 }) {
-  const apply = async (command: ApplyCommand, gate?: ApplyGate): Promise<ApplyClickAnswer> => {
+  const apply = async (command: ApplyCommand): Promise<ApplyClickAnswer> => {
     const { commandId } = command.envelope;
     const lookup = async (): Promise<ApplyClickAnswer | null> =>
       replay<ApplyClickResult>(await input.commands.lookup(command.envelope), commandId);
@@ -281,7 +267,7 @@ export function createApplyClickService(input: {
         }
         prepared.push({ node: item.node, tree, text: { base, click } });
       }
-      return await input.store.apply(command, prepared, gate);
+      return await input.store.apply(command, prepared);
     } catch (cause) {
       if (cause instanceof CommandExistsError) {
         const winner = await lookup();

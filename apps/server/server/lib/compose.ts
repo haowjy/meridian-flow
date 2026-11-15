@@ -269,7 +269,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import { lockAgentsLevel } from "../shared/agents-level-lock.js";
+import { withAgentsLevelLock } from "../shared/agents-level-lock.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
@@ -660,7 +660,7 @@ export async function createProductionAppPorts(input: {
   });
   const agentsWidening = createAgentsWidening({
     catalog: agentCatalog,
-    lockLevel: (owner) => lockAgentsLevel(db, owner),
+    holdLevel: (owner, operation) => withAgentsLevelLock(db, owner, operation),
     draftReview: documentSync.draftReview,
   });
   const users = createDrizzleUserRepository({ db });
@@ -1857,7 +1857,7 @@ export function createInMemoryAppServices(): AppServices {
     agentCatalog,
     agentsWidening: createAgentsWidening({
       catalog: agentCatalog,
-      lockLevel: async () => {},
+      holdLevel: (_owner, operation) => operation(),
       draftReview: documentSync.draftReview,
     }),
     eventSink: createNoopEventSink(),

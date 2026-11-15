@@ -737,6 +737,13 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       };
     };
     let result = await settle(effect);
+    // The projection catches up once the edit is durable, whoever stored it.
+    if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
+      await deps.documentSync.refreshDocumentProjection({
+        documentId: refresh,
+        threadId: ctx.threadId,
+      });
+    // The check reads the branch, which holds the write once the projection has caught up.
     if (checked.level && isCommandResult(result) && result.modelEdit.status === "done") {
       const thread = context.resolution.thread;
       const check = await deps.agentsWidening.settle({
@@ -748,12 +755,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       });
       result = withAgentsCheck(result, check);
     }
-    // The projection catches up once the edit is durable, whoever stored it.
-    if (refresh && !(isCommandResult(result) && result.modelEdit.status !== "done"))
-      await deps.documentSync.refreshDocumentProjection({
-        documentId: refresh,
-        threadId: ctx.threadId,
-      });
     return result;
   };
 }

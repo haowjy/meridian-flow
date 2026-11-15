@@ -65,8 +65,8 @@ export function agentsLevelOfUri(uri: string | null): AgentsLevel | null {
 
 export function createAgentsWidening(deps: {
   catalog: Pick<BoundAgentCatalog, "effectiveAgents">;
-  /** Takes the level's advisory lock in the ambient transaction. */
-  lockLevel(owner: AgentsLevelOwner): Promise<void>;
+  /** Runs `operation` holding the level's lock (`withAgentsLevelLock`). */
+  holdLevel<T>(owner: AgentsLevelOwner, operation: () => Promise<T>): Promise<T>;
   draftReview: Pick<CollabBranches["draftReview"], "autoApply">;
 }): AgentsWidening {
   /** Live against the branch, per `compareAgents`; the only comparison there is. */
@@ -76,7 +76,10 @@ export function createAgentsWidening(deps: {
     owner: DraftOwner,
   ) {
     const before = await deps.catalog.effectiveAgents(userId, scope);
-    const after = await deps.catalog.effectiveAgents(userId, { ...scope, branch: { owner } });
+    const after = await deps.catalog.effectiveAgents(userId, {
+      ...scope,
+      branch: { owner },
+    });
     return {
       widened: compareAgents(before, after).map(widenedLabel),
       created: newAgents(before, after).map(newAgentLabel),
@@ -90,28 +93,31 @@ export function createAgentsWidening(deps: {
     async settle({ thread, owner, level, callId, apply }) {
       const scope = { projectId: thread.projectId, level };
       const check = () => compare(thread.userId, scope, owner);
-      const first = await check();
-      if (first.widened.length > 0 || !apply)
-        return { status: "waiting", labels: first.widened, created: first.created };
+      if (!apply) {
+        const now = await check();
+        return { status: "waiting", labels: now.widened, created: now.created };
+      }
       const levelOwner: AgentsLevelOwner =
         level === "project"
           ? { level, projectId: thread.projectId }
           : { level, userId: thread.userId };
-      const result = await deps.draftReview.autoApply({
-        owner,
-        accountId: thread.userId as UserId,
-        projectId: thread.projectId as ProjectId,
-        commandId: applyCommandId(callId),
-        select: (item) => agentsLevelOfUri(item.path) === level,
-        gate: async () => {
-          await deps.lockLevel(levelOwner);
-          return (await check()).widened.length === 0;
-        },
+      // Under the level's lock the comparison sees every earlier auto-Apply's effect, so two
+      // writes that are safe alone and widen together cannot both land.
+      return deps.holdLevel(levelOwner, async (): Promise<AgentsCheck> => {
+        const now = await check();
+        if (now.widened.length > 0)
+          return { status: "waiting", labels: now.widened, created: now.created };
+        const result = await deps.draftReview.autoApply({
+          owner,
+          accountId: thread.userId as UserId,
+          projectId: thread.projectId as ProjectId,
+          commandId: applyCommandId(callId),
+          select: (item) => agentsLevelOfUri(item.path) === level,
+        });
+        return result.status === "applied"
+          ? { status: "applied", created: now.created }
+          : { status: "unchanged", created: now.created };
       });
-      if (result.status === "applied") return { status: "applied", created: first.created };
-      if (result.status === "nothing") return { status: "unchanged", created: first.created };
-      const again = await check();
-      return { status: "waiting", labels: again.widened, created: again.created };
     },
   };
 }

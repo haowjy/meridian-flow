@@ -8,14 +8,12 @@ import type { ApplyItemsClick } from "@meridian/contracts/branches";
 import type * as Y from "yjs";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { commandDigest } from "../../../shared/commands/command-record.js";
-import { type ApplyGate, ApplyHeld, wholeDraftCut } from "./apply-click.js";
+import { wholeDraftCut } from "./apply-click.js";
 import type { DraftReviewItem } from "./branch-review-items.js";
 
 export type AutoApplyResult =
   /** The command applied these items. */
   | { status: "applied"; documentIds: string[] }
-  /** The gate said no: nothing changed and the drafts stay pending. */
-  | { status: "held" }
   /** No selected item had anything to apply, or Apply refused. */
   | { status: "nothing" };
 
@@ -23,10 +21,11 @@ export function createBranchAutoApply(input: {
   items(owner: DraftOwner): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
   /** A private copy of a draft's committed replica, destroyed by the caller. */
   copyDraft(draftId: string): Promise<{ doc: Y.Doc }>;
-  apply(
-    input: { branchId: BranchId; request: ApplyItemsClick; envelope: CommandEnvelope },
-    gate?: ApplyGate,
-  ): Promise<{ status: string }>;
+  apply(input: {
+    branchId: BranchId;
+    request: ApplyItemsClick;
+    envelope: CommandEnvelope;
+  }): Promise<{ status: string }>;
 }) {
   return async function autoApply(command: {
     owner: DraftOwner;
@@ -35,7 +34,6 @@ export function createBranchAutoApply(input: {
     /** The id the Apply command keeps; a resend answers the first outcome. */
     commandId: CommandId;
     select(item: DraftReviewItem): boolean;
-    gate?: ApplyGate;
   }): Promise<AutoApplyResult> {
     const { branchId, items } = await input.items(command.owner);
     if (!branchId) return { status: "nothing" };
@@ -71,14 +69,9 @@ export function createBranchAutoApply(input: {
         body: request,
       }),
     };
-    try {
-      const answer = await input.apply({ branchId, request, envelope }, command.gate);
-      return answer.status === "applied"
-        ? { status: "applied", documentIds: cuts.map((cut) => cut.node) }
-        : { status: "nothing" };
-    } catch (cause) {
-      if (cause instanceof ApplyHeld) return { status: "held" };
-      throw cause;
-    }
+    const answer = await input.apply({ branchId, request, envelope });
+    return answer.status === "applied"
+      ? { status: "applied", documentIds: cuts.map((cut) => cut.node) }
+      : { status: "nothing" };
   };
 }

@@ -547,12 +547,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       items: async (owner) => {
         const branch = await workBranches.activeForOwner(owner);
         return branch
-          ? { branchId: branch.id, items: await reviewItems.list(branch.id) }
+          ? { branchId: branch.id, items: await reviewItems.all(branch.id) }
           : { branchId: null, items: [] };
       },
       copyDraft: (draftId) => draftCoordinator.copyDraft(draftId),
-      apply: ({ branchId, request, envelope }, gate) =>
-        applyCommands.apply({ branchId, request, envelope }, gate),
+      apply: applyCommands.apply,
     }),
     unapplyClick: applyCommands.unapply,
     undoDiscard,
