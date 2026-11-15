@@ -7,7 +7,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { OpenDocument } from "@/client/stores";
 import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
@@ -102,10 +101,6 @@ function AccountFeatureProviders({
   lifetime: AccountFeatureLifetime;
   children: React.ReactNode;
 }) {
-  useInsertionEffect(() => {
-    scopeCreationRegistry(lifetime.accountId);
-  }, [lifetime.accountId]);
-
   useInsertionEffect(() => {
     lifetime.resumeFeatureLease();
     return () => lifetime.suspendFeatureLease();

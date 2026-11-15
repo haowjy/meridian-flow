@@ -10,7 +10,6 @@ import {
 } from "@/client/query/useProjectCreation";
 import { useProject } from "@/client/query/useProjectList";
 import { Button } from "@/components/ui/button";
-import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { ProjectCreationNotice } from "@/features/project/ProjectCreationNotice";
 import { ProjectRouteBootstrap } from "@/features/project/routing/ProjectRouteBootstrap";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
@@ -62,8 +61,7 @@ function ProjectRoute() {
   const loaderData = Route.useLoaderData();
   const { projectId } = Route.useParams();
   const { user } = AuthenticatedRoute.useLoaderData();
-  const accountSignal = useAccountEpochSignal();
-  const creation = useProjectCreationState(projectId, accountSignal);
+  const creation = useProjectCreationState(projectId);
   useSettleConfirmedCreation(projectId, loaderData.data !== null);
   const project = useProject(projectId, loaderData.project ?? creation.project);
   // A project being created has no route data yet; the creation stands in.

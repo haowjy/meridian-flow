@@ -26,7 +26,7 @@ Does: presses "Create a project" ("Create a project for your first book, series,
 Sees: the new project opens at once, before the server has answered. A pending note, a failure, Retry and Discard appear on the new project.
 
 - Map: [creation](../app-library.md#creation), [client](../app.md#client), [projects](../server-workspace.md#projects)
-- Machines: [Creation record](../../../apps/app/src/client/creation/.context/state-machines.md)
+- Machines: [Command driver](../../../packages/command-driver/.context/state-machines.md)
 
 ## Open the import menu
 

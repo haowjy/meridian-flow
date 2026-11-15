@@ -38,6 +38,19 @@ export type CommandDomain = {
   bind(driver: CommandDriver): () => void;
 };
 
+/** One domain out of several: their kinds side by side, and every binding. */
+export function combineDomains(...domains: CommandDomain[]): CommandDomain {
+  return {
+    kinds: Object.assign({}, ...domains.map((domain) => domain.kinds)),
+    bind: (driver) => {
+      const unbinds = domains.map((domain) => domain.bind(driver));
+      return () => {
+        for (const unbind of unbinds) unbind();
+      };
+    },
+  };
+}
+
 export function CommandDriverProvider({
   domains,
   children,
