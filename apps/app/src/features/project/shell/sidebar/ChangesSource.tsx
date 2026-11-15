@@ -135,8 +135,8 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * place of the buttons that asked it. A Discard made here shows its notice in the row's place
  * (Discard all: the bar's); an Apply's facts sit below the rows.
  *
- * An archived Work's commands show disabled, with the reason above the rows. A frozen lineage
- * (every chat in Trash) offers no Apply, only Discard.
+ * A closed Work's commands look and act like an open Work's: the server's refusal shows as one
+ * bounce in the Work chip. A frozen lineage (every chat in Trash) offers no Apply, only Discard.
  */
 export function ChangesSource({
   projectId,
@@ -154,8 +154,6 @@ export function ChangesSource({
   onPicked?: () => void;
 }) {
   const { ownerKey } = scope;
-  // Locked with rows to show means archived or deleted: no owner key or Work lists nothing.
-  const archived = controller.dispositionLocked;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -288,7 +286,6 @@ export function ChangesSource({
           setAsking(null);
           applyAll(asking.targets, asking.folders, ids(asking.restoring), asking.name);
         },
-        disabled: controller.dispositionLocked,
       }
     : null;
   const owned = useDraftNotice(ownerKey);
@@ -391,7 +388,6 @@ export function ChangesSource({
               scope="all"
               density="full"
               touch={touch}
-              disabled={archived}
               discardAsks={controller.frozen}
               onDiscard={
                 everyDraft.length > 0 || changedFolders.length > 0
@@ -423,16 +419,10 @@ export function ChangesSource({
           ) : null
         }
       >
-        {hasFiles && (archived || controller.frozen) ? (
+        {hasFiles && controller.frozen ? (
           <div className="px-2">
             <ListLine iconSlot>
-              {archived && scope.work?.deletedAt ? (
-                <Trans>This Work is deleted. Restore it to apply or discard its changes.</Trans>
-              ) : archived ? (
-                <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
-              ) : (
-                <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
-              )}
+              <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
             </ListLine>
           </div>
         ) : null}
@@ -644,7 +634,7 @@ function ChangeRow({
             labels={{ apply: t`Apply draft of ${name}`, discard: t`Discard draft of ${name}` }}
             density="icon"
             touch={touch}
-            disabled={command.pending || controller.dispositionLocked}
+            disabled={command.pending}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
             onApply={
@@ -659,7 +649,7 @@ function ChangeRow({
         }
         below={
           <div className="pl-1">
-            {asking && !controller.dispositionLocked ? (
+            {asking ? (
               <DiscardQuestion
                 scope="document"
                 onKeep={() => setAsking(false)}
@@ -797,7 +787,7 @@ function FolderGroupRow({
             }}
             density="icon"
             touch={touch}
-            disabled={pending || controller.dispositionLocked}
+            disabled={pending}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={() => onDiscard(name)}
             onApply={canApply ? () => onApply(name) : undefined}

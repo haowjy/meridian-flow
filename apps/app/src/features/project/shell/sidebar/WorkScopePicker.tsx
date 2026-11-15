@@ -2,7 +2,7 @@ import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
@@ -21,6 +21,7 @@ import {
 import { ChooserMark } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
+import { useDraftCommandOwner } from "../../context/account-feature-context";
 import { useWorkReviewCount } from "../../tree-version";
 import { useBringWorkBack } from "../../work/EndedWorkNotice";
 import { useChangesScope } from "./ChangesSource";
@@ -62,6 +63,9 @@ export function WorkScopePicker({
   const pending = changes.count;
   const shown = changes.work && !changes.work.isNoWork ? changes.work : scoped;
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch();
+  const commands = useDraftCommandOwner();
+  useSyncExternalStore(commands.subscribe, commands.snapshot, commands.snapshot);
+  const closedBounce = scoped ? commands.isClosedBounce(scoped.id) : false;
 
   return (
     <DropdownMenu>
@@ -83,8 +87,20 @@ export function WorkScopePicker({
                 className={cn("min-w-0", role.row)}
               />
               {shown === scoped && ended !== "active" ? (
-                <span className={cn("shrink-0 text-xs", role.secondary)}>
-                  {ended === "deleted" ? <Trans>Deleted</Trans> : <Trans>Archived</Trans>}
+                <span
+                  role={closedBounce ? "status" : undefined}
+                  className={cn(
+                    "shrink-0 text-xs",
+                    closedBounce ? "text-warning-ink" : role.secondary,
+                  )}
+                >
+                  {closedBounce ? (
+                    <Trans>Work was closed</Trans>
+                  ) : ended === "deleted" ? (
+                    <Trans>Deleted</Trans>
+                  ) : (
+                    <Trans>Archived</Trans>
+                  )}
                 </span>
               ) : null}
             </span>

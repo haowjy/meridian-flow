@@ -61,8 +61,9 @@ export function useWorkBranchCommands({
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  // An archived or deleted Work's drafts show, and take no command until it is back.
-  const locked = !ownerKey || !work || workLifecycleState(work) !== "active";
+  // No scope, no command. A closed Work is not locked here: its commands are sent, and the
+  // server's answer shows the one closed-Work bounce (`DraftCommandOwner.closedWorks`).
+  const locked = !ownerKey || !work;
   // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
@@ -422,7 +423,10 @@ export function useWorkBranchCommands({
     ): CommandStart => {
       const started = mode === "apply" ? applyOne(draft, target) : discardOne(draft, target);
       void started.outcome.then((outcome) => {
-        if (outcome.kind === "change-refused" && outcome.code === "work_archived")
+        if (
+          outcome.kind === "change-refused" &&
+          (outcome.code === "work_archived" || outcome.code === "work_deleted")
+        )
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
       });
       return started;
@@ -686,15 +690,13 @@ export function useWorkBranchCommands({
        * other Discard's notice takes it back.
        */
       discardAsks: (_draft: DraftReviewSelection, _target?: ChangeTarget) => frozen,
-      dispositionLocked: locked,
       /** A frozen owner's draft takes no single-change command: only the whole draft's Discard. */
       changesLocked: locked || frozen,
       /** The owner's drafts are frozen (`ThreadDraftListResponse.frozen`): read-only, no Apply. */
       frozen,
       /**
        * Whether Apply is offered at all. A frozen owner (a lineage with every chat in Trash)
-       * takes no Apply, so every surface hides it; an archived Work still shows it, disabled by
-       * `dispositionLocked`.
+       * takes no Apply, so every surface hides it; a closed Work still shows it, as an open one.
        */
       canApply: !frozen,
       commandChange,

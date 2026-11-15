@@ -53,14 +53,8 @@ export type DraftReviewController = {
   commandChange: WorkBranchCommands["commandChange"];
   /** A command on this presented draft only. */
   /**
-   * Every Apply and Discard control disables on this: a disposition is in
-   * flight, or the Work is archived and its drafts are frozen. Review
-   * stays available on a frozen Work.
-   */
-  dispositionLocked: boolean;
-  /**
    * A change's own Apply and Discard disable on this alone: a command on the
-   * whole presented draft is in flight, or the Work is frozen. Clicks during
+   * whole presented draft is in flight, or the owner is frozen. Clicks during
    * another change's command are accepted and queued.
    */
   changesLocked: boolean;
@@ -146,7 +140,6 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
 
-  const dispositionLocked = commands.dispositionLocked;
   const changesLocked = commands.changesLocked;
 
   const enterInlineReview = useCallback(
@@ -252,7 +245,6 @@ export function useDraftReviewController({
       threadId,
       inlineReview,
       commandChange: commands.commandChange,
-      dispositionLocked,
       changesLocked,
       canApply: commands.canApply,
       marksVisible: marks.visible,
@@ -279,7 +271,6 @@ export function useDraftReviewController({
       ownerKey,
       threadId,
       inlineReview,
-      dispositionLocked,
       changesLocked,
       commands.canApply,
       marks.visible,

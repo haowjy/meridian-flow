@@ -18,6 +18,7 @@ import type {
   DraftMetadataResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/branches";
+import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import * as Y from "yjs";
@@ -122,14 +123,6 @@ type Entry = {
 /** A click that is one member of a several-item Apply: it takes the group's id and send. */
 type Joint = { commandId: string; send(body: ApplyClick): Promise<ApplyClickAnswer> };
 export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
-/**
- * A refusal the screen already explains reverts silently (offer only what
- * applies): an archived Work removes its commands and shows its own notice with
- * Unarchive, so a held "archived" line would only go stale once it is unarchived.
- */
-function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | null {
-  return failure.serverCode === "work_archived" ? null : failure;
-}
 /** The server's word for an unapplied click, as the surfaces' refusal copy keys it. */
 function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>): string {
   switch (answer.status) {
@@ -181,6 +174,30 @@ export class DraftCommandOwner {
     };
   };
   snapshot = () => this.revision;
+  /** Works whose closed state a command just ran into; each clears itself after a moment. */
+  private readonly closedWorks = new Map<string, ReturnType<typeof setTimeout>>();
+  isClosedBounce = (workId: string) => this.closedWorks.has(workId);
+  /**
+   * A refusal because the Work is closed shows once, in the Work chip, instead of on the control
+   * pressed: the controls look as an open Work's do, and the line would only go stale on restore.
+   */
+  private shown(ownerKey: string, failure: BranchCommandFailure): BranchCommandFailure | null {
+    if (failure.serverCode !== "work_archived" && failure.serverCode !== "work_deleted")
+      return failure;
+    const workId = workIdOfDraftOwnerKey(ownerKey);
+    if (workId) {
+      clearTimeout(this.closedWorks.get(workId));
+      this.closedWorks.set(
+        workId,
+        setTimeout(() => {
+          this.closedWorks.delete(workId);
+          this.publish();
+        }, 6000),
+      );
+      this.publish();
+    }
+    return null;
+  }
   /**
    * State follows the item's current draft generation. An item key (branch + document) outlives
    * its drafts: discarding one item keeps the branch, and a later write mints a new draft under
@@ -558,7 +575,12 @@ export class DraftCommandOwner {
     if (answer.status !== "applied" && answer.status !== "landed" && answer.status !== "cancelled")
       this.setState(
         ref.itemKey,
-        { failure: shownRefusal({ code: "apply-refused", serverCode: refusalCode(answer) }) },
+        {
+          failure: this.shown(ref.ownerKey, {
+            code: "apply-refused",
+            serverCode: refusalCode(answer),
+          }),
+        },
         id,
       );
     return this.outcomeOf(ref, answer, restore);
@@ -911,7 +933,7 @@ export class DraftCommandOwner {
       this.setState(ref.itemKey, {
         hidden: false,
         discarding: null,
-        failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
+        failure: this.shown(ref.ownerKey, { code: "discard-refused", serverCode: result.status }),
       });
       return { kind: "change-refused", code: result.status };
     } catch {
@@ -965,7 +987,7 @@ export class DraftCommandOwner {
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") return { kind: "done" };
       this.setState(ref.itemKey, {
-        failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
+        failure: this.shown(ref.ownerKey, { code: "discard-refused", serverCode: result.status }),
       });
       return { kind: "change-refused", code: result.status };
     } catch {
@@ -1012,7 +1034,10 @@ export class DraftCommandOwner {
     const failed = (failure: BranchCommandFailure | null) => {
       if (this.active)
         for (const ref of scope.values())
-          this.setState(ref.itemKey, { hidden: false, failure: failure && shownRefusal(failure) });
+          this.setState(ref.itemKey, {
+            hidden: false,
+            failure: failure && this.shown(ref.ownerKey, failure),
+          });
     };
     try {
       const answer = await discardBranch(projectId, branchId, {
