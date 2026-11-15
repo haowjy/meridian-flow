@@ -38,9 +38,13 @@ code disagree, one of them is a bug.
 `openSide(X)`: X is the other kind from main; it fills its kind's slot, which the side shows. The side's picker offers only the
 other kind.
 
+A chat's upload sits in neither pane: `place` hands it back to the caller, whose open shows it in
+the upload viewer dialog over both panes, which stay as they were.
+
 ```mermaid
 flowchart TD
   pick([Writer picks X]) --> where{Where?}
+  where -->|X is a chat's upload| dlg[Upload viewer dialog; panes untouched] --> done
   where -->|Left sidebar| om[openMain X]
   where -->|Write or Chat switch to kind k| cur[X = slot of k, else current of k, else empty page of k] --> om
   where -->|Inside a pane, or the side picker| inPane{Same kind as main?}

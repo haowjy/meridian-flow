@@ -48,6 +48,8 @@ async function fixture() {
     agentRevisions: app.agentRevisions,
     agentCatalog,
     eventSink: app.eventSink,
+    contextSources: app.contextSources,
+    projectWakeHub: app.projectWakeHub,
   };
   const args = {
     id: crypto.randomUUID(),

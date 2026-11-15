@@ -102,7 +102,8 @@ leaves main where it is. Back and Forward move main only; the side follows the s
 Every link, door and reveal of an item, and every pick in the side's picker, follows one placement
 command, `place(item)` (`side/SideView.tsx`, `placeIn(kind, main)` in `side/side-item.ts`): main's
 kind opens in main, the other kind in the other pane, which is the same rule from main and from the
-side. A surface in no pane (the left sidebar) opens in main without asking `place`
+side. A chat's upload goes to neither pane: `place` answers main, and the opener shows it in
+`UploadViewerDialog`. A surface in no pane (the left sidebar) opens in main without asking `place`
 (`useOptionalPlaceHere`, `usePlaceChat`). Each host provides its pane (`PanePlaceContext`,
 `pane-place.ts`: the document host, the chat surface, the phone's sheet and main chat); `place` no
 longer reads it, but focus (a chat in main takes it), the draft scope and the announcement do. For the

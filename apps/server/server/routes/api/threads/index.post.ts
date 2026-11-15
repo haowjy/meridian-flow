@@ -35,6 +35,8 @@ export default defineEventHandler(async (event) => {
         agentRevisions: app.agentRevisions,
         agentCatalog: app.agentCatalog,
         eventSink: app.eventSink,
+        contextSources: app.contextSources,
+        projectWakeHub: app.projectWakeHub,
       },
       {
         projectId: requireRequestId(body.projectId, "projectId"),

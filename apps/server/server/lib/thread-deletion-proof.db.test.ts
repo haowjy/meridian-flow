@@ -186,6 +186,8 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
       agentRevisions: app.agentRevisions,
       agentCatalog,
       eventSink: app.eventSink,
+      contextSources: app.contextSources,
+      projectWakeHub: app.projectWakeHub,
     };
     const args = {
       projectId: PROJECT,

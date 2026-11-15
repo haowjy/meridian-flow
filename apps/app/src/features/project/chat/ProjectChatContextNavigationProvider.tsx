@@ -8,7 +8,8 @@
  * visibility and thread lifetime. This file prepares each door as a question plus a policy:
  * a live answer opens by the document id the resolver named, in the pane `useLinkPlacement` picks; a hidden document goes
  * to its Work's review by item identity; a missing one routes by address, so the route says
- * so in place. An upload has no Editor address, so no door opens it.
+ * so in place. An upload has no Editor address: its door asks the same question and opens the
+ * answer by id, which shows it in the upload viewer.
  *
  * Every door (and, through `retire`, every transcript click) retires a passage still landing.
  * A passage door's answer hands the resolved id and its placement to passage navigation, which
@@ -154,8 +155,13 @@ export function ProjectChatContextNavigationProvider({
   const prepare = useCallback(
     (uri: string, passage?: ContextPassageAnchor): PreparedDoor | null => {
       if (!onOpenContextTarget || !activeWork || !noWorkId) return null;
-      // An upload belongs to its chat and has no Editor address: no door opens it.
-      if (chatIdForUploadsUri(uri, chats)) return null;
+      if (chatIdForUploadsUri(uri, chats)) {
+        passages.retire();
+        const link = classifyLinkTarget(uri);
+        if (!link) return null;
+        const door: Placement = { workId: null, passage };
+        return { link, policy: { open: (document) => openFound(door, document) } };
+      }
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return null;
       // The catalog knows a document only by its canonical spelling, whoever owns it: a bare
@@ -207,8 +213,8 @@ export function ProjectChatContextNavigationProvider({
     (uri: string) =>
       !!activeWork &&
       !!noWorkId &&
-      chatIdForUploadsUri(uri, chats) === null &&
-      isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages),
+      (chatIdForUploadsUri(uri, chats) !== null ||
+        isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages)),
     [activeWork, availableWorks, noWorkId, lineages, chats],
   );
   const doors = useMemo(

@@ -23,9 +23,10 @@ come in through the real intake.
 5. Delete a file, one a sent message used too: its row goes at once, a notice offers Undo, and
    its chip leaves the composer. Reload: it stays deleted. Trash lists it ("Deleted from
    Uploads"); Undo or Restore brings the row back in Files.
-6. Rows offer no Open: uploads have no editor address, so no chat door opens one
-   on desktop, and the sent message's attachment is not a link. This also holds for a chat
-   created with its first attachment.
+6. Rows offer no Open: a click inserts. Click the sent message's attachment chip, a tool row
+   naming the upload, and a reply's `uploads://` link: each opens the upload viewer dialog, with
+   the chat in main or beside, and the side keeps what it showed. This also holds right after
+   sending a chat's first message with its first attachment.
 7. Open a second chat in the same Work: Files shows the same shared Scratch and
    no uploads from the first chat. Fork the first chat: the fork's
    trigger reads "Files" and its menu says "No files attached in this chat yet."
