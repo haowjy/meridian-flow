@@ -36,10 +36,15 @@ export async function readDocument(
      * this lookup; a copy's private source read passes none.
      */
     recordingFrontier?: FrontierLookup;
+    /** Inside a model edit's command: the read joins its transaction and pulls nothing. */
+    inCommand?: boolean;
   },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
 ): Promise<WriteOutcome> {
-  return deps.documentSync.agentEdit().read(
+  const read = options.inCommand
+    ? deps.documentSync.modelEdits().read
+    : deps.documentSync.agentEdit().read;
+  return read(
     {
       ...options.selection,
       ...(options.format ? { format: options.format } : {}),

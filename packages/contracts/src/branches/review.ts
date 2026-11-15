@@ -7,7 +7,7 @@
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
  */
 import { z } from "zod";
-import { CommandIdSchema, type CommandOutcome } from "../commands/index.js";
+import { CommandIdSchema, type CommandOutcome, type Settlement } from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchId, CommandId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
@@ -267,10 +267,14 @@ export type ModelEditKey = {
   projectId: ProjectId;
 };
 
-/** A model's edit settled: `edited` committed it, `refused` answered it with nothing changed. */
+/**
+ * A model's edit settled: `edited` committed it; `returned` answered it with the document as it
+ * stands and changed nothing (`settled` says why); `refused` answered it with nothing changed.
+ */
 export type ModelEditCommandResult = {
-  status: "edited" | "refused";
+  status: "edited" | "returned" | "refused";
   toolResult: ModelEditToolResult;
+  settled?: Settlement[];
 };
 
 /**

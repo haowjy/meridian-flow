@@ -51,7 +51,7 @@ import { createBranches } from "../domain/branches.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
 import { createDraftRetirement } from "../domain/draft-retirement.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
-import { createModelEditWriter } from "../domain/model-edit-write.js";
+import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import { createThreadCores } from "../thread-cores.js";
@@ -364,15 +364,14 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     observability,
   });
   // Scoped as composition scopes it, so a real link scope sees every model call.
-  const agentEdit = scopeAgentEdit(
-    createAgentEditRouter({
-      branches: workBranches,
-      drafts: draftStore,
-      liveUtilityCore: runtime.liveUtilityCore,
-      threadCore,
-    }),
-    links,
-  );
+  const agentEditRouter = createAgentEditRouter({
+    branches: workBranches,
+    drafts: draftStore,
+    liveUtilityCore: runtime.liveUtilityCore,
+    threadCore,
+  });
+  const agentEdit = scopeAgentEdit(agentEditRouter, links);
+  const modelEditRead = createModelEditRead(agentEdit.read);
   const ensureWorkDraft = ({
     documentId,
     branchId,
@@ -386,6 +385,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     {
       write: scopeModelEditWrite(
         createModelEditWriter({
+          read: modelEditRead,
           evidence: modelEvidence,
           liveCore: runtime.liveUtilityCore,
           threadCore,
@@ -412,6 +412,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         }),
         links,
       ),
+      read: modelEditRead,
       catchUp: (documentId) => draftPulls.flushLivePull(documentId),
     },
     modelEvidence,

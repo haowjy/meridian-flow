@@ -610,7 +610,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await review(script).discard(CH1, { ends: "item" });
         const { call } = await drafting(script).begin();
         const undone = await call("write", { command: "undo", path: "ch1" });
-        expect(undone.isError).toBe(true);
+        expect(undone.isError).toBeFalsy();
         expect(text(undone)).toContain("status: cant_undo_changed");
       });
     });
