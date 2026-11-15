@@ -138,11 +138,17 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
   view,
 ) => {
   const schema = view.state.schema;
+  let content = copied.content;
+  // A cell selection's slice is open around its table. The text codec needs the enclosing
+  // blocks too; throwing here also prevents ProseMirror from copying the parallel HTML slice.
+  if (content.firstChild?.type.spec.tableRole === "row") {
+    content = Fragment.from(schema.nodes.table.create(null, content));
+  }
   const blocks: PMNode[] = [];
-  if (copied.content.firstChild?.isInline) {
-    blocks.push(schema.nodes.paragraph.create(null, copied.content));
+  if (content.firstChild?.isInline) {
+    blocks.push(schema.nodes.paragraph.create(null, content));
   } else {
-    copied.content.forEach((node) => {
+    content.forEach((node) => {
       blocks.push(node);
     });
   }
