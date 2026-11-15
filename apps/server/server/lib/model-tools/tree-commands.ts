@@ -16,12 +16,20 @@ import {
   type TreeResult,
 } from "../../domains/context/tree/tree-commands.js";
 import {
+  appliesAfterCheck,
   type FileGrant,
   isFileAccessDenied,
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import { agentsLevelOfUri } from "../agents-widening.js";
 import { threadContainerTarget } from "../file-targets.js";
+import {
+  type AgentsCheckTarget,
+  checkAgentsWrite,
+  draftContext,
+  markAgentsWrite,
+} from "./agents-check.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, namesEvidence, shownNamesOf } from "./shown-paths.js";
 import {
@@ -91,6 +99,8 @@ export async function runTreeToolCommand(
   ctx: ToolHandlerContext,
   /** Runs the part that changes things as the call's command. */
   settle: (effect: () => Promise<unknown>) => Promise<unknown>,
+  /** Where the check's target is collected when the call's caller checks several writes at once. */
+  checked: AgentsCheckTarget = {},
 ) {
   const command = commandOf(input);
   if (isToolError(command)) return command;
@@ -107,20 +117,48 @@ export async function runTreeToolCommand(
   }
   const primary = areaOfPath(command.path)?.area as string;
   // The file policy decides per source whether the change is the chat's draft or live.
-  const grants: FileGrant<"edit">[] = [];
-  let draftArea: string | undefined;
-  for (const area of areas as string[]) {
-    const path = paths.find((candidate) => areaOfPath(candidate)?.area === area) as string;
-    const target = await threadContainerTarget(deps.works, call.context.resolution, path);
-    if (!target) continue;
-    const granted = await deps.fileAccess.authorize(call.principal, target, "edit");
-    if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);
-    grants.push(granted);
-    if (granted.destination.kind === "draft") draftArea ??= area;
-  }
   const crossing =
     command.command === "move" &&
     command.from.some((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary));
+  const grants: FileGrant<"edit">[] = [];
+  let draftArea: string | undefined;
+  for (const area of areas as string[]) {
+    const inArea = paths.filter((candidate) => areaOfPath(candidate)?.area === area);
+    const path = inArea[0] as string;
+    const target = await threadContainerTarget(deps.works, call.context.resolution, path);
+    if (!target) continue;
+    let granted = await deps.fileAccess.authorize(call.principal, target, "edit");
+    if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);
+    // A change to an Agents level lands in the chat's branch whatever the chat's mode; the
+    // check then decides whether it applies (the same rule `writeUnderGrant` follows). A move
+    // between lists that touches a level never gets here: it is a copy and a delete.
+    // Any path of the area may be the one in the level: a move from `user://notes/` into
+    // `user://.agents/` names both in one area.
+    const level = inArea.map((each) => agentsLevelOfUri(uriOfWritten(each))).find(Boolean) ?? null;
+    if (level) {
+      if (granted.destination.kind === "live") {
+        const drafted = await deps.fileAccess.authorizeAt(
+          call.principal,
+          target,
+          {
+            kind: "draft",
+            owner: call.execution.branchOwner,
+            ownerHandle: call.execution.scope.workHandle,
+          },
+          "edit",
+        );
+        if (isFileAccessDenied(drafted)) return fileAccessDeniedError(input.command, drafted, path);
+        granted = drafted;
+      }
+      markAgentsWrite(
+        checked,
+        level,
+        appliesAfterCheck(call.principal, { ...granted.facts, agentsLevel: level }),
+      );
+    }
+    grants.push(granted);
+    if (granted.destination.kind === "draft") draftArea ??= area;
+  }
   if (crossing && draftArea !== undefined)
     return writeToolError(
       input.command,
@@ -145,14 +183,17 @@ export async function runTreeToolCommand(
     threadId: ctx.threadId,
     turnId: ctx.turnId,
   };
+  // An Agents level drafts whatever the chat's mode, so its port places writes in the branch.
   const port = drafted
-    ? call.context.port
+    ? checked.levels
+      ? draftContext(deps, call).port
+      : call.context.port
     : contextPortForThread(deps.contextPorts, call.context.resolution, {
         destination: { kind: "live" },
       });
   let handle: string | undefined;
 
-  return settle(async () => {
+  const result = await settle(async () => {
     const run = await runWithEditGrants(deps.fileAccess, grants, () =>
       port.treeCommand(area, {
         origin,
@@ -227,7 +268,8 @@ export async function runTreeToolCommand(
         ...(result.alreadyDeleted ? { alreadyDeleted: true as const } : {}),
         ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
         ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
-        ...(drafted && firstDrafted && result.made.length > 0
+        // An Agents change says on its own receipt line whether it waits or applied.
+        ...(drafted && firstDrafted && !checked.levels && result.made.length > 0
           ? { firstDrafted: true as const }
           : {}),
         ...(result.concurrent.length > 0 ? { concurrent: result.concurrent } : {}),
@@ -244,4 +286,5 @@ export async function runTreeToolCommand(
       evidence: { shown: [], ...namesEvidence(result.delta) },
     };
   });
+  return checkAgentsWrite(deps, call, ctx, checked, result);
 }

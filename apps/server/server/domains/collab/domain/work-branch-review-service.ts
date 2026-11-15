@@ -23,6 +23,7 @@ export function createWorkBranchReviewService(input: {
   discard: BranchDiscard;
   commands: DocumentCommands;
   apply: CollabBranches["draftReview"]["apply"];
+  autoApply: CollabBranches["draftReview"]["autoApply"];
   unapplyClick: CollabBranches["draftReview"]["unapplyClick"];
   undoDiscard: CollabBranches["draftReview"]["undoDiscard"];
   listDiscards: CollabBranches["draftReview"]["listDiscards"];
@@ -79,6 +80,7 @@ export function createWorkBranchReviewService(input: {
   return {
     draftReview: {
       apply: input.apply,
+      autoApply: input.autoApply,
       unapplyClick: input.unapplyClick,
       undoDiscard: input.undoDiscard,
       listDiscards: input.listDiscards,

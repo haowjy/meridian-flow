@@ -1,6 +1,12 @@
 /** A level's package files as the writer's documents hold them now. */
+import type { DraftOwner } from "@meridian/contracts";
 import type { AgentsLevel } from "@meridian/contracts/agents";
 import type { SkillFiles } from "../domain/types.js";
+
+/** A branch a level is read through: its owner's drafts over live. */
+export interface AgentsBranch {
+  owner: DraftOwner;
+}
 
 export interface LevelFiles {
   /** Plain text of each document, keyed by level-root-relative path (`agents/critic.md`). */
@@ -13,7 +19,13 @@ export interface LevelFiles {
 }
 
 export interface AgentLevelFiles {
-  read(input: { level: AgentsLevel; userId: string; projectId?: string }): Promise<LevelFiles>;
+  read(input: {
+    level: AgentsLevel;
+    userId: string;
+    projectId?: string;
+    /** Reads the level as this owner's branch holds it: its tree, and a draft's text over live's. */
+    branch?: AgentsBranch;
+  }): Promise<LevelFiles>;
 }
 
 /** A host with no writer documents: only the built-in level exists. */

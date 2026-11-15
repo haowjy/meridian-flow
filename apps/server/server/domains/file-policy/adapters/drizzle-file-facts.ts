@@ -6,6 +6,7 @@
  */
 
 import type { DraftOwner } from "@meridian/contracts";
+import { agentsLocationOf } from "@meridian/contracts/agents";
 import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextSourceId,
@@ -61,7 +62,7 @@ type WorkRow = {
   deletedAt: Date | null;
 };
 
-type FolderRow = { id: FolderId; deleted: boolean };
+type FolderRow = { id: FolderId; deleted: boolean; name: string };
 
 export function createDrizzleFileFacts(
   db: Database,
@@ -198,6 +199,15 @@ async function sourceRows(
   return new Map(rows.map((row) => [row.sourceId, row]));
 }
 
+/** The Agents level a document's folder chain (nearest first) puts it in, if any. */
+function agentsLevelOf(scheme: ContextUriScheme, chain: readonly FolderRow[]) {
+  const folder = chain
+    .map((link) => link.name)
+    .reverse()
+    .join("/");
+  return agentsLocationOf(scheme, folder)?.level;
+}
+
 type DocumentBaseRow = SourceRow & { inTrash: boolean };
 
 function documentBase(
@@ -208,6 +218,7 @@ function documentBase(
 ): Omit<BaseFacts, "scheme"> {
   if (!isContextUriScheme(row.scheme))
     throw new Error(`Document ${documentId} has an invalid source`);
+  const agentsLevel = agentsLevelOf(row.scheme, folders);
   return {
     projectId: row.projectId,
     ownerAccountId: row.ownerAccountId as UserId,
@@ -217,6 +228,7 @@ function documentBase(
     ownerWork: row.work ? workFacts(row.work) : null,
     deleted: row.sourceDeletedAt !== null || (includeTreeDeletion && row.inTrash),
     contentScheme: row.scheme,
+    ...(agentsLevel ? { agentsLevel } : {}),
     self: { kind: "document", id: documentId },
     ancestors: [
       ...folders.map((folder): FileNode => ({ kind: "folder", id: folder.id })),

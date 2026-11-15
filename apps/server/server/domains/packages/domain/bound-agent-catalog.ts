@@ -11,7 +11,7 @@ import type {
   ResolvedAgentConfiguration,
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
-import type { AgentLevelFiles } from "../ports/agent-level-files.js";
+import type { AgentLevelFiles, AgentsBranch } from "../ports/agent-level-files.js";
 import type {
   AgentRevision,
   AgentRevisionStore,
@@ -22,6 +22,7 @@ import {
   resolveAgentConfiguration,
   skillReference,
 } from "./agent-configuration.js";
+import { capabilityOf, type EffectiveAgents } from "./agent-widening.js";
 import { type Combined, type Layered, type LevelItems, layerByName } from "./combine-agents.js";
 import {
   type AgentSourceSnapshot,
@@ -79,6 +80,16 @@ export interface BoundAgentCatalog {
   >;
   /** Every level's Agent and skill files, with Mars's verdict and what each hides. */
   files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
+  /**
+   * The Agents a write at `level` can change the meaning of: that level and the levels below it,
+   * never the writing Project's full catalog (`subagents` and `skills` resolve only inside their
+   * package, so a higher level that has a name keeps its winner whatever `level` holds). `branch`
+   * reads the files as that owner's branch holds them, its drafts' text over live's.
+   */
+  effectiveAgents(
+    userId: string,
+    input: { projectId?: string; level: "user" | "project"; branch?: AgentsBranch },
+  ): Promise<EffectiveAgents>;
   /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
   builtinFile(path: string): string | undefined;
   /** The skills a writer can invoke with `/`: built-in, user and project, combined by name. */
@@ -129,9 +140,9 @@ export function createBoundAgentCatalog(input: {
   }));
 
   /** The three levels' packages, lowest first, compiled from the files as they are now. */
-  async function levels(userId: string, projectId: string | undefined) {
+  async function levels(userId: string, projectId: string | undefined, branch?: AgentsBranch) {
     const read = async (level: "user" | "project") =>
-      splitLevel(level, await input.levelFiles.read({ level, userId, projectId }));
+      splitLevel(level, await input.levelFiles.read({ level, userId, projectId, branch }));
     const [user, project] = await Promise.all([read("user"), read("project")]);
     const compileLevel = (split: typeof user) => ({
       root: compile(split.root),
@@ -256,6 +267,21 @@ export function createBoundAgentCatalog(input: {
                   : 0,
         ),
       };
+    },
+
+    async effectiveAgents(userId, { projectId, level, branch }) {
+      const all = await levels(userId, projectId, branch);
+      const scope = level === "user" ? all.filter((each) => each.level !== "project") : all;
+      return new Map(
+        winners(agentsOf(scope)).map((entry) => [
+          entry.slug,
+          {
+            name: entry.value?.agent.name ?? entry.slug,
+            level: entry.level,
+            capability: capabilityOf(entry.value?.agent),
+          },
+        ]),
+      );
     },
 
     async resolvePrimary(_userId, selection) {

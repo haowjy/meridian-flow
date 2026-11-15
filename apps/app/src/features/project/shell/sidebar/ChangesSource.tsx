@@ -664,6 +664,11 @@ function ChangeRow({
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
+            {file.draft.widened?.map((label) => (
+              <p key={label} className="px-2 text-xs text-muted-foreground">
+                <Trans>Wider Agent: {label}</Trans>
+              </p>
+            ))}
             <DraftCommandStatus itemKey={file.draft.itemKey} />
           </div>
         }

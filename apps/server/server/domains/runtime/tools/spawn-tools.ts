@@ -4,14 +4,17 @@
  * ChildRunCoordinator owns lifecycle. Each registration's zod input is parsed by
  * the executor before its handler runs.
  */
-import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
+import {
+  type InvocationPatch,
+  invocationPatchSchema,
+  TOOL_CATALOG,
+} from "@meridian/contracts/agents";
 import {
   type ReturnResultCapture,
   returnResultCaptureSchema,
   type SpawnResult,
 } from "@meridian/contracts/spawn";
 import { z } from "zod";
-import { TOOL_CATALOG } from "../loop/permissions/tool-policy.js";
 import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
 import { spawnHistorySummary, threadHistorySummary } from "./history-summaries.js";

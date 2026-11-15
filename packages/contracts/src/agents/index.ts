@@ -5,6 +5,7 @@ import type { InvocationPatch } from "./execution-knobs.js";
 
 export * from "./execution-knobs.js";
 export * from "./location.js";
+export * from "./tool-policy.js";
 
 /**
  * The Agent a writer picked: the name the picker shows and the exact revision it showed. A chat

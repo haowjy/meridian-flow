@@ -50,6 +50,7 @@ import type { ThreadControls } from "../../domains/runtime/loop/runtime-delivery
 import type { ObjectRelease, ObjectStorePort } from "../../domains/storage/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../domains/threads/index.js";
 import { threadExecutionContext } from "../../domains/threads/index.js";
+import type { AgentsWidening } from "../agents-widening.js";
 import { agentPrincipal } from "./file-access.js";
 
 export interface ToolWiringDeps {
@@ -67,6 +68,8 @@ export interface ToolWiringDeps {
   /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
+  /** The check on an AI write into an Agents level. */
+  agentsWidening: AgentsWidening;
   eventSink: EventSink;
   /** Binary copies duplicate the stored object. */
   objectStore: ObjectStorePort;

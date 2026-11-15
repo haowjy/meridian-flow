@@ -71,6 +71,18 @@ is in the [Agent definition][definitions] and [package][packages] pages.
 - The store is an internal port, and app composition shares one transaction
   owner with thread repositories so a completed transaction cannot leak writes.
 
+## Widening
+
+`domain/agent-widening.ts` compares two effective catalogs (`BoundAgentCatalog.effectiveAgents`:
+the winners by name at one level and the levels below it, read live or through an owner's branch)
+and says which Agents became wider: the permission rose, the runtime's tool set (`projectToolPolicy`
+in `@meridian/contracts/agents`) gained a tool, or `subagents` gained a name. Capability is what
+the runtime grants: `ask`/`confirm` run as `allow` today, so they never count. An Agent with no
+item of its name before is new, never a widening. A broken Agent that is fixed is compared with a
+read-only Agent. One formatter (`widenedLabel`) serves the receipt and Changes. `widenedByFile`
+says which widened Agents a pending file can be the reason for (an Agent's own file; a skill's file
+for the Agents that load it; any other file for all), so Changes labels each item, not the level.
+
 Checks: `tools/qa/probes/agents-through-mars/run.mts` (database) and
 `tools/qa/agents-through-mars/server-gate.mts` (running stack).
 

@@ -45,6 +45,7 @@
  */
 
 import { createReplyMutations } from "@meridian/agent-edit/integration";
+import type { ToolPolicy } from "@meridian/contracts/agents";
 import {
   isMeridianError,
   type MeridianError,
@@ -144,7 +145,7 @@ import {
   parsePartialToolActivityInput,
   showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
-import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
+import { missingToolRefusal } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Lease, RunClaim, ThreadPhase } from "./ports.js";
 import {

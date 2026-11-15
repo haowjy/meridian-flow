@@ -13,6 +13,7 @@ import {
   draftOwnerFromKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
+import type { AgentsLevel } from "@meridian/contracts/agents";
 import type {
   ApplyClickAnswer,
   ApplyClickResult,
@@ -52,10 +53,16 @@ import {
   isFileAccessDenied,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
+import {
+  type Widened,
+  widenedByFile,
+  widenedLabel,
+} from "../domains/packages/domain/agent-widening.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/command-record.js";
 import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
+import { agentsPlacesOf } from "./agents-widening.js";
 import type { AppServices } from "./app.js";
 import {
   documentTarget,
@@ -73,6 +80,7 @@ type BranchRouteServices = {
     "authorize" | "authorizeAt" | "confirmEdit" | "listAccess"
   >;
   documentSync: Pick<AppServices["documentSync"], "draftReview" | "roomRemoval">;
+  agentsWidening: Pick<AppServices["agentsWidening"], "widened">;
 };
 
 export function selectBranchRouteServices(app: AppServices): BranchRouteServices {
@@ -81,6 +89,7 @@ export function selectBranchRouteServices(app: AppServices): BranchRouteServices
     works: app.workRepo,
     fileAccess: app.fileAccess,
     documentSync: app.documentSync,
+    agentsWidening: app.agentsWidening,
   };
 }
 
@@ -450,13 +459,38 @@ export async function handleOwnerDraftListRequest(
   const frozen =
     listed.branchId !== null &&
     (await deps.documentSync.draftReview.branchOwner(listed.branchId))?.lifecycle === "frozen";
+  const visible = listed.items.filter(
+    (item) =>
+      readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
+  );
+  // One comparison per Agents level the listed items touch, not one per item; each item then
+  // carries the Agents its own file can widen.
+  const levels = new Set(visible.flatMap((item) => agentsPlacesOf(item).map((at) => at.level)));
+  const widened = new Map<AgentsLevel, Widened[]>();
+  for (const level of listed.branchId ? levels : [])
+    widened.set(
+      level,
+      await deps.agentsWidening.widened({
+        userId: input.userId,
+        projectId: input.projectId,
+        owner,
+        level,
+      }),
+    );
   return {
-    items: listed.items
-      .filter(
-        (item) =>
-          readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
-      )
-      .map((item) => toWireItem(item, listed.threadTitles)),
+    items: visible.map((item) => {
+      const labels = [
+        ...new Set(
+          agentsPlacesOf(item).flatMap((at) =>
+            widenedByFile(widened.get(at.level) ?? [], at.path).map(widenedLabel),
+          ),
+        ),
+      ];
+      return {
+        ...toWireItem(item, listed.threadTitles),
+        ...(labels.length ? { widened: labels } : {}),
+      };
+    }),
     branchId: listed.branchId,
     folders: listed.folders,
     frozen,

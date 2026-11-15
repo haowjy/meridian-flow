@@ -446,6 +446,17 @@ export type DraftReviewApi = {
     request: import("@meridian/contracts/branches").ApplyItemsClick;
     envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
+  /**
+   * The server's Apply of the owner's branch items `select` names (an AI write that passed its
+   * check), as one Apply command.
+   */
+  autoApply(input: {
+    owner: DraftOwner;
+    accountId: UserId;
+    projectId: ProjectId;
+    commandId: CommandId;
+    select(item: import("./domain/branch-review-items.js").DraftReviewItem): boolean;
+  }): Promise<import("./domain/branch-auto-apply.js").AutoApplyResult>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */
   unapplyClick(input: {
     branchId: BranchId;
@@ -600,6 +611,14 @@ export type DraftPeerShadowAccess = {
   ): Promise<Map<DocumentId, string>>;
   /** Words per document whose derived outputs are current; the others are absent. */
   readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
+  /**
+   * A document's markdown as an owner's branch holds it: the owner's draft when it has one, else
+   * live. Needs no reading chat, so a review list and a check read the same text.
+   */
+  readOwnerMarkdown(input: {
+    documentId: DocumentId;
+    owner: DraftOwner;
+  }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   readEffectiveMarkdown(
     input: {
       documentId: DocumentId;

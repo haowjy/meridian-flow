@@ -479,6 +479,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     apply: async () => {
       throw new Error("Apply is not configured in the collab fixture");
     },
+    autoApply: async () => ({ status: "nothing" }),
     unapplyClick: async () => {
       throw new Error("Un-Apply click is not configured in the collab fixture");
     },
