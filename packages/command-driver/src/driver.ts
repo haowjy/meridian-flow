@@ -44,8 +44,11 @@ export class JournalUnavailableError extends Error {
 
 export type SubmitInput = {
   kind: string;
-  /** Ordering: only the earliest unsettled record of a lane is sent. */
-  lanes: readonly string[];
+  /**
+   * Ordering: only the earliest unsettled record of a lane is sent. A function is given the
+   * journal's records inside the transaction that saves this one, for lanes that depend on them.
+   */
+  lanes: readonly string[] | ((records: readonly CommandRecord[]) => readonly string[]);
   body: unknown;
 };
 
@@ -92,6 +95,11 @@ export class CommandDriver {
     }
   }
 
+  /** Whether the journal has been read: false until the first read succeeds. */
+  get hasRead(): boolean {
+    return this.installedRead > 0;
+  }
+
   stop(): void {
     this.stopped = true;
     this.suspend();
@@ -135,12 +143,12 @@ export class CommandDriver {
     const id = crypto.randomUUID();
     let record: CommandRecord;
     try {
-      record = await this.ports.journal.transact(({ nextSeq }) => {
+      record = await this.ports.journal.transact(({ records, nextSeq }) => {
         const created: CommandRecord = {
           id,
           seq: nextSeq,
           kind: input.kind,
-          lanes: input.lanes,
+          lanes: typeof input.lanes === "function" ? input.lanes(records) : input.lanes,
           sendId: crypto.randomUUID(),
           body: input.body,
           bodyVersion: kind.version,
@@ -187,12 +195,26 @@ export class CommandDriver {
     }));
   }
 
-  /** The writer is done with a settled record. */
+  /**
+   * The writer is done with a settled record. A refused record that holds its lanes takes with
+   * it the unsent records waiting on them: they depended on it.
+   */
   dismiss(id: string): Promise<void> {
     return this.mutate(({ records }) => {
       const record = records.find((candidate) => candidate.id === id);
+      if (!record || record.state === "sending") return { change: {}, result: undefined };
+      const waiting =
+        record.state === "never" && this.ports.kinds[record.kind]?.holdsLane === true
+          ? records.filter(
+              (other) =>
+                other.seq > record.seq &&
+                other.state === "sending" &&
+                !other.sent &&
+                other.lanes.some((lane) => record.lanes.includes(lane)),
+            )
+          : [];
       return {
-        change: { remove: record && record.state !== "sending" ? [id] : [] },
+        change: { remove: [id, ...waiting.map((other) => other.id)] },
         result: undefined,
       };
     });

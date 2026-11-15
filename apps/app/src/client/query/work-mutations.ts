@@ -10,7 +10,6 @@ import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-quer
 import { useMemo } from "react";
 import { useCommandDriver, useCommands } from "@/client/commands/driver-context";
 import { DeviceRefusedError, submitCommand } from "@/client/commands/submit";
-import { unsettledProjectCreation } from "./project-commands";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   type ReturnedWhy,
@@ -103,12 +102,7 @@ async function runWorkCommand<Op extends WorkOperation>(
   }
   const record = await submitCommand(driver, {
     kind: workKindOf(operation),
-    lanes: workLanes(
-      operation,
-      projectId,
-      workId,
-      unsettledProjectCreation(driver.getSnapshot().records, projectId) !== undefined,
-    ),
+    lanes: (records) => workLanes(operation, projectId, workId, records),
     body: { projectId, variables },
   });
   if (!record) return new DeviceRefusedError();
