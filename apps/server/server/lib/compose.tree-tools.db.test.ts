@@ -360,7 +360,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await writer.apply(CH1)).toMatchObject({
         status: "applied",
-        settled: [{ rule: "restored", documentId: CH1 }],
+        items: [
+          { node: CH1, tree: { landed: true, settled: [{ rule: "restored", documentId: CH1 }] } },
+        ],
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
 
