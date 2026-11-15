@@ -19,11 +19,10 @@ describe("DraftRoomPool.release", () => {
     const pool = new DraftRoomPool({
       teardownGraceMs: 1,
       teardownOwner: new DocumentSessionTeardownOwner(() => new Error("unavailable")),
-      hold: async () => ({ release: () => undefined }),
-      openSession: () => {
+      open: () => {
         opened += 1;
         const first = opened === 1;
-        return {
+        const session = {
           getSnapshot: () => ({ connectionState: { kind: "reset", disposition: "removed" } }),
           resetDisposition: "removed",
           unacknowledgedUpdates: () => null,
@@ -36,6 +35,10 @@ describe("DraftRoomPool.release", () => {
           },
           destroy: first ? () => draining : vi.fn(async () => {}),
         } as never;
+        return {
+          session,
+          hold: Promise.resolve({ release: () => undefined }),
+        };
       },
     });
     pool.retain("editor", [{ roomKey: room, documentId: "doc" }]);

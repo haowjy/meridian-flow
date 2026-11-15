@@ -535,21 +535,116 @@ keyboard, pointer, drop, or draft-recovery answer.
 ### Unsent typing handed back
 
 - Before a room's local copy goes with typing the server never acknowledged, the registry
-  reads the words (`DocumentSession.unsentText`: the text the transport's unacknowledged
-  updates inserted and nothing has deleted since, `rescued-text.ts`) and tells
-  `observeUnsentTyping` once per session. It reads them as the session's retirement begins,
+  reads it (`DocumentSession.unsentEdits`: the items the transport's unacknowledged updates
+  inserted, and the document encoded so it can be read once the session is destroyed) and
+  hands them back once per session, like every other notice (see "One notice store per
+  account"). It reads them as the session's retirement begins,
   when it ended on a closing or removing reset (`DocumentSessionTeardownOwner`'s `retiring`),
   and in `clearLocalCopy` (cause `removed`). Not at the reset: a session kept on screen still
   shows that text, and a restore that restarts it delivers it, so the words would come back
   twice. A session retires once, so each session's typing is handed back at most once. A 4409
-  access change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`notifyUnsentTyping`,
+  access change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`unsentTypingToasts`,
   `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
   the words back. A closed draft's copy also stays for an Undo of its Discard, which delivers it.
 - What it cannot reach: a room with no session in this tab (the copy lives only in
-  IndexedDB, for a document no tab has open), and typing from before this tab's transport
-  existed (an offline reload replays it from IndexedDB, outside the transport's
-  unacknowledged updates). Both are known losses on
+  IndexedDB, for a document no tab has open: its next open decides, handing it back while the
+  Work is closed and delivering it after an Unarchive), and, for a closed draft or removed
+  document, typing from before this tab's transport existed (an offline reload replays it from
+  IndexedDB, outside the transport's unacknowledged updates). A read admission has no such loss:
+  see the next section. The same cause loses a reload's unsent typing in a document purged before
+  the room reconnects: `clearLocalCopy` with no session has no measure of what the server lacks
+  and deletes the copy unmeasured. The fix is a mark in the copy of what the server is known to
+  have (#1606). Both are known losses on
   [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
+
+### Undeliverable edits (a room admitted read-only)
+
+**A room the server admits read-only holds none of the writer's edits that the server lacks.**
+It is checked at every handshake of a read admission (`core/transport/handshake-difference.ts`),
+from the wire alone, with nothing stored between handshakes.
+
+- The session (`unsent-edits.ts`) decides what counts: everything the server lacks, whoever wrote it,
+  except *display writes*, what the editor binding writes while drawing (it deletes a node the
+  schema can't build). A display write is told from a writer transaction by the sync plugin's own
+  `addToHistory` meta. A new reader that opens a Yjs transaction through
+  `readRepairedRoot` on a read-only room, with no origin, would be counted each time. The undo
+  manager captures a binding write only with that mark, so repairs never land on the writer's undo
+  stack (its other origins, the manager's own undo and redo, a Discard, are unchanged).
+- A display write is known wherever it travels: `LocalDocumentPeers` marks the update it relays
+  (the receiver adds its delete set before anything is decided) and the session records its
+  display writes in the copy's `custom` store, keyed by client id and schema tag, in the task of
+  the update. A reader takes the copy's updates first and its records after.
+- **Typing** is what the session wrote through any local transaction that is not a display write
+  and has an origin (an editor, Undo and Redo, a Discard; its ledger, by client id), plus every item of any other client id the server lacks.
+- A read-admitted connection sends no Update frame; a change that is not a display write asks for
+  one `forceSync`, and `serverHasLocalChanges` there is the handshake's verdict (Apply's
+  acknowledgement barrier waits on it, not on a `SyncStatus` the server always answers `false`).
+- **The replacement** (`DocumentSessionRegistry.replaceRoom`): the old session reads its copy and
+  takes one more handshake (it can end the replacement), the typing is handed back
+  (`owner-closed`, "…before this document became read-only"; a change with no words shows the
+  sentence alone, and only for a change this session made itself), the old session goes inert for
+  good (`attachTransport` does nothing on it, so no retain, restart or pending attachment can
+  reconnect it and upload the handed-back words; its document stays readable), and a session on the room's *next incarnation* of
+  its copy opens read-only, loading from the server. Nothing is emptied and nothing is sent to
+  other tabs: the copy's database name has a trailing incarnation number (none means 0),
+  `LocalDocumentCopies.current/advance` keep the pointer in `localStorage` under a Web Lock, and two
+  tabs advancing at once end on the same number. The old session is destroyed when its editors
+  have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
+  older-copy path below, like any older incarnation: read whole against the new session's first
+  handshake, so words another tab wrote into the same copy meanwhile come back (once). Holders
+  follow through `observeReplacement` (live bindings and open tabs, draft room reads); a review
+  mount carries its reading position across it (`use-reading-position.ts`).
+- **One notice store per account.** A hand-back notice is a record that holds its own words
+  (`hand-back-notices.ts`, IndexedDB `meridian-handback:<account>`, one store keyed by id and
+  indexed by the copy's database name). The copies are working storage only: nothing in them says
+  what was offered or acted on. A notice is made in one place and changed in one way:
+  - `claim(copy, cause, lacking, read)`: of the items the server lacks, those no notice from that
+    copy holds yet become a new notice with their words. One readwrite transaction, which the
+    browser runs one at a time across tabs and workers, so two tabs holding the same words get
+    one notice between them and a tab holding more gets a second notice with only the rest. It
+    reads the words inside the transaction, from a scratch document of the caller's snapshot.
+  - `act(id)` on Copy or Dismiss marks it acted on: it drops the words and keeps the items, and
+    nothing clears it. No path rewrites a notice's ranges, so no stale tab can take a fact back.
+    Unacted notices carry a field a sparse index lists, so a tab's read costs the open notices,
+    not the account's history.
+- **Who claims.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
+  it reads that and a snapshot, makes the old session inert, then claims), the older-copy read
+  below (everything an older incarnation holds beyond the new session's first handshake), and a
+  closing or removing retirement (the session's unacknowledged typing, read synchronously; a
+  removal's `clearLocalCopy` claims through it). **A copy is deleted only after a claim of what it
+  holds has resolved, and a claim that rejects still shows its words**, unstored, in this tab
+  (`done` resolves at once). The replacement goes on and its old copy stays for the older-copy read; an
+  older copy stays for the next open; a removal keeps the copy for this page. A terminal
+  retirement has only the snapshot, so a rejected claim there is the one place words can be shown
+  once and then lost. Offering twice is accepted; losing is not. A change with no words (a
+  deletion, a format change) is shown unstored by the session's tab, and only when the session's
+  own ledger is among the undeliverable edits: it holds nothing a reload could lose.
+- **What a tab shows is the store's unacted notices.** When the registry's first observer
+  subscribes (the account's start) and whenever another tab claims or acts (a BroadcastChannel
+  ping that carries no state), the tab shows each unacted notice it has not shown, and withdraws
+  the toasts of notices another tab acted on. It keeps the ids it has shown for the life of the
+  page: a read while an `act` is on its way still finds the notice unacted. So every open tab of the account shows a notice, wherever its document is; a reload
+  offers it again until the writer acts in one tab, and then never again in any. The start needs
+  no copy, lock, server or open document. A copy's measure of what the server lacks can't be the
+  store: what the server lacks is known only to a connected session, and an empty measure would
+  offer a purged document's whole text.
+- **Nothing is deleted from the store.** An acted notice's items stop any later claim from its
+  copy offering the same words again, and a claim can still be on its way after its copy
+  database is gone: a terminal retirement claims from its snapshot without anyone waiting for it,
+  in any tab. No tab can know when the last such claim has run, so collecting acted notices by
+  their copy's absence brought words back. Sign-out (`clearAll`) deletes the whole
+  notice database after the copies, and only when no copy was left behind.
+- **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy shows
+  "Copied" at once; Dismiss closes the toast when `done` resolves, a local write's moment later
+  (sonner drops a toast re-shown under an id it is still removing, so a closed toast can't come
+  back). When `done` rejects, the toast stays with "Didn't go through. Try again.", and the next
+  press runs `act` again. Until one commits, the
+  notice stays unacted, so a reload offers it again too.
+- A session that opens a room's current incarnation reads the older ones no tab holds against
+  its first handshake, claims what they hold beyond it (never a wordless toast, which only the
+  current session's own edit earns), and deletes each one whose claim resolved.
+- Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
+  (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
 
 ### Draft room retirement
 
@@ -560,7 +655,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   draft-generation replacement or writer-operation handoff to a new draft.
 - Terminal `4205` (`closed`) and `4208` (`removed`) end the session's transport; its cache
   stays, and a retained session stays readable until its owner releases it or a restore
-  restarts it. The account command owner asks the server what each close means (fresh
+  restarts it. Once its last owner releases it, it retires on the next task, not after the
+  grace: it can never reopen, and its retirement is what hands back typing that just left the
+  screen. The account command owner asks the server what each close means (fresh
   metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
   whichever arrives first; see Draft end and reopen in the
   [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the
