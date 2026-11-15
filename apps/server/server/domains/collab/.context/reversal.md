@@ -177,7 +177,17 @@ goes back by the model's own move the other way (`moveBackAcrossLists`, the cont
 renamed the node. A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
 a folder has no document, so the item carries the node id with `folder: true` and no door), and
-the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
+the receipt chip counts the tree steps. Every row's words come from the turn's write receipts:
+its line (moved, copied, deleted, a folder's too) from each node's `before_at` and `after_at`, a
+folder's name where the change left it (a clash's " (2)" included), the rows in the file tree's
+order (by section, then rank and id at each level of the view that shows the row: `placesOf`; a
+folder row at its address there now), and the same
+words after the card's Undo (a change leaves the card only when the newest reversal in its chain
+is the model's own undo). A drafted change says each half: `drafts` the text, from the turn's
+parts, and `trees` the tree, from `draftedFates` in `@meridian/project-tree` over the receipt's
+records (it follows a restored Discard's copies, and a record a later change landed over reads
+`replaced`); per node, pending, else applied, else replaced, else discarded. The card's label and
+row word read both. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in
 Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call

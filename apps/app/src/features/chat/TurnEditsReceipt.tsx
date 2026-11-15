@@ -10,6 +10,8 @@ import type {
   TurnInverseSkip,
   TurnLiveLineageDocumentItem,
   TurnReceiptChip,
+  TurnTreeLine,
+  TurnTreeState,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
@@ -94,6 +96,7 @@ export function TurnEditsReceipt({
   const projectId = useProjectDocumentNavigationProjectId();
 
   const drafts = receipt?.drafts;
+  const trees = receipt?.trees;
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   // A part the refusal line already names (a blocked or missing folder, or a document gone
   // again) isn't listed a second time, nor is a drafted document's apply or discard: its row
@@ -101,7 +104,10 @@ export function TurnEditsReceipt({
   const skips = (actionSkips?.skips ?? receipt?.skips ?? []).filter(
     (skip) =>
       !(skip.kind === "tree" && commandRefusal?.status === skip.cause) &&
-      !(drafts?.[skip.documentId] && (skip.cause === "applied" || skip.cause === "discarded")),
+      !(
+        (drafts?.[skip.documentId] || trees?.[skip.documentId]) &&
+        (skip.cause === "applied" || skip.cause === "discarded")
+      ),
   );
   const names = useOwnerNames();
   const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal, names) : undefined;
@@ -231,7 +237,7 @@ export function TurnEditsReceipt({
         >
           <span className="min-w-0 flex-1 font-medium text-foreground">
             {hasEditedDocuments
-              ? documentCountLabel(documents, drafts)
+              ? documentCountLabel(documents, drafts, trees)
               : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
@@ -308,9 +314,7 @@ export function TurnEditsReceipt({
                 <li key={doc.uri}>
                   <DocumentRow
                     document={doc}
-                    draft={
-                      doc.scope === "draft" && !doc.folder ? drafts?.[doc.documentId] : undefined
-                    }
+                    halves={halvesOf(doc, drafts, trees)}
                     onOpenContextUri={openContextUri}
                     canOpenContextUri={canOpenContextUri}
                   />
@@ -386,34 +390,31 @@ function AgentPackagesSaveLines({
  */
 function DocumentRow({
   document,
-  draft,
+  halves,
   onOpenContextUri,
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
-  /** What became of the document's draft text, when the turn drafted it. */
-  draft: TurnDraftState | undefined;
+  /** What became of each half the turn drafted. */
+  halves: Halves;
   onOpenContextUri: OpenContextUri | null;
   canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
-  // A folder has no document to open or drag: its row names where it is.
-  if (document.folder)
-    return (
-      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
-        {folderDisplayName(document.uri)}
-      </span>
-    );
+  // A folder has no document to open; a deleted document's old address may hold another now.
   const openable =
-    document.tree?.op !== "delete" && onOpenContextUri && canOpenContextUri?.(document.uri);
+    !document.folder &&
+    document.tree?.op !== "delete" &&
+    onOpenContextUri &&
+    canOpenContextUri?.(document.uri);
   if (!openable) {
     return (
       <span
         {...drag}
-        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
+        className="flex min-h-6 min-w-0 flex-wrap items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
       >
         <DocumentRowLabel document={document} />
-        <DraftStateWord state={draft} />
+        <DraftStateWord halves={halves} op={document.tree?.op} />
       </span>
     );
   }
@@ -425,10 +426,10 @@ function DocumentRow({
       onAuxClick={(event) => {
         if (event.button === MIDDLE_BUTTON) onOpenContextUri(document.uri);
       }}
-      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
+      className="focus-ring flex min-h-6 w-full flex-wrap items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
     >
       <DocumentRowLabel document={document} />
-      <DraftStateWord state={draft} />
+      <DraftStateWord halves={halves} op={document.tree?.op} />
     </button>
   );
 }
@@ -453,22 +454,77 @@ function useDocumentRowDrag(document: TurnEditDocument) {
   );
 }
 
-/** What a drafted document's text stands at now; one still waiting needs no word. */
-function DraftStateWord({ state }: { state: TurnDraftState | undefined }) {
-  if (state !== "applied" && state !== "discarded") return null;
+/** What became of a row's drafted text (`text`) and tree change (`tree`), each when the turn drafted it. */
+type Halves = { text?: TurnDraftState; tree?: TurnTreeState };
+
+function halvesOf(
+  document: TurnEditDocument,
+  drafts: TurnReceiptChip["drafts"],
+  trees: TurnReceiptChip["trees"],
+): Halves {
+  if (document.scope !== "draft") return {};
+  const text = document.folder ? undefined : drafts?.[document.documentId];
+  const tree = trees?.[document.documentId];
+  return { ...(text ? { text } : {}), ...(tree ? { tree } : {}) };
+}
+
+/** One state for a row: waiting while a half waits; else applied when a half landed. */
+function stateOf({ text, tree }: Halves): TurnTreeState | undefined {
+  if (text === "pending" || tree === "pending") return "pending";
+  if (text === "applied" || tree === "applied") return "applied";
+  return tree === "replaced" ? tree : (text ?? tree);
+}
+
+/**
+ * What became of a row's drafted change: one word when its halves agree ("Applied"; one still
+ * waiting needs none), and each half's when they differ ("Text applied, move still a draft").
+ */
+function DraftStateWord({ halves, op }: { halves: Halves; op: TurnTreeLine["op"] | undefined }) {
+  const { text, tree } = halves;
+  const word =
+    text && tree && text !== tree
+      ? t`Text ${halfState(text)}, ${treeNoun(op)} ${halfState(tree)}`
+      : stateWord(text ?? tree);
+  if (!word) return null;
   return (
-    <span className="ml-auto shrink-0 pl-2 text-muted-foreground" data-draft-state={state}>
-      {state === "applied" ? t`Applied` : t`Discarded`}
+    <span
+      className="ml-auto shrink-0 pl-2 text-muted-foreground"
+      data-draft-state={stateOf(halves)}
+    >
+      {word}
     </span>
   );
 }
 
-/** A row's words: the document's name, or what the turn did to where it is. */
+function stateWord(state: TurnTreeState | undefined): string | null {
+  if (state === "applied") return t`Applied`;
+  if (state === "discarded") return t`Discarded`;
+  if (state === "replaced") return t`Replaced by a later change`;
+  return null;
+}
+
+function halfState(state: TurnTreeState): string {
+  if (state === "applied") return t`applied`;
+  if (state === "discarded") return t`discarded`;
+  if (state === "replaced") return t`replaced by a later one`;
+  return t`still a draft`;
+}
+
+/** The tree half, named by what the turn did: a document with no tree line was made by it. */
+function treeNoun(op: TurnTreeLine["op"] | undefined): string {
+  if (op === "move") return t`move`;
+  if (op === "delete") return t`delete`;
+  if (op === "copy") return t`copy`;
+  return t`new document`;
+}
+
+/** A row's words: the node's name (a folder's where the turn left it), or what the turn did to where it is. */
 function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   const names = useOwnerNames();
   const tree = document.tree;
+  const nameOf = document.folder ? folderDisplayName : documentDisplayName;
   if (tree?.op === "move") {
-    const source = documentDisplayName(tree.from);
+    const source = nameOf(tree.from);
     const { kind, place } = describeModelMove(tree.from, tree.to, names);
     if (kind === "reorder")
       return (
@@ -485,7 +541,7 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     );
   }
   if (tree?.op === "copy") {
-    const source = documentDisplayName(tree.from);
+    const source = nameOf(tree.from);
     const { place } = describeModelMove(tree.from, tree.to, names);
     return (
       <span className="min-w-0 truncate text-foreground" data-turn-tree-line="copy">
@@ -496,20 +552,23 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     );
   }
   if (tree?.op === "delete") {
-    const name = documentDisplayName(tree.from);
+    const name = nameOf(tree.from);
     return (
       <span className="min-w-0 truncate text-foreground" data-turn-tree-line="delete">
         <Trans>Deleted {name}</Trans>
       </span>
     );
   }
+  if (document.folder)
+    return <span className="min-w-0 truncate text-foreground">{nameOf(document.uri)}</span>;
   // The whole row is the door here, so the name inside it stays inert.
   return <DocumentName path={document.uri} insideDoor />;
 }
 
 /**
  * "Drafted" when every change went into a draft and some still wait; "Applied" or "Discarded"
- * once every one of them has had that outcome; the mix said in counts when they differ. Else
+ * once every one of them, text and tree alike, has had that outcome; the mix said in counts when
+ * they differ. Else
  * "Edited" while the turn only changed text, "Changed" once it moved, deleted or made something
  * or wrote both drafts and the manuscript. Documents and folders are counted apart, so a
  * reorganisation says it touched folders too. It counts, never names: a name inside the toggle
@@ -518,6 +577,7 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
 function documentCountLabel(
   documents: readonly TurnEditDocument[],
   drafts: TurnReceiptChip["drafts"],
+  trees: TurnReceiptChip["trees"],
 ): string {
   const counted = (folder: boolean) =>
     new Set(
@@ -530,29 +590,64 @@ function documentCountLabel(
   const what =
     counted(true) === 0 ? files : counted(false) === 0 ? folders : t`${files} and ${folders}`;
   if (documents.every((document) => document.scope === "draft")) {
-    const states = new Map<string, TurnDraftState | undefined>(
-      documents
-        .filter((document) => !document.folder)
-        .map(({ documentId }) => [documentId, drafts?.[documentId]]),
+    const states = new Map<string, TurnTreeState | undefined>(
+      documents.map((document) => [
+        document.documentId,
+        stateOf(halvesOf(document, drafts, trees)),
+      ]),
     );
-    const count = (state: TurnDraftState) =>
+    const count = (state: TurnTreeState) =>
       [...states.values()].filter((value) => value === state).length;
     const applied = count("applied");
+    const replaced = count("replaced");
     const discarded = count("discarded");
-    const waiting = states.size - applied - discarded;
-    if (applied && !discarded && !waiting && counted(true) === 0) return t`Applied ${what}`;
-    if (discarded && !applied && !waiting && counted(true) === 0) return t`Discarded ${what}`;
-    if (applied && discarded && waiting)
-      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded, ${waiting} still a draft`;
-    if (applied && discarded) return t`Drafted ${what}: ${applied} applied, ${discarded} discarded`;
-    if (applied && waiting) return t`Drafted ${what}: ${applied} applied, ${waiting} still a draft`;
-    if (discarded && waiting)
-      return t`Drafted ${what}: ${discarded} discarded, ${waiting} still a draft`;
-    return t`Drafted ${what}`;
+    const waiting = states.size - applied - replaced - discarded;
+    if (applied === states.size) return t`Applied ${what}`;
+    if (discarded === states.size) return t`Discarded ${what}`;
+    if (waiting === states.size) return t`Drafted ${what}`;
+    return draftedMix(what, { applied, replaced, discarded, waiting });
   }
   if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
     return t`Changed ${what}`;
   return t`Edited ${what}`;
+}
+
+/**
+ * A reply's drafted rows that ended in more than one way, each mix one whole message for
+ * translators.
+ */
+function draftedMix(
+  what: string,
+  n: { applied: number; replaced: number; discarded: number; waiting: number },
+): string {
+  const { applied, replaced, discarded, waiting } = n;
+  const mix = `${applied ? "a" : ""}${replaced ? "r" : ""}${discarded ? "d" : ""}${waiting ? "w" : ""}`;
+  switch (mix) {
+    case "r":
+      return t`Drafted ${what}: ${replaced} replaced by a later change`;
+    case "ar":
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change`;
+    case "ad":
+      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded`;
+    case "aw":
+      return t`Drafted ${what}: ${applied} applied, ${waiting} still a draft`;
+    case "rd":
+      return t`Drafted ${what}: ${replaced} replaced by a later change, ${discarded} discarded`;
+    case "rw":
+      return t`Drafted ${what}: ${replaced} replaced by a later change, ${waiting} still a draft`;
+    case "dw":
+      return t`Drafted ${what}: ${discarded} discarded, ${waiting} still a draft`;
+    case "ard":
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change, ${discarded} discarded`;
+    case "arw":
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change, ${waiting} still a draft`;
+    case "adw":
+      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded, ${waiting} still a draft`;
+    case "rdw":
+      return t`Drafted ${what}: ${replaced} replaced by a later change, ${discarded} discarded, ${waiting} still a draft`;
+    default:
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change, ${discarded} discarded, ${waiting} still a draft`;
+  }
 }
 
 /**

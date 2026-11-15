@@ -387,6 +387,9 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
     async listFolderTargetsForTurn() {
       return [];
     },
+    async placesOf() {
+      return new Map();
+    },
     async listTreeEntriesForTurn() {
       return [];
     },

@@ -21,6 +21,7 @@ import type {
   TurnInverseSkip,
   TurnInverseSkipCause,
   TurnReceiptChip,
+  TurnTreeState,
 } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
@@ -135,6 +136,8 @@ export interface TurnInverseStore {
     query: TurnInverseQuery,
     direction: "undo" | "redo",
   ): Promise<{ acting: number; gone: number }>;
+  /** What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`). */
+  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnTreeState>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -391,6 +394,8 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
         );
+        const treeStates = await store.treeDraftStates(query);
+        const trees = Object.keys(treeStates).length ? treeStates : undefined;
         const redo = prepare(store, documents, query, "redo", randomUUID());
         if (countAccepted(redo) || treeRedo)
           return {
@@ -409,12 +414,14 @@ export function createTurnInverseService(store: TurnInverseStore) {
             state: "live-active",
             control: "undo",
             drafts,
+            trees,
             skips: undo.flatMap((plan) => plan.skips),
           };
         return {
           state: "expired",
           control: "view_change",
           drafts,
+          trees,
           skips: undo.flatMap((plan) => plan.skips),
         };
       });

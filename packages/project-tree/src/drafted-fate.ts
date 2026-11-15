@@ -1,0 +1,94 @@
+import type * as Y from "yjs";
+import { settleLogOf, type TreeRecord } from "./record.js";
+import { listRecords } from "./view.js";
+
+/**
+ * What became of a drafted record: `pending` while it, or the copy a restored Discard put back
+ * in its Work, still waits; `applied` once an Apply took it (a create live already had standing
+ * counts, as there is nothing left to land); `replaced` when it couldn't land and a later change
+ * to the same fact landed in its place (`superseded`); `discarded` when a Discard took it, the
+ * server dropped it, or its list no longer holds it (a purge).
+ */
+export type DraftedFate = "pending" | "applied" | "replaced" | "discarded";
+
+/**
+ * One record's own last settlement, read as a fate: `dropped` is the server's stamp at
+ * admission. `command` is the command that settled it, `at` its place in the settle log.
+ */
+export type RecordSettled = {
+  fate: Exclude<DraftedFate, "pending"> | "dropped";
+  command: string | undefined;
+  at: number;
+};
+
+type Index = {
+  records: Map<string, TreeRecord>;
+  /** Each family's drafted records in list order: the original and a restored Discard's copies. */
+  drafted: Map<string, string[]>;
+  settled: Map<string, RecordSettled>;
+};
+
+/**
+ * One read of a copy's records and settlements, rebuilt only after the copy changed: every reader
+ * of the same copy between two updates shares it.
+ */
+const indexes = new WeakMap<Y.Doc, Index>();
+
+function indexOf(doc: Y.Doc): Index {
+  const held = indexes.get(doc);
+  if (held) return held;
+  const records = new Map<string, TreeRecord>();
+  const drafted = new Map<string, string[]>();
+  for (const record of listRecords(doc)) {
+    records.set(record.id, record);
+    // An Apply's live copies are what landed, which the drafted record's settlement already says.
+    if (record.draft === null) continue;
+    const root = record.carries ?? record.id;
+    drafted.set(root, [...(drafted.get(root) ?? []), record.id]);
+  }
+  const settled = new Map<string, RecordSettled>();
+  settleLogOf(doc)
+    .toArray()
+    .forEach((settle, at) => {
+      for (const target of settle.targets) {
+        if (settle.to === "pending") {
+          settled.delete(target);
+          continue;
+        }
+        const fate =
+          settle.to === "applied" ||
+          (settle.to === "superseded" && records.get(target)?.type === "create")
+            ? "applied"
+            : settle.to === "superseded"
+              ? "replaced"
+              : settle.to;
+        settled.set(target, { fate, command: settle.command, at });
+      }
+    });
+  const index = { records, drafted, settled };
+  indexes.set(doc, index);
+  doc.once("update", () => indexes.delete(doc));
+  return index;
+}
+
+/** Each record's own last settlement; a record absent from it is pending (or live). */
+export function settledRecords(doc: Y.Doc): ReadonlyMap<string, RecordSettled> {
+  return indexOf(doc).settled;
+}
+
+/**
+ * The fate of each drafted record `ids` names, following its family to the newest drafted copy:
+ * a Discard's restore makes a new pending copy and leaves the original discarded, so the copy's
+ * settlement is the family's. An id the list doesn't hold reads `discarded`.
+ */
+export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, DraftedFate> {
+  const { records, drafted, settled } = indexOf(doc);
+  const fates = new Map<string, DraftedFate>();
+  for (const id of ids) {
+    const record = records.get(id);
+    const newest = record && drafted.get(record.carries ?? record.id)?.at(-1);
+    const fate = newest ? (settled.get(newest)?.fate ?? "pending") : "discarded";
+    fates.set(id, fate === "dropped" ? "discarded" : fate);
+  }
+  return fates;
+}

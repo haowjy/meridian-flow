@@ -1,6 +1,10 @@
 /** Route core for authenticated live-lineage document reads for one thread turn. */
 
-import { draftOwnerKey } from "@meridian/contracts";
+import {
+  type ContextUriScheme,
+  draftOwnerKey,
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+} from "@meridian/contracts";
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
@@ -8,6 +12,7 @@ import type {
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import {
+  type TreePlacement,
   type TurnEditedDocument,
   type TurnTreeFolder,
   turnEditDestination,
@@ -71,11 +76,13 @@ export async function handleTurnLiveLineageRequest(
       ? ({ state: "work-reversed", control: "redo" } as const)
       : null;
   return {
-    documents: [
-      ...visibleDocuments.map(serializeLiveLineageDocument),
+    documents: inTreeOrder<TurnEditedDocument | TurnTreeFolder>([
+      ...visibleDocuments,
       // The thread's owner has proven the turn is theirs; a folder has no file grant of its own.
-      ...folders.map(serializeLiveLineageFolder),
-    ],
+      ...folders,
+    ]).map((row) =>
+      "nodeId" in row ? serializeLiveLineageFolder(row) : serializeLiveLineageDocument(row),
+    ),
     receipt: receipt ?? workReceipt,
   };
 }
@@ -121,7 +128,7 @@ async function filterAccessibleLiveLineageDocuments(
 }
 
 function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocumentItem {
-  const parsed = parseContextUri(folder.shownAt);
+  const parsed = parseContextUri(folder.at);
   if (!parsed.ok) {
     throw createError({ statusCode: 500, message: "Live-lineage folder URI is invalid" });
   }
@@ -133,6 +140,7 @@ function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocu
     ...(folder.ownerKey
       ? { scope: "draft" as const, owner: folder.ownerKey }
       : { scope: "live" as const }),
+    ...(folder.tree ? { tree: folder.tree } : {}),
   };
 }
 
@@ -150,4 +158,35 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
       : { scope: "live" as const }),
     ...(document.tree ? { tree: document.tree } : {}),
   };
+}
+
+/**
+ * The file tree's order: its sections in their order, then within a source rank, then id, at
+ * each level (`placement`). A row its view no longer places goes last, in the order it came.
+ */
+/** The file tree's sections, in the sidebar's order. */
+const SECTIONS: readonly ContextUriScheme[] = [
+  ...PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+  "scratch",
+  "uploads",
+];
+
+function inTreeOrder<Row extends { placement?: TreePlacement; uri?: string; at?: string }>(
+  rows: Row[],
+): Row[] {
+  const section = (row: Row) => {
+    const parsed = parseContextUri(row.uri ?? row.at ?? "");
+    return parsed.ok ? SECTIONS.indexOf(parsed.value.scheme) : SECTIONS.length;
+  };
+  return [...rows].sort((a, b) => {
+    if (!a.placement || !b.placement) return a.placement ? -1 : b.placement ? 1 : 0;
+    if (section(a) !== section(b)) return section(a) - section(b);
+    const depth = Math.min(a.placement.length, b.placement.length);
+    for (let at = 0; at < depth; at++) {
+      const left = a.placement[at] ?? "";
+      const right = b.placement[at] ?? "";
+      if (left !== right) return left < right ? -1 : 1;
+    }
+    return a.placement.length - b.placement.length;
+  });
 }
