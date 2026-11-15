@@ -233,6 +233,10 @@ export function executeUndo(
 ): Uint8Array[] {
   const updates: Uint8Array[] = [];
   const collect = (update: Uint8Array) => updates.push(update);
+  const inDeleteSet = (id: Y.ID) =>
+    stack.insertions.clients
+      .get(id.client)
+      ?.some((r) => id.clock >= r.clock && id.clock < r.clock + r.len) ?? false;
   const manager = new Y.UndoManager(doc.getXmlFragment(root), {
     trackedOrigins: new Set(),
     ignoreRemoteMapChanges: false,
@@ -242,12 +246,87 @@ export function executeUndo(
   manager.undoStack.push(stack);
   doc.on("update", collect);
   try {
+    doc.transact((transaction) =>
+      restoreBesideInsertions(transaction, stack.deletions, inDeleteSet),
+    );
     manager.undo();
   } finally {
     doc.off("update", collect);
     manager.destroy();
   }
   return updates;
+}
+
+/**
+ * Yjs restores a deleted run between the run's old neighbours, so writing typed at the seam after
+ * the run lands to its right. A replacement's own insertion marks where the run stood: place each
+ * restored run directly left of that insertion, which keeps writing on either side of it in place.
+ * The copy is linked through `redone`, so Yjs's undo then reuses it. Runs with no such insertion
+ * are left to Yjs.
+ */
+function restoreBesideInsertions(
+  transaction: Y.Transaction,
+  deletions: ReturnType<typeof Y.createDeleteSet>,
+  isInserted: (id: Y.ID) => boolean,
+): void {
+  const doc = transaction.doc;
+  const restoring: Y.Item[] = [];
+  for (const [client, ranges] of deletions.clients)
+    for (const range of ranges)
+      for (const { item, clock, len } of itemsInRange(doc, { client, ...range })) {
+        const start = Y.getItemCleanStart(transaction, Y.createID(client, clock));
+        const whole =
+          len < start.length
+            ? Y.getItemCleanEnd(transaction, doc.store, Y.createID(client, clock + len - 1))
+            : start;
+        if (item) restoring.push(whole);
+      }
+  const wanted = new Set(restoring.filter((item) => item.deleted && item.redone === null));
+  const sameParent = (item: Y.Item) =>
+    item.parentSub === null &&
+    item.content instanceof Y.ContentString &&
+    item.parent instanceof Y.AbstractType &&
+    !item.parent._item?.deleted;
+  for (const first of wanted) {
+    if (!sameParent(first) || (first.left && wanted.has(first.left) && first.left.right === first))
+      continue;
+    const run = [first];
+    while (run.at(-1)?.right && wanted.has(run.at(-1)!.right!)) run.push(run.at(-1)!.right!);
+    const last = run[run.length - 1];
+    const seen = new Set<Y.Item>([...run]);
+    let anchor: Y.Item | null = null;
+    for (let x = last.right; x; x = x.right) {
+      const origin = x.origin && findItem(doc, x.origin);
+      if (!origin || !seen.has(origin)) break;
+      seen.add(x);
+      if (
+        x.origin &&
+        x.origin.client === last.id.client &&
+        x.origin.clock === last.id.clock + last.length - 1 &&
+        isInserted(x.id)
+      ) {
+        anchor = x;
+        break;
+      }
+    }
+    if (!anchor) continue;
+    let left = anchor.left;
+    for (const item of run) {
+      const id = Y.createID(doc.clientID, Y.getState(doc.store, doc.clientID));
+      new Y.Item(
+        id,
+        left,
+        left && left.lastId,
+        anchor,
+        anchor.id,
+        item.parent as Y.AbstractType<unknown>,
+        null,
+        item.content.copy(),
+      ).integrate(transaction, 0);
+      item.redone = id;
+      left = findItem(doc, Y.createID(id.client, id.clock + item.length - 1));
+    }
+  }
 }
 
 /** String clocks only; container and formatting structs have no textual excerpt. */
