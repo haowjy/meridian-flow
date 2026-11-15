@@ -21,6 +21,8 @@ export type LeftWhy =
   | "would_loop"
   /** What it acts on is gone: purged, or never created in the view. */
   | "purged"
+  /** What it acts on moved to another list: between a project's files and the account's. */
+  | "moved_away"
   /** It was admitted after the press, so the writer had not seen it. */
   | "after_press"
   /** It stands on a record that did not land, or landing it would change what the Work's tree showed. */
@@ -194,7 +196,13 @@ export function covers(doc: Y.Doc, saw: Uint8Array): boolean {
 }
 
 const whyNotInView = (reason: SkipReason): LeftWhy =>
-  reason === "cycle" ? "would_loop" : GONE.has(reason) ? "purged" : "needs";
+  reason === "cycle"
+    ? "would_loop"
+    : reason === "left-list"
+      ? "moved_away"
+      : GONE.has(reason)
+        ? "purged"
+        : "needs";
 
 /**
  * Apply a Work, whole or in part: appends a live copy of each chosen record, and settles the

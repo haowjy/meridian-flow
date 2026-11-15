@@ -1562,6 +1562,10 @@ msgid "Can't go inside itself"
 msgstr ""
 
 #: src/features/draft-review/tree-groups.ts
+msgid "Can't land: it moved between the project and Your files."
+msgstr ""
+
+#: src/features/draft-review/tree-groups.ts
 msgid "Can't land: the folder it goes to is gone."
 msgstr ""
 

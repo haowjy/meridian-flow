@@ -174,6 +174,8 @@ export function landingFaultSentence(fault: LandingFault): string {
     }
     case "gone":
       return t`Can't land: the folder it goes to is gone.`;
+    case "moved-away":
+      return t`Can't land: it moved between the project and Your files.`;
     case "deleted-live":
       return t`Deleted in live. Restore it to keep this change.`;
   }

@@ -807,7 +807,7 @@ describe("part 5: what a document is, and a move between two lists", () => {
     expect(here.w.view(LIVE).trash).toEqual([]);
     // A client that had not seen the move renames it in the list it left.
     const late = here.w.rename(LIVE, WRITER, ch, "Late");
-    expect(here.w.view(LIVE).skipped).toContainEqual({ record: late.id, reason: "missing-node" });
+    expect(here.w.view(LIVE).skipped).toContainEqual({ record: late.id, reason: "left-list" });
     expect(there.at(ch)?.name).toBe("Chapter One");
     here.valid();
     there.valid();

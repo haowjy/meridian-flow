@@ -52,6 +52,8 @@ export type TreeNode = {
 export type SkipReason =
   | "cycle"
   | "missing-node"
+  /** Its node moved to another list (a project's files or the account's) and is not back. */
+  | "left-list"
   | "missing-parent"
   | "parent-not-folder"
   | "duplicate"
@@ -380,7 +382,9 @@ export function replay(
       continue;
     }
     if (!node) {
-      skip(nodes.has(record.node) ? "purged" : "missing-node");
+      skip(
+        nodes.has(record.node) ? "purged" : leftAt.has(record.node) ? "left-list" : "missing-node",
+      );
       continue;
     }
     switch (record.type) {
@@ -389,7 +393,7 @@ export function replay(
         // create that brings it back by Undo; what stays under it here is rescued at the end.
         if (isListRoot(record.parent)) {
           const { undoes: _, ...leave } = record;
-          lift(leave, node, { ownOnly: record.draft !== null });
+          lift(leave, node, { ownOnly: false });
           leftAt.set(record.node, { at: index, source: sourceOf(nodes, leftAt, record.node) });
           nodes.delete(record.node);
           break;

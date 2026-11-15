@@ -6,6 +6,8 @@ import { branchRows, projectedRows } from "./rows.js";
 export type LandingFault =
   | { kind: "inside-itself"; into: string }
   | { kind: "gone" }
+  /** What it changes moved between a project's files and the account's. */
+  | { kind: "moved-away" }
   | { kind: "deleted-live" };
 
 const GONE: ReadonlySet<SkipReason> = new Set([
@@ -30,6 +32,7 @@ export function landingFaults(
         kind: "inside-itself",
         into: work.nodes.get(record.parent)?.displayName ?? "",
       });
+    else if (reason === "left-list") faults.set(record.node, { kind: "moved-away" });
     else if (GONE.has(reason)) faults.set(record.node, { kind: "gone" });
   }
   for (const record of pending) {

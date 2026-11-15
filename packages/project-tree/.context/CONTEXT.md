@@ -50,7 +50,8 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
     What stands under a node that left and is not back at the end of the replay (a chapter in
     Trash the crossing left, a purged one, a create Yjs placed before the leave) goes to the top
     of its source, arriving there at that leave, as rule 10 does for a purged one; it rejoins the
-    node if the node comes back.
+    node if the node comes back. A record on the node while it is away is skipped (`left-list`);
+    Apply leaves a drafted one pending as `moved_away`.
 
 Rules 11 to 13 read `classifyFiletype`, `schemaType` and `normalEntryName`, which are frozen as
 the replay uses them (package `AGENTS.md`).
@@ -133,7 +134,7 @@ the replay uses them (package `AGENTS.md`).
   on the same fact; every other pending change stays pending. When landing that would change what
   the Work's tree showed, it widens to the drafted prefix it stands on, and
   returns `{ command, copies, left, superseded, lifted }`: `left` is each record it did not
-  land with `would_loop` or `purged`, `lifted` the copies that lifted a delete (rule 9).
+  land with `would_loop`, `purged` or `moved_away` (its node moved to the other list), `lifted` the copies that lifted a delete (rule 9).
   `covers(doc, saw)` says whether a copy holds the state the writer saw.
 - **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { writtenSince,
   restoredByApply })` writes each landed copy's opposite record through `undoChange` (a create's
@@ -187,6 +188,8 @@ the replay uses them (package `AGENTS.md`).
   records, so a folder arrives with its order and its empty folders. What a delete of a node below
   it holds in Trash stays in that list's Trash (rule 14). Take one back with
   `moveBackBetweenLists`, given the crossing's records: the same move the other way, by id, to
-  where the root left from, each node below settling as in any crossing.
+  where the root left from, each node below settling as in any crossing. It answers
+  `changed_since` for a root moved since, or held in Trash by a delete made after the crossing
+  entered the list: the deletes an Undo put back (rule 14) go with its Redo.
 - Replay live and the views a record can change, then `changedRows` against the last rows.
 - Give the writer `pendingText` for views it replays: this package cannot see text.

@@ -351,21 +351,35 @@ export type Crossing = { left: MoveRecord[]; entered: CreateRecord[] };
  * under `into.name` or its own, numbered among what is shown there; each node below keeps its
  * parent, rank and shown name, so order and empty folders come with it. A root in Trash crosses
  * live (rule 9); what is in Trash below it by a delete of its own stays in that list's Trash
- * (rule 14). `reverses` names the records of a crossing this one takes back (its Undo, or the
- * Undo's Redo): each node's pair is marked `undoes` the pair it takes back there.
+ * (rule 14).
  */
 export function moveBetweenLists(
   out: ListEnd,
-  into: ListEnd & {
-    parent: string;
-    index?: number;
-    rank?: string;
-    name?: string;
-    filetype?: string;
-  },
+  into: CrossingInto,
   actor: Actor,
   node: string,
-  reverses: readonly string[] = [],
+): Crossing {
+  return cross(out, into, actor, node, []);
+}
+
+type CrossingInto = ListEnd & {
+  parent: string;
+  index?: number;
+  rank?: string;
+  name?: string;
+  filetype?: string;
+};
+
+/**
+ * `moveBetweenLists`, taking back the crossing whose records are `reverses` (none for a new one):
+ * each node's pair is marked `undoes` the pair it takes back there.
+ */
+function cross(
+  out: ListEnd,
+  into: CrossingInto,
+  actor: Actor,
+  node: string,
+  reverses: readonly string[],
 ): Crossing {
   const leaving = out.writer.view(LIVE);
   const was = leaving.nodes.get(node);
@@ -504,11 +518,12 @@ export function moveBackBetweenLists(
   const here = out.writer.view(LIVE);
   const now = placeIn(here.nodes, node);
   if (!leave || !now) return "unknown";
-  if (now.trashed || here.setters.get(node)?.place) return "changed_since";
+  if (deletedSince(out.writer, here, node, ids) || here.setters.get(node)?.place)
+    return "changed_since";
   const there = into.writer.view(LIVE);
   const back =
     isSourceRoot(leave.from.parent) || placeIn(there.nodes, leave.from.parent)?.kind === "folder";
-  return moveBetweenLists(
+  return cross(
     out,
     {
       ...into,
@@ -519,5 +534,27 @@ export function moveBackBetweenLists(
     actor,
     node,
     records,
+  );
+}
+
+/**
+ * Whether a delete made after the crossing (`records`) entered this list holds `node` in Trash.
+ * The deletes it left Trash with come back with the Undo's create (rule 14): the Redo of that
+ * Undo takes them with it, as the crossing did.
+ */
+function deletedSince(
+  writer: TreeWriter,
+  here: TreeProjection,
+  node: string,
+  records: ReadonlySet<string>,
+): boolean {
+  if (!here.nodes.get(node)?.trashed) return false;
+  const order = listRecords(writer.doc);
+  const entered = order.findIndex(
+    (record) => records.has(record.id) && record.type === "create" && record.node === node,
+  );
+  const at = (id: string) => order.findIndex((record) => record.id === id);
+  return here.trash.some(
+    (entry) => (entry.node === node || entry.cascade.includes(node)) && at(entry.id) > entered,
   );
 }
