@@ -1,26 +1,27 @@
 // @vitest-environment jsdom
 /**
  * Work commands show through `useWorks` as a projection over the server
- * snapshot: queued commands show at once, each failure stays on its own Work,
- * and no server read can hide a change whose command has not settled.
+ * snapshot: unsettled commands show at once, each failure stays on its own Work,
+ * and no server read can hide a change the server has not yet shown. The commands
+ * run on a real command driver over an in-memory journal and a scripted server.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Work command patch ownership
  * - Work deletion Undo window
  */
+import {
+  CommandDriver,
+  type TransportAnswer,
+  type TransportRequest,
+} from "@meridian/command-driver";
+import { createMemoryJournal } from "@meridian/command-driver/memory-journal";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  archiveWork,
-  createProjectWork,
-  deleteWork,
-  listProjectWorks,
-  unarchiveWork,
-  updateWork,
-} from "@/client/api/projects-api";
+import { listProjectWorks } from "@/client/api/projects-api";
+import { CommandDriverContext } from "@/client/commands/driver-context";
 import { useWorkRename } from "@/features/project/work/WorkTitles";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { archived, deferred, snapshot, WORK } from "@/test-support/works-fixtures";
@@ -33,23 +34,11 @@ import {
   type WorkCommandFailure,
   type WorkDeleteWindow,
 } from "./work-command-selectors";
-import { closeWorkDeleteWindow, useWorkMutations } from "./work-command-store";
-import type { WorkCommandRecord, WorkMutations } from "./work-commands";
-import { acquireWorksSnapshot } from "./works-projection-acquisition";
+import { workDomain } from "./work-commands";
+import { closeWorkDeleteWindow, useWorkMutations, type WorkMutations } from "./work-mutations";
+import { acquireWorksSnapshot, refreshWorksSnapshot } from "./works-projection-acquisition";
 
-const account = vi.hoisted(() => ({ epoch: new AbortController() }));
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useOptionalAccountEpochSignal: () => account.epoch.signal,
-}));
-vi.mock("@/client/api/projects-api", () => ({
-  archiveWork: vi.fn(),
-  createProjectWork: vi.fn(),
-  deleteWork: vi.fn(),
-  listProjectWorks: vi.fn(),
-  restoreWork: vi.fn(),
-  unarchiveWork: vi.fn(),
-  updateWork: vi.fn(),
-}));
+vi.mock("@/client/api/projects-api", () => ({ listProjectWorks: vi.fn() }));
 
 beforeEach(() => notifyManager.setScheduler(queueMicrotask));
 afterEach(() => notifyManager.setScheduler((callback) => setTimeout(callback, 0)));
@@ -93,38 +82,88 @@ function RenameProbe() {
 const field = <K extends keyof Work>(id: string, key: K) =>
   seen.works?.find((work) => work.id === id)?.[key];
 
+/** What the scripted server answers a command with; a refusal is stored and resolved as `refused`. */
+type Answer = Promise<{ work?: Work } | "refuse">;
+let respond: (request: TransportRequest) => Answer = async () => ({});
+let driver!: CommandDriver;
+const stored = new Map<string, unknown>();
+const requests: TransportRequest[] = [];
+
+const transport = async (request: TransportRequest): Promise<TransportAnswer> => {
+  requests.push(request);
+  if (request.path.endsWith("/resolve")) {
+    const id = request.path.split("/").at(-2) as string;
+    return {
+      status: 200,
+      code: null,
+      body: { commandId: id, outcome: stored.get(id) ?? { status: "never" } },
+    };
+  }
+  const answer = await respond(request);
+  const commandId = (request.body as { commandId: string }).commandId;
+  if (answer === "refuse") {
+    stored.set(commandId, {
+      status: "refused",
+      result: { status: "refused", refusal: { error: "locked" } },
+    });
+    return { status: 400, code: "work_locked", body: null };
+  }
+  return { status: 200, code: null, body: answer.work ?? null };
+};
+
 async function withProbe(server: WorksSnapshot, run: (client: QueryClient) => Promise<void>) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   client.setQueryData(projectQueryKeys.works(PROJECT_ID), server);
+  const domain = workDomain(client);
+  driver = new CommandDriver({
+    journal: createMemoryJournal(),
+    lock: { acquire: async () => () => undefined },
+    transport,
+    changes: { post() {}, subscribe: () => () => undefined, close() {} },
+    online: () => true,
+    routes: {
+      lookup: (id) => `/api/commands/${id}`,
+      resolve: (id) => `/api/commands/${id}/resolve`,
+    },
+    kinds: domain.kinds,
+    log() {},
+  });
+  await driver.open();
+  const unbind = domain.bind(driver);
   renders.length = 0;
+  requests.length = 0;
+  stored.clear();
   try {
     await withReactRoot(
       <QueryClientProvider client={client}>
-        <Probe />
-        <RenameProbe />
+        <CommandDriverContext.Provider value={driver}>
+          <Probe />
+          <RenameProbe />
+        </CommandDriverContext.Provider>
       </QueryClientProvider>,
       () => run(client),
       { drainMacrotask: true },
     );
   } finally {
+    unbind();
+    driver.stop();
     client.clear();
     vi.resetAllMocks();
   }
 }
 
 const settle = async (check: () => void) => {
-  await act(async () => {});
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
   check();
 };
-const recordStatuses = (client: QueryClient) =>
-  (client.getQueryData<WorkCommandRecord[]>(projectQueryKeys.workCommands(PROJECT_ID)) ?? []).map(
-    (record) => record.status,
-  );
+const posts = () => requests.filter((request) => !request.path.endsWith("/resolve"));
 
 describe("Work command projection", () => {
   it("shows a rename at once, keeps it over an older read, and drops it on failure", async () => {
-    const request = deferred<Work>();
-    vi.mocked(updateWork).mockImplementation(() => request.promise);
+    const request = deferred<"refuse">();
+    respond = () => request.promise;
     vi.mocked(listProjectWorks).mockResolvedValue(snapshot([WORK]));
     await withProbe(snapshot([WORK]), async (client) => {
       const staleRead = deferred<WorksSnapshot>();
@@ -143,61 +182,72 @@ describe("Work command projection", () => {
 
       let outcome: Error | null = null;
       await act(async () => {
-        request.reject(new Error("Rejected"));
+        request.resolve("refuse");
         outcome = await rename;
       });
       await settle(() => expect(field(WORK.id, "name")).toBe("Arc"));
       // The rename reports its failure through its own promise; no record lingers.
       expect(outcome).toBeInstanceOf(Error);
+      respond = async () => "refuse";
       await expect(renameWork("Another title")).rejects.toBeInstanceOf(Error);
-      expect(recordStatuses(client)).toEqual([]);
+      expect(driver.getSnapshot().records).toEqual([]);
       expect(seen.failures.size).toBe(0);
     });
   });
 
-  it("keeps the failure of the first of two queued archives", async () => {
-    const first = deferred<Work>();
-    const second = deferred<Work>();
-    vi.mocked(archiveWork)
-      .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => second.promise);
-    // Snapshot reads never land: the test observes the projection only.
+  it("sends lifecycle moves one at a time per project, and a Work's in order", async () => {
+    const first = deferred<"refuse">();
+    respond = (request) =>
+      request.path.includes(WORK.id) && request.path.endsWith("/archive")
+        ? first.promise
+        : Promise.resolve({ work: archived(SECOND) });
     vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
     await withProbe(snapshot([WORK, SECOND]), async () => {
       await act(async () => {
         void commands.archive({ workId: WORK.id });
+        void commands.unarchive({ workId: WORK.id });
         void commands.archive({ workId: SECOND.id });
       });
-      await settle(() => {
-        expect(field(WORK.id, "archivedAt")).not.toBeNull();
-        expect(field(SECOND.id, "archivedAt")).not.toBeNull();
-      });
-      // One lifecycle scope: the second command waits for the first on the network.
-      expect(archiveWork).toHaveBeenCalledTimes(1);
+      await settle(() => expect(field(SECOND.id, "archivedAt")).not.toBeNull());
+      // The project's turn: nothing else leaves while the first is unanswered.
+      expect(posts().map((request) => request.path)).toEqual([`/api/works/${WORK.id}/archive`]);
 
-      await act(async () => first.reject(new Error("Rejected")));
+      await act(async () => first.resolve("refuse"));
+      await settle(() => expect(posts()).toHaveLength(3));
+      expect(posts().map((request) => request.path)).toEqual([
+        `/api/works/${WORK.id}/archive`,
+        `/api/works/${WORK.id}/unarchive`,
+        `/api/works/${SECOND.id}/archive`,
+      ]);
+    });
+  });
+
+  it("shows a refused archive on its Work until dismissed", async () => {
+    respond = async (request) => (request.path.includes(WORK.id) ? "refuse" : {});
+    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
+    await withProbe(snapshot([WORK, SECOND]), async () => {
+      await act(async () => {
+        void commands.archive({ workId: WORK.id });
+      });
       await settle(() => expect(seen.failures.get(WORK.id)?.operation).toBe("archive"));
       expect(field(WORK.id, "archivedAt")).toBeNull();
-      expect(field(SECOND.id, "archivedAt")).not.toBeNull();
-      expect(seen.failures.has(SECOND.id)).toBe(false);
-
+      expect(seen.failures.get(WORK.id)?.error.code).toBe("work_locked");
       await act(async () => seen.failures.get(WORK.id)?.dismiss());
       await settle(() => expect(seen.failures.size).toBe(0));
     });
   });
 
   it("does not let a read that started before a commit hide that commit", async () => {
-    // Archive's read captures the server before the rename commits, but lands
-    // with a newer revision than the cache holds.
     const archiveRead = deferred<WorksSnapshot>();
     const renameRead = deferred<WorksSnapshot>();
     vi.mocked(listProjectWorks)
       .mockImplementationOnce(() => archiveRead.promise)
       .mockImplementationOnce(() => renameRead.promise);
-    vi.mocked(archiveWork).mockImplementation(async () => archived(SECOND));
     const renamed = { ...WORK, name: "Revised arc" } as Work;
-    vi.mocked(updateWork).mockImplementation(async () => renamed);
-    await withProbe(snapshot([WORK, SECOND]), async (client) => {
+    respond = async (request) => ({
+      work: request.method === "PATCH" ? renamed : archived(SECOND),
+    });
+    await withProbe(snapshot([WORK, SECOND]), async () => {
       await act(async () => {
         void commands.archive({ workId: SECOND.id });
       });
@@ -208,125 +258,64 @@ describe("Work command projection", () => {
       await settle(() => expect(listProjectWorks).toHaveBeenCalledTimes(2));
 
       await act(async () => archiveRead.resolve(snapshot([WORK, archived(SECOND)], "2")));
-      // Deliver the controlled query notifications before inspecting the render.
       await settle(() => {
         expect(field(SECOND.id, "archivedAt")).not.toBeNull();
         expect(field(WORK.id, "name")).toBe("Revised arc");
       });
 
       await act(async () => renameRead.resolve(snapshot([renamed, archived(SECOND)], "3")));
-      await settle(() => expect(recordStatuses(client)).toEqual([]));
-      await settle(() => {
-        expect(field(WORK.id, "name")).toBe("Revised arc");
-        expect(field(SECOND.id, "archivedAt")).not.toBeNull();
-      });
+      await settle(() => expect(driver.getSnapshot().records.every((r) => r.observed)).toBe(true));
+      expect(field(WORK.id, "name")).toBe("Revised arc");
+      expect(field(SECOND.id, "archivedAt")).not.toBeNull();
       const shown = renders.findIndex((render) => render.works?.[0]?.name === "Revised arc");
       expect(renders.slice(shown).map((render) => render.works?.[0]?.name)).not.toContain("Arc");
     });
   });
 
-  it("archives then unarchives without showing the archived state in between", async () => {
-    let server = snapshot([WORK]);
-    vi.mocked(listProjectWorks).mockImplementation(async () => server);
-    const archiveRequest = deferred<Work>();
-    vi.mocked(archiveWork).mockImplementation(() => archiveRequest.promise);
-    vi.mocked(unarchiveWork).mockImplementation(async () => {
-      server = snapshot([WORK], "3");
-      return WORK;
-    });
-    await withProbe(server, async () => {
+  it("keeps a committed change showing when the read after it fails, until a later read lands", async () => {
+    respond = async () => ({ work: archived(WORK) });
+    vi.mocked(listProjectWorks).mockRejectedValue(new Error("Offline"));
+    await withProbe(snapshot([{ ...WORK, name: "Revised arc" } as Work], "2"), async (client) => {
       await act(async () => {
-        void commands.archive({ workId: WORK.id });
+        await commands.archive({ workId: WORK.id });
       });
       await settle(() => expect(field(WORK.id, "archivedAt")).not.toBeNull());
-      await act(async () => {
-        void commands.unarchive({ workId: WORK.id });
-      });
-      await settle(() => expect(field(WORK.id, "archivedAt")).toBeNull());
-      const back = renders.length - 1;
+      expect(field(WORK.id, "name")).toBe("Revised arc");
+      expect(driver.getSnapshot().records.map((record) => record.observed)).toEqual([false]);
 
+      // One good read afterwards covers every record settled before it.
+      vi.mocked(listProjectWorks).mockResolvedValue(
+        snapshot([{ ...WORK, name: "Revised arc" } as Work], "3"),
+      );
       await act(async () => {
-        server = snapshot([archived(WORK)], "2");
-        archiveRequest.resolve(archived(WORK));
+        await refreshWorksSnapshot(client, PROJECT_ID);
       });
-      await settle(() => expect(unarchiveWork).toHaveBeenCalledTimes(1));
-      await settle(() => expect(listProjectWorks).toHaveBeenCalledTimes(2));
-      expect(renders.slice(back).map((render) => render.works?.[0]?.status)).not.toContain(
-        "archived",
+      await settle(() =>
+        expect(driver.getSnapshot().records.map((r) => r.observed)).toEqual([true]),
       );
       expect(field(WORK.id, "archivedAt")).toBeNull();
     });
   });
 
-  it("patches only the fields a command owns when the refresh after it fails", async () => {
-    const renamed = { ...WORK, name: "Revised arc" } as Work;
-    // The archive committed against the old name; a newer read already has the rename.
-    vi.mocked(archiveWork).mockResolvedValue(archived(WORK));
-    vi.mocked(listProjectWorks).mockRejectedValue(new Error("Offline"));
-    await withProbe(snapshot([renamed], "2"), async (client) => {
+  it("closes a Undo window at once, and a refused Undo reopens it", async () => {
+    respond = async (request) => (request.method === "DELETE" ? {} : "refuse");
+    vi.mocked(listProjectWorks).mockImplementation(async () =>
+      snapshot([{ ...WORK, deletedAt: "2026-09-03T00:00:00.000Z" } as Work], "2"),
+    );
+    await withProbe(snapshot([WORK]), async (client) => {
       await act(async () => {
-        await commands.archive({ workId: WORK.id });
-      });
-      await settle(() => {
-        expect(recordStatuses(client)).toEqual([]);
-        expect(field(WORK.id, "archivedAt")).not.toBeNull();
-      });
-      expect(field(WORK.id, "name")).toBe("Revised arc");
-    });
-  });
-
-  it("closes a pending delete's Undo window at once, and drops its record when it lands", async () => {
-    let server = snapshot([WORK]);
-    vi.mocked(listProjectWorks).mockImplementation(async () => server);
-    const request = deferred<void>();
-    vi.mocked(deleteWork).mockImplementation(() => request.promise);
-    await withProbe(server, async (client) => {
-      await act(async () => {
-        void commands.delete({ workId: WORK.id });
+        await commands.delete({ workId: WORK.id });
       });
       await settle(() => expect(seen.windows.map((open) => open.workId)).toEqual([WORK.id]));
+      await act(async () => {
+        await commands.restore({ workId: WORK.id });
+      });
+      await settle(() => expect(seen.windows.map((open) => open.workId)).toEqual([WORK.id]));
+      expect(seen.failures.size).toBe(0);
 
-      await act(async () => closeWorkDeleteWindow(client, PROJECT_ID, WORK.id));
+      await act(async () => closeWorkDeleteWindow(client, driver, PROJECT_ID, WORK.id));
       await settle(() => expect(seen.windows).toEqual([]));
-      expect(seen.works).toEqual([]);
-
-      await act(async () => {
-        server = snapshot([{ ...WORK, deletedAt: "2026-09-03T00:00:00.000Z" } as Work], "2");
-        request.resolve();
-      });
-      await settle(() => expect(recordStatuses(client)).toEqual([]));
-      expect(seen.windows).toEqual([]);
     });
-  });
-
-  it("drops every record on an account switch, and a command still running writes none", async () => {
-    const request = deferred<Work>();
-    vi.mocked(archiveWork)
-      .mockRejectedValueOnce(new Error("Rejected"))
-      .mockImplementationOnce(() => request.promise);
-    vi.mocked(listProjectWorks).mockImplementation(() => new Promise(() => undefined));
-    await withProbe(snapshot([WORK, SECOND]), async (client) => {
-      await act(async () => {
-        void commands.archive({ workId: WORK.id });
-        void commands.archive({ workId: SECOND.id });
-      });
-      await settle(() => {
-        expect(seen.failures.get(WORK.id)?.operation).toBe("archive");
-        expect(field(SECOND.id, "archivedAt")).not.toBeNull();
-      });
-      const reads = vi.mocked(listProjectWorks).mock.calls.length;
-
-      await act(async () => account.epoch.abort());
-      await settle(() => {
-        expect(seen.failures.size).toBe(0);
-        expect(field(SECOND.id, "archivedAt")).toBeNull();
-      });
-      // The old account's commit neither reads nor patches the Works snapshot.
-      await act(async () => request.resolve(archived(SECOND)));
-      expect(listProjectWorks).toHaveBeenCalledTimes(reads);
-      expect(recordStatuses(client)).toEqual([]);
-    });
-    account.epoch = new AbortController();
   });
 });
 
@@ -339,13 +328,12 @@ describe("Work creation", () => {
   } as Work;
   const CREATED_ID = CREATED.id as ParsedRequestId;
 
-  it("keeps a confirmed Work in every reader until the snapshot includes it", async () => {
-    const post = deferred<Work>();
-    vi.mocked(createProjectWork).mockImplementation(() => post.promise);
+  it("keeps a confirmed Work in every reader until a read includes it", async () => {
+    const post = deferred<{ work: Work }>();
+    respond = () => post.promise;
     const refresh = deferred<WorksSnapshot>();
     vi.mocked(listProjectWorks).mockImplementation(() => refresh.promise);
     await withProbe(snapshot([WORK]), async (client) => {
-      // A read already on its way when the POST commits, without the new Work.
       const staleRead = deferred<WorksSnapshot>();
       const stale = acquireWorksSnapshot(client, PROJECT_ID, () => staleRead.promise);
       await act(async () => {
@@ -354,7 +342,7 @@ describe("Work creation", () => {
       await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("pending"));
       expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
 
-      await act(async () => post.resolve(CREATED));
+      await act(async () => post.resolve({ work: CREATED }));
       await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));
       const confirmed = renders.length - 1;
       expect(seen.creations.size).toBe(0);
@@ -364,7 +352,7 @@ describe("Work creation", () => {
         await stale;
       });
       await act(async () => refresh.resolve(snapshot([CREATED, WORK], "3")));
-      await settle(() => expect(recordStatuses(client)).toEqual([]));
+      await settle(() => expect(driver.getSnapshot().records.every((r) => r.observed)).toBe(true));
       expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]);
       for (const render of renders.slice(confirmed))
         expect(render.works?.map((work) => work.id)).toContain(CREATED.id);
@@ -372,9 +360,7 @@ describe("Work creation", () => {
   });
 
   it("shows a refused Work as not created, and a retry creates it", async () => {
-    vi.mocked(createProjectWork)
-      .mockRejectedValueOnce(new Error("Rejected"))
-      .mockResolvedValueOnce(CREATED);
+    respond = async () => "refuse";
     let server = snapshot([WORK]);
     vi.mocked(listProjectWorks).mockImplementation(async () => server);
     await withProbe(server, async () => {
@@ -386,27 +372,13 @@ describe("Work creation", () => {
       expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
 
       server = snapshot([CREATED, WORK], "2");
+      respond = async () => ({ work: CREATED });
       await act(async () => {
         await seen.failures.get(CREATED.id)?.retry();
       });
       await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));
       expect(seen.creations.size).toBe(0);
       expect(seen.failures.size).toBe(0);
-    });
-  });
-
-  it("recovers a Work whose POST response was lost, by its own id", async () => {
-    vi.mocked(createProjectWork).mockRejectedValue(new Error("Network lost"));
-    vi.mocked(listProjectWorks).mockImplementation(async () => snapshot([CREATED, WORK], "2"));
-    await withProbe(snapshot([WORK]), async (client) => {
-      let outcome: Error | null | undefined;
-      await act(async () => {
-        outcome = await commands.create({ workId: CREATED_ID, name: "Branch three" });
-      });
-      expect(outcome).toBeNull();
-      await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));
-      expect(recordStatuses(client)).toEqual([]);
-      expect(seen.creations.size).toBe(0);
     });
   });
 });

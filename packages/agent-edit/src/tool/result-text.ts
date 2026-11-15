@@ -76,7 +76,10 @@ function statusLine(result: AgentEditResultV1): string {
     facts.push(
       total !== undefined && total > count ? `blocks: ${count} of ${total}` : `blocks: ${count}`,
     );
-    if (result.read.version) facts.push(`version: ${result.read.version}`);
+    if (result.read.version)
+      facts.push(
+        `version: ${writeVersion({ destination: result.read.version, draftWork: result.read.draftWork })}`,
+      );
     if (result.read.format === "outline") facts.push("format: outline");
   }
   return facts.join("; ");

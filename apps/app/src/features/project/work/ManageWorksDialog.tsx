@@ -209,12 +209,12 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             }}
             submitLabel={t`Create Work`}
             onClose={() => setCreating(false)}
-            onCreate={({ name, details }) => {
-              // Navigate first: the Work opens at once, in its creating state until the server answers.
-              setView({
-                kind: "work",
-                workId: createWork.create({ name, goal: details || undefined }),
-              });
+            onCreate={async ({ name, details }) => {
+              // Navigate first: the Work opens as soon as it is saved on this device, in its
+              // creating state until the server answers.
+              const workId = await createWork.create({ name, goal: details || undefined });
+              if (!workId) return;
+              setView({ kind: "work", workId });
               setCreating(false);
             }}
           />
@@ -262,7 +262,7 @@ function OpenedWork({
         name={creation.work.name}
         goal={creation.work.goal}
         failed={creation.phase === "failed"}
-        onRetry={recovery.retry}
+        onRetry={recovery.retryable ? recovery.retry : undefined}
         onDiscard={recovery.discard}
       />
     );

@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { cn } from "@/lib/utils";
 import { TabTitleField } from "./TabTitleField";
 
@@ -36,6 +37,7 @@ export function TitleEditSlot({
   titleKey,
   label,
   failure,
+  closed,
   rename,
   maxLength,
   fieldClassName,
@@ -49,6 +51,11 @@ export function TitleEditSlot({
   label: string;
   /** Shown under the reopened field when the rename was refused, from its cause. */
   failure: (cause: unknown) => string;
+  /**
+   * The sentence for a rename a closed Work bounced, or null for any other failure. A bounce
+   * shows as a chip at the field's trailing edge instead of a line under it.
+   */
+  closed?: (cause: unknown) => string | null;
   /** Rejects when the rename was refused. */
   rename: (title: string) => Promise<unknown>;
   maxLength?: number;
@@ -74,7 +81,7 @@ export function TitleEditSlot({
     () => ({ start: (initial) => setEditing({ initial, unchanged: initial, focus: true }) }),
     [],
   );
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<{ line: string } | { closed: string } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const failureId = useId();
   const close = () => {
@@ -110,7 +117,8 @@ export function TitleEditSlot({
           rename(next)
             .catch((cause: unknown) => {
               if (latestRename.get(titleKey) !== commit) return;
-              setRefusal(failure(cause));
+              const sentence = closed?.(cause) ?? null;
+              setRefusal(sentence === null ? { line: failure(cause) } : { closed: sentence });
               // An edit the writer already reopened keeps its draft.
               setEditing(
                 (current) =>
@@ -123,14 +131,17 @@ export function TitleEditSlot({
         }}
         onCancel={close}
       />
-      {refusal ? (
+      {refusal && "closed" in refusal ? (
+        <WorkClosedChip id={failureId} sentence={refusal.closed} />
+      ) : null}
+      {refusal && "line" in refusal ? (
         <div
           className={cn(
             "absolute top-full z-20 mt-1 rounded-md border border-border bg-card font-normal shadow-float",
             failureClassName,
           )}
         >
-          <InlineErrorRow id={failureId} message={refusal} />
+          <InlineErrorRow id={failureId} message={refusal.line} />
         </div>
       ) : null}
     </>

@@ -8,7 +8,7 @@ import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
-import { useWorkMutations } from "@/client/query/work-command-store";
+import { useWorkMutations } from "@/client/query/work-mutations";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +26,8 @@ import { useWorkMetadataController, WorkGoal, type WorkMetadataController } from
 import { WorkTitleLine } from "./WorkTitleLine";
 import { WorkHeading } from "./WorkTitles";
 
-const ARCHIVE_TOGGLE = ["archive", "unarchive"] as const;
+// An update refused after a reload has no field left to reopen: it shows here, under the title.
+const HEADER_FAILURES = ["archive", "unarchive", "update"] as const;
 
 /** Asks before leaving with an unsaved goal edit; the dialog calls it for Back and close. */
 export type LeaveGuard = (leave: () => void, cancel: () => void) => void;
@@ -50,7 +51,7 @@ export function WorkDetail({
 }) {
   const mutations = useWorkMutations(projectId);
   const toggleArchive = useWorkArchiveToggle(projectId);
-  const archiveFailure = useWorkCommandFailures(projectId, ARCHIVE_TOGGLE).get(work.id);
+  const headerFailure = useWorkCommandFailures(projectId, HEADER_FAILURES).get(work.id);
   const controller = useWorkMetadataController(work, async (data) => {
     const error = await mutations.update({ workId: work.id, data });
     if (error) throw error;
@@ -90,7 +91,7 @@ export function WorkDetail({
             <EndedWorkNotice projectId={projectId} work={work} showFailure={false} />
           </div>
         ) : null}
-        {archiveFailure ? <WorkCommandFailureRow failure={archiveFailure} /> : null}
+        {headerFailure ? <WorkCommandFailureRow failure={headerFailure} /> : null}
         <WorkGoal work={work} controller={controller} />
       </header>
       <DirtyDecision controller={controller} />
@@ -121,7 +122,6 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
         <DialogFooter>
           <Button
             variant="ghost"
-            disabled={controller.saving}
             onClick={controller.keepEditing}
             className="[@media(pointer:coarse)]:min-h-11"
           >
@@ -129,18 +129,16 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
           </Button>
           <Button
             variant="outline"
-            disabled={controller.saving}
             onClick={controller.discardAndResume}
             className="[@media(pointer:coarse)]:min-h-11"
           >
             <Trans>Discard changes</Trans>
           </Button>
           <Button
-            disabled={controller.saving}
             onClick={() => void controller.saveAndResume()}
             className="[@media(pointer:coarse)]:min-h-11"
           >
-            {controller.saving ? <Trans>Saving…</Trans> : <Trans>Save changes</Trans>}
+            <Trans>Save changes</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>
