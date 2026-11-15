@@ -11,6 +11,7 @@ import {
   type PanelSlotId,
   ResizeHandle,
   SLOT_WIDTH_BOUNDS,
+  type SlotDefinition,
   SlotGrid,
   type SlotGridHost,
 } from "../layout";
@@ -25,8 +26,8 @@ export type ProjectShellProps = {
   onSetSlotWidth: (slot: PanelSlotId, widthPx: number) => void;
   /** Open or close a panel slot. */
   onSetSlotOpen: (slot: PanelSlotId, open: boolean) => void;
-  /** Minimum width (px) the main column may shrink to. */
-  mainMinWidth?: number;
+  /** The window has no room for the sidebar beside main: the open sidebar lies over main. */
+  sidebarOver?: boolean;
   children?: ReactNode;
 };
 
@@ -35,13 +36,14 @@ export function ProjectShell({
   hosts,
   onSetSlotWidth,
   onSetSlotOpen,
-  mainMinWidth,
+  sidebarOver = false,
   children,
 }: ProjectShellProps) {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const railOpen = panels["rail-l"].open;
   const sideOpen = panels.side.open;
-  const leftWidth = railOpen ? panels["rail-l"].width : 0;
+  const railWidth = panels["rail-l"].width;
+  const leftWidth = railOpen && !sidebarOver ? railWidth : 0;
   const sideWidth = sideOpen ? panels.side.width : 0;
   const desktopGridTemplate = getDesktopGridTemplate();
 
@@ -71,7 +73,7 @@ export function ProjectShell({
   return (
     <SlotGrid
       gridRef={gridRef}
-      slots={DESKTOP_PROJECT_SLOTS}
+      slots={sidebarOver ? sidebarOverSlots(railWidth) : DESKTOP_PROJECT_SLOTS}
       hosts={hosts}
       // The grid shows only in the center field's rounded top-left notch.
       className="relative h-full w-full bg-chrome"
@@ -80,23 +82,22 @@ export function ProjectShell({
       gridTemplateRows={desktopGridTemplate.rows}
       style={
         {
-          // No rail, no curve: zero the chrome-field corner while the left
-          // rail is collapsed; when open, leave the var unset so the utility's
+          // No rail, no curve: zero the chrome-field corner while no left rail
+          // sits beside main; when one does, leave the var unset so the utility's
           // own fallback applies — globals.css is the single owner of the
           // corner radius value.
-          "--chrome-corner": railOpen ? undefined : "0px",
+          "--chrome-corner": leftWidth > 0 ? undefined : "0px",
           "--project-left-width": `${leftWidth}px`,
           // Resize handles render as transparent absolute overlays centered on
           // these grid seams; zero-width tracks remove the visible empty strip.
           "--project-left-handle-width": "0px",
-          "--project-main-min-width": `${mainMinWidth ?? 0}px`,
           "--project-side-handle-width": "0px",
           "--project-side-width": `${sideWidth}px`,
         } as CSSProperties
       }
     >
       {children}
-      {railOpen ? (
+      {leftWidth > 0 ? (
         <div className="relative z-20 min-h-0 overflow-visible" style={{ gridArea: "left-resize" }}>
           <ResizeHandle
             gridRef={gridRef}
@@ -173,5 +174,19 @@ function CornerToggle({
     >
       <Icon aria-hidden />
     </IconButton>
+  );
+}
+
+/** The sidebar in main's cell, at its own width over main's left edge. */
+function sidebarOverSlots(width: number): SlotDefinition[] {
+  return DESKTOP_PROJECT_SLOTS.map((slot) =>
+    slot.id === "rail-l"
+      ? {
+          ...slot,
+          area: "center",
+          className: cn(slot.className, "z-20 rounded-r-xl shadow-modal"),
+          style: { justifySelf: "start", width },
+        }
+      : slot,
   );
 }

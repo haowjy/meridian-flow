@@ -11,6 +11,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { useRouterState } from "@tanstack/react-router";
 import { FileQuestion, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveTabs } from "@/client/project-shell/live-tabs";
@@ -59,9 +60,7 @@ import {
 } from "./side/SideView";
 import { useMainItem } from "./views";
 
-/** Minimum width (px) the main content column may shrink to on desktop. */
-const MAIN_MIN_WIDTH = 360;
-/** Below sidebar (264) + side panel (360) + main's minimum, the side panel folds so main is never crushed. */
+/** Below sidebar (264) + side panel (360) + 360 for main, the side panel folds so main keeps its room. */
 const COMPACT_DESKTOP_QUERY = "(max-width: 983px)";
 const NARROW_DESKTOP_QUERY = "(max-width: 767px)";
 
@@ -79,6 +78,17 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const sidebarToggle: PaneHeaderRailToggle = { open: panels["rail-l"].open };
   const sideToggle: PaneHeaderRailToggle = { open: panels.side.open };
   const sideOpen = panels.side.open;
+  const sidebarOver = narrowHold.narrow && panels["rail-l"].open;
+  // Any open goes to main, so a sidebar lying over main folds to show it, as the phone's drawer
+  // closes. The history position, not the entry's key: an address repair replaces the entry.
+  const position = useRouterState({ select: (state) => state.location.state.__TSR_index });
+  const arrivedAt = useRef(position);
+  const { foldSidebar } = narrowHold;
+  useEffect(() => {
+    if (arrivedAt.current === position) return;
+    arrivedAt.current = position;
+    if (sidebarOver) foldSidebar();
+  }, [position, sidebarOver, foldSidebar]);
   // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();
   const seenReveal = useRef(revealed);
@@ -336,7 +346,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         hosts={hosts}
         onSetSlotWidth={setSlotWidth}
         onSetSlotOpen={setSlotOpenHere}
-        mainMinWidth={MAIN_MIN_WIDTH}
+        sidebarOver={sidebarOver}
       />
     </TreeCreationProvider>
   );
@@ -368,10 +378,12 @@ function SideEmpty({ projectId }: { projectId: string }) {
  * A window too narrow for a panel holds it closed while it stays narrow, without writing prefs,
  * so the writer's own choice returns when the window widens. Opening a panel by hand releases
  * its hold until the window narrows again; in a window too narrow for both, it holds the other
- * one closed instead, so main keeps its minimum.
+ * one closed instead, so main keeps its room. A window too narrow for the sidebar beside main
+ * (`narrow`) lays a sidebar opened by hand over main, and an open folds it again.
  */
 function useNarrowWindowHold() {
   const [held, setHeld] = useState<readonly PanelSlotId[]>(NO_HELD_PANELS);
+  const [narrow, setNarrow] = useState(false);
   useEffect(() => {
     const compact = window.matchMedia(COMPACT_DESKTOP_QUERY);
     const narrow = window.matchMedia(NARROW_DESKTOP_QUERY);
@@ -380,6 +392,7 @@ function useNarrowWindowHold() {
       if (compact.matches) next.push("side");
       if (narrow.matches) next.push("rail-l");
       setHeld(next.length === 0 ? NO_HELD_PANELS : next);
+      setNarrow(narrow.matches);
     };
     compact.addEventListener("change", apply);
     narrow.addEventListener("change", apply);
@@ -398,5 +411,8 @@ function useNarrowWindowHold() {
       return next.length === 0 ? NO_HELD_PANELS : next;
     });
   }, []);
-  return { held, openByHand };
+  const foldSidebar = useCallback(() => {
+    setHeld((current) => (current.includes("rail-l") ? current : [...current, "rail-l"]));
+  }, []);
+  return { held, narrow, openByHand, foldSidebar };
 }
