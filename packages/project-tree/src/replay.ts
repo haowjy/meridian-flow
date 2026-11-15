@@ -753,7 +753,7 @@ export function deleteCovering(projection: TreeProjection, id: string): TrashEnt
 
 /**
  * Every delete in force that covers a node, nearest first: its own, then each one above it whose
- * cascade names it, the latest of each node's first. A nearer delete doesn't hide a farther one,
+ * cascade names it, each node's latest first. A nearer delete doesn't hide a farther one,
  * so a command can ask whether any delete it made covers the node.
  */
 export function deletesCovering(projection: TreeProjection, id: string): TrashEntry[] {
