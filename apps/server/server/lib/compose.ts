@@ -40,6 +40,7 @@ import { createTrashRemovals } from "../domains/context/adapters/trash-removals.
 import {
   type ChatUploads,
   type ContextSources,
+  createAgentFilesHints,
   createAgentLevelFiles,
   createContextUploadContentPort,
   createDocumentAddressResolver,
@@ -600,6 +601,7 @@ export async function createProductionAppPorts(input: {
     draftClose,
     treeLists,
     removals: createTrashRemovals(db),
+    onLiveTextChanged: createAgentFilesHints({ db, wake: projectWakeHub, eventSink }),
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(

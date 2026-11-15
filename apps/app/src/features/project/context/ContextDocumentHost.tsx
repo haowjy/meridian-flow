@@ -202,6 +202,7 @@ export function ContextDocumentHost({
                 detached={document.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={document.kind === "tracked" ? document.schemaType : "document"}
+                filetype={document.kind === "tracked" ? document.filetype : undefined}
                 showCollaborationDecorations={presentation.collaborationDecorations}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.

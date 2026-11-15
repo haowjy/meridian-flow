@@ -35,7 +35,7 @@ import {
 import { documentRef, type LinkView, parseLinkRef } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { MarkupCodec, PMNode } from "@meridian/markup";
+import { codeFileBlock, type MarkupCodec, type PMNode } from "@meridian/markup";
 import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
@@ -168,13 +168,8 @@ function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
   return (markdown: string, filetype: string | null) => {
     const schemaType = schemaTypeOf(filetype);
     const blocks: PMNode[] =
-      schemaType === "code"
-        ? [
-            deps.schema.nodes.code_block.create(
-              { language: filetype },
-              markdown.length > 0 ? deps.schema.text(markdown) : undefined,
-            ),
-          ]
+      schemaType === "code" && filetype !== null
+        ? [codeFileBlock(deps.schema, filetype, markdown)]
         : deps.codec.parse(markdown).blocks;
     return { schemaType, blocks };
   };
@@ -341,12 +336,7 @@ export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBi
     return makeBound({
       holder: { kind: "document", documentId },
       fresh: true,
-      blocks: [
-        deps.schema.nodes.code_block.create(
-          { language: filetype },
-          text.length > 0 ? deps.schema.text(text) : undefined,
-        ),
-      ],
+      blocks: [codeFileBlock(deps.schema, filetype, text)],
       markdown: text,
       schemaType: "code",
     });

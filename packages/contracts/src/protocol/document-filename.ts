@@ -131,20 +131,45 @@ export function canonicalLeaf(filename: string): string {
 }
 
 /**
+ * A name that already ends in a copy number (`Notes (2)`) is split into its base and that number.
+ * Only the endings the numbering writes count: 2 to 999999999, no leading zero. A larger number
+ * would stop growing under `+ 1`, and `(02)` would lose its zero when renumbered.
+ */
+export function splitCopyNumber(name: string): { base: string; copy: number } {
+  const match = /^(.*\S) \(([1-9]\d{0,8})\)$/.exec(name);
+  const copy = match ? Number(match[2]) : 1;
+  return match && copy >= 2 ? { base: match[1] ?? name, copy } : { base: name, copy: 1 };
+}
+
+/** The first `base (N)` for N above `after` that `taken` does not hold, with `extension`. */
+export function firstFreeCopy(
+  base: string,
+  after: number,
+  extension: string,
+  taken: ReadonlySet<string>,
+): { name: string; extension: string; filename: string } {
+  for (let suffix = after + 1; ; suffix += 1) {
+    const name = `${base} (${suffix})`;
+    const filename = renderFilename(name, extension);
+    if (!taken.has(filename)) return { name, extension, filename };
+  }
+}
+
+/**
  * The first free name for an arrival: `name`, then `name (2)`, `name (3)`…, against the rendered
- * filenames its parent already holds. Siblings of either kind clash when their rendered
- * filenames are equal, so `taken` is just a set of strings. Callers own the atomic claim.
+ * filenames its parent already holds. A name already ending in ` (N)` continues that sequence
+ * (`Notes (2)` becomes `Notes (3)`, never `Notes (2) (2)`). Siblings of either kind clash when
+ * their rendered filenames are equal, so `taken` is just a set of strings. Callers own the atomic claim.
  */
 export function firstFreeName(
   desired: { name: string; extension?: string },
   taken: ReadonlySet<string>,
 ): { name: string; extension: string; filename: string } {
   const extension = desired.extension ?? "";
-  for (let suffix = 1; ; suffix += 1) {
-    const name = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
-    const filename = renderFilename(name, extension);
-    if (!taken.has(filename)) return { name, extension, filename };
-  }
+  const filename = renderFilename(desired.name, extension);
+  if (!taken.has(filename)) return { name: desired.name, extension, filename };
+  const { base, copy } = splitCopyNumber(desired.name);
+  return firstFreeCopy(base, copy, extension, taken);
 }
 
 /** What a row says about its own name: its stored extension and whether it is a tracked document. */

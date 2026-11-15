@@ -5,7 +5,8 @@
   their retained definition; slugs can change, so looking one up would rewrite
   history.
 - The picker only selects, from saved versions. Unavailable Agents are omitted; the Agents tab
-  and an open Agent file show them, with Mars's reasons.
+  and an open Agent file show them, each reason in Flow's sentence, Mars's words the fallback
+  (`findings.ts`). A package-level problem is said once, on the package.
 - A package's Save state is the files query's, never kept on the client; `PackageSave` is its
   one look, wherever it shows.
 - Writer-facing copy spells the levels `.agents/` and `~/.agents/`, never `agents://`.

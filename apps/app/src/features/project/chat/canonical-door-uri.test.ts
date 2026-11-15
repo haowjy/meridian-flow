@@ -20,13 +20,7 @@ describe("a chat door's catalog address", () => {
     ).toBe("scratch://@w1/beats.md");
   });
 
-  it("spells a chat's Uploads with its handle and leaves project areas plain", () => {
-    expect(
-      canonicalDoorUri(
-        { scheme: "uploads", path: "/map.png", workId: null, chatId: "chat-id" },
-        { ownerRef: "c15" },
-      ),
-    ).toBe("uploads://@c15/map.png");
+  it("leaves project areas plain", () => {
     expect(canonicalDoorUri({ scheme: "manuscript", path: "/ch.md", workId: null }, {})).toBe(
       "manuscript://ch.md",
     );

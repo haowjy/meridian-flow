@@ -56,7 +56,7 @@ flowchart TD
 ```
 
 In one line: **main's kind opens in main, the other kind opens beside, and the left sidebar always
-opens in main.** Main and the side always hold different kinds, so from either pane this is the
+opens in main.** A chat's upload is no pane's: it opens in the upload viewer from anywhere. Main and the side always hold different kinds, so from either pane this is the
 same rule (`placeIn(kind, main)`); only the sidebar, outside every pane, opens in main without asking.
 
 ## Events

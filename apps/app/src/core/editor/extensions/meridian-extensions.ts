@@ -37,7 +37,7 @@ import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { browserPictureSource } from "../images/image-workflow";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
-import { cellInteriorPressPlugin } from "../landing/cell-interior-press";
+import { tablePressPlugin } from "../landing/table-press";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
 import { drawLinkAnswer } from "../links/link-mark-view";
 import { mountedLinks } from "../links/link-storage";
@@ -447,15 +447,11 @@ export const MeridianTable = Table.extend({
 
   // Before the parent's, so the sweep-replace paste answers ahead of
   // prosemirror-tables' rectangle overwrite on the same handlePaste ladder.
-  // The cell press router rides AFTER the parent's for the mirrored reason:
+  // The table press router rides AFTER the parent's for the mirrored reason:
   // a column-resize press must claim first, and the cell-sweep drag must arm
   // its listeners before the router claims an inert padding press.
   addProseMirrorPlugins() {
-    return [
-      tableSweepPastePlugin(),
-      ...(this.parent?.() ?? []),
-      cellInteriorPressPlugin(this.editor),
-    ];
+    return [tableSweepPastePlugin(), ...(this.parent?.() ?? []), tablePressPlugin(this.editor)];
   },
 
   addAttributes() {

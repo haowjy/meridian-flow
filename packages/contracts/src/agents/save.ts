@@ -93,6 +93,8 @@ export interface SaveOutcome {
   leftOut: string[];
   /** `critic is now critic__a, critic__b`. */
   renamed: string[];
+  /** The package had a saved version before this Save: what new chats keep when it fails. */
+  savedBefore: boolean;
 }
 export const saveOutcomeSchema = z.object({
   level: levelSchema,
@@ -104,6 +106,8 @@ export const saveOutcomeSchema = z.object({
   kept: z.array(z.string()),
   leftOut: z.array(z.string()),
   renamed: z.array(z.string()),
+  // A chat's card stored before this field read as a package saved before.
+  savedBefore: z.boolean().default(true),
 }) satisfies z.ZodType<SaveOutcome>;
 
 const projectIdSchema = z

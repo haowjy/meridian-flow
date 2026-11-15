@@ -33,8 +33,8 @@ export function keymapScopeApplies(scope: KeymapScope, state: KeymapApplicabilit
   }
 }
 
-/** How far from the manuscript a keystroke may be for a contribution to hear it. */
-export type KeymapReach = "prose" | "chrome";
+/** Which listeners offer a key: prose; prose and portalled chrome; or unclaimed native input. */
+export type KeymapRoute = "prose" | "chrome" | "native";
 
 /** ProseMirror's own binding shape: return true to consume the key. */
 export type KeymapBinding = (
@@ -46,8 +46,8 @@ export type KeymapBinding = (
 type KeymapContributionBase = {
   /** The registering surface, e.g. `"slash-menu"`. Names the owner in a trace. */
   id: string;
-  /** Where the key may be pressed. `"prose"` when unsaid. */
-  reach?: KeymapReach;
+  /** Defaults to prose. Chrome also runs in prose; native only prepares unclaimed input. */
+  route?: KeymapRoute;
   /** Narrows further than the scope, for a contribution that applies to one kind of the scope's context — one object type, one table role. */
   appliesTo?: (context: ChromeContext) => boolean;
   /** Keys in ProseMirror's `keymap` spelling: `"Alt-ArrowUp"`, `"Mod-Enter"`. */
@@ -88,9 +88,14 @@ export function assertKeymapContribution(
       `Keymap contribution "${contribution.id}" bound Escape; the Esc chain owns it — register a chrome layer instead`,
     );
   }
-  if (contribution.reach === "chrome" && contribution.scope !== "layer") {
+  if (contribution.route === "chrome" && contribution.scope !== "layer") {
     throw new Error(
-      `Keymap contribution "${contribution.id}" asked for chrome reach at "${contribution.scope}" scope; only a layer's keys may outlive the prose's focus`,
+      `Keymap contribution "${contribution.id}" asked for chrome route at "${contribution.scope}" scope; only a layer's keys may outlive the prose's focus`,
+    );
+  }
+  if (contribution.route === "native" && contribution.scope === "layer") {
+    throw new Error(
+      `Keymap contribution "${contribution.id}" cannot route layer keys through native input`,
     );
   }
   if (contribution.appliesTo) return;
@@ -107,6 +112,7 @@ export function assertKeymapContribution(
 
 /** Do these two contributions answer for the same place, so a shared key would always be a collision? */
 function sameKeymapPlace(left: KeymapContribution, right: KeymapContribution): boolean {
+  if ((left.route === "native") !== (right.route === "native")) return false;
   if (left.scope !== right.scope) return false;
   if (left.scope !== "layer") return true;
   return left.layer !== null && left.layer === right.layer;
@@ -122,14 +128,15 @@ type KeymapRung = {
 export function mergeKeymapContributions(
   contributions: readonly KeymapContribution[],
   applicability: () => KeymapApplicability,
-  reach: KeymapReach = "prose",
+  route: KeymapRoute = "prose",
 ): Record<string, KeymapBinding> {
   const byKey = new Map<string, KeymapRung[]>();
 
   for (const scope of KEYMAP_SCOPE_ORDER) {
     for (const contribution of contributions) {
       if (contribution.scope !== scope) continue;
-      if (reach === "chrome" && contribution.reach !== "chrome") continue;
+      if ((route === "native") !== (contribution.route === "native")) continue;
+      if (route === "chrome" && contribution.route !== "chrome") continue;
       for (const [key, binding] of Object.entries(contribution.bindings)) {
         const rungs = byKey.get(key);
         if (rungs) rungs.push({ contribution, binding });

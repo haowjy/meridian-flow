@@ -520,6 +520,21 @@ export function createDrizzleDocumentTrash(deps: {
         count += released.documentIds.length;
         if (released.storageUrls.length) await objects.storageUrls(released.storageUrls);
       };
+      // One entry's purge is its own transaction: a failure stays logged each pass and does not
+      // stop the entries after it.
+      const isolated = async (id: string, run: () => Promise<Released | null>) => {
+        try {
+          return await run();
+        } catch (error) {
+          emitEvent(deps.eventSink, {
+            level: "error",
+            source: "context.document-purge",
+            name: "purge.failed",
+            payload: { id, error },
+          });
+          return null;
+        }
+      };
       let after: { at: string; id: string } | undefined;
       while (count < DOCUMENT_PURGE_BATCH_LIMIT) {
         const due = await dueEntries(cutoff, after);
@@ -528,7 +543,9 @@ export function createDrizzleDocumentTrash(deps: {
         after = { at: last.at, id: last.deleteId };
         for (const entry of due) {
           if (count >= DOCUMENT_PURGE_BATCH_LIMIT) break;
-          await finish(await purgeEntry(entry.list, entry.deleteId));
+          await finish(
+            await isolated(entry.deleteId, () => purgeEntry(entry.list, entry.deleteId)),
+          );
         }
       }
       while (count < DOCUMENT_PURGE_BATCH_LIMIT) {
@@ -541,7 +558,7 @@ export function createDrizzleDocumentTrash(deps: {
         if (candidates.length === 0) break;
         const before = count;
         for (const { id } of candidates)
-          await finish(await purgeUnviewed(id as DocumentId, cutoff));
+          await finish(await isolated(id, () => purgeUnviewed(id as DocumentId, cutoff)));
         // A candidate that waits stays a candidate: stop when a pass releases nothing.
         if (count === before) break;
       }

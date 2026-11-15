@@ -12,11 +12,13 @@ import {
   documentEdgeTransaction,
   type ObjectAt,
   objectBeside,
+  objectSelectionForDOM,
+  objectTextSelectionTransaction,
   selectedObject,
   selectObjectTransaction,
   typeBesideObjectTransaction,
 } from "./object-selection";
-import { isEditorObject, objectBody, objectTypeSpec } from "./object-types";
+import { EDITOR_OBJECT_TYPES, isEditorObject, objectBody, objectTypeSpec } from "./object-types";
 import { pictureCapped } from "./picture-cap";
 
 const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
@@ -185,12 +187,30 @@ export const ObjectPhysicsExtension = Extension.create({
         /** Registration rides the view's lifetime rather than TipTap's `create` event, which is emitted a macrotask late — long enough for a first keystroke to miss it. */
         view(editorView) {
           const chrome = getEditorChrome(editor);
-          // Two contributions, because the arrows and Enter are live in
-          // different places. Walking ONTO an object starts from prose beside
+          // Walking ONTO an object starts from prose beside
           // it, so the arrows cannot be scoped to "an object is selected" —
           // they are block-level movement that declines wherever there is no
           // object to step on. Enter genuinely needs the selection.
           const releases = [
+            chrome?.registerKeymap({
+              id: "object-extend-selection",
+              scope: "object",
+              appliesTo: (context) =>
+                EDITOR_OBJECT_TYPES.some(
+                  (spec) => spec.id === context.objectSpec && spec.body === "inline-drag",
+                ),
+              bindings: objectSelectionExtensionBindings(),
+            }),
+            chrome?.registerKeymap({
+              id: "object-native-extend-selection",
+              scope: "object",
+              route: "native",
+              appliesTo: (context) =>
+                EDITOR_OBJECT_TYPES.some(
+                  (spec) => spec.id === context.objectSpec && spec.body === "text",
+                ),
+              bindings: objectSelectionExtensionBindings(),
+            }),
             chrome?.registerKeymap({
               id: "object-walk",
               scope: "block",
@@ -258,6 +278,10 @@ export const ObjectPhysicsExtension = Extension.create({
             ]);
           },
 
+          // Chromium adopts a nonempty native range before compositionstart.
+          // Keep object selection in the model, but give native input a caret.
+          selectionForDOM: (view) => (view.editable ? objectSelectionForDOM(view.state) : null),
+
           /** Typing beside a selected object keeps the object intact. */
           handleTextInput(view, _from, _to, text) {
             const selected = selectedObject(view.state);
@@ -283,6 +307,21 @@ export const ObjectPhysicsExtension = Extension.create({
           },
 
           handleDOMEvents: {
+            mousedown(view, event) {
+              if (!view.editable || !event.shiftKey || event.button !== 0 || event.defaultPrevented)
+                return false;
+              if (!selectedObject(view.state)?.node.isInline) return false;
+              const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+              if (!at) return false;
+              const transaction = objectTextSelectionTransaction(
+                view.state,
+                at.pos < view.state.selection.from ? -1 : 1,
+              );
+              // Run before PM starts delaying native selection updates for a drag.
+              if (transaction) view.dispatch(transaction);
+              return false;
+            },
+
             beforeinput(view, event) {
               if (
                 !view.editable ||
@@ -377,6 +416,54 @@ function selectedObjectRange(
   const { selection } = state;
   if (!(selection instanceof NodeSelection)) return null;
   return { from: selection.from, to: selection.to };
+}
+
+function objectSelectionExtensionBindings(): Record<string, KeymapBinding> {
+  const mac = isMacOS();
+  // Native Shift-navigation must start from the model range, not the typing caret.
+  const nativeSelectionKeys = {
+    ArrowLeft: -1,
+    ArrowUp: -1,
+    Home: -1,
+    PageUp: -1,
+    ArrowRight: 1,
+    ArrowDown: 1,
+    End: 1,
+    PageDown: 1,
+  } satisfies Record<string, 1 | -1>;
+  const bindings = Object.fromEntries(
+    (mac ? ["", "Mod-", "Alt-", "Ctrl-"] : ["", "Mod-"]).flatMap((modifier) =>
+      Object.entries(nativeSelectionKeys)
+        .filter(([key]) => modifier === "" || (key !== "PageUp" && key !== "PageDown"))
+        .map(([key, direction]) => [
+          `${modifier}Shift-${key}`,
+          prepareObjectSelectionExtension(direction),
+        ]),
+    ),
+  );
+  if (mac) {
+    // macOS text controls also expose Emacs-style selection gestures.
+    for (const [key, direction] of Object.entries({
+      a: -1,
+      b: -1,
+      p: -1,
+      e: 1,
+      f: 1,
+      n: 1,
+    } satisfies Record<string, 1 | -1>)) {
+      bindings[`Ctrl-Shift-${key}`] = prepareObjectSelectionExtension(direction);
+    }
+  }
+  return bindings;
+}
+
+function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
+  return (state, dispatch) => {
+    const transaction = objectTextSelectionTransaction(state, direction);
+    if (transaction) dispatch?.(transaction);
+    // The browser extends this model range, not the native typing caret.
+    return false;
+  };
 }
 
 /** Delete and Backspace take the whole object, not the selection over it. */

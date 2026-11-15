@@ -312,8 +312,10 @@ try {
       const slug = `u${index}`;
       const name = publish(entry.files(slug));
       const outcome = await savePackage(`packages/${name}/`);
-      const file = (await catalog.files(USER, {})).files.find(
-        (item) => item.slug === slug && item.level === "user",
+      const files = await catalog.files(USER, {});
+      const file = files.files.find((item) => item.slug === slug && item.level === "user");
+      const status = files.packages.find(
+        (item) => item.level === "user" && item.folder === `packages/${name}/`,
       );
       if (saves.has(entry.name)) {
         assert.equal(outcome.outcome, "saved", JSON.stringify(outcome.findings));
@@ -326,7 +328,16 @@ try {
         assert.equal((await catalog.resolvePrimary(USER, item.selection)).ok, true);
         return;
       }
-      assert.ok(file && file.unavailableReasons.length > 0, "the files show no reason");
+      // A file's Errors are its package's findings: its own, or a package-level one.
+      assert.ok(file, "the files don't list it");
+      assert.ok(
+        status?.findings.some(
+          (item) =>
+            item.severity === "error" &&
+            (item.file === `agents/${slug}.md` || !item.file.startsWith("agents/")),
+        ),
+        "the files show no Error",
+      );
       if (fails.has(entry.name)) {
         assert.equal(outcome.outcome, "failed");
         assert.ok(
