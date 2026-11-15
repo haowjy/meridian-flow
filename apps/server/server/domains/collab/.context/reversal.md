@@ -84,6 +84,11 @@ Undo after a pull equals Undo of the same typing on the draft when the writer in
 the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
 Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
 item can still be removed or restored, `undone` when only Redo can, else `changed`.
+Un-Apply adds one rule the card does not have: an inverse never changes a word that holds writing
+made after the Apply, so a group whose reversal would (a writer's letters inside or joined to the
+AI's word) stays applied and is named in `skippedGroupIds`. Whole words beside the AI's text do
+not stop it. `packages/agent-edit/.context/CONTEXT.md` has the definition and its known gap, a
+later deletion that glues words.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
