@@ -78,6 +78,7 @@ import {
   type FigureAssetService,
   type LinkAheadRegistry,
   type ProjectContextAvailabilityPort,
+  type ProjectHintPort,
   type ProjectWakeHub,
   type PromotionService,
   type UnifiedContextPortFactory,
@@ -308,6 +309,7 @@ export type AppServices = {
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
+  projectHints: ProjectHintPort;
   documentLinks: DocumentLinkResolver;
   /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
   linkScopes: DocumentLinkScopes;
@@ -399,6 +401,7 @@ export type ProductionAppPorts = {
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   projectWakeHub: ProjectWakeHub;
+  projectHints: ProjectHintPort;
   /** The Works projection: counts, revisions, and the wake a Work's change sends. */
   workProjectionMutation: WorkProjectionMutation;
   documentLinks: DocumentLinkResolver;
@@ -722,6 +725,7 @@ export async function createProductionAppPorts(input: {
       availability: projectContextAvailability,
     }),
     projectWakeHub,
+    projectHints,
     workProjectionMutation,
     documentLinks: createDocumentLinkResolver({
       sources: contextSources,
@@ -1243,6 +1247,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     projectWakeHub: ports.projectWakeHub,
+    projectHints: ports.projectHints,
     documentLinks: ports.documentLinks,
     linkScopes: ports.linkScopes,
     projects: ports.projects,
@@ -1309,6 +1314,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
 
 export function createInMemoryAppServices(): AppServices {
   const backgroundTasks = createDetachedWorkTracker();
+  const projectWakeHub = createProjectWakeHub();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
     transactionOwner,
@@ -1651,7 +1657,8 @@ export function createInMemoryAppServices(): AppServices {
       },
       serializeCreate: (_entryId, create) => create(),
     },
-    projectWakeHub: createProjectWakeHub(),
+    projectWakeHub,
+    projectHints: createProjectHints(projectWakeHub),
     documentLinks: createDocumentLinkResolver({ sources: noContextSources, workAuthorityResolver }),
     projectExport: createProjectExport({
       pendingDrafts: {

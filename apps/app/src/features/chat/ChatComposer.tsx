@@ -87,7 +87,7 @@ function ChatComposerComponent({
   const dock = useDraftDock({ threadId, generating, active });
   const openReferenceDocument = useOpenPlacedDocument(projectId);
   const onOpenReference = useCommittedEvent((reference: { uri: string; documentId: string }) => {
-    void openReferenceDocument(reference.documentId);
+    void openReferenceDocument(reference);
   });
 
   return (

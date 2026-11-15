@@ -66,7 +66,7 @@ function UserTurnComponent({
       references={projected.references}
       skills={projected.skills}
       referenceResolutions={resolutions}
-      onOpenReference={(documentId) => void openDocument(documentId)}
+      onOpenReference={(reference) => void openDocument(reference)}
     >
       {projected.text}
     </Markdown>

@@ -15,7 +15,7 @@ import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
-import type { ContextUri } from "@/lib/context-uri";
+import { type ContextUri, isUploadsUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
 import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
@@ -289,16 +289,18 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
 
 /**
  * Opens a document by id where `useLinkPlacement` puts it: a chip or a mention in a chat's
- * message or composer.
+ * message or composer. An upload (`uri` is `uploads://`) skips placement for the upload viewer.
  */
 export function useOpenPlacedDocument(
   projectId: string | undefined,
-): (documentId: string) => Promise<OpenDocumentOutcome> {
+): (reference: { documentId: string; uri: string | null }) => Promise<OpenDocumentOutcome> {
   const openDocument = useOpenProjectDocument(projectId);
   const place = useLinkPlacement(projectId ?? null, null);
   return useCallback(
-    (documentId) =>
-      place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
+    ({ documentId, uri }) =>
+      uri && isUploadsUri(uri)
+        ? openDocument({ documentId })
+        : place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
     [place, openDocument],
   );
 }

@@ -81,7 +81,7 @@ export function CreationComposer({
   const folders = useMemo<FolderMenuHost>(
     () => ({
       projectId,
-      openDocument: (documentId) => void openDocument(documentId),
+      openDocument: (documentId) => void openDocument({ documentId, uri: null }),
     }),
     [openDocument, projectId],
   );
@@ -140,7 +140,7 @@ export function CreationComposer({
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
-          void openDocument(reference.documentId);
+          void openDocument(reference);
         }}
         uploadPort={chatUploadPort}
         uploadScope={{ kind: "chat", projectId, chatId: creation.draft.chatId }}

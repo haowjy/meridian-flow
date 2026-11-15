@@ -8,8 +8,8 @@
  * visibility and thread lifetime. This file prepares each door as a question plus a policy:
  * a live answer opens by the document id the resolver named, in the pane `useLinkPlacement` picks; a hidden document goes
  * to its Work's review by item identity; a missing one routes by address, so the route says
- * so in place. An upload has no Editor address: its door asks the same question and opens the
- * answer by id, which shows it in the upload viewer.
+ * so in place. An upload has no Editor address and no pane: its door asks the same question and
+ * opens the answer by id, unplaced, which shows it in the upload viewer.
  *
  * Every door (and, through `retire`, every transcript click) retires a passage still landing.
  * A passage door's answer hands the resolved id and its placement to passage navigation, which
@@ -49,7 +49,7 @@ type RouteTarget = NonNullable<ReturnType<typeof contextRouteTargetFromUri>>;
 
 /**
  * Where a door's answer goes, whatever kind of door it is. Passage intent lives here, apart
- * from whether a route holds the document: an upload has no route and still has an anchor.
+ * from whether a route holds the document. An upload's viewer has no passage to land on.
  */
 type Placement = {
   workId: string | null;
@@ -159,8 +159,8 @@ export function ProjectChatContextNavigationProvider({
         passages.retire();
         const link = classifyLinkTarget(uri);
         if (!link) return null;
-        const door: Placement = { workId: null, passage };
-        return { link, policy: { open: (document) => openFound(door, document) } };
+        const door: Placement = { workId: null };
+        return { link, policy: { open: (document) => openLive(door, document) } };
       }
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return null;
@@ -202,6 +202,7 @@ export function ProjectChatContextNavigationProvider({
       onOpenContextTarget,
       passages,
       openFound,
+      openLive,
       openMissing,
       route,
       rootThreadId,

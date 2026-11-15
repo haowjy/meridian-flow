@@ -43,7 +43,7 @@ export function DocumentName({
     byIdentity ||
     (uri !== null && !insideDoor && openContextUri !== null && canOpenContextUri?.(uri) === true);
   const open = () => {
-    if (byIdentity) void openPlaced(documentId);
+    if (byIdentity) void openPlaced({ documentId, uri });
     else if (uri !== null) openContextUri?.(uri, undefined);
   };
 

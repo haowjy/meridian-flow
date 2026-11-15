@@ -3,11 +3,10 @@
  * asserting ownership and resolving its work attachment. App-layer glue tying
  * the projects + threads + packages domains together.
  */
-import type { ProjectId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
-import type { ContextSources, ProjectWakePort } from "../domains/context/index.js";
+import type { ProjectHintPort } from "../domains/context/index.js";
 import {
   type EventSink,
   emitEvent,
@@ -55,8 +54,11 @@ export interface CreateThreadForProjectDeps {
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
   eventSink: EventSink;
-  contextSources: Pick<ContextSources, "ownedBy">;
-  projectWakeHub: Pick<ProjectWakePort, "publish">;
+  /**
+   * A New chat's uploads are stored before the chat exists, under a bare `uploads://` address; its
+   * handle (`uploads://@c4/…`) names them once it does, so clients re-read their sources.
+   */
+  sourceHints: Pick<ProjectHintPort, "publishSourcesHint">;
 }
 
 export interface CreateThreadForProjectArgs {
@@ -138,6 +140,7 @@ export async function createThreadForProject(
         await deps.threadWorks.addMembership(created.id, work.id, true);
         // An explicit choice becomes the Work's default; lock order is thread, then Work.
         if (args.aiWriteMode) await deps.workRepo.setDefaultAiWriteMode(work.id, args.aiWriteMode);
+        deps.sourceHints.publishSourcesHint(args.projectId);
         return work.id;
       },
     });
@@ -149,8 +152,6 @@ export async function createThreadForProject(
     }
     throw error;
   }
-
-  await announceAdoptedSources(deps, thread);
 
   try {
     await deps.workRepo.touch(work.id);
@@ -168,34 +169,4 @@ export async function createThreadForProject(
     });
   }
   return thread;
-}
-
-/**
- * A New chat's uploads are stored before the chat exists, under a bare `uploads://` address. The
- * chat's handle now names them (`uploads://@c4/…`), so a client holding the bare one re-reads its
- * sources; a lossy hint, since a missed one leaves the list stale until its next read.
- */
-async function announceAdoptedSources(deps: CreateThreadForProjectDeps, thread: Thread) {
-  try {
-    const owned = await deps.contextSources.ownedBy(thread.projectId as ProjectId, {
-      kind: "chat",
-      chatId: thread.id,
-    });
-    if (owned.length > 0)
-      await deps.projectWakeHub.publish({
-        type: "context-sources-hint",
-        projectId: thread.projectId,
-      });
-  } catch (error) {
-    emitEvent(deps.eventSink, {
-      level: "warn",
-      source: "lib.thread-creation",
-      name: "sources_hint.failed",
-      payload: {
-        threadId: thread.id,
-        projectId: thread.projectId,
-        ...unknownToEventPayload(error),
-      },
-    });
-  }
 }

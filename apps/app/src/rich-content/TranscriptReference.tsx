@@ -78,7 +78,7 @@ export function referenceKey(kind: "document" | "folder", id: string): string {
 }
 export const TranscriptReferenceContext = createContext<{
   resolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
-  onOpen?: (documentId: string) => void;
+  onOpen?: (reference: { documentId: string; uri: string | null }) => void;
 }>({});
 
 export function TranscriptReference({
@@ -136,7 +136,7 @@ export function TranscriptReference({
   const follow =
     exact?.kind === "document"
       ? resolution?.available && onOpen
-        ? () => onOpen(resolution.id)
+        ? () => onOpen({ documentId: resolution.id, uri: uri ?? null })
         : undefined
       : navigation && syntax && syntaxFollowable && !folderMenu
         ? () => navigation.follow(syntax)

@@ -31,7 +31,6 @@ import {
 } from "@/client/project-shell/store";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
-import { useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import type { NewChatAbout } from "@/features/chat/CreationComposer";
 import { useAccountId, useShownDocuments } from "../context/account-feature-context";
@@ -303,15 +302,8 @@ export function SideViewProvider({
   const [revealed, setRevealed] = useState(0);
   const mainRef = useRef(main);
   mainRef.current = main;
-  const trees = useProjectTrees(projectId);
-  const treesRef = useRef(trees);
-  treesRef.current = trees;
   const place = useCallback<Place>(
     (item, draft) => {
-      const upload =
-        item.kind === "document" &&
-        treesRef.current.find(item.documentId)?.source.scheme === "uploads";
-      if (upload) return "main";
       const pane = placeIn(item.kind, mainRef.current);
       if (pane === "main") return pane;
       if (item.kind === "document") {
@@ -428,7 +420,7 @@ export type PlacedItem =
  * The one placement command: where `item` opens (`placeIn`). It returns the pane. For the side it
  * has already written the slot (and the draft the document shows) and had the side seen; for main
  * the caller opens the item, since only it knows how (a live page, a draft, a chat). A chat's
- * upload is never placed beside: the caller opens it, in the upload viewer.
+ * upload never comes here: its `uploads://` address sends it to the upload viewer.
  */
 export type Place = (
   item: PlacedItem,

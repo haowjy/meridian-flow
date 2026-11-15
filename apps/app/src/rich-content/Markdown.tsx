@@ -16,7 +16,7 @@ type MarkdownBaseProps = {
   references?: readonly MarkdownReferenceOccurrence[];
   skills?: readonly MarkdownSkillOccurrence[];
   referenceResolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
-  onOpenReference?: (documentId: string) => void;
+  onOpenReference?: (reference: { documentId: string; uri: string | null }) => void;
 };
 
 type MarkdownProps = MarkdownBaseProps &

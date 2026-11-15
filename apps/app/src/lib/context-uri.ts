@@ -43,6 +43,14 @@ export type ChatUploadOwners = {
 };
 
 /**
+ * Whether an address names a chat's upload, whether or not the project's list has it yet. An
+ * upload opens in the upload viewer, never in a pane.
+ */
+export function isUploadsUri(uri: string): boolean {
+  return parseContextUri(uri)?.scheme === "uploads";
+}
+
+/**
  * The chat whose uploads an `uploads://` URI names, or null for any other URI. A Work route
  * can't name an upload, so a chat door opens it by its document in the chat's catalog.
  */
