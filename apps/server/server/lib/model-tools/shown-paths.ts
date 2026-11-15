@@ -4,7 +4,9 @@
  * the model meant, and what the call's path showed is recorded with its result. This is the one place the tools that read or write inside a
  * document do it; the tree commands resolve inside their own command.
  */
-import { splitDocumentFile } from "@meridian/agent-edit/integration";
+import { removerName, splitDocumentFile } from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
+import { parseActor } from "../../domains/context/adapters/context-fs/tree-writes.js";
 import { contextAreaOf, parseUnifiedContextUri } from "../../domains/context/index.js";
 import {
   addDelta,
@@ -16,12 +18,8 @@ import {
   type ShownDelta,
 } from "../../domains/context/tree/names-shown.js";
 import { reachPath } from "../../domains/context/tree/tree-commands.js";
-import {
-  type ResultEvidence,
-  type ToolHandlerContext,
-  TREE_NAMES_ROOM,
-} from "../../domains/runtime/index.js";
-import type { ToolCall } from "./tool-context.js";
+import { type ToolHandlerContext, TREE_NAMES_ROOM } from "../../domains/runtime/index.js";
+import type { ToolCall, ToolWiringDeps } from "./tool-context.js";
 
 /** What the model has been shown of the tree so far in this conversation. */
 export async function shownNamesOf(
@@ -72,17 +70,31 @@ export type Reached = {
   /** The node the path reached, when the names shown or the tree hold it. */
   node?: { id: string; kind: "folder" | "document" | "file"; entries: number };
   /**
+   * A create's folders that were in Trash and stand again around what it makes, with who deleted
+   * them (`folderOf`).
+   */
+  kept?: string;
+  /**
    * The node the path names is not available here (in Trash, purged, or of the other version):
    * the tool answers with `goneMessage` and never looks `path` up again, which could reach
    * another node that holds the name now.
    */
-  gone?: "deleted" | "purged" | "other_version";
+  gone?: Gone;
+};
+
+/** Why a path's node is not available, and who deleted it: "you" when it was this chat. */
+export type Gone = {
+  why: "deleted" | "purged" | "other_version";
+  by?: NonNullable<DocumentRemovalRecord["actor"]> | "you";
 };
 
 /** What a tool says for a path whose node is not available (`Reached.gone`). */
-export function goneMessage(path: string, gone: NonNullable<Reached["gone"]>): string {
-  if (gone === "deleted") return `${path} is in Trash; restore it to use it.`;
-  if (gone === "purged") return `${path} was emptied from Trash and is gone for good.`;
+export function goneMessage(path: string, gone: Gone): string {
+  if (gone.why === "deleted") {
+    const by = gone.by === "you" ? "you" : removerName(gone.by ?? null);
+    return `${path} is in Trash${by ? `: deleted by ${by}` : ""}. Restore it to use it.`;
+  }
+  if (gone.why === "purged") return `${path} was emptied from Trash and is gone for good.`;
   return `${path} names something in the other version of the tree, not this one.`;
 }
 
@@ -90,11 +102,13 @@ export function goneMessage(path: string, gone: NonNullable<Reached["gone"]>): s
  * The path as it is now for the node the model meant (`#fragment` kept). A path neither the names
  * shown nor the tree hold a node for comes back as written: the tool reports it as it always did.
  * One whose node is not available comes back `gone`. `create` resolves the folder it goes into,
- * not the name it makes.
+ * not the name it makes, and that folder is never `gone`: one the model was shown that someone
+ * deleted since is `node`, and the create goes into it, which brings it back.
  */
 export async function reachShown(
+  deps: Pick<ToolWiringDeps, "documentRemovals">,
   call: ToolCall,
-  ctx: Pick<ToolHandlerContext, "shownNames">,
+  ctx: Pick<ToolHandlerContext, "shownNames" | "threadId">,
   path: string,
   options: { version?: "draft" | "live"; folderOf?: boolean } = {},
 ): Promise<Reached> {
@@ -109,15 +123,25 @@ export async function reachShown(
   if (looked === "") return { path };
   const reached = await call.context.port.readTree(parts.area, {
     ...(options.version ? { version: options.version } : {}),
-    read: (scope) => reachPath(scope, parts.area, shown, looked),
+    read: (scope) =>
+      reachPath(scope, parts.area, shown, looked, { destination: options.folderOf === true }),
   });
   if (!reached.ok || reached.value.kind === "unresolved") return { path };
-  if (reached.value.kind === "gone") return { path, gone: reached.value.why };
+  if (reached.value.kind === "gone") {
+    const { why, by } = reached.value;
+    if (!by) return { path, gone: { why } };
+    const who = parseActor(by);
+    if (who?.kind === "agent" && who.chatId === ctx.threadId)
+      return { path, gone: { why, by: "you" } };
+    const actor = (await deps.documentRemovals.actors([by]))(by);
+    return { path, gone: { why, ...(actor ? { by: actor } : {}) } };
+  }
   const value = reached.value;
   return {
     path: `${value.uri}${leaf}${fragment === undefined ? "" : `#${fragment}`}`,
     delta: value.delta,
     node: value.node,
+    ...(value.kept ? { kept: value.kept } : {}),
   };
 }
 

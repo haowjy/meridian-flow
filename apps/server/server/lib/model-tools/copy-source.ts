@@ -89,7 +89,7 @@ export async function resolveCopySource(
   const call = await resolveToolCall(deps, ctx, source.version);
   if (isToolError(call)) return writeToolError(command, fromMessage(source, call.output.message));
   const { context } = call;
-  const reached = await reachShown(call, ctx, source.path, {
+  const reached = await reachShown(deps, call, ctx, source.path, {
     ...(source.version ? { version: source.version } : {}),
   });
   if (reached.gone)

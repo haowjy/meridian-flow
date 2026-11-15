@@ -12,4 +12,8 @@ export interface DocumentRemovals {
   lookup(
     documentIds: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, DocumentRemovalRecord>>;
+  /** Who the authors of deletes are (`user:<id>`, `agent:<chat>/<turn>`), read in one go. */
+  actors(
+    authors: Iterable<string | null>,
+  ): Promise<(by: string | null) => DocumentRemovalRecord["actor"]>;
 }

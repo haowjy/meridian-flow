@@ -64,7 +64,7 @@ export function createLsHandler(deps: ToolWiringDeps) {
     // The folder as the model meant it: a renamed or moved folder is found, and a path that is
     // a document says so.
     const reached = path
-      ? await reachShown(call, ctx, path, { ...(version ? { version } : {}) })
+      ? await reachShown(deps, call, ctx, path, { ...(version ? { version } : {}) })
       : null;
     if (path && reached?.gone)
       return toolError({ code: "not_found", message: goneMessage(path, reached.gone) });

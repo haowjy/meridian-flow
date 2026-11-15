@@ -577,17 +577,23 @@ export type PathReach =
       node: { id: string; kind: TreeNode["kind"]; entries: number };
       uri: string;
       delta: ShownDelta;
+      /** A destination's folders that were in Trash and stand again for the call, and who deleted them. */
+      kept?: string;
     }
-  /** The path names a node this view can't act on: in Trash, purged, or of the other version. */
-  | { kind: "gone"; why: "deleted" | "purged" | "other_version" }
+  /** The path names a node this view can't act on: in Trash (`by` deleted it), purged, or of the other version. */
+  | { kind: "gone"; why: "deleted" | "purged" | "other_version"; by?: Actor }
   | { kind: "unresolved" };
 
 /**
  * Resolves a path through the names shown, for the tools that read or write inside a document:
- * the live node it meant and where it is now; `gone` when the node it names (the one the model
- * was shown, or else the one holding the name) is not available here, so no caller looks the
- * path up again and reaches whatever holds that name now; or nothing when neither the map nor the
- * tree holds a node for it.
+ * the live node it meant and where it is now; `gone` when the node it names is not available
+ * here, so no caller looks the path up again and reaches whatever holds that name now; or nothing
+ * when neither the map nor the tree holds a node for it. Only a name the model was shown means a
+ * node in Trash: an unshown name means a standing node or nothing.
+ *
+ * A `destination` (the folder a create goes into) never answers `gone`: a folder the model was
+ * shown that someone deleted since stands again around what the call makes (rule 3), and a purged
+ * one or one of the other version falls to the tree, where the call makes a fresh folder.
  */
 export function reachPath(
   scope: Pick<TreeScope, "writer" | "view" | "root">,
@@ -595,7 +601,7 @@ export function reachPath(
   shown: NamesShown,
   path: string,
   /** Undo names what was deleted by its old path: a node in Trash is the one it means. */
-  options: { deleted?: boolean } = {},
+  options: { deleted?: boolean; destination?: boolean } = {},
 ): PathReach {
   const cx: Context = {
     scope: { ...scope, actor: "" },
@@ -609,10 +615,13 @@ export function reachPath(
   const projection = scope.writer.view(scope.view);
   const found = resolveShown(projection, shown, scope.root, pathFrom(cx, path));
   if (found.kind === "purged" || found.kind === "other_version")
-    return { kind: "gone", why: found.kind };
+    return options.destination ? { kind: "unresolved" } : { kind: "gone", why: found.kind };
   if (found.kind !== "node") return { kind: "unresolved" };
-  if (!options.deleted && (found.node.trashed || found.trashed.length > 0))
-    return { kind: "gone", why: "deleted" };
+  if (!options.deleted && !options.destination && found.trashed.length > 0) {
+    const by = deleterOf(cx, projection, found.node);
+    return { kind: "gone", why: "deleted", ...(by ? { by } : {}) };
+  }
+  const kept = options.destination ? keptTrashed(cx, projection, found.trashed) : undefined;
   return {
     kind: "node",
     node: {
@@ -622,6 +631,7 @@ export function reachPath(
     },
     uri: nodeUri(cx, projection, found.node),
     delta: printedDelta(projection, [found.node.id]),
+    ...(kept ? { kept } : {}),
   };
 }
 
