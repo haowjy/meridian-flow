@@ -280,8 +280,9 @@ export type AgentTreeHistory = {
   turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
   /**
    * The node this chat's receipts took away from `at`, so an undo there finds it: the latest
-   * deleted there or its create undone (the path the model wrote); else the latest moved or
-   * deleted from `at`, or from a folder `at` is inside (a node's address before the call).
+   * deleted there or its create undone (the path the model wrote); else what last stood at `at`
+   * and was moved or deleted from it, itself or with a folder above it, by this chat's receipts
+   * in order (a node's address before the call).
    */
   nodeLeftAt(threadId: ThreadId, at: string): Promise<{ node: string; folder: boolean } | null>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */

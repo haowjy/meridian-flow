@@ -14,7 +14,7 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
 import { boundCommandId } from "./drizzle-document-edits.js";
@@ -194,12 +194,17 @@ export function createDrizzleTreeHistory(
       // What a receipt took from the path it was written at comes first: a blocker moved aside
       // from a path never stands in for what was deleted there.
       if (written) return { node: written.node, folder: at.endsWith("/") };
-      // A folder's move writes a row for the folder only, so a document that was inside it is
-      // found by the folder's old address above it. A folder's address ends in "/".
-      const [left] = await tx()
+      // A folder's move writes a row for the folder only, so what was inside it is found by the
+      // folder's address above `at` (a folder's address ends in "/"). The rows that touched `at`
+      // or a folder above it are walked in order, carrying what stood at `at`: a folder that
+      // moved after the node had already left `at` took nothing from it.
+      const above = (address: string | null) =>
+        address !== null && (address === at || (address.endsWith("/") && at.startsWith(address)));
+      const rows = await tx()
         .select({
           node: treeEditReceiptNodes.nodeId,
           beforeAt: treeEditReceiptNodes.beforeAt,
+          afterAt: treeEditReceiptNodes.afterAt,
         })
         .from(treeEditReceiptNodes)
         .innerJoin(treeEditReceipts, eq(treeEditReceipts.id, treeEditReceiptNodes.receiptId))
@@ -208,20 +213,31 @@ export function createDrizzleTreeHistory(
             eq(treeEditReceiptNodes.threadId, threadId),
             or(
               eq(treeEditReceiptNodes.beforeAt, at),
+              eq(treeEditReceiptNodes.afterAt, at),
               and(
                 like(treeEditReceiptNodes.beforeAt, "%/"),
                 sql`starts_with(${at}, ${treeEditReceiptNodes.beforeAt})`,
               ),
-            ),
-            or(
-              isNull(treeEditReceiptNodes.afterAt),
-              ne(treeEditReceiptNodes.afterAt, treeEditReceiptNodes.beforeAt),
+              and(
+                like(treeEditReceiptNodes.afterAt, "%/"),
+                sql`starts_with(${at}, ${treeEditReceiptNodes.afterAt})`,
+              ),
             ),
           ),
         )
-        .orderBy(desc(treeEditReceipts.seq), desc(sql`length(${treeEditReceiptNodes.beforeAt})`))
-        .limit(1);
-      return left ? { node: left.node, folder: (left.beforeAt ?? "").endsWith("/") } : null;
+        .orderBy(treeEditReceipts.seq, desc(sql`length(${treeEditReceiptNodes.beforeAt})`));
+      // Before the chat's first row, something may stand at `at`.
+      let standing = true;
+      let left: { node: string; folder: boolean } | null = null;
+      for (const row of rows) {
+        if (row.beforeAt === row.afterAt) continue;
+        if (above(row.beforeAt) && standing) {
+          left = { node: row.node, folder: (row.beforeAt as string).endsWith("/") };
+          standing = false;
+        }
+        if (above(row.afterAt)) standing = true;
+      }
+      return left;
     },
 
     async historyOf(threadId, nodeId, isDocument) {
