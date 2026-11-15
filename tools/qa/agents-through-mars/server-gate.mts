@@ -4,7 +4,7 @@
  * itself and as children Muse spawns. Needs a stack on the mock provider:
  *
  *   LIVE_TEST_MODEL= MODEL_PROVIDER=mock pnpm dev
- *   pnpm exec tsx tools/qa/agents-through-mars/server-gate.mts
+ *   bun tools/qa/agents-through-mars/server-gate.mts
  *
  * `MF_SERVER_URL` and `DATABASE_URL` override the stack and database this checkout's `pnpm dev`
  * would use. Writes through `POST /api/agents` and chats in the stack's default project.

@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /** Build and serve the production client behind a same-origin dev-stack gateway. */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";

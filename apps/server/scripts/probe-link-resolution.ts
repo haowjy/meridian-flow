@@ -2,7 +2,7 @@
  * Import link resolution and frontmatter parsing cost at vault scale. Pure, no
  * database. Not a correctness gate; records timings.
  *
- *   pnpm --filter @meridian/server exec tsx scripts/probe-link-resolution.ts
+ *   bun apps/server/scripts/probe-link-resolution.ts
  *
  * Prints one JSON line per measurement.
  */

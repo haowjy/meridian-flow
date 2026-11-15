@@ -2,7 +2,7 @@
  * A second `apps/server` process on a database another process already uses, for the lock-free
  * drafts two-process probe (P6): two servers, one database, one draft.
  *
- *   pnpm exec tsx tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian
+ *   bun tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian
  *
  * `DATABASE_URL` is set verbatim. `applyDevEnvToProcess` is never called for it: the
  * loader pins a worktree's URL to that checkout's own database, which is how a "second worktree
@@ -36,7 +36,7 @@ import {
 const SERVER_SUFFIX = ".server.meridian";
 const SERVE_SERVER = "--serve-server";
 const SERVE_APP = "--serve-app";
-const USAGE = "usage: tsx tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian";
+const USAGE = "usage: bun tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian";
 
 const repoRoot = resolveCurrentRepoRoot(import.meta.dirname);
 
@@ -98,7 +98,7 @@ async function launch(): Promise<void> {
   const children: ChildProcess[] = [];
   const stopAll = (signal: NodeJS.Signals) => {
     for (const child of children) {
-      // Each child leads its own process group: pnpm and tsx do not forward signals.
+      // Each child leads its own process group: pnpm does not forward signals.
       if (child.exitCode !== null || !child.pid) continue;
       try {
         process.kill(-child.pid, signal);
@@ -113,7 +113,7 @@ async function launch(): Promise<void> {
   ] as const) {
     const child = spawn(
       "pnpm",
-      ["exec", "portless", "--name", name, "--force", "tsx", import.meta.filename, flag],
+      ["exec", "portless", "--name", name, "--force", "bun", import.meta.filename, flag],
       { cwd: repoRoot, env, stdio: "inherit", detached: true },
     );
     child.on("exit", (code) => {

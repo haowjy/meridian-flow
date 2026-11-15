@@ -8,7 +8,7 @@ exists; R2's behavior on every line is unproven until then.
 docker run -d --name probe-minio -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER=probekey \
   -e MINIO_ROOT_PASSWORD=probesecret-xx minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
 cd apps/server && S3_ENDPOINT=http://127.0.0.1:19000 S3_ACCESS_KEY=probekey \
-  S3_SECRET_KEY=probesecret-xx pnpm exec tsx scripts/probe-direct-put.ts --serve 5190
+  S3_SECRET_KEY=probesecret-xx bun scripts/probe-direct-put.ts --serve 5190
 ```
 
 For R2 set `S3_ENDPOINT` to the account endpoint, `S3_BUCKET` to the bucket and

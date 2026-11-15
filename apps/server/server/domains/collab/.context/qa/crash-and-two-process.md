@@ -8,11 +8,11 @@ durable state with `tools/qa/draft-readback.ts`.
 
 ## Tools
 
-- `pnpm exec tsx tools/qa/draft-readback.ts <draftId> [--db <url>]` prints a
+- `bun tools/qa/draft-readback.ts <draftId> [--db <url>]` prints a
   draft's `revision`, `checkpointRevision`, `checkpointSeq`, generation, tail
   rows with their client ids, materialized `text` and `stateSha256`. Without
   `--db` it reads this checkout's database.
-- `pnpm exec tsx tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian`
+- `bun tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian`
   starts a second server on `<database-url>`, set verbatim, and an app paired with
   it. The tab URL is `https://<prefix>.app.meridian.localhost`. The tool refuses
   any target but the local dev Postgres and refuses this checkout's own route
@@ -98,7 +98,7 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
    ```bash
    pid=$(pnpm -s exec portless list | grep "<stack-prefix>.server.meridian" | grep -o 'pid [0-9]*' | cut -d' ' -f2)
    db=$(tr '\0' '\n' < /proc/$pid/environ | sed -n 's/^DATABASE_URL=//p')
-   MODEL_PROVIDER=mock pnpm exec tsx tools/qa/shared-db-server.ts "$db" p6b.server.meridian
+   MODEL_PROVIDER=mock bun tools/qa/shared-db-server.ts "$db" p6b.server.meridian
    ```
 
    The second server inherits this shell's environment. Without

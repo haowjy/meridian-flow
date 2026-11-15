@@ -4,6 +4,6 @@
 # and `exec` leaves no wrapper process, so Ctrl-C reaches psql itself.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-connection="$(cd "$root" && "$root/node_modules/.bin/tsx" tools/dev/psql-env.ts)"
+connection="$(cd "$root" && bun tools/dev/psql-env.ts)"
 eval "$connection"
 exec psql "$@"

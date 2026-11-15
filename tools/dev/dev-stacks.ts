@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * Report how much memory each dev stack is holding, and optionally stop the
  * ones that have been idle longest.

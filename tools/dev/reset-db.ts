@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   }
 
   console.log("▸ Installing database baseline…");
-  execFileSync("tsx", [path.join(repoRoot, "tools/dev/prepare-db.ts")], {
+  execFileSync("bun", [path.join(repoRoot, "tools/dev/prepare-db.ts")], {
     cwd: repoRoot,
     stdio: "inherit",
     env: process.env,

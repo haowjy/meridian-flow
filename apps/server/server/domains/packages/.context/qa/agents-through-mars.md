@@ -27,7 +27,7 @@ and runs the real Drizzle store and catalog over it. It checks:
 
 ```sh
 LIVE_TEST_MODEL= MODEL_PROVIDER=mock pnpm dev
-pnpm exec tsx tools/qa/agents-through-mars/server-gate.mts
+bun tools/qa/agents-through-mars/server-gate.mts
 ```
 
 (`LIVE_TEST_MODEL` set in the main checkout's `.env` stops the mock provider booting; the empty

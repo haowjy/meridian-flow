@@ -23,7 +23,7 @@ const CHILD_SOURCE = join(dirname(fileURLToPath(import.meta.url)), "child.mts");
 let bundled: Promise<string> | undefined;
 
 /**
- * The child as one bundled file. Starting it through tsx transpiles the server's whole import
+ * The child as one bundled file. Starting it through bun transpiles the server's whole import
  * graph on each boot (about 8 s); the bundle starts in about 1 s, which is what lets a probe
  * kill a process per case. The workspace's own source is inlined, other packages stay external.
  */

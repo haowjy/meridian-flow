@@ -3,7 +3,7 @@
 Run from the checkout under review:
 
 ```sh
-pnpm exec tsx tools/qa/probes/atomic-apply/run.mts
+bun tools/qa/probes/atomic-apply/run.mts
 ```
 
 The runner creates, migrates, and drops its own `lfd_probe_*` PostgreSQL

@@ -8,7 +8,7 @@ const LEAVES = 1_172;
 
 const output = process.argv[2];
 if (!output) {
-  console.error("Usage: tsx scripts/build-import-performance-fixture.ts <output-dir>");
+  console.error("Usage: bun scripts/build-import-performance-fixture.ts <output-dir>");
   process.exitCode = 2;
 } else {
   const root = resolve(output);

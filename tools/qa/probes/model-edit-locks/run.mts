@@ -4,7 +4,7 @@
  * parent holds a lock from its own connection to line the racers up in the order that used to
  * hang, lose text or store a deadlock as an answer. Asserts on stored rows only.
  *
- *   pnpm exec tsx tools/qa/probes/model-edit-locks/run.mts
+ *   bun tools/qa/probes/model-edit-locks/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a closed draft in a document's history puts its Work in an inverse's Work locks

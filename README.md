@@ -45,7 +45,7 @@ Dev is portless: use `pnpm portless:list` for live `https://*.localhost` URLs in
 
 ```bash
 pnpm check
-MODEL_PROVIDER=mock pnpm exec tsx tests/smoke/run.ts
+MODEL_PROVIDER=mock bun tests/smoke/run.ts
 pnpm --filter @meridian/server smoke:thread-runtime
 ```
 

@@ -4,7 +4,7 @@
  * and a second process recovers. Asserts on stored rows only: the live document, the Work's
  * draft, the result blocks, the edit receipts and the command rows.
  *
- *   pnpm exec tsx tools/qa/probes/model-edit-drafts/run.mts
+ *   bun tools/qa/probes/model-edit-drafts/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a draft-mode write creates its Work draft inside the command's transaction

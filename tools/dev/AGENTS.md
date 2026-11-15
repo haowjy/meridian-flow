@@ -40,6 +40,9 @@ this directory never imports application packages. The `./mf` CLI lives in
 - Orphan teardown requires path/pane ownership and process identity, never cwd
   or a name prefix alone. Inspect orphans with
   `pnpm dev:prune-worktrees -- --orphans --dry-run`.
+- Scripts run under `bun` (`#!/usr/bin/env bun`, `bun tools/dev/x.ts` in `package.json`), not
+  tsx. Bun is pinned in `.tool-versions`. Vite, Nitro and Vitest stay on Node: don't use
+  `bunx --bun` for them.
 - `tools/mf` and `apps/app/e2e` import the Portless helpers
   ([the list](../mf/AGENTS.md)). Keep those free of import-time side effects, with
   Node built-ins as their only runtime dependencies.
@@ -63,9 +66,9 @@ pane output does not track use. `lib/dev-idle.ts` holds the rule, and
   the stack. A stack with no live `idle-watch` window shows `unwatched` (started with
   `0`, watcher crashed, or started before the watcher existed) and is never reaped:
   restart it to get a watcher.
-- **The watcher runs under plain `node`** with type stripping, ~70 MB; under tsx it was
-  ~360 MB. Keep `dev-idle-watch.ts` and what it imports to erasable TypeScript with `.ts`
-  import specifiers.
+- **The watcher runs under `bun`**, ~20 MB resident; under tsx it was ~360 MB and under
+  plain `node` ~60 MB. It lives as long as the stack, so keep it light: a few `node:` imports,
+  no workspace packages.
 - **Why a stack stopped:** the watcher logs the `--stop` outcome to `logs/dev-idle-stop.log`
   and leaves `.meridian/dev-idle-stopped`; `pnpm dev` prints and clears it, and
   `pnpm dev:stacks` and `./mf` print it while the stack is down.

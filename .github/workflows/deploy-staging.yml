@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - name: Build release artifacts
         run: pnpm nx run-many -t build -p @meridian/app,@meridian/server,@meridian/www

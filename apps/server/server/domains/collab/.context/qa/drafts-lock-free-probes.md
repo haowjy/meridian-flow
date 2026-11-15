@@ -9,8 +9,8 @@ outcome and observed locks. CI runs them after the DB suite (`pnpm test:probes`,
 ## Run
 
 ```bash
-pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts
-pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts f1-inverse-grant d23-archived-draft-rebases
+bun tools/qa/probes/drafts-lock-free/run.mts
+bun tools/qa/probes/drafts-lock-free/run.mts f1-inverse-grant d23-archived-draft-rebases
 ```
 
 The runner creates `lfd_probe_<pid>_<stamp>` on local dev Postgres (or a CI runner's own), applies the

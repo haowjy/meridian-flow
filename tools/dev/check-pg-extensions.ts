@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * Proves the Postgres behind DATABASE_URL can serve writer search: pg_bigm is preloaded,
  * pg_bigm, btree_gin and pg_trgm install, and a 1-character Han LIKE is narrowed by a

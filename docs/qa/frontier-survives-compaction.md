@@ -9,7 +9,7 @@ holds by construction (every server doc is `gc: false`). It needs no database, d
 browser.
 
 ```bash
-pnpm exec tsx tools/qa/probes/frontier-survives-compaction/run.mts
+bun tools/qa/probes/frontier-survives-compaction/run.mts
 ```
 
 It prints one `PASS` or `FAIL` per check and exits with the number that failed.

@@ -3,8 +3,8 @@
 Run the PostgreSQL/Hocuspocus seam probes:
 
 ```sh
-pnpm exec tsx tools/qa/probes/draft-generations/run.mts
-pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts cold-load-commit read-only-handshake
+bun tools/qa/probes/draft-generations/run.mts
+bun tools/qa/probes/drafts-lock-free/run.mts cold-load-commit read-only-handshake
 ```
 
 The first runner creates and drops its scratch database. It checks that live
@@ -17,7 +17,7 @@ Against a running dev stack, seed an existing-document draft in a scratch Work,
 then run this probe. It discards that Work's entire branch:
 
 ```sh
-pnpm exec tsx tools/qa/probes/draft-generations/live.mts <workId> <documentId> --restart
+bun tools/qa/probes/draft-generations/live.mts <workId> <documentId> --restart
 ```
 
 The probe opens an authenticated provider socket, restarts the mock stack,
