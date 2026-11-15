@@ -307,7 +307,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         return (
           <RowWord
             tone="warning"
-            word={<Trans>Not back</Trans>}
+            word={<Trans>Not restored</Trans>}
             sentence={restoreReturnedSentence(notice.returned)}
           />
         );
@@ -316,7 +316,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         return (
           <RowWord
             tone="warning"
-            word={<Trans>Partly back</Trans>}
+            word={<Trans>Partly restored</Trans>}
             sentence={plural(left, {
               one: "# change couldn't come back: it was drafted again or is gone.",
               other: "# changes couldn't come back: they were drafted again or are gone.",

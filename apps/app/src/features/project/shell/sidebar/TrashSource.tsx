@@ -217,7 +217,9 @@ function useTrashDiscardRows(projectId: string) {
   const { states, restore } = useRestoreDiscard(projectId);
   const queryClient = useQueryClient();
   const owner = useDraftCommandOwner();
-  const restored = useRef(new Map<string, DiscardEntry>());
+  const restored = useRef(
+    new Map<string, { entry: DiscardEntry; listedThen: ReadonlySet<string> }>(),
+  );
   const [undoing, setUndoing] = useState<ReadonlyMap<string, "sending" | "failed">>(new Map());
   const mark = (commandId: string, state: "sending" | "failed" | null) =>
     setUndoing((current) => {
@@ -228,13 +230,28 @@ function useTrashDiscardRows(projectId: string) {
     });
   const listed = query.data?.entries ?? [];
   for (const entry of listed)
-    if (states.get(entry.commandId)?.kind === "restored")
-      restored.current.set(entry.commandId, entry);
+    if (states.get(entry.commandId)?.kind === "restored" && !restored.current.has(entry.commandId))
+      restored.current.set(entry.commandId, {
+        entry,
+        listedThen: new Set(listed.map(({ commandId }) => commandId)),
+      });
+  // A new Discard of a restored draft is the next thing done to it: the restore's Undo ends.
+  for (const [commandId, { entry: held, listedThen }] of restored.current) {
+    const took = new Set(documentsOf(held));
+    if (
+      listed.some(
+        (entry) =>
+          !listedThen.has(entry.commandId) &&
+          documentsOf(entry).some((document) => took.has(document)),
+      )
+    )
+      restored.current.delete(commandId);
+  }
   const entries = [
     ...listed,
-    ...[...restored.current.values()].filter(
-      (held) => !listed.some((entry) => entry.commandId === held.commandId),
-    ),
+    ...[...restored.current.values()]
+      .map(({ entry }) => entry)
+      .filter((held) => !listed.some((entry) => entry.commandId === held.commandId)),
   ];
   const rows = entries.map((entry) => {
     const created = new Map(entry.tree.created.map((node) => [node.node, node.name]));

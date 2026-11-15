@@ -4416,8 +4416,8 @@ msgid "Not applied to"
 msgstr "Not applied to"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Not back"
-msgstr "Not back"
+#~ msgid "Not back"
+#~ msgstr "Not back"
 
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -4470,6 +4470,7 @@ msgstr "Not renamed:"
 msgid "Not reported"
 msgstr "Not reported"
 
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -4745,8 +4746,12 @@ msgid "Partial result"
 msgstr "Partial result"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Partly back"
-msgstr "Partly back"
+#~ msgid "Partly back"
+#~ msgstr "Partly back"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Partly restored"
+msgstr "Partly restored"
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Partly undone"
