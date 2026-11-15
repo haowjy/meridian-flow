@@ -250,6 +250,16 @@ function lowerText(
         before.content.cut(old.from, old.to).eq(after.content.cut(next.from, next.to))
       )
         continue;
+      if (process.env.WINDOW_DIFF && old.from < old.to && next.from < next.to) {
+        for (const hunk of wordHunks(a.slice(old.from, old.to), b.slice(next.from, next.to), isAtom))
+          hunks.push({
+            from: hunk.from + old.from,
+            to: hunk.to + old.from,
+            at: hunk.at + next.from,
+            end: hunk.end + next.from,
+          });
+        continue;
+      }
       hunks.push({
         from: old.from,
         to: old.to,
