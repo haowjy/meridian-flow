@@ -702,10 +702,11 @@ function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) 
   const count = !file.draft.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
   if (!tree && count === null) return null;
   return (
-    <span className="flex min-w-0 gap-2">
+    <span className="flex min-w-0 flex-wrap gap-x-2">
       {tree ? <span className="min-w-0 truncate">{tree}</span> : null}
       {count !== null ? (
-        <span className="shrink-0">
+        // A row word beside it can leave less than the count's width: the count wraps, whole.
+        <span className="whitespace-normal">
           <Plural value={count} one="# text change" other="# text changes" />
         </span>
       ) : null}

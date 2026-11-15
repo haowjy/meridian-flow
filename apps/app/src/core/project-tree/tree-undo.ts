@@ -61,8 +61,23 @@ export type TreeStep = {
 };
 
 /**
+ * What an Un-Apply took back of its Apply: `all` of what stood, `partly` (what stayed was edited
+ * or changed since), `nothing` (all that stood was), or `already` (an earlier Un-Apply, here or in
+ * another tab, took it all). `textLeft` counts the text changes that stayed, `treeLeft` the nodes.
+ */
+export type Unapplied =
+  | { taken: "all" | "already" }
+  | { taken: "partly" | "nothing"; textLeft: number; treeLeft: number };
+
+/** What an Un-Apply left standing, said on the rows of the Apply it took back. */
+export type Left = Extract<Unapplied, { taken: "partly" | "nothing" }> & {
+  name: string;
+  nodes: readonly string[];
+};
+
+/**
  * An Apply, one step whichever view is on screen: it changed live and the Work's tree alike.
- * `unapply` asks the server; `skipped` is its answer that something changed since. It has two
+ * `unapply` asks the server, and `failed` is a press that didn't reach it. It has two
  * halves: its text ends only by an Un-Apply (a press answers it, this tab's or, as `already`,
  * another's); its tree half ends when nothing of it stands in live any more (`endWhenTakenBack`).
  * It leaves the stack when both have ended.
@@ -81,11 +96,11 @@ export type ApplyStep = {
   name: string;
   /** The nodes it took, whose rows say what an Undo of it couldn't do. */
   nodes: readonly string[];
-  /** `textLeft`: the text changes a later edit overlaps, which stay applied. */
-  unapply(): Promise<{ answer: "unapplied" | "skipped" | "failed"; textLeft?: number }>;
+  unapply(): Promise<Unapplied | { taken: "failed" }>;
 };
 
-export type Skipped = { kind: "tree" | "apply"; name: string; nodes: readonly string[] };
+/** A tree step a press passed over: something changed it again since. */
+export type Skipped = { name: string; nodes: readonly string[] };
 
 /**
  * What a list's rows say: the latest gesture, whose rows offer its Undo, or what the latest press
@@ -94,9 +109,9 @@ export type Skipped = { kind: "tree" | "apply"; name: string; nodes: readonly st
 export type TreeNotice = { kind: "step"; step: TreeStep } | { kind: "said"; said: readonly Said[] };
 
 export type Said =
-  | { kind: "skipped"; of: Skipped["kind"]; name: string; nodes: readonly string[] }
-  /** An Apply taken back but for `textLeft` text changes edited since. */
-  | { kind: "partial"; name: string; nodes: readonly string[]; textLeft: number }
+  | ({ kind: "skipped" } & Skipped)
+  /** An Apply's Un-Apply that left some of it, or all of it, standing. */
+  | ({ kind: "left" } & Left)
   /** An Apply's Un-Apply didn't reach the server; `step` is still on the stack. */
   | { kind: "failed"; name: string; nodes: readonly string[]; step: ApplyStep };
 
@@ -113,27 +128,23 @@ export type Bounce = {
 };
 
 export type UndoOutcome =
-  /** `partial`: an Apply taken back but for text changes edited since, which stay applied. */
+  /** `left`: what an Apply's Un-Apply left standing. */
   | {
       kind: "undone";
       skipped: readonly Skipped[];
       /** What the step taken back acted on: where the focus follows it. */
       nodes: readonly string[];
-      partial?: { name: string; nodes: readonly string[]; textLeft: number };
+      left?: Left;
     }
-  | { kind: "nothing"; skipped: readonly Skipped[] }
+  | { kind: "nothing"; skipped: readonly Skipped[]; left?: Left }
   /** An Apply's Un-Apply didn't reach the server: the step stays on the stack. */
   | { kind: "failed"; skipped: readonly Skipped[]; name: string; step: ApplyStep };
 
 function saidOf(outcome: UndoOutcome): TreeNotice | null {
   const said: Said[] = [
-    ...outcome.skipped.map(({ kind, ...each }) => ({
-      kind: "skipped" as const,
-      of: kind,
-      ...each,
-    })),
-    ...(outcome.kind === "undone" && outcome.partial
-      ? [{ kind: "partial" as const, ...outcome.partial }]
+    ...outcome.skipped.map((each) => ({ kind: "skipped" as const, ...each })),
+    ...(outcome.kind !== "failed" && outcome.left
+      ? [{ kind: "left" as const, ...outcome.left }]
       : []),
     ...(outcome.kind === "failed"
       ? [
@@ -278,29 +289,21 @@ async function takeLatest(
     stack.splice(at, 1);
     if (step.kind === "tree") step.ended?.();
     if (step.kind === "apply") {
-      const { answer, textLeft = 0 } = await step.unapply();
-      if (answer !== "failed") step.ended?.();
-      if (answer === "unapplied")
-        return {
-          kind: "undone",
-          skipped,
-          nodes: step.nodes,
-          ...(textLeft > 0 ? { partial: { name: step.name, nodes: step.nodes, textLeft } } : {}),
-        };
-      if (answer === "failed") {
+      const answer = await step.unapply();
+      if (answer.taken === "failed") {
         stack.splice(at, 0, step);
         return { kind: "failed", skipped, name: step.name, step };
       }
-      // A press that reached the server is spent: the writer pressed once, for this step.
-      skipped.push({ kind: "apply", name: step.name, nodes: step.nodes });
-      return { kind: "nothing", skipped };
+      step.ended?.();
+      // A press that reached the server is spent, whatever it took: the writer pressed once.
+      return unappliedOutcome(step, answer, skipped);
     }
     const names = step.nodes.flatMap(
       (node) => session.replay(view, pendingText).nodes.get(node)?.displayName ?? [],
     );
     if (takeBack(session, step, view, actor, pendingText))
       return { kind: "undone", skipped, nodes: step.nodes };
-    skipped.push({ kind: "tree", name: names[0] ?? "", nodes: step.nodes });
+    skipped.push({ name: names[0] ?? "", nodes: step.nodes });
   }
   return { kind: "nothing", skipped };
 }
@@ -328,9 +331,7 @@ export async function undoStep(
   const undone = takeBack(session, step, view, actor, pendingText);
   show(
     session,
-    undone
-      ? null
-      : saidOf({ kind: "nothing", skipped: [{ kind: "tree", name, nodes: step.nodes }] }),
+    undone ? null : saidOf({ kind: "nothing", skipped: [{ name, nodes: step.nodes }] }),
   );
   return undone;
 }
@@ -345,27 +346,29 @@ export async function undoApply(session: TreeListSession, step: ApplyStep): Prom
   if (at < 0) return false;
   stack.splice(at, 1);
   show(session, null);
-  const { answer, textLeft = 0 } = await step.unapply();
-  if (answer === "failed") stack.splice(Math.min(at, stack.length), 0, step);
+  const answer = await step.unapply();
+  if (answer.taken === "failed") stack.splice(Math.min(at, stack.length), 0, step);
   else step.ended?.();
-  show(
-    session,
-    saidOf(
-      answer === "failed"
-        ? { kind: "failed", skipped: [], name: step.name, step }
-        : answer === "skipped"
-          ? { kind: "nothing", skipped: [{ kind: "apply", name: step.name, nodes: step.nodes }] }
-          : {
-              kind: "undone",
-              skipped: [],
-              nodes: step.nodes,
-              ...(textLeft > 0
-                ? { partial: { name: step.name, nodes: step.nodes, textLeft } }
-                : {}),
-            },
-    ),
-  );
-  return answer === "unapplied";
+  const outcome: UndoOutcome =
+    answer.taken === "failed"
+      ? { kind: "failed", skipped: [], name: step.name, step }
+      : unappliedOutcome(step, answer, []);
+  show(session, saidOf(outcome));
+  return outcome.kind === "undone";
+}
+
+function unappliedOutcome(
+  step: ApplyStep,
+  answer: Unapplied,
+  skipped: readonly Skipped[],
+): UndoOutcome {
+  const left: Left | undefined =
+    answer.taken === "partly" || answer.taken === "nothing"
+      ? { ...answer, name: step.name, nodes: step.nodes }
+      : undefined;
+  return answer.taken === "nothing"
+    ? { kind: "nothing", skipped, left }
+    : { kind: "undone", skipped, nodes: step.nodes, ...(left ? { left } : {}) };
 }
 
 /**

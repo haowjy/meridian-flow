@@ -5,13 +5,18 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type { ApplyClickResult, ApplyItemResult } from "@meridian/contracts/branches";
+import type {
+  ApplyClickResult,
+  ApplyItemResult,
+  UnapplyClickResult,
+} from "@meridian/contracts/branches";
 import {
   CLOSED_OWNER_WHYS,
   type ClosedOwnerWhy,
   type Settlement,
 } from "@meridian/contracts/commands";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { Unapplied } from "@/core/project-tree/tree-undo";
 import type { DiscardRestores } from "./discard-restores";
 
 export type NoticeSurface =
@@ -118,6 +123,21 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
       item.tree?.landed && item.tree.restore ? [item.tree.restore] : [],
     ),
   };
+}
+
+/**
+ * What an Un-Apply took back, the one reading every surface says: something taken back with
+ * nothing left is `all`; with text skipped or a tree fact left out, `partly`; nothing taken back
+ * but something left, `nothing`; neither, `already` (the server's `already unapplied`).
+ */
+export function unappliedOf(answer: UnapplyClickResult): Unapplied {
+  const took = answer.reversedGroupIds.length > 0 || answer.treeUndone.length > 0;
+  const textLeft = answer.skippedGroupIds.length;
+  const treeLeft = new Set(
+    (answer.settled ?? []).flatMap((one) => (one.rule === "left_out" ? one.items : [])),
+  ).size;
+  if (textLeft === 0 && treeLeft === 0) return { taken: took ? "all" : "already" };
+  return { taken: took ? "partly" : "nothing", textLeft, treeLeft };
 }
 
 /** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */

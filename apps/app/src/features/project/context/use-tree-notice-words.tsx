@@ -310,23 +310,41 @@ function SaidWord({
         <RowWord
           tone="warning"
           word={<Trans>Skipped</Trans>}
-          sentence={
-            said.of === "apply"
-              ? t`Undo skipped applying ${name}: the tree changed since.`
-              : t`Undo skipped your change to ${name}: it was changed again since.`
-          }
+          sentence={t`Undo skipped your change to ${name}: it was changed again since.`}
         />
       );
-    case "partial": {
-      const stayed = plural(said.textLeft, {
-        one: "# text change stayed: it was edited since.",
-        other: "# text changes stayed: they were edited since.",
-      });
+    case "left": {
+      if (said.taken === "nothing")
+        return (
+          <RowWord
+            tone="warning"
+            word={<Trans>Not undone</Trans>}
+            sentence={
+              said.textLeft > 0
+                ? t`Not undone: it was edited since.`
+                : t`Not undone: it was changed since.`
+            }
+          />
+        );
+      const stayed = [
+        said.textLeft > 0
+          ? plural(said.textLeft, {
+              one: "# text change stayed: it was edited since.",
+              other: "# text changes stayed: they were edited since.",
+            })
+          : null,
+        said.treeLeft > 0
+          ? plural(said.treeLeft, {
+              one: "# document stayed as it is: it was changed since.",
+              other: "# documents stayed as they are: they were changed since.",
+            })
+          : null,
+      ].filter(Boolean);
       return (
         <RowWord
           tone="warning"
           word={<Trans>Partly undone</Trans>}
-          sentence={`${t`Undid applying ${name}.`} ${stayed}`}
+          sentence={[t`Undid part of applying ${name}.`, ...stayed].join(" ")}
         />
       );
     }
