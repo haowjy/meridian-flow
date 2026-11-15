@@ -50,9 +50,9 @@ import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { DocumentHistory } from "./editor-history";
-import type { Ranges } from "./item-ranges";
+import { insertedBy, type Ranges } from "./item-ranges";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -63,7 +63,7 @@ import {
   type LocalPresence,
   type LocalPresenceFields,
 } from "./local-presence";
-import { unsentText } from "./rescued-text";
+import type { Offer } from "./rescued-text";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import {
   attemptClientSchemaReload,
@@ -603,9 +603,7 @@ export class DocumentSession {
    * this session wrote any of what is left through an editor or its Undo. Null when the room holds
    * none.
    */
-  undeliverableEdits(
-    handedBack: Ranges,
-  ): { ranges: Ranges; text: string | null; own: boolean } | null {
+  undeliverableEdits(handedBack: Ranges): (Offer & { own: boolean }) | null {
     const difference = this.lastDifference;
     if (!difference || !this.holdsUndeliverable) return null;
     return this.unsent.undeliverable(difference, handedBack);
@@ -631,10 +629,16 @@ export class DocumentSession {
     return this.unacknowledgedUpdates() !== null;
   }
 
-  /** The words typed here that the server has not acknowledged; null when there are none. */
-  unsentText(): string | null {
+  /**
+   * The typing here the server has not acknowledged, as the items it inserted (`lacking`) and the
+   * document they live in, encoded so it can be read after the session is destroyed; null when
+   * there is none.
+   */
+  unsentEdits(): { copy: Uint8Array; lacking: Ranges } | null {
     const updates = this.unacknowledgedUpdates();
-    return updates ? unsentText(this.document, updates) : null;
+    return updates
+      ? { copy: Y.encodeStateAsUpdate(this.document), lacking: insertedBy(updates) }
+      : null;
   }
 
   /**

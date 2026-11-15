@@ -144,15 +144,6 @@ export function documentText(document: Y.Doc): string | null {
   return text || null;
 }
 
-/**
- * The words this browser typed into `document` that the server never acknowledged: the text
- * `unacknowledged` inserted and nothing has deleted since. Null when it holds no words (a format
- * change, a deletion).
- */
-export function unsentText(document: Y.Doc, unacknowledged: Uint8Array): string | null {
-  return typedText(document, insertedBy(unacknowledged));
-}
-
 /** The live words of the items in `ranges`; null when they hold none. */
 function typedText(document: Y.Doc, ranges: Ranges): string | null {
   const clients = new Map(
@@ -169,18 +160,29 @@ function typedText(document: Y.Doc, ranges: Ranges): string | null {
   return text || null;
 }
 
+declare const offered: unique symbol;
+/** What a hand-back notice offers. Only `offer` makes one, so no notice skips the acted-on records. */
+export type Offer = Readonly<{ ranges: Ranges; text: string | null; [offered]: true }>;
+
 /**
  * What a hand-back notice offers, for every reader of what a copy holds: the items of `lacking`
  * (what the server lacks) outside `handedBack` (the notices acted on, and those still showing
  * here), and their live words in `document`. The notice records `ranges`, exactly what it offered.
  */
-export function offer(
-  document: Y.Doc,
-  lacking: Ranges,
-  handedBack: Ranges,
-): { ranges: Ranges; text: string | null } {
+export function offer(document: Y.Doc, lacking: Ranges, handedBack: Ranges): Offer {
   const ranges = subtract(lacking, handedBack);
-  return { ranges, text: typedText(document, ranges) };
+  return { ranges, text: typedText(document, ranges) } as Offer;
+}
+
+/** `read` on `copy` (an update) in a scratch document. */
+export function readCopy<T>(copy: Uint8Array, read: (document: Y.Doc) => T): T {
+  const scratch = new Y.Doc();
+  try {
+    Y.applyUpdate(scratch, copy);
+    return read(scratch);
+  } finally {
+    scratch.destroy();
+  }
 }
 
 /** `read` on the items of `copy` (an update) beyond `server` (a state vector), in a scratch document. */
@@ -189,11 +191,7 @@ export function readBeyond<T>(
   server: Uint8Array,
   read: (document: Y.Doc, lacking: Ranges) => T,
 ): T {
-  const scratch = new Y.Doc();
-  try {
-    Y.applyUpdate(scratch, copy);
-    return read(scratch, insertedBy(Y.encodeStateAsUpdate(scratch, server)));
-  } finally {
-    scratch.destroy();
-  }
+  return readCopy(copy, (document) =>
+    read(document, insertedBy(Y.encodeStateAsUpdate(document, server))),
+  );
 }

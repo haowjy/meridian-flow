@@ -34,7 +34,7 @@ import {
   within,
   without,
 } from "./item-ranges";
-import { offer } from "./rescued-text";
+import { type Offer, offer } from "./rescued-text";
 
 type DisplayRecord = { inserted: RangeList; deleted: RangeList };
 
@@ -180,7 +180,7 @@ export class UnsentEdits {
   undeliverable(
     { lacking, server }: HandshakeDifference,
     handedBack: Ranges,
-  ): { ranges: Ranges; text: string | null; own: boolean } {
+  ): Offer & { own: boolean } {
     const update = Y.decodeUpdate(lacking);
     const typing: Ranges = new Map();
     for (const struct of update.structs) {

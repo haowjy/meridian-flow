@@ -29,7 +29,7 @@ import {
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
-import { offer, readBeyond } from "./rescued-text";
+import { type Offer, offer, readBeyond, readCopy } from "./rescued-text";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
 const LIVE_DOC_SOFT_CAP = 50;
@@ -74,7 +74,7 @@ export class DocumentSessionRegistry {
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
     (session) => {
       const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
-      if (cause) this.handBackUnsent(session, cause);
+      if (cause) void this.handBackUnsent(session, cause);
     },
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
@@ -154,8 +154,10 @@ export class DocumentSessionRegistry {
     const state = this.liveRooms.get(documentId);
     this.liveRooms.delete(documentId);
     if (state?.session) {
-      this.handBackUnsent(state.session, "removed");
+      // Read before the copy goes: its records say what the writer already took back.
+      const handedBack = this.handBackUnsent(state.session, "removed");
       await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
+      await handedBack;
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
     (await state?.hold)?.release();
@@ -446,8 +448,7 @@ export class DocumentSessionRegistry {
             if (left.text === null) return;
             kept.add(name);
             const notice = offer(document, left.ranges, union(...this.pendingIn(name)));
-            if (notice.text)
-              this.handBack(notice.text, "owner-closed", { name, offered: notice.ranges });
+            if (notice.text) this.handBack("owner-closed", name, notice);
           });
     } finally {
       await Promise.all(older.map((copy) => copy.finish(!settled || kept.has(copy.name))));
@@ -517,8 +518,7 @@ export class DocumentSessionRegistry {
       this.replacing.delete(old);
       return;
     }
-    const copy = this.copyOf.get(old);
-    if (!copy) throw new Error(`Session has no local copy to advance: ${old.roomKey}`);
+    const copy = this.copyOfSession(old);
     const name = incarnationName(copy.key, copy.incarnation);
     const handedBack = union(await this.copies.handedBack(name), ...this.pendingIn(name));
     if (!this.isRoomSession(old)) {
@@ -527,8 +527,7 @@ export class DocumentSessionRegistry {
     }
     const edits = old.undeliverableEdits(handedBack);
     // Wordless edits made by another tab or an earlier page are not told to this one.
-    if (edits && (edits.text !== null || edits.own))
-      this.handBack(edits.text, "owner-closed", { name, offered: edits.ranges });
+    if (edits && (edits.text !== null || edits.own)) this.handBack("owner-closed", name, edits);
     void old.makeInert().catch(reportError);
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
@@ -582,46 +581,64 @@ export class DocumentSessionRegistry {
     };
   }
 
-  private handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): void {
-    if (this.handedBack.has(session)) return;
-    const text = session.unsentText();
-    if (!text) return;
-    this.handedBack.add(session);
-    this.handBack(text, cause);
+  private copyOfSession(session: DocumentSession): { key: string; incarnation: number } {
+    const copy = this.copyOf.get(session);
+    if (!copy) throw new Error(`Session has no local copy: ${session.roomKey}`);
+    return copy;
   }
 
   /**
-   * `text` is null for a change that has no words (a deletion, a format change). A hand-back
-   * `from` a copy is pending until the writer is done with it, then recorded in the copy.
+   * The typing a retiring session never delivered, handed back like every notice: what is left
+   * after the acted-on records and this tab's pending notices of its copy. Read synchronously,
+   * because the session is destroyed next; the records are read after.
    */
-  private handBack(
-    text: string | null,
-    cause: UnsentTypingCause,
-    from?: { name: string; offered: Ranges },
-  ): void {
-    if (text === null && cause !== "owner-closed") return;
-    const id = crypto.randomUUID();
-    let done = () => {};
-    if (from) {
-      const pending = this.pendingHandBacks.get(from.name) ?? new Set();
-      pending.add(from.offered);
-      this.pendingHandBacks.set(from.name, pending);
-      let recorded = false;
-      done = () => {
-        if (recorded) return;
-        recorded = true;
-        // Pending until written: a read here in between must not offer the words again.
-        void this.copies
-          .recordHandedBack(from.name, id, from.offered)
-          .then(() => {
-            pending.delete(from.offered);
-            if (pending.size === 0 && this.pendingHandBacks.get(from.name) === pending)
-              this.pendingHandBacks.delete(from.name);
-          })
-          .catch(reportError);
-      };
+  private async handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): Promise<void> {
+    if (this.handedBack.has(session)) return;
+    const unsent = session.unsentEdits();
+    if (!unsent) return;
+    this.handedBack.add(session);
+    try {
+      const copy = this.copyOfSession(session);
+      const name = incarnationName(copy.key, copy.incarnation);
+      const acted = await this.copies.handedBack(name).catch((error: unknown) => {
+        // An unreadable record offers the words again rather than losing them.
+        reportError(error);
+        return new Map() as Ranges;
+      });
+      const notice = readCopy(unsent.copy, (document) =>
+        offer(document, unsent.lacking, union(acted, ...this.pendingIn(name))),
+      );
+      if (notice.text !== null) this.handBack(cause, name, notice);
+    } catch (error) {
+      reportError(error);
     }
-    const typing = Object.freeze({ id, cause, text, done });
+  }
+
+  /**
+   * Shows `notice`, made from the copy `name` by `offer`. It is pending until the writer is done
+   * with it, then recorded in the copy, so no later read offers its words again. `text` is null
+   * for a change that has no words (a deletion, a format change).
+   */
+  private handBack(cause: UnsentTypingCause, name: string, notice: Offer): void {
+    const id = crypto.randomUUID();
+    const pending = this.pendingHandBacks.get(name) ?? new Set();
+    pending.add(notice.ranges);
+    this.pendingHandBacks.set(name, pending);
+    let recorded = false;
+    const done = () => {
+      if (recorded) return;
+      recorded = true;
+      // Pending until written: a read here in between must not offer the words again.
+      void this.copies
+        .recordHandedBack(name, id, notice.ranges)
+        .then(() => {
+          pending.delete(notice.ranges);
+          if (pending.size === 0 && this.pendingHandBacks.get(name) === pending)
+            this.pendingHandBacks.delete(name);
+        })
+        .catch(reportError);
+    };
+    const typing = Object.freeze({ id, cause, text: notice.text, done });
     for (const observer of this.unsentTypingObservers) observer(typing);
   }
 

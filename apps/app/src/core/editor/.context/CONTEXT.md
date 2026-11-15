@@ -525,9 +525,10 @@ keyboard, pointer, drop, or draft-recovery answer.
 ### Unsent typing handed back
 
 - Before a room's local copy goes with typing the server never acknowledged, the registry
-  reads the words (`DocumentSession.unsentText`: the text the transport's unacknowledged
-  updates inserted and nothing has deleted since, `rescued-text.ts`) and tells
-  `observeUnsentTyping` once per session. It reads them as the session's retirement begins,
+  reads it (`DocumentSession.unsentEdits`: the items the transport's unacknowledged updates
+  inserted, and the document encoded so it can be read once the session is destroyed) and
+  tells `observeUnsentTyping` once per session what `offer` leaves of it, like every other
+  notice (see "Each notice records exactly what it offered"). It reads them as the session's retirement begins,
   when it ended on a closing or removing reset (`DocumentSessionTeardownOwner`'s `retiring`),
   and in `clearLocalCopy` (cause `removed`). Not at the reset: a session kept on screen still
   shows that text, and a restore that restarts it delivers it, so the words would come back
@@ -587,8 +588,10 @@ from the wire alone, with nothing stored between handshakes.
   copy's `custom` store, under the copy's shared lock, never recreating a deleted copy. Every
   reader offers through one function (`offer` in `rescued-text.ts`): what the server lacks,
   minus the union of the copy's acted-on sets, minus this tab's notices from the copy still
-  showing. The readers are the replacement (`undeliverableEdits`, the session's typing) and the
-  older-copy read below (the whole copy). A copy is deletable only when nothing it holds beyond
+  showing. The readers are the replacement (`undeliverableEdits`, the session's typing), the
+  older-copy read below (the whole copy), and a closing or removing retirement (the session's
+  unacknowledged typing, above). The registry's one way to show a notice, `handBack`, takes the
+  copy's name and an `Offer`, which only `offer` makes, so no notice can skip the records. A copy is deletable only when nothing it holds beyond
   the server has words outside its acted-on sets, so a notice still showing keeps it. So a
   reload or crash offers again every notice's words the writer has not acted on, acting on one
   notice consumes only its own words, and once acted on, in any tab, no reader offers them
