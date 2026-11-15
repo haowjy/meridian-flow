@@ -329,7 +329,7 @@ function moveTenses(tool: ToolView, names?: OwnerNames): ToolActivityVocabulary 
   if (!from) return documentTenses(tool, t`Moving`, t`Moved`);
   const source = documentDisplayName(from);
   const active = t`Moving ${source} to`;
-  const complete = t`Moved ${source} to`;
+  const complete = copiedOnly(tool) ? t`Copied ${source} to` : t`Moved ${source} to`;
   if (!destination) return tenses(`${active}…`, complete);
   const { kind, place } = describeModelMove(from, destination, names);
   if (kind === "reorder")
@@ -338,6 +338,20 @@ function moveTenses(tool: ToolView, names?: OwnerNames): ToolActivityVocabulary 
     active: { verb: active, parameter: `${place}…` },
     complete: { verb: complete, parameter: place },
   };
+}
+
+/** A move between a project's files and `user://` copies: the answer lists copies and moved nothing. */
+function copiedOnly(tool: ToolView): boolean {
+  const result = tool.result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return false;
+  const tree = result.tree;
+  if (!tree || typeof tree !== "object" || Array.isArray(tree)) return false;
+  const moved = tree.moved;
+  const made =
+    moved && typeof moved === "object" && !Array.isArray(moved) && typeof moved.made === "number"
+      ? moved.made
+      : 0;
+  return Array.isArray(tree.copied) && tree.copied.length > 0 && made === 0;
 }
 
 function documentTarget(input: Record<string, JsonValue>): string | undefined {

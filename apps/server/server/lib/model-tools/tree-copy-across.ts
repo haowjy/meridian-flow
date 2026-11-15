@@ -1,0 +1,225 @@
+/**
+ * The sources of a model's `move` that are in another list (a project's files and the account's
+ * `user://` files are two lists): each is copied, with the writer's Copy (`port.copy`), and the
+ * original stays. A list is the unit of history, so nothing moves between two. The copy is one
+ * command for all of them, and each copied root gets a `create` receipt, so `undo` and a card's
+ * Undo take the copy away.
+ */
+
+import { createHash } from "node:crypto";
+import type { ThreadId, TurnId } from "@meridian/contracts";
+import { joinContextUri } from "@meridian/contracts/context-uri";
+import { canonicalLeaf, storedFilename } from "@meridian/contracts/protocol";
+import { descendantsOf, listRecords } from "@meridian/project-tree";
+import type { TreeScope } from "../../domains/context/ports/context-adapter.js";
+import type { ContextPort } from "../../domains/context/ports/context-port.js";
+import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
+import { reachPath } from "../../domains/context/tree/tree-commands.js";
+import { type FileGrant, runWithEditGrants } from "../../domains/file-policy/index.js";
+import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
+import { areaOfPath, printedNames, shownNamesOf } from "./shown-paths.js";
+import {
+  contextErrorMessage,
+  type ToolCall,
+  type ToolWiringDeps,
+  writeToolError,
+} from "./tool-context.js";
+
+/** The folder part of a path, with its trailing slash. */
+const folderPart = (path: string) => path.slice(0, path.lastIndexOf("/") + 1);
+
+/** One id per tool call, so an effect that runs again answers the copy it already made. */
+function operationIdOf(ctx: ToolHandlerContext): string {
+  const hex = createHash("sha256")
+    .update(`${ctx.threadId}:${ctx.turnId ?? ""}:${ctx.toolCallId ?? crypto.randomUUID()}`)
+    .digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+export type CopiedAcross = {
+  copied: number;
+  /** Where each copy landed, by the path the model wrote for its original. */
+  landed: Array<{ from: string; to: string }>;
+  notCopied: string[];
+  handle?: string;
+  names: ShownDelta | undefined;
+};
+
+/**
+ * Copies `from` into the folder `path` names, or, for one source and a path not ending in `/`,
+ * into the folder that path is in, to be renamed to its last name by `recordCopies`. One source
+ * that can't be copied refuses the call; of several, it is listed among those not copied.
+ */
+export async function copyAcross(
+  deps: ToolWiringDeps,
+  call: ToolCall,
+  ctx: ToolHandlerContext,
+  grants: FileGrant<"edit">[],
+  command: { from: readonly string[]; path: string; many: boolean },
+): Promise<{ refused: unknown } | Copies> {
+  const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
+  const shown = await shownNamesOf(ctx);
+  const notCopied: string[] = [];
+  const sources: Array<{ from: string; uri: string; kind: "file" | "folder"; nodeId: string }> = [];
+  for (const from of command.from) {
+    const source = areaOfPath(from) as NonNullable<ReturnType<typeof areaOfPath>>;
+    const found = await call.context.port.readTree(source.area, {
+      read: (scope) => reachPath(scope, source.area, shown, source.rest),
+    });
+    const reached = found.ok ? found.value : undefined;
+    if (reached?.kind !== "node") {
+      const why = reached?.kind === "gone" && reached.why === "deleted" ? "in Trash" : "not found";
+      if (!command.many)
+        return { refused: writeToolError("move", `Nothing copied: ${from} (${why}).`) };
+      notCopied.push(`${from} (${why})`);
+      continue;
+    }
+    const folder = reached.node.kind === "folder";
+    sources.push({
+      from,
+      uri: reached.uri,
+      kind: folder ? "folder" : "file",
+      nodeId: reached.node.id,
+    });
+  }
+  if (sources.length === 0) return { area: to.area, roots: [], notCopied };
+
+  const intoFolder = command.many || command.path.endsWith("/");
+  const into = intoFolder ? to.rest : folderPart(to.rest);
+  const copy = await runWithEditGrants(deps.fileAccess, grants, () =>
+    call.context.port.copy({
+      operationId: operationIdOf(ctx),
+      sources: sources.map((source) => ({
+        uri: source.uri,
+        expected: { kind: source.kind, nodeId: source.nodeId },
+      })),
+      destinationUri: joinContextUri(to.area, into),
+    }),
+  );
+  if (!copy.ok)
+    return { refused: fileAccessDeniedError("move", firstRefusal(copy.refusal), command.path) };
+  const done = copy.value;
+  if (!done.ok) return { refused: writeToolError("move", contextErrorMessage(done.error)) };
+  // Each source's copy is the entry copied from it; the rest are what stands below those.
+  const roots = sources.flatMap((source) => {
+    const entry = done.value.entries.find((each) => each.copiedFrom === source.nodeId);
+    return entry ? [{ source, entry }] : [];
+  });
+  const name = intoFolder ? "" : to.rest.slice(into.length);
+  return { area: to.area, roots, notCopied, ...(name ? { name } : {}) };
+}
+
+/** What `copyAcross` made: each source's copied root, and the sources not copied with why. */
+export type Copies = {
+  area: string;
+  roots: Array<{
+    source: { from: string; nodeId: string };
+    entry: { kind: "file" | "folder"; id: string; path: string };
+  }>;
+  notCopied: string[];
+  /** The name one source's path gave it; the copy took its original's, and is renamed to this. */
+  name?: string;
+};
+
+/**
+ * Each copy's `create` receipt, in the call's command: what the model's `undo` and a card's Undo
+ * take back. The copy itself ran before the command, as the writer's Copy does: it reads its
+ * sources outside any transaction.
+ */
+export async function recordCopies(
+  deps: ToolWiringDeps,
+  call: ToolCall,
+  ctx: ToolHandlerContext,
+  port: ContextPort,
+  { area, roots, notCopied, name }: Copies,
+): Promise<CopiedAcross> {
+  const to = { area };
+  // The copy's records: each root's create and every create below it, which its Undo takes back,
+  // and the rename to the name the path gave, which the same Undo takes back first.
+  const made = await port.treeCommand(to.area, {
+    make: (scope) => {
+      const creates = new Map(
+        listRecords(scope.writer.doc).flatMap((record) =>
+          record.type === "create" ? [[record.node, record.id] as const] : [],
+        ),
+      );
+      const before = scope.writer.view(scope.view);
+      const result = roots.map(({ entry }) => {
+        const records = [entry.id, ...descendantsOf(before, entry.id)].flatMap((node) => {
+          const record = creates.get(node);
+          return record ? [{ record, node }] : [];
+        });
+        const renamed = name ? renameCopy(scope, entry.id, name) : undefined;
+        if (renamed) records.push({ record: renamed, node: entry.id });
+        const node = scope.writer.view(scope.view).nodes.get(entry.id);
+        return { records, name: node?.displayName };
+      });
+      return { result };
+    },
+  });
+  if (!made.ok) throw new Error(`The copy's tree did not write: ${made.error.code}`);
+
+  const history = deps.documentSync.treeHistory();
+  let handle: string | undefined;
+  const landed: CopiedAcross["landed"] = [];
+  for (const [at, { source, entry }] of roots.entries()) {
+    const copiedAt = entry.path.replace(/^\/+|\/+$/g, "");
+    const named = made.value[at]?.name;
+    const path = named ? `${folderPart(copiedAt)}${named}` : copiedAt;
+    const uri = joinContextUri(to.area, `${path}${entry.kind === "folder" ? "/" : ""}`);
+    landed.push({ from: source.from, to: uri });
+    const recorded = await history.recordAgentTreeChange({
+      subject: entry.id,
+      nodes: [{ nodeId: entry.id, beforeAt: null, afterAt: uri }],
+      records: made.value[at]?.records ?? [],
+      op: "create",
+      threadId: ctx.threadId as ThreadId,
+      ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
+      ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+      shownAt: uri,
+    });
+    handle = recorded.handle;
+  }
+  return {
+    copied: roots.length,
+    landed,
+    notCopied,
+    ...(handle ? { handle } : {}),
+    names: await printedNames(
+      call,
+      to.area,
+      roots.map(({ entry }) => entry.id),
+    ),
+  };
+}
+
+/**
+ * Renames a copied root to `name`, as the in-list move renames: a document's name is read as a
+ * filename against its own kind. A name that can't be one leaves the copy under its original's.
+ */
+function renameCopy(scope: TreeScope, node: string, name: string): string | undefined {
+  const copied = scope.writer.view(scope.view).nodes.get(node);
+  if (!copied) return undefined;
+  if (copied.kind === "folder") {
+    if (name === copied.displayName) return undefined;
+    return scope.writer.rename(scope.view, scope.actor, node, name).id;
+  }
+  if (canonicalLeaf(name) === canonicalLeaf(copied.displayName)) return undefined;
+  const ext = copied.displayName.lastIndexOf(".");
+  const parsed = storedFilename(name, {
+    extension: ext > 0 ? copied.displayName.slice(ext + 1).toLowerCase() : "",
+    editable: copied.kind === "document",
+    filetype: copied.filetype,
+  });
+  if (!parsed.ok) return undefined;
+  const filetype = parsed.filename.filetype;
+  return scope.writer.rename(
+    scope.view,
+    scope.actor,
+    node,
+    parsed.name,
+    filetype && filetype !== copied.filetype ? filetype : undefined,
+  ).id;
+}
