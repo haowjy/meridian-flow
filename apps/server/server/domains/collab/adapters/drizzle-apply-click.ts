@@ -651,7 +651,7 @@ export function createDrizzleApplyClick(
                     item,
                   ]),
                 );
-                const { applied, settled, held } = await treeHalf.apply({
+                const { applied, settled, held, deleted } = await treeHalf.apply({
                   branchId,
                   userId,
                   commandId,
@@ -663,8 +663,8 @@ export function createDrizzleApplyClick(
                   })),
                 });
                 // The text half, after the tree half, in id order: every document's key is
-                // held (`treeHalf.apply`). A delete takes the document out of live: its
-                // text has nowhere to merge.
+                // held (`treeHalf.apply`). A delete this command made takes the document out of
+                // live: its text has nowhere to merge.
                 const tx = currentDrizzleDb(db);
                 let ordinal = 0;
                 let overrode = 0;
@@ -672,7 +672,7 @@ export function createDrizzleApplyClick(
                 for (const item of [...items].sort((a, b) => a.node.localeCompare(b.node))) {
                   const draftId = item.text?.base.snapshot.draftId ?? item.closedDraftId;
                   if (!draftId || held.has(item.node)) continue;
-                  if (reviewItems.get(item.node)?.change === "deleting") continue;
+                  if (deleted.has(item.node)) continue;
                   // Held under the Work and document keys, so the draft cannot close from here on.
                   const gone = await closedDraftSettlement(tx, item.node, draftId);
                   if (gone || !item.text) {

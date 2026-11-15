@@ -7,12 +7,9 @@
 blocks: independently built schemas have distinct node and mark types, which the merge
 kernel can't mix. Receipt membership is classified at that cut, not replayed onto live.
 
-The `restore` check runs under the Work's and branch's locks, before the list's, so a
-delete the writer's view didn't show answers `needs_restore`, however late it landed: nothing
-changes, the draft stays pending, and the answer is stored, so a replay returns it. The client
-asks before sending a new click with `restore`; with it, the document's `restore` record and the
-Apply are one `submit`. Apply reads the addressed document's own row in the Work's tree
-(`branch_tree_nodes` against `tree_nodes`), not a branch-wide listing.
+A document live has in Trash comes back whenever the click lands records on it, with no question
+asked: the answer says `restored { documentId }` in `settled`. Apply reads the addressed document's
+own row in the Work's tree (`branch_tree_nodes` against `tree_nodes`), not a branch-wide listing.
 
 The route authorizes a deleted item at its source through the draft destination
 (`restoreGrant`), not a live grant. A drafted delete of a document live deleted too
@@ -34,13 +31,10 @@ when a later one was edited in live.
 
 Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `commands` row (`shared/commands/`, which every kind of request shares; `adapters/drizzle-document-commands.ts` is the document side).
 `runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
-enters the Work boundary after it (`CONTEXT.md`, the lock order). A refusal raised after the claim (`ApplyClickRefused`, a draft that closed under the
-append door, a Discard's `stale` or `draft_changed`) rolls back to the savepoint and is stored as the
-outcome, so a resend under the same id gets the same refusal and "Try again" needs a new id. A miss
+enters the Work boundary after it (`CONTEXT.md`, the lock order). An Apply or Un-Apply stores no refusal: each item lands or comes back in `settled` (below), and the row is `done`. A draft that closed under the append door can't happen mid-command: the Work's and the document's keys are held. A miss
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
 `BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
-turned away before the transaction (access, malformed, unknown document) stores nothing. Un-Apply
-reads only the effects whose draft's branch is the URL's. `GET /api/commands/:id` returns the stored outcome to the
+turned away before the transaction stores nothing: a malformed click (a bad snapshot, patches or group ids) is a 400, and one whose cut is ahead of what the server holds (`unsynced`: a room's unacknowledged changes, or tree records the server's list lacks, `covers(list, saw)`) is a 503 the client sends again with the same id. `GET /api/commands/:id` returns the stored outcome to the
 account that sent it; `POST /api/commands/:id/resolve` (`lib/command-route.ts`) waits on a held key and
 answers the stored outcome, or stores `never` where there is no row (a late request under the id then
 answers `command_conflict` on an old-shape route).
@@ -64,12 +58,24 @@ A click's tree half is the package's `applyDraft` (`adapters/drizzle-apply-tree.
 project's, or the account's for `user://`), in the click's own transaction. Its `only` is the
 document's item: the pending records made on it, and a drafted delete of a folder above it that
 took it along; the package adds the drafted creates they stand on and earlier records on the
-same facts. The click carries `tree.revision`, a digest of the Work's row on the document
-(`md5` over its source, parent, name, rank, `deleted` and `exists_only_in_draft`), and answers
-`changed` when the row says something else now. A record that cannot land (a move into itself,
-a move of what live has in Trash) lands nothing of the item: the click is `refused` with
-`ancestor_taken` and the draft stays pending. A text-only click leaves a pending move or delete
-pending, except for a creation only the Work shows, which lands whole.
+same facts. The click carries `saw`, each list's state vector at the press; a record admitted after
+it stays pending (`after_press`). A record that cannot land (a move into itself, a node that is
+gone) lands nothing of the item and the draft stays pending: the answer names it in `settled`.
+A text-only click leaves a pending move or delete pending, except for a creation only the Work
+shows, which lands whole.
+
+**Settled, per item.** An Apply never answers a whole command with a refusal. `ApplyClickResult` is
+`applied` with `applied[]` (what landed) and `settled[]`, which says what happened to each item that
+did not land: `already { applied }` (an Apply took its tree records earlier), `overtaken { discarded |
+removed, by }` (a Discard took them, or its text draft was closed by one; or an Apply's delete
+removed the document), `left_out { items, why }` (`would_loop`, `purged`, `after_press`, `needs`,
+`changed_since`). One read decides it for the tree half, `lastSettlementOf` (`drizzle-settlement-of.ts`):
+the last settlement of a node's records in the Work's branch, which names the command and whether it
+applied or discarded; Discard's per-item answer reads the same. A text cut on a draft that is closed
+reads the draft row (`closedDraftSettlement`): closed by a Discard or a swap is `overtaken
+discarded`, by a delete or a removal `overtaken removed`, with no command `left_out purged`. An item
+whose tree half did not resolve keeps its text pending too. An Apply that lands nothing emits
+`apply.answered_without_landing` with the reasons.
 
 Lock order inside the click: Work, branch, the list's key (`treeLists.lock`), the document's
 mutex, then the writes: the list's records and rows (`submit`), the closed draft's resync, draft
@@ -85,9 +91,8 @@ cut. The per-document click (`.../documents/:documentId/draft/apply`) is the sam
 one item (`itemsOfClick`), and Apply all sends every item at once; a loop of per-document
 commands could be taken back only one at a time. `adapters/drizzle-apply-click.ts` runs the tree
 cuts first (`applyDraft` over all the chosen records in each list), then each document's text
-cut in id order, all in one transaction. A text draft closed under the click answers `closed` for
-the whole command; a row that holds another revision answers `changed` and nothing lands. An item
-that cannot land stays pending; none landing is `refused` `ancestor_taken`.
+cut in id order, all in one transaction. An item that cannot land stays pending and is named in
+`settled`; the others land.
 
 The command records its whole effect. Tree half: one `apply_command_trees` row per list, with the
 list's state vector right after, the created documents' journal heads once the text is in, the
@@ -95,8 +100,11 @@ live restore records the Apply made (a "Restore and apply" brings a document out
 its copies), and the nodes it touched. Text half: `apply_command_effects`, one row per group per
 document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
 and the restores leave live), then each document's text groups. It runs the tree half before any
-write and after every check that can end the command quietly, so a refusal (`gone`: the list moved,
-or a created document has text past its heads; `superseded`) stores nothing of either half. A text
+write. A change it cannot take back (`changed_since`, `has_text` for a created document with text past
+its heads, `purged`) stays and is named in `settled` as `left_out`; one already taken back is quiet. When
+nothing was left to take back, the answer is `already { unapplied }`, and so is a second Un-Apply of a
+delete. When the Work's purge took the tree rows of the Apply, the document it moved or deleted is
+`left_out purged`. A text
 group a later edit overlaps stays applied and is named in `skippedGroupIds`; when every group stays
 and the tree half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created (and of the

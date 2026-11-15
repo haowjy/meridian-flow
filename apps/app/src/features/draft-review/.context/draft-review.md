@@ -134,11 +134,19 @@ withholds later commands behind any stalled intent. Redo queues a new Apply for 
 text groups the server actually reversed, never the original tree cut.
 
 Existence of a deleted document is its own fact, never read from a name conflict.
-`apply(ref, target, restore)` sends `restore` only when the writer knew: an Apply whose
-row showed the delete, or an Apply all for the documents its confirmation named. Without
-it the server answers `needs_restore`, nothing changes, and the row shows the delete.
-The account owner keeps the answer's `restored` and `renamed` facts, so an editor Apply
-keeps its result after navigation.
+An Apply brings a deleted document back whenever its records land on it: the click carries
+no `restore`, and the server's `settled` says `restored { documentId }`. The question a
+strip or Apply all asks first (it names the deletes and restores) is the writer's
+heads-up, not a precondition. The account owner keeps the answer's `restored` and `renamed`
+facts, so an editor Apply keeps its result after navigation.
+
+An Apply never answers refused. The answer is `applied` with `settled` lines, and for an
+item that did not land (`overtaken_discarded`, `overtaken_removed`, `left_out_<why>`) the
+owner sets the item's `apply-refused` failure with that code and the outcome is
+`change-refused`; `already` is quiet. A click whose room cannot acknowledge it settles
+`unsent` on the client. The press sends `saw`, each open synced tree list's state vector
+(`TreeListRegistry.sawOf`), frozen with the click; a 503 (the server lacks something the
+press saw) is an unknown delivery the queue retries with the same id.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
 Retry. Transient disconnects keep acknowledgement barriers pending. Each click has two
@@ -323,9 +331,8 @@ admission, so catalog invalidation can't strand a review after unmounting its ro
 ## Tree lines
 
 An item with a branch row (a creation, move or delete) applies it with a tree cut: the
-item's Apply carries `tree.revision`, and with no text to send it is the tree cut alone, in
-the same item FIFO. The click body's `tree` is `{ revision }` only, because the server's
-schema is strict.
+item's Apply carries `tree: true`, and with no text to send it is the tree cut alone, in
+the same item FIFO.
 
 `discardItem` is the item's one Discard when it has a tree line: the server's tree-only
 Discard (`ends: "tree"`) beside the local text revert. Its notice's Undo takes back both, so
@@ -333,8 +340,8 @@ the text never comes back without its move or delete.
 
 An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack as one step
 (`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
-command's id, and a refusal (`gone`, `superseded`: something changed since) is a skipped step
-with its notice. A band's Apply has its editor's Undo instead.
+command's id; changes it could not take back come back as `left_out` and, with nothing
+reversed, are a skipped step with its notice. A band's Apply has its editor's Undo instead.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

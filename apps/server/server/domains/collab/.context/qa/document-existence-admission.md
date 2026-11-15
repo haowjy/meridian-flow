@@ -40,14 +40,11 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
 6. **Apply against a removal.** A draft-mode chat edits document A. Start the
    stack with `HOOK_PAUSE_AT=apply.beforeBoundary`, click Apply on A (its row
    doesn't show a delete yet), `./mf doc rm` A while the click waits, resume.
-   PASS: the answer is `needs_restore`; A's `deleted_at` is unchanged, its
-   draft is still `active`, and it has no AI live row. Apply again from the row,
-   which now says "Deleted from the manuscript": the click carries `restore`,
-   the answer is `applied` with `restored: true`, A is living with the draft's
-   text. The same race runs unattended as rows of
+   PASS: the answer is `applied` with `restored { documentId }` in `settled`; A is
+   living with the draft's text. The same race runs unattended as rows of
    `pnpm exec tsx tools/qa/probes/atomic-apply/run.mts`.
 7. **A taken path.** Delete A live, then create a document at A's path. PASS:
-   Apply with `restore` is `applied`; A is restored at the next free name and
+   Apply is `applied`; A is restored at the next free name and
    the result carries a `renamed` note with the requested and landed paths.
 8. **The receipt names who removed it.** Start the stack with
    `HOOK_PAUSE_AT=command.beforeClaim` (the edit must not hold the Work lock the

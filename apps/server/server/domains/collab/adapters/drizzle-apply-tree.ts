@@ -46,6 +46,8 @@ export type TreeApplyOutcome = {
   settled: Settlement[];
   /** Items whose tree half did not resolve (left out or overtaken): their text stays pending too. */
   held: ReadonlySet<string>;
+  /** Documents this command deleted: their text has nowhere to merge, and their drafts closed. */
+  deleted: ReadonlySet<string>;
 };
 
 /** One node of an Apply, as the click read it. */
@@ -102,7 +104,7 @@ export function createApplyTreeOperations(input: {
     const active = items.filter((it) => landing(it) || restoring(it));
     if (active.length === 0) {
       await lockItems();
-      return { applied: [], settled: [], held: new Set() };
+      return { applied: [], settled: [], held: new Set(), deleted: new Set() };
     }
 
     const lists: TreeList[] = [];
@@ -124,7 +126,7 @@ export function createApplyTreeOperations(input: {
     const here = active.filter((it) => listOf.has(it.node));
     if (here.length === 0) {
       await lockItems();
-      return { applied: [], settled, held };
+      return { applied: [], settled, held, deleted: new Set() };
     }
     const actor = `user:${click.userId}`;
     // The lists' keys, then the documents', before anything writes: the lists' rows and the
@@ -287,7 +289,7 @@ export function createApplyTreeOperations(input: {
     await input.arrivals?.settle(documents);
     for (const documentId of documents)
       deferUntilDrizzleCommit(() => input.onCommitted(documentId));
-    return { applied, settled, held };
+    return { applied, settled, held, deleted: new Set<string>(deleting) };
   }
 
   /**

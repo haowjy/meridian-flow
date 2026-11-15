@@ -41,6 +41,7 @@ import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime"
 import { createError } from "nitro/h3";
 import { z } from "zod";
 import type { CommandOutcome } from "../domains/collab/contracts.js";
+import { ApplyClickMalformed, ApplyClickUnsynced } from "../domains/collab/domain/apply-click.js";
 import type { DiscardSelection } from "../domains/collab/domain/branch-discard.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-branch-pending-store.js";
@@ -713,7 +714,9 @@ async function applyItems(
       grants.push(await restoreGrant(deps, { ...input, owner }, item, "command"));
   }
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
-    deps.documentSync.draftReview.apply({ branchId: input.branchId, request, envelope }),
+    callDraftReview(
+      deps.documentSync.draftReview.apply({ branchId: input.branchId, request, envelope }),
+    ),
   );
   if (result.ok) return result.value;
   const answer = await denied(
@@ -1085,6 +1088,15 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
+    if (cause instanceof ApplyClickMalformed)
+      throw createError({ statusCode: 400, message: "Invalid Apply request" });
+    // The click is ahead of what the server holds; nothing was stored and the client sends it again.
+    if (cause instanceof ApplyClickUnsynced)
+      throw createError({
+        statusCode: 503,
+        message: "Apply is waiting for the draft to sync",
+        data: { retryable: true },
+      });
     if (cause instanceof Error && cause.message === "draft_not_found") {
       throw createError({ statusCode: 404, message: "Draft not found" });
     }
