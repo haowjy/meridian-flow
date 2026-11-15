@@ -21,7 +21,7 @@ export function UploadViewerDialog({
       <DialogContent className="flex h-[min(48rem,calc(100dvh-2rem))] max-w-[min(56rem,calc(100vw-2rem))] gap-0 flex-col overflow-hidden rounded-lg p-0">
         {document ? (
           <>
-            <DialogTitle className="truncate border-b border-border-subtle py-3 pr-12 pl-4 text-sm font-medium">
+            <DialogTitle className="truncate border-b border-border-subtle py-3 pr-12 pl-4 text-sm leading-8 font-medium">
               {document.name}
             </DialogTitle>
             <DialogDescription className="sr-only">{document.path}</DialogDescription>

@@ -184,6 +184,13 @@ export type OpenProjectDocumentRequest = {
   focus?: true;
   /** Takes the place of the current history entry (main leaving a document the writer removed). */
   replace?: true;
+  /**
+   * Offers a document that opens in a pane to the side, once this open knows what it is: true when
+   * the side took it. A chat's upload never reaches it, since no pane holds one.
+   */
+  placeBeside?: () => boolean;
+  /** The caller goes elsewhere when this open is refused, so the opener says nothing of it. */
+  fallsBack?: true;
   signal?: AbortSignal;
 };
 
@@ -228,27 +235,25 @@ export class ProjectDocumentNavigationAdapter {
 
   /** Every refusal is said here, so no door that opens through this has to. */
   async open(projectId: string, request: OpenProjectDocumentRequest): Promise<OpenDocumentOutcome> {
-    const outcome = await this.run(projectId, request);
-    if (outcome.kind === "refused")
+    let outcome: OpenDocumentOutcome;
+    try {
+      outcome = await this.run(projectId, request);
+    } catch (error) {
+      // A door drops the promise: an open that threw would otherwise end in silence.
+      reportError(error);
+      outcome = { kind: "refused", reason: "lookup-failed" };
+    }
+    if (outcome.kind === "refused" && !request.fallsBack)
+      // A later Retry is a new open: replacing would drop whatever page the writer is on by then.
       this.dependencies.refused(outcome, () => {
-        void this.open(projectId, { ...request, signal: undefined });
+        void this.open(projectId, { ...request, replace: undefined, signal: undefined });
       });
     return outcome;
   }
 
-  /** Whether a document opens in the upload viewer rather than in a pane: placement asks first. */
-  async opensInViewer(projectId: string, documentId: string): Promise<boolean> {
-    const identified = await this.identify(projectId, {
-      documentId,
-      signal: new AbortController().signal,
-      isCurrent: () => true,
-    });
-    return identified.kind === "identified" && !isEditorScheme(identified.identity.scheme);
-  }
-
   private async run(
     projectId: string,
-    { documentId, known, workId, focus, replace, signal }: OpenProjectDocumentRequest,
+    { documentId, known, workId, focus, replace, placeBeside, signal }: OpenProjectDocumentRequest,
   ): Promise<OpenDocumentOutcome> {
     const navigationIsCurrent = this.dependencies.captureNavigation?.();
     const token = ++this.attempt;
@@ -283,6 +288,8 @@ export class ProjectDocumentNavigationAdapter {
         return { kind: "committed", documentId };
       }
 
+      if (!isCurrent()) return { kind: "cancelled" };
+      if (placeBeside?.()) return { kind: "committed", documentId };
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
       const committed = await this.commitFile({
@@ -517,20 +524,6 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
         return { kind: "refused", reason: "lookup-failed" };
       return owner.adapter.open(projectId, request);
     },
-    [owner, projectId],
-  );
-}
-
-/** Whether a document opens in the upload viewer rather than in a pane (`opensInViewer`). */
-export function useOpensInViewer(
-  projectId: string | null,
-): (documentId: string) => Promise<boolean> {
-  const owner = useContext(ProjectDocumentNavigationContext);
-  return useCallback(
-    async (documentId) =>
-      !!projectId &&
-      owner?.projectId === projectId &&
-      owner.adapter.opensInViewer(projectId, documentId),
     [owner, projectId],
   );
 }

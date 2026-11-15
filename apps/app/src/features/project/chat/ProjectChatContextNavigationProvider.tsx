@@ -113,10 +113,16 @@ export function ProjectChatContextNavigationProvider({
   // A live answer opens the document the resolver named, by identity: never by address, which
   // could be held by a hidden sibling's review.
   const openLive = useCallback(
-    (door: Placement, document: LinkDocumentRef, signal?: AbortSignal) =>
+    (
+      door: Placement,
+      document: LinkDocumentRef,
+      placeBeside: (() => boolean) | undefined,
+      signal?: AbortSignal,
+    ) =>
       openChatDocument({
         documentId: document.documentId,
         workId: door.workId ?? undefined,
+        placeBeside,
         ...(signal ? { signal } : {}),
       }),
     [openChatDocument],
@@ -133,10 +139,19 @@ export function ProjectChatContextNavigationProvider({
   const openFound = useCallback(
     (door: Placement, document: LinkDocumentRef) => {
       const { passage } = door;
-      if (!passage) return place(document, (found) => openLive(door, found), door.workId);
+      if (!passage)
+        return place(
+          document,
+          (found, placeBeside) => openLive(door, found, placeBeside),
+          door.workId,
+        );
       // The passage door opens the document wherever the placement puts it, once, and lands there.
       passages.land(passage, document.documentId, (signal) =>
-        place(document, (found) => openLive(door, found, signal), door.workId),
+        place(
+          document,
+          (found, placeBeside) => openLive(door, found, placeBeside, signal),
+          door.workId,
+        ),
       );
       return Promise.resolve();
     },

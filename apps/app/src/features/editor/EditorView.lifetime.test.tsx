@@ -65,7 +65,6 @@ vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: reviewHooks.foc
 const openDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => openDocument,
-  useOpensInViewer: () => async () => false,
   useProjectDocumentNavigationProjectId: () => "project-a",
 }));
 

@@ -5,6 +5,7 @@
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type {
+  ContextOwner,
   CopyContextEntryView,
   ProjectContextTreeScheme,
   TrashEntry,
@@ -62,11 +63,8 @@ export function dragEntry(node: TreeEntry): DragEntry {
  * (the writer's, in every project) is one, and each owner's Scratch or Uploads
  * is its own. Crossing systems is a choice (Move or Copy), not a drop.
  */
-export function entrySystem(
-  scheme: ProjectContextTreeScheme,
-  owner: { workId?: string | null; rootThreadId?: string | null; chatId?: string | null },
-): string {
+export function entrySystem(scheme: ProjectContextTreeScheme, owner: ContextOwner): string {
   if (scheme === "user") return "user";
   if (isProjectScopedScheme(scheme)) return "project";
-  return `${scheme}:${owner.chatId ?? owner.rootThreadId ?? owner.workId ?? ""}`;
+  return `${scheme}:${owner.chatThreadId ?? owner.rootThreadId ?? owner.workId ?? ""}`;
 }

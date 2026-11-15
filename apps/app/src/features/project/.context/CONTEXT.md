@@ -103,7 +103,7 @@ Every link, door and reveal of an item, and every pick in the side's picker, fol
 command, `place(item)` (`side/SideView.tsx`, `placeIn(kind, main)` in `side/side-item.ts`): main's
 kind opens in main, the other kind in the other pane, which is the same rule from main and from the
 side. A chat's upload is neither kind: no pane holds one, so it opens in the upload viewer wherever
-its door is, and `useLinkPlacement` asks before it places. A surface in no pane (the left sidebar) opens in main without asking `place`
+its door is: `useLinkPlacement` lets the opener place beside (`placeBeside`) only after its lookup. A surface in no pane (the left sidebar) opens in main without asking `place`
 (`useOptionalPlaceHere`, `usePlaceChat`). Each host provides its pane (`PanePlaceContext`,
 `pane-place.ts`: the document host, the chat surface, the phone's sheet and main chat); `place` no
 longer reads it, but focus (a chat in main takes it), the draft scope and the announcement do. For the

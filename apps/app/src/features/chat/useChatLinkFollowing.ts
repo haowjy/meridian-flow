@@ -159,9 +159,10 @@ export function useChatLinkFollowing({
 
   const openReferenceDocument = useOpenProjectDocument(projectId);
   const openLive = useCallback(
-    (document: LinkDocumentRef) =>
+    (document: LinkDocumentRef, placeBeside?: () => boolean) =>
       openReferenceDocument({
         documentId: document.documentId,
+        placeBeside,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
       }),

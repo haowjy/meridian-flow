@@ -13,14 +13,14 @@ import type {
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 /**
- * A tab's owner: a `ContextOwner` whose handle is known, so the tab can spell its URI. A Work row id
- * (Scratch), a No Work chat's lineage with its handle, or a chat (uploads) with its handle. Project
+ * A tab's owner, a `ContextOwner`: a Work row id (Scratch), a No Work chat's lineage with the
+ * handle its URI spells, or a chat (uploads), whose handle it has once the chat does. Project
  * schemes have none.
  */
 export type OpenDocumentOwner =
   | (WorkOwnerRef & { workId?: string })
   | (LineageOwnerRef & { rootThreadRef: string })
-  | (ChatOwnerRef & { chatRef: string });
+  | ChatOwnerRef;
 
 /** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */
 export function replaceOwner(owner: OpenDocumentOwner): OpenDocumentOwner {

@@ -18,8 +18,9 @@ destination discards its unconsumed answer.
 Scratch documents open in main owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads have no editor address: the adapter opens one in `UploadViewerDialog` (the read-only
-viewers, a text upload's included), whichever pane the door is in. `useLinkPlacement` asks the
-adapter (`opensInViewer`) before it places a document, so an upload never lands in the side. The resolved file's
+viewers, a text upload's included), whichever pane the door is in. `useLinkPlacement` hands the
+side placement to the adapter (`placeBeside`), which offers it only after its lookup, under the
+open's own cancellation, so an upload never lands in the side. The resolved file's
 Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 

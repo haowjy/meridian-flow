@@ -263,7 +263,10 @@ function RecentDocumentRow({
 const MOVE_DELETE: readonly EntryAction[] = ["move", "delete"];
 const NONE: readonly EntryAction[] = [];
 
-/** Opens a Recently opened row in main; false when it did not land. */
+/**
+ * Opens a Recently opened row in main; false when it did not land. `leaving` is main leaving a
+ * removed document: the row takes its history entry, and a refusal falls back to Recents unsaid.
+ */
 export async function openRecent(
   item: AccountRecentItem,
   ports: {
@@ -271,12 +274,12 @@ export async function openRecent(
     editorWorkId: string | null;
     openDocument: ReturnType<typeof useOpenProjectDocument>;
   },
-  replace?: true,
+  leaving?: true,
 ): Promise<boolean> {
   const outcome = await ports.openDocument({
     documentId: item.documentId,
     workId: ports.editorWorkId ?? undefined,
-    ...(replace ? { replace } : {}),
+    ...(leaving ? { replace: true, fallsBack: true } : {}),
   });
   return outcome.kind === "committed";
 }

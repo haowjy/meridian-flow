@@ -24,7 +24,7 @@ export function BuiltinAgentFileDialog({
       <DialogContent className="flex h-[min(48rem,calc(100dvh-2rem))] max-w-[min(56rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden rounded-lg p-0">
         {file ? (
           <>
-            <DialogTitle className="truncate border-b border-border-subtle py-3 pr-12 pl-4 text-sm font-medium">
+            <DialogTitle className="truncate border-b border-border-subtle py-3 pr-12 pl-4 text-sm leading-8 font-medium">
               {file.slug}
             </DialogTitle>
             <DialogDescription className="sr-only">

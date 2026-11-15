@@ -5419,8 +5419,8 @@ msgid "Restored {count} items from Trash just now. Undo puts them back in Trash.
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Restored {name}, but couldn't open it. Try again from the file list."
-msgstr ""
+#~ msgid "Restored {name}, but couldn't open it. Try again from the file list."
+#~ msgstr ""
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx

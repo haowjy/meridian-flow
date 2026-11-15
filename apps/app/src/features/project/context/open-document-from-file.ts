@@ -15,9 +15,13 @@ import type {
 import type { OpenDocument, OpenDocumentOwner, ServerOpenDocument } from "@/client/stores";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 
-/** The handle (`c15`) a chat's upload's URI spells. */
-function chatRefOf(file: TreeFile): string {
+/**
+ * The handle (`c15`) a chat's upload's URI spells. A New chat's first uploads were listed before the
+ * chat's row existed, so their URI is the contextual form (`uploads://map.png`) and has none.
+ */
+function chatRefOf(file: TreeFile): string | undefined {
   const parsed = parseContextUri(file.uri);
+  if (parsed.ok && parsed.value.authority.kind === "contextual") return undefined;
   if (!parsed.ok || parsed.value.authority.kind !== "chat")
     throw new Error("A chat's upload must have a chat authority");
   return parsed.value.authority.chatRef;
