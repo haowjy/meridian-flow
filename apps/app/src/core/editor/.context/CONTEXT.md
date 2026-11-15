@@ -537,13 +537,13 @@ keyboard, pointer, drop, or draft-recovery answer.
 - Before a room's local copy goes with typing the server never acknowledged, the registry
   reads it (`DocumentSession.unsentEdits`: the items the transport's unacknowledged updates
   inserted, and the document encoded so it can be read once the session is destroyed) and
-  tells `observeUnsentTyping` once per session what `offer` leaves of it, like every other
-  notice (see "Each notice records exactly what it offered"). It reads them as the session's retirement begins,
+  hands them back once per session, like every other notice (see "One notice store per
+  account"). It reads them as the session's retirement begins,
   when it ended on a closing or removing reset (`DocumentSessionTeardownOwner`'s `retiring`),
   and in `clearLocalCopy` (cause `removed`). Not at the reset: a session kept on screen still
   shows that text, and a restore that restarts it delivers it, so the words would come back
   twice. A session retires once, so each session's typing is handed back at most once. A 4409
-  access change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`notifyUnsentTyping`,
+  access change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`unsentTypingToasts`,
   `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
   the words back. A closed draft's copy also stays for an Undo of its Discard, which delivers it.
 - What it cannot reach: a room with no session in this tab (the copy lives only in
@@ -551,7 +551,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   Work is closed and delivering it after an Unarchive), and, for a closed draft or removed
   document, typing from before this tab's transport existed (an offline reload replays it from
   IndexedDB, outside the transport's unacknowledged updates). A read admission has no such loss:
-  see the next section. Both are known losses on
+  see the next section. The same cause loses a reload's unsent typing in a document purged before
+  the room reconnects: `clearLocalCopy` with no session has no measure of what the server lacks
+  and deletes the copy unmeasured. The fix is a mark in the copy of what the server is known to
+  have (#1606). Both are known losses on
   [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
 
 ### Undeliverable edits (a room admitted read-only)
@@ -591,50 +594,48 @@ from the wire alone, with nothing stored between handshakes.
   handshake, so words another tab wrote into the same copy meanwhile come back (once). Holders
   follow through `observeReplacement` (live bindings and open tabs, draft room reads); a review
   mount carries its reading position across it (`use-reading-position.ts`).
-- **Each notice records exactly what it offered.** A hand-back from a copy carries the item
-  ranges (client, clock range) whose words it shows, and nothing else: not the server's state,
-  not an earlier notice's words. When the writer is done with its toast (Copy pressed or
-  Dismiss; the toast never times out), `UnsentTyping.done` adds that set, and only it, to the
-  copy's `custom` store, under the copy's shared lock, never recreating a deleted copy. Every
-  reader offers through one function (`offer` in `rescued-text.ts`): what the server lacks,
-  minus the union of the copy's acted-on sets, minus this tab's notices from the copy still
-  showing. The readers are the replacement (`undeliverableEdits`, the session's typing), the
-  older-copy read below (the whole copy), and a closing or removing retirement (the session's
-  unacknowledged typing, above). The registry's one way to show a notice, `handBack`, takes the
-  copy's name and an `Offer`, which only `offer` makes, so no notice can skip the records. A copy is deletable only when nothing it holds beyond
-  the server has words outside its acted-on sets, so a notice still showing keeps it. Every read of
-  a copy checks it exists under the lock it reads under and never creates one.
-- **A notice not acted on comes back at the next start, wherever its document is.** The copy is
-  the one store: a notice with words also writes what it offered into its copy as it shows
-  (`recordOffered`: cause and item ranges, no words), beside the acted-on records. Unacted is
-  offered minus acted, read from the same database under the same lock, so the two can't
-  disagree. The registry, as it is made (the account's start in a tab, before any session), reads every
-  copy of the account no tab holds (`openUnacted`: `indexedDB.databases()` under the account's
-  prefixes, each locked exclusively if available, records first and the document only when some
-  offer is unacted) and offers each record again under its own id, overlapping records once, without
-  opening the document. A copy another tab holds is that tab's to offer from; the older-copy read
-  and a removal wait for this read, which locks what it reads. The server's state
-  can't be the measure here: what it lacks is known only to a connected session (the transport's
-  unacknowledged updates, in memory), and an empty one would offer a purged document's whole
-  text. A copy with an unacted offer is never deleted: a removal (`clear`) marks it retired and
-  it goes when the last offer is acted on (`recordHandedBack`) or at a start that finds nothing
-  left. A removal whose offer the copy could not record does not clear it. A closed draft or an
-  older incarnation is rarely opened again, so its document's next open can't be what offers
-  them. A tab that starts while another still shows a notice shows it too; acting in either is
-  enough. Sign-out deletes the copies, offers with them. Wordless notices record nothing: they
-  have nothing to lose.
-- So a
-  reload or crash offers again every notice's words the writer has not acted on, acting on one
-  notice consumes only its own words, and once acted on, in any tab, no reader offers them
-  again. Two live tabs whose read admissions overlap each offer the words; one acting is enough.
-  A state vector can't be the record: a later notice's would also cover an earlier notice's
-  words, and a per-client clock can't keep the holes left by a notice not acted on. A copy can't
-  drop handed-back words instead: it is shared with tabs still writing into it, and Yjs can't
-  remove an operation.
+- **One notice store per account.** A hand-back notice is a record that holds its own words
+  (`hand-back-notices.ts`, IndexedDB `meridian-handback:<account>`, one store keyed by id and
+  indexed by the copy's database name). The copies are working storage only: nothing in them says
+  what was offered or acted on. A notice is made in one place and changed in one way:
+  - `claim(copy, cause, lacking, read)`: of the items the server lacks, those no notice from that
+    copy holds yet become a new notice with their words. One readwrite transaction, which the
+    browser runs one at a time across tabs and workers, so two tabs holding the same words get
+    one notice between them and a tab holding more gets a second notice with only the rest. It
+    reads the words inside the transaction, from a scratch document of the caller's snapshot.
+  - `act(id)` on Copy or Dismiss sets `acted`, and nothing clears it. No path rewrites a notice's
+    ranges or words, so no stale tab can take a fact back.
+- **Who claims.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
+  it reads that and a snapshot, makes the old session inert, then claims), the older-copy read
+  below (everything an older incarnation holds beyond the new session's first handshake), and a
+  closing or removing retirement (the session's unacknowledged typing, read synchronously; a
+  removal's `clearLocalCopy` claims through it). **A copy is deleted only after a claim of what it
+  holds has resolved, and a claim that rejects still shows its words**, unstored, in this tab
+  (`done` does nothing). The replacement goes on and its old copy stays for the older-copy read; an
+  older copy stays for the next open; a removal keeps the copy for this page. A terminal
+  retirement has only the snapshot, so a rejected claim there is the one place words can be shown
+  once and then lost. Offering twice is accepted; losing is not. A change with no words (a
+  deletion, a format change) is shown unstored by the session's tab, and only when the session's
+  own ledger is among the undeliverable edits: it holds nothing a reload could lose.
+- **What a tab shows is the store's unacted notices.** When the registry's first observer
+  subscribes (the account's start) and whenever another tab claims or acts (a BroadcastChannel
+  ping that carries no state), the tab shows each unacted notice it has not shown, and withdraws
+  the toasts of notices another tab acted on. It keeps the ids it has shown for the life of the
+  page: Dismiss removes the toast before its `act` commits, and a read in between still finds it
+  unacted. So every open tab of the account shows a notice, wherever its document is; a reload
+  offers it again until the writer acts in one tab, and then never again in any. The start needs
+  no copy, lock, server or open document. A copy's measure of what the server lacks can't be the
+  store: what the server lacks is known only to a connected session, and an empty measure would
+  offer a purged document's whole text.
+- **Cleaning the store.** An acted notice still stops a later claim from its copy offering the
+  same words again, and is needed for as long as that copy database exists. At the account's
+  start, after showing, one transaction deletes the acted notices whose copy is not among
+  `indexedDB.databases()`; a browser without it skips the cleanup. An unacted notice is never
+  deleted. Sign-out (`clearAll`) deletes the notice database after the copies, and only when no
+  copy was left behind: the notices say which of its words the writer already acted on.
 - A session that opens a room's current incarnation reads the older ones no tab holds against
-  its first handshake, offers what `offer` leaves (never a wordless toast, which only the
-  current session's own edit earns), and deletes each one that is deletable; one that is not
-  stays for the next open.
+  its first handshake, claims what they hold beyond it (never a wordless toast, which only the
+  current session's own edit earns), and deletes each one whose claim resolved.
 - Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
   (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
 
