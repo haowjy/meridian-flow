@@ -15,6 +15,7 @@ import {
   itemIsInFragment,
   itemIsVisible,
   itemsInRange,
+  type RestorePlacement,
   snapshotRedone,
 } from "../yjs-mutation.js";
 import { shouldDeleteUndoItem } from "./delete-filter.js";
@@ -356,6 +357,8 @@ interface InversePlan {
   acts: boolean;
   /** A restore skipped because its parent is gone. */
   blocked: boolean;
+  /** The part of `restoring` that goes beside the text that replaced it, not at its tombstone. */
+  placements: RestorePlacement[];
 }
 function planInverse(
   index: Lineage,
@@ -382,6 +385,43 @@ function planInverse(
     const item = find(index.doc, original);
     if (item) removingItems.add(item);
   }
+  const ownRoots = new Set(index.rootsFor(part.effect));
+  const charKey = (item: Y.Item, n: number) =>
+    key({ client: item.id.client, clock: item.id.clock + n });
+  const isNewer = (k: Key) => {
+    const origin = parse(index.root(k));
+    return origin.clock >= (part.frontier[origin.client] ?? 0);
+  };
+  const leavingClients = new Set(removingKeys.map((k) => parse(k).client));
+  const leavingChar = (item: Y.Item): number => {
+    if (!leavingClients.has(item.id.client)) return -1;
+    for (let n = 0; n < item.length; n++) if (removingSet.has(charKey(item, n))) return n;
+    return -1;
+  };
+  /**
+   * The seam beside an item: the siblings on one side that the part could not see as text
+   * (tombstones, marks, its own items, writing newer than its frontier), up to the first item it
+   * is taking away. `live` counts the visible text crossed on the way.
+   */
+  const seam = (item: Y.Item, step: "left" | "right") => {
+    const crossed: Y.Item[] = [];
+    let live = 0;
+    for (let near = item[step]; near; near = near[step]) {
+      if (near.countable && leavingChar(near) >= 0) return { found: near, crossed, live };
+      if (!near.deleted && near.countable) {
+        const edge = charKey(near, step === "left" ? near.length - 1 : 0);
+        if (!ownRoots.has(index.root(edge)) && !isNewer(edge)) break;
+        live++;
+      }
+      crossed.push(near);
+    }
+    return { found: null, crossed, live };
+  };
+  const leavingStands = (item: Y.Item) =>
+    (["left", "right"] as const).some((step) => {
+      const found = seam(item, step).found;
+      return !!found && !found.deleted;
+    });
   const strandedItems = new Map<Y.Item, boolean>();
   const strandedByRemoval = (original: Key): boolean => {
     const item = find(index.doc, original);
@@ -407,7 +447,7 @@ function planInverse(
         newer ||= origin.clock >= (part.frontier[origin.client] ?? 0);
       }
     }
-    const stranded = paired && !standing && newer;
+    const stranded = paired && !standing && newer && !leavingStands(item);
     strandedItems.set(item, stranded);
     return stranded;
   };
@@ -454,7 +494,125 @@ function planInverse(
     restoring,
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
+    placements: planPlacements(
+      index,
+      restoring,
+      ownRoots,
+      isNewer,
+      seam,
+      (item) => leavingChar(item) >= 0,
+    ),
   };
+}
+type Seam = (
+  item: Y.Item,
+  step: "left" | "right",
+) => { found: Y.Item | null; crossed: Y.Item[]; live: number };
+/**
+ * Where a restored run goes when Yjs's place for it (its tombstone) is wrong: text the part
+ * replaced comes back touching the text that replaced it, whenever visible writing sits between
+ * the two. Everything else stays with Yjs. A run moves whole or not at all.
+ */
+function planPlacements(
+  index: Lineage,
+  restoring: readonly Key[],
+  ownRoots: ReadonlySet<Key>,
+  isNewer: (k: Key) => boolean,
+  seam: Seam,
+  leaving: (item: Y.Item) => boolean,
+): RestorePlacement[] {
+  const pieces = new Map<Y.Item, Key[]>();
+  for (const k of restoring) {
+    const item = find(index.doc, k);
+    if (!item || item.parentSub !== null || !(item.parent instanceof Y.XmlText)) continue;
+    const home = item.parent._item;
+    if (home && !index.isVisible(key(home.id))) continue;
+    pieces.set(item, [...(pieces.get(item) ?? []), k]);
+  }
+  const sites: { anchor: Y.Item; items: Y.Item[]; crossed: Y.Item[] }[] = [];
+  const seen = new Set<Y.Item>();
+  for (const item of pieces.keys()) {
+    if (seen.has(item)) continue;
+    // The run: every piece this one reaches through its seam, with what lies past each end.
+    const end = (step: "left" | "right") => {
+      const reach = seam(item, step);
+      let inside = 0,
+        outside = 0,
+        last = 0;
+      const run: Y.Item[] = [];
+      for (const [n, near] of reach.crossed.entries()) {
+        if (pieces.has(near)) {
+          run.push(near);
+          inside += outside;
+          outside = 0;
+          last = n + 1;
+        } else if (!near.deleted && near.countable) outside++;
+      }
+      return { ...reach, run, inside, outside, within: reach.crossed.slice(0, last) };
+    };
+    const left = end("left"),
+      right = end("right"),
+      items = [item, ...left.run, ...right.run];
+    for (const piece of items) seen.add(piece);
+    // Writing inside the run stays inside it, so the run comes back around it where it lies.
+    if (left.inside || right.inside) continue;
+    // Typing lands right of the tombstones at its seam, so only a run left of the leaving text can
+    // have writing between the two that belongs before it. Touching it, Yjs's place is right.
+    if (!right.found || !right.outside || left.found) continue;
+    // Marks alone have no place to fix; moving them would only change what they cover.
+    if (!items.some((piece) => piece.countable)) continue;
+    sites.push({ anchor: right.found, items, crossed: [...left.within, ...right.crossed] });
+  }
+  const out: RestorePlacement[] = [];
+  for (const site of sites) {
+    // Deleted text the part could see, that a card can still bring back, keeps its place after the
+    // run. A tombstone can hold the run's characters and such text together, so judge by character.
+    const moving = new Set(site.items.flatMap((item) => pieces.get(item) ?? []));
+    const returnable = [...site.items, ...site.crossed].some((item) => {
+      if (!item.deleted || !(item.content instanceof Y.ContentString)) return false;
+      let started = !pieces.has(item);
+      for (let n = 0; n < item.length; n++) {
+        const k = key({ client: item.id.client, clock: item.id.clock + n });
+        if (moving.has(k)) started = true;
+        else if (
+          started &&
+          index.owners.has(k) &&
+          !ownRoots.has(index.root(k)) &&
+          !isNewer(k) &&
+          index.effective(k) === k
+        )
+          return true;
+      }
+      return false;
+    });
+    if (returnable) continue;
+    const parent = site.anchor.parent as Y.XmlText;
+    const wanted = new Set<Y.Item>([...site.items, site.anchor]);
+    const order = new Map<Y.Item, number>(),
+      marks = new Map<Y.Item, string>(),
+      current = new Map<string, unknown>();
+    let n = 0;
+    const snapshot = () => JSON.stringify([...current].sort(([a], [b]) => (a < b ? -1 : 1)));
+    for (let item = parent._start; item; item = item.right) {
+      if (wanted.has(item)) {
+        order.set(item, n++);
+        marks.set(item, snapshot());
+      }
+      if (!item.deleted && item.content instanceof Y.ContentFormat && !leaving(item)) {
+        if (item.content.value === null) current.delete(item.content.key);
+        else current.set(item.content.key, item.content.value);
+      }
+    }
+    const here = marks.get(site.anchor);
+    // The run keeps its marks only where the marks in force are the ones at its tombstones.
+    if (site.items.some((item) => marks.get(item) !== here)) continue;
+    const ordered = site.items.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+    out.push({
+      ranges: ordered.flatMap((item) => ranges(pieces.get(item) ?? [])),
+      before: { client: site.anchor.id.client, clock: site.anchor.id.clock },
+    });
+  }
+  return out;
 }
 function itemsRightOf(item: Y.Item): Y.Item[] {
   const out: Y.Item[] = [];
@@ -712,9 +870,10 @@ function computePreparedInverse(
       }
       index.hydrate();
       const plan = planInverse(index, part, direction);
+      const placed = new Set(plan.placements.flatMap((placement) => clocks(placement.ranges)));
       const stack = {
         insertions: deleteSet(plan.removing),
-        deletions: deleteSet(plan.restoring),
+        deletions: deleteSet(plan.restoring.filter((k) => !placed.has(k))),
         meta: new Map(),
       };
       const frontier = captureEditFrontier(scratch),
@@ -725,8 +884,13 @@ function computePreparedInverse(
       Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
       let updates: Uint8Array[];
       try {
-        updates = executeUndo(scratch, ROOT, client, stack, (item) =>
-          shouldDeleteUndoItem(item, stack),
+        updates = executeUndo(
+          scratch,
+          ROOT,
+          client,
+          stack,
+          (item) => shouldDeleteUndoItem(item, stack),
+          plan.placements,
         );
       } catch (error) {
         before.destroy();
