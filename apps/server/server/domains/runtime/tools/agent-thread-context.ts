@@ -8,7 +8,7 @@ import {
   type ToolPolicy,
 } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
-import type { GenerateRequest, Tool } from "@meridian-flow/gateway";
+import type { GenerateRequest, Tool } from "@meridian-flow/runtime/gateway";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";

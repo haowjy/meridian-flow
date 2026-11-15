@@ -3,7 +3,7 @@
 The apps, and the packages under them. An arrow means "calls code from". The page shows layers,
 not a path, so no arrow is numbered. No package imports an app, and `prosemirror-schema`, `yjs-inspect` and
 `design-tokens` import no workspace code. `gateway` is not in this repository: it is
-[`@meridian-flow/gateway`](https://github.com/haowjy/meridian-runtime/tree/main/packages/gateway) from npm. Where the code breaks its written rules is on
+the `@meridian-flow/runtime/gateway` entry of [`@meridian-flow/runtime`](https://github.com/haowjy/meridian-runtime/tree/main/src/gateway) from npm. Where the code breaks its written rules is on
 [dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
 [system](system.md#mf).
 
@@ -90,11 +90,11 @@ One schema per HTTP response. A chat's run state is one versioned record, always
 
 The model gateway: one streaming port to Anthropic, OpenAI, Gemini and OpenAI-compatible providers.
 
-Not code in this repository: the `meridian-runtime` repository publishes it to npm as `@meridian-flow/gateway`, and Flow depends on it by version. The server builds it from `FLOW_` variables in `lib/gateway/`; `contracts` re-exports its `shapes` entry, which is free of Node built-ins and SDKs so the browser bundle can take it.
+Not code in this repository: the `meridian-runtime` repository publishes it to npm in `@meridian-flow/runtime` (entry `/gateway`), and Flow depends on it by version. The server builds it from `FLOW_` variables in `lib/gateway/`; `contracts` re-exports its `shapes` entry, which is free of Node built-ins and SDKs so the browser bundle can take it.
 
 - Kind: external
 - Paths: `apps/server/server/lib/gateway`
-- Docs: [server gateway wiring CONTEXT](../../apps/server/server/lib/gateway/.context/CONTEXT.md), [package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/.context/CONTEXT.md)
+- Docs: [server gateway wiring CONTEXT](../../apps/server/server/lib/gateway/.context/CONTEXT.md), [package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/src/gateway/.context/CONTEXT.md)
 
 ## database
 

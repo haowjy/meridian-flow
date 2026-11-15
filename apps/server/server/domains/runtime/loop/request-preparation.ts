@@ -1,7 +1,7 @@
 /** Request preparation stages references and image decisions without writes, then measures compaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts/threads";
-import { mediaKind, type Tool } from "@meridian-flow/gateway";
+import { mediaKind, type Tool } from "@meridian-flow/runtime/gateway";
 import {
   activeCompaction,
   encodeMediaInclusionMetadata,

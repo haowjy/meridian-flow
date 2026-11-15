@@ -3,7 +3,12 @@
  * The decorator observes canonical events without buffering or changing gateway behavior.
  */
 
-import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "@meridian-flow/gateway";
+import type {
+  Gateway,
+  GenerateRequest,
+  GenerateResult,
+  StreamEvent,
+} from "@meridian-flow/runtime/gateway";
 import type { EventCorrelation, EventLevel, EventSink } from "../../domains/observability/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 

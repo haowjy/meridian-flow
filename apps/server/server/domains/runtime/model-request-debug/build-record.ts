@@ -4,7 +4,7 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRequest,
 } from "@meridian/contracts/threads";
-import type { GenerateRequest, Tool } from "@meridian-flow/gateway";
+import type { GenerateRequest, Tool } from "@meridian-flow/runtime/gateway";
 import type { ToolRegistry } from "../tools/index.js";
 
 /** A signed link is a credential and changes each window; the record keeps that it was a link. */
