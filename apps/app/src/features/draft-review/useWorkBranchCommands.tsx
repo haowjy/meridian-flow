@@ -611,34 +611,36 @@ export function useWorkBranchCommands({
      * notice's Undo is the server's Undo of that Discard, which brings both halves back. `name`:
      * the folder the selection is, for the notice.
      */
-    const discardSelection = (
-      input:
-        | { all: true; drafts: readonly DraftReviewSelection[]; name: null }
-        | {
-            all?: false;
-            drafts: readonly DraftReviewSelection[];
-            folders: readonly string[];
-            name: string | null;
-          },
-    ): Promise<CommandOutcome> => {
+    const discardSelection = (input: {
+      all?: boolean;
+      drafts: readonly DraftReviewSelection[];
+      folders: readonly string[];
+      name: string | null;
+    }): Promise<CommandOutcome> => {
       endNotice();
       const listed = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       );
       const branchId = listed?.branchId;
-      const folders = input.all ? [] : input.folders;
+      const { folders } = input;
       if (locked || !branchId || (input.drafts.length === 0 && folders.length === 0))
         return Promise.resolve({ kind: "blocked" });
       const commandId = crypto.randomUUID();
       const documentIds = input.drafts.map((draft) => draft.documentId);
       const refs = input.drafts.map(ref);
+      const folderRefs = folders.map((node) => ({
+        projectId,
+        ownerKey,
+        documentId: node,
+        itemKey: folderKey(branchId, node),
+      }));
       const outcome = owner
         .discardBranch({
           projectId,
           branchId,
           commandId,
           selection: input.all
-            ? { all: true, refs }
+            ? { all: true, refs: [...refs, ...folderRefs] }
             : {
                 items: [
                   ...input.drafts.map((draft) => {
@@ -652,15 +654,7 @@ export function useWorkBranchCommands({
                         : {}),
                     };
                   }),
-                  ...folders.map((node) => ({
-                    ref: {
-                      projectId,
-                      ownerKey,
-                      documentId: node,
-                      itemKey: folderKey(branchId, node),
-                    },
-                    ends: "item" as const,
-                  })),
+                  ...folderRefs.map((folderRef) => ({ ref: folderRef, ends: "item" as const })),
                 ],
               },
         })
@@ -739,8 +733,11 @@ export function useWorkBranchCommands({
       discardMany,
       discardSelection,
       /** Discard all: every change of the branch, the one Discard that closes it. */
-      discardAll: (drafts: readonly DraftReviewSelection[]) =>
-        discardSelection({ all: true, drafts, name: null }),
+      discardAll: (
+        drafts: readonly DraftReviewSelection[],
+        folders: readonly string[],
+        name: string | null,
+      ) => discardSelection({ all: true, drafts, folders, name }),
     };
   }, [
     owner,

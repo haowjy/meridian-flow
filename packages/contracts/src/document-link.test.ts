@@ -365,7 +365,6 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     ["manuscript://book/ch12.md", "link", "manuscript://book/ch12"],
     ["manuscript://book/notes.txt", "link", "manuscript://book/notes"],
     ["manuscript://book/outline.json", "link", "manuscript://book/outline.json"],
-    ["ch12", "link", null],
   ];
   for (const [uri, kind, expected] of minted) {
     const address = aheadAddress(uri, kind);

@@ -20,10 +20,10 @@ It cannot judge the two rows that need review:
 | Change | Version class |
 |---|---|
 | Surface identical | No bump required; patch allowed |
-| New node or mark, or new attribute with a default | Minor `x.(y+1).0` |
+| New node or mark, or new attribute with a default, unless it changes stored content meaning below | Minor `x.(y+1).0` |
 | Content expression or attribute default changed | Next minor or next major; review confirms the minor path only loosens the schema |
 | Node, mark or attribute removed or renamed, fragment renamed, or Yjs encoding changed | Major `(x+1).0.0` |
-| A change that alters what stored content means (such as an added attribute) | Major |
+| Existing stored content is reinterpreted (for example, a stored link target replaces path-based identity) | Major |
 
 A major needs a human call and a migration or reset plan, recorded in the entry's
 `compatibilityNote`.

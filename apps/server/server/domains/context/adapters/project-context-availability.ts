@@ -532,17 +532,6 @@ export async function resolveHeldFolderUri(
   return held?.kind === "held" ? held.address.uri : null;
 }
 
-/** Whether this project (or the writer's own User area) holds the row's source. */
-function heldInProject(row: SourceFacts, projectId: string, userId: string): boolean {
-  return (
-    row.source.projectId === projectId ||
-    row.work?.projectId === projectId ||
-    (row.source.slug === "user" &&
-      row.sourceProject?.isPersonal === true &&
-      row.sourceProject.userId === userId)
-  );
-}
-
 /**
  * The address this project holds `id` at in live, in Trash included, read from the node and its
  * source rather than through a Work authority. Null when the project holds no such node (a node
@@ -575,10 +564,6 @@ async function resolveHeldContextNode(input: {
           deleted: row.folder.deleted,
         }))[0];
   if (!found) return null;
-  // Another project holding the id is not this project's row.
-  if (!heldInProject(found, input.projectId, input.userId)) return null;
-  if (found.deleted && !input.inTrash) return { kind: "unreachable" };
-  if (found.source.deletedAt || found.sourceProject?.deletedAt) return { kind: "unreachable" };
   const foldersById = new Map(
     (await loadIdentityFolderClosure(tx, LIVE_TREE, found.parentId ? [found.parentId] : [])).map(
       (folder) => [folder.id, folder],
@@ -597,6 +582,14 @@ async function resolveHeldContextNode(input: {
     foldersById,
   });
   if (classification.kind === "not-visible") return null;
+  // Only after the fence: another project's deleted node must not read as `unreachable`.
+  if (
+    (found.deleted && !input.inTrash) ||
+    found.source.deletedAt ||
+    found.sourceProject?.deletedAt
+  ) {
+    return { kind: "unreachable" };
+  }
   if (classification.kind !== "valid") return { kind: "unreachable" };
   const { scheme, parentPath } = classification.identity;
   const path = [...parentPath, found.name].join("/");

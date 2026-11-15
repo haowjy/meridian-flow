@@ -97,7 +97,8 @@ document. Un-Apply reverses all of it, across every document: `undoApply` in eac
 and the restores leave live), then each document's text groups. It runs the tree half before any
 write and after every check that can end the command quietly, so a refusal (`gone`: the list moved,
 or a created document has text past its heads; `superseded`) stores nothing of either half. A text
-group a later edit overlaps stays applied and is named in `skippedGroupIds`; when every group stays
+group whose reversal would change a word holding writing made after the Apply (the word rule,
+`reversal.md`) stays applied and is named in `skippedGroupIds`; when every group stays
 and the tree half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created (and of the
 drafts the Apply closed, below).

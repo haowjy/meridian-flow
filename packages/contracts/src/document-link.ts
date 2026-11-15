@@ -11,7 +11,7 @@
  * stored `href`/`src` is an escaped wire spelling, built only by `storedHref`.
  */
 import type { DraftOwnerKey } from "./branches/owner.js";
-import { isProjectScopedScheme, parseContextUri } from "./context-uri.js";
+import { canonicalContextUri, isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
   documentPathKey,
   type LinkAddress,
@@ -216,13 +216,10 @@ export function classifyWrittenLink(href: string, holderUri: string | null): Wri
     : { kind: "internal", target: resolved.kind, uri: resolved.uri, suffix: resolved.suffix };
 }
 
-/** The grammar image and figure sources are written in: a bare source is manuscript-root-relative. */
-export const IMAGE_SOURCE_BASE = "manuscript://";
-
 // `resolveDocumentHref` and `spellDocumentHref` resolve against a holder's
 // directory, so a holder sitting at the manuscript root stands in for the
 // root itself. Only its directory is ever read.
-const MANUSCRIPT_ROOT_HOLDER = `${IMAGE_SOURCE_BASE}_`;
+const MANUSCRIPT_ROOT_HOLDER = canonicalContextUri("manuscript", "_");
 
 /**
  * `classifyWrittenLink` for an `image`/`figure` source, under the

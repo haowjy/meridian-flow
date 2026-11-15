@@ -20,6 +20,7 @@ import {
   type BranchRow,
   branchRows,
   type CreateRecord,
+  changedFolders,
   changedRows,
   deleteCovering,
   LIVE,
@@ -551,7 +552,8 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
  * Brings the rows to the list's replay: `added` are the records this transaction admitted, whose
  * documents get their `documents` rows. Call under the list's lock, after the update is
  * journaled, so the rows are never behind the list. The views replayed are live and every open
- * Work with pending tree records or pending text. Returns the creates that made a document row.
+ * Work with pending tree records or pending text. Returns the creates that made a document row,
+ * and the Works' branches whose rows changed (their review count may have moved).
  */
 export async function syncRows(
   db: DrizzleDb,
@@ -559,7 +561,7 @@ export async function syncRows(
   listId: string,
   doc: Y.Doc,
   added: readonly TreeRecord[],
-): Promise<CreateRecord[]> {
+): Promise<{ created: CreateRecord[]; changedBranches: string[] }> {
   const tx = currentDrizzleDb(db as Database);
   const live = replayView(doc, LIVE);
   const liveRows = shownRows(live);
@@ -567,12 +569,26 @@ export async function syncRows(
   const kept = [...(await keptBranches(tx, list))];
   const text = await pendingText(tx, kept);
   const drafted = new Map<string, Map<string, ProjectedRow>>();
-  for (const branchId of kept)
-    if (text.has(branchId) || pendingRecords(doc, branchId).length > 0)
-      drafted.set(branchId, shownRows(replayView(doc, { draft: branchId }, text.get(branchId))));
+  const faulted = new Map<string, Set<string>>();
+  for (const branchId of kept) {
+    const pending = pendingRecords(doc, branchId);
+    if (!text.has(branchId) && pending.length === 0) continue;
+    const projection = replayView(doc, { draft: branchId }, text.get(branchId));
+    drafted.set(branchId, shownRows(projection));
+    faulted.set(branchId, changedFolders(live, projection, pending));
+  }
   await dropForeignSources(tx, list, [liveRows, ...drafted.values()]);
   const next = new Map(
-    [...drafted].map(([branchId, rows]) => [branchId, branchRows(liveRows, rows)] as const),
+    [...drafted].map(([branchId, rows]) => {
+      const differing = branchRows(liveRows, rows);
+      // A folder whose move cannot land shows as live does and is still a change: its row stands
+      // for it, so the stored count is the one the Changes list shows.
+      for (const id of faulted.get(branchId) ?? []) {
+        const row = rows.get(id);
+        if (row && !differing.has(id)) differing.set(id, { ...row, existsOnlyInDraft: false });
+      }
+      return [branchId, differing] as const;
+    }),
   );
 
   const created =
@@ -589,16 +605,18 @@ export async function syncRows(
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);
-  for (const branchId of new Set([...prev.keys(), ...next.keys()]))
-    changed.push(
-      ...(await writeBranch(
-        tx,
-        listId,
-        branchId,
-        prev.get(branchId) ?? new Map(),
-        next.get(branchId) ?? new Map(),
-      )),
+  const changedBranches: string[] = [];
+  for (const branchId of new Set([...prev.keys(), ...next.keys()])) {
+    const written = await writeBranch(
+      tx,
+      listId,
+      branchId,
+      prev.get(branchId) ?? new Map(),
+      next.get(branchId) ?? new Map(),
     );
+    if (written.length > 0) changedBranches.push(branchId);
+    changed.push(...written);
+  }
   await markUnviewed(tx, changed);
-  return created;
+  return { created, changedBranches };
 }

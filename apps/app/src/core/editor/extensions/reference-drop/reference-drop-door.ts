@@ -12,7 +12,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 
 import type { DropDoor, DropPlan } from "../../landing/drop-plan";
-import { snapOutOfCode, snapOutOfIdentityLink, snapToWordEdge } from "../../landing/inline-snap";
+import { snapOutOfChip, snapOutOfCode, snapToWordEdge } from "../../landing/inline-snap";
 import type { Landing } from "../../landing/point-landing";
 
 export type ReferenceDropEntry = Readonly<{
@@ -78,7 +78,7 @@ export function placeNodes(
     };
   }
   const { doc } = view.state;
-  const pos = snapToWordEdge(doc, snapOutOfIdentityLink(doc, snapOutOfCode(doc, landing.pos)));
+  const pos = snapToWordEdge(doc, snapOutOfChip(doc, snapOutOfCode(doc, landing.pos)));
   const content = spaced(view, pos, nodes);
   if (!content) return null;
   return { pos, commit: (target) => insert(target, pos, content, (end) => end) };

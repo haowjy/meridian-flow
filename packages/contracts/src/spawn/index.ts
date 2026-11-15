@@ -23,18 +23,15 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   ]),
 );
 
-const artifactUriSchema = z
-  .string()
-  .superRefine((uri, context) => {
-    const parsed = parseContextUri(uri);
-    if (!uri.includes("://") || !parsed.ok || !parsed.value.path) {
-      context.addIssue({
-        code: "custom",
-        message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
-      });
-    }
-  })
-  .transform((uri): ArtifactRef => ({ type: "object", uri }));
+const artifactUriSchema = z.string().transform((uri, context): ArtifactRef => {
+  const parsed = parseContextUri(uri);
+  if (parsed.ok && parsed.value.path) return { type: "object", uri: parsed.value.normalized };
+  context.addIssue({
+    code: "custom",
+    message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
+  });
+  return z.NEVER;
+});
 
 /** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
