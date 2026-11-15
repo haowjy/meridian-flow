@@ -121,6 +121,7 @@ export function compilePackage(
     );
   }
   rejectBrokenSubagents(drafts);
+  noteSharedNames(drafts);
 
   const agents = [...drafts.values()].map((draft) => ({
     slug: draft.slug,
@@ -143,6 +144,34 @@ export function compilePackage(
       ...[...skills.values()].flat(),
     ]),
   };
+}
+
+/**
+ * Two Agents of a package may share a name: both work, and each says which other file has it,
+ * since the picker shows them by that name.
+ */
+function noteSharedNames(drafts: Map<string, Draft>) {
+  const byName = new Map<string, Draft[]>();
+  for (const draft of drafts.values()) {
+    const key = (draft.fields?.name ?? draft.slug).normalize("NFC").toLowerCase();
+    byName.set(key, [...(byName.get(key) ?? []), draft]);
+  }
+  for (const group of byName.values()) {
+    if (group.length < 2) continue;
+    for (const draft of group) {
+      const name = draft.fields?.name ?? draft.slug;
+      const others = group.filter((other) => other !== draft).map((other) => other.file);
+      draft.warnings.push(
+        flow(
+          draft.file,
+          "name-shared",
+          `Another Agent is also named "${name}": ${others.join(", ")}`,
+          "warning",
+          ["name"],
+        ),
+      );
+    }
+  }
 }
 
 function distinct(items: PackageDiagnostic[]): PackageDiagnostic[] {

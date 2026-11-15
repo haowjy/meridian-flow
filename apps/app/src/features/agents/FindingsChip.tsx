@@ -17,7 +17,7 @@ export function FindingsChip({
   touch = false,
 }: {
   tone: "destructive" | "warning" | "neutral";
-  word: string;
+  word: ReactNode;
   heading: string;
   sub?: string;
   /** The list; given the popover's close, for an item that leaves it. */

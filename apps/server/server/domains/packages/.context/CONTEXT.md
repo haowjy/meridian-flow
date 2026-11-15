@@ -23,6 +23,8 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   file is not a skill, and a `mars.toml` with one makes every Agent of the package unavailable. A
   `warning` or `info` doesn't: it is shown and the Agent runs as its file reads (a restriction
   `prepare` dropped, `field.restriction-lost`, is a warning). `compilePackage` holds the table.
+  Two Agents of one package with the same name both run; each carries a `flow.name-shared`
+  warning naming the other's file, since the picker shows them by that name.
   `checkPackage` (`domain/check-package.ts`) is the one place Save asks whether files can be
   published: it returns the package's errors and warnings, and later calls Mars's `check()`.
 - An unavailable Agent is stored with its diagnostics and no definition, so

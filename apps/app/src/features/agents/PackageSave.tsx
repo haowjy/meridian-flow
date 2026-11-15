@@ -4,7 +4,7 @@
  * Save the same place says what it did ("Saved" with Undo, or "Not saved: 2 problems").
  */
 import { plural, t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
+import { Plural, Trans } from "@lingui/react/macro";
 import type {
   AgentFileChange,
   AgentFinding,
@@ -24,9 +24,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
 import { FindingsChip, SentenceList } from "./FindingsChip";
-import { findingSentence, findingsOfFile } from "./findings";
+import {
+  findingSentence,
+  findingsOfFile,
+  type OutOfUse,
+  outOfUseAfterSave,
+  outOfUseWord,
+} from "./findings";
 import {
   failsSave,
+  importName,
   type PackageRef,
   type PackageWord,
   packageErrorsOf,
@@ -104,7 +111,7 @@ function StateAndSave({
           projectId={projectId}
           pkg={pkg}
           findings={problems}
-          word={plural(problems.length, { one: "# problem", other: "# problems" })}
+          word={problemsWord(pkg, problems.length, look)}
           heading={t`Saving ${label} fails until these are fixed`}
           sub={
             status.savedAt
@@ -184,27 +191,29 @@ function Word({
   look: PackageSaveLook;
 }) {
   const saves = usePackageSaves(projectId);
+  const files = useAgentFiles(projectId);
   const label = packageLabel(pkg);
   switch (word.kind) {
     case "saved": {
       const { saveId } = word.outcome;
       const undoState = saveId ? saves.undoOf(saveId) : undefined;
-      const held = heldBack(word.outcome);
+      const out = outOfUseAfterSave(files?.files ?? [], files?.packages ?? [], pkg);
       // Nothing new was saved: the edits kept out of use are all the Save has to say.
       const nothingNew = word.outcome.outcome === "unchanged";
       return (
         <>
-          {/* On a sidebar row the chip's heading says "Saved", and the row has no room for both. */}
-          {nothingNew || (look === "package" && held.length > 0) ? null : (
+          {/* The chip's list opens with what was saved, and a 264px row or a 390px toolbar has no
+              room for both. */}
+          {nothingNew || out.length > 0 ? null : (
             <RowWord tone="done" word={<Trans>Saved</Trans>} sentence={savedSentence(word)} />
           )}
-          {held.length > 0 ? (
-            <PackageProblems
+          {out.length > 0 ? (
+            <OutOfUseChip
               projectId={projectId}
               pkg={pkg}
-              findings={held}
-              held={word.outcome}
-              {...heldSummary(word.outcome)}
+              outcome={word.outcome}
+              items={out}
+              notes={savedNotes(word) ?? []}
             />
           ) : null}
           {nothingNew ? null : (
@@ -231,15 +240,7 @@ function Word({
           projectId={projectId}
           pkg={pkg}
           findings={problems}
-          word={
-            // On a 264px package row the longer word pushes the package's name out.
-            look === "package"
-              ? plural(problems.length, { one: "# problem", other: "# problems" })
-              : plural(problems.length, {
-                  one: "Not saved: # problem",
-                  other: "Not saved: # problems",
-                })
-          }
+          word={problemsWord(pkg, problems.length, look)}
           heading={t`${label} wasn't saved`}
           sub={
             word.outcome.savedBefore
@@ -273,6 +274,37 @@ function Word({
   }
 }
 
+/**
+ * The count of a package's problems. On its own row the row names the package; on an open file
+ * the word does, so a good file of a broken package never reads as broken itself. A long name
+ * gives way before the count does: the popover's heading says it in full.
+ */
+function problemsWord(pkg: PackageRef, count: number, look: PackageSaveLook): ReactNode {
+  if (look === "package") return plural(count, { one: "# problem", other: "# problems" });
+  const name = (
+    <span className="inline-block max-w-16 truncate align-bottom">
+      {pkg.folder ? importName(pkg.folder) : packageLabel(pkg)}
+    </span>
+  );
+  return (
+    <span>
+      <Plural
+        value={count}
+        one={
+          <>
+            {name} can't be saved: {count} problem
+          </>
+        }
+        other={
+          <>
+            {name} can't be saved: {count} problems
+          </>
+        }
+      />
+    </span>
+  );
+}
+
 function savedSentence(word: Extract<PackageWord, { kind: "saved" }>): ReactNode {
   const said = word.settled
     ? t`Saved just now. New chats use it; chats already running keep the version they started with.`
@@ -290,7 +322,7 @@ function savedSentence(word: Extract<PackageWord, { kind: "saved" }>): ReactNode
   );
 }
 
-/** A package's problems, or what a Save left out, as a chip that lists them by file. */
+/** A package's problems (a broken `mars.toml`), as a chip that lists them by file. */
 function PackageProblems({
   projectId,
   pkg,
@@ -298,36 +330,107 @@ function PackageProblems({
   word,
   heading,
   sub,
-  held,
 }: {
   projectId: string;
   pkg: PackageRef;
   findings: readonly AgentFinding[];
-  word: string;
+  word: ReactNode;
   heading: string;
   sub?: string;
-  held?: SaveOutcome;
 }) {
   const openFile = useOpenAgentFile(projectId);
   return (
+    <FindingsChip tone="destructive" word={word} heading={heading} sub={sub}>
+      {(close) => (
+        <FindingList
+          pkg={pkg}
+          findings={findings}
+          onOpen={(file) => {
+            close();
+            openFile(pkg.level, `${pkg.folder}${file}`);
+          }}
+        />
+      )}
+    </FindingsChip>
+  );
+}
+
+/**
+ * What of the package is out of use after a Save, counted as every level counts it
+ * (`outOfUseWord`): the same before the server answers and after the files are read again. It
+ * lists each file with what keeps it out of use, then what the Save did save and its notes.
+ */
+function OutOfUseChip({
+  projectId,
+  pkg,
+  outcome,
+  items,
+  notes,
+}: {
+  projectId: string;
+  pkg: PackageRef;
+  outcome: SaveOutcome;
+  items: readonly OutOfUse[];
+  /** What else the Save said (`savedNotes`). */
+  notes: readonly string[];
+}) {
+  const openFile = useOpenAgentFile(projectId);
+  const out = outOfUseWord(items);
+  if (!out) return null;
+  const label = packageLabel(pkg);
+  const held = outcome.kept.length + outcome.leftOut.length > 0;
+  const ordered = [...items].sort(
+    (a, b) => Number(a.trouble.kind !== "unavailable") - Number(b.trouble.kind !== "unavailable"),
+  );
+  return (
     <FindingsChip
-      tone={held && held.leftOut.length === 0 ? "warning" : "destructive"}
-      word={word}
-      heading={heading}
-      sub={sub}
+      tone={out.tone}
+      word={out.word}
+      heading={held ? heldSummary(outcome).heading : t`Saved ${label}`}
+      sub={t`Fix these and save ${label} again.`}
     >
       {(close) => (
         <>
-          <FindingList
-            pkg={pkg}
-            findings={findings}
-            held={held}
-            onOpen={(file) => {
-              close();
-              openFile(pkg.level, `${pkg.folder}${file}`);
-            }}
-          />
-          {held ? <SavedChanges outcome={held} /> : null}
+          <ul className="flex flex-col">
+            {ordered.map(({ file, trouble }) => (
+              <li key={file.path} className="px-2 py-1 text-xs">
+                <button
+                  type="button"
+                  className="focus-ring -mx-1 block max-w-full rounded-sm px-1 text-left hover:bg-ink-fill"
+                  onClick={() => {
+                    close();
+                    openFile(pkg.level, file.path);
+                  }}
+                >
+                  <span
+                    className={cn(
+                      "block truncate text-foreground",
+                      trouble.kind === "unavailable" && "line-through",
+                    )}
+                  >
+                    {file.path}
+                  </span>
+                </button>
+                <span className="block text-muted-foreground">
+                  {trouble.kind === "not-in-use" ? (
+                    <Trans>Your latest edit isn't in use:</Trans>
+                  ) : trouble.runtime ? (
+                    <Trans>New chats can't start it:</Trans>
+                  ) : (
+                    <Trans>Left out:</Trans>
+                  )}
+                </span>
+                <SentenceList items={trouble.problems} className="px-0 pr-0 pl-4" />
+              </li>
+            ))}
+          </ul>
+          <SavedChanges outcome={outcome} />
+          {notes.length > 0 ? (
+            <SentenceList
+              items={notes}
+              className="border-border-subtle border-t text-muted-foreground"
+            />
+          ) : null}
         </>
       )}
     </FindingsChip>
@@ -364,27 +467,25 @@ export function changeLine({ path, change }: AgentFileChange): string {
 }
 
 /**
- * The words for what a Save kept out of use: "1 left out" when nothing it held back has a good
- * save, else "1 not in use", and a heading naming the items.
+ * The heading and sub-line for what a Save kept out of use, naming the items: the AI's card says
+ * them, and a package's Save chip says the heading.
  */
-export function heldSummary(outcome: SaveOutcome): { word: string; heading: string; sub: string } {
+export function heldSummary(outcome: SaveOutcome): { heading: string; sub: string } {
   const label = packageLabel(outcome);
   const items = [...outcome.kept, ...outcome.leftOut];
   const names = listOf(items.map((file) => agentsFileOf(file)?.slug ?? file));
-  const count = items.length;
   const allLeftOut = outcome.kept.length === 0;
-  const nothingNew = outcome.outcome === "unchanged";
+  if (outcome.outcome === "unchanged")
+    return {
+      heading: t`Nothing new saved in ${label}`,
+      sub: t`Your edits to ${names} aren't in use until each problem is fixed and ${label} is saved again.`,
+    };
   return {
-    word: allLeftOut
-      ? plural(count, { one: "# left out", other: "# left out" })
-      : plural(count, { one: "# not in use", other: "# not in use" }),
-    heading: nothingNew
-      ? t`${label} has nothing new to save`
-      : allLeftOut
-        ? t`Saved ${label} without ${names}`
-        : outcome.leftOut.length === 0
-          ? t`Saved ${label}, but not the latest edit of ${names}`
-          : t`Saved ${label}, but not ${names}`,
+    heading: allLeftOut
+      ? t`Saved ${label} without ${names}`
+      : outcome.leftOut.length === 0
+        ? t`Saved ${label}, but not the latest edit of ${names}`
+        : t`Saved ${label}, but not ${names}`,
     sub: allLeftOut
       ? t`New chats can't use ${names} until each problem is fixed and ${label} is saved again.`
       : t`Where an item had a good save, new chats keep using it until each problem is fixed and ${label} is saved again.`,

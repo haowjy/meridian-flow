@@ -2,14 +2,15 @@
  * What Mars and Flow found in an Agent package, as the writer reads it: each finding in Flow's
  * sentence where Flow has one (Mars's own words otherwise), and what a file's findings make of it.
  */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import type {
   AgentFileStatus,
   AgentFinding,
   AgentLevel,
   AgentPackageStatus,
+  AgentsLevel,
 } from "@meridian/contracts/agents";
-import { errorsOf, failsSave, packageFolderOf } from "./package-save";
+import { errorsOf, failsSave, type PackageRef, packageFolderOf, statusOf } from "./package-save";
 
 const quoted = (message: string) => /"([^"]+)"|`([^`]+)`/.exec(message)?.slice(1).find(Boolean);
 
@@ -35,6 +36,11 @@ export function findingSentence(finding: AgentFinding): string {
     case "flow.subagent-unavailable":
       if (name) return t`Its subagent ${name} is unavailable.`;
       break;
+    case "flow.name-shared": {
+      const others = finding.message.split(": ").slice(1).join(": ");
+      if (name && others) return t`${others} is also named ${name}. Both work under that name.`;
+      break;
+    }
     case "toml.invalid": {
       const at = /line (\d+), column (\d+)/.exec(finding.message);
       return at
@@ -83,4 +89,78 @@ export function fileTrouble(
   if (file.hiddenBy) return { kind: "hidden", by: file.hiddenBy };
   const warnings = findings.filter((finding) => finding.severity === "warning");
   return warnings.length ? { kind: "notes", notes: warnings.map(findingSentence) } : null;
+}
+
+/**
+ * What a Save of the file's package makes of it. An Agent with an Error keeps whatever it had;
+ * an edit that is read but can't run (`runtime`) becomes the saved version, which then can't
+ * run either. Said the same before the Save answers and after its files are read again.
+ */
+export function troubleAfterSave(
+  file: AgentFileStatus,
+  status: AgentPackageStatus | undefined,
+): FileTrouble | null {
+  const now = fileTrouble(file, status);
+  return now?.kind === "not-in-use" && now.runtime && status && !failsSave(status)
+    ? { ...now, kind: "unavailable" }
+    : now;
+}
+
+/** One file out of use, with what keeps it so. */
+export type OutOfUse = {
+  file: AgentFileStatus;
+  trouble: Extract<FileTrouble, { kind: "unavailable" | "not-in-use" }>;
+};
+
+/** The level's files under `prefix` that are out of use, each read with `read`. */
+export function outOfUseUnder(
+  files: readonly AgentFileStatus[],
+  packages: readonly AgentPackageStatus[],
+  where: { level: AgentsLevel; prefix: string; folder?: string },
+  read: typeof fileTrouble = fileTrouble,
+): OutOfUse[] {
+  return files.flatMap((file) => {
+    if (file.level !== where.level || !file.path.startsWith(where.prefix)) return [];
+    const folder = packageFolderOf(file.path);
+    if (where.folder !== undefined && folder !== where.folder) return [];
+    const trouble = read(file, statusOf(packages, { level: where.level, folder }));
+    return trouble?.kind === "unavailable" || trouble?.kind === "not-in-use"
+      ? [{ file, trouble }]
+      : [];
+  });
+}
+
+/** The files of one package that are out of use, as a Save of it leaves them. */
+export const outOfUseAfterSave = (
+  files: readonly AgentFileStatus[],
+  packages: readonly AgentPackageStatus[],
+  pkg: PackageRef,
+) =>
+  outOfUseUnder(
+    files,
+    packages,
+    { level: pkg.level, prefix: pkg.folder, folder: pkg.folder },
+    troubleAfterSave,
+  );
+
+/** The count every level says of what it holds out of use: "2 unavailable", else "1 not in use". */
+export function outOfUseWord(items: readonly OutOfUse[]): {
+  word: string;
+  tone: "destructive" | "warning";
+  count: number;
+} | null {
+  const unavailable = items.filter((item) => item.trouble.kind === "unavailable").length;
+  if (unavailable)
+    return {
+      word: plural(unavailable, { one: "# unavailable", other: "# unavailable" }),
+      tone: "destructive",
+      count: unavailable,
+    };
+  if (items.length)
+    return {
+      word: plural(items.length, { one: "# not in use", other: "# not in use" }),
+      tone: "warning",
+      count: items.length,
+    };
+  return null;
 }

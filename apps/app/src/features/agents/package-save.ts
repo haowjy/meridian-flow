@@ -153,21 +153,31 @@ function heldWord(entry: Entry, status: AgentPackageStatus | undefined): Package
 /**
  * What a Save of these files will answer, said before it does: a package-level Error fails it;
  * an Agent or skill file with an Error is not used, its errors listed first. Whether that item
- * keeps an earlier saved version is the server's to say, so the prediction holds none.
+ * keeps an earlier saved version is the server's to say, so the prediction holds none; what is
+ * shown of it (the count of what is out of use) is read from the files, so it does not wait.
  */
 function predicted(status: AgentPackageStatus): PackageWord {
   const errors = errorsOf(status.findings);
   const fails = failsSave(status);
+  const leftOut = fails ? [] : itemsWithErrors(status.findings);
+  // A Save whose every change is to an item it holds back saves nothing new.
+  const held = (path: string) =>
+    leftOut.some((item) => {
+      const file = `${status.folder}${item}`;
+      const skill = agentsFileOf(item)?.kind === "skill" ? file.replace(/SKILL\.md$/, "") : null;
+      return path === file || (skill !== null && path.startsWith(skill));
+    });
+  const nothingNew = !fails && status.changes.every((change) => held(change.path));
   const outcome: SaveOutcome = {
     level: status.level,
     folder: status.folder,
-    outcome: fails ? "failed" : "saved",
+    outcome: fails ? "failed" : nothingNew ? "unchanged" : "saved",
     changes: status.changes,
     findings: fails
       ? errors
       : [...errors, ...status.findings.filter((finding) => finding.severity === "warning")],
     kept: [],
-    leftOut: fails ? [] : itemsWithErrors(status.findings),
+    leftOut,
     renamed: [],
     savedBefore: status.savedAt !== null,
   };
@@ -206,7 +216,7 @@ async function save(
       const key = keyOf(projectId, ref);
       const before = bases.get(key);
       // A Save with nothing new still says which edits it kept out of use.
-      if (outcome.outcome === "unchanged" && outcome.kept.length === 0) {
+      if (outcome.outcome === "unchanged" && outcome.kept.length + outcome.leftOut.length === 0) {
         entries.delete(key);
         continue;
       }

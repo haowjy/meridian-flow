@@ -6,15 +6,8 @@ import {
   agentsLocationOf,
 } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { invalidateAgentReads, useAgentFiles } from "@/client/query/useAgentFiles";
+import { useAgentFiles } from "@/client/query/useAgentFiles";
 import type { OpenDocument } from "@/client/stores";
-import {
-  useAccountId,
-  useLiveDocumentSessionRegistry,
-} from "@/features/project/context/account-feature-context";
 import { FindingsChip, SentenceList } from "./FindingsChip";
 import { type FileTrouble, fileTrouble } from "./findings";
 import { PackageSave } from "./PackageSave";
@@ -78,8 +71,8 @@ export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[])
 /**
  * An open file of an Agents level, at the end of its toolbar row: what keeps it from use (its
  * problems, or a level above that hides it), its notes, and its package's Save state with Save.
- * Read again each time the server acknowledges the writer's edits, so it follows the typing. A
- * file with nothing to say shows nothing.
+ * The verdicts are read again each time a level's text changes (`useProjectWake`), so it follows
+ * the typing. A file with nothing to say shows nothing.
  */
 export function AgentFileState({
   projectId,
@@ -95,7 +88,6 @@ export function AgentFileState({
   return at ? (
     <LevelFileState
       projectId={projectId}
-      documentId={document.documentId}
       scheme={document.scheme}
       path={document.path}
       touch={touch}
@@ -105,20 +97,17 @@ export function AgentFileState({
 
 function LevelFileState({
   projectId,
-  documentId,
   scheme,
   path,
   touch,
 }: {
   projectId: string;
-  documentId: string;
   scheme: ProjectContextTreeScheme;
   path: string;
   touch: boolean;
 }) {
   useLingui();
   const files = useAgentFiles(projectId);
-  useReadAgainOnSave(projectId, documentId);
   const at = agentsLocationOf(scheme, path.replace(/^\//, ""));
   const file = agentFileAt(files?.files ?? null, scheme, path);
   if (!at || !files) return null;
@@ -199,26 +188,4 @@ export function TroubleChip({
         </FindingsChip>
       );
   }
-}
-
-/** Each time the server has every edit of this document, the verdicts are read again. */
-function useReadAgainOnSave(projectId: string, documentId: string) {
-  const registry = useLiveDocumentSessionRegistry();
-  const queryClient = useQueryClient();
-  const accountId = useAccountId();
-  useEffect(() => {
-    const lease = registry.admit(projectId as ProjectId, documentId as DocumentId);
-    const owner = `agent-file-notice:${documentId}`;
-    registry.retain(owner, [lease]);
-    let saved: boolean | null = null;
-    const stop = registry.get(lease).subscribe((snapshot) => {
-      const now = snapshot.serverHasLocalChanges;
-      if (saved === false && now) void invalidateAgentReads(queryClient, projectId, accountId);
-      saved = now;
-    });
-    return () => {
-      stop();
-      registry.release(owner);
-    };
-  }, [registry, queryClient, projectId, documentId, accountId]);
 }

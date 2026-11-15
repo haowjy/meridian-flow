@@ -35,13 +35,14 @@ import {
   ListRowField,
 } from "@/components/ui/list-row";
 import { ListSectionHeader } from "@/components/ui/list-section";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useInlineEdit } from "@/components/ui/use-inline-edit";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { agentFileAt } from "@/features/agents/AgentFileState";
 import { writeFirstAgentText } from "@/features/agents/agent-file-template";
 import { BuiltinAgentFileDialog } from "@/features/agents/BuiltinAgentFileDialog";
-import { fileTrouble } from "@/features/agents/findings";
+import { fileTrouble, outOfUseUnder, outOfUseWord } from "@/features/agents/findings";
 import { PackageSave, savedNotes } from "@/features/agents/PackageSave";
 import {
   failsSave,
@@ -51,6 +52,7 @@ import {
   statusOf,
   usePackageSaves,
 } from "@/features/agents/package-save";
+import { cn } from "@/lib/utils";
 import { useLiveDocumentSessionRegistry } from "../../context/account-feature-context";
 import { type ContextTree, ContextTreeBody, useContextTree } from "../../context/ContextTreePanel";
 import { validateContextEntryName } from "../../context/context-entry-name";
@@ -117,9 +119,7 @@ export function AgentsSource({
       if (!inside && !save) return null;
       return (
         <span className="flex min-w-0 shrink-0 items-center gap-1">
-          {inside ? (
-            <span className="shrink-0 px-1 text-muted-foreground text-xs">{inside}</span>
-          ) : null}
+          {inside ? <InsideCount inside={inside} short={save !== null} /> : null}
           {save ? <PackageSave projectId={projectId} pkg={save} status={status} /> : null}
         </span>
       );
@@ -228,25 +228,17 @@ function levelFileMark(
 }
 
 /**
- * What a closed folder holds out of use, so closing it hides no problem: "2 unavailable", else
- * "1 not in use", else a package that can't be saved.
+ * What a closed folder holds out of use, so closing it hides no problem: the count every level
+ * says (`outOfUseWord`), else a package that can't be saved.
  */
-function outOfUseInside(files: AgentFiles | null, at: AgentsLocation): string | null {
+function outOfUseInside(
+  files: AgentFiles | null,
+  at: AgentsLocation,
+): { word: string; tone: "destructive" | "warning" | "muted"; count: number } | null {
   if (!files) return null;
   const prefix = at.path ? `${at.path}/` : "";
-  let unavailable = 0;
-  let notInUse = 0;
-  for (const file of files.files) {
-    if (file.level !== at.level || !file.path.startsWith(prefix)) continue;
-    const trouble = fileTrouble(
-      file,
-      statusOf(files.packages, { level: file.level, folder: packageFolderOf(file.path) }),
-    );
-    if (trouble?.kind === "unavailable") unavailable++;
-    if (trouble?.kind === "not-in-use") notInUse++;
-  }
-  if (unavailable) return plural(unavailable, { one: "# unavailable", other: "# unavailable" });
-  if (notInUse) return plural(notInUse, { one: "# not in use", other: "# not in use" });
+  const out = outOfUseWord(outOfUseUnder(files.files, files.packages, { level: at.level, prefix }));
+  if (out) return out;
   // A package's own row says its problem; a folder above it says it holds one.
   const failing = files.packages.filter(
     (item) =>
@@ -255,7 +247,53 @@ function outOfUseInside(files: AgentFiles | null, at: AgentsLocation): string | 
       item.folder !== prefix &&
       failsSave(item),
   ).length;
-  return failing ? plural(failing, { one: "# can't be saved", other: "# can't be saved" }) : null;
+  return failing
+    ? {
+        word: plural(failing, { one: "# can't be saved", other: "# can't be saved" }),
+        tone: "muted",
+        count: failing,
+      }
+    : null;
+}
+
+/**
+ * A closed folder's count. Beside a package's Save it gives way to the name: a dot and the
+ * number, said in full to a screen reader and in its tooltip.
+ */
+function InsideCount({
+  inside,
+  short,
+}: {
+  inside: NonNullable<ReturnType<typeof outOfUseInside>>;
+  short: boolean;
+}) {
+  if (!short)
+    return <span className="shrink-0 px-1 text-muted-foreground text-xs">{inside.word}</span>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="flex shrink-0 items-center gap-1 px-1 text-muted-foreground text-xs tabular-nums"
+          aria-label={inside.word}
+          role="img"
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "size-1.5 rounded-full",
+              inside.tone === "destructive"
+                ? "bg-destructive"
+                : inside.tone === "warning"
+                  ? "bg-warning"
+                  : "bg-current",
+            )}
+          />
+          {inside.count}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{inside.word}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 /** One level's heading, its New menu, and its rows. */
