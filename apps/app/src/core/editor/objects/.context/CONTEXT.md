@@ -67,15 +67,19 @@ text and partial cell selections keep their existing input paths.
 Before input starts, `objectSelectionForDOM` gives an editable view a collapsed
 native caret: after an inline object, or at the last visible text position inside
 a text-body object. It skips opaque bodies and never searches outside the selected
-object. The model still holds the NodeSelection or full CellSelection, so commands,
+object. Registration `body: "text"` means editable object content (tables);
+`body: "block-drag"` means an opaque block (rules, figures and rendered diagrams).
+Inline images use `body: "inline-drag"` and the trailing-caret rule. The model still
+holds the NodeSelection or full CellSelection, so commands,
 clipboard contents and rings keep selecting the object. Chromium otherwise adopts
 the nonempty native range before `compositionstart` and can restart composition,
 leaving provisional text beside the committed text.
 
 The native caret and the `compositionstart` preparation are both needed. Without
 the latter, typing on a selected table would land inside its last cell. If the
-schema refuses a typing destination, ProseMirror can read back the projected caret
-instead. Browser selection changes can also read that caret into the model; the
+schema offers neither following text nor space for a paragraph, ProseMirror can
+read back the projected caret and input lands there instead (inside the table,
+rather than after it). Browser selection changes can also read that caret into the model; the
 projection must therefore always be a valid editing position. Read-only views,
 opaque block objects and partial cell selections keep their normal native range.
 

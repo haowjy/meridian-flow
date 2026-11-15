@@ -5,21 +5,33 @@
 
 ## Native selection and composition
 
-Remaining causes found after PR #1573:
+Remaining native-input failures:
 
 1. A selected diagram before empty prose can restart Chromium composition,
    leaving provisional `ni` beside committed `你`. A trace places native focus
    inside the rendered SVG after the first input, before ProseMirror reads the
-   DOM. A diagram-only or figure-only document can also lose its native range after
+   DOM. A whole selected table whose last cell ends in a rendered diagram also
+   restarts composition, but its input-event trace still shows focus in the typed
+   text; whether these share a cause is unproved. To reproduce, place a rendered
+   Mermaid diagram before an empty paragraph, or in the last table cell; select
+   the diagram or whole table, then compose `ni` → `你`. Expected: exactly `你`
+   beside the object. Actual: `ni你`.
+2. A diagram-only or figure-only document can lose its native range after
    mouseup while ProseMirror keeps a NodeSelection. Chromium then emits no input
-   events. Fix the missing browser input target without per-object event patches.
-2. An inline image alone in its paragraph can restart composition even when a
+   events. Create a document containing only that object, click its body, release
+   the mouse, then type. The range can disappear and nothing is inserted. Whether
+   this shares the composition-restart cause above is unproved. Fix the missing
+   browser input target without per-object event patches.
+3. An inline image alone in its paragraph can restart composition even when a
    plain caret is already after it. This reproduces without ProseMirror in static
    contenteditable HTML: an inline-block wrapper containing a block-level image
    box triggers Chromium's restart. An inline-level image box fixes that reduction,
    but the app's hovered chrome introduces another trigger not yet isolated. Fix
    the image/chrome box structure rather than filtering provisional text. Native
-   selection projection alone does not fix this case.
+   selection projection alone does not fix this case. Insert an inline image beside
+   one character, delete that character, click the image and press Right to place
+   a caret after it. Compose `ni` → `你`: expected `你`, actual `ni你`. Repeat with
+   the pointer over and away from the image to distinguish hover chrome.
 
 Reproduce with real selection plus Chromium `Input.imeSetComposition` updates and
 commit. This does not verify Android InputConnection or an operating-system IME.

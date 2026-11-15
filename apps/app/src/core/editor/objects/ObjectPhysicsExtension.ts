@@ -199,21 +199,7 @@ export const ObjectPhysicsExtension = Extension.create({
                 EDITOR_OBJECT_TYPES.some(
                   (spec) => spec.id === context.objectSpec && spec.body === "inline-drag",
                 ),
-              bindings: Object.fromEntries(
-                ["", "Mod-", "Alt-", ...(isMacOS() ? ["Ctrl-"] : [])].flatMap((modifier) =>
-                  Object.entries({
-                    ArrowLeft: -1,
-                    ArrowUp: -1,
-                    Home: -1,
-                    ArrowRight: 1,
-                    ArrowDown: 1,
-                    End: 1,
-                  } satisfies Record<string, 1 | -1>).map(([key, direction]) => [
-                    `${modifier}Shift-${key}`,
-                    prepareObjectSelectionExtension(direction),
-                  ]),
-                ),
-              ),
+              bindings: objectSelectionExtensionBindings(),
             }),
             chrome?.registerKeymap({
               id: "object-walk",
@@ -421,7 +407,43 @@ function selectedObjectRange(
   return { from: selection.from, to: selection.to };
 }
 
-/** Delete and Backspace take the whole object, not the selection over it. */
+function objectSelectionExtensionBindings(): Record<string, KeymapBinding> {
+  const mac = isMacOS();
+  // Native Shift-navigation must start from the model range, not the typing caret.
+  const nativeSelectionKeys = {
+    ArrowLeft: -1,
+    ArrowUp: -1,
+    Home: -1,
+    PageUp: -1,
+    ArrowRight: 1,
+    ArrowDown: 1,
+    End: 1,
+    PageDown: 1,
+  } satisfies Record<string, 1 | -1>;
+  const bindings = Object.fromEntries(
+    (mac ? ["", "Mod-", "Alt-", "Ctrl-"] : ["", "Mod-"]).flatMap((modifier) =>
+      Object.entries(nativeSelectionKeys).map(([key, direction]) => [
+        `${modifier}Shift-${key}`,
+        prepareObjectSelectionExtension(direction),
+      ]),
+    ),
+  );
+  if (mac) {
+    // macOS text controls also expose Emacs-style selection gestures.
+    for (const [key, direction] of Object.entries({
+      a: -1,
+      b: -1,
+      p: -1,
+      e: 1,
+      f: 1,
+      n: 1,
+    } satisfies Record<string, 1 | -1>)) {
+      bindings[`Ctrl-Shift-${key}`] = prepareObjectSelectionExtension(direction);
+    }
+  }
+  return bindings;
+}
+
 function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
   return (state, dispatch) => {
     const transaction = objectTextSelectionTransaction(state, direction);
@@ -431,6 +453,7 @@ function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
   };
 }
 
+/** Delete and Backspace take the whole object, not the selection over it. */
 const removeSelected: KeymapBinding = (state, dispatch) => {
   const selected = selectedObject(state);
   if (!selected) return false;

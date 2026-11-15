@@ -285,10 +285,9 @@ clipboard use the model selection. See the [object input contract](../objects/.c
 Keep the source, ESM/CJS runtimes and both declarations in the patch aligned.
 Replace this patch when upstream provides an equivalent hook; a dependency upgrade
 must recheck the native-selection readers and browser verification, not merely
-make the diff apply.
+make the diff apply. The [upstream proposal](https://github.com/haowjy/meridian-flow-docs/blob/a9d5e8706fa7f459f3c79b102f00281e1be0b5f2/work/native-composition-restart/upstream-proposal.md) is prepared but not submitted; the replacement tracker needs an authenticated account.
 
-These mechanics implement the ownership rules in the guide. Keep the policy
-centralized: a new surface must use these seams rather than add a competing
+Keep interaction policy centralized: a new surface must use these seams rather than add a competing
 keyboard, pointer, drop, or draft-recovery answer.
 
 ### Pointer, keyboard, and drop policy

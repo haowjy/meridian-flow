@@ -45,3 +45,15 @@ committed text: `ni` → `你`, with more than 500ms between updates, undoes fir
 `ni`, then to the original text. This occurs in ordinary prose as well as beside
 objects. Follow up after the native-selection fixes from PR #1573:
 group the composition as one user action rather than depending on capture timing.
+
+## Cell selection restoration
+
+A peer edit elsewhere in a document turns a full-table CellSelection into a
+TextSelection over its head cell; the table ring disappears and typing can replace
+that cell's text. This also happens with native caret projection disabled.
+`getRelativeSelection` in y-tiptap records the `cell` type but uses the selection's
+text endpoints; `restoreRelativeSelection` handles only all/node/nodeRange and
+falls back to TextSelection for cells. Preserve the cell boundary endpoints and
+selection type at that binding boundary, including partial selections, deleted or
+moved cells and Undo restore. Reproduce with two tabs: select the whole table in
+one, type in a following paragraph in the other, then inspect or type in the first.
