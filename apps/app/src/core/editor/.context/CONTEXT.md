@@ -538,6 +538,15 @@ keyboard, pointer, drop, or draft-recovery answer.
   unacknowledged updates). Both are known losses on
   [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
 
+- A room admitted read-only drops the writer's unsent typing without saying so. The registry
+  watches every session's access: once it is `read` with edits unacknowledged,
+  `DocumentSession.revertUnsentEdits` reads the words and has the transport take its outbox back
+  out of the Y.Doc (an Undo of the merged update, so the room and its IndexedDB copy equal the
+  server's again), and the words go to `observeUnsentTyping` (cause `closed`). The transport holds
+  Yjs garbage collection off from each local transaction until the server acknowledges, so text the
+  edit deleted can come back. One place for every cause: typing, a Discard written offline, a
+  Discard in flight.
+
 ### Draft room retirement
 
 - `DraftRoomPool` retains stable `draft:<draftId>` rooms without leases. The last

@@ -21,7 +21,8 @@
  * `access-changed` close freezes the room until the reconnect names the new
  * scope. It never resets the room: unacknowledged local edits stay in this
  * Y.Doc, and the reconnect's admission decides. An edit admission's handshake
- * delivers them; a read-only one holds them on screen.
+ * delivers them; a read-only one has the session take them back out
+ * (`revertUnacknowledgedUpdates`).
  *
  * A draft room's update refusal (`1008`) is bounded. One refusal reconnects
  * and resends, as any close does; after `MAX_DRAFT_UPDATE_REFUSALS` in a row
@@ -74,6 +75,7 @@ import {
   DRAFT_UPDATES_REFUSED,
   type ResetDisposition,
 } from "@/core/editor/document-session";
+import { isNotTyping } from "../editor/rescued-text";
 
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
@@ -300,6 +302,7 @@ export function createHocuspocusDocumentTransport({
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
     if (acknowledged && !terminal) {
       outbox = null;
+      typedOutbox = null;
       refusals = 0;
     }
     for (const listener of acknowledgementListeners) listener(acknowledged);
@@ -322,6 +325,8 @@ export function createHocuspocusDocumentTransport({
   let currentClosedWhy: ClosedOwnerWhy | null = null;
   let reasonPending = false;
   let outbox: Uint8Array | null = null;
+  /** The part of `outbox` the writer typed (`isNotTyping` leaves a Discard's text out). */
+  let typedOutbox: Uint8Array | null = null;
   let refusals = 0;
   let terminal = false;
   let destroyed = false;
@@ -356,7 +361,9 @@ export function createHocuspocusDocumentTransport({
   function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
-    document.off("update", handleDocumentUpdate);
+    // No admission is coming to name a reason.
+    if (currentAccess && reasonPending) publishAccess(currentAccess, currentClosedWhy);
+    stopObservingDocument();
     stopHints();
     acknowledgement.terminate();
     publish(state);
@@ -389,6 +396,8 @@ export function createHocuspocusDocumentTransport({
     if (origin !== provider) {
       const wasEmpty = outbox === null;
       outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
+      if (!isNotTyping(origin))
+        typedOutbox = typedOutbox ? Y.mergeUpdates([typedOutbox, update]) : update.slice();
       if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
     }
   }
@@ -406,10 +415,14 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (isAccessChangedClose(event) || event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
-      // Frozen until the reconnect's authenticated message names the new scope;
-      // a removed document has no reconnect, so it stays read-only.
-      publishAccess("read", accessChangedWhy(event) ?? null);
+    if (isAccessChangedClose(event)) {
+      // Frozen until the reconnect's authenticated message names the new scope. A close that
+      // names no reason (an unarchive, a restore) leaves it pending too: the answer is on its way.
+      const why = accessChangedWhy(event) ?? null;
+      publishAccess("read", why, !why);
+    } else if (event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
+      // A removed document has no reconnect, so it stays read-only.
+      publishAccess("read", null);
     }
     const state = classifyDocumentTransportClose(event);
     if (state) {
@@ -435,7 +448,26 @@ export function createHocuspocusDocumentTransport({
 
   // Store local bytes before the provider's listener sends and publishes its
   // acknowledgement edge. Session observers must see one complete pending edge.
+  // Text a local edit deletes keeps its content until the server acknowledges the edit, so a
+  // read-only room can take the edit back (`revertUpdate`). The collector would drop that content
+  // before the update event, so it is held off from before the transaction until the outbox is
+  // known.
+  const collectsGarbage = document.gc;
+  function handleBeforeTransaction(transaction: Y.Transaction): void {
+    if (transaction.origin !== provider) document.gc = false;
+  }
+  function handleAfterAllTransactions(): void {
+    document.gc = collectsGarbage && outbox === null;
+  }
+  function stopObservingDocument(): void {
+    document.off("update", handleDocumentUpdate);
+    document.off("beforeTransaction", handleBeforeTransaction);
+    document.off("afterAllTransactions", handleAfterAllTransactions);
+    document.gc = collectsGarbage;
+  }
   document.on("update", handleDocumentUpdate);
+  document.on("beforeTransaction", handleBeforeTransaction);
+  document.on("afterAllTransactions", handleAfterAllTransactions);
   const provider = new HocuspocusProvider({
     name: roomName,
     document,
@@ -472,6 +504,21 @@ export function createHocuspocusDocumentTransport({
 
   return {
     unacknowledgedUpdates: () => outbox,
+    unacknowledgedTyping: () => typedOutbox,
+    revertUnacknowledgedUpdates() {
+      if (!outbox) return;
+      const unsent = outbox;
+      outbox = null;
+      typedOutbox = null;
+      // The revert is the server's state again, not a change to send.
+      document.off("update", handleDocumentUpdate);
+      try {
+        revertUpdate(document, unsent);
+      } finally {
+        if (!terminal) document.on("update", handleDocumentUpdate);
+      }
+      for (const listener of acknowledgementListeners) listener(acknowledgement.acknowledged);
+    },
     whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     get synced() {
       return provider.synced;
@@ -506,7 +553,7 @@ export function createHocuspocusDocumentTransport({
       if (destroyed) return;
       destroyed = true;
       stopHints();
-      document.off("update", handleDocumentUpdate);
+      stopObservingDocument();
       acknowledgement.terminate();
       provider.destroy();
       websocket.destroy();
@@ -516,4 +563,26 @@ export function createHocuspocusDocumentTransport({
       changeEventListeners.clear();
     },
   };
+}
+
+/**
+ * Takes `update` back out of `document`: what it inserted is deleted and what it deleted is
+ * restored, as an Undo of it would, so the room and its local copy match the server again.
+ */
+function revertUpdate(document: Y.Doc, update: Uint8Array): void {
+  const { structs, ds } = Y.decodeUpdate(update);
+  const insertions = new Map<number, { clock: number; len: number }[]>();
+  for (const struct of structs) {
+    if (!(struct instanceof Y.Item)) continue;
+    const ranges = insertions.get(struct.id.client) ?? [];
+    ranges.push({ clock: struct.id.clock, len: struct.length });
+    insertions.set(struct.id.client, ranges);
+  }
+  const undo = new Y.UndoManager([...document.share.values()], { trackedOrigins: new Set() });
+  undo.undoStack.push({ insertions: { clients: insertions }, deletions: ds, meta: new Map() });
+  try {
+    undo.undo();
+  } finally {
+    undo.destroy();
+  }
 }
