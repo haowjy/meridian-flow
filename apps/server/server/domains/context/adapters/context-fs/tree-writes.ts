@@ -302,15 +302,14 @@ export interface SourceTree {
     input: { node: string; kind: "file" | "folder"; fromSourceId: string; onlyAt?: string },
   ): Promise<Result<DeletedNode, AdapterFault>>;
   /**
-   * A tree of new nodes under `dir`, made as one change (a Copy's result, minted before it is
-   * written): folders before what they hold, children in the order given. Each root must find
-   * its name free in the folder, else the answer is `replan` and nothing is made.
+   * Trees of new nodes at their destination folders, made as one change: folders before what
+   * they hold, children in the order given. Each root must find its name free in its folder,
+   * else the answer is `replan` and nothing is made.
    */
   insertTree(
     target: TreeWriteTarget,
     input: {
-      dir: readonly string[];
-      roots: readonly NewNode[];
+      trees: readonly { dir: readonly string[]; roots: readonly NewNode[] }[];
       position?: ContextSiblingPosition;
     },
   ): Promise<Result<{ kind: "inserted" } | { kind: "replan" }, AdapterFault>>;
@@ -529,43 +528,57 @@ export function createSourceTree(deps: {
       const result = await write<{ kind: "inserted" } | { kind: "replan" }>(
         [await list()],
         ([{ writer }]) => {
-          const parent = ensureFolders(writer, target, sourceId, input.dir);
-          if (!parent.ok) return parent;
-          const projection = writer.view(target.view);
-          if (input.roots.some((root) => childNamed(projection, parent.value, root.filename)))
-            return Ok({ kind: "replan" as const });
-          // Ranks are minted once per level: a create's own replay per node would cost a
-          // replay of the whole list each.
-          const at = indexAt(projection, parent.value, input.position);
-          const siblings = childrenOf(projection, parent.value);
-          const rootRanks = generateNKeysBetween(
-            siblings[at - 1]?.rank ?? null,
-            siblings[at]?.rank ?? null,
-            input.roots.length,
-          );
-          const put = (node: NewNode, parentId: string, rank: string) => {
-            writer.author(target.view, target.actor, {
-              type: "create",
-              kind: node.kind,
-              node: node.id,
-              name: node.filename,
-              parent: parentId,
-              source: sourceId,
-              rank,
-              ...(node.kind === "document" ? { filetype: node.filetype } : {}),
-              ...(node.kind === "file" ? { blob: node.blob } : {}),
-            } as TreeRecordInput);
-            if (node.kind !== "folder") return;
-            const ranks = generateNKeysBetween(null, null, node.children.length);
-            for (const [index, child] of node.children.entries())
-              put(child, node.id, ranks[index] as string);
-          };
-          for (const [index, root] of input.roots.entries())
-            put(root, parent.value, rootRanks[index] as string);
+          const before = writer.view(target.view);
+          for (const tree of input.trees) {
+            const parent = findFolder(before, sourceId, tree.dir);
+            if (
+              parent !== null &&
+              tree.roots.some((root) => childNamed(before, parent, root.filename))
+            )
+              return Ok({ kind: "replan" as const });
+          }
+          const groups: { roots: readonly NewNode[]; parent: string }[] = [];
+          for (const tree of input.trees) {
+            const parent = ensureFolders(writer, target, sourceId, tree.dir);
+            if (!parent.ok) return parent;
+            groups.push({ roots: tree.roots, parent: parent.value });
+          }
+          for (const group of groups) {
+            const projection = writer.view(target.view);
+            // Ranks are minted once per level: a create's own replay per node would cost a
+            // replay of the whole list each.
+            const at = indexAt(projection, group.parent, input.position);
+            const siblings = childrenOf(projection, group.parent);
+            const rootRanks = generateNKeysBetween(
+              siblings[at - 1]?.rank ?? null,
+              siblings[at]?.rank ?? null,
+              group.roots.length,
+            );
+            const put = (node: NewNode, parentId: string, rank: string) => {
+              writer.author(target.view, target.actor, {
+                type: "create",
+                kind: node.kind,
+                node: node.id,
+                name: node.filename,
+                parent: parentId,
+                source: sourceId,
+                rank,
+                ...(node.kind === "document" ? { filetype: node.filetype } : {}),
+                ...(node.kind === "file" ? { blob: node.blob } : {}),
+              } as TreeRecordInput);
+              if (node.kind !== "folder") return;
+              const ranks = generateNKeysBetween(null, null, node.children.length);
+              for (const [index, child] of node.children.entries())
+                put(child, node.id, ranks[index] as string);
+            };
+            for (const [index, root] of group.roots.entries())
+              put(root, group.parent, rootRanks[index] as string);
+          }
           return Ok({ kind: "inserted" as const });
         },
       );
-      if (result.ok && result.value.kind === "inserted") await annotateTree(input.roots);
+      if (result.ok && result.value.kind === "inserted")
+        await annotateTree(input.trees.flatMap((tree) => [...tree.roots]));
       return result;
     },
 

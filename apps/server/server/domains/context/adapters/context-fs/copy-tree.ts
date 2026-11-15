@@ -23,11 +23,12 @@ import {
   renderFilename,
 } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
+import { runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import {
+  type CollabDomain,
   createCopyIdentityMap,
   type DocumentCreationAggregate,
-  type MarkdownDocumentStore,
 } from "../../../collab/index.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -48,8 +49,8 @@ import type { NewNode, SourceTree } from "./tree-writes.js";
 export interface CopyTreeDeps {
   store: ContextDocumentStore;
   writes: SourceTree;
-  documentCreation: DocumentCreationAggregate;
-  documentSync: Pick<MarkdownDocumentStore, "installSeeds">;
+  documentCreation: Pick<DocumentCreationAggregate, "createDocumentsAtomically">;
+  documentSync: Pick<CollabDomain, "installSeeds" | "refreshDocumentProjection">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
   /** Who made the copy: `user:<id>`. */
   actor: string;
@@ -109,19 +110,24 @@ export async function planCopyTree(
   };
 }
 
-export async function insertCopiedTree(
+export async function insertPlannedTrees(
   deps: CopyTreeDeps,
-  input: {
-    dir: readonly string[];
-    plan: CopyPlan;
-    contents: ReadonlyMap<string, CopiedContent>;
-    position?: ContextSiblingPosition;
-  },
+  inputs: readonly { plan: CopyPlan; contents: ReadonlyMap<string, CopiedContent> }[],
+  position?: ContextSiblingPosition,
 ): Promise<Result<CopyOutcome, AdapterFault>> {
-  const { plan, contents } = input;
-  if (plan.dir.join("/") !== input.dir.join("/")) return Ok({ kind: "replan" });
-  const tree = toNewTree(plan.roots, contents);
-  if (!tree.ok) return tree;
+  const trees: { dir: readonly string[]; roots: readonly NewNode[] }[] = [];
+  const states = new Map<string, Uint8Array | null>();
+  const ids: string[] = [];
+  const binaryIds: string[] = [];
+  const documents = inputs.flatMap(({ plan }) => [...plan.documents]);
+  for (const { plan, contents } of inputs) {
+    const tree = toNewTree(plan.roots, contents);
+    if (!tree.ok) return tree;
+    trees.push({ dir: plan.dir, roots: tree.value.roots });
+    for (const [id, state] of tree.value.states) states.set(id, state);
+    ids.push(...tree.value.ids);
+    binaryIds.push(...tree.value.binaryIds);
+  }
   let refusal: AdapterFault | null = null;
   let replan = false;
   // Rows, then each tracked document's first state, then its arrival: one unit.
@@ -132,9 +138,8 @@ export async function insertCopiedTree(
         const inserted = await deps.writes.insertTree(
           { view: LIVE, actor: deps.actor },
           {
-            dir: input.dir,
-            roots: tree.value.roots,
-            ...(input.position ? { position: input.position } : {}),
+            trees,
+            ...(position ? { position } : {}),
           },
         );
         if (!inserted.ok) {
@@ -146,16 +151,16 @@ export async function insertCopiedTree(
           return null;
         }
         // Arrivals settle ahead refs under the source's namespace key, taken after the list's.
-        await deps.arrivals?.lockNamespaces(tree.value.ids as DocumentId[], [
+        await deps.arrivals?.lockNamespaces(ids as DocumentId[], [
           (await deps.writes.sourceId()) as never,
         ]);
-        return plan.documents.map((document) => document.id as DocumentId);
+        return documents.map((document) => document.id as DocumentId);
       },
       initializeContent: (documentIds) =>
         deps.documentSync.installSeeds(
           documentIds.map((documentId) => ({
             documentId,
-            state: tree.value.states.get(documentId) ?? null,
+            state: states.get(documentId) ?? null,
           })),
         ),
     });
@@ -168,8 +173,17 @@ export async function insertCopiedTree(
   if (replan || !created.created) return Ok({ kind: "replan" });
   // An upload's arrival publishes with its live identity; a tracked document's waited for its
   // content, in the creation aggregate.
-  await deps.arrivals?.settle(tree.value.binaryIds as DocumentId[]);
-  return Ok({ kind: "copied", entries: entriesOf(plan.roots) });
+  await deps.arrivals?.settle(binaryIds as DocumentId[]);
+  // Projections read committed rows and need no namespace lock. Match Copy's bounded fan-out.
+  runAfterDrizzleCommit(() => {
+    const queue = documents.map((document) => document.id as DocumentId);
+    const worker = async () => {
+      for (let id = queue.shift(); id; id = queue.shift())
+        await deps.documentSync.refreshDocumentProjection({ documentId: id });
+    };
+    void Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+  });
+  return Ok({ kind: "copied", entries: inputs.flatMap(({ plan }) => entriesOf(plan.roots)) });
 }
 
 /**
@@ -229,7 +243,7 @@ function toNewTree(
       id: node.id,
       filename,
       filetype: source.filetype,
-      metadata: { copiedFrom: content.copiedFrom },
+      ...(content.copiedFrom ? { metadata: { copiedFrom: content.copiedFrom } } : {}),
     });
   };
   const converted: NewNode[] = [];
