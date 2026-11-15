@@ -51,6 +51,7 @@ function DialogContent({
   showCloseButton = true,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
@@ -66,6 +67,10 @@ function DialogContent({
           className,
         )}
         {...focus}
+        onEscapeKeyDown={(event) => {
+          keepEscapeForField(event);
+          onEscapeKeyDown?.(event);
+        }}
         {...props}
       >
         {children}
@@ -79,6 +84,18 @@ function DialogContent({
       </DialogPrimitive.Content>
     </DialogPortal>
   );
+}
+
+/**
+ * Escape in an inline edit field cancels the edit and nothing else. Radix hears Escape on the
+ * document before the field's own handler runs, so the dialog is told to leave it alone here.
+ */
+export function keepEscapeForField(event: {
+  target: EventTarget | null;
+  preventDefault: () => void;
+}) {
+  if (event.target instanceof Element && event.target.closest(".inline-edit-field"))
+    event.preventDefault();
 }
 
 type AutoFocusHandler = (event: Event) => void;

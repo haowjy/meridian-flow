@@ -76,15 +76,17 @@ export function useWorkMetadataController(
     setClosed(null);
     end("retried");
     setEditing(false);
-    setAnnouncement(t`Goal saved`);
     focusDisplay();
-    // The command is the driver's: what it settles to only matters if it was not applied.
-    saveWork({ goal }).catch((cause: unknown) => {
-      setDraft(goal);
-      setEditing(true);
-      if (cause instanceof WorkReturnedError) setClosed(workClosedSentence(cause.why));
-      else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
-    });
+    // The command is the driver's: the announcement waits for what it settles to.
+    saveWork({ goal }).then(
+      () => setAnnouncement(t`Goal saved`),
+      (cause: unknown) => {
+        setDraft(goal);
+        setEditing(true);
+        if (cause instanceof WorkReturnedError) setClosed(workClosedSentence(cause.why));
+        else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
+      },
+    );
     return true;
   }, [dirty, draft, editing, focusDisplay, saveWork, end, fail]);
   const request = useCallback(
