@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * `with-dev-env.ts -- <command…>`: run a command with this checkout's dev env
  * (`applyDevEnvToProcess`). The dev stack runs each service through it, so a

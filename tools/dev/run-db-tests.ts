@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /** Run the shared DB suite against a database owned by this invocation. */
 import { fork, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
       console.log(`DB tests: created owned database ${targetDb}.`);
       const migrationExit = await run(
         repoRoot,
-        ["exec", "tsx", "tools/dev/migrate-db.ts", "--managed-test-database"],
+        ["exec", "bun", "tools/dev/migrate-db.ts", "--managed-test-database"],
         databaseUrl,
       );
       if (migrationExit !== 0)

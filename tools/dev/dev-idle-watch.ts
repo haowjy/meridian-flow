@@ -2,10 +2,10 @@
  * Runs in window `idle-watch` of a dev stack's tmux session and stops the stack once it has
  * done no work for the idle timeout. The rule is in `lib/dev-idle.ts`.
  *
- * Started with plain `node` (type stripping), not tsx: tsx and its pnpm wrapper held
- * ~360 MB per stack against ~70 MB for this. Erasable syntax only, `.ts` import specifiers.
+ * Started with `bun` directly, not through pnpm: it lives as long as the stack, and a bare
+ * bun process holds ~20 MB where tsx and its pnpm wrapper held ~360 MB.
  *
- * Usage: node dev-idle-watch.ts <session> <minutes>
+ * Usage: bun dev-idle-watch.ts <session> <minutes>
  */
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";

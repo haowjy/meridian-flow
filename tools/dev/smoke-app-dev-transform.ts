@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * App dev-transform smoke — boots the @meridian/app dev server far enough to
  * SSR-render real routes, then asserts their exact public contract.
