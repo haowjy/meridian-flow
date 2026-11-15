@@ -578,22 +578,27 @@ export async function syncRows(
 
   const kept = [...(await keptBranches(tx, list))];
   const text = await pendingText(tx, kept);
-  const drafted = new Map<string, Map<string, ProjectedRow>>();
-  const faulted = new Map<string, Set<string>>();
+  const works = new Map<
+    string,
+    { rows: Map<string, ProjectedRow>; faulted: Set<string>; pending: TreeRecord[] }
+  >();
   for (const branchId of kept) {
     const pending = pendingRecords(doc, branchId);
     if (!text.has(branchId) && pending.length === 0) continue;
     const projection = replayView(doc, { draft: branchId }, text.get(branchId));
-    drafted.set(branchId, shownRows(projection));
-    faulted.set(branchId, changedFolders(live, projection, pending));
+    works.set(branchId, {
+      rows: shownRows(projection),
+      faulted: changedFolders(live, projection, pending),
+      pending,
+    });
   }
-  await dropForeignSources(tx, list, [liveRows, ...drafted.values()]);
+  await dropForeignSources(tx, list, [liveRows, ...[...works.values()].map((work) => work.rows)]);
   const next = new Map(
-    [...drafted].map(([branchId, rows]) => {
-      const differing = branchRows(liveRows, rows);
+    [...works].map(([branchId, { rows, faulted, pending }]) => {
+      const differing = branchRows(liveRows, rows, pending);
       // A folder whose move cannot land shows as live does and is still a change: its row stands
       // for it, so the stored count is the one the Changes list shows.
-      for (const id of faulted.get(branchId) ?? []) {
+      for (const id of faulted) {
         const row = rows.get(id);
         if (row && !differing.has(id)) differing.set(id, { ...row, existsOnlyInDraft: false });
       }

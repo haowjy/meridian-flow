@@ -123,10 +123,12 @@ the replay uses them (package `AGENTS.md`).
   its root id while it stands for something it put back: an entry, or a member of a folder's
   cascade (a restore of one chapter out of a deleted folder), until a restore lifts that again.
   A Redo of a Redo's Undo, and so on round, works every time.
-  Redo reads the same ownership as Undo (`holds` in `undo.ts`): an Undo whose opposite record
-  took its target off the top still holds the fact while the record it left holding it still
-  does (`TreeProjection.undoneTo`). A change since that an Undo took back, a crossing taken back
-  included, holds nothing, so it is not in the Redo's way. No record order is compared.
+  An Undo's opposite record that takes its target off shows the name the stack puts back, even
+  when its author's copy had not yet seen an earlier rename: every copy settles on the same name.
+  Redo reads in force the same way (`holds` in `undo.ts`, over `recordsInForce`): an Undo holds
+  its fact while no record since that is in force set it, other than an Undo of one of those. A
+  change since that an Undo took back, a crossing taken back included, is not in the Redo's way;
+  an Undo of an earlier change is.
 - **Undo writes where the change stands.** `undoChange` takes the view the caller acts in; when the
   record in force there is live (a drafted change an Apply landed), the opposite record goes to
   live. Its `draft` says which. No caller retries in another view.
@@ -137,6 +139,18 @@ the replay uses them (package `AGENTS.md`).
   (`from`) all match by the root. If none is in the view (still discarded, applied away,
   superseded), Undo answers `unknown`. Undo of an Apply and `restoreEntry` use the same match.
   `restores`, `restoredBy`, `appliedBy` and `fromDraft` say who and from where, not which record.
+- **A record is in force while no later record in force undoes its root** (`recordsInForce`, in
+  `undo.ts`; the one reading of it). `undoChange` answers `already` for a record that is not, and
+  `appliedNodes(doc, command, restoredByApply)` is the one reader of what of an Apply still
+  stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
+  ids `undoApply` takes back) is in force by the same rule. An Apply that only brought a document
+  back from Trash lists it until Un-Apply or a card's Undo takes the restore back. A
+  tab can tell the Apply's tree half has ended (a card's Undo of the drafted change took the copy
+  back). A Redo (an undo of the undo) puts it back in force, and an Undo of it then undoes the
+  Redo (`redoneAs`) when the Undos in the chain put back exactly what they undid, else it answers
+  `changed_since`. A Redo puts back what the move did, its numbered name included, even if the
+  clash that numbered it has gone since. `appliedBy` keeps copies not in force, so `undoApply` reports them `already`;
+  a copy of the Apply's own Undo record may bring one back in force on the way.
 - **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
   numbers only the clashes nobody saw. A move that numbers its arrival carries the name itself,
   not a paired `rename`.

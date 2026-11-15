@@ -4,14 +4,17 @@ import type {
   AgentsLevel,
   SaveAgentsRequest,
   SaveOutcome,
+  ThreadAgent,
 } from "@meridian/contracts/agents";
 import {
   agentBuiltinFileSchema,
   agentCatalogSchema,
   agentFilesSchema,
   saveAgentsResponseSchema,
+  threadAgentSchema,
   undoSaveResponseSchema,
 } from "@meridian/contracts/agents";
+import { apiThreadAgentPath } from "@meridian/contracts/protocol";
 import { getJson, postJson } from "./http-client";
 
 export async function listAgentCatalog(
@@ -56,4 +59,8 @@ export async function readBuiltinAgentFile(signal: AbortSignal, path: string): P
   const query = new URLSearchParams({ path });
   return (await getJson(`/api/agents/builtin?${query}`, { signal, schema: agentBuiltinFileSchema }))
     .text;
+}
+
+export function readThreadAgent(signal: AbortSignal, threadId: string): Promise<ThreadAgent> {
+  return getJson(apiThreadAgentPath(threadId), { signal, schema: threadAgentSchema });
 }

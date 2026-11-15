@@ -38,9 +38,10 @@ filename parsing.
 
 The top bar has hamburger, project identity, breadcrumb, and the side's button.
 It has no back button. The phone shell mounts only main's item and the Sheet's,
-unlike desktop's kept host. The Sheet closes when the history position changes
-(`__TSR_index`), not the entry's key: an address repair that replaces the entry
-(a rename) keeps it open.
+unlike desktop's kept host. The Sheet closes on an open (`routing/use-on-open.ts`,
+which a narrow desktop window's covering sidebar shares): the history position
+changes (`__TSR_index`), not the entry's key, so an address repair that replaces
+the entry (a rename) keeps it open.
 
 ## Document registry and review
 

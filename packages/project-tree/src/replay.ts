@@ -117,12 +117,6 @@ export type TreeProjection = {
    * the delete was made): a change an Undo took back does not count.
    */
   sinceEntry: ReadonlyMap<string, { label: boolean; place: boolean; deleted: boolean }>;
-  /**
-   * Per Undo of a move or rename that took its target off the top (by the id a Redo names): the
-   * record it left holding each fact, null for none. The Undo holds that fact while the same
-   * record still does: a change an Undo took back since does not count.
-   */
-  undoneTo: ReadonlyMap<string, { label?: string | null; place?: string | null }>;
   /** Rule 14: the nodes that are in another list now. */
   away: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
@@ -220,7 +214,6 @@ export function replay(
   // What a restore lifted, and what a delete that took a restore back put in force again, by
   // the id an Undo of it names: taking either back undoes exactly that.
   const lifted = new Map<string, Lifted>();
-  const undoneTo = new Map<string, { label?: string | null; place?: string | null }>();
   const pendingOn = new Map<string, Set<string>>();
   // A drafted change and the drafted record that takes it back leave nothing pending.
   const pend = (record: TreeRecord) => {
@@ -309,9 +302,8 @@ export function replay(
 
   // A record sets a fact: it goes on the node's stack of setters, and an Undo's opposite record
   // takes its target off instead, putting back the arrival it moved (so an undone move or
-  // rename shows the names it showed before, not a numbered copy).
+  // rename shows the names it showed before, not a numbered copy). Returns the setter taken off.
   const setFact = <Before>(
-    fact: "label" | "place",
     stack: Array<Setter<Before>>,
     node: Working,
     record: TreeRecord,
@@ -328,9 +320,7 @@ export function replay(
     ) {
       stack.pop();
       node.arrivedAt = top.arrivedBefore;
-      const root = record.carries ?? record.id;
-      undoneTo.set(root, { ...undoneTo.get(root), [fact]: stack.at(-1)?.id ?? null });
-      return;
+      return top;
     }
     stack.push({
       id: record.id,
@@ -339,6 +329,7 @@ export function replay(
       arrivedBefore,
     });
     if (changed) node.arrivedAt = index;
+    return undefined;
   };
 
   for (const [index, value] of values.entries()) {
@@ -456,7 +447,6 @@ export function replay(
         // One arrival sets both facts, so both answer to the arrival before it.
         const arrivedBefore = node.arrivedAt;
         setFact(
-          "place",
           node.place,
           node,
           record,
@@ -465,8 +455,7 @@ export function replay(
           node.parent !== record.parent,
         );
         if (record.name !== undefined) {
-          setFact(
-            "label",
+          const undone = setFact(
             node.label,
             node,
             record,
@@ -475,7 +464,7 @@ export function replay(
             node.name !== shownName(node.kind, record.name, node.filetype),
             arrivedBefore,
           );
-          node.name = shownName(node.kind, record.name, node.filetype);
+          node.name = undone?.before.name ?? shownName(node.kind, record.name, node.filetype);
           if (record.actor.startsWith("user:")) node.provisional = false;
         }
         node.parent = record.parent;
@@ -500,8 +489,8 @@ export function replay(
         else if (record.undoes === undefined)
           lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
-        setFact(
-          "label",
+        // An Undo shows the name it took back to, even one its author's copy had not seen yet.
+        const undone = setFact(
           node.label,
           node,
           record,
@@ -509,7 +498,9 @@ export function replay(
           { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
           node.name !== shownName(node.kind, record.name, record.filetype ?? node.filetype),
         );
-        node.name = shownName(node.kind, record.name, record.filetype ?? node.filetype);
+        node.name =
+          undone?.before.name ??
+          shownName(node.kind, record.name, record.filetype ?? node.filetype);
         if (record.filetype) node.filetype = record.filetype;
         // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
         if (record.actor.startsWith("user:")) node.provisional = false;
@@ -562,7 +553,6 @@ export function replay(
   if (purgedAt.size > 0 || leftAt.size > 0) rescueOrphans(nodes, purgedAt, leftAt);
   return {
     ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
-    undoneTo,
     away: new Set([...leftAt.keys()].filter(isAway)),
     dropped: [],
   };
@@ -674,7 +664,7 @@ function derive(
   skipped: TreeProjection["skipped"],
   rescued: string[],
   gone: ReadonlySet<string>,
-): Omit<TreeProjection, "dropped" | "away" | "undoneTo"> {
+): Omit<TreeProjection, "dropped" | "away"> {
   const children = new Map<string, Working[]>();
   for (const node of nodes.values()) {
     const siblings = children.get(node.parent);

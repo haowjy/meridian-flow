@@ -23,7 +23,7 @@ import {
 import { placeIn, type TreeNode, type TreeProjection } from "./replay.js";
 import { childrenOf, descendantsOf, nameAmong, rankAmong, rankAt } from "./shape.js";
 import { writable } from "./validate.js";
-import { inForce, LIVE, listRecords, replayView, type View } from "./view.js";
+import { LIVE, lastOfFamily, listRecords, replayView, type View } from "./view.js";
 
 /**
  * Makes records in one copy of the list, against what that copy's own view shows. The browser
@@ -310,7 +310,7 @@ export class TreeWriter {
    * entries, and restoring one must not undo the other.
    */
   restoreEntry(view: View, actor: Actor, deleteId: string): RestoreRecord | "unknown" {
-    const entry = inForce(this.doc, view, deleteId);
+    const entry = lastOfFamily(this.doc, view, deleteId);
     if (entry === "unknown" || entry?.type !== "delete") return "unknown";
     return this.author(
       view,

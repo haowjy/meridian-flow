@@ -88,12 +88,16 @@ export function viewRecords(
 }
 
 /**
- * The last record in force in the view that is the record `id` names or a copy of it, whichever
+ * The last record of the family in the view that is the record `id` names or a copy of it, whichever
  * of the original or its copies `id` is (a copy always names the root original in `carries`).
  * "unknown" when no record of the list has that id; undefined when none of the family is in the
  * view.
  */
-export function inForce(doc: Y.Doc, view: View, id: string): TreeRecord | "unknown" | undefined {
+export function lastOfFamily(
+  doc: Y.Doc,
+  view: View,
+  id: string,
+): TreeRecord | "unknown" | undefined {
   const named = listRecords(doc).find((record) => record.id === id);
   if (!named) return "unknown";
   const root = named.carries ?? named.id;

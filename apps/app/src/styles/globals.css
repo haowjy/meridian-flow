@@ -404,9 +404,11 @@
    (FoldToggle, activity summary) keep min-w-0 on the truncating child.
 
    Viewport shell: `app-frame` locks the outer shell to one screen; `app-scroll`
-   is the only vertical scroll opt-in inside it (see DESIGN.md § Layout). */
+   is the only vertical scroll opt-in inside it (see DESIGN.md § Layout). Clip, not
+   hidden: a hidden box still scrolls when focus reaches content past its edge, and the
+   whole app slides sideways. */
 @utility app-frame {
-  @apply h-svh max-h-svh w-full min-h-0 overflow-hidden overscroll-none;
+  @apply h-svh max-h-svh w-full min-h-0 overflow-clip;
 }
 
 @utility app-scroll {

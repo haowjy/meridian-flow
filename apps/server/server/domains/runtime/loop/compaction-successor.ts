@@ -57,6 +57,8 @@ export type PreparedCompaction =
       metadata: JsonObject;
       provisionalBakeId: string;
       composition: Awaited<ReturnType<typeof composeLivePromptBake>>;
+      /** The newest saved Agent's binding the bake was composed from; written with the boundary. */
+      refreshedBinding: Awaited<ReturnType<OrchestratorDeps["agentCatalog"]["refreshBinding"]>>;
       summaryBlock: ReturnType<typeof contentForBlockInput>;
       /** The documents the compaction re-shows after its summary, persisted on its turn. */
       reshown: ReshownDocuments;
@@ -268,11 +270,39 @@ export async function prepareCompactionSuccessor(args: {
       recorded,
       revisions: deps.documentRevisions,
     });
+    // The successor's bake and its first request read the newest save; the binding row itself is
+    // replaced in the boundary's transaction (`completeCompactionCurrent`), so a retry repeats both.
+    // A failed catalog read keeps the current binding: it never fails the compaction or the reply.
+    const refreshedBinding = await deps.agentCatalog
+      .refreshBinding(thread.userId, thread.projectId, thread)
+      .catch((error: unknown) => {
+        if (input.signal?.aborted) throw error;
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.compaction",
+          name: "binding_refresh.failed",
+          correlation: { threadId: input.threadId, turnId: placeholder.id },
+          payload: unknownToEventPayload(error),
+        });
+        return undefined;
+      });
+    const successorDeps = refreshedBinding
+      ? {
+          ...deps,
+          agentRevisions: {
+            ...deps.agentRevisions,
+            readThreadBinding: async (threadId: string) =>
+              threadId === thread.id
+                ? refreshedBinding
+                : deps.agentRevisions.readThreadBinding(threadId),
+          },
+        }
+      : deps;
     const contextInput = {
       thread,
       turns: allTurns,
       blocks: allBlocks,
-      agentRevisions: deps.agentRevisions,
+      agentRevisions: successorDeps.agentRevisions,
       threads: deps.repos.threads,
       toolRegistry: deps.toolRegistry,
       baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
@@ -330,7 +360,7 @@ export async function prepareCompactionSuccessor(args: {
         selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
       ) =>
         prepareRequestContext({
-          deps,
+          deps: successorDeps,
           thread,
           threadId: input.threadId,
           referenceTurnId: placeholder.id,
@@ -404,6 +434,7 @@ export async function prepareCompactionSuccessor(args: {
       metadata: staged.metadata,
       provisionalBakeId,
       composition,
+      refreshedBinding,
       summaryBlock,
       reshown: staged.reshown,
       tokensAfter,
@@ -459,6 +490,13 @@ export async function completeCompactionCurrent(input: {
   if (prepared?.kind === "usable" && failure === undefined) {
     const persisted = [prepared.summaryBlock, ...prepared.reshown.blocks];
     blocks = persisted.map(localBlockFromEvent);
+    if (prepared.refreshedBinding)
+      await deps.agentRevisions.replaceThreadBinding(
+        threadId,
+        prepared.refreshedBinding.revision.id,
+        prepared.refreshedBinding.configuration,
+        prepared.refreshedBinding.invokedSkills,
+      );
     await beginPromptEpoch(deps, {
       threadId,
       boundaryTurnId: placeholder.id,
