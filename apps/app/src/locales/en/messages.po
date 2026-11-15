@@ -2944,6 +2944,10 @@ msgstr "Creating a Work…"
 msgid "Creating project…"
 msgstr "Creating project…"
 
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "CRLF line ending"
+msgstr "CRLF line ending"
+
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 #~ msgid "Current block type"
 #~ msgstr "Current block type"
@@ -3499,6 +3503,10 @@ msgstr "Embedded blocks take no links."
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Empty"
 msgstr "Empty"
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Empty file"
+msgstr "Empty file"
 
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "Enclosing folder"
@@ -4129,6 +4137,10 @@ msgstr "Left out:"
 #: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
 msgstr "Let's work on it"
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "LF line ending"
+msgstr "LF line ending"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
@@ -4783,6 +4795,10 @@ msgstr "No matches found before the search stopped"
 #: src/features/agents/AgentPicker.tsx
 msgid "No model"
 msgstr "No model"
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "No newline at end of file"
+msgstr "No newline at end of file"
 
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."

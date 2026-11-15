@@ -104,6 +104,12 @@ function DiffView({ saved, now }: { saved: string | null; now: string | null }) 
       </p>
     );
   const sides = { saved: saved !== null, now: now !== null };
+  if (blocks.length === 0)
+    return (
+      <p className={cn(role.emptyLine, "px-4 py-3")}>
+        <Trans>Empty file</Trans>
+      </p>
+    );
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div
@@ -227,7 +233,9 @@ function Cell({
           hideNarrow && "max-sm:hidden",
         )}
       >
-        {cell === null ? null : tone === null ? (
+        {cell?.empty ? (
+          <Trans>Empty file</Trans>
+        ) : cell === null ? null : tone === null ? (
           cell.text || " "
         ) : (
           <>
@@ -241,6 +249,19 @@ function Cell({
               : cell.text || " "}
           </>
         )}
+        {cell && !cell.empty && tone !== null && cell.ending === "none" ? (
+          <span className="block text-muted-foreground">
+            <Trans>No newline at end of file</Trans>
+          </span>
+        ) : cell && tone !== null && cell.ending === "CRLF" ? (
+          <span className="block text-muted-foreground">
+            <Trans>CRLF line ending</Trans>
+          </span>
+        ) : cell && tone !== null && cell.ending === "LF" ? (
+          <span className="block text-muted-foreground">
+            <Trans>LF line ending</Trans>
+          </span>
+        ) : null}
       </span>
     </>
   );

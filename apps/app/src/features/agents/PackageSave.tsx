@@ -65,11 +65,12 @@ export function PackageSave({
     <StateAndSave projectId={projectId} pkg={pkg} status={status} look={look} onSave={save} />
   ) : null;
   if (!content) return null;
-  // The files changed since the last save, as a count before the state. An open file's
-  // "Unsaved" is that list itself (`StateAndSave`); a 264px row has no room for the count beside
-  // a Save's word, so there it waits for the word to go; after a Save there is nothing to list.
   const counted =
-    look === "package" ? !word : word ? word.kind !== "saved" : status && failsSave(status);
+    look === "package"
+      ? word?.kind !== "saved"
+      : word
+        ? word.kind !== "saved"
+        : status && failsSave(status);
   const changes =
     status && counted ? <PackageChanges projectId={projectId} pkg={pkg} status={status} /> : null;
   return (

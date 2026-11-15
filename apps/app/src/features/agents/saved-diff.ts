@@ -11,6 +11,8 @@ import {
 export interface DiffCell {
   n: number;
   text: string;
+  ending: "LF" | "CRLF" | "none";
+  empty: boolean;
   /** Runs of the line, `changed` on the words the other side lacks; absent for a whole-line change. */
   runs?: Array<{ text: string; changed: boolean }>;
 }
@@ -20,11 +22,17 @@ export type DiffRow =
   /** A side is null where the other side's lines have no counterpart. */
   | { kind: "changed"; saved: DiffCell | null; now: DiffCell | null };
 
-const linesOf = (text: string | null): string[] => {
-  if (!text) return [];
-  const lines = text.split("\n");
-  if (lines[lines.length - 1] === "") lines.pop();
-  return lines;
+const linesOf = (text: string | null): string[] =>
+  text === null ? [] : text === "" ? [""] : (text.match(/[^\n]*\n|[^\n]+$/g) ?? []);
+
+const cellOf = (line: string, n: number): DiffCell => {
+  const ending = line.endsWith("\r\n") ? "CRLF" : line.endsWith("\n") ? "LF" : "none";
+  return {
+    n,
+    text: line.slice(0, line.length - (ending === "CRLF" ? 2 : ending === "LF" ? 1 : 0)),
+    ending,
+    empty: line === "",
+  };
 };
 
 /** `saved` null for an added file, `now` null for a deleted one. */
@@ -43,7 +51,9 @@ export function diffRows(saved: string | null, now: string | null): DiffRow[] {
       const x = removed[k];
       const y = added[k];
       const paired = x !== undefined && y !== undefined;
-      const words = paired ? wordDiff(a[x], b[y]) : [];
+      const left = x === undefined ? null : cellOf(a[x], x + 1);
+      const right = y === undefined ? null : cellOf(b[y], y + 1);
+      const words = left && right ? wordDiff(left.text, right.text) : [];
       const runsOf = (skip: number) =>
         paired
           ? words.flatMap(([op, text]) =>
@@ -52,8 +62,8 @@ export function diffRows(saved: string | null, now: string | null): DiffRow[] {
           : undefined;
       rows.push({
         kind: "changed",
-        saved: x === undefined ? null : { n: x + 1, text: a[x], runs: runsOf(DIFF_INSERT) },
-        now: y === undefined ? null : { n: y + 1, text: b[y], runs: runsOf(DIFF_DELETE) },
+        saved: left && { ...left, runs: runsOf(DIFF_INSERT) },
+        now: right && { ...right, runs: runsOf(DIFF_DELETE) },
       });
     }
     removed = [];
@@ -67,8 +77,8 @@ export function diffRows(saved: string | null, now: string | null): DiffRow[] {
         flush();
         rows.push({
           kind: "same",
-          saved: { n: i + 1, text: a[i] },
-          now: { n: j + 1, text: b[j] },
+          saved: cellOf(a[i], i + 1),
+          now: cellOf(b[j], j + 1),
         });
         i++;
         j++;
@@ -91,6 +101,7 @@ export type DiffBlock =
  * row so an opened fold stays open. A file with no change folds nothing.
  */
 export function foldRows(rows: DiffRow[]): DiffBlock[] {
+  if (rows.length === 0) return [];
   if (!rows.some((row) => row.kind === "changed")) return [{ kind: "rows", rows }];
   const blocks: DiffBlock[] = [];
   let k = 0;

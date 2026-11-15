@@ -2944,6 +2944,10 @@ msgstr ""
 msgid "Creating project…"
 msgstr ""
 
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "CRLF line ending"
+msgstr ""
+
 #: src/features/editor/surfaces/blocks/BlockMenu.tsx
 #~ msgid "Current block type"
 #~ msgstr ""
@@ -3498,6 +3502,10 @@ msgstr ""
 
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "Empty"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "Empty file"
 msgstr ""
 
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
@@ -4129,6 +4137,10 @@ msgstr ""
 #: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
 msgstr "我们开始吧"
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "LF line ending"
+msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
@@ -4782,6 +4794,10 @@ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No model"
+msgstr ""
+
+#: src/features/agents/SavedDiffDialog.tsx
+msgid "No newline at end of file"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
