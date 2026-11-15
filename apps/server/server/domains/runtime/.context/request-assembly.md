@@ -12,7 +12,11 @@ cache warmth.
 The immutable thread binding supplies the retained Agent body, resolved model,
 tools, effort, and invocation overlay. A spawn-time `appendSystemPrompt` is
 additive, never a replacement. Missing binding fails before gateway dispatch;
-catalog removal or advancement cannot change a retained binding. Forks keep the
+catalog removal or advancement cannot change a retained binding, except at a compaction:
+there the successor's bake and first request read the newest saved Agent
+(`agentCatalog.refreshBinding`, computed in preparation), and the binding row is
+replaced in the compaction's transaction just before `beginPromptEpoch`. No
+other boundary refreshes it, and compaction writes no notice line. Forks keep the
 source binding and cutoff bake; only handoff selects a different Agent and
 starts unbaked.
 

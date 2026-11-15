@@ -93,7 +93,8 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   broken), what it hides and what hides it (`layerByName`; `combineByName` is its winners), and every package's Save state. A
   file's own findings drop the file name. `builtinFile` reads a built-in's text by that path.
   Routes: `GET /api/agents/files`, `GET /api/agents/builtin`.
-- A chat's binding keeps its revision whatever is saved later. A skill invoked with `/` pins the files it was first read from; invoking it again reads the pin.
+- A chat's binding keeps its revision whatever is saved later, until the chat compacts. A skill invoked with `/` pins the files it was first read from; invoking it again reads the pin.
+- `refreshBinding(userId, projectId, threadId)` reads the binding the chat moves onto at a compaction: the newest save of its Agent's name (an Agent that is gone, or whose newest save can't run, resolves to the bound revision, so nothing changes), with each invoked skill pinned again to its saved version (a skill no longer saved keeps its pin). It writes nothing; the runtime writes it with `replaceThreadBinding` inside the compaction's transaction, which leaves the invocation overlay and the chat's per-chat model override alone. There is no Reload. `boundAgent` backs the chat's read-only definition view (`GET /api/threads/:id/agent`) and says `stale` when a refresh would change the binding.
 - A level root with no `mars.toml` is a package named for the level. When package-wide tool
   rules are supported, deleting that manifest drops them.
 - The adapter reads files one by one, so a multi-file Apply can be seen half done; an Agent's

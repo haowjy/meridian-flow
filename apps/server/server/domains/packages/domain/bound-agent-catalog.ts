@@ -15,6 +15,7 @@ import type {
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type {
   AgentRevision,
+  AgentRevisionBinding,
   AgentRevisionStore,
   CatalogRevision,
 } from "../ports/agent-revision-store.js";
@@ -83,6 +84,26 @@ export interface BoundAgentCatalog extends PackageSaver {
    * hides, and every package's Save state.
    */
   files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
+  /**
+   * The binding a chat moves onto when it compacts: the newest saved Agent of its name, with each
+   * skill the chat invoked pinned again to the saved version (one no longer saved keeps its pin).
+   * Undefined to keep the binding: the Agent is gone, its newest save can't run, or the chat is
+   * already on it. Reads only; the caller writes it with `replaceThreadBinding`.
+   */
+  refreshBinding(
+    userId: string,
+    projectId: string | undefined,
+    threadId: string,
+  ): Promise<(AgentRevisionBinding & { revision: AgentRevision }) | undefined>;
+  /**
+   * The Agent file a chat is bound to, as saved, and whether a newer save would take over at the
+   * chat's next compaction. Undefined for a chat with no Agent file (a generic subagent).
+   */
+  boundAgent(
+    userId: string,
+    projectId: string | undefined,
+    threadId: string,
+  ): Promise<{ name: string; text: string; stale: boolean } | undefined>;
   /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
   builtinFile(path: string): string | undefined;
   /** The saved skills a writer can invoke with `/`: built-in, user and project, combined by name. */
@@ -182,7 +203,7 @@ export function createBoundAgentCatalog(input: {
     levelFiles: input.levelFiles,
   });
 
-  return {
+  const catalog: BoundAgentCatalog = {
     ...saver,
 
     async list(userId, { projectId }) {
@@ -362,7 +383,46 @@ export function createBoundAgentCatalog(input: {
         reference: skillReference(packageRevisionId, winner.value.package.files, winner.value.slug),
       };
     },
+
+    async boundAgent(userId, projectId, threadId) {
+      const bound = await store.readThreadBinding(threadId);
+      if (!bound?.revision) return undefined;
+      const { revision } = bound;
+      const source = await store.readSource(revision.packageRevisionId);
+      const text = source?.files[agentPath(revision.slug)];
+      if (text === undefined) return undefined;
+      return {
+        name: revision.definition.metadata.name ?? revision.slug,
+        text,
+        stale: (await catalog.refreshBinding(userId, projectId, threadId)) !== undefined,
+      };
+    },
+
+    async refreshBinding(userId, projectId, threadId) {
+      const bound = await store.readThreadBinding(threadId);
+      if (!bound?.revision) return undefined;
+      // The bound version is the fallback, so an Agent that is gone or whose newest save can't
+      // run resolves to what the chat already has.
+      const newest = await catalog.resolvePrimary(
+        userId,
+        { slug: bound.revision.slug, definitionRevisionId: bound.revision.id },
+        projectId,
+      );
+      if (!newest.ok || newest.revision.id === bound.revision.id) return undefined;
+      const pins: Record<string, RetainedSkillReference> = {};
+      for (const slug of Object.keys(bound.invokedSkills)) {
+        const skill = await catalog.resolveSkill(userId, { projectId, slug });
+        if (skill) pins[slug] = skill.reference;
+      }
+      return {
+        revision: newest.revision,
+        configuration: newest.configuration,
+        invocationOverlay: bound.invocationOverlay,
+        invokedSkills: { ...bound.invokedSkills, ...pins },
+      };
+    },
   };
+  return catalog;
 }
 
 /** Whether a writer can start a conversation with the Agent, not only another Agent call it. */
