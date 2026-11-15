@@ -48,6 +48,10 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
   const [held, setHeld] = useState<ReadonlyMap<string, HeldReview>>(new Map());
   const leases = useRef(new Map<string, () => void>());
   const reads = useRef(new Map<string, DraftRoomRead>());
+  // The answer each room last asked again on: one retry per answer, so a room that keeps failing
+  // waits for the next one.
+  const retriedOn = useRef(new Map<string, number>());
+  const roomsKey = JSON.stringify([...held].map(([name, room]) => [name, room.read.state().kind]));
   useEffect(() => {
     for (const [index, result] of metadata.entries()) {
       const { data } = result;
@@ -56,10 +60,21 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       else if (
         data?.status === "active" &&
         owner.metadataActive(drafts[index], data.draftId, data.readAt)
-      )
-        reads.current.get(data.reviewRoomName)?.retry();
+      ) {
+        const read = reads.current.get(data.reviewRoomName);
+        const kind = read?.state().kind;
+        if (
+          kind !== undefined &&
+          kind !== "usable" &&
+          kind !== "rebuilding" &&
+          retriedOn.current.get(data.reviewRoomName) !== result.dataUpdatedAt
+        ) {
+          retriedOn.current.set(data.reviewRoomName, result.dataUpdatedAt);
+          read?.retry();
+        }
+      }
     }
-  }, [metadataKey, owner]);
+  }, [metadataKey, roomsKey, owner]);
   useEffect(
     () => () => {
       for (const release of leases.current.values()) release();

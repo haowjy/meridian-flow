@@ -561,13 +561,13 @@ export class DraftCommandOwner {
    * The server answers the draft open (`draftId`), at `at`, after this tab saw it end: a restore
    * reopened it, here or anywhere. Its ended state goes and its room may open again under the same
    * id, and the session still on screen joins it in place; a room the server still holds closed
-   * refuses the join, which ends it again. True when it reopened: a reader the close left without
-   * a room asks again.
+   * refuses the join, which ends it again. True when the draft is open by this answer, whichever
+   * reader brought the reopening: every reader the close left without a room asks again.
    */
   metadataActive(ref: DraftRef, draftId: string, at: number): boolean {
     if (!this.active) return false;
     const ended = [draftId, ref.itemKey].filter((key) => (this.endedAt.get(key) ?? at) < at);
-    if (ended.length === 0) return false;
+    if (ended.length === 0) return !this.endedAt.has(draftId) && !this.endedAt.has(ref.itemKey);
     for (const key of ended) {
       this.endedAt.delete(key);
       this.discardedHere.delete(key);

@@ -5,7 +5,8 @@
  * releasing only record ownership; a room opens on `get` or `rebuild`.
  *
  * A closed room keeps its local copy: a Discard can be undone, so the copy goes with its document
- * (`LocalDocumentCopies`), never with the room. It stays closed until a restore reopens it.
+ * (`LocalDocumentCopies`), never with the room. It stays closed until a restore reopens it; a
+ * reader that comes to it meanwhile reads the session an owner still shows, if one does.
  *
  * A room whose updates the server kept refusing (`updatesRefused`), or whose draft the server
  * closed (`draftClosed`: it is in Trash), is not retired on that close: it stays open, read-only,
@@ -80,12 +81,13 @@ export class DraftRoomPool {
   }
 
   get(roomKey: string): DocumentSession {
-    if (this.closed.has(roomKey)) throw new Error(`Draft room closed: ${roomKey}`);
+    const existing = this.rooms.get(roomKey);
+    // A closed room an owner still shows is read as it is shown, and joins its reopening with it.
+    if (this.closed.has(roomKey) && !existing) throw new Error(`Draft room closed: ${roomKey}`);
     const room = parseYjsRoomName(roomKey);
     if (room?.kind !== "draft") throw new Error(`Draft session requires a draft room: ${roomKey}`);
     this.cancelTeardown(roomKey);
     this.deps.teardownOwner.assertAvailable({ kind: "draft", roomKey });
-    const existing = this.rooms.get(roomKey);
     if (existing) return existing;
     const documentId = this.documents.get(roomKey);
     if (!documentId) throw new Error(`Draft room was never retained: ${roomKey}`);
