@@ -25,8 +25,6 @@ import { createDrizzleDraftDispositionStore } from "../../../../apps/server/serv
 import { createReopenDrafts } from "../../../../apps/server/server/domains/collab/adapters/drizzle-reopen-drafts.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import {
-  ApplyClickMalformed,
-  ApplyClickUnsynced,
   createApplyClickService,
 } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
@@ -403,6 +401,10 @@ async function fixture(
   if (draftText.join("\0") !== baseText.join("\0")) await f.type(draftText);
   return f;
 }
+/** The route answers a malformed (400) or unsynced (503) click with an HTTP error and stores nothing. */
+const httpStatus = (statusCode: number) => (error: unknown) =>
+  (error as { status?: number }).status === statusCode;
+
 async function row(name: string, run: () => Promise<unknown>) {
   const result = await run();
   reports.push({ name, result: result ?? "passed" });
@@ -444,13 +446,13 @@ try {
       const f = await fixture(["Base."], ["Changed."]);
       const bad = f.click();
       bad.request.groupIds = ["unknown"];
-      await assert.rejects(f.send(bad), ApplyClickMalformed);
+      await assert.rejects(f.send(bad), httpStatus(400));
       const overlap = f.click();
       overlap.request.baseViewDelta = [
         { base: { from: 0, to: 1 }, draft: { from: 0, to: 1 }, blocks: [paragraph("O").toJSON()] },
         { base: { from: 0, to: 1 }, draft: { from: 0, to: 1 }, blocks: [] },
       ];
-      await assert.rejects(f.send(overlap), ApplyClickMalformed);
+      await assert.rejects(f.send(overlap), httpStatus(400));
       assert.equal(
         (
           await h.raw`select count(*)::int as n from commands where id in (${bad.request.commandId},${overlap.request.commandId})`
@@ -526,7 +528,7 @@ try {
     await f.type(["The big cat sat."]);
     const second = f.click(first.patched);
     first.request.groupIds = ["bad"];
-    await assert.rejects(f.send(first), ApplyClickMalformed);
+    await assert.rejects(f.send(first), httpStatus(400));
     await applied(f, second);
     assert.deepEqual(await f.liveText(), ["The big cat sat."]);
     f.close();
@@ -761,7 +763,7 @@ try {
     await f.type(["The big cat slept."]);
     const c = f.click(b.patched);
     a.request.groupIds = ["unknown"];
-    await assert.rejects(f.send(a), ApplyClickMalformed);
+    await assert.rejects(f.send(a), httpStatus(400));
     await applied(f, b);
     await applied(f, c);
     assert.deepEqual(await f.liveText(), ["The big cat slept."]);
@@ -780,7 +782,7 @@ try {
     f.room.off("update", capture);
     const c = f.click();
     // A wait, not an answer: nothing is stored, and the client sends the same command again.
-    await assert.rejects(f.send(c), ApplyClickUnsynced);
+    await assert.rejects(f.send(c), httpStatus(503));
     assert.equal(
       (await h.raw`select count(*)::int as n from commands where id=${c.request.commandId}`)[0].n,
       0,
@@ -974,7 +976,7 @@ try {
       await g.type(["Big cat.", "Divider.", "Small dog."]);
       const second = g.click(first.patched);
       first.request.groupIds = ["unknown"];
-      await assert.rejects(g.send(first), ApplyClickMalformed);
+      await assert.rejects(g.send(first), httpStatus(400));
       await applied(g, second);
       assert.deepEqual(await g.liveText(), ["Cat.", "Divider.", "Small dog."]);
       g.close();
