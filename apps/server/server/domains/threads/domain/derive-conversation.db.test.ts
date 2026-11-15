@@ -86,6 +86,7 @@ else
         `agents/${slug}.md`,
         "---\nname: Writer\nmode: primary\n---\n\nWriter prompt.",
       );
+      await agentCatalog.savePackages(ids.userId, { packages: [{ level: "user", folder: "" }] });
       const listed = (await agentCatalog.list(ids.userId, {})).agents.find(
         (item) => item.slug === slug,
       );
@@ -197,6 +198,9 @@ else
         `agents/${fixture.agent.slug}.md`,
         "---\nname: Writer\nmode: primary\n---\n\nAdvanced prompt.",
       );
+      await fixture.deps.agentCatalog.savePackages(ids.userId, {
+        packages: [{ level: "user", folder: "" }],
+      });
       const invoked = { packageRevisionId: "p", path: "skills/story-review", contentDigest: "d" };
       await revisions.recordInvokedSkill(fixture.source.id, "story-review", invoked);
       // A pending switch is the writer's mode: the fork starts in it, the source stays applied.
