@@ -623,8 +623,7 @@ from the wire alone, with nothing stored between handshakes.
   subscribes (the account's start) and whenever another tab claims or acts (a BroadcastChannel
   ping that carries no state), the tab shows each unacted notice it has not shown, and withdraws
   the toasts of notices another tab acted on. It keeps the ids it has shown for the life of the
-  page: Dismiss removes the toast before its `act` commits, and a read in between still finds it
-  unacted. So every open tab of the account shows a notice, wherever its document is; a reload
+  page: a read while an `act` is on its way still finds the notice unacted. So every open tab of the account shows a notice, wherever its document is; a reload
   offers it again until the writer acts in one tab, and then never again in any. The start needs
   no copy, lock, server or open document. A copy's measure of what the server lacks can't be the
   store: what the server lacks is known only to a connected session, and an empty measure would
@@ -635,9 +634,11 @@ from the wire alone, with nothing stored between handshakes.
   in any tab. No tab can know when the last such claim has run, so collecting acted notices by
   their copy's absence brought words back. Sign-out (`clearAll`) deletes the whole
   notice database after the copies, and only when no copy was left behind.
-- **A press that isn't stored stays actionable.** Copy and Dismiss show their result at once.
-  `done` resolves when `act` commits; when it rejects, the toast comes back (or stays) with
-  "Didn't go through. Try again.", and the next press runs `act` again. Until one commits, the
+- **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy shows
+  "Copied" at once; Dismiss closes the toast when `done` resolves, a local write's moment later
+  (sonner drops a toast re-shown under an id it is still removing, so a closed toast can't come
+  back). When `done` rejects, the toast stays with "Didn't go through. Try again.", and the next
+  press runs `act` again. Until one commits, the
   notice stays unacted, so a reload offers it again too.
 - A session that opens a room's current incarnation reads the older ones no tab holds against
   its first handshake, claims what they hold beyond it (never a wordless toast, which only the

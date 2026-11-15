@@ -167,21 +167,24 @@ export const unsentTypingToasts: UnsentTypingObserver = {
 
 const actedHere = new Set<string>();
 
-/** Copy and Dismiss show as done at once; one that couldn't be stored brings the toast back to retry. */
+/**
+ * Copy shows "Copied" at once; Dismiss closes the toast once its local write commits, a moment
+ * later. A press that couldn't be stored keeps the toast with the failure line, to press again.
+ */
 function notifyUnsentTyping(typing: UnsentTyping) {
   const id = `unsent:${typing.id}`;
   let failed = false;
-  let dismissed = false;
   const act = () => {
     actedHere.add(typing.id);
-    typing.done().then(
+    return typing.done().then(
       () => {
-        if (failed && !dismissed) render(false);
+        if (failed) render(false);
+        return true;
       },
       () => {
         actedHere.delete(typing.id);
-        dismissed = false;
         render(true);
+        return false;
       },
     );
   };
@@ -192,12 +195,8 @@ function notifyUnsentTyping(typing: UnsentTyping) {
         <UnsentTypingToast
           typing={typing}
           failed={failing}
-          onCopied={act}
-          onDismiss={() => {
-            dismissed = true;
-            toast.dismiss(id);
-            act();
-          }}
+          onCopied={() => void act()}
+          onDismiss={() => void act().then((stored) => stored && toast.dismiss(id))}
         />
       ),
       // Swiping it away would clear words the writer never read.
