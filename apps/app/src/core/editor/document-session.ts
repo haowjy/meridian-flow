@@ -409,7 +409,8 @@ export class DocumentSession {
           ? this.waitForLocalPersistenceTransportGate()
           : null,
       ]).then(() => {
-        if (!this.destroyed && !this.inert) this.connectTransport(transportFactory);
+        if (!this.destroyed && !this.inert && this.resetDisposition === null)
+          this.connectTransport(transportFactory);
       });
       return;
     }
@@ -438,8 +439,6 @@ export class DocumentSession {
     this.status = "syncing";
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
-        // A close learned first from the server's answer stands: the socket's later news can't reopen it.
-        if (draftClosed(this.transportState)) return;
         this.transportState = state;
         if (state.kind !== "connected") this.forgetDifference();
         if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
@@ -542,7 +541,8 @@ export class DocumentSession {
 
   /**
    * The server answered that this draft closed before its socket said so: the room ends as its
-   * close would (read-only, nothing reconnects), and stays readable for its owner.
+   * close would (read-only, its transport ended so nothing more is sent or reconnects), and stays
+   * readable for its owner.
    */
   endClosed(): void {
     if (this.destroyed || this.transportState?.kind === "reset") return;
@@ -552,6 +552,8 @@ export class DocumentSession {
       disposition: "closed",
     };
     this.localPeers?.stop();
+    this.transportAttachmentPending = false;
+    void this.transportProvider?.destroy();
     this.recomputeStatus();
   }
 

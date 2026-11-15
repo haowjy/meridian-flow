@@ -146,8 +146,9 @@ and remain quarantined until their retryable destroy ledger succeeds.
   ends the room when the review owner learns closure through authoritative metadata before
   the socket frame, and the pool refuses to reopen that closed id until a restore reopens the
   draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive` or a close the server
-  answers open). A room an owner still retains keeps its session, read-only (`endClosed`), so a
-  draft that ended on screen stays readable; a reader that comes to it while closed reads that
+  answers open). A room an owner still retains keeps its session, read-only, and its transport ends as
+  the socket's close would end it (`endClosed`), so a draft that ended on screen stays readable
+  and sends nothing more; a reader that comes to it while closed reads that
   session too, and a restore restarts its transport rather than opening a new one. Only an
   unretained closed room retires.
   `abandonDraftRoom` ends the room of a document's create the server dropped (its draft was
@@ -556,17 +557,18 @@ keyboard, pointer, drop, or draft-recovery answer.
 ### Unsent typing handed back
 
 - **What the server has.** Each copy holds a mark in its `custom` store (`server-mark.ts`): a Yjs
-  state vector of what the server is known to hold. The transport reports the server's SyncStep1
-  at each handshake and the whole document each time the server has acknowledged everything
-  (`subscribeServerHas`); the session merges each into the mark by per-client maximum in one
-  transaction, skipping a vector it already wrote. Per client the server holds every item below the
-  mark, so the items the copy holds beyond it are all the server can lack. A mark too low offers
-  words the server has; one too high would lose words, so nothing writes a vector the server has
-  not shown. An update the server sends is not evidence: Yjs can integrate a local peer's pending
-  items in the same transaction, once the update supplies what they waited on. Hocuspocus never
-  uploads a provider-origin update, so the transport sends such a one up as a local change
-  (`handleDocumentUpdate`); without that, a later full acknowledgement would mark the peer's words
-  as the server's.
+  state vector of what the server is known to hold. The transport reads one off each socket's
+  frames (`transport/server-has.ts`): the server's SyncStep1, every update the server sends and
+  every one written to the socket. It reports the SyncStep1 at each handshake and that vector each
+  time the server has acknowledged everything (`subscribeServerHas`); the session merges each into
+  the mark by per-client maximum in one transaction, skipping a vector it already wrote. Per client
+  the server holds every item below the mark, so the items the copy holds beyond it are all the
+  server can lack. A mark too low offers words the server has; one too high would lose words, so
+  nothing writes a vector no frame showed: never the document's own, which can hold a local
+  peer's pending items that a server update released in the provider's transaction, which
+  Hocuspocus never uploads. After each server frame, once the provider and every transaction it
+  opened (a schema repair included) are done, an editable room sends what the document holds
+  beyond the vector, so those items reach the server too.
 - **A replaced room.** The server can replace a room's document with one that lacks items a mark
   counts: a restore from a checkpoint (`CollabDomain.restore`, no caller yet) installs an older
   state as a new generation, and a document with no authority head is reseeded empty. A handshake

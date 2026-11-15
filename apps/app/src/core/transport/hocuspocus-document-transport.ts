@@ -11,7 +11,9 @@
  * seam.
  *
  * It also reports whether the server has acknowledged every local change
- * (`server-acknowledgement.ts`). That is read off the socket's own send and
+ * (`server-acknowledgement.ts`), and what the server holds (`server-has.ts`): after each server
+ * frame an editable room sends what the document holds beyond that, which a local peer's pending
+ * items released in the provider's transaction would otherwise never upload. That is read off the socket's own send and
  * receive path rather than provider events: the provider emits its outgoing
  * message before the socket decides to queue it, and queued messages can be
  * dropped, so only the socket knows what actually reached the wire.
@@ -87,6 +89,7 @@ import {
   readDocumentSyncType,
   type ServerAcknowledgementTracker,
 } from "./server-acknowledgement";
+import { createServerHasTracker, type ServerHasTracker } from "./server-has";
 import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
 
 const TERMINAL_DENIAL_CODES = new Set<number>([
@@ -111,7 +114,8 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly acknowledgement: ServerAcknowledgementTracker;
   private readonly difference: HandshakeDifferenceReader;
-  private readonly onServerStateVector: (vector: Uint8Array) => void;
+  private readonly serverHas: ServerHasTracker;
+  private readonly onServerFrame: (frame: Uint8Array) => void;
   private readonly handshakeUploadFirst: boolean;
   // Per socket: whether its SyncStep2 has been written, and the Updates held until then.
   private handshakeUploaded = false;
@@ -121,13 +125,15 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
     acknowledgement: ServerAcknowledgementTracker,
     difference: HandshakeDifferenceReader,
-    onServerStateVector: (vector: Uint8Array) => void,
+    serverHas: ServerHasTracker,
+    onServerFrame: (frame: Uint8Array) => void,
     handshakeUploadFirst: boolean,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
     this.difference = difference;
-    this.onServerStateVector = onServerStateVector;
+    this.serverHas = serverHas;
+    this.onServerFrame = onServerFrame;
     this.handshakeUploadFirst = handshakeUploadFirst;
   }
 
@@ -139,6 +145,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     this.dropHeldUpdates();
     this.acknowledgement.beginConnection();
     this.difference.reset();
+    this.serverHas.reset();
     const cancel = this.cancelWebsocketRetry;
     void super.onOpen(event);
     this.cancelWebsocketRetry = cancel;
@@ -163,6 +170,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
         }
         if (syncType === messageYjsSyncStep2) {
           this.acknowledgement.noteFrameSent(message);
+          this.serverHas.noteFrameSent(message);
           super.send(message);
           this.handshakeUploaded = true;
           const released = this.heldUpdates;
@@ -171,8 +179,10 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
           return;
         }
       }
-      if (open) this.acknowledgement.noteFrameSent(message);
-      else this.acknowledgement.noteFrameQueued(message);
+      if (open) {
+        this.acknowledgement.noteFrameSent(message);
+        this.serverHas.noteFrameSent(message);
+      } else this.acknowledgement.noteFrameQueued(message);
     }
     super.send(message);
   }
@@ -190,10 +200,11 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     } finally {
       // Same read the base class makes: frames arrive as ArrayBuffer.
       const frame = new Uint8Array(event.data);
+      // Before the acknowledgement: what the frame left unsent goes out first, so the server
+      // acknowledging everything still means it holds the whole document.
+      if (this.serverHas.noteFrameReceived(frame)) this.onServerFrame(frame);
       this.acknowledgement.noteFrameReceived(frame);
       if (this.acknowledgement.readOnly) this.difference.noteFrameReceived(frame);
-      const serverState = readServerStateVector(frame);
-      if (serverState) this.onServerStateVector(serverState);
     }
   }
 
@@ -312,15 +323,16 @@ export function createHocuspocusDocumentTransport({
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const differenceListeners = new Set<(difference: HandshakeDifference | null) => void>();
   const serverHasListeners = new Set<(vector: Uint8Array, handshake: boolean) => void>();
-  const serverHas = (vector: Uint8Array, handshake: boolean) => {
+  const reportServerHas = (vector: Uint8Array, handshake: boolean) => {
     for (const listener of serverHasListeners) listener(vector, handshake);
   };
+  const serverHas = createServerHasTracker();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
     if (acknowledged && !terminal) {
       outbox = null;
       refusals = 0;
-      // The handshake and every update since are applied: the server holds the whole document.
-      serverHas(Y.encodeStateVector(document), false);
+      // Everything written on this socket is applied.
+      reportServerHas(serverHas.vector, false);
     }
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
@@ -334,7 +346,8 @@ export function createHocuspocusDocumentTransport({
     createHandshakeDifferenceReader(document, (difference) => {
       for (const listener of differenceListeners) listener(difference);
     }),
-    (vector) => serverHas(vector, true),
+    serverHas,
+    handleServerFrame,
     isDraftRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
@@ -369,7 +382,6 @@ export function createHocuspocusDocumentTransport({
     if (terminal) return;
     terminal = true;
     document.off("update", handleDocumentUpdate);
-    document.off("beforeTransaction", notePending);
     stopHints();
     acknowledgement.terminate();
     publish(state);
@@ -399,22 +411,26 @@ export function createHocuspocusDocumentTransport({
         notifyYjsRoomAttached(roomName, observedClientID);
       }
     }
-    if (origin === provider) {
-      // A server frame can supply what a local peer's pending items waited on: Yjs integrates them
-      // in the provider's transaction, which Hocuspocus never uploads. They go up as local changes,
-      // so a full acknowledgement still means the server holds the whole document.
-      if (pendingBefore === null || document.store.pendingStructs === pendingBefore) return;
-      provider.documentUpdateHandler(update, null);
-    }
+    if (origin !== provider) noteUnacknowledged(update);
+  }
+
+  function noteUnacknowledged(update: Uint8Array): void {
     const wasEmpty = outbox === null;
     outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
     if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
   }
 
-  // Yjs replaces `pendingStructs` only when a transaction retries, that is integrates, them.
-  let pendingBefore: unknown = null;
-  function notePending(): void {
-    pendingBefore = document.store.pendingStructs;
+  // After the provider applied the frame and every transaction it opened (`server-has.ts`).
+  function handleServerFrame(frame: Uint8Array): void {
+    if (terminal || destroyed) return;
+    const vector = readServerStateVector(frame);
+    if (vector) reportServerHas(vector, true);
+    // A read admission's socket drops every update; its handshakes report the difference instead.
+    if (acknowledgement.readOnly) return;
+    const lacking = serverHas.lacking(document);
+    if (!lacking) return;
+    provider.documentUpdateHandler(lacking, null);
+    noteUnacknowledged(lacking);
   }
 
   function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
@@ -476,7 +492,6 @@ export function createHocuspocusDocumentTransport({
 
   // Store local bytes before the provider's listener sends and publishes its
   // acknowledgement edge. Session observers must see one complete pending edge.
-  document.on("beforeTransaction", notePending);
   document.on("update", handleDocumentUpdate);
   const provider = new HocuspocusProvider({
     name: roomName,
@@ -563,7 +578,6 @@ export function createHocuspocusDocumentTransport({
       destroyed = true;
       stopHints();
       document.off("update", handleDocumentUpdate);
-      document.off("beforeTransaction", notePending);
       acknowledgement.terminate();
       provider.destroy();
       websocket.destroy();

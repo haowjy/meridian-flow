@@ -8,8 +8,8 @@
  * not cover it: the server no longer holds items it counts (a room restored from a checkpoint or
  * reseeded), and that handshake's vector replaces it. A mark too low offers words the server has;
  * one too high would lose words, so only the server's own vector and, once it has acknowledged
- * everything, the document's are written; never an update's, which can carry a local peer's
- * items the server lacks.
+ * everything, what the socket's frames showed (`transport/server-has.ts`) are written; never the
+ * document's, which can hold a local peer's items no frame carried.
  */
 import * as Y from "yjs";
 
@@ -36,8 +36,8 @@ function grow(mark: Clocks, vector: Clocks): boolean {
 
 export type ServerMark = {
   /**
-   * `handshake`: the server's own SyncStep1, its whole state. Otherwise the document's state
-   * vector once the server acknowledged everything.
+   * `handshake`: the server's own SyncStep1, its whole state. Otherwise what the socket's frames
+   * showed, once the server acknowledged everything.
    */
   note(vector: Uint8Array, handshake: boolean): void;
 };
