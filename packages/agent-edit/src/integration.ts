@@ -152,6 +152,7 @@ export {
   classifyEditParts,
   computeInverse,
   inspectEditRoots,
+  partsSplitByLaterEdits,
   prepareEditRoots,
 } from "./undo/forward-inverse.js";
 export { heldDeletes } from "./undo/held-deletes.js";

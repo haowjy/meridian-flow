@@ -480,6 +480,68 @@ function classify(index: Lineage, part: InversePart): PartClassification {
     return changed(error instanceof Error ? error.message : String(error));
   }
 }
+/**
+ * The edit ids among `parts` whose inserted text a later edit sits inside: the later edit's run
+ * has the part's own characters on both sides, so inverting the part would leave the run's
+ * fragments (a word cut in two keeps the later half). An edit at the part's edge, or beside it,
+ * is not inside. `parts` are one command's own groups: they are not each other's later edits.
+ */
+export function partsSplitByLaterEdits(
+  doc: Y.Doc,
+  history: readonly InversePart[],
+  parts: readonly InversePart[],
+): Set<string> {
+  const index = new Lineage(doc, history);
+  const own = new Set(parts.map((part) => part.editId));
+  const neighbor = (k: Key, step: "left" | "right"): Key | undefined => {
+    const id = parse(k),
+      item = find(doc, k);
+    if (!item) return undefined;
+    const offset = id.clock - item.id.clock;
+    if (step === "left" ? offset > 0 : offset < item.length - 1)
+      return key({ client: id.client, clock: id.clock + (step === "left" ? -1 : 1) });
+    const near = item[step];
+    return near
+      ? key({
+          client: near.id.client,
+          clock: near.id.clock + (step === "left" ? near.length - 1 : 0),
+        })
+      : undefined;
+  };
+  const split = new Set<string>();
+  for (const part of parts) {
+    const owned = new Set(clocks(part.effect.inserted).map((k) => index.root(k)));
+    for (const later of index.ordered) {
+      if (later.id <= part.id || own.has(later.editId)) continue;
+      const written = new Set(clocks(later.effect.inserted));
+      for (const start of written) {
+        const before = neighbor(start, "left");
+        if (before && written.has(before)) continue;
+        let last = start,
+          standing = index.isVisible(start);
+        for (
+          let next = neighbor(last, "right");
+          next && written.has(next);
+          next = neighbor(last, "right")
+        ) {
+          last = next;
+          standing ||= index.isVisible(next);
+        }
+        const after = neighbor(last, "right");
+        // A run an earlier Un-Apply or Undo already took out is no longer in the way.
+        if (
+          standing &&
+          before &&
+          after &&
+          owned.has(index.root(before)) &&
+          owned.has(index.root(after))
+        )
+          split.add(part.editId);
+      }
+    }
+  }
+  return split;
+}
 /** Dry run only. Policy decides selection, destination, locking and partial acceptance. */
 export function classifyEditParts(
   doc: Y.Doc,

@@ -24,7 +24,7 @@ import {
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import type { InversePart, JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
-import { computeInverse } from "@meridian/agent-edit/integration";
+import { computeInverse, partsSplitByLaterEdits } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type { ApplyClickResult, UnapplyClickResult } from "@meridian/contracts/branches";
@@ -372,11 +372,19 @@ export function createDrizzleApplyClick(
                     const value = part.origin;
                     if (value?.kind === "live") bySeq.set(value.seq, part);
                   }
-                  const targeted = effects.flatMap((effect) => {
+                  const found = effects.flatMap((effect) => {
                     if (effect.liveUpdateSeq === null) return [];
                     const part = bySeq.get(effect.liveUpdateSeq);
                     return part ? [{ effect, part }] : [];
                   });
+                  // A group a later edit sits inside stays applied: inverting it would leave the later
+                  // edit's words cut apart.
+                  const split = partsSplitByLaterEdits(
+                    live,
+                    history,
+                    found.map(({ part }) => part),
+                  );
+                  const targeted = found.filter(({ part }) => !split.has(part.editId));
                   const inverse = computeInverse(
                     live,
                     history,
