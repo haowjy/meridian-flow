@@ -7721,6 +7721,10 @@ msgid "Your latest typing didn't reach the server before the draft closed."
 msgstr "Your latest typing didn't reach the server before the draft closed."
 
 #: src/features/editor/RescuedText.tsx
+msgid "Your latest typing didn't reach the server before this document became read-only."
+msgstr "Your latest typing didn't reach the server before this document became read-only."
+
+#: src/features/editor/RescuedText.tsx
 #~ msgid "Your latest typing didn't reach the server before your access to the document changed."
 #~ msgstr "Your latest typing didn't reach the server before your access to the document changed."
 

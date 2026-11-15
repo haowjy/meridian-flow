@@ -536,10 +536,51 @@ keyboard, pointer, drop, or draft-recovery answer.
   `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
   the words back. A closed draft's copy also stays for an Undo of its Discard, which delivers it.
 - What it cannot reach: a room with no session in this tab (the copy lives only in
-  IndexedDB, for a document no tab has open), and typing from before this tab's transport
-  existed (an offline reload replays it from IndexedDB, outside the transport's
-  unacknowledged updates). Both are known losses on
+  IndexedDB, for a document no tab has open: its next open decides, handing it back while the
+  Work is closed and delivering it after an Unarchive), and, for a closed draft or removed
+  document, typing from before this tab's transport existed (an offline reload replays it from
+  IndexedDB, outside the transport's unacknowledged updates). A read admission has no such loss:
+  see the next section. Both are known losses on
   [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
+
+### Undeliverable edits (a room admitted read-only)
+
+**A room the server admits read-only holds none of the writer's edits that the server lacks.**
+It is checked at every handshake of a read admission (`core/transport/handshake-difference.ts`),
+from the wire alone, with nothing stored between handshakes.
+
+- The session (`unsent-edits.ts`) decides what counts: everything the server lacks, whoever wrote it,
+  except *display writes*, what the editor binding writes while drawing (it deletes a node the
+  schema can't build). A display write is told from a writer transaction by the sync plugin's own
+  `addToHistory` meta. A new reader that opens a Yjs transaction through
+  `readRepairedRoot` on a read-only room, with no origin, would be counted each time. The undo
+  manager captures a binding write only with that mark, so repairs never land on the writer's undo
+  stack (its other origins, the manager's own undo and redo, a Discard, are unchanged).
+- A display write is known wherever it travels: `LocalDocumentPeers` marks the update it relays
+  (the receiver adds its delete set before anything is decided) and the session records its
+  display writes in the copy's `custom` store, keyed by client id and schema tag, in the task of
+  the update. A reader takes the copy's updates first and its records after.
+- **Typing** is what the session wrote through an editor or the document's Undo and Redo (its
+  ledger, by client id), plus every item of any other client id the server lacks.
+- A read-admitted connection sends no Update frame; a change that is not a display write asks for
+  one `forceSync`, and `serverHasLocalChanges` there is the handshake's verdict (Apply's
+  acknowledgement barrier waits on it, not on a `SyncStatus` the server always answers `false`).
+- **The replacement** (`DocumentSessionRegistry.replaceRoom`): the old session reads its copy and
+  takes one more handshake (it can end the replacement), the typing is handed back
+  (`owner-closed`, "…before this document became read-only"; a change with no words shows the
+  sentence alone), the old session goes inert, and a session on the room's *next incarnation* of
+  its copy opens read-only, loading from the server. Nothing is emptied and nothing is sent to
+  other tabs: the copy's database name has a trailing incarnation number (none means 0),
+  `LocalDocumentCopies.current/advance` keep the pointer in `localStorage` under a Web Lock, and two
+  tabs advancing at once end on the same number. The old session is destroyed when its editors
+  have unmounted (`retireReplaced`, quarantined by persistence name). Holders follow through
+  `observeReplacement` (live bindings and open tabs, draft room reads); a review mount carries its
+  reading position across it (`use-reading-position.ts`).
+- A session that opens a room's current incarnation reads the older ones no tab holds against
+  its first handshake, hands back the words the server lacks (so a reload gets a second look at
+  words from a toast it lost), and deletes them.
+- Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
+  (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
 
 ### Draft room retirement
 

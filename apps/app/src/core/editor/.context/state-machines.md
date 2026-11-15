@@ -74,6 +74,7 @@ stateDiagram-v2
   usable --> fenced: this tab's document schema no longer fits the room
   usable --> fenced: the server refused its updates three times in a row
   usable --> fenced: the server closed the draft (a Discard; 4205, or its answer first)
+  usable --> usable: admitted read-only holding the writer's unsent edits; a new session replaces it
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
   fenced --> rebuilding: retry, for a room whose updates were refused
@@ -94,7 +95,11 @@ stateDiagram-v2
   and the text on screen, carries on with the same session. A reader the close left
   `unavailable` retries. A wrong answer costs one refused join, which closes it again.
 - **An access change is not a state.** A 4409 reconnects the same session, which stays
-  `usable`; the server's new scope only makes it read-only or writable again.
+  `usable`; the server's new scope only makes it read-only or writable again. The one edge:
+  `usable → usable` with a new session, when a read admission's handshake shows the room holds
+  the writer's edits the server lacks. The pool's `replace` opens a session on the next copy
+  incarnation (read-only from its first frame), and `readDraftRoom` binds it on the registry's
+  replacement notice (never on the old session's `destroyed`, which a removed room also sends).
 - **Retry from `unavailable` works only when the room can be opened again.** A room the pool
   holds closed stays unavailable.
 - A rebuild result is used only if it is still the newest attempt and the read is not disposed.
