@@ -61,7 +61,12 @@ export function FindingsChip({
       ) : (
         <PopoverTrigger asChild>{chip}</PopoverTrigger>
       )}
-      <PopoverContent align="end" className="w-80 max-w-[calc(100vw-1rem)] p-2">
+      <PopoverContent
+        align="end"
+        className="w-80 max-w-[calc(100vw-1rem)] p-2"
+        // Portaled, but React carries its clicks up to the row the chip sits in, which would open.
+        onClick={(event) => event.stopPropagation()}
+      >
         <p className="px-2 pt-1 font-medium text-foreground text-sm">{heading}</p>
         {sub ? <p className="px-2 pb-1 text-muted-foreground text-xs">{sub}</p> : null}
         {children(() => setOpen(false))}

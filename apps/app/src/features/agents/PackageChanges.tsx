@@ -40,14 +40,7 @@ export function PackageChanges({
           other: "# files changed since the last save",
         });
   return (
-    // The dialog is portaled, but its clicks and keys still bubble through React to the row the
-    // chip sits in, which would open or move in the tree.
-    // biome-ignore lint/a11y/noStaticElementInteractions: only stops events from the dialog
-    <span
-      className="contents"
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
-    >
+    <>
       <FindingsChip
         tone="neutral"
         word={
@@ -101,7 +94,7 @@ export function PackageChanges({
         documentId={opened ? documentOf(pkg.level, opened.path) : null}
         onClose={() => setOpened(null)}
       />
-    </span>
+    </>
   );
 }
 
