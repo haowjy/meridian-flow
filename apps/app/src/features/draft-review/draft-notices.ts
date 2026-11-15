@@ -73,11 +73,12 @@ export function viewOf(one: Settlement): SettledView | null {
     case "left_out":
       return { kind: "left_out", why: one.why };
     case "returned":
-      return (CLOSED_OWNER_WHYS as readonly string[]).includes(one.why)
-        ? { kind: "returned", why: closedOwnerWord(one.why as ClosedOwnerWhy) }
-        : null;
+      return isClosedOwnerWhy(one.why) ? { kind: "returned", why: closedOwnerWord(one.why) } : null;
   }
 }
+
+const isClosedOwnerWhy = (why: string): why is ClosedOwnerWhy =>
+  (CLOSED_OWNER_WHYS as readonly string[]).includes(why);
 
 /**
  * Every line of a flat answer (Discard, Restore, Un-Apply) that names `itemId`, or every line
@@ -141,21 +142,29 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
  * What an Un-Apply took back, the one reading every surface says: something taken back with
  * nothing left is `all`; with text skipped or a tree fact left out, `partly`; nothing taken back
  * but something left, `nothing`; neither, `already` (the server's `already unapplied`). Each node
- * a `left_out` line names keeps that line's reason, so its row can say why it stayed; the lines
- * are read here, not through `settledOf`, whose views drop the nodes they name.
+ * a `left_out` line names keeps that line's reason, and each a `returned` line names (held: its
+ * notes' owner is closed) keeps the owner's, so its row can say why it stayed; the lines are read
+ * here, not through `settledOf`, whose views drop the nodes they name.
  */
 export function unappliedOf(answer: UnapplyClickResult): Unapplied {
   const took = answer.reversedGroupIds.length > 0 || answer.treeUndone.length > 0;
   const textLeft = answer.skippedGroupIds.length;
   const treeLeft = new Map<string, LeftOutWhy>();
-  for (const one of answer.settled ?? [])
+  const held = new Map<string, { why: ClosedOwnerWhy; owner?: string }>();
+  for (const one of answer.settled ?? []) {
     if (one.rule === "left_out")
       for (const node of one.items) if (!treeLeft.has(node)) treeLeft.set(node, one.why);
-  if (textLeft === 0 && treeLeft.size === 0) return { taken: took ? "all" : "already" };
+    if (one.rule === "returned" && isClosedOwnerWhy(one.why))
+      for (const node of one.items ?? [])
+        held.set(node, { why: one.why, ...(one.owner ? { owner: one.owner } : {}) });
+  }
+  if (textLeft === 0 && treeLeft.size === 0 && held.size === 0)
+    return { taken: took ? "all" : "already" };
   return {
     taken: took ? "partly" : "nothing",
     textLeft,
     treeLeft: [...treeLeft].map(([node, why]) => ({ node, why })),
+    held: [...held].map(([node, one]) => ({ node, ...one })),
   };
 }
 

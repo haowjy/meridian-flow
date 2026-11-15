@@ -431,6 +431,18 @@ msgid "{change} can no longer be taken back."
 msgstr "{change} can no longer be taken back."
 
 #: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: {owner} is archived. Unarchive it to undo this."
+msgstr "{change} stayed: {owner} is archived. Unarchive it to undo this."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: {owner} is deleted."
+msgstr "{change} stayed: {owner} is deleted."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: {owner} is in Trash. Restore it to undo this."
+msgstr "{change} stayed: {owner} is in Trash. Restore it to undo this."
+
+#: src/features/project/context/use-tree-notice-words.tsx
 msgid "{change} stayed: it has writing in it since."
 msgstr "{change} stayed: it has writing in it since."
 
@@ -868,6 +880,18 @@ msgstr "{needsYou} waiting on you"
 #: src/features/agents/findings.ts
 #~ msgid "{others} is also named {name}. Both work under that name."
 #~ msgstr "{others} is also named {name}. Both work under that name."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "{owner} is archived. Unarchive it to apply this."
+msgstr "{owner} is archived. Unarchive it to apply this."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "{owner} is deleted."
+msgstr "{owner} is deleted."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "{owner} is in Trash. Restore it to apply this."
+msgstr "{owner} is in Trash. Restore it to apply this."
 
 #: src/features/agents/PackageSave.tsx
 msgid "{path} added"
@@ -4067,6 +4091,10 @@ msgstr "It's over the import size limit."
 msgid "Italic"
 msgstr "Italic"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Its chat"
+msgstr "Its chat"
+
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Its chat is in Trash"
 msgstr "Its chat is in Trash"
@@ -4098,6 +4126,10 @@ msgstr "Its paragraph was removed"
 #: src/features/agents/findings.ts
 msgid "Its subagent {name} is unavailable."
 msgstr "Its subagent {name} is unavailable."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Its Work"
+msgstr "Its Work"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its Work was closed, so this stayed as it is"
@@ -6768,6 +6800,10 @@ msgstr "The AI saw this file."
 #: src/features/chat/namespace-refusal-copy.ts
 #~ msgid "The AI's path for {source} now names a different document, so nothing was done."
 #~ msgstr "The AI's path for {source} now names a different document, so nothing was done."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The applied text"
+msgstr "The applied text"
 
 #: src/features/chat/tool-failure.tsx
 msgid "The assistant called this tool with arguments it couldn't use."

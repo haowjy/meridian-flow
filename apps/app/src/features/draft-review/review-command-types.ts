@@ -6,9 +6,10 @@ export type ServerRefusal = {
 };
 /**
  * One line of what an Apply left out of an item, for the half it explains: `overtaken_<state>`
- * or `left_out_<why>`. `by` is the command that settled it first, which a Restore takes back.
+ * or `left_out_<why>`, or a closed owner's reason. `by` is the command that settled it first,
+ * which a Restore takes back; `owner` the closed owner's name.
  */
-export type ApplyLine = { half: "tree" | "text"; code: string; by?: string };
+export type ApplyLine = { half: "tree" | "text"; code: string; by?: string; owner?: string };
 export type BranchCommandFailure =
   | ({
       code:

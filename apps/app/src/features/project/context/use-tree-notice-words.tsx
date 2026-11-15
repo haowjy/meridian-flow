@@ -1,6 +1,6 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { LeftOutWhy } from "@meridian/contracts/commands";
+import type { ClosedOwnerWhy, LeftOutWhy } from "@meridian/contracts/commands";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { type GoneRow, RowWord } from "@/components/app/RowWord";
@@ -331,6 +331,7 @@ function SaidWord({
     case "left": {
       const fact = factOf(said, node);
       const tree = said.treeLeft.find((one) => one.node === node);
+      const held = said.held.find((one) => one.node === node);
       const text = textOn(said, node);
       const stayed = [
         text > 0
@@ -340,6 +341,7 @@ function SaidWord({
             })
           : null,
         tree ? treeLeftSentence(fact, tree.why) : null,
+        held ? heldSentence(fact, held) : null,
       ].filter(Boolean);
       if (said.taken === "nothing")
         return (
@@ -347,7 +349,9 @@ function SaidWord({
             tone="warning"
             word={<Trans>Not undone</Trans>}
             sentence={
-              tree ? [t`Not undone.`, ...stayed].join(" ") : t`Not undone: it was edited since.`
+              tree || held
+                ? [t`Not undone.`, ...stayed].join(" ")
+                : t`Not undone: it was edited since.`
             }
           />
         );
@@ -372,27 +376,41 @@ function SaidWord({
   }
 }
 
-/** Why the tree change an Un-Apply left on a row stayed, named as the writer saw it land. */
+/** The change an Apply made on a row, named as the writer saw it land. */
+function changeOf(fact: TreeFact): string {
+  return fact.did === "moved"
+    ? t`The move`
+    : fact.did === "renamed"
+      ? t`The rename`
+      : fact.did === "restored"
+        ? t`The restore from Trash`
+        : fact.did === "deleted"
+          ? t`The delete`
+          : fact.did === "created"
+            ? fact.folder
+              ? t`The new folder`
+              : t`The new document`
+            : fact.folder
+              ? t`The change to this folder`
+              : t`The change to this document`;
+}
+
+/** Why the tree change an Un-Apply left on a row stayed. */
 function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
-  const change =
-    fact.did === "moved"
-      ? t`The move`
-      : fact.did === "renamed"
-        ? t`The rename`
-        : fact.did === "restored"
-          ? t`The restore from Trash`
-          : fact.did === "deleted"
-            ? t`The delete`
-            : fact.did === "created"
-              ? fact.folder
-                ? t`The new folder`
-                : t`The new document`
-              : fact.folder
-                ? t`The change to this folder`
-                : t`The change to this document`;
+  const change = changeOf(fact);
   if (why === "purged") return t`${change} can no longer be taken back.`;
   if (why === "has_text") return t`${change} stayed: it has writing in it since.`;
   return t`${change} stayed: it was changed since.`;
+}
+
+/** Why an Un-Apply left a row's change as it was: the notes it is in are a closed owner's. */
+function heldSentence(fact: TreeFact, held: { why: ClosedOwnerWhy; owner?: string }): string {
+  const change = fact.did === null && !fact.folder ? t`The applied text` : changeOf(fact);
+  const owner = held.owner ?? (held.why === "chat_frozen" ? t`Its chat` : t`Its Work`);
+  if (held.why === "work_archived")
+    return t`${change} stayed: ${owner} is archived. Unarchive it to undo this.`;
+  if (held.why === "work_deleted") return t`${change} stayed: ${owner} is deleted.`;
+  return t`${change} stayed: ${owner} is in Trash. Restore it to undo this.`;
 }
 
 const factOf = (said: Extract<Said, { kind: "left" }>, node: string): TreeFact =>
@@ -404,4 +422,6 @@ const textOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
 
 /** Whether anything of `node`'s change stayed: a row taken back whole says nothing. */
 const leftOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
-  textOn(said, node) > 0 || said.treeLeft.some((one) => one.node === node);
+  textOn(said, node) > 0 ||
+  said.treeLeft.some((one) => one.node === node) ||
+  said.held.some((one) => one.node === node);

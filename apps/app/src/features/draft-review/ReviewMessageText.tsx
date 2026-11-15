@@ -6,7 +6,14 @@ import { Trans } from "@lingui/react/macro";
 import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
-function knownRefusal(serverCode: string): MessageDescriptor | undefined {
+function knownRefusal(serverCode: string, owner?: string): MessageDescriptor | undefined {
+  if (owner !== undefined) {
+    // A closed owner of the notes the change is in, by name: it may not be the writer's Work.
+    if (serverCode === "work_archived")
+      return msg`${owner} is archived. Unarchive it to apply this.`;
+    if (serverCode === "work_deleted") return msg`${owner} is deleted.`;
+    if (serverCode === "chat_frozen") return msg`${owner} is in Trash. Restore it to apply this.`;
+  }
   switch (serverCode) {
     case "review_updated":
       return msg`The review updated. Choose the change again.`;
@@ -58,9 +65,13 @@ function answersAlone(serverCode: string | undefined): boolean {
  * comes from the failure's code. The one renderer for a whole-draft and a
  * per-change refusal.
  */
-function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
+function RefusalReason({
+  serverCode,
+  serverReason,
+  owner,
+}: Partial<ServerRefusal> & { owner?: string }) {
   const { i18n } = useLingui();
-  const known = serverCode ? knownRefusal(serverCode) : undefined;
+  const known = serverCode ? knownRefusal(serverCode, owner) : undefined;
   const reason = known
     ? i18n._(known)
     : (serverReason ?? i18n._(msg`The server couldn't do that. Try again.`));
@@ -70,10 +81,12 @@ function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
 export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }) {
   if (failure.code === "apply-left-out") {
     // One sentence per distinct reason, whichever half it explains: each says what to do.
-    const codes = [...new Set(failure.lines.map((line) => line.code))];
-    return codes.map((code) => (
-      <span key={code} className="block">
-        <RefusalReason serverCode={code} />
+    const reasons = new Map(
+      failure.lines.map((line) => [`${line.code}:${line.owner ?? ""}`, line] as const),
+    );
+    return [...reasons].map(([key, line]) => (
+      <span key={key} className="block">
+        <RefusalReason serverCode={line.code} owner={line.owner} />
       </span>
     ));
   }

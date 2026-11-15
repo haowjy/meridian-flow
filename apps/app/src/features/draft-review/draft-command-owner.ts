@@ -213,8 +213,9 @@ function linesOf(item: ApplyItemResult | undefined): ApplyLine[] {
       if (view?.kind === "overtaken")
         return [{ half, code: `overtaken_${view.state}`, by: view.by }];
       if (view?.kind === "left_out") return [{ half, code: `left_out_${view.why}` }];
-      // The file's own Work (or chat) is closed: the line says which, and the item stays pending.
-      if (view?.kind === "returned" && one.rule === "returned") return [{ half, code: one.why }];
+      // The notes it would change are a closed owner's: the line names them, and it stays pending.
+      if (view?.kind === "returned" && one.rule === "returned")
+        return [{ half, code: one.why, ...(one.owner ? { owner: one.owner } : {}) }];
       return [];
     }),
   );

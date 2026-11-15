@@ -157,7 +157,8 @@ settles `unsent` on the client. The press sends `saw`, the cut the cached draft 
 with, frozen with the click; a 503 (the server lacks something the press saw) is an unknown
 delivery the queue retries with the same id. An Apply goes on the Undo stack only when an
 item landed, and a press of its step that reached the server is spent: `already` or nothing
-taken back never falls through to the next older step.
+taken back never falls through to the next older step. A press whose answer held a node for a
+closed owner keeps the step on the stack (below).
 
 A Discard never refuses either, and its answer is read per item the same way (`discardAnswer`
 in `draft-command-owner.ts`): an item it took, or one an earlier Discard took (`already`, quiet),
@@ -185,8 +186,11 @@ independent duties:
   under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
   as `landed`, with `restored` unknown.
 
-A closed owner (an archived or deleted Work, or a chat in Trash) locks nothing: Apply and Un-Apply land and
-leave the Work closed. A Discard, Discard all, a folder's ×, a change's Discard and an Undo of a Discard come
+A closed branch owner (an archived or deleted Work, or a chat in Trash) locks nothing: Apply and Un-Apply land and
+leave the Work closed. A closed owner of the notes an item would change is different: Apply returns that item
+(`returned { why, owner }`, the line naming the owner, "Tea Notes is archived…"), and Un-Apply leaves it as the
+Apply left it, naming it in a `returned` line's `items`; `unappliedOf` reads those into `held`, the row says it
+stayed and why, and the Undo step stays on the stack for a press after the owner reopens. A Discard, Discard all, a folder's ×, a change's Discard and an Undo of a Discard come
 back on their own: the server answers `done` with a settled `returned { why }` (`work_archived`, `work_deleted`,
 `chat_frozen`) and changes nothing. `returnedOf` reads `settled`, never the status, into the `returned` words the
 Undo already uses (`work-closed`, `chat-in-trash`); the owner's outcome is `returned`, and `bounced` in the command
@@ -375,8 +379,9 @@ the text never comes back without its move or delete.
 An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack as one step
 (`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
 command's id, and the press is spent once the server answers, whatever it took back. What it
-couldn't take back (text edited since, a tree change named by a `left_out` line) is said on the
-rows it stayed on (`unappliedOf`); only a tree step is skipped for the one before it. A band's
+couldn't take back (text edited since, a tree change named by a `left_out` line, a node held for a
+closed owner) is said on the rows it stayed on (`unappliedOf`); only a tree step is skipped for the one
+before it. A held node keeps its step on the stack. A band's
 Apply has its editor's Undo instead.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a

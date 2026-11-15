@@ -256,8 +256,9 @@ export function useWorkBranchCommands({
       );
       const shown = session.replay(view, pendingText);
       const documentIds = nodes.filter((node) => shown.nodes.get(node)?.kind !== "folder");
-      // A resend after a lost answer names the same Un-Apply: the server answers it once.
-      const unapplyId = crypto.randomUUID();
+      // A resend after a lost answer names the same Un-Apply: the server answers it once. A press
+      // after an answer is a new one (what it held, the step offers again once its owner opens).
+      let unapplyId = crypto.randomUUID();
       const unapplyOnServer = async (): Promise<Awaited<ReturnType<ApplyStep["unapply"]>>> => {
         try {
           const answer = await unapplyCommand(projectId, branchId, {
@@ -265,6 +266,7 @@ export function useWorkBranchCommands({
             applyCommandId: commandId,
           });
           if (answer.status === "conflict") return { taken: "failed" };
+          unapplyId = crypto.randomUUID();
           refresh(documentIds);
           const unapplied = unappliedOf(answer);
           if (unapplied.taken !== "nothing")

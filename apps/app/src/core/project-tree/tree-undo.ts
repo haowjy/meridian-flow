@@ -13,7 +13,7 @@
  * (`treeBounces`: their Work was closed), each said on the row it was made on; they end at the
  * writer's next gesture, press or action elsewhere in the list, as the notice does.
  */
-import type { LeftOutWhy } from "@meridian/contracts/commands";
+import type { ClosedOwnerWhy, LeftOutWhy } from "@meridian/contracts/commands";
 import {
   appliedNodes,
   type DroppedRecord,
@@ -65,7 +65,8 @@ export type TreeStep = {
  * What an Un-Apply took back of its Apply: `all` of what stood, `partly`, `nothing`, or `already`
  * (an earlier Un-Apply, here or in another tab, took it all). `textLeft` counts the text changes
  * that stayed (edited since; the answer doesn't say whose document); `treeLeft` names each node
- * whose tree change stayed, with why.
+ * whose tree change stayed, with why; `held` each node that stayed because its notes' owner is
+ * closed (`owner` names it), which a later press can take back once it opens.
  */
 export type Unapplied =
   | { taken: "all" | "already" }
@@ -73,7 +74,11 @@ export type Unapplied =
       taken: "partly" | "nothing";
       textLeft: number;
       treeLeft: readonly { node: string; why: LeftOutWhy }[];
+      held: readonly { node: string; why: ClosedOwnerWhy; owner?: string }[];
     };
+
+/** An answer that held something: its step stays on the stack for a press once the owner opens. */
+const heldSome = (answer: Unapplied) => "held" in answer && answer.held.length > 0;
 
 /** What an Apply's tree half did to a node, for what an Un-Apply that left it says. */
 export type TreeFact = {
@@ -310,8 +315,10 @@ async function takeLatest(
         stack.splice(at, 0, step);
         return { kind: "failed", skipped, name: step.name, step };
       }
-      step.ended?.();
-      // A press that reached the server is spent, whatever it took: the writer pressed once.
+      // A press that reached the server is spent, whatever it took: the writer pressed once. What
+      // it held stays on the stack, where it was.
+      if (heldSome(answer)) stack.splice(at, 0, step);
+      else step.ended?.();
       return unappliedOutcome(step, answer, skipped);
     }
     const names = step.nodes.flatMap(
@@ -363,7 +370,8 @@ export async function undoApply(session: TreeListSession, step: ApplyStep): Prom
   stack.splice(at, 1);
   show(session, null);
   const answer = await step.unapply();
-  if (answer.taken === "failed") stack.splice(Math.min(at, stack.length), 0, step);
+  if (answer.taken === "failed" || heldSome(answer))
+    stack.splice(Math.min(at, stack.length), 0, step);
   else step.ended?.();
   const outcome: UndoOutcome =
     answer.taken === "failed"
