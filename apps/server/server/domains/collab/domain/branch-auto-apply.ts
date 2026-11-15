@@ -41,7 +41,8 @@ export function createBranchAutoApply(input: {
     const { branchId, items } = await input.items(command.owner);
     if (!branchId) return { status: "nothing" };
     const cuts: ApplyItemsClick["items"] = [];
-    for (const item of items.filter(command.select)) {
+    const selected = items.filter(command.select);
+    for (const item of selected) {
       let text: NonNullable<ApplyItemsClick["items"][number]["text"]> | undefined;
       if (item.draftId) {
         const { doc } = await input.copyDraft(item.draftId);
@@ -61,7 +62,12 @@ export function createBranchAutoApply(input: {
       if (command.select({ path: folder.uri, tree: null }))
         cuts.push({ node: folder.id, tree: { revision: folder.revision } });
     if (cuts.length === 0) return { status: "nothing" };
-    const request: ApplyItemsClick = { commandId: command.commandId, items: cuts };
+    // An item live has in Trash is Applied as a restore, which the writer's click says it knew.
+    const request: ApplyItemsClick = {
+      commandId: command.commandId,
+      items: cuts,
+      ...(selected.some((item) => item.deletedLive) ? { restore: true as const } : {}),
+    };
     const envelope: CommandEnvelope = {
       commandId: command.commandId,
       accountId: command.accountId,

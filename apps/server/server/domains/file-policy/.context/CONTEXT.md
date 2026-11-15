@@ -41,6 +41,10 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
   writer's own Apply when it widens no Agent, else leaves it labelled. `deny` still wins; a stored
   `ask` or a draft-mode chat never auto-applies. Reads, `ls` and `grep` need no extra term: the
   place's destination is the draft, and the branch view falls back to live for a file with none.
+  A move that touches a level is checked too: within one list it is a draft tree move; between a
+  project's files and the account's it is a create at the destination and a delete at the source
+  (`lib/model-tools/tree-agents-move.ts`), one command, both through the check. An Undo of an
+  applied change in a level is a draft change (`undoChange` with `keepInAsked`), never a live one.
 - **Not built yet.** Stored settings (written only by the writer's tree command, never a model tool);
   a rule for another Work's Scratch; a setting that changes
   between authorize and confirm (`confirmEdit` re-checks the level at the grant's destination, not the
