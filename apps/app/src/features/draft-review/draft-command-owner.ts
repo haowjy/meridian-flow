@@ -50,6 +50,7 @@ import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import {
   type ApplyHalves,
+  type DiscardTook,
   type DiscardUndo,
   DraftNotices,
   halvesOf,
@@ -118,9 +119,11 @@ export type CommandOutcome =
         transition?: { from: string | null; to: string | null };
         renamed?: string;
       }[];
+      /** A Discard's answer: what of what it was sent it took (`DiscardTook`). */
+      took?: DiscardTook;
     }
   /** The server answered for this item and landed neither half: each half's lines say why. */
-  | { kind: "settled"; lines: ApplyLine[] }
+  | { kind: "settled"; lines: ApplyLine[]; took?: DiscardTook }
   /** A closed owner answered and changed nothing: the surface says why, once. */
   | { kind: "returned"; why: RestoreReturned }
   | { kind: "change-refused"; code: string };
@@ -156,8 +159,9 @@ export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
 /**
  * A Discard's answer for the documents it was sent. `done` when it took something, `settled` when
  * each item was settled before it, `returned` when a closed owner changed nothing. `untaken`: the
- * items it found settled; `lines`: each item's own lines (an Apply that took it first), by
- * document. `already` is quiet and gives none; a line naming no item covers every one sent.
+ * items it found settled; `lines`: each item's own lines (a delete that took it first), by
+ * document; an Apply that took one first is the notice's to say (`took.appliedFirst`), not a
+ * line. `already` is quiet and gives none; a line naming no item covers every one sent.
  */
 function discardAnswer(
   result: DiscardCommandResult,
@@ -170,23 +174,27 @@ function discardAnswer(
   const why = returnedIn(result.settled);
   if (why) return { outcome: { kind: "returned", why }, untaken: new Set(), lines: new Map() };
   const untaken = new Set<string>();
+  const appliedFirst = new Set<string>();
   const lines = new Map<string, ApplyLine[]>();
   for (const one of result.settled ?? []) {
     if (one.rule !== "already" && one.rule !== "overtaken") continue;
     const view = viewOf(one);
     for (const item of one.item ? [one.item] : documentIds) {
       untaken.add(item);
-      if (view?.kind === "overtaken")
+      if (view?.kind !== "overtaken") continue;
+      if (view.state === "applied") appliedFirst.add(item);
+      else
         lines.set(item, [
           ...(lines.get(item) ?? []),
           { half: "tree", code: `overtaken_${view.state}`, by: view.by },
         ]);
     }
   }
+  const took = { untaken: [...untaken], appliedFirst: [...appliedFirst] };
   return {
     outcome: documentIds.some((id) => !untaken.has(id))
-      ? { kind: "done" }
-      : { kind: "settled", lines: [...lines.values()].flat() },
+      ? { kind: "done", took }
+      : { kind: "settled", lines: [...lines.values()].flat(), took },
     untaken,
     lines,
   };
@@ -1067,7 +1075,8 @@ export class DraftCommandOwner {
    * An item's Discard when its branch moves or deletes the document: the move or delete (its
    * tree line), discarded on the server as `commandId`, and unless only the line was chosen, the
    * chosen text, here. Its Undo takes back both: the text's `handle` and the server's command.
-   * Null when the chosen text couldn't be written: the move or delete stays with it.
+   * `tree` is the server's answer alone, which says what the command took. Null when the chosen
+   * text couldn't be written: the move or delete stays with it.
    */
   discardItem(
     ref: DraftRef,
@@ -1075,15 +1084,21 @@ export class DraftCommandOwner {
     target: GroupsTarget | { kind: "tree" },
     history: Editor | "notice" | null,
     commandId: string,
-  ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
+  ): {
+    handle: DiscardUndo | null;
+    outcome: Promise<CommandOutcome>;
+    tree: Promise<CommandOutcome>;
+  } | null {
     if (!this.active || !item.tree) return null;
     const text =
       item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
     if (item.hasDraft && target.kind !== "tree" && !text) return null;
+    const tree = this.discardTree(ref, item, commandId);
     return {
       handle: text?.handle ?? null,
-      outcome: Promise.all([this.discardTree(ref, item, commandId), text?.outcome]).then(
-        ([tree, discarded]) => (tree.kind === "done" && discarded ? discarded : tree),
+      tree,
+      outcome: Promise.all([tree, text?.outcome]).then(([answer, discarded]) =>
+        answer.kind === "done" && discarded ? discarded : answer,
       ),
     };
   }

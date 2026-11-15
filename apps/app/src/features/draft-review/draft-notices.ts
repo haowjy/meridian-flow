@@ -175,6 +175,13 @@ export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
   return why === "chat_frozen" ? "chat-in-trash" : "work-closed";
 }
 
+/**
+ * What a Discard's answer says of the documents and folders it was sent: `untaken`, the ones it
+ * found settled already (an earlier Discard's, quietly, or an Apply's), and of those
+ * `appliedFirst`, the ones an Apply took before it. A notice lists only what it took.
+ */
+export type DiscardTook = { untaken: readonly string[]; appliedFirst: readonly string[] };
+
 export type DiscardUndoAnswer = {
   /** `returned`: the restore was answered and did nothing, for `why`. */
   answer: "ok" | "failed" | "gone" | "returned";
@@ -229,14 +236,17 @@ export type DraftNotice =
   | (Base & {
       kind: "discarded";
       subject: NoticeSubject;
+      /** What the Discard took (its answer's word, once it came): the rows its Undo brings back. */
       documentIds: readonly string[];
+      /** What it was sent that an Apply took first: each says so where the writer pressed. */
+      appliedFirst: readonly string[];
       /** A single draft's review, which an Undo may return main to. */
       review: ReviewFileTarget | null;
       /**
        * `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back.
        * `returned`: the Undo was answered with nothing done, for `returned`. `bounced`: the
-       * Discard itself came back for `returned` and discarded nothing (no Undo; it ends after
-       * `BOUNCE_SHOWN_MS`).
+       * Discard itself discarded nothing, because a closed owner returned it (`returned`) or an
+       * Apply took all of it first (`appliedFirst`); no Undo, and it ends after `BOUNCE_SHOWN_MS`.
        */
       status: "ready" | "undoing" | "failed" | "partial" | "returned" | "bounced";
       leftOut: number;
@@ -272,7 +282,7 @@ export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
 );
 
 /** A notice with something to say on a line: a plain Apply's is said only on its rows. */
-export const hasLine = (notice: DraftNotice) =>
+export const hasLine = (notice: DraftNotice): boolean =>
   notice.kind === "applied"
     ? notice.facts.some((fact) => fact.kind !== "applied")
     : notice.status !== "bounced";
@@ -291,6 +301,8 @@ export class DraftNotices {
    */
   private readonly pressed = new Map<number, "undoing" | "failed">();
   private readonly bounceTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  /** Where a Discard notice says it discarded nothing, when not where it shows (`bounceSurface`). */
+  private readonly bounceTo = new Map<number, NoticeSurface>();
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
@@ -387,6 +399,8 @@ export class DraftNotices {
     projectId: string;
     ownerKey: string;
     surface: NoticeSurface;
+    /** Where it says it discarded nothing, as a closed owner's bounce would (a change card's). */
+    bounceSurface?: NoticeSurface;
     parts: readonly DiscardPart[];
   }): number | null {
     if (this.closed || input.parts.length === 0) {
@@ -397,6 +411,7 @@ export class DraftNotices {
     if (held) this.drop(held);
     const id = this.nextId++;
     this.parts.set(id, [...input.parts]);
+    if (input.bounceSurface) this.bounceTo.set(id, input.bounceSurface);
     const { ownerKey } = input;
     this.notices.set(ownerKey, {
       kind: "discarded",
@@ -408,6 +423,7 @@ export class DraftNotices {
       status: "ready",
       leftOut: 0,
       returned: null,
+      appliedFirst: [],
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
       dismiss: () => this.endIf(ownerKey, id),
@@ -430,8 +446,75 @@ export class DraftNotices {
     if (this.closed) return;
     const held = this.notices.get(input.ownerKey);
     if (held) this.drop(held);
-    const id = this.nextId++;
-    const { ownerKey } = input;
+    this.bounce({
+      id: this.nextId++,
+      projectId: input.projectId,
+      ownerKey: input.ownerKey,
+      surface: input.surface,
+      documentIds: input.documentIds,
+      appliedFirst: [],
+      returned: input.why,
+    });
+  }
+
+  /**
+   * What a Discard's answer says it took (`DiscardTook`): the share's rows it didn't take leave
+   * the notice, and the ones an Apply took first say so. A notice left with nothing to bring back
+   * but something applied first says only that, as a bounce does.
+   */
+  answered(handle: DiscardUndo, took: DiscardTook) {
+    const untaken = new Set(took.untaken);
+    for (const [id, parts] of this.parts) {
+      const index = parts.findIndex((part) => part.handle === handle);
+      const part = parts[index];
+      if (!part) continue;
+      const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
+      // An Undo in flight owns the notice until it answers, as `partEnded` leaves it.
+      if (notice?.kind !== "discarded" || notice.status === "undoing") return;
+      const covers = (part.covers ?? [part.documentId]).filter((node) => !untaken.has(node));
+      if (covers.length === 0) {
+        parts.splice(index, 1);
+        part.handle.end();
+      } else
+        parts[index] = {
+          ...part,
+          covers,
+          ...(part.count !== undefined ? { count: covers.length } : {}),
+        };
+      const appliedFirst = [...new Set([...notice.appliedFirst, ...took.appliedFirst])];
+      if (parts.length === 0) {
+        const surface = this.bounceTo.get(id) ?? notice.surface;
+        this.parts.delete(id);
+        this.bounceTo.delete(id);
+        this.pressed.delete(id);
+        if (appliedFirst.length === 0) this.notices.delete(notice.ownerKey);
+        else
+          this.bounce({
+            id,
+            projectId: notice.projectId,
+            ownerKey: notice.ownerKey,
+            surface,
+            documentIds: [],
+            appliedFirst,
+            returned: null,
+          });
+      } else
+        this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(parts) });
+      this.publish();
+      return;
+    }
+  }
+
+  private bounce(input: {
+    id: number;
+    projectId: string;
+    ownerKey: string;
+    surface: NoticeSurface;
+    documentIds: readonly string[];
+    appliedFirst: readonly string[];
+    returned: RestoreReturned | null;
+  }) {
+    const { id, ownerKey } = input;
     this.notices.set(ownerKey, {
       kind: "discarded",
       id,
@@ -440,11 +523,12 @@ export class DraftNotices {
       surface: input.surface,
       subject: { kind: "drafts", count: input.documentIds.length },
       documentIds: input.documentIds,
+      appliedFirst: input.appliedFirst,
       review: null,
       left: null,
       status: "bounced",
       leftOut: 0,
-      returned: input.why,
+      returned: input.returned,
       undo: async () => "failed",
       dismiss: () => this.endIf(ownerKey, id),
     });
@@ -475,6 +559,7 @@ export class DraftNotices {
       if (parts.length === 0) {
         this.notices.delete(notice.ownerKey);
         this.parts.delete(id);
+        this.bounceTo.delete(id);
         this.pressed.delete(id);
       } else this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
       this.publish();
@@ -573,6 +658,7 @@ export class DraftNotices {
     if (status === null) {
       this.notices.delete(ownerKey);
       this.parts.delete(id);
+      this.bounceTo.delete(id);
       this.pressed.delete(id);
       this.publish();
       return;
@@ -597,7 +683,14 @@ export class DraftNotices {
 
   private subjectOf(parts: readonly DiscardPart[]) {
     const [only] = parts;
-    const count = parts.reduce((sum, part) => sum + (part.count ?? 1), 0);
+    // A document's text and its move are two shares of one change: it counts once.
+    const counted = new Set<string>();
+    const count = parts.reduce((sum, part) => {
+      if (part.count !== undefined) return sum + part.count;
+      if (counted.has(part.documentId)) return sum;
+      counted.add(part.documentId);
+      return sum + 1;
+    }, 0);
     return {
       subject:
         count === 1 && only
@@ -633,6 +726,7 @@ export class DraftNotices {
     this.pressed.delete(notice.id);
     clearTimeout(this.bounceTimers.get(notice.id));
     this.bounceTimers.delete(notice.id);
+    this.bounceTo.delete(notice.id);
     for (const part of parts) part.handle.end();
   }
 

@@ -278,8 +278,6 @@ export function ChangesSource({
   const owned = useDraftNotice(ownerKey);
   const notice = owned?.surface.kind === "changes" ? owned : null;
   const words = useDraftNoticeWords(notice);
-  // Discard all names no row: its returned Discard says so on the bar.
-  const barBounce = notice?.kind === "discarded" && notice.documentIds.length === 0 ? notice : null;
   const openDocument = useOpenProjectDocument(projectId);
   // What undoing an Apply skipped or couldn't take back is said on the rows it concerns here too.
   const drawn = useMemo<NoticePlace>(() => {
@@ -350,6 +348,14 @@ export function ChangesSource({
     (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
   const goneRows = shown.some((item) => item.gone);
+  // A Discard that discarded nothing says why on its rows; one with no row drawn here (Discard
+  // all names none) says it on the bar.
+  const barBounce =
+    notice?.kind === "discarded" &&
+    notice.status === "bounced" &&
+    !shown.some((item) => words.held(item.key))
+      ? notice
+      : null;
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
   const undone = useRef<string | null>(null);
   if (notice?.kind === "discarded" && notice.documentIds[0]) undone.current = notice.documentIds[0];
@@ -430,14 +436,15 @@ export function ChangesSource({
         {hasFiles || goneRows ? (
           <ul className="flex flex-col px-2">
             {shown.map(({ row: item, gone }) => {
-              // A row a Discard took is struck through with its Undo; one an Apply took says
-              // what the Apply did, and opens the document where it is now.
+              // A row a Discard took is struck through with its Undo; one an Apply took (its
+              // own, or one that reached it before the Discard) says what the Apply did, and
+              // opens the document where it is now.
               if (gone)
                 return (
                   <li key={item.key} data-change-row={item.key} data-command-notice="row">
                     <ListRow
                       depth={item.depth}
-                      gone={notice?.kind === "discarded"}
+                      gone={notice?.kind === "discarded" && !notice.appliedFirst.includes(item.key)}
                       disabled={item.kind !== "file"}
                       onOpen={() => void openDocument({ documentId: item.key })}
                       icon={

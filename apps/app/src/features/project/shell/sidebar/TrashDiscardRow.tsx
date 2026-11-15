@@ -58,7 +58,7 @@ export function TrashDiscardRow({
               tone="warning"
               word={<Trans>Retry</Trans>}
               label={t`Retry undoing the restore of ${title}`}
-              sentence={t`Couldn't put them back in Trash. Retry tries again.`}
+              sentence={t`Undo didn't go through. Try again.`}
               onAction={onUndo}
             />
           ) : !onUndo ? (
