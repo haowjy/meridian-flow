@@ -8,6 +8,7 @@ import type {
   WorkId,
 } from "@meridian/contracts";
 import type { BranchOwnerLifecycle } from "../../../../shared/draft-owner.js";
+import type { WorkWriteOptions } from "../../../projects/index.js";
 
 export type BranchStatus = "active" | "closed";
 
@@ -65,8 +66,12 @@ export interface BranchWriteBoundary {
   /**
    * Opens its own transaction, or joins an ambient one only when the command boundary
    * approved it (it has locked nothing but owners); refuses any other ambient caller. Locks
-   * the owner (the Work row, or the lineage lock) and refuses one that isn't active with
-   * `WorkLifecycleUnavailableError`.
+   * the owner (the Work row, or the lineage lock) under the caller's `WorkWriteOptions`; by
+   * default it refuses one that isn't active with `WorkLifecycleUnavailableError`.
    */
-  withActiveOwnerLocked<T>(owner: DraftOwner, operation: () => Promise<T>): Promise<T>;
+  withActiveOwnerLocked<T>(
+    owner: DraftOwner,
+    operation: () => Promise<T>,
+    options?: WorkWriteOptions,
+  ): Promise<T>;
 }

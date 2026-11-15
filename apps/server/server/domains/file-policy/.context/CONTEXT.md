@@ -45,6 +45,12 @@ until Apply moves the live identity: Scratch content stays live behind a
 proposed project path, while project content stays drafted behind a proposed
 Scratch path. The physical Scratch owner continues to cap delegation.
 
+The decision also carries `command`: whether the person may run a document command (Apply,
+Un-Apply, Discard, Undo of a Discard) there. It is `edit` by grants and agent terms and ignores the
+lifecycle terms, so a closed Work, a chat in Trash or a deleted document passes: the command itself
+answers a closed owner (`returned`, under the Work lock) instead of the route refusing it. `level` is
+unchanged, so words stay read-only.
+
 A `restore` target reads through Trash, so an undo by an old path is authorized where the
 document actually returns, not at the path it was shown at. A document in no view has no
 source and no facts: a restore of a discarded create is refused here, and the server's own

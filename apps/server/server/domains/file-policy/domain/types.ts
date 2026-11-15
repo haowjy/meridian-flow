@@ -222,25 +222,26 @@ export interface FileDecision {
   archivedWork: WorkRef | null;
   destination: FileDestination;
   /**
-   * Whether the principal may throw this draft away: `edit` ignoring a frozen
-   * lineage, which only holds back writes that keep a draft alive.
+   * Whether the principal may run a document command (Apply, Un-Apply, Discard, Undo of a
+   * Discard) here: `edit` ignoring the lifecycle terms. A closed owner is the command's own
+   * answer to give, under the Work lock.
    */
-  discard: boolean;
+  command: boolean;
 }
 
-export type FileNeed = "read" | "edit" | "discard";
+export type FileNeed = "read" | "edit" | "command";
 
 declare const fileGrantBrand: unique symbol;
 
 /**
  * Proof that a principal may `N` a target, minted only by the file-access
- * service. `FileGrant<"edit">` and `FileGrant<"discard">` each satisfy `FileGrant<"read">`.
+ * service. `FileGrant<"edit">` and `FileGrant<"command">` each satisfy `FileGrant<"read">`.
  */
 export interface FileGrant<N extends FileNeed = FileNeed> {
   readonly [fileGrantBrand]: N extends "edit"
     ? { read: true; edit: true }
-    : N extends "discard"
-      ? { read: true; discard: true }
+    : N extends "command"
+      ? { read: true; command: true }
       : { read: true };
   /**
    * What `confirmEdit` re-checks. Typed `FileNeed`, not `N`, so a wider grant

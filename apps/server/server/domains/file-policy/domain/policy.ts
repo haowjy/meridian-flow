@@ -147,11 +147,14 @@ export function levelAt(
   ];
   const level = terms.reduce<FileAccessLevel>((min, term) => lowerLevel(min, term.cap), "edit");
   const limiting = level === "edit" ? undefined : terms.find((term) => term.cap === level);
-  const discard = terms
-    .filter((term) => term.limit !== "chat_frozen")
-    .every((term) => term.cap === "edit");
+  // A command on what the server holds lands on a closed owner or a deleted document too:
+  // only who the writer is, and what an agent may do, decide it.
+  const command =
+    personLevel(facts, grants) === "edit" &&
+    (!principal.agent ||
+      agentTerms(principal.agent.chain, facts).every((term) => term.cap === "edit"));
   return {
-    discard,
+    command,
     level,
     limitedBy: limiting?.limit ?? null,
     archivedWork: limiting?.limit === "work_archived" ? (limiting.work ?? null) : null,

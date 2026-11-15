@@ -228,15 +228,6 @@ export function createApplyClickService(input: {
         const captured = await input.evidence.capture(cut.draftId);
         if (!captured || captured.draft.documentDraft.status === "closed")
           return (await lookup()) ?? { status: "closed", commandId };
-        const lifecycle = captured.draft.documentDraft.lifecycle;
-        if (lifecycle !== "active")
-          throw new ApplyClickRefused(
-            lifecycle === "archived"
-              ? "work_archived"
-              : lifecycle === "deleted"
-                ? "work_deleted"
-                : "not_found",
-          );
         let click: CompiledClick;
         try {
           click = compileClick(base.replica.doc, { ...cut, commandId }, captured);

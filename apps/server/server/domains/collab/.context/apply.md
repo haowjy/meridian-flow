@@ -102,9 +102,11 @@ and the tree half comes back, the answer is still `unapplied`, with no reversed 
 the lists' keys, then the keys of the documents the Apply wrote text in or created.
 
 Every route that writes documents on behalf of a command takes the same grants before it runs:
-Apply the draft's and the live grant on each document (and a restore grant for one live has
-deleted), Un-Apply and Undo of a Discard an edit grant, or the restore grant, on each document the
-command's own record names (`commandDocuments`). A folder has no file of its own: the project's
+Apply the draft's `command` grant and the live `edit` grant on each document (and a restore grant
+for one live has deleted), Un-Apply an `edit` grant, and Undo of a Discard and Discard the draft's
+`command` grant, on each document the command's own record names (`commandDocuments`). `command`
+ignores the owner's lifecycle (a closed Work or chat, a deleted document), so the route never answers
+for a closed owner; the Work lock does, in the command's transaction. A folder has no file of its own: the project's
 owner is its only writer, which the branch's identity step proved. A creation only the Work
 showed, whose draft a Discard closed, has no tree row for any target to resolve until Undo of
 the Discard copies it back; it takes no grant, and the Work's lock (lifecycle) is its authority.
@@ -128,8 +130,11 @@ refusals: `expired` (the command is older than `DELETION_RETENTION_DAYS`), `docu
 `nothing_to_restore` (its tree records belong to another Work), `work_purged` (the Work and its
 branches are gone; the route lets the command through instead of answering 404 so the refusal is
 stored). A branch of another project is a 404 at the route and `not_found` in the store. A Work or
-chat that cannot take the restore (archived, deleted, frozen) is a stored refusal too:
-`asLifecycleRefusal` runs inside each command's refusal mapper, before the claim settles. `listDiscards(projectId)` is the document half of Trash's Discard entries.
+chat that cannot take the restore (archived, deleted, a chat in Trash) bounces: stored `done`, nothing
+changed, `restored: 0`, `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
+The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
+result in the command's refusal mapper; Discard bounces the same way (`status: "returned"`). Apply and
+Un-Apply land on a closed owner, and it stays closed. `listDiscards(projectId)` is the document half of Trash's Discard entries.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows. The browser rejoining a restored draft's room is the
 client's.

@@ -380,6 +380,12 @@ export function useWorkBranchCommands({
             discardCommandId,
           });
           refresh(documentIds);
+          // A closed owner returned it: nothing came back.
+          if (
+            answer.status === "restored" &&
+            answer.settled?.some((one) => one.rule === "returned")
+          )
+            return { ...settled, answer: "failed" };
           if (answer.status === "restored")
             return { ...settled, answer: "ok", leftOut: answer.leftOut };
           if (

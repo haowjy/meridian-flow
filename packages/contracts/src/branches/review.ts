@@ -46,14 +46,7 @@ export type ApplyClick = {
   tree?: { revision: string | null };
 };
 
-export type ApplyClickRefusalReason =
-  | "unsynced"
-  | "malformed"
-  | "work_archived"
-  | "chat_frozen"
-  | "work_deleted"
-  | "not_found"
-  | "ancestor_taken";
+export type ApplyClickRefusalReason = "unsynced" | "malformed" | "not_found" | "ancestor_taken";
 
 export type ApplyRenamedNote = {
   code: "renamed";
@@ -171,6 +164,8 @@ export type UndoDiscardResult =
       swapped: number;
       /** What the Discard held that could not come back: a node or document that has been purged. */
       leftOut: number;
+      /** `returned`: the draft's owner is closed, so nothing came back and `restored` is 0. */
+      settled?: Settlement[];
     }
   | {
       status: "refused";
@@ -187,10 +182,7 @@ export type UndoDiscardResult =
         | "expired"
         | "document_purged"
         | "work_purged"
-        | "not_found"
-        | "work_archived"
-        | "chat_frozen"
-        | "work_deleted";
+        | "not_found";
     };
 export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
 
@@ -402,7 +394,9 @@ export type DraftDiscardResponse =
       branchId: BranchId;
       itemKey: DraftItemKey;
     } & DraftItemSettlement)
-  | { status: DraftDiscardRefusalStatus; branchId: BranchId; itemKey: DraftItemKey };
+  | { status: DraftDiscardRefusalStatus; branchId: BranchId; itemKey: DraftItemKey }
+  /** The draft's owner is closed (`settled` says how): nothing changed. */
+  | { status: "returned"; branchId: BranchId; itemKey: DraftItemKey; settled: Settlement[] };
 
 /**
  * One item's Discard on the server. `tree` ends only the branch's move or delete: a live chat's
@@ -449,7 +443,9 @@ export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
  */
 export type BranchDiscardResponse =
   | { status: "discarded"; branchId: BranchId; closed?: string[] }
-  | { status: "gone" | "stale" | "draft_changed"; branchId: BranchId };
+  | { status: "gone" | "stale" | "draft_changed"; branchId: BranchId }
+  /** The Work's owner is closed (`settled` says how): nothing changed. */
+  | { status: "returned"; branchId: BranchId; settled: Settlement[] };
 
 /** A Discard's terminal body, exactly what its 200 carries. */
 export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;

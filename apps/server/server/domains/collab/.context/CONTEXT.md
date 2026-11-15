@@ -71,7 +71,8 @@ the kernel compares it under the draft's row lock and refuses `draft_changed` wh
 draft moved on (a chat restored elsewhere, then written to). `updated_at` and not
 `revision` is the fence because content-free folds keep it. The answer's `itemClosed`
 is what the kernel ended. Its command row is claimed first in the kernel's transaction and
-holds the answer when it commits; `stale` and `draft_changed` are stored answers too. Nothing
+holds the answer when it commits; `stale` and `draft_changed` are stored answers too, and so is
+the bounce on an archived or deleted Work or a chat in Trash (`returned`, nothing ended). Nothing
 left to end answers `stale` without changing text. The tree half of every Discard is the
 package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
 (`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
@@ -329,7 +330,7 @@ either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
-Work of the set is active. No other collab code locks a Work for a write; the
+Work of the set is active, and `allowFrozenLineage` lets a chat in Trash pass it. Discard and Restore keep `requireActive` (a closed owner bounces them); Apply and Un-Apply pass `requireActive: false` and `work: "any"` at their `prepareAppend`, so they land on a closed owner. `ensureActiveForWrite` takes the caller's `WorkWriteOptions` the same way. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. Creating a document draft
 runs inside `mutate`: a draft made while its Work archives waits on
 the Work row and is read as archived once the archive commits. No append enters the boundary: no

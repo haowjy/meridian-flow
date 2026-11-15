@@ -29,12 +29,14 @@ import {
   BranchDiscardApplicableStateChangedError,
   BranchDiscardDraftChangedError,
   type BranchDiscardStore,
+  type DiscardEnded,
   type DiscardKernelInput,
   type DiscardKernelResult,
   type DiscardRefusal,
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
+import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
@@ -243,7 +245,7 @@ export function createDrizzleBranchDiscard(
   return {
     kernel,
     async discardLocked({ kernel: input, command }) {
-      const settled: { ended: DiscardKernelResult | DiscardRefusal | null } = { ended: null };
+      const settled: { ended: DiscardEnded } = { ended: null };
       await runDocumentCommand(
         db,
         command.envelope,
@@ -258,10 +260,11 @@ export function createDrizzleBranchDiscard(
                 settled.ended = await kernel(input);
               return command.result(settled.ended);
             },
-            { seam: true, requireActive: true, allowFrozenLineage: true },
+            { seam: true, requireActive: true },
           ),
         (cause) => {
-          const refused = discardRefusal(cause);
+          const returned = closedOwnerBounce(cause);
+          const refused = returned ? { returned } : discardRefusal(cause);
           if (!refused) return undefined;
           settled.ended = refused;
           return command.result(refused);

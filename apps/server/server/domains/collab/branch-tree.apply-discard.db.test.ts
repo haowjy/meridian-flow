@@ -772,19 +772,20 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(back).toMatchObject({ status: "restored", restored: 1, swapped: 1 });
         expect((await draftsOn(a, branchId, "active")).map((row) => row.id)).toEqual([newer]);
 
-        // A restore turned away by the Work's state is a final answer: stored, and replayed
-        // after the Work is unarchived.
+        // A restore on an archived Work bounces: stored as done with nothing changed, and
+        // replayed after the Work is unarchived.
+        const bounced = {
+          status: "restored",
+          restored: 0,
+          settled: [{ rule: "returned", why: "work_archived" }],
+        };
         await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
         const turnedAway = randomUUID();
-        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject({
-          status: "refused",
-          reason: "work_archived",
-        });
+        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject(bounced);
         await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
-        expect(await undo((first as { commandId: string }).commandId, turnedAway)).toMatchObject({
-          status: "refused",
-          reason: "work_archived",
-        });
+        expect(await undo((first as { commandId: string }).commandId, turnedAway)).toMatchObject(
+          bounced,
+        );
 
         // A whole Discard with a tree record and a text draft: both come back on the new branch.
         const b = (await seed.document(SOURCE, "beta.md")) as DocumentId;

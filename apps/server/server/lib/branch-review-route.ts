@@ -356,44 +356,36 @@ async function requireReviewItemGrant<N extends FileNeed>(
 }
 
 /**
- * The edit grants an Apply needs (TM "Authorization", §13.3): the draft's grant on each item,
- * and the live grant on one live readers see. A document deleted live authorizes at its final
- * location's source through the draft's destination (F9). A Discard changes only the draft,
- * so it needs the draft's grants alone, at the `discard` need: a trashed chat's frozen lineage
- * refuses Apply and edits but not throwing its drafts away.
+ * The grants a Discard needs: the `command` grant on the draft of each item, which a closed
+ * owner (an archived or deleted Work, a chat in Trash) does not withhold: the Work lock answers
+ * such a Discard with a stored `returned`. A document deleted live authorizes at its final
+ * location's source through the draft's destination (F9).
  */
-async function applyGrants(
+async function discardGrants(
   deps: BranchRouteServices,
   input: CommandScope & { owner: DraftOwner; items: readonly DraftReviewItem[] },
-  need: "edit" | "discard" = "edit",
-): Promise<FileGrant<"edit" | "discard">[]> {
-  const grants: FileGrant<"edit" | "discard">[] = [];
+): Promise<FileGrant<"command">[]> {
+  const grants: FileGrant<"command">[] = [];
   for (const item of input.items) {
-    if (item.deletedLive) {
-      grants.push(await restoreGrant(deps, input, item, need));
-      continue;
-    }
     grants.push(
-      await requireReviewItemGrant(deps, { ...input, documentId: item.documentId }, item, need),
+      item.deletedLive
+        ? await restoreGrant(deps, input, item, "command")
+        : await requireReviewItemGrant(
+            deps,
+            { ...input, documentId: item.documentId },
+            item,
+            "command",
+          ),
     );
-    if (need === "edit" && !item.isNew)
-      grants.push(
-        await requireFileGrant(
-          deps.fileAccess,
-          input.userId,
-          documentTarget(item.documentId),
-          "edit",
-        ),
-      );
   }
   return grants;
 }
 
-async function restoreGrant<N extends FileNeed = "edit">(
+async function restoreGrant<N extends FileNeed>(
   deps: BranchRouteServices,
   input: { projectId: ProjectId; owner: DraftOwner; userId: UserId },
   item: DraftReviewItem,
-  need?: N,
+  need: N,
 ): Promise<FileGrant<N>> {
   const parsed = item.path ? parseUnifiedContextUri(item.path) : null;
   if (!parsed?.ok || !isProjectScopedScheme(parsed.value.scheme)) {
@@ -564,7 +556,7 @@ async function commandItem(
 /** What a command's pre-effect phase decided: refuse it, or run its effect under these grants. */
 type PreparedCommand =
   | { refusal: () => CommandRouteResult }
-  | { grants: FileGrant<"edit" | "discard">[]; effect: () => Promise<CommandOutcome> };
+  | { grants: FileGrant<"edit" | "command">[]; effect: () => Promise<CommandOutcome> };
 
 /**
  * The one ingress every branch command goes through. After authenticated project and branch
@@ -581,7 +573,7 @@ async function commandIngress(
   envelope: CommandEnvelope,
   prepare: (access: BranchAccess) => Promise<PreparedCommand>,
 ): Promise<CommandRouteResult> {
-  const access = await requireBranchAccess(deps, input);
+  const access = await requireBranchIdentity(deps, input);
   const replay = await recorded(deps, envelope);
   if (replay) return replay;
   const replayOr = async (cause: unknown): Promise<CommandRouteResult> => {
@@ -607,15 +599,6 @@ async function commandIngress(
     return replayOr(cause);
   }
   return respond(outcome);
-}
-
-/** Why a grant was refused, as the reason an Apply or an Undo of a Discard answers. */
-function denialReason(grant: FileAccessDenied) {
-  return grant.facts?.branchOwner?.deleted || grant.facts?.ownerWork?.deleted
-    ? ("work_deleted" as const)
-    : grant.reason === "work_archived" || grant.reason === "chat_frozen"
-      ? grant.reason
-      : ("not_found" as const);
 }
 
 /**
@@ -679,9 +662,6 @@ async function applyItems(
   const { owner } = access;
   if (!request) return refuse("malformed");
   if (!owner) return refuse("not_found");
-  if (access.lifecycle === "deleted") return refuse("work_deleted");
-  if (access.lifecycle === "frozen") return refuse("chat_frozen");
-  if (access.lifecycle === "archived") return refuse("work_archived");
   const resolved = await Promise.all(
     request.items.map(async (entry) => ({
       node: entry.node as DocumentId,
@@ -706,7 +686,7 @@ async function applyItems(
       const removed = await deps.documentSync.roomRemoval({ documentId: node });
       if (removed) return (await lookup()) ?? { status: "closed", commandId };
     }
-    return refuse(denialReason(grant));
+    return refuse("not_found");
   }
   // A live delete that committed after the items resolved, at authorization or at the grants'
   // confirmation: nothing was claimed, so the click runs once more, resolves the item as
@@ -717,7 +697,7 @@ async function applyItems(
       : denial
         ? deniedAnswer(denial, node)
         : refuse("not_found");
-  const grants: FileGrant<"edit">[] = [];
+  const grants: FileGrant<"edit" | "command">[] = [];
   for (const { node, found } of resolved) {
     if (!found) continue;
     const { item } = found;
@@ -728,7 +708,7 @@ async function applyItems(
         deps,
         { ...input, owner, documentId: node },
         item,
-        "edit",
+        "command",
       );
       if (isFileAccessDenied(grant)) return denied(grant, node);
       grants.push(grant);
@@ -742,7 +722,8 @@ async function applyItems(
       if (isFileAccessDenied(live)) return denied(live, node);
       grants.push(live);
     }
-    if (item.deletedLive) grants.push(await restoreGrant(deps, { ...input, owner }, item));
+    if (item.deletedLive)
+      grants.push(await restoreGrant(deps, { ...input, owner }, item, "command"));
   }
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
     deps.documentSync.draftReview.apply({ branchId: input.branchId, request, envelope }),
@@ -839,20 +820,20 @@ async function documentGrant(
   input: CommandScope,
   documentId: DocumentId,
   owner: DraftOwner | null,
-): Promise<FileGrant<"edit"> | FileAccessDenied> {
+): Promise<FileGrant<"edit" | "command"> | FileAccessDenied> {
   const principal = { accountId: input.userId };
   if (owner) {
     const draft = await deps.fileAccess.authorize(
       principal,
       { kind: "draft", documentId, owner },
-      "edit",
+      "command",
     );
     if (!isFileAccessDenied(draft)) return draft;
     const restored = await deps.fileAccess.authorizeAt(
       principal,
       { kind: "restore", documentId },
       { kind: "draft", owner, ownerHandle: null },
-      "edit",
+      "command",
     );
     if (!isFileAccessDenied(restored)) return restored;
   }
@@ -866,7 +847,7 @@ async function documentGrant(
  * command's own copy brings it back, so no target resolves it. The Work's lifecycle, which the
  * command's Work lock checks, is the only authority over it.
  */
-const unseen = (grant: FileGrant<"edit"> | FileAccessDenied) =>
+const unseen = (grant: FileGrant<"edit" | "command"> | FileAccessDenied) =>
   isFileAccessDenied(grant) && grant.reason === "not_found" && grant.facts === null;
 
 /** Take back one Apply command: its text groups and everything it settled in the tree. */
@@ -891,7 +872,7 @@ export function handleUnapplyClickRequest(
           status: "refused",
           commandId: request.commandId as CommandId,
         };
-      const grants: FileGrant<"edit">[] = [];
+      const grants: FileGrant<"edit" | "command">[] = [];
       for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofApply({
         applyCommandId: request.applyCommandId as CommandId,
         accountId: input.userId,
@@ -929,7 +910,7 @@ export function handleUndoDiscardRequest(
         );
       const recorded = await lookup();
       if (recorded) return recorded;
-      const grants: FileGrant<"edit">[] = [];
+      const grants: FileGrant<"edit" | "command">[] = [];
       for (const documentId of access
         ? await deps.documentSync.draftReview.commandDocuments.ofDiscard({
             discardCommandId: request.discardCommandId as CommandId,
@@ -940,7 +921,7 @@ export function handleUndoDiscardRequest(
         const grant = await documentGrant(deps, input, documentId, access?.owner ?? null);
         if (unseen(grant)) continue;
         if (isFileAccessDenied(grant))
-          return (await lookup()) ?? { status: "refused", commandId, reason: denialReason(grant) };
+          return (await lookup()) ?? { status: "refused", commandId, reason: "not_found" };
         grants.push(grant);
       }
       const result = await runWithEditGrants(deps.fileAccess, grants, () =>
@@ -956,7 +937,7 @@ export function handleUndoDiscardRequest(
         : ((await lookup()) ?? {
             status: "refused",
             commandId,
-            reason: denialReason(result.refusal.refused[0] as FileAccessDenied),
+            reason: "not_found" as const,
           });
     },
   });
@@ -998,7 +979,7 @@ export async function handleDiscardWorkDraftRequest(
     const item = request.branchId === input.branchId ? await commandItem(deps, input) : null;
     if (!item || !owner) return { refusal: goneItem(request) };
     return {
-      grants: await applyGrants(deps, { ...input, owner, items: [item] }, "discard"),
+      grants: await discardGrants(deps, { ...input, owner, items: [item] }),
       effect: () =>
         deps.documentSync.draftReview.discardItem({
           item,
@@ -1046,7 +1027,7 @@ export async function handleDiscardBranchRequest(
       });
     if ("all" in request)
       return {
-        grants: await applyGrants(deps, { ...input, owner, items: listed.items }, "discard"),
+        grants: await discardGrants(deps, { ...input, owner, items: listed.items }),
         effect: discard({ kind: "whole" }),
       };
     const byNode = new Map(listed.items.map((item) => [item.documentId as string, item]));
@@ -1060,7 +1041,7 @@ export async function handleDiscardBranchRequest(
         refusal: () => ({ httpStatus: 200, body: { status: "stale", branchId } }),
       };
     return {
-      grants: await applyGrants(deps, { ...input, owner, items }, "discard"),
+      grants: await discardGrants(deps, { ...input, owner, items }),
       effect: discard({
         kind: "items",
         items: request.items.map((entry) => ({

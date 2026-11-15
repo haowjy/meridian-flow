@@ -62,7 +62,7 @@ export interface FileAccess {
    * would break the id order. Refused grants are returned, not thrown, so the
    * rest of the reply can commit.
    */
-  confirmEdit(grants: readonly FileGrant<"edit" | "discard">[]): Promise<FileAccessDenied[]>;
+  confirmEdit(grants: readonly FileGrant<"edit" | "command">[]): Promise<FileAccessDenied[]>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
    * with an agent's drafted documents decided in its branch. A document the principal
@@ -261,7 +261,7 @@ async function refreshPrincipal(
 
 /** `confirmEdit` re-checks a grant against the need it was minted for. */
 function allows(result: FileDecision, need: FileNeed): boolean {
-  return need === "discard" ? result.discard : atLeast(result.level, need);
+  return need === "command" ? result.command : atLeast(result.level, need);
 }
 
 function mint<N extends FileNeed>(

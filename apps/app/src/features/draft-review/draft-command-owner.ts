@@ -15,6 +15,7 @@ import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contra
 import type {
   ApplyClick,
   ApplyClickAnswer,
+  DiscardCommandResult,
   DraftMetadataResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/branches";
@@ -128,7 +129,18 @@ export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
  * Unarchive, so a held "archived" line would only go stale once it is unarchived.
  */
 function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | null {
-  return failure.serverCode === "work_archived" ? null : failure;
+  return failure.serverCode === "work_archived" || failure.serverCode === "work_deleted"
+    ? null
+    : failure;
+}
+/**
+ * The code a Discard that changed nothing answers with: a closed owner's `returned` settlement
+ * names why (`work_archived`, `work_deleted`, `chat_frozen`), else the answer's status.
+ */
+function discardCode(result: DiscardCommandResult): string {
+  if (result.status !== "returned") return result.status;
+  const returned = result.settled.find((one) => one.rule === "returned");
+  return returned?.rule === "returned" ? returned.why : "returned";
 }
 /** The server's word for an unapplied click, as the surfaces' refusal copy keys it. */
 function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>): string {
@@ -911,9 +923,9 @@ export class DraftCommandOwner {
       this.setState(ref.itemKey, {
         hidden: false,
         discarding: null,
-        failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
+        failure: shownRefusal({ code: "discard-refused", serverCode: discardCode(result) }),
       });
-      return { kind: "change-refused", code: result.status };
+      return { kind: "change-refused", code: discardCode(result) };
     } catch {
       if (this.active)
         this.setState(ref.itemKey, {
@@ -965,9 +977,9 @@ export class DraftCommandOwner {
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") return { kind: "done" };
       this.setState(ref.itemKey, {
-        failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
+        failure: shownRefusal({ code: "discard-refused", serverCode: discardCode(result) }),
       });
-      return { kind: "change-refused", code: result.status };
+      return { kind: "change-refused", code: discardCode(result) };
     } catch {
       if (this.active) this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
       return { kind: "change-refused", code: "unknown" };
@@ -1033,8 +1045,8 @@ export class DraftCommandOwner {
         for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
         return { kind: "done" };
       }
-      failed({ code: "discard-refused", serverCode: answer.status });
-      return { kind: "change-refused", code: answer.status };
+      failed({ code: "discard-refused", serverCode: discardCode(answer) });
+      return { kind: "change-refused", code: discardCode(answer) };
     } catch {
       failed({ code: "discard-unknown" });
       return { kind: "change-refused", code: "unknown" };

@@ -122,6 +122,13 @@ export function createWorkBranchReviewService(input: {
         // What the kernel ended decides the answer, stored with the command in its transaction.
         const settled = (ended: DiscardResult): DiscardCommandResult => {
           if (ended.status === "gone") return refused("gone");
+          if (ended.status === "returned")
+            return {
+              status: "returned",
+              branchId: item.branchId,
+              itemKey: item.itemKey,
+              settled: ended.settled,
+            };
           if (ended.status === "refused") return refused(ended.reason);
           const closed = ended.branchClosed || ended.closed.includes(item.documentId);
           return {
@@ -165,9 +172,11 @@ export function createWorkBranchReviewService(input: {
             ? { status: ended.reason, branchId }
             : ended.status === "gone"
               ? { status: "gone", branchId }
-              : ended.branchClosed
-                ? { status: "discarded", branchId }
-                : { status: "discarded", branchId, closed: [...ended.closed] };
+              : ended.status === "returned"
+                ? { status: "returned", branchId, settled: ended.settled }
+                : ended.branchClosed
+                  ? { status: "discarded", branchId }
+                  : { status: "discarded", branchId, closed: [...ended.closed] };
         return effect(envelope, async () =>
           settled(
             await input.discard.discardItems({
