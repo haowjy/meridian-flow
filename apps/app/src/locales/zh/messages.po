@@ -6794,6 +6794,10 @@ msgstr ""
 msgid "Undo"
 msgstr "撤销"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo applying {name}"
+msgstr ""
+
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo delete of {name}"
@@ -6849,6 +6853,14 @@ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Undo switch to draft mode"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the whole Apply, all {count} changes."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes them back out."
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
