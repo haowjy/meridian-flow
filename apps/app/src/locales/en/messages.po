@@ -123,6 +123,11 @@ msgstr "{0, plural, one {# call} other {# calls}}"
 msgid "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
 msgstr "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
 
+#. placeholder {0}: said.treeLeft
+#: src/features/project/context/use-tree-notice-words.tsx
+#~ msgid "{0, plural, one {# document stayed as it is: it was changed since.} other {# documents stayed as they are: they were changed since.}}"
+#~ msgstr "{0, plural, one {# document stayed as it is: it was changed since.} other {# documents stayed as they are: they were changed since.}}"
+
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
@@ -175,8 +180,8 @@ msgstr "{0, plural, one {# problem} other {# problems}}"
 
 #. placeholder {0}: said.textLeft
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
-msgstr "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+#~ msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+#~ msgstr "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -404,6 +409,18 @@ msgstr "{answered, plural, one {# answered} other {# answered}}"
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} can no longer be taken back."
+msgstr "{change} can no longer be taken back."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: it has writing in it since."
+msgstr "{change} stayed: it has writing in it since."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: it was changed since."
+msgstr "{change} stayed: it was changed since."
 
 #: src/features/chat/DraftDock.tsx
 msgid "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"
@@ -861,6 +878,10 @@ msgstr "{steps, plural, one {# step} other {# steps}}"
 #: src/features/creation/CreationDialog.tsx
 msgid "{submitLabel} (enter a name first)"
 msgstr "{submitLabel} (enter a name first)"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{text, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+msgstr "{text, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
 
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
 #~ msgid "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
@@ -4814,9 +4835,25 @@ msgstr "Not sent, signed out"
 msgid "Not sent: {0}"
 msgstr "Not sent: {0}"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone"
+msgstr "Not undone"
+
 #: src/features/agents/AgentSavesReceipt.tsx
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr "Not undone: {label} was saved again since."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+#~ msgid "Not undone: it was changed since."
+#~ msgstr "Not undone: it was changed since."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone: it was edited since."
+msgstr "Not undone: it was edited since."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone."
+msgstr "Not undone."
 
 #. placeholder {0}: whose(file.hiddenBy, file.slug)
 #: src/features/agents/AgentFileNotice.tsx
@@ -6577,6 +6614,18 @@ msgstr "The change could not be confirmed. Try again."
 #~ msgid "The change didn't fit the current draft. The AI will read it again."
 #~ msgstr "The change didn't fit the current draft. The AI will read it again."
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The change to this document"
+msgstr "The change to this document"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The change to this folder"
+msgstr "The change to this folder"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The delete"
+msgstr "The delete"
+
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The destination is no longer there."
 msgstr "The destination is no longer there."
@@ -6621,6 +6670,18 @@ msgstr "The header row stays first."
 msgid "The latest edits hadn't reached the server."
 msgstr "The latest edits hadn't reached the server."
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The move"
+msgstr "The move"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The new document"
+msgstr "The new document"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The new folder"
+msgstr "The new folder"
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr "The project could not be reached. The link itself is fine."
@@ -6629,6 +6690,10 @@ msgstr "The project could not be reached. The link itself is fine."
 msgid "the project's"
 msgstr "the project's"
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The rename"
+msgstr "The rename"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage in {name} wasn't specific enough."
 msgstr "The requested passage in {name} wasn't specific enough."
@@ -6636,6 +6701,10 @@ msgstr "The requested passage in {name} wasn't specific enough."
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage wasn't specific enough."
 msgstr "The requested passage wasn't specific enough."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "The restore from Trash"
+msgstr "The restore from Trash"
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "The review updated. Choose the change again."
@@ -7355,13 +7424,17 @@ msgid "Undid"
 msgstr "Undid"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undid applying {name}."
-msgstr "Undid applying {name}."
+#~ msgid "Undid applying {name}."
+#~ msgstr "Undid applying {name}."
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undid part of applying {name}."
+msgstr "Undid part of applying {name}."
 
 #: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
@@ -7435,8 +7508,8 @@ msgid "Undo save of {label}"
 msgstr "Undo save of {label}"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undo skipped applying {name}: the tree changed since."
-msgstr "Undo skipped applying {name}: the tree changed since."
+#~ msgid "Undo skipped applying {name}: the tree changed since."
+#~ msgstr "Undo skipped applying {name}: the tree changed since."
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped your change to {name}: it was changed again since."

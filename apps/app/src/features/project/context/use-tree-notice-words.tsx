@@ -1,5 +1,6 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { LeftOutWhy } from "@meridian/contracts/commands";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { type GoneRow, RowWord } from "@/components/app/RowWord";
@@ -8,6 +9,7 @@ import {
   endTreeNotice,
   type Said,
   subscribeTreeNotices,
+  type TreeFact,
   type TreeStep,
   treeBounces,
   treeNotice,
@@ -176,9 +178,17 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
     for (const { notice, list } of shown)
       if (notice.kind === "said")
         for (const said of notice.said)
-          put(said.nodes, (node) => (
-            <SaidWord key={node} said={said} onRetry={(step) => void list.undo(step)} />
-          ));
+          put(
+            said.kind === "left" ? said.nodes.filter((node) => leftOn(said, node)) : said.nodes,
+            (node) => (
+              <SaidWord
+                key={node}
+                said={said}
+                node={node}
+                onRetry={(step) => void list.undo(step)}
+              />
+            ),
+          );
     return {
       end,
       header,
@@ -295,12 +305,17 @@ function stepSentence(step: TreeStep, node: string): string {
   }
 }
 
-/** What a press has to say on a row: a step it skipped, or an Apply it couldn't fully take back. */
+/**
+ * What a press has to say on `node`'s row: a step it skipped, what an Un-Apply left of this row's
+ * change, or an Apply it couldn't reach the server for.
+ */
 function SaidWord({
   said,
+  node,
   onRetry,
 }: {
   said: Said;
+  node: string;
   onRetry: (step: Extract<Said, { kind: "failed" }>["step"]) => void;
 }) {
   const { name } = said;
@@ -310,23 +325,37 @@ function SaidWord({
         <RowWord
           tone="warning"
           word={<Trans>Skipped</Trans>}
-          sentence={
-            said.of === "apply"
-              ? t`Undo skipped applying ${name}: the tree changed since.`
-              : t`Undo skipped your change to ${name}: it was changed again since.`
-          }
+          sentence={t`Undo skipped your change to ${name}: it was changed again since.`}
         />
       );
-    case "partial": {
-      const stayed = plural(said.textLeft, {
-        one: "# text change stayed: it was edited since.",
-        other: "# text changes stayed: they were edited since.",
-      });
+    case "left": {
+      const fact = factOf(said, node);
+      const tree = said.treeLeft.find((one) => one.node === node);
+      const text = textOn(said, node);
+      const stayed = [
+        text > 0
+          ? plural(text, {
+              one: "# text change stayed: it was edited since.",
+              other: "# text changes stayed: they were edited since.",
+            })
+          : null,
+        tree ? treeLeftSentence(fact, tree.why) : null,
+      ].filter(Boolean);
+      if (said.taken === "nothing")
+        return (
+          <RowWord
+            tone="warning"
+            word={<Trans>Not undone</Trans>}
+            sentence={
+              tree ? [t`Not undone.`, ...stayed].join(" ") : t`Not undone: it was edited since.`
+            }
+          />
+        );
       return (
         <RowWord
           tone="warning"
           word={<Trans>Partly undone</Trans>}
-          sentence={`${t`Undid applying ${name}.`} ${stayed}`}
+          sentence={[t`Undid part of applying ${name}.`, ...stayed].join(" ")}
         />
       );
     }
@@ -342,3 +371,37 @@ function SaidWord({
       );
   }
 }
+
+/** Why the tree change an Un-Apply left on a row stayed, named as the writer saw it land. */
+function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
+  const change =
+    fact.did === "moved"
+      ? t`The move`
+      : fact.did === "renamed"
+        ? t`The rename`
+        : fact.did === "restored"
+          ? t`The restore from Trash`
+          : fact.did === "deleted"
+            ? t`The delete`
+            : fact.did === "created"
+              ? fact.folder
+                ? t`The new folder`
+                : t`The new document`
+              : fact.folder
+                ? t`The change to this folder`
+                : t`The change to this document`;
+  if (why === "purged") return t`${change} can no longer be taken back.`;
+  if (why === "has_text") return t`${change} stayed: it has writing in it since.`;
+  return t`${change} stayed: it was changed since.`;
+}
+
+const factOf = (said: Extract<Said, { kind: "left" }>, node: string): TreeFact =>
+  said.facts.get(node) ?? { did: null, folder: false };
+
+/** The answer doesn't say whose text stayed: every document row of the Apply says it. */
+const textOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
+  factOf(said, node).folder ? 0 : said.textLeft;
+
+/** Whether anything of `node`'s change stayed: a row taken back whole says nothing. */
+const leftOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
+  textOn(said, node) > 0 || said.treeLeft.some((one) => one.node === node);
