@@ -32,7 +32,6 @@ export async function seedSecondWork(fixture: CrossWorkProbeFixture): Promise<vo
       createdByUserId: USER_ID,
       title: "Work B primary chat",
       kind: "primary",
-      status: "idle",
       aiWriteMode: "draft",
     })
     .onConflictDoNothing();

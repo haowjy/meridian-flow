@@ -38,19 +38,6 @@ export function isNotesStepHeldResult(result: unknown): result is { refusal: "no
   );
 }
 
-// TODO(archive-delete): make archive + delete "both real" (product decision).
-// Today `archived` is unreachable: the server can set it (`transitionThreadArchive`)
-// but no route or UI calls that. `deletedAt` soft-delete (the trash) is wired. Intended model:
-//   archive → status:"archived" → reversible filing, hidden from default lists,
-//             browsable in an "Archived" view (unarchive returns it to idle)
-//   delete  → deletedAt tombstone → trashed, excluded from every list
-// Wire archive/unarchive mutations + a user-facing delete; keep them distinct.
-/**
- * Durable thread lifecycle. Run state (`active`/`idle`/`error`) is no longer
- * stored here; it is derived from the live lease. See {@link ThreadStatus}.
- */
-export type ThreadLifecycleStatus = Thread["status"];
-
 /** Lease phase published by the running loop; `generating` around the model call, `waiting` during tool calls, `compacting` while a compaction runs. */
 export type ThreadPhase = "generating" | "waiting" | "compacting";
 

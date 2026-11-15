@@ -42,7 +42,7 @@ export function groupChats(
     helpers.set(thread.parentThreadId, list);
   }
   const recent = threads
-    .filter((thread) => thread.kind === "primary" && thread.status !== "archived")
+    .filter((thread) => thread.kind === "primary")
     .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
   const states = new Map<string, RowState>();
   const replying = new Set<string>();
