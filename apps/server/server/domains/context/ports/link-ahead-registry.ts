@@ -14,8 +14,8 @@ export type AheadRegistration = AheadHolder & {
  */
 export type AheadHolder = { holderProjectId: ProjectId } | { holderUserId: UserId };
 
-/** Which holders' index rows a registration recovery reads. */
-export type AheadRecoveryScope = { documentId: DocumentId } | { projectId: ProjectId };
+/** Which holders' index rows a registration recovery reads: one holder's. */
+export type AheadRecoveryScope = { documentId: DocumentId };
 
 /** One page of recovery, in ahead-id order, strictly after `after`. */
 export type AheadRecoveryPage = { after?: string; limit: number };

@@ -22,7 +22,6 @@ import { livingDocumentSql } from "../../context/tree/living-document.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { documentHash } from "../domain/document-derivations.js";
 import {
-  type DerivationScope,
   DOCUMENT_EXTRACTOR_VERSION,
   type DocumentDerivationCut,
   type DocumentDerivationOutputs,
@@ -220,7 +219,7 @@ export async function certifyDocumentDerivation(
 /** Registry recovery the derive step drives; the collab domain never imports the registry. */
 export type AheadRegistrationRecovery = {
   registerUnregistered(
-    scope: { documentId: DocumentId } | DerivationScope | undefined,
+    scope: { documentId: DocumentId } | undefined,
     page: { after?: string; limit: number },
   ): Promise<{ registered: number; next: string | null }>;
 };
@@ -273,7 +272,6 @@ export function createDrizzleDocumentDerivationStore(
       // namespace keys in its own root transaction, so it waits for this commit (§6.1, O6).
       if (!deferUntilDrizzleCommit(register)) await register();
     },
-    drainAheads: (scope) => drain(scope),
     recoverAheads: (after) => page(undefined, after),
     capture(documentId) {
       return runInDrizzleTransaction(db, async () => {
@@ -289,7 +287,7 @@ export function createDrizzleDocumentDerivationStore(
         return certifyDocumentDerivation(tx, cut, outputs, at);
       });
     },
-    async stale(scope, page) {
+    async stale(page) {
       // LIMIT bounds returned stale rows, not the cross-table freshness scan.
       const rows = await currentDrizzleDb(db)
         .select({ id: documents.id })
@@ -301,7 +299,6 @@ export function createDrizzleDocumentDerivationStore(
           and(
             livingDocumentSql(documents.id),
             staleForSweep,
-            scope ? eq(documents.projectId, scope.projectId) : undefined,
             page?.after ? gt(documents.id, page.after) : undefined,
           ),
         )

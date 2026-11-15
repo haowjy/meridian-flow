@@ -595,9 +595,9 @@ describe("durable document derivations", () => {
     const folderId = await seeder.folder(sourceId, "moved");
     await liveEdit((writer) => writer.move(LIVE, "system", documentId, folderId));
     expect(await store.certify(preMove, outputsOf("wrong folder"), new Date())).toBe(false);
-    expect(await store.stale({ projectId })).toEqual([documentId]);
-    await service.flush({ projectId });
-    expect(await store.stale({ projectId })).toEqual([]);
+    expect(await store.stale()).toEqual([documentId]);
+    await service.derive(documentId);
+    expect(await store.stale()).toEqual([]);
     const [watermark] = await db
       .select()
       .from(documentBlockRooms)
@@ -624,9 +624,9 @@ describe("durable document derivations", () => {
             .where(eq(documentBlockRooms.documentId, documentId)),
         ),
       );
-    expect(await store.stale({ projectId })).toEqual([documentId]);
-    await service.flush({ projectId });
-    expect(await store.stale({ projectId })).toEqual([]);
+    expect(await store.stale()).toEqual([documentId]);
+    await service.derive(documentId);
+    expect(await store.stale()).toEqual([]);
     expect(await projection()).toBe("old new");
     // A live document under a deleted folder holds no address there (deleted-ancestor rule).
     await liveEdit((writer) => writer.delete(LIVE, "system", folderId));

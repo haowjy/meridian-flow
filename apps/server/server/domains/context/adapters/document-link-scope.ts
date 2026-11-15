@@ -46,6 +46,7 @@ import type {
 import type { FileAccess } from "../../file-policy/index.js";
 import type { ProjectContextAvailabilityPort } from "../ports/project-context-availability.js";
 import type { TreeList } from "../ports/tree-list-store.js";
+import { ownedByRequest } from "../tree/source-owner.js";
 import {
   type DocumentAddressSelection,
   type DocumentCoordinates,
@@ -698,6 +699,8 @@ function snapshotCatalog(
   miss: (key: string) => void,
 ): HolderCatalog & { branchCreatedAt(uri: string): CatalogDocument | null } {
   const key = viewKey(view);
+  const owned = (row: Row) =>
+    ownedByRequest(row.list, { projectId: snapshot.projectId, accountId: snapshot.viewer });
   /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
   const statusOf = (row: Row) => {
     const status = snapshot.views.get(key)?.statuses.get(row.id as DocumentId);
@@ -728,10 +731,7 @@ function snapshotCatalog(
       presence: status.kind === "deleted" ? "deleted" : branch ? "branch" : "live",
       ...(branch ? { branch } : {}),
       readable: snapshot.readable.get(row.id) ?? false,
-      nameable:
-        row.list.kind === "project"
-          ? row.list.projectId === snapshot.projectId
-          : row.list.userId === snapshot.viewer,
+      nameable: owned(row),
     };
   };
   const atAddress = (uri: string, stems: boolean) => {
@@ -835,8 +835,8 @@ function snapshotCatalog(
     assetAddress(id) {
       const row = snapshot.rows.get(id);
       if (row === undefined) return undefined;
-      // Never another project's address: its id names nothing this reader has.
-      if (!row?.image || projectOf(row) !== snapshot.projectId) return null;
+      // Never another owner's address: its id names nothing this reader has.
+      if (!row?.image || !owned(row)) return null;
       const status = statusOf(row);
       if (status === UNLOADED) return undefined;
       // "gone" is a document in no view, or one with no spellable address: it names nothing
@@ -855,11 +855,11 @@ function snapshotCatalog(
     assetFor(uri) {
       const live = liveImage(uri);
       if (live === UNLOADED) return undefined;
-      if (live && projectOf(live) === snapshot.projectId) return live.id;
+      if (live && owned(live)) return live.id;
       if (!snapshot.addresses.has(uri)) return undefined;
       const deleted = soleDeletedImage(uri);
       if (deleted === UNLOADED) return undefined;
-      return deleted && projectOf(deleted) === snapshot.projectId ? deleted.id : null;
+      return deleted && owned(deleted) ? deleted.id : null;
     },
   };
 }

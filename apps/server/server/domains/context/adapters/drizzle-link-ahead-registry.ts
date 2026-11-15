@@ -244,11 +244,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           isNotNull(documentLinks.aheadId),
           isNotNull(documentLinks.address),
           isNull(linkAheadRefs.aheadId),
-          scope === undefined
-            ? undefined
-            : "documentId" in scope
-              ? eq(documentLinks.sourceDocumentId, scope.documentId)
-              : sql`${sourceOwnerProjectId} = ${scope.projectId}`,
+          scope === undefined ? undefined : eq(documentLinks.sourceDocumentId, scope.documentId),
           page.after ? gt(documentLinks.aheadId, page.after) : undefined,
         ),
       )

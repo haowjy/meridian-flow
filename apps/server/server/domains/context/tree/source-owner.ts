@@ -43,7 +43,7 @@ export function sameOwner(a: TreeList, b: TreeList): boolean {
  */
 export function ownedByRequest(
   owner: TreeList,
-  request: { projectId: string; accountId: string },
+  request: { projectId: string | null; accountId: string | null },
 ): boolean {
   return owner.kind === "project"
     ? owner.projectId === request.projectId
