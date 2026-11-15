@@ -39,8 +39,9 @@ export type WorkListProjection = {
 
 /**
  * Active: Works being created, then each just-deleted Work's Undo row (newest
- * delete first), then the tab's Works. Archived: its Undo rows, then its
- * Works. Deleted: every deleted Work the server still holds, from the
+ * delete first), then the tab's Works; the list puts an Undo row back where its
+ * Work was when it can. Archived: its Undo rows, then its Works. Deleted: every
+ * deleted Work the server still holds, from the
  * moment it is deleted; a Work with an open Undo row shows in both.
  */
 export function workListEntries(

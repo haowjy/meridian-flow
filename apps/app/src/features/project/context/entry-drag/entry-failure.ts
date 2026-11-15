@@ -231,7 +231,9 @@ export async function runDelete(
       });
     }
   }
-  if (context.notice && taken.length > 0)
+  // In the sidebar the rows carry the delete's Undo (`TreeNotice`); a line shows only where no row
+  // does: on main's Recently opened, or where main went back to when the delete took its document.
+  if (context.notice && taken.length > 0 && (leaving || context.notice.at === "main"))
     shown = showDeleteNotice(context.notice, projectId, taken, leaving, covered.flat()[0] ?? "");
 }
 
@@ -240,7 +242,7 @@ export async function runDelete(
  * runs first, the other has nothing left (a press ends the notice).
  */
 function showDeleteNotice(
-  { notices, at }: NonNullable<EntryContext["notice"]>,
+  { notices }: NonNullable<EntryContext["notice"]>,
   projectId: string,
   taken: readonly { list: EntryActions["project"]; step: TreeStep; names: string[] }[],
   leaving: string | null,
@@ -249,15 +251,15 @@ function showDeleteNotice(
   const names = taken.flatMap((each) => each.names);
   const surface: NoticeSurface = leaving
     ? { kind: "band", documentId: leaving }
-    : { kind: at === "main" ? "landing" : "tree" };
+    : { kind: "landing" };
   const handle: DiscardUndo = {
-    undo: () => ({
-      answer: taken.map(({ list, step }) => list.undo(step)).some(Boolean) ? "ok" : "gone",
+    undo: async () => ({
+      answer: (await Promise.all(taken.map(({ list, step }) => list.undo(step)))).some(Boolean)
+        ? "ok"
+        : "gone",
       landed: Promise.resolve(),
     }),
-    end: () => {
-      for (const stop of stops) stop();
-    },
+    end: () => {},
   };
   // The notice's one Undo covers every list's step: it ends with the last of them.
   const standing = new Set(taken.map(({ step }) => step));
@@ -268,7 +270,6 @@ function showDeleteNotice(
       handle.end();
       notices.partEnded(handle);
     };
-  const stops = taken.map(({ list, step }) => list.endWhenRestored(step));
   const id = notices.showDiscard({
     projectId,
     ownerKey: deleteNoticeKey(projectId),

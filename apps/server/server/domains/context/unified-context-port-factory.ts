@@ -7,7 +7,7 @@
  * thread resolution to context-port-resolution.ts.
  */
 
-import type { BranchId, CanonicalContextAuthority } from "@meridian/contracts";
+import type { BranchId, CanonicalContextAuthority, DraftOwner } from "@meridian/contracts";
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
@@ -121,21 +121,26 @@ interface AdapterAssembly {
 }
 
 /**
- * Where an adapter's creates land (contract §2.3): a draft-mode thread's drafted source
- * is a draft placement, exactly as `sourceDestination` decides; people and auto-apply
- * Works are live.
+ * Where an adapter's creates land (contract §2.3): a drafted source whose writes draft is a
+ * draft placement, exactly as `sourceDestination` decides; people and the places an auto-apply
+ * chat writes live are live. A draft-mode chat's live source still reads its branch's tree, where
+ * a draft moved a file in.
  */
 function placementFor(assembly: AdapterAssembly, scheme: ContextScheme): ContextPlacement {
   const { thread, branches } = assembly;
-  if (!thread?.branchOwner) return { kind: "live" };
-  const destination = sourceDestination(scheme, thread.branchOwner);
-  const branch = {
-    owner: thread.branchOwner.owner,
+  if (!thread) return { kind: "live" };
+  const destination =
+    thread.destination ?? sourceDestination(thread.writeMode, scheme, thread.branchOwner);
+  const branch = (owner: DraftOwner) => ({
+    owner,
     threadId: thread.threadId as ThreadId,
     userId: assembly.owner.userId as UserId,
     branches,
-  };
-  return destination.kind === "draft" ? { kind: "draft", ...branch } : { kind: "live", branch };
+  });
+  if (destination.kind === "draft") return { kind: "draft", ...branch(destination.owner) };
+  return thread.writeMode === "draft" && !thread.destination
+    ? { kind: "live", branch: branch(thread.branchOwner.owner) }
+    : { kind: "live" };
 }
 
 function contextFsAdapter(

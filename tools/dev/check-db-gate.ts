@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 /**
  * Local DB gate — runs only the Postgres-backed test files related to changes
  * since origin/main, including staged, unstaged, and untracked files.

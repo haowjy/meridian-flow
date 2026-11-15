@@ -170,7 +170,6 @@ export function useEntryList({
             restoreInto(
               plan.entries.map((entry) => ({ ref: trashRef(entry), name: entry.name })),
               plan.destination,
-              plan.destinationName,
             );
           return;
         }

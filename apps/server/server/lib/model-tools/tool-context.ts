@@ -73,7 +73,10 @@ export interface ToolWiringDeps {
   /** Deletes the duplicate when the copy's destination write fails. */
   release: ObjectRelease;
   /** Every model read and write asks the file policy first (file-access §1). */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "historyAccess">;
+  fileAccess: Pick<
+    FileAccess,
+    "authorize" | "authorizeAt" | "confirmEdit" | "listAccess" | "historyAccess"
+  >;
   /** The removal record behind a missing file the model already addresses by id. */
   documentRemovals: DocumentRemovals;
   /** Retained project Trash, used to confirm a history-resolved missing document still exists. */

@@ -91,8 +91,9 @@ In an owned project, seed two Manuscript folders and an editable Work's Scratch
 with two folders and a note. Open a chat bound to that Work (for example Beats).
 
 1. In Files tree, chat Scratch, and Work Files, rename a file in place, move it
-   to another folder, then delete it. The file leaves the list at once, with no toast,
-   and waits in Trash. Restore it there: the file returns at its prior path, and
+   to another folder, then delete it. Each step says "Undo" in the row's trailing place,
+   with no toast; the deleted row stays struck through in its place until the next action
+   there, and the file waits in Trash. Restore it there: the file returns at its prior path, and
    `./mf doc read` returns its content. Keep all operations
    in the isolated project.
 2. In Work Files, repeat Rename and Delete on a populated folder. Its menu
@@ -118,7 +119,8 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    Repeat with Work trash/restore cascading over the lineage's chats.
 4. Seed a `zz-probe` folder with nested documents. Keep descendants open in
    main, the side and kept (open one, then another, with a chat in between). Delete the folder
-   from its list: the rows disappear at once, and the open documents close with the removed notice.
+   from its list: the folder's row is struck through with "Undo" at once, its rows go, and the
+   open documents close with the removed notice.
    Repeat offline, reload, then reconnect: the delete lands once and the tree agrees in a second tab.
 5. Delete a Scratch note independently, then trash and restore its No Work chat
    and its Work. The independently deleted note never returns.

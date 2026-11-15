@@ -16,10 +16,11 @@ import type {
   UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import type { JsonValue, StoredMediaPart } from "@meridian/contracts/threads";
+import type { JsonValue } from "@meridian/contracts/threads";
 import { markdownLinkDestination } from "@meridian/markup/links";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import type { RunClaim } from "../loop/ports.js";
+import type { ChatMediaPort } from "../ports/chat-media.js";
 
 export const MAX_USER_MESSAGE_BLOCKS = 64;
 export const MAX_USER_MESSAGE_IMAGES = 16;
@@ -429,10 +430,7 @@ export function createUserTurnAdmission(deps: {
   runClaim: Pick<RunClaim, "withExclusiveThread">;
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
-  /** The image's name, type and size as stored; null when the file is no image the server can name. */
-  describeImage(
-    documentId: string,
-  ): Promise<Pick<StoredMediaPart, "mediaType" | "sizeBytes" | "name"> | null>;
+  chatMedia: ChatMediaPort;
   /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
   verifyDraftUpload?(
     reference: Extract<SubmittedReference, { kind: "document" }> & { intakeId: string },
@@ -601,7 +599,7 @@ export function createUserTurnAdmission(deps: {
           storedBlocks.push(block);
           continue;
         }
-        const media = await deps.describeImage(block.documentId);
+        const media = await deps.chatMedia.admit(input.threadId, block.documentId);
         if (!media) throw attachmentFailed();
         storedBlocks.push({ ...block, ...media });
       }

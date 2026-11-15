@@ -13,7 +13,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { contentInset, ICON_SLOT_PX, ListRow, ListRowField } from "@/components/ui/list-row";
+import { withGone } from "@/components/app/RowWord";
+import { contentInset, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { useRevealImport } from "@/features/import/ImportProvider";
@@ -30,10 +31,9 @@ import { type ContextEntrySibling, parentContextEntryPath } from "./context-entr
 import { fileKindIcon } from "./context-file-icon";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
-import { EntryRefusalNotice } from "./EntryRefusalNotice";
 import type { DragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
-import { NamespaceFailureMark } from "./NamespaceFailureMark";
+import { RefusalWord } from "./NamespaceFailureMark";
 import { DropRegion, InsertionLine } from "./tree-drop/DropRegion";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
 import { useCreateEntryForm } from "./use-create-entry-form";
@@ -43,6 +43,7 @@ import {
   useEntryInteraction,
 } from "./use-entry-interaction";
 import { useRenameEntryForm } from "./use-rename-entry-form";
+import type { TreeNoticeWords } from "./use-tree-notice-words";
 
 export type TreeEnv = {
   projectId: string;
@@ -65,6 +66,8 @@ export type TreeEnv = {
     placeAt: (folderPath: string) => void;
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: TreeFile) => void;
+  /** What the lists say on their rows: the latest gesture's Undo, or what a press skipped. */
+  notices: TreeNoticeWords;
   onRequestDelete: (entries: readonly DragEntry[]) => void;
   importHere?: {
     folders: boolean;
@@ -79,8 +82,6 @@ export type TreeEnv = {
   /** The tree's rows with the imports still being built; the tree's own when none is. */
   rows?: ImportedTree;
   visibleIds?: ReadonlySet<string>;
-  /** Rows say a refusal in words with its repair, where nothing can hover (the phone). */
-  refusalNotice?: true;
 };
 
 const TreeEnvContext = createContext<TreeEnv | null>(null);
@@ -128,34 +129,46 @@ export function TreeChildren({
   const rows = useMemo(() => env.rows ?? plainTree(env.tree), [env.rows, env.tree]);
   const children = rows.rows(parentId);
   const siblings = useMemo(() => siblingsOf(children), [children]);
+  const shown = children.filter(
+    (child) =>
+      child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
+  );
+  const held = withGone(shown, rowId, env.notices.deleted(parentId));
   return (
     <>
-      {children
-        .filter(
-          (child) =>
-            child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
-        )
-        .map((child) =>
-          child.origin === "import" ? (
-            <PendingTreeRow key={child.id} row={child} depth={depth} />
-          ) : child.node.kind === "dir" ? (
-            <DirRow
-              key={rowId(child)}
-              dir={child.node}
+      {held.map((item) => {
+        if (item.gone)
+          return (
+            <ListRow
+              key={item.key}
               depth={depth}
-              siblings={siblings}
-              parent={parent}
+              gone
+              icon={item.row.kind === "folder" ? Folder : fileKindIcon(item.row.name)}
+              title={item.row.name}
+              notice={env.notices.word(item.key, true)}
             />
-          ) : (
-            <FileRow
-              key={rowId(child)}
-              file={child.node}
-              depth={depth}
-              siblings={siblings}
-              parent={parent}
-            />
-          ),
-        )}
+          );
+        const child = item.row;
+        return child.origin === "import" ? (
+          <PendingTreeRow key={child.id} row={child} depth={depth} />
+        ) : child.node.kind === "dir" ? (
+          <DirRow
+            key={item.key}
+            dir={child.node}
+            depth={depth}
+            siblings={siblings}
+            parent={parent}
+          />
+        ) : (
+          <FileRow
+            key={item.key}
+            file={child.node}
+            depth={depth}
+            siblings={siblings}
+            parent={parent}
+          />
+        );
+      })}
       {/* At the end of the folder: where the new entry lands, so nothing moves on Enter. */}
       {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
@@ -251,32 +264,18 @@ function DirRow({
           frameProps={drop.dropProps}
           menu={interaction.menu}
           revealActions
-          trailing={
-            dir.namespaceFailure && !env.refusalNotice ? (
-              <NamespaceFailureMark
+          notice={
+            env.notices.word(dir.entryId) ??
+            (dir.namespaceFailure ? (
+              <RefusalWord
                 failure={dir.namespaceFailure}
                 move={Boolean(dir.namespaceRepairMove)}
                 reason={dir.failureReason}
                 folder
               />
-            ) : env.changed?.has(dir.entryId) ? (
-              <DraftChangeMark />
-            ) : null
+            ) : null)
           }
-          below={
-            dir.namespaceFailure && env.refusalNotice ? (
-              <RowNotice depth={depth}>
-                <EntryRefusalNotice
-                  failure={dir.namespaceFailure}
-                  move={Boolean(dir.namespaceRepairMove)}
-                  reason={dir.failureReason}
-                  folder
-                  actions={interaction.actions}
-                  onAction={interaction.onAction}
-                />
-              </RowNotice>
-            ) : null
-          }
+          trailing={env.changed?.has(dir.entryId) ? <DraftChangeMark /> : null}
         />
       </EntryDestinationPicker>
       {isOpen ? (
@@ -366,30 +365,17 @@ function FileRow({
         frameProps={drop.dropProps}
         menu={interaction.menu}
         revealActions
-        trailing={
-          file.namespaceFailure && !env.refusalNotice ? (
-            <NamespaceFailureMark
+        notice={
+          env.notices.word(file.entryId) ??
+          (file.namespaceFailure ? (
+            <RefusalWord
               failure={file.namespaceFailure}
               move={Boolean(file.namespaceRepairMove)}
               reason={file.failureReason}
             />
-          ) : env.changed?.has(file.documentId) ? (
-            <DraftChangeMark />
-          ) : null
+          ) : null)
         }
-        below={
-          file.namespaceFailure && env.refusalNotice ? (
-            <RowNotice depth={depth}>
-              <EntryRefusalNotice
-                failure={file.namespaceFailure}
-                move={Boolean(file.namespaceRepairMove)}
-                reason={file.failureReason}
-                actions={interaction.actions}
-                onAction={interaction.onAction}
-              />
-            </RowNotice>
-          ) : null
-        }
+        trailing={env.changed?.has(file.documentId) ? <DraftChangeMark /> : null}
       />
     </EntryDestinationPicker>
   );
@@ -404,11 +390,6 @@ function DraftChangeMark() {
       </span>
     </span>
   );
-}
-
-/** Under a row, on its title's edge: a refusal said in words, with its repair. */
-function RowNotice({ depth, children }: { depth: number; children: ReactNode }) {
-  return <div style={{ paddingLeft: contentInset(depth) + ICON_SLOT_PX }}>{children}</div>;
 }
 
 function RenameRow({

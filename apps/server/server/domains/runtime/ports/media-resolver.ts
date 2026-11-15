@@ -1,4 +1,5 @@
 /** The host's answer to "what can the model be given for this stored file, right now?". */
+import type { StoredMediaPart } from "@meridian/contracts/threads";
 
 /**
  * The span a signed link stays identical for: the thread's prompt-cache lifetime. How long the
@@ -42,10 +43,14 @@ export interface MediaResolverPort {
     projectId: string;
     reason: "unavailable_or_over_budget";
   }): void;
-  /** The runtime treats `ref` as opaque. Null: the file is gone or the thread may not read it. */
+  /**
+   * The runtime treats `ref` as opaque. A part with a `chatCopy` is the chat's own picture and
+   * reads from that copy, with no placement or grant check. Null: the file is gone or the thread
+   * may not read it.
+   */
   resolve(
     context: { projectId: string; threadId: string; actorUserId: string },
-    ref: { documentId: string; uri: string },
+    part: Pick<StoredMediaPart, "ref" | "mediaType" | "sizeBytes" | "name" | "chatCopy">,
     window: LinkWindow,
   ): Promise<ResolvedMedia | null>;
 }

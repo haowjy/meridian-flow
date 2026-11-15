@@ -128,6 +128,7 @@ function harness(
   const threadProject = vi.fn(async () => projectId);
   const runClaim = createInMemoryRunClaim();
   const service = createUserTurnAdmission({
+    chatMedia: { admit: async () => IMAGE_FACTS },
     runClaim,
     records: {
       lookup,
@@ -151,7 +152,6 @@ function harness(
     },
     availability,
     threadProject,
-    describeImage: async () => IMAGE_FACTS,
     verifyDraftUpload: vi.fn(async () => draftUploadMatches),
     authorizeActivatedSkills,
     producer: { enqueue: producer },

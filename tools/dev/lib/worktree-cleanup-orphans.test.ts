@@ -9,7 +9,6 @@ import { devTmuxArgs } from "./dev-tmux-socket";
 
 const checkout = fileURLToPath(new URL("../../../", import.meta.url));
 const cli = path.join(checkout, "tools/dev/prune-worktrees.ts");
-const tsx = path.join(checkout, "node_modules/tsx/dist/cli.mjs");
 const hasTmux = spawnSync("tmux", ["-V"]).status === 0;
 
 // These cases launch real CLIs and wait for process teardown, not just in-memory work.
@@ -62,7 +61,7 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
   }
 
   function prune(...args: string[]) {
-    return run(process.execPath, [tsx, cli, "--orphans", ...args]);
+    return run("bun", [cli, "--orphans", ...args]);
   }
 
   function stubbornSession(root: string, spawnChildOnTerm = false): string {
@@ -105,7 +104,7 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
       ${body}
     `,
     );
-    return run(process.execPath, [tsx, runner]);
+    return run("bun", [runner]);
   }
 
   beforeEach(() => {

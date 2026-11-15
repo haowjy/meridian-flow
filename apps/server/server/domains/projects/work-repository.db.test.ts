@@ -1071,6 +1071,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readHead: backingStore.readHead.bind(backingStore),
         signPut: backingStore.signPut.bind(backingStore),
         get: backingStore.get.bind(backingStore),
+        list: backingStore.list.bind(backingStore),
         async delete() {
           deleteObservedCommittedPurge = (await works.findById(work.id)) === null;
           return {

@@ -24,7 +24,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
-import { sourceDestination } from "../../../file-policy/index.js";
+import { type FileDestination, sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, renderFilename, splitPath } from "../../context/paths.js";
@@ -552,13 +552,24 @@ export class ContextFS implements ContextSchemeAdapter {
     const first = searchable[0];
     if (!first) return Ok({ files: [], totalFiles: 0, exact: true });
 
-    const view = this.threadView();
+    const viewOf = (documentId: string) =>
+      this.threadView(access.get(documentId)?.destination) ?? { destination: "live" as const };
     const stored = async (ids: string[]) => {
-      const texts = await this.documentSync.readStoredGrepTexts({
-        ...(view ?? { destination: "live" as const }),
-        documentIds: ids as DocumentId[],
-      });
-      return new Map<string, string>(texts);
+      // Each document's text is read where its own access reads it.
+      const groups = new Map<string, string[]>();
+      for (const id of ids) {
+        const key = JSON.stringify(viewOf(id));
+        groups.set(key, [...(groups.get(key) ?? []), id]);
+      }
+      const texts = await Promise.all(
+        [...groups.values()].map((group) =>
+          this.documentSync.readStoredGrepTexts({
+            ...viewOf(group[0] as string),
+            documentIds: group as DocumentId[],
+          }),
+        ),
+      );
+      return new Map<string, string>(texts.flatMap((read) => [...read]));
     };
     // One source has one project association, including personal and Work sources; its
     // chapters' reads join this snapshot, so it is read in their thread.
@@ -566,7 +577,7 @@ export class ContextFS implements ContextSchemeAdapter {
       {
         documentId: first.id,
         documentIds: searchable.map(({ id }) => id),
-        ...(view ? { viewer: { threadId: view.threadId } } : {}),
+        ...(this.readView ? { viewer: { threadId: this.readView.threadId } } : {}),
       },
       async () => {
         const scanned = await scanDocuments({
@@ -577,7 +588,7 @@ export class ContextFS implements ContextSchemeAdapter {
           headLimit: query.headLimit,
           signal: query.signal,
           read: async (documentId) => {
-            const read = await this.readGrepBlocks(documentId);
+            const read = await this.readGrepBlocks(documentId, viewOf(documentId));
             return read.ok ? read : { ok: false, error: this.syncFault(read.error) };
           },
         });
@@ -588,7 +599,7 @@ export class ContextFS implements ContextSchemeAdapter {
             path: document.path,
             documentId: document.id,
             revision,
-            readonly: access.get(document.id) !== "edit",
+            readonly: access.get(document.id)?.level !== "edit",
             matches: query.mode === "content" && match ? match.matches : [],
             ...(query.mode === "files_with_matches" ? {} : { matchCount }),
             ...(shown ? { shown } : {}),
@@ -599,15 +610,24 @@ export class ContextFS implements ContextSchemeAdapter {
     );
   }
 
-  /** The thread reading this source and the version it reads, or null outside a thread. */
-  private threadView(): ({ threadId: ThreadId } & EffectiveReadVersion) | null {
+  /**
+   * The thread reading this source and the version it reads, or null outside a thread. A
+   * document's own access decision gives `decided`; only a read with no decision (a person
+   * opening a path) falls back to what this source's scheme sends the chat's writes to.
+   */
+  private threadView(
+    decided?: FileDestination,
+  ): ({ threadId: ThreadId } & EffectiveReadVersion) | null {
     const view = this.readView;
     if (!view) return null;
     const reader = { threadId: view.threadId as ThreadId };
     // Without a separate draft both versions are the same document.
-    const drafted = sourceDestination(this.scheme, view.branchOwner).kind === "draft";
-    return view.version !== "live" && drafted && view.branchOwner
-      ? { ...reader, destination: "draft", owner: view.branchOwner.owner }
+    const at =
+      decided ??
+      view.destination ??
+      sourceDestination(view.writeMode, this.scheme, view.branchOwner);
+    return (decided || view.version !== "live") && at.kind === "draft"
+      ? { ...reader, destination: "draft", owner: at.owner }
       : { ...reader, destination: "live" };
   }
 
@@ -629,8 +649,8 @@ export class ContextFS implements ContextSchemeAdapter {
    */
   private async readGrepBlocks(
     documentId: string,
+    view: { threadId?: ThreadId } & EffectiveReadVersion,
   ): Promise<{ ok: true; value: GrepRead<GrepShowing> } | { ok: false; error: SyncError }> {
-    const view = this.threadView() ?? { destination: "live" as const };
     const read = await this.documentSync.readEffectiveHashlines({
       ...view,
       documentId: documentId as DocumentId,

@@ -58,7 +58,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scratchOwner: { scope: "work", workId: w },
       },
     ];
-    const agent: Principal = { accountId: u, agent: { chain, branchOwner: null } };
+    const agent: Principal = {
+      accountId: u,
+      agent: {
+        chain,
+        branchOwner: { owner: { kind: "work", workId: w }, handle: null },
+        writeMode: "direct",
+      },
+    };
 
     beforeEach(async () => {
       const db = database.current;

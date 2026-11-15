@@ -1028,10 +1028,9 @@ export class DraftCommandOwner {
             }),
       });
       if (answer.status === "discarded") {
-        // A branch that closed ends its item keys; a selection's items stay the branch's, and
-        // the caller drops their rows with this answer, as an item's server Discard does.
-        if (!("all" in selection))
-          for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
+        // The caller drops the rows with this answer, as an item's server Discard does: the
+        // keys stay live, since the Discard's Undo reopens the same items, even a closed branch's.
+        for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
         return { kind: "done" };
       }
       failed({ code: "discard-refused", serverCode: answer.status });

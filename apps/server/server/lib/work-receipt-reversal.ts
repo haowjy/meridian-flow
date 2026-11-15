@@ -123,7 +123,7 @@ export async function reverseTurnCard(
       },
       input.threadId,
       input.userId,
-      { liveWrites: true },
+      { destination: { kind: "live" } },
     );
     const moved = await moveBackAcrossLists(
       port,

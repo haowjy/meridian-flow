@@ -62,7 +62,7 @@ function image(id: string): Block {
 
 function assets(sizes: ReadonlyMap<string, number>): MediaResolverPort {
   return {
-    async resolve(_context, identity) {
+    async resolve(_context, { ref: identity }) {
       const sizeBytes = sizes.get(identity.documentId);
       if (sizeBytes === undefined) return null;
       return bytesMedia({ data: identity.uri, sizeBytes });

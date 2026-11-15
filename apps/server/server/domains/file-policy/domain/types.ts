@@ -16,6 +16,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 
 // ---------------------------------------------------------------------------
@@ -64,7 +65,7 @@ export interface WorkRef {
   handle: string | null;
 }
 
-/** The owner whose branch drafted writes land in, with the handle refusal copy names it by. */
+/** The owner whose branch an agent's drafts land in, with the handle refusal copy names it by. */
 export interface BranchOwnerRef {
   owner: DraftOwner;
   handle: string | null;
@@ -72,15 +73,28 @@ export interface BranchOwnerRef {
 
 /**
  * Who is asking. A person acts alone; an agent acts for the person, under its
- * delegation chain, and in draft mode routes drafted sources to `branchOwner`.
+ * delegation chain. Its drafts go to `branchOwner` in either mode; `writeMode` says whether
+ * every drafted source drafts (`draft`), or only the places that ask for review do.
  */
 export interface Principal {
   accountId: UserId;
   agent?: {
     chain: AgentChain;
-    /** The owner whose branch drafted sources land in; null outside draft mode. */
-    branchOwner: BranchOwnerRef | null;
+    branchOwner: BranchOwnerRef;
+    writeMode: AiWriteMode;
   };
+}
+
+/**
+ * What a place does with an AI write: `auto-apply` lands it, `ask` lands it as a draft for the
+ * writer to Apply, `deny` leaves the place read-only to the AI.
+ */
+export type AiAccess = "auto-apply" | "ask" | "deny";
+
+/** A setting on a node of the live tree. */
+export interface AiAccessSetting {
+  node: FileNode;
+  access: AiAccess;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +192,12 @@ export interface FileFacts {
   self: FileNode | null;
   /** Nearest first: folders up to the source, the source, the owning Work, the project. */
   ancestors: readonly FileNode[];
+  /**
+   * The settings on the file and its folders, source and Work in the *live* tree, nearest first;
+   * never a draft's view, or a draft move of a file out of a `deny` folder would escape it.
+   * The policy takes the first. Absent until settings are stored.
+   */
+  aiAccessSettings?: readonly AiAccessSetting[];
   /** The owner whose branch this access goes through, when one was asked about. */
   branchOwner?: FileBranchOwnerFacts;
 }

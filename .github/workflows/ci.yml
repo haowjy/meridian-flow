@@ -34,6 +34,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - run: node tools/ci/run-check-group.mjs static
 
@@ -49,6 +52,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       # Keep Nx outputs local to this runner; do not restore them across CI runs.
       - run: node tools/ci/run-check-group.mjs typecheck
@@ -70,6 +76,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - run: node tools/ci/run-check-group.mjs test --shard=1/2
 
@@ -89,6 +98,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - run: node tools/ci/run-check-group.mjs test --shard=2/2
 
@@ -128,6 +140,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meridian/database exec drizzle-kit check
       - name: Check generated baseline
@@ -179,6 +194,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - name: Create throwaway database
         run: createdb -h 127.0.0.1 -U postgres meridian_test_ci
@@ -205,6 +223,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       # Boots the app dev server and asserts the exact public route contract —
       # catches transform/wiring-class runtime breaks `pnpm check` misses.
@@ -225,6 +246,9 @@ jobs:
         with:
           node-version: 24.17.0
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       # Builds .output, passes structurally valid fake production config through
       # the child environment, then boots and probes the generated Nitro server.

@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 import { execFileSync } from "node:child_process";
 import { ensureDatabaseForUrl, formatPgError } from "./lib/dev-db";
 import { applyDevEnvToProcess, DEV_DATABASES, resolveCurrentRepoRoot } from "./lib/dev-env";
