@@ -128,7 +128,8 @@ export type FileOwnerRef =
  * the text room, which takes text until the node is purged. Restore admission reads through
  * document and folder tombstones because placement revives that chain; source, project,
  * owner-Work, and ownership lifecycle still apply. A `draft` with `restore` is that restore in
- * a Work's draft: the Work's own delete and live's Trash are read through the same way.
+ * a Work's draft: it reads through live's Trash as a live restore does, and the Work's and
+ * owner's lifecycle still apply.
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }

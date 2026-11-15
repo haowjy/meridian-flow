@@ -624,12 +624,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // bug, not live routing.
     if (!principal) return null;
     const restoring = new Set(
-      treeDocuments.flatMap((d) => (d.restore && !d.branchId ? [d.documentId] : [])),
-    );
-    const restoringDrafts = new Set(
-      treeDocuments.flatMap((d) =>
-        d.restore && d.branchId ? [`${d.documentId}:${d.branchId}`] : [],
-      ),
+      treeDocuments.flatMap((d) => (d.restore ? [`${d.documentId}:${d.branchId ?? "live"}`] : [])),
     );
     const requirements = new Map<
       string,
@@ -637,10 +632,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     >();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
-      // A document this command restores is in Trash when it is admitted, where no draft
-      // outlives it: its text, live or drafted, is admitted as the restore, which a Redo runs
-      // first.
-      if (restoring.has(documentId)) {
+      // The text of a document this command restores is admitted as that restore, which a Redo
+      // runs first: the document is in Trash, or the draft gone from the Work's tree, until
+      // then. A live restore also takes the document's drafted text.
+      const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
+      if (restoring.has(`${documentId}:live`)) {
         requirements.set(`${documentId}:live:restore`, {
           documentId,
           branchId: null,
@@ -648,10 +644,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         });
         continue;
       }
-      const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
-      // A draft this command restores is gone from the Work's tree when its text is admitted,
-      // as a live one is gone from Trash.
-      if (branchId && restoringDrafts.has(`${documentId}:${branchId}`)) continue;
+      if (restoring.has(`${documentId}:${branchId ?? "live"}`)) continue;
       requirements.set(`${documentId}:${branchId ?? "live"}:content`, {
         documentId,
         branchId,
