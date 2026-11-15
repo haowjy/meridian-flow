@@ -83,16 +83,15 @@ contents, including the existing header timestamp.
    ```bash
    pnpm --filter @meridian/app lingui:compile
    ```
-5. Register the catalog with the app at
-   `src/lib/i18n.ts` — add it to the `CATALOGS` map:
+5. Register the locale in one change: add its code to `ACCOUNT_LANGUAGES` in
+   `packages/contracts/src/preferences/index.ts`, then add its catalog and display
+   name to `CATALOGS` and `LOCALE_LABELS` in `src/lib/i18n.ts`. These maps must
+   cover every account language before typechecking:
    ```ts
    import { messages as deMessages } from "@/locales/de/messages";
    const CATALOGS = { en: enMessages, zh: zhMessages, de: deMessages };
+   const LOCALE_LABELS = { en: "English", zh: "中文", de: "Deutsch" };
    ```
-
-6. Add the code to `ACCOUNT_LANGUAGES` in
-   `packages/contracts/src/preferences/index.ts` and its display name to
-   `LOCALE_LABELS` in `src/lib/i18n.ts`, so account settings can select it.
 
 That's it. **No component-site code changes** are required — every user-facing
 string already routes through a Lingui macro.

@@ -33,6 +33,9 @@ independent. Local target caches include the shared configuration inputs below.
 
 ## Locale catalogs
 
+Missing compiled messages can show raw message IDs instead of copy in the app,
+so the check covers both source catalogs and compiled runtime catalogs.
+
 `pnpm check:i18n` extracts and compiles catalogs in a temporary directory outside
 this checkout, then compares them with the working files. It seeds translations
 from the app's configured catalogs and formats compiled output through Biome's
