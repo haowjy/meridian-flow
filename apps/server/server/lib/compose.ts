@@ -887,6 +887,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const wakeIfRunnable = createWakeIfRunnable({ delivery, runStarter, shutdown });
   const workContextNotices = delivery;
   const permissionGrants = createDrizzlePermissionGrantStore(ports.db);
+  const chatMedia = createChatMedia({
+    identities: ports.uploadIdentity,
+    objects: ports.objectStore,
+  });
   const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -1042,11 +1046,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
-    chatMedia: createChatMedia({
-      identities: ports.uploadIdentity,
-      objects: ports.objectStore,
-      eventSink: ports.eventSink,
-    }),
+    chatMedia,
     runClaim: runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
@@ -1147,7 +1147,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     askRequests: asks,
     reports: { publish: reportPublisher.publish },
     gateway: ports.gateway,
-    referenceReader: createReferenceReader(coreToolDeps),
+    referenceReader: createReferenceReader(coreToolDeps, chatMedia),
     documentEvidence: ports.documentSync.modelEvidence(),
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,

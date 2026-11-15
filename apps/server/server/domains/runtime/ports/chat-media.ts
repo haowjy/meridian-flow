@@ -1,12 +1,13 @@
-/** The host's chat-owned bytes for the pictures a writer sends. */
+/** The host's chat-owned bytes for every file a conversation was sent as media. */
 import type { StoredMediaPart } from "@meridian/contracts/threads";
 
 export interface ChatMediaPort {
   /**
-   * The writer's uploaded picture as the message stores it: its name, type and size, and the
-   * thread's own copy of the bytes (`chatCopy`) so it outlives the upload. Null: the file is no
-   * picture the server can name. A copy that could not be made is left off; the message then
-   * reads the upload, as before.
+   * A file the chat is sent as media (a picture the writer attached, or a PDF a mention's read
+   * shows the model) as the message stores it: its name, type and size, and the thread's own copy
+   * of the bytes (`chatCopy`), so what the chat was sent never changes when the file does or goes.
+   * Null: the file is nothing a model takes as media. A copy that fails throws
+   * `MediaResolutionError`: the send or turn fails, and nothing reads the file in its place.
    */
   admit(
     threadId: string,

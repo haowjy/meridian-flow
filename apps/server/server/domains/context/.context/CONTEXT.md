@@ -309,7 +309,7 @@ a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
   until its next read.
 - A chat's uploads add what the list does not hold, `GET .../context/chat-uploads?chatId=`
   (`ChatUploadsResult`): `attachedAt` per document id. Deleting an upload is a tree `delete`
-  record like a document's, used or not: a sent picture has the chat's own copy
+  record like a document's, used or not: a sent file has the chat's own copy
   (`chat-media/<threadId>/`), and Trash and the 30-day purge treat it as any document.
 
 A delete or a move across lists is addressed by entry id: the router takes the node
