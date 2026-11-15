@@ -36,8 +36,13 @@ page's `img-src` policy (`apps/app/src/server/content-security-policy.ts`) allow
 Flow's origin, the object store's signed-URL origin, `data:` and `blob:`, so an `<img>` that
 bypasses the placeholder is refused by the browser. A new `<img>` fed from a document's
 source goes through the placeholder or the asset render state, never a bare address. The
-clipboard HTML of a remote picture carries no `src` (`renderHTML` uses `inlinePictureSource`),
-because the serializer would fetch it.
+clipboard and drag HTML of a remote picture carries its address in `data-remote-src`, never in
+`src`, because a serialized `<img src>` would be fetched (`pictureSourceAttributes` in
+`meridian-extensions.ts`). The parse rule and the paste sanitizer read it back, so a paste
+inside Flow lands the same remote picture; `transformPasted` skips those addresses
+(`linkExternalPastedImages`) so they are not turned into link-and-import. A foreign `<img src>`
+still becomes a link and an import, and the import fetches through `/api/image-proxy`, so the
+browser never fetches a remote address itself.
 
 ## Size, cap and states
 
