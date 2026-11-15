@@ -1059,3 +1059,41 @@ describe("replay rules 9 to 13", () => {
     expect(replayView(t.doc, LIVE).dropped).toEqual([{ record: made, reason: "Work was closed" }]);
   });
 });
+
+describe("numbered names after a partial Apply", () => {
+  it("a copy is not numbered against a record the Apply leaves out", () => {
+    const t = start();
+    const map = t.chapter("Map");
+    const ch2 = t.folder("Ch2");
+    t.folder("Arc", ch2);
+    t.w.delete(LIVE, WRITER, ch2);
+    t.w.author(D, CHAT, { type: "rename", node: map, name: "Ch2", fromName: "Map" });
+    // Putting Ch2 back would bring Arc back too, which is not in the Work: it stays pending.
+    t.w.author(D, CHAT, {
+      type: "move",
+      node: ch2,
+      parent: ROOT,
+      rank: "a1",
+      from: { parent: ROOT, rank: "a1" },
+    });
+    const { left } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(left.map(({ record }) => record.node)).toEqual([ch2]);
+    // In live the folder is in Trash, so nothing is called Ch2 but this.
+    expect(t.at(map)?.displayName).toBe("Ch2");
+  });
+
+  it("a rename to the name a node has is not baked into a number", () => {
+    const t = start();
+    const first = t.chapter("Notes");
+    const second = t.chapter("Alpha");
+    const third = t.chapter("Beta");
+    // Clients that did not number: each literal name is the one the number would take.
+    t.w.author(LIVE, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Alpha" });
+    t.w.author(LIVE, CHAT, { type: "rename", node: third, name: "Notes (2)", fromName: "Beta" });
+    const shown = () => [first, second, third].map((node) => t.at(node)?.displayName);
+    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (2) (2)"]);
+    t.w.author(D, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Notes" });
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (2) (2)"]);
+  });
+});

@@ -312,7 +312,14 @@ export function applyDraft(
       (copy.type === "create" || nameSet(copy) !== undefined)
     ) {
       const shown = reads.nodes.get(copy.node);
-      if (lastNamed.get(copy.node) === record.id && shown && shown.name === copy.name)
+      // A name the node already has arrives in no new place in the numbering, so baking a
+      // number onto it would move it behind the siblings that arrived since.
+      if (
+        lastNamed.get(copy.node) === record.id &&
+        shown &&
+        shown.name === copy.name &&
+        before?.name !== copy.name
+      )
         copy.name = shown.displayName;
     }
     if (copy.type === "create")
