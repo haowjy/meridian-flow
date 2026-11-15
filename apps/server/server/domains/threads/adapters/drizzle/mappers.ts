@@ -50,7 +50,6 @@ export function mapThread(
     effectiveAiWriteMode: effectiveAiWriteMode(row.aiWriteMode, row.pendingWriteMode ?? null),
     userId: row.createdByUserId,
     kind: row.kind as Thread["kind"],
-    status: row.status as Thread["status"],
     title: row.title === "" ? null : row.title,
     ref: row.ref,
     initialPromptBakeId: row.initialPromptBakeId,

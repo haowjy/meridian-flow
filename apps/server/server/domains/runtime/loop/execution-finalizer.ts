@@ -207,8 +207,7 @@ export async function finalizeExecution(
       }
       if (turn.role === "assistant") await deps.recoverCommands(input.threadId, turn);
       const askedCause = input.cause.kind === "asked" ? input.cause : null;
-      const publishAsk =
-        askedCause !== null && thread && !thread.deletedAt && thread.status !== "archived";
+      const publishAsk = askedCause !== null && thread && !thread.deletedAt;
       const effectiveCause: TerminalCause =
         input.cause.kind === "asked" && !publishAsk
           ? { kind: "cancelled", reason: "thread_unavailable" }

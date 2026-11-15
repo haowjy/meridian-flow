@@ -8,8 +8,8 @@ import type { DocumentDraftHint } from "@meridian/contracts/branches";
 import { useQuery } from "@tanstack/react-query";
 
 import { listDocumentDraftHints } from "@/client/api/branches-api";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 
 const NONE: readonly DocumentDraftHint[] = [];
 

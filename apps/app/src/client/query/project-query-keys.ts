@@ -69,3 +69,17 @@ export const projectQueryKeys = {
   accountContextSources: () => ["account", "context-sources"] as const,
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,
 };
+
+/** The project a read belongs to: `["projects", id, ...]`, the detail key, or an account's recents. */
+export function projectIdOfQueryKey(queryKey: readonly unknown[]): string | null {
+  // The project detail key is ["projects", "detail", id]; recents are ["account", acct, "recent-documents", id].
+  const id =
+    queryKey[0] === "projects"
+      ? queryKey[1] === "detail"
+        ? queryKey[2]
+        : queryKey[1]
+      : queryKey[0] === "account" && queryKey[2] === "recent-documents"
+        ? queryKey[3]
+        : null;
+  return typeof id === "string" ? id : null;
+}

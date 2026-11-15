@@ -61,7 +61,6 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     title: "Race thread",
     ref: "c900",
     kind: "primary",
-    status: "idle",
   });
   await db.insert(schema.contextSources).values({
     id: ids.contextId,

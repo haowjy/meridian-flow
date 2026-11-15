@@ -33,6 +33,7 @@ export function InlineEditInput({
       </span>
       <input
         type="text"
+        data-handles-escape=""
         size={1}
         value={value}
         placeholder={placeholder}
@@ -61,6 +62,7 @@ export function InlineEditTextarea({
   }, [value]);
   return (
     <textarea
+      data-handles-escape=""
       rows={1}
       value={value}
       {...props}

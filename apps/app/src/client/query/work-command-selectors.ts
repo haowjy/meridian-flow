@@ -20,6 +20,8 @@ export type WorkCommandFailure<Op extends WorkOperation = WorkOperation> = {
   workId: string;
   operation: Op;
   error: WorkCommandRefused;
+  /** A restore's Work name, for its row when the Work is gone. */
+  name?: string;
   /** Runs the command again; resolves to its failure, or `null`. */
   retry: () => Promise<Error | null>;
   dismiss: () => void;
@@ -49,6 +51,7 @@ export function useWorkCommandFailures<Op extends WorkOperation>(
         workId: record.workId,
         operation: record.operation as Op,
         error: new WorkCommandRefused(record.code),
+        name: record.operation === "restore" ? record.variables.name : undefined,
         retry: () => retryWorkCommand(driver, record),
         dismiss: () => dismissWorkCommand(driver, record.id),
       });

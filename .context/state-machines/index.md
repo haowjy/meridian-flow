@@ -30,7 +30,7 @@ have it:
 | User-turn admission | One writer submission, admitted exactly once | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
 | Media inclusion | Whether one picture or tool-result media part is in the model request | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
 | Spawn status | What became of one subagent, as its parent sees it | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
-| Thread archive, thread trash | Whether a chat is archived, and whether it is in the Trash | [threads](../../apps/server/server/domains/threads/.context/state-machines.md) |
+| Thread trash | Whether a chat is in the Trash | [threads](../../apps/server/server/domains/threads/.context/state-machines.md) |
 | Work archive, Work delete | Whether a Work is available | [projects](../../apps/server/server/domains/projects/.context/state-machines.md) |
 | Import, import entry | An import job and each file in it | [import](../../apps/server/server/domains/import/.context/state-machines.md) |
 | Upload intake | One uploaded file, from a reserved address to a file in the project | [context/uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md) |
@@ -60,7 +60,6 @@ have it:
 | Sync pill outage phase | Whether the pill is reporting or confirming an outage | [features/editor](../../apps/app/src/features/editor/.context/state-machines.md) |
 | Upload store | One file being sent from the editor or composer | [core/uploads](../../apps/app/src/core/uploads/.context/state-machines.md) |
 | Chat submission | One sent message, from the journal to the server's answer | [client/chat-submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md) |
-| Creation record | Something created that the server has not confirmed | [client/creation](../../apps/app/src/client/creation/.context/state-machines.md) |
 | Composer toolbar | Which toolbar surface is open, and whether it is locked | [composer-toolbar](../../apps/app/src/components/app/composer-toolbar/.context/state-machines.md) |
 | Composer Work binding | The Work picker while a chat changes Work | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Queued control | One compaction or write-mode switch waiting behind a running reply | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |

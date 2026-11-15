@@ -37,29 +37,6 @@ interface TransitionThreadTrashDeps {
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
 }
 
-/** Serialized archive transition. Archive is not yet exposed by an HTTP route. */
-export async function transitionThreadArchive(
-  deps: TransitionThreadTrashDeps,
-  input: { threadId: ThreadId; userId: UserId; archived: boolean },
-): Promise<ThreadTrashTransition> {
-  return deps.repos.transaction(async () => {
-    if (input.archived) await deps.stopThreads([input.threadId]);
-    const before = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
-    if (!before || before.userId !== input.userId || before.deletedAt)
-      throw new ThreadTrashUnavailableError(input.threadId);
-    const project = await deps.projects.findById(before.projectId);
-    if (!project || project.deletedAt || project.userId !== input.userId)
-      throw new ThreadTrashUnavailableError(input.threadId);
-    const alreadyAtTarget = (before.status === "archived") === input.archived;
-    if (alreadyAtTarget) return { thread: before, changed: false };
-    const thread = await deps.repos.threads.updateStatus(
-      input.threadId,
-      input.archived ? "archived" : "idle",
-    );
-    return { thread, changed: true };
-  });
-}
-
 /** Locks, authorizes, and applies one owned thread-trash desired state. */
 export async function transitionThreadTrash(
   deps: TransitionThreadTrashDeps,

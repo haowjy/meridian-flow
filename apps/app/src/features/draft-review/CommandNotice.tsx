@@ -270,6 +270,9 @@ export type DraftNoticeWords = {
  * A notice said on the rows it concerns (`RowWord`), for a list that has rows: a Discard's Undo
  * on every row it took, or each fact an Apply brought on its document's row.
  */
+const focused = new Set<number>();
+const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
+
 export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWords {
   useLingui();
   const undo = useNoticeUndo();
@@ -284,12 +287,32 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         const renamed = facts.some((fact) => fact.kind === "renamed");
         const [first] = facts;
         const name = first ? (first.kind === "also" ? first.to : first.name) : "";
+        const said = facts.map(factSentence).join(" ");
+        const step = facts.find((fact) => fact.step)?.step;
+        if (step) {
+          const count = step.count;
+          return (
+            <RowWord
+              label={t`Undo applying ${name}`}
+              word={<Trans>Undo</Trans>}
+              sentence={`${said} ${
+                count > 1
+                  ? t`Undo takes back the whole Apply, all ${count} changes.`
+                  : t`Undo takes them back out.`
+              }`}
+              onAction={step.undo}
+              // The pressed ✓ or Apply all left with its row: the first row the Apply took has
+              // the focus, as a delete's Undo does.
+              focus={{ take: () => takeOnce(notice.id) }}
+            />
+          );
+        }
         return (
           <RowWord
             tone="done"
             label={renamed ? t`${name}, renamed` : t`${name}, applied`}
             word={renamed ? <Trans>Renamed</Trans> : <Trans>Applied</Trans>}
-            sentence={facts.map(factSentence).join(" ")}
+            sentence={said}
           />
         );
       },
@@ -391,6 +414,7 @@ export function restoreReturnedSentence(why: RestoreReturned | null): string {
 
 /** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
 export const noticeAction = (container: HTMLElement) =>
+  container.querySelector<HTMLElement>("[data-command-notice] [data-row-word]:not(:disabled)") ??
   container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
 
 /**

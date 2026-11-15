@@ -108,14 +108,16 @@ export type DraftNotice =
       dismiss(): void;
     });
 
+/** An Apply's Undo: its step on the sidebar's Undo stack (`undoApply`), over `count` changes. */
+export type AppliedUndo = { undo: () => void; count: number };
+
 /**
- * One fact an Apply brought, about one document: it was applied, landed somewhere new (`uri`), was added under
- * another name than the one asked for, came back to the manuscript, or was applied along with
- * the documents picked (`also`: its old and new names).
+ * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
+ * only its row says), landed somewhere new (`uri`), was added under another name than the one
+ * asked for, came back to the manuscript, or was applied along with the documents picked
+ * (`also`: its old and new names). `step`: the Apply's Undo, while it can be taken back.
  */
-export type AppliedFact = {
-  documentId: string;
-} /** Applied where it was, under its name: the row says so, the chat's line has nothing to add. */ & (
+export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
   | { kind: "applied"; name: string }
   | { kind: "landed"; uri: string; name: string }
   | { kind: "renamed"; name: string }

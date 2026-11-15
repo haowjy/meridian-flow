@@ -44,7 +44,6 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: "primary",
-    status: "idle",
     title: input.title ?? null,
     ref: null,
     initialPromptBakeId: input.initialPromptBakeId ?? null,
