@@ -64,14 +64,8 @@ export function TrashedDocument({
   const text = useSessionText(
     binding.state.kind === "opened" ? binding.state.session.document : null,
   );
-  const { states, restore } = useDocumentTrashRestore();
-  const state = states.get(documentId);
-  const openFailed = useOpenOnceLiving(
-    projectId,
-    documentId,
-    state?.kind,
-    standing.kind === "in-tree",
-  );
+  const { restore } = useDocumentTrashRestore();
+  useOpenOnceLiving(projectId, documentId, standing.kind === "in-tree");
 
   if (standing.kind === "purged" || standing.kind === "not-in-list") {
     return (
@@ -101,9 +95,6 @@ export function TrashedDocument({
     );
   }
   const name = standing.kind === "in-trash" ? standing.node.displayName : "";
-  const failure = openFailed
-    ? t`Restored ${name}, but couldn't open it. Try again from the file list.`
-    : null;
   return (
     <MainSurface joined className="flex h-full min-h-0 flex-col">
       <ReadOnlyViewerFrame className="bg-transparent">
@@ -126,7 +117,6 @@ export function TrashedDocument({
             >
               {details ? trashSentence(details, i18n.locale, accountId) : null}
             </DocumentNotice>
-            {failure ? <InlineErrorRow message={failure} className="px-0 pt-2 pb-0" /> : null}
           </div>
           {file ? (
             <div className="grid min-h-0 flex-1 place-items-center px-6 py-10">
@@ -168,33 +158,16 @@ function useSessionText(document: Y.Doc | null): string {
  * Main follows the document out of Trash, wherever it was restored from (this Restore, the
  * sidebar's, a drag out), and an address naming a document no longer in Trash goes to it once.
  * One open leaves the view: the list changing again must not start another, which would cancel
- * this one and lose its failure. Returns whether that open failed.
+ * this one. A refusal is the opener's to say.
  */
-function useOpenOnceLiving(
-  projectId: string,
-  documentId: string,
-  restore: "restored" | undefined,
-  living: boolean,
-): boolean {
+function useOpenOnceLiving(projectId: string, documentId: string, living: boolean): void {
   const openDocument = useOpenProjectDocument(projectId);
-  const [failed, setFailed] = useState(false);
   const leaving = useRef(false);
-  const mounted = useRef(false);
   useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  useEffect(() => {
-    const restored = restore === "restored";
-    if (leaving.current || (!restored && !living)) return;
+    if (leaving.current || !living) return;
     leaving.current = true;
-    void openDocument({ documentId, replace: true }).then((outcome) => {
-      if (restored && mounted.current && outcome.kind === "refused") setFailed(true);
-    });
-  }, [restore, living, documentId, openDocument]);
-  return failed;
+    void openDocument({ documentId, replace: true });
+  }, [living, documentId, openDocument]);
 }
 
 /** What the page says of the removal: the list's place, and the server's author, time and retention once it has answered. */

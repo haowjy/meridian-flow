@@ -9,7 +9,7 @@ import {
 } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 
-import { isEditorObject, isOpaqueObject } from "./object-types";
+import { isEditorObject, isOpaqueObject, objectBody } from "./object-types";
 
 export type ObjectAt = { node: PMNode; pos: number };
 
@@ -171,7 +171,7 @@ export function caretHomeFromObjectTransaction(
   // object is what made a scene break look like a dead end and sent the caret
   // backward into the block above. A rendered diagram is one more thing with
   // no text to offer, whatever the schema says about its `code_block`.
-  const forwardText = forwardWriterText(state, $after, bound.end);
+  const forwardText = writerText(state, $after, 1, bound.end);
   if (forwardText) return state.tr.setSelection(forwardText).scrollIntoView();
 
   // A scene break can also be the LAST thing in the document, and then there
@@ -230,6 +230,36 @@ export function typeBesideObjectTransaction(state: EditorState, pos: number): Tr
   return transaction?.scrollIntoView() ?? null;
 }
 
+export function objectSelectionForDOM(state: EditorState): TextSelection | null {
+  const object = selectedObject(state);
+  if (!object) return null;
+
+  const after = object.pos + object.node.nodeSize;
+  if (object.node.isInline) return TextSelection.create(state.doc, after);
+  if (objectBody(object.node) !== "text") return null;
+
+  const text = writerText(state, state.doc.resolve(after), -1, object.pos + 1);
+  return text ? TextSelection.create(state.doc, text.head) : null;
+}
+
+export function objectTextSelectionTransaction(
+  state: EditorState,
+  direction: 1 | -1,
+): Transaction | null {
+  const object = selectedObject(state);
+  if (!object) return null;
+  if (!object.node.isInline) {
+    if (objectBody(object.node) !== "text") return null;
+    const { $anchor, $head } = state.selection;
+    return state.tr.setSelection(TextSelection.between($anchor, $head));
+  }
+  const from = object.pos;
+  const to = from + object.node.nodeSize;
+  return state.tr.setSelection(
+    TextSelection.create(state.doc, direction === 1 ? from : to, direction === 1 ? to : from),
+  );
+}
+
 /** Remove the object at `pos` outright. */
 export function deleteObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);
@@ -237,22 +267,23 @@ export function deleteObjectTransaction(state: EditorState, pos: number): Transa
   return state.tr.delete(pos, pos + node.nodeSize).scrollIntoView();
 }
 
-/** The first text position forward of `$from` the writer can actually see, at or before `limit` — the isolating bound the search must not leave. */
-function forwardWriterText(
+/** Find visible text without crossing the caller's object or isolating boundary. */
+function writerText(
   state: EditorState,
   $from: ResolvedPos,
+  direction: 1 | -1,
   limit: number,
 ): Selection | null {
   let $at = $from;
   for (;;) {
-    const found = Selection.findFrom($at, 1, true);
-    if (!found || found.from > limit) return null;
+    const found = Selection.findFrom($at, direction, true);
+    if (!found || (direction === 1 ? found.from > limit : found.to < limit)) return null;
 
     const hidden = opaqueObjectAround(found.$head);
     if (!hidden) return found;
 
-    const past = hidden.pos + hidden.node.nodeSize;
-    if (past <= $at.pos) return null;
+    const past = direction === 1 ? hidden.pos + hidden.node.nodeSize : hidden.pos;
+    if (direction === 1 ? past <= $at.pos : past >= $at.pos) return null;
     $at = state.doc.resolve(past);
   }
 }

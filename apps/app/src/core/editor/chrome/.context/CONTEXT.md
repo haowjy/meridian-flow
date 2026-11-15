@@ -18,8 +18,8 @@ the prose. A surface declaring self-dismissal has to register its layer or it
 survives Escape. Radix content has to carry `useChromeLayer`'s `onEscapeKeyDown`,
 or one Escape closes a dialog and the non-Radix layer inside it.
 
-Closing a layer marks it out of the walk before calling `close`, so a dismissal
-that never lands costs one Escape rather than all of them.
+Closing a layer removes it from the Escape dismissal traversal before calling
+`close`, so a dismissal that never lands costs one Escape rather than all of them.
 
 Suggestion retreat is keyed by a stable owner ID. A pending owner is honored
 before React registration so a first Escape can't outrun the menu.
@@ -28,23 +28,33 @@ The backstop can't read `event.defaultPrevented` to decide whether Escape was
 handled: ProseMirror prevents key 27 while dispatching, whether or not the chain
 found a step. Read the resulting kernel state instead.
 
-## Keymap reach and collisions
+## Keymap routes and collisions
+
+A contribution's `route` names where it runs: `prose` (default) in ProseMirror's
+key handler, `chrome` there and in the portalled-layer capture listener, or `native`
+in the document bubble listener after all ProseMirror handlers decline. Native
+bindings prepare the model selection for browser default and never consume the key;
+only editable editor-root events outside composition reach them. A layer cannot
+register on that route. Each map is cached by the same registration revision.
 
 A layer contribution reaches the document only while its layer is the active
 owner. Same scope, same key and overlapping predicates are a collision that
-registration rejects; different scopes and explicit predicates are the intended
-fall-through chain. Undo is mounted above the kernel, so don't raise the kernel to
+registration rejects. The native stage is separate; prose/chrome routes overlap.
+Different scopes and explicit predicates are the intended fall-through chain. Undo is mounted above the kernel, so don't raise the kernel to
 compete with it.
 
 ## Approach and suppression
 
-Selection and table persistence are lane-owned and aren't cleared because no
-pointer is present. Drag and sweep suppression are shared.
+Pointer absence clears the hover target, not editor selection. Object and table
+control surfaces decide from editor state whether to remain visible. Drag and
+sweep suppression are shared.
 
 ## Right-click menus
 
-The formatting claim moves the caret to the pointer synchronously, because Turn
-into reads the selection. The router is a capture-phase document listener because
+The [context-claim handlers](../context-claims.ts) choose which menu owns a
+right-click. The formatting handler moves the caret to the pointer synchronously,
+because Turn into reads the selection. The router is a capture-phase document
+listener because
 React node views swallow `contextmenu` before ProseMirror handlers run. Chrome
 portalled out of the editor has to spread `editorChromeAttributes(chrome)` or its
 right-clicks reach the browser.

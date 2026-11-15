@@ -126,9 +126,7 @@ export function useProjectMenuSource({
     (EDITOR_CONTEXT_SCHEMES as readonly string[]).includes(documentScheme);
   const hiddenNeeded = documentScheme !== null && !sameAsScratch && !sameAsProject;
   const hidden = useProjectTreeView(projectId, documentScheme ?? "scratch", {
-    workId: documentOwner?.workId,
-    rootThreadId: documentOwner?.rootThreadId,
-    chatId: documentOwner?.chatThreadId,
+    ...documentOwner,
     enabled: hiddenNeeded,
     version,
   });
