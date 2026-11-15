@@ -63,9 +63,12 @@ A click's tree half is the package's `applyDraft` (`adapters/drizzle-apply-tree.
 `treeListStore.submit` in the list that holds the document (`tree_node_ids.list_id`: the
 project's, or the account's for `user://`), in the click's own transaction. Its `only` is the
 document's item: the pending records made on it, and a drafted delete of a folder above it that
-took it along; the package adds the drafted creates they stand on, with those nodes' drafted
-deletes and restores (a folder lands standing as the Work showed it, so a card Undo of its restore
-finds it in live), and earlier records on the same facts. The click carries `tree.revision`, a digest of the Work's row on the document
+took it along; the package adds what they stand on (`prerequisites`): the drafted creates of
+the nodes they need, and, for each Work-created folder above where a record acts, that folder's
+last drafted delete or restore before the record, so the folder lands as it stood when the record
+was drafted (a card Undo of its restore then finds it in live). A folder's delete drafted after
+the document left it, or after the record, stays pending. Earlier records on the same facts come
+too. The click carries `tree.revision`, a digest of the Work's row on the document
 (`md5` over its source, parent, name, rank, `deleted` and `exists_only_in_draft`), and answers
 `changed` when the row says something else now. A record that cannot land (a move into itself,
 a move of what live has in Trash) lands nothing of the item: the click is `refused` with

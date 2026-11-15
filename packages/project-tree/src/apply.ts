@@ -68,11 +68,13 @@ const sharesFact = (a: TreeRecord, b: TreeRecord) => {
 };
 
 /**
- * The chosen records plus the drafted creates they stand on, each with the drafted deletes and
- * restores of its node up to the last chosen record (it lands standing or not as the Work showed
- * it, so an Undo of one of those records finds it in live), and the earlier drafted records on
- * the same fact (applying a second rename brings the first, or the draft would read the first
- * after it).
+ * The chosen records plus what they stand on: the drafted creates of the nodes they need, and of
+ * each Work-created folder above where a record acts (as the drafted records before it place
+ * things), that folder's last drafted delete or restore before the record, so the folder lands
+ * standing or in Trash as it was when the record was drafted (an Undo of that restore then finds
+ * it in live). With each record come the earlier drafted records on the same fact (applying a
+ * second rename brings the first, or the draft would read the first after it). A folder's delete
+ * or restore after the record, or of a folder it no longer stands in, stays pending.
  */
 export function prerequisites(
   pending: readonly TreeRecord[],
@@ -82,7 +84,6 @@ export function prerequisites(
   for (const record of pending) if (record.type === "create") created.set(record.node, record.id);
   const byId = new Map(pending.map((record) => [record.id, record]));
   const position = new Map(pending.map((record, index) => [record.id, index]));
-  const last = Math.max(-1, ...only.map((id) => position.get(id) ?? -1));
   const out = new Set<string>();
   const stack = [...only];
   while (stack.length > 0) {
@@ -90,17 +91,48 @@ export function prerequisites(
     const record = byId.get(id);
     if (!record || out.has(id)) continue;
     out.add(id);
+    const before = pending.slice(0, position.get(id) ?? 0);
     for (const node of needs(record)) {
       const creator = created.get(node);
-      if (!creator || creator === id) continue;
-      stack.push(creator);
-      for (const presence of pending.slice(0, last))
-        if ((presence.type === "delete" || presence.type === "restore") && presence.node === node)
-          stack.push(presence.id);
+      if (creator && creator !== id) stack.push(creator);
     }
-    for (const earlier of pending.slice(0, position.get(id) ?? 0))
-      if (sharesFact(earlier, record)) stack.push(earlier.id);
+    for (const folder of foldersAbove(before, record)) {
+      const creator = created.get(folder);
+      if (!creator) continue;
+      stack.push(creator);
+      const presence = before.findLast(
+        (earlier) =>
+          (earlier.type === "delete" || earlier.type === "restore") && earlier.node === folder,
+      );
+      if (presence) stack.push(presence.id);
+    }
+    for (const earlier of before) if (sharesFact(earlier, record)) stack.push(earlier.id);
   }
+  return out;
+}
+
+/**
+ * The folders above where a record acts, as the drafted records before it place things: above
+ * its node, and for a create or move, above where it puts it. Placing comes only from the drafted
+ * creates and moves, so the walk stops at a node they don't place.
+ */
+function foldersAbove(before: readonly TreeRecord[], record: TreeRecord): Set<string> {
+  const parentOf = (node: string) => {
+    for (let at = before.length - 1; at >= 0; at--) {
+      const earlier = before[at] as TreeRecord;
+      if (earlier.node === node && (earlier.type === "create" || earlier.type === "move"))
+        return earlier.parent;
+    }
+    return undefined;
+  };
+  const out = new Set<string>();
+  const starts = [parentOf(record.node)];
+  if (record.type === "create" || record.type === "move") starts.push(record.parent);
+  for (let folder of starts)
+    while (folder !== undefined && !out.has(folder)) {
+      out.add(folder);
+      folder = parentOf(folder);
+    }
   return out;
 }
 
