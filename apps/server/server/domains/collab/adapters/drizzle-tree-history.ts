@@ -14,7 +14,7 @@ import {
   treeEditReceipts,
 } from "@meridian/database";
 import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
 import { boundCommandId } from "./drizzle-document-edits.js";
@@ -173,6 +173,50 @@ export function createDrizzleTreeHistory(
           acrossOf(row, subject),
         );
       });
+    },
+
+    async crossedInCommand(threadId, commandId, kind) {
+      const rows = await tx()
+        .select()
+        .from(treeEditReceipts)
+        .where(
+          and(
+            eq(treeEditReceipts.threadId, threadId),
+            eq(treeEditReceipts.commandId, commandId),
+            eq(treeEditReceipts.kind, kind),
+            eq(treeEditReceipts.acrossLists, true),
+          ),
+        )
+        .orderBy(asc(treeEditReceipts.seq));
+      if (rows.length === 0) return [];
+      const ids = rows.map((row) => row.id);
+      const reversed = new Set(
+        (
+          await tx()
+            .select({ reverses: treeEditReceipts.reverses })
+            .from(treeEditReceipts)
+            .where(inArray(treeEditReceipts.reverses, ids))
+        ).flatMap((row) => (row.reverses ? [row.reverses] : [])),
+      );
+      const touched = await tx()
+        .select()
+        .from(treeEditReceiptNodes)
+        .where(inArray(treeEditReceiptNodes.receiptId, ids));
+      return rows
+        .filter((row) => !reversed.has(row.id))
+        .map((row) => {
+          const own = touched.filter((node) => node.receiptId === row.id);
+          return receiptOf(
+            row,
+            own.map((node) => node.nodeId),
+            0,
+            0,
+            acrossOf(
+              row,
+              own.find((node) => node.nodeId === row.nodeId),
+            ),
+          );
+        });
     },
 
     async receiptsAt(threadId, shownAt) {

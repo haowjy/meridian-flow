@@ -278,6 +278,16 @@ export type AgentTreeHistory = {
    * the model's `undo` chooses from.
    */
   turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
+  /**
+   * The receipts of one command that moved a node between lists, oldest first, of one kind, that
+   * nothing reversed: a folder that crossed is its documents' moves and then its own delete, so
+   * taking the delete back or doing it again takes these with it.
+   */
+  crossedInCommand(
+    threadId: ThreadId,
+    commandId: string,
+    kind: TreeReceipt["kind"],
+  ): Promise<TreeReceipt[]>;
   /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
   receiptsAt(threadId: ThreadId, shownAt: string): Promise<TreeReceipt[]>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */

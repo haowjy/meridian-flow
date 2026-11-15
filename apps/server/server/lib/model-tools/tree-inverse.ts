@@ -148,33 +148,31 @@ export async function runTreeInverse(
 
   const done: Array<Awaited<ReturnType<typeof reverseReceipt>>> = [];
   for (const receipt of chosen.receipts) {
-    const answer = await reverseReceipt(deps, call, input, ctx, receipt, node.id);
-    done.push(answer);
-    if ("isError" in answer && answer.isError) break;
     // A folder that crossed lists is its documents' moves and then its own delete, one command:
-    // taking the delete back takes the moves back with it.
-    if (receipt.op === "delete" && receipt.commandId && receipt.turnId) {
-      const crossed = (await treeHistory.turnSteps(threadId, receipt.turnId as TurnId, "undo"))
-        .filter(
-          (step) => step.commandId === receipt.commandId && step.across && step.kind === "write",
-        )
-        // Oldest first, so they come back in the order they stood.
-        .reverse();
-      for (const step of crossed) {
-        const back = await reverseReceipt(
-          deps,
-          call,
-          { ...input, path: step.across?.to ?? input.path },
-          ctx,
-          step,
-          step.subject,
-        );
-        if ("isError" in back && back.isError) {
-          done.push(back);
-          break;
-        }
+    // Undo takes the delete back and then the moves, oldest first; Redo does the moves again,
+    // oldest first, and then the delete.
+    const crossed =
+      receipt.op === "delete" && receipt.commandId
+        ? await treeHistory.crossedInCommand(threadId, receipt.commandId, receipt.kind)
+        : [];
+    const steps = input.command === "redo" ? [...crossed, receipt] : [receipt, ...crossed];
+    let failed = false;
+    for (const step of steps) {
+      const answer = await reverseReceipt(
+        deps,
+        call,
+        { ...input, path: step === receipt ? input.path : (step.across?.to ?? input.path) },
+        ctx,
+        step,
+        step === receipt ? node.id : step.subject,
+      );
+      done.push(answer);
+      if ("isError" in answer && answer.isError) {
+        failed = true;
+        break;
       }
     }
+    if (failed) break;
   }
   const last = done.at(-1) as (typeof done)[number];
   if (chosen.text === 0 || ("isError" in last && last.isError))

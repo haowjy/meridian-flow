@@ -170,7 +170,9 @@ copy of an applied or restored change by `carries`, and takes back only what the
 what others put in a folder it made stands and keeps it standing. The records an Undo makes name
 what they take back (`undoes`), a Redo's included. A move between a project and `user://` is two
 lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
-way. A model `undo` that takes tree and text steps together is one command (the tree receipts
+way. A folder that crossed is its documents' moves and then its own delete, one command: the model's
+`undo` takes the delete and then the moves back, and `redo` does the moves and then the delete
+(`crossedInCommand` finds the command's cross receipts of the same kind that nothing reversed). A model `undo` that takes tree and text steps together is one command (the tree receipts
 first, then the text engine's), so a refusal of the text half takes the tree half back with it.
 The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do,
 and Undo counts by it: the steps of one command (a create with content is a node and its text)
