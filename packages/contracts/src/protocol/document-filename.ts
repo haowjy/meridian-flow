@@ -130,18 +130,29 @@ export function canonicalLeaf(filename: string): string {
   return parsed.ok ? renderFilename(parsed.value.name, parsed.value.extension) : filename;
 }
 
+/** A name that already ends in a copy number (`Notes (2)`) is split into its base and that number. */
+export function splitCopyNumber(name: string): { base: string; copy: number } {
+  const match = /^(.*\S) \((\d+)\)$/.exec(name);
+  const copy = match ? Number(match[2]) : 1;
+  return match && copy >= 2 ? { base: match[1] ?? name, copy } : { base: name, copy: 1 };
+}
+
 /**
  * The first free name for an arrival: `name`, then `name (2)`, `name (3)`…, against the rendered
- * filenames its parent already holds. Siblings of either kind clash when their rendered
- * filenames are equal, so `taken` is just a set of strings. Callers own the atomic claim.
+ * filenames its parent already holds. A name already ending in ` (N)` continues that sequence
+ * (`Notes (2)` becomes `Notes (3)`, never `Notes (2) (2)`). Siblings of either kind clash when
+ * their rendered filenames are equal, so `taken` is just a set of strings. Callers own the atomic claim.
  */
 export function firstFreeName(
   desired: { name: string; extension?: string },
   taken: ReadonlySet<string>,
 ): { name: string; extension: string; filename: string } {
   const extension = desired.extension ?? "";
-  for (let suffix = 1; ; suffix += 1) {
-    const name = suffix === 1 ? desired.name : `${desired.name} (${suffix})`;
+  const { base, copy } = splitCopyNumber(desired.name);
+  const first = renderFilename(desired.name, extension);
+  if (!taken.has(first)) return { name: desired.name, extension, filename: first };
+  for (let suffix = copy + 1; ; suffix += 1) {
+    const name = `${base} (${suffix})`;
     const filename = renderFilename(name, extension);
     if (!taken.has(filename)) return { name, extension, filename };
   }

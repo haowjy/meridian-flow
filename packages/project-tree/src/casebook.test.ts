@@ -1137,6 +1137,17 @@ describe("replay rules 9 to 13", () => {
     expect(t.at(ch)?.displayName).toBe("notes");
   });
 
+  it("a clashing name that ends in a number continues it: Notes, Notes (2), Notes (3)", () => {
+    const t = start();
+    const f = t.folder("F");
+    t.chapter("Notes", f);
+    t.chapter("Notes", f);
+    t.chapter("Notes (2)", f);
+    t.chapter("Notes (2)", f);
+    expect(t.names(f)).toEqual(["Notes", "Notes (2)", "Notes (3)", "Notes (4)"]);
+    t.valid();
+  });
+
   it("a create the server stamped dropped is in no view and is listed", () => {
     const t = start();
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
