@@ -182,6 +182,7 @@ export type TreeReceiptNode = {
   nodeId: string;
   beforeAt: string | null;
   afterAt: string | null;
+  copiedFrom?: string;
 };
 
 /** One record a model's tree call admitted, as its receipt keeps it. */

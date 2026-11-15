@@ -195,7 +195,12 @@ export async function recordCopies(
   const recorded = first
     ? await deps.documentSync.treeHistory().recordAgentTreeChange({
         subject: first.node,
-        nodes: landed.map(({ node, to }) => ({ nodeId: node, beforeAt: null, afterAt: to })),
+        nodes: landed.map(({ node, from, to }) => ({
+          nodeId: node,
+          beforeAt: null,
+          afterAt: to,
+          copiedFrom: from,
+        })),
         records: made.value.records,
         op: "create",
         threadId: ctx.threadId as ThreadId,

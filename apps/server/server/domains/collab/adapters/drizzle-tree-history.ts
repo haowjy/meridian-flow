@@ -85,6 +85,7 @@ export function createDrizzleTreeHistory(
           wId,
           beforeAt: node.beforeAt,
           afterAt: node.afterAt,
+          copiedFrom: node.copiedFrom ?? null,
         });
       }
       await tx().insert(treeEditReceiptNodes).values(reserved);

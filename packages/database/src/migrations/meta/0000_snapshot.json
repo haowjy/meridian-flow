@@ -5699,6 +5699,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "copied_from": {
+          "name": "copied_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "before_at": {
           "name": "before_at",
           "type": "text",

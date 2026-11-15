@@ -137,7 +137,6 @@ export const treeEditReceipts = pgTable(
     reverses: uuid("reverses"),
     /** The Work's branch the record was drafted in; null when it is live. */
     draftBranchId: uuid("draft_branch_id").$type<BranchId>(),
-    /** The change moved a document between a project's list and the account's: its records are in two lists. */
     /** The path the model gave, for the turn's receipt lines and the Undo of a deleted node. */
     shownAt: text("shown_at"),
     createdAt: createdAt(),
@@ -161,7 +160,7 @@ export const treeEditReceipts = pgTable(
  * ordinal reserved on the node's counter (`agent_edit_wid_counters`), the same sequence the node's
  * text edits take, so Undo, Redo and `revert` order text and tree changes by it. `before_at` and
  * `after_at` are the node's address before and after (null for a node the call created or
- * deleted), for the turn's change viewer.
+ * deleted), for the turn's change viewer. `copied_from` is the source address of a copy.
  */
 export const treeEditReceiptNodes = pgTable(
   "tree_edit_receipt_nodes",
@@ -174,6 +173,7 @@ export const treeEditReceiptNodes = pgTable(
       .references(() => threads.id, { onDelete: "cascade" }),
     nodeId: uuid("node_id").notNull(),
     wId: integer("w_id").notNull(),
+    copiedFrom: text("copied_from"),
     beforeAt: text("before_at"),
     afterAt: text("after_at"),
   },
