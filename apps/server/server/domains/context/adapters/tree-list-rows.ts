@@ -570,9 +570,11 @@ export async function syncRows(
   const text = await pendingText(tx, kept);
   const drafted = new Map<string, Map<string, ProjectedRow>>();
   const faulted = new Map<string, Set<string>>();
+  const pendingOf = new Map<string, TreeRecord[]>();
   for (const branchId of kept) {
     const pending = pendingRecords(doc, branchId);
     if (!text.has(branchId) && pending.length === 0) continue;
+    pendingOf.set(branchId, pending);
     const projection = replayView(doc, { draft: branchId }, text.get(branchId));
     drafted.set(branchId, shownRows(projection));
     faulted.set(branchId, changedFolders(live, projection, pending));
@@ -580,7 +582,7 @@ export async function syncRows(
   await dropForeignSources(tx, list, [liveRows, ...drafted.values()]);
   const next = new Map(
     [...drafted].map(([branchId, rows]) => {
-      const differing = branchRows(liveRows, rows);
+      const differing = branchRows(liveRows, rows, pendingOf.get(branchId) ?? []);
       // A folder whose move cannot land shows as live does and is still a change: its row stands
       // for it, so the stored count is the one the Changes list shows.
       for (const id of faulted.get(branchId) ?? []) {

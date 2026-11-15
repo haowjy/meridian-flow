@@ -1,6 +1,6 @@
 import type { TreeRecord } from "./record.js";
 import type { SkipReason, TreeProjection } from "./replay.js";
-import { branchRows, projectedRows } from "./rows.js";
+import { branchRows, pendingCreates, projectedRows } from "./rows.js";
 
 /** Why a pending change cannot land: the replay skips it, or live deleted what it changes. */
 export type LandingFault =
@@ -32,10 +32,12 @@ export function landingFaults(
       });
     else if (GONE.has(reason)) faults.set(record.node, { kind: "gone" });
   }
-  for (const record of pending) {
-    const node = work.nodes.get(record.node);
-    if (node?.keptByPending && !faults.has(record.node))
-      faults.set(record.node, { kind: "deleted-live" });
+  // A node the Work creates is the Work's own, whatever live holds under its id (Un-Apply leaves
+  // the applied copy in Trash); one the Work only changes, text included, has to be restored.
+  const created = pendingCreates(pending);
+  for (const node of work.nodes.values()) {
+    if (node.keptByPending && !created.has(node.id) && !faults.has(node.id))
+      faults.set(node.id, { kind: "deleted-live" });
   }
   return faults;
 }
@@ -53,7 +55,7 @@ export function changedFolders(
   pending: readonly TreeRecord[],
   faults: ReadonlyMap<string, LandingFault> = landingFaults(work, pending),
 ): Set<string> {
-  const differing = branchRows(projectedRows(live), projectedRows(work));
+  const differing = branchRows(projectedRows(live), projectedRows(work), pending);
   const folders = new Set<string>();
   for (const { node } of pending) {
     if (work.nodes.get(node)?.kind !== "folder") continue;
