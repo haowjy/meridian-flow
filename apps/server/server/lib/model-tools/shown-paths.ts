@@ -6,7 +6,8 @@
  * document do it; the tree commands resolve inside their own command.
  */
 import { modelResult, splitDocumentFile } from "@meridian/agent-edit/integration";
-import { contextAreaOf, parseUnifiedContextUri } from "../../domains/context/index.js";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
+import { parseUnifiedContextUri } from "../../domains/context/index.js";
 import {
   addDelta,
   decodeDelta,
@@ -61,10 +62,15 @@ export async function printedNames(
 
 /** The area a path names (`manuscript://`, a Work's, a chat's) and the path below it. */
 export function areaOfPath(path: string): { area: string; rest: string } | null {
-  const uri = path.includes("://") ? path : `manuscript://${path}`;
-  if (!parseUnifiedContextUri(uri).ok) return null;
-  const area = contextAreaOf(uri);
-  return { area, rest: uri.slice(area.length) };
+  // The parser reads every spelling a model writes (a bare path, `.agents/…`, `~/…`, a scheme).
+  const parsed = parseUnifiedContextUri(path);
+  if (!parsed.ok) return null;
+  const { scheme, authority, path: inside } = parsed.value;
+  const folder = inside !== "" && path.trim().endsWith("/");
+  return {
+    area: formatParsedContextUri(scheme, "", authority),
+    rest: folder ? `${inside}/` : inside,
+  };
 }
 
 export type Reached = {

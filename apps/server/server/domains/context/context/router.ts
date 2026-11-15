@@ -8,7 +8,11 @@ import {
   validateContextEntryName,
   validateContextEntryPath,
 } from "@meridian/contracts/context-entry-validation";
-import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
+import {
+  type CanonicalContextAuthority,
+  formatParsedContextUri,
+  type OwnerSlip,
+} from "@meridian/contracts/context-uri";
 import {
   type ContextEntryRef,
   documentFilenameAt,
@@ -708,7 +712,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([scheme, { adapter }]) => ({
               kind: "directory" as const,
-              uri: `${scheme}://`,
+              uri: formatParsedContextUri(scheme, "", { kind: "contextual" }),
               readonly: !adapter.capabilities.writable,
             })),
         });

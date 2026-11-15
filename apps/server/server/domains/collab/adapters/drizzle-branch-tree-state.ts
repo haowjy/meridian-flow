@@ -2,6 +2,7 @@
  * The tree half of the review list, read from the Work's rows (`branch_tree_nodes`, written by
  * the replay of the list) against live's (`tree_nodes`). Addresses are spelled by the tree reader.
  */
+import { type ContextUriScheme, formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -83,7 +84,9 @@ export async function branchFolderPlaces(
   return Promise.all(
     [...rows].map(async ({ scheme, ...row }) => {
       const folder = await tree.findFolderById({ kind: "branch", branchId }, row.id);
-      return { ...row, uri: folder ? `${scheme}://${folder.path}` : null };
+      return { ...row, uri: folder
+          ? formatParsedContextUri(scheme as ContextUriScheme, folder.path, { kind: "contextual" })
+          : null };
     }),
   );
 }
