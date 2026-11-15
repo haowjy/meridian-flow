@@ -26,7 +26,7 @@ export interface ModelWork {
 /** `work show`: the Work, its recent chats and its drafts. */
 export interface WorkShowResult {
   work: ModelWork;
-  recentThreads: { title: string | null; updatedAt: string | Date; status: string }[];
+  recentThreads: { title: string | null; updatedAt: string | Date }[];
   drafts: {
     documentName: string | null;
     contextLocation: ThreadDraftListItem["contextLocation"];
@@ -94,10 +94,9 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
       [
         "Recent chats:",
         ...result.recentThreads.map((thread) => {
-          const notes = [
-            thread.status === "archived" ? "archived" : undefined,
-            verbose ? `updated ${formatUtc(thread.updatedAt)}` : undefined,
-          ].filter((note) => note !== undefined);
+          const notes = [verbose ? `updated ${formatUtc(thread.updatedAt)}` : undefined].filter(
+            (note) => note !== undefined,
+          );
           const title = thread.title?.trim() || "Untitled chat";
           return `  ${title}${notes.length > 0 ? ` (${notes.join(", ")})` : ""}`;
         }),

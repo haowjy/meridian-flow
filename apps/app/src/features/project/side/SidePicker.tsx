@@ -144,10 +144,7 @@ function ChatChoices({
   const search = query.trim();
   const found = search
     ? filterThreadsByTitle(
-        (threads ?? []).filter(
-          (thread) =>
-            thread.kind !== "subagent" && !thread.deletedAt && thread.status !== "archived",
-        ),
+        (threads ?? []).filter((thread) => thread.kind !== "subagent" && !thread.deletedAt),
         query,
       ).slice(0, FIND_LIMIT)
     : [];
