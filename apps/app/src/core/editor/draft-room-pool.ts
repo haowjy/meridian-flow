@@ -15,12 +15,7 @@
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import {
-  type DocumentSession,
-  type DocumentSessionAccess,
-  draftClosed,
-  updatesRefused,
-} from "./document-session";
+import { type DocumentSession, draftClosed, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import type { CopyHold } from "./local-document-copies";
 
