@@ -35,7 +35,7 @@ pnpm exec tsx tools/qa/agents-through-mars/server-gate.mts
 ```
 
 (`LIVE_TEST_MODEL` set in the main checkout's `.env` stops the mock provider booting; the empty
-value overrides it.) It makes a file with a removed key, Saves it through `POST /api/agents/save`
+value overrides it.) It makes a file with an Error (`effort: 7`), Saves it through `POST /api/agents/save`
 and checks the Save leaves it out (HTTP 200, its error first), it is listed unavailable and no thread binds it; it has Critic write to `manuscript://Scene` and
 checks the refusal and that no document exists; it has Muse spawn `continuity-checker` and
 `reader-sim` and reads each child's binding from the database for `permission: read`.

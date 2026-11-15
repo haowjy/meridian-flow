@@ -3,7 +3,12 @@
  * a package's own files comes back as the tool result with Mars's code, key path and message
  * (never a refused write): the files stay as written, so the model fixes them and saves again.
  */
-import { type AgentsLevel, agentsLocationOf, type SaveOutcome } from "@meridian/contracts/agents";
+import {
+  type AgentsLevel,
+  agentsLocationOf,
+  type SaveOutcome,
+  shownFindings,
+} from "@meridian/contracts/agents";
 import { meridianErrorFromTool } from "@meridian/contracts/errors";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { z } from "zod";
@@ -82,7 +87,9 @@ export function renderSaveOutcomes(outcomes: SaveOutcome[]): string {
           finding.severity === "error" &&
           (item.kept.includes(finding.file) || item.leftOut.includes(finding.file)),
       );
-      const warnings = item.findings.filter((finding) => finding.severity !== "error");
+      const warnings = shownFindings(item.findings).filter(
+        (finding) => finding.severity !== "error",
+      );
       return [
         ...byFile(held, (file) =>
           item.kept.includes(file)
