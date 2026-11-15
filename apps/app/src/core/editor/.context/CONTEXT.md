@@ -577,15 +577,19 @@ from the wire alone, with nothing stored between handshakes.
   tabs advancing at once end on the same number. The old session is destroyed when its editors
   have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
   older-copy path below, like any older incarnation: read whole against the new session's first
-  handshake, so words another tab wrote into the same copy meanwhile come back (once), while what
-  the old session already handed back is not offered again. A copy a tab still holds, or one read
-  before the server's state arrives, stays for the next open. Holders follow through
+  handshake, so words another tab wrote into the same copy meanwhile come back (once). What a
+  session handed back is recorded in the copy itself (`recordHandedBack`, in its `custom` store:
+  the state the deciding handshake covered, the server's plus what it lacked), and every read of an
+  older copy offers only what lies beyond the server and those records. So a copy another tab
+  still holds, or one read before the server's state arrives, stays for the next open, in any tab
+  or after a reload, without its handed-back words. A copy can't drop them instead: it is shared
+  with tabs still writing into it, and Yjs can't remove an operation. Holders follow through
   `observeReplacement` (live bindings and open tabs, draft room reads); a review mount carries its
   reading position across it (`use-reading-position.ts`).
 - A session that opens a room's current incarnation reads the older ones no tab holds against
-  its first handshake, hands back the words the server lacks (so a reload gets a second look at
-  words from a toast it lost; never a wordless toast, which only the current session's own edit
-  earns), and deletes them.
+  its first handshake, hands back the words the server lacks and no session handed back yet
+  (never a wordless toast, which only the current session's own edit earns), and deletes them. A
+  reload does not offer words from a toast it lost again: the toast is the only place they are.
 - Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
   (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
 

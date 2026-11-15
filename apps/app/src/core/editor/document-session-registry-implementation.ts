@@ -25,6 +25,7 @@ import {
   type CopyHold,
   documentSessionPersistenceKey,
   draftRoomPersistenceKey,
+  incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
 import { missingText } from "./rescued-text";
@@ -384,11 +385,10 @@ export class DocumentSessionRegistry {
 
   /**
    * A session on the room's current incarnation, and the hold on it. The words an older incarnation
-   * held that the server lacks are handed back once the session has synced, and it goes. A copy is
-   * never deleted on one session's say-so: a session that `replaced` another retires it by the
-   * same path, once its editors have gone and its hold is released, so words another tab wrote
-   * into the same copy meanwhile come back too. Only what the old session had already handed back
-   * is not offered again.
+   * held that the server lacks and no session handed back yet are handed back once the session has
+   * synced, and it goes. A copy is never deleted on one session's say-so: a session that `replaced`
+   * another retires it by the same path, once its editors have gone and its hold is released, so
+   * words another tab wrote into the same copy meanwhile come back too.
    */
   private openCopy(
     roomKey: string,
@@ -396,7 +396,8 @@ export class DocumentSessionRegistry {
     replaced?: { session: DocumentSession; hold: Promise<CopyHold> | null | undefined },
   ): { session: DocumentSession; hold: Promise<CopyHold> } {
     const incarnation = this.copies.current(copyKey);
-    const name = this.copies.nameOf(copyKey);
+    // Named from the incarnation just read: another tab can advance the pointer in between.
+    const name = incarnationName(copyKey, incarnation);
     const hold = this.copies.hold(name);
     const session = this.createSession(
       roomKey,
@@ -405,12 +406,11 @@ export class DocumentSessionRegistry {
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
     if (replaced) {
-      const handedBack = Y.encodeStateAsUpdate(replaced.session.document);
       void this.teardownOwner
         .retireReplaced(replaced.session.room.kind === "live" ? "live" : "draft", replaced.session)
         .catch((error: unknown) => reportError(error))
         .then(async () => (await replaced.hold)?.release())
-        .then(() => this.handBackOlder(session, copyKey, incarnation, handedBack))
+        .then(() => this.handBackOlder(session, copyKey, incarnation))
         .catch(reportError);
     } else if (incarnation > 0) {
       void this.handBackOlder(session, copyKey, incarnation).catch(reportError);
@@ -422,23 +422,20 @@ export class DocumentSessionRegistry {
     session: DocumentSession,
     copyKey: string,
     incarnation: number,
-    handedBack?: Uint8Array,
   ): Promise<void> {
     const older = await this.copies.openOlder(copyKey, incarnation);
     if (older.length === 0) return;
     // Until the first handshake the document is not the server's, and everything would look unsent.
     await session.whenSynced();
     const settled = session.getSnapshot().status !== "destroyed";
-    const known = Y.encodeStateVectorFromUpdate(
-      Y.mergeUpdates([
-        Y.encodeStateAsUpdate(session.document),
-        ...(handedBack ? [handedBack] : []),
-      ]),
-    );
+    const server = Y.decodeStateVector(Y.encodeStateVector(session.document));
     try {
       if (settled)
-        for (const { update } of older) {
-          const text = missingText(update, known);
+        for (const { update, handedBack } of older) {
+          const known = new Map(server);
+          for (const [client, clock] of handedBack)
+            if (clock > (known.get(client) ?? 0)) known.set(client, clock);
+          const text = missingText(update, Y.encodeStateVector(known));
           if (text) this.handBack(text, "owner-closed");
         }
     } finally {
@@ -512,6 +509,7 @@ export class DocumentSessionRegistry {
     const edits = old.undeliverableEdits();
     // Wordless edits made by another tab or an earlier page are not told to this one.
     if (edits && (edits.typing !== null || edits.own)) this.handBack(edits.typing, "owner-closed");
+    old.recordHandedBack();
     void old.makeInert().catch(reportError);
     const copy = this.copyOf.get(old);
     if (!copy) throw new Error(`Session has no local copy to advance: ${old.roomKey}`);

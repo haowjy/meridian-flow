@@ -56,6 +56,7 @@ import {
   commitContentInitialization,
   readContentInitialization,
 } from "./local-content-initialization";
+import { recordHandedBack } from "./local-document-copies";
 import { LocalDocumentPeers } from "./local-document-peers";
 import {
   createLocalPresence,
@@ -608,6 +609,17 @@ export class DocumentSession {
       typing: this.unsent.typing(difference.lacking),
       own: this.unsent.holdsOwnEdits(difference),
     };
+  }
+
+  /**
+   * Records in this session's copy that what the last read-admitted handshake found was handed
+   * back, so no later read of the copy offers it again. What is written after that handshake is
+   * not covered: a later read offers it.
+   */
+  recordHandedBack(): void {
+    const database = this.persistence?.db;
+    if (this.lastDifference && database)
+      recordHandedBack(database, this.document.clientID, this.lastDifference);
   }
 
   /**

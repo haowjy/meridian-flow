@@ -19,6 +19,10 @@
  * message is sent, and two tabs that advance at once both end on the same next number. A copy is
  * deleted on a final fact; an incarnation that is no longer current is deleted when no tab holds
  * it (`openOlder`).
+ *
+ * A copy records what a session handed back from it (`recordHandedBack`): another tab can still
+ * hold the copy and write into it after that session moved on, so the copy outlives the hand-back,
+ * and every later read of it, in any tab or after a reload, offers only what came after.
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -27,6 +31,7 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
+import type { HandshakeDifference } from "./document-session";
 import { documentText } from "./rescued-text";
 
 const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
@@ -34,7 +39,7 @@ const DRAFT_PREFIX = `meridian:document:${collabSchemaKeyTag()}:draft/`;
 const HOLD_WAIT_MS = 10_000;
 
 /** `#` is always encoded in the parts of a key, so it only ever starts an incarnation number. */
-function incarnationName(key: string, incarnation: number): string {
+export function incarnationName(key: string, incarnation: number): string {
   return incarnation === 0 ? key : `${key}#${incarnation}`;
 }
 
@@ -60,6 +65,50 @@ export function draftRoomPersistenceKey(
 }
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";
+const HANDED_BACK_PREFIX = "meridian:handed-back:";
+
+/**
+ * Records in a session's copy that everything the read-admitted handshake `difference` covered is
+ * the server's or was handed back: the server's state, and every struct of what it lacked. Written
+ * when the hand-back is shown, so a crash before the write offers the words again, never loses them.
+ * Keyed by the session's client id: each session that hands back from the copy adds its own.
+ */
+export function recordHandedBack(
+  database: IDBDatabase,
+  writer: number,
+  difference: HandshakeDifference,
+): void {
+  const covered = Y.decodeSnapshot(difference.server).sv;
+  for (const struct of Y.decodeUpdate(difference.lacking).structs) {
+    if (struct instanceof Y.Skip) continue;
+    const end = struct.id.clock + struct.length;
+    if (end > (covered.get(struct.id.client) ?? 0)) covered.set(struct.id.client, end);
+  }
+  const transaction = database.transaction("custom", "readwrite");
+  transaction.onabort = () => reportError(transaction.error);
+  transaction
+    .objectStore("custom")
+    .put(Y.encodeStateVector(covered), `${HANDED_BACK_PREFIX}${writer}`);
+}
+
+/** Everything the copy's sessions handed back, as one state vector: per client, the furthest any covered. */
+function readHandedBack(database: IDBDatabase): Promise<Map<number, number>> {
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction("custom", "readonly");
+    const request = transaction
+      .objectStore("custom")
+      .getAll(IDBKeyRange.bound(HANDED_BACK_PREFIX, `${HANDED_BACK_PREFIX}\uffff`));
+    transaction.oncomplete = () => {
+      const covered = new Map<number, number>();
+      for (const record of request.result as Uint8Array[])
+        for (const [client, clock] of Y.decodeStateVector(record))
+          if (clock > (covered.get(client) ?? 0)) covered.set(client, clock);
+      resolve(covered);
+    };
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error("Handed-back record read aborted"));
+  });
+}
 
 export type CopyHold = { release(): void };
 
@@ -79,6 +128,8 @@ function documentOf(name: string, accountId: AccountId): DocumentId | null {
 export type OlderCopy = {
   /** Everything the copy holds. */
   update: Uint8Array;
+  /** What its sessions already handed back (`recordHandedBack`), as a state vector. */
+  handedBack: Map<number, number>;
   /** Releases the copy, deleting it unless `keep`. */
   finish(keep: boolean): Promise<void>;
 };
@@ -114,11 +165,6 @@ export class LocalDocumentCopies {
   /** The incarnation of the room's copy that sessions open now. Synchronous: a session is made where it is needed. */
   current(key: string): number {
     return Number(this.pointers.getItem(`${POINTER_PREFIX}${key}`) ?? 0);
-  }
-
-  /** The database name of the room's current incarnation. */
-  nameOf(key: string): string {
-    return incarnationName(key, this.current(key));
   }
 
   /**
@@ -163,6 +209,7 @@ export class LocalDocumentCopies {
           await persistence.whenSynced;
           ready.resolve({
             update: Y.encodeStateAsUpdate(document),
+            handedBack: persistence.db ? await readHandedBack(persistence.db) : new Map(),
             finish: async (keep) => {
               finished.resolve(keep);
             },
