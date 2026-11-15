@@ -30,6 +30,8 @@ export interface CreateDerivedPrimaryThreadInput {
   source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth">;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
+  /** A fork copies its source's; a handoff takes the writer's pick, else none. */
+  modelOverride?: string | null;
   title?: string | null;
   initialPromptBakeId?: PromptBakeId | null;
 }
@@ -49,6 +51,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     initialPromptBakeId: input.initialPromptBakeId ?? null,
     agentDefinitionRevisionId: null,
     agentName: null,
+    modelOverride: input.modelOverride ?? null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: input.source.parentThreadId,

@@ -94,6 +94,8 @@ export type ChatSubmission = {
     workAiWriteMode: AiWriteMode;
     /** The writer's explicit choice, sent with the creation request. */
     aiWriteMode?: AiWriteMode;
+    /** Sent with the creation request: the model the chat runs on instead of its Agent's. */
+    modelOverride?: string;
     agentSelection: AgentSelection;
     agentName: string;
     agentSlug: string;
@@ -181,6 +183,7 @@ function parseSubmission(value: unknown): ChatSubmission | null {
       (creation.workId !== null && typeof creation.workId !== "string") ||
       !isAiWriteMode(creation.workAiWriteMode) ||
       (creation.aiWriteMode !== undefined && !isAiWriteMode(creation.aiWriteMode)) ||
+      (creation.modelOverride !== undefined && typeof creation.modelOverride !== "string") ||
       !isAgentSelection(creation.agentSelection) ||
       typeof creation.agentName !== "string" ||
       typeof creation.agentSlug !== "string")

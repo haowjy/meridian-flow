@@ -42,9 +42,9 @@ import {
 } from "@meridian/thread-client";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
-import { useSetThreadModel } from "@/client/query/thread-model-command";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
+import { useSetThreadModel, useThreadModel } from "@/client/query/useSetThreadModel";
 import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
@@ -645,7 +645,7 @@ export function ChatView({
     if (handoffCutoff) handoffTurn(handoffCutoff, choice);
   });
   const setThreadModel = useSetThreadModel(threadId);
-  const modelOverride = activeThread?.modelOverride ?? null;
+  const modelOverride = useThreadModel(threadId, activeThread?.modelOverride ?? null);
   const agentName = activeThread?.agentName ?? null;
   const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
   // Busy only while the server has yet to accept the chat's first send; a chat with nothing to

@@ -9,6 +9,16 @@ cache warmth.
 
 ## Bound Agent and prompt
 
+A chat can run on another model than its Agent's: `threads.model_override`, set by the
+`thread_set_model` command and never part of the binding, so a compaction's binding refresh keeps it.
+`turnGatewayParams` (turn-context-assembly) resolves it per request: the override while the gateway
+lists it, else the Agent's model, else the default. An id the gateway no longer lists runs on the
+Agent's model, and `turns.model` records what ran; a client tells "fell back" from "chosen" by
+comparing the override with the newest turn's model, or with `GET /api/models` (`available`) for the
+turn about to run. The Agent's effort carries over; the gateway clamps it to the resolved model.
+`LIVE_TEST_MODEL` redirects at the gateway, so an override cannot bypass it. A change costs a
+cache rebuild, already predicted as `model_changed`.
+
 The immutable thread binding supplies the retained Agent body, resolved model,
 tools, effort, and invocation overlay. A spawn-time `appendSystemPrompt` is
 additive, never a replacement. Missing binding fails before gateway dispatch;

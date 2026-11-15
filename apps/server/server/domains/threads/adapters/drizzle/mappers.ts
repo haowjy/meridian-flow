@@ -55,6 +55,7 @@ export function mapThread(
     initialPromptBakeId: row.initialPromptBakeId,
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
+    modelOverride: row.modelOverride,
     nextSeq: String(row.nextSeq),
     activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,

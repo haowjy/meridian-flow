@@ -24,6 +24,14 @@ export function parseCreationAiWriteMode(value: unknown): AiWriteMode | undefine
   throw createError({ statusCode: 400, message: "aiWriteMode must be 'direct' or 'draft'" });
 }
 
+/** Stored as given: an id the gateway doesn't list falls back at turn time. */
+export function parseCreationModelOverride(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value !== "string" || !value)
+    throw createError({ statusCode: 400, message: "modelOverride must be a string or null" });
+  return value;
+}
+
 export function throwThreadCreationError(error: unknown): never {
   if (error instanceof ThreadCreationNotFoundError)
     throw createError({ statusCode: 404, message: error.message });

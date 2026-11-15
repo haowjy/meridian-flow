@@ -476,6 +476,8 @@ export type CreateThreadRequest = {
    * given, it also becomes that Work's default.
    */
   aiWriteMode?: AiWriteMode;
+  /** The model the new chat runs on instead of its Agent's; omitted or null runs the Agent's own. */
+  modelOverride?: string | null;
 };
 
 export type CreateThreadResponse = Thread;
@@ -488,10 +490,32 @@ export const forkThreadRequestSchema = z
   })
   .strict();
 
+/** `GET /api/models`: every model Flow knows, for the Agent picker. */
+export const modelListSchema = z.object({
+  models: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      /** False when this deployment can't run it (no provider key): a chat set to it falls back to its Agent's model. */
+      available: z.boolean(),
+    }),
+  ),
+});
+export type ModelList = z.infer<typeof modelListSchema>;
+
+/** `PATCH /api/threads/:threadId/model`: `model: null` clears the override. */
+export const setThreadModelRequestSchema = z.strictObject({
+  commandId: z.uuid(),
+  model: z.string().min(1).nullable(),
+});
+export type SetThreadModelRequest = z.infer<typeof setThreadModelRequestSchema>;
+
 export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
   originTurnId: z.uuid(),
   agentSelection: agentSelectionSchema,
+  /** The model the new chat runs on instead of its Agent's. */
+  modelOverride: z.string().nullish(),
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 

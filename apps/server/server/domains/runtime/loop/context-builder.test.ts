@@ -34,6 +34,7 @@ function thread(): Thread {
     initialPromptBakeId: "bake-1" as never,
     agentDefinitionRevisionId: null,
     agentName: null,
+    modelOverride: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: THREAD_ID,

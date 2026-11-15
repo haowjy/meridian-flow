@@ -253,6 +253,7 @@ export interface CreateThreadInput {
   workId?: WorkId | null;
   /** No default: every creation path chooses the chat's mode. */
   aiWriteMode: AiWriteMode;
+  modelOverride?: string | null;
   kind?: ThreadKind;
   title?: string | null;
   parentThreadId?: ThreadId | null;
@@ -282,6 +283,8 @@ export interface PromptBakeRepository {
 }
 
 export interface ThreadRepository {
+  /** The Agent slug of the project's newest primary chat this writer started, or null. */
+  lastStartedAgentSlug(userId: UserId, projectId: ProjectId): Promise<string | null>;
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
@@ -329,6 +332,8 @@ export interface ThreadRepository {
   ): Promise<WorkThreadSummary[]>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
+  /** Sets or clears the model this chat runs on instead of its Agent's. Not activity: `updatedAt` stays. */
+  setModelOverride(id: ThreadId, model: string | null): Promise<Thread>;
   /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
   setAiWriteMode(id: ThreadId, mode: AiWriteMode): Promise<void>;
   /** Locks, inserts, and points at the first bake; contenders receive the winner. */

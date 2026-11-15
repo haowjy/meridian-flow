@@ -36,6 +36,8 @@ export type DerivationIntent = {
   /** The destination's Agent: the source's for a fork, the writer's pick for a handoff. */
   agent: CreationAgent | null;
   agentName: string | null;
+  /** The model the destination runs on instead of its Agent's: the writer's pick for a handoff, the source's for a fork (the server copies it). */
+  modelOverride: string | null;
   createdAt: string;
 };
 
@@ -143,6 +145,7 @@ function optimisticThread(intent: DerivationIntent, source: Thread | null): Thre
     timestamp: intent.createdAt,
     workId: intent.workId,
     aiWriteMode: intent.aiWriteMode,
+    modelOverride: intent.modelOverride,
     ...(intent.agent ? { agent: intent.agent } : {}),
   });
   return {
@@ -168,6 +171,7 @@ function request(intent: DerivationIntent): Promise<Thread> {
     id: intent.threadId,
     originTurnId: intent.originTurnId,
     agentSelection: intent.agent.selection,
+    modelOverride: intent.modelOverride,
   });
 }
 

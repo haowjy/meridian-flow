@@ -22,6 +22,8 @@ export const threadSchema = z.object({
   agentDefinitionRevisionId: z.string().nullable(),
   /** Display name from the retained Agent definition. */
   agentName: z.string().nullable(),
+  /** The model id this chat runs on instead of its Agent's; null runs the Agent's own. */
+  modelOverride: z.string().nullable(),
   nextSeq: z
     .string()
     .regex(/^(0|[1-9]\d*)$/)

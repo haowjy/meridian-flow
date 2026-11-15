@@ -109,6 +109,8 @@ export async function handoffThreadAgent(
     userId: string;
     originTurnId: string;
     agentSelection: AgentSelection;
+    /** The writer's model pick for the new chat; null runs the Agent's own. */
+    modelOverride?: string | null;
   },
 ): Promise<{ thread: Thread; created: boolean }> {
   const existing = await findExistingDerivationBeforeSourceLoad(deps, input, "handoff");
@@ -155,6 +157,7 @@ export async function handoffThreadAgent(
         source: owner,
         initialPromptBakeId: inheritedBake?.id ?? null,
         originType: "handoff",
+        modelOverride: input.modelOverride,
         originTurnId: cutoff.turn.id as TurnId,
         title: `Handoff from ${lockedSource.title ?? "thread"}`,
       });
@@ -237,6 +240,7 @@ export async function forkThreadAgent(
       aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
       source: lockedSource,
       originType: "fork",
+      modelOverride: lockedSource.modelOverride,
       originTurnId: cutoff.turn.id as TurnId,
       title: `Fork from ${lockedSource.title ?? "thread"}`,
       initialPromptBakeId: inheritedBake?.id ?? null,

@@ -68,7 +68,7 @@ export interface CatalogSkill extends SkillListing {
 
 export interface BoundAgentCatalog extends PackageSaver {
   /** The saved Agents of the built-in, user and (with `projectId`) project levels. */
-  list(userId: string, input: { projectId?: string }): Promise<AgentCatalog>;
+  list(userId: string, input: { projectId?: string }): Promise<Pick<AgentCatalog, "agents">>;
   /**
    * Binds the newest saved Agent of the selection's name; the selection's revision id is used
    * only when that name is no longer saved, and only if a Save of this account or project (which

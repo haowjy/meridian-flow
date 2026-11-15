@@ -180,11 +180,27 @@ interface PreparedNextTurnContext
   eventSink?: EventSink;
 }
 
+/**
+ * The chat's model override replaces the Agent's model while the gateway lists it. An id it no
+ * longer lists runs on the Agent's model, and the turn's recorded model says so. The Agent's
+ * effort carries over: the gateway clamps it to what the resolved model accepts.
+ */
+function turnGatewayParams(
+  gateway: AssembleNextTurnContextInput["gateway"],
+  thread: Pick<Thread, "modelOverride">,
+  agentParams: Pick<GenerateRequest, "model" | "reasoning">,
+): Pick<GenerateRequest, "model" | "reasoning"> {
+  const override = thread.modelOverride;
+  return override && gateway?.listModels().some((model) => model.id === override)
+    ? { ...agentParams, model: override }
+    : agentParams;
+}
+
 function modelOf(
   gateway: AssembleNextTurnContextInput["gateway"],
-  agentContext: Awaited<ReturnType<typeof resolveAgentThreadTurnContext>>,
+  params: Pick<GenerateRequest, "model">,
 ): ModelInfo | undefined {
-  const modelId = agentContext.gatewayParams.model ?? gateway?.getDefaultModel?.();
+  const modelId = params.model ?? gateway?.getDefaultModel?.();
   return gateway?.listModels().find((model) => model.id === modelId);
 }
 
@@ -201,7 +217,11 @@ export function lazyThreadModel(
   let model: Promise<ModelInfo | undefined> | undefined;
   return () =>
     (model ??= resolveAgentThreadTurnContext({ ...input, baseTools: input.baseTools }).then(
-      (context) => modelOf(input.gateway, context),
+      (context) =>
+        modelOf(
+          input.gateway,
+          turnGatewayParams(input.gateway, input.thread, context.gatewayParams),
+        ),
     ));
 }
 
@@ -260,7 +280,8 @@ export async function prepareNextTurnContext(
     }
   }
 
-  const resolvedModel = modelOf(input.gateway, agentContext);
+  const gatewayParams = turnGatewayParams(input.gateway, thread, agentContext.gatewayParams);
+  const resolvedModel = modelOf(input.gateway, gatewayParams);
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,
@@ -325,7 +346,7 @@ export async function prepareNextTurnContext(
     promptCacheKey: cacheKeyOwner,
     eventSink: input.eventSink,
     policy: agentContext.policy,
-    gatewayParams: agentContext.gatewayParams,
+    gatewayParams,
     resolvedModel: resolvedModel ?? null,
     baked,
     compactionTriggerTokens: compactionTrigger?.thresholdTokens ?? null,

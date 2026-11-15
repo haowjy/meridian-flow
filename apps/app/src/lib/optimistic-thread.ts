@@ -12,6 +12,7 @@ export function makeOptimisticThread(input: {
   workId?: string | null;
   aiWriteMode: AiWriteMode;
   agent?: CreationAgent;
+  modelOverride?: string | null;
 }): Thread {
   return {
     id: input.id,
@@ -19,6 +20,7 @@ export function makeOptimisticThread(input: {
     workId: input.workId ?? null,
     aiWriteMode: input.aiWriteMode,
     effectiveAiWriteMode: input.aiWriteMode,
+    modelOverride: input.modelOverride ?? null,
     userId: OPTIMISTIC_OWNER_ID,
     kind: "primary",
     title: input.title,

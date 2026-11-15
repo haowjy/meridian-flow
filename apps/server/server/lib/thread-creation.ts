@@ -66,6 +66,7 @@ export interface CreateThreadForProjectArgs {
   workId?: string | null;
   /** The writer's explicit mode; it also becomes the Work's default. Omitted, the chat copies it. */
   aiWriteMode?: AiWriteMode;
+  modelOverride?: string | null;
 }
 
 /**
@@ -128,6 +129,7 @@ export async function createThreadForProject(
           projectId: args.projectId,
           title: args.title ?? null,
           aiWriteMode: args.aiWriteMode ?? work.defaultAiWriteMode,
+          modelOverride: args.modelOverride ?? null,
         });
       },
       resolveWork: async (created) => {

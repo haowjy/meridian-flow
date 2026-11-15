@@ -128,6 +128,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
+    modelOverride: input.modelOverride ?? null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: normalized.parentThreadId,
@@ -477,6 +478,16 @@ export function createInMemoryRepositories(
         title: title === "" ? null : title,
         updatedAt: toIsoString(new Date()),
       };
+      threads.set(id, updated);
+      return projectThread(updated);
+    },
+    async lastStartedAgentSlug() {
+      return null;
+    },
+    async setModelOverride(id, model) {
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`Thread not found: ${id}`);
+      const updated = { ...thread, modelOverride: model };
       threads.set(id, updated);
       return projectThread(updated);
     },

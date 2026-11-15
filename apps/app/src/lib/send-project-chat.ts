@@ -20,6 +20,8 @@ export type SendProjectChatArgs = {
   draft?: ComposerDraftSnapshot;
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
+  /** The model this chat runs on instead of the Agent's, if the writer picked one. */
+  modelOverride?: string | null;
   workId: string;
   /** The selected Work's default: the new chat's mode unless the writer chose one. */
   workAiWriteMode: AiWriteMode;
@@ -48,6 +50,7 @@ export function sendProjectChat({
   draft,
   activatedSkillSlugs,
   agent,
+  modelOverride,
   workId,
   workAiWriteMode,
   aiWriteMode,
@@ -81,6 +84,7 @@ export function sendProjectChat({
         workId,
         workAiWriteMode,
         ...(aiWriteMode ? { aiWriteMode } : {}),
+        ...(modelOverride ? { modelOverride } : {}),
         agentSelection: agent.selection,
         agentName: agent.name,
         agentSlug: agent.slug,
