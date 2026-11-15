@@ -156,6 +156,14 @@ export function unsentText(document: Y.Doc, unacknowledged: Uint8Array): string 
     ranges.push({ clock: struct.id.clock, len: struct.length });
     inserted.set(struct.id.client, ranges);
   }
+  return typedText(document, inserted);
+}
+
+/** The live words of the items in `inserted` (clock ranges by client); null when they hold none. */
+export function typedText(
+  document: Y.Doc,
+  inserted: Map<number, { clock: number; len: number }[]>,
+): string | null {
   const { text } = textInRanges(
     document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
     { clients: inserted },
