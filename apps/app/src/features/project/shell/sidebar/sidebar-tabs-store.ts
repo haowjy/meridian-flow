@@ -2,10 +2,10 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /** A tree source the writer can put in the middle of the strip, between Chat and Changes. */
-export type TreeTab = "manuscript" | "kb" | "user";
+export type TreeTab = "manuscript" | "kb" | "user" | "agents";
 
 /** Every tree source the ⋯ menu offers, in strip order. */
-export const TREE_TABS: readonly TreeTab[] = ["manuscript", "kb", "user"];
+export const TREE_TABS: readonly TreeTab[] = ["manuscript", "kb", "user", "agents"];
 
 const DEFAULT_TREE_TABS: readonly TreeTab[] = ["manuscript", "kb"];
 
@@ -13,6 +13,10 @@ type SidebarTabs = {
   shown: readonly TreeTab[];
   toggle: (source: TreeTab) => void;
   show: (source: TreeTab) => void;
+  /** The latest ask from outside the sidebar to put a tab on screen; the sidebar follows it. */
+  asked: { source: TreeTab; at: number } | null;
+  /** Shows the tab in the strip and on screen (the picker's "unsaved Agent changes"). */
+  reveal: (source: TreeTab) => void;
 };
 
 /** Which tree sources the sidebar's strip shows: the writer's choice, kept on this device. */
@@ -30,6 +34,14 @@ export const useSidebarTabs = create<SidebarTabs>()(
         set((state) =>
           state.shown.includes(source) ? state : { shown: inStripOrder([...state.shown, source]) },
         ),
+      asked: null,
+      reveal: (source) =>
+        set((state) => ({
+          shown: state.shown.includes(source)
+            ? state.shown
+            : inStripOrder([...state.shown, source]),
+          asked: { source, at: (state.asked?.at ?? 0) + 1 },
+        })),
     }),
     {
       name: "meridian.sidebar-tabs.v1",

@@ -27,6 +27,8 @@ export async function writeMarkdown(
   documentId: string,
   markdown: string,
   stored: () => Promise<boolean>,
+  /** A `source` document holds its text as one code block, byte for byte; prose is parsed. */
+  filetype?: string,
 ): Promise<void> {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodecFactory(mdxCodec({ schema }));
@@ -64,14 +66,17 @@ export async function writeMarkdown(
         );
       }),
     ]);
-    const parsed = codec.parse(markdown);
+    const blocks =
+      filetype === "source"
+        ? [schema.nodes.code_block.create({ language: filetype }, schema.text(markdown))]
+        : codec.parse(markdown).blocks;
     const written = overwriteWithAssigned({
       doc,
       model: yProsemirrorModel(schema),
       codec: codec.forScope(UNSCOPED_DOCUMENT_LINKS),
       documentId,
       content: markdown,
-      blocks: parsed.blocks,
+      blocks,
     });
     if (!written.ok)
       throw new CliError("http_error", `The document refused its text: ${written.message}`);

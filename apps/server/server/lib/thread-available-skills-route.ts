@@ -1,14 +1,14 @@
 /** Route core for GET /api/threads/:threadId/skills — user slash catalog. */
 import type { ThreadAvailableSkillsResponse } from "@meridian/contracts/protocol";
-import type { AccountSkillInstallStore, AgentRevisionStore } from "../domains/packages/index.js";
+import type { AgentRevisionStore, BoundAgentCatalog } from "../domains/packages/index.js";
 import { resolveThreadUserInvocableSkills } from "../domains/runtime/loop/available-skills.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
 
 export interface ThreadAvailableSkillsRouteDeps {
   repos: Pick<ThreadRepositories, "threads">;
-  agentRevisions: Pick<AgentRevisionStore, "listInstallations" | "readSource">;
-  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
+  agentCatalog: Pick<BoundAgentCatalog, "userSkills">;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
 }
 
 export async function handleGetThreadAvailableSkills(
@@ -20,16 +20,11 @@ export async function handleGetThreadAvailableSkills(
     input.threadId,
     input.userId,
   );
-  const skills = await resolveThreadUserInvocableSkills({
-    thread,
-    agentRevisions: deps.agentRevisions,
-    accountSkillInstalls: deps.accountSkillInstalls,
-  });
   return {
-    skills: skills.map((skill) => ({
-      slug: skill.slug,
-      name: skill.name,
-      description: skill.description,
-    })),
+    skills: await resolveThreadUserInvocableSkills({
+      thread,
+      agentCatalog: deps.agentCatalog,
+      agentRevisions: deps.agentRevisions,
+    }),
   };
 }

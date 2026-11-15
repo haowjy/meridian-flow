@@ -31,14 +31,14 @@ import {
   type WorkRef,
 } from "./types.js";
 
-/** The most any agent may do in each source, whatever its permission. */
-const SOURCE_AGENT_CAPS: Readonly<Record<ContextUriScheme, FileAccessLevel>> = {
-  manuscript: "edit",
-  kb: "edit",
-  user: "edit",
-  unfiled: "edit",
-  scratch: "edit",
-  uploads: "read",
+/**
+ * The most any agent may do in a source, whatever its permission, and the reason it is told. A
+ * source with no entry is capped at nothing.
+ */
+const SOURCE_AGENT_LIMITS: Readonly<
+  Partial<Record<ContextUriScheme, { cap: FileAccessLevel; limit: "uploads_read_only" }>>
+> = {
+  uploads: { cap: "read", limit: "uploads_read_only" },
 };
 
 /** Whether agent writes to this source go to the Work branch in draft mode. */
@@ -215,9 +215,8 @@ function workTerms(work: FileWorkFacts): Term[] {
  * of its thread's current Work, No Work's included. A place set to `deny` reads. The minimum wins.
  */
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
-  const terms: Term[] = [
-    { cap: SOURCE_AGENT_CAPS[facts.contentScheme], limit: "uploads_read_only" },
-  ];
+  const sourceLimit = SOURCE_AGENT_LIMITS[facts.contentScheme];
+  const terms: Term[] = sourceLimit ? [sourceLimit] : [];
   for (const link of chain) {
     const ownScratch =
       facts.contentScheme === "scratch" &&

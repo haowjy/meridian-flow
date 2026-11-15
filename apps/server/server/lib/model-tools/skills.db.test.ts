@@ -20,8 +20,9 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import {
   type AgentSourceSnapshot,
+  createBoundAgentCatalog,
   createDrizzleAgentRevisionStore,
-  createInMemoryAccountSkillInstallStore,
+  noLevelFiles,
   resolveAgentConfiguration,
 } from "../../domains/packages/index.js";
 import { createToolExecutor, createToolRegistry } from "../../domains/runtime/index.js";
@@ -91,11 +92,12 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     afterAll(() => db.close());
 
     it("lets the thread read a skill its user invoked, and not a spawned child", async () => {
-      const launch = await agentRevisions.installSource(await launchAgentsSource());
-      await agentRevisions.advanceInstallation({
-        ownerUserId: null,
-        coordinate: "meridian-launch-agents",
-        currentRevisionId: launch.packageRevisionId,
+      const agentCatalog = createBoundAgentCatalog({
+        store: agentRevisions,
+        levelFiles: noLevelFiles,
+        builtins: [await launchAgentsSource()],
+        defaultModel: () => "fixture-model",
+        unavailableReasons: () => [],
       });
       const generalRow = (
         await agentRevisions.installSource({
@@ -148,7 +150,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         thread: { id: PARENT, userId: USER, kind: "primary" } as Thread,
         slug: "story-review",
         agentRevisions,
-        accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
+        agentCatalog,
       });
       expect(body.readable).toBe(true);
 

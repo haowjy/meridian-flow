@@ -571,8 +571,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
 }
 
 export function createWriteHandler(deps: ToolWiringDeps) {
-  return async (input: unknown, handlerCtx: ToolHandlerContext) => {
-    const ctx = handlerCtx;
+  const write = async (input: unknown, ctx: ToolHandlerContext) => {
     const edit = ctx.modelEdit;
     if (!edit) throw new Error("A write is a document command: the executor keys it");
     const written = input as WriteToolInput;
@@ -853,6 +852,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       });
     return result;
   };
+  return (input: unknown, ctx: ToolHandlerContext) => write(input, ctx);
 }
 
 /** A failed edit the server runs again once, under the same command id. */

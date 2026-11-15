@@ -45,7 +45,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const localSessions = new Map<string, ActorSession>();
   const autoTurnIdNonce = createAutoTurnIdNonce();
   const autoTurnCounter = { value: 0 };
-  const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
+  const renderer = createDocumentRenderer({ model: options.model });
   const journal = options.journal;
   const documentSave = createDocumentSave({
     coordinator: options.coordinator,
@@ -56,6 +56,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     options: {
       model: options.model,
       codec: options.codec,
+      codecFor: options.codecFor,
       coordinator: options.coordinator,
       links: options.links,
       onLinkSpliceFallback: options.onLinkSpliceFallback,

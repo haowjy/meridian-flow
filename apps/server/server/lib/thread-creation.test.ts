@@ -4,7 +4,11 @@
  * - Work-default write mode and reserved Agent revision recovery (kb/wiki/product/work/write-mode.md)
  */
 import { describe, expect, it } from "vitest";
-import { createBoundAgentCatalog, seedGeneralAgent } from "../domains/packages/index.js";
+import {
+  createBoundAgentCatalog,
+  generalAgentSource,
+  noLevelFiles,
+} from "../domains/packages/index.js";
 import {
   createInMemoryProjectRepository,
   createInMemoryWorkRepository,
@@ -22,14 +26,17 @@ async function fixture() {
   const app = createInMemoryAppServices();
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "owner", title: "Agents" });
-  await seedGeneralAgent(app.agentRevisions, "fixture-model");
-  const entry = await app.agentRevisions.readCatalogEntry(null, "general");
-  if (!entry) throw new Error("Missing General");
   const agentCatalog = createBoundAgentCatalog({
     defaultModel: () => "test-model",
     store: app.agentRevisions,
+    levelFiles: noLevelFiles,
+    builtins: [generalAgentSource("fixture-model")],
     unavailableReasons: () => [],
   });
+  const general = (await agentCatalog.list("owner", {})).agents.find(
+    (agent) => agent.slug === "general",
+  );
+  if (!general?.selection) throw new Error("Missing General");
   const workRepo = createInMemoryWorkRepository();
   await workRepo.ensureNoWork(project.id);
   const deps = {
@@ -48,7 +55,7 @@ async function fixture() {
     userId: "owner",
     title: "Branch a scene",
     workId: null,
-    agentSelection: { catalogEntryId: entry.id, definitionRevisionId: entry.selectedRevisionId },
+    agentSelection: general.selection,
   };
   return { app, deps, args, projects };
 }
@@ -90,16 +97,14 @@ describe("exact thread creation", () => {
     expect((await create()).aiWriteMode).toBe("direct");
   });
 
-  it("binds the reserved revision and recovers it before prospective catalog eligibility", async () => {
+  it("binds the winner for the slug and recovers the same binding without consulting the catalog", async () => {
     const { app, deps, args } = await fixture();
     const created = await createThreadForProject(deps, args);
-    expect(created.agentDefinitionRevisionId).toBe(args.agentSelection.definitionRevisionId);
     expect(created.agentName).toBe("General");
     expect(created.ref).toBe("c1");
     expect((await app.threadRepos.threads.findById(created.id))?.agentDefinitionRevisionId).toBe(
-      args.agentSelection.definitionRevisionId,
+      created.agentDefinitionRevisionId,
     );
-    await seedGeneralAgent(app.agentRevisions, "new-model");
     const recovered = await createThreadForProject(
       {
         ...deps,
@@ -160,9 +165,7 @@ describe("exact thread creation", () => {
     ]);
     expect(second).toEqual(first);
     expect((await app.threadRepos.threads.listByProject(args.projectId)).length).toBe(1);
-    expect((await app.agentRevisions.readThreadBinding(args.id))?.revision?.id).toBe(
-      args.agentSelection.definitionRevisionId,
-    );
+    expect((await app.agentRevisions.readThreadBinding(args.id))?.revision?.slug).toBe("general");
   });
 
   it("refuses Work loss at locked attachment after rolling creation back", async () => {
@@ -207,18 +210,12 @@ describe("exact thread creation", () => {
     expect(await app.agentRevisions.readThreadBinding(args.id)).toBeUndefined();
   });
 
-  it("refuses another account's catalog selection and unavailable Work without creating a thread", async () => {
+  it("refuses an unknown Agent and an unavailable Work without creating a thread", async () => {
     const { app, deps, args } = await fixture();
-    const privateEntry = await app.agentRevisions.selectRevision({
-      ownerUserId: "other",
-      logicalKey: "private",
-      revisionId: args.agentSelection.definitionRevisionId,
-    });
-    if (!privateEntry.ok) throw new Error("Fixture catalog failed");
     await expect(
       createThreadForProject(deps, {
         ...args,
-        agentSelection: { ...args.agentSelection, catalogEntryId: privateEntry.entry.id },
+        agentSelection: { slug: "no-such-agent", definitionRevisionId: crypto.randomUUID() },
       }),
     ).rejects.toThrow("Agent not found");
     await expect(createThreadForProject(deps, { ...args, workId: "missing-work" })).rejects.toThrow(

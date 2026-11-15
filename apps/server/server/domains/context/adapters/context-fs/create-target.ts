@@ -3,12 +3,14 @@
  * canonical name, extension and filetype. Live and draft creates share it, so a drafted
  * `characters/Kael` and a live `characters/Kael.md` name one canonical row.
  */
+
+import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
   classifyFiletype,
+  documentFilenameAt,
   type Filetype,
   filenameForBinary,
   type ParsedDocumentFilename,
-  parseDocumentFilename,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { splitPath } from "../../context/paths.js";
@@ -29,22 +31,24 @@ export type CreateTargetInput = {
 };
 
 function parseTarget(
+  scheme: ContextUriScheme,
   path: string,
   input: CreateTargetInput,
 ): Result<{ dir: string[]; parsed: ParsedDocumentFilename }, AdapterFault> {
   const { dir, filename } = splitPath(path);
   if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
   if (input.parsedFilename) return Ok({ dir, parsed: input.parsedFilename });
-  const parsed = parseDocumentFilename(filename, { sourceExtension: input.sourceExtension });
+  const parsed = documentFilenameAt(scheme, path, { sourceExtension: input.sourceExtension });
   return parsed.ok ? Ok({ dir, parsed: parsed.value }) : Err(parsed.error);
 }
 
 /** A tracked document's create target, or the fault a root, invalid or binary name is. */
 export function resolveCreateTarget(
+  scheme: ContextUriScheme,
   path: string,
   input: CreateTargetInput = {},
 ): Result<CreateTarget, AdapterFault> {
-  const target = parseTarget(path, input);
+  const target = parseTarget(scheme, path, input);
   if (!target.ok) return target;
   const { dir, parsed } = target.value;
   if (classifyFiletype(parsed.filetype).kind !== "tracked") {
@@ -58,11 +62,12 @@ export function resolveCreateTarget(
  * caller) a prose-shaped name takes its storage type's registered suffix.
  */
 export function resolveBinaryTarget(
+  scheme: ContextUriScheme,
   path: string,
   storage: { fileType: string; mimeType?: string; filename?: { name: string; extension: string } },
 ): Result<{ dir: string[]; name: string; extension: string }, AdapterFault> {
   if (storage.filename) return Ok({ dir: splitPath(path).dir, ...storage.filename });
-  const target = parseTarget(path, {});
+  const target = parseTarget(scheme, path, {});
   if (!target.ok) return target;
   const { name, extension } = filenameForBinary(
     target.value.parsed,

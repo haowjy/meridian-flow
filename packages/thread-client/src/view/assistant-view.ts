@@ -3,6 +3,7 @@
  * writer sees (process folds, prose, reports, artifacts), with the fold's visible tools, digest
  * counts, the hidden protocol halves and the turn's Work receipts decided here once.
  */
+import type { SaveOutcome } from "@meridian/contracts/agents";
 import { type Block, blockPlainText, type Turn } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
@@ -17,7 +18,7 @@ import {
   visibleReasoningText,
 } from "./partition-turn";
 import { type FoldDigest, foldDigest } from "./thinking-digest";
-import { workReceipt } from "./tool-command";
+import { agentsSaved, workReceipt } from "./tool-command";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ViewRun =
@@ -55,6 +56,8 @@ export type AssistantView = {
   /** Tool calls the writer sees elsewhere (a card, or the per-tool policy), so they have no row. */
   hiddenToolCallIds: string[];
   workReceipts: WorkReceipt[];
+  /** What the turn's `save_agents` calls did, one outcome per package, in call order. */
+  agentsSaved: SaveOutcome[];
 };
 
 const cache = new WeakMap<readonly Block[], AssistantView>();
@@ -81,6 +84,7 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
       const receipt = workReceipt(tool);
       return receipt ? [receipt] : [];
     }),
+    agentsSaved: tools.flatMap(agentsSaved),
   };
   cache.set(turn.blocks, view);
   return view;

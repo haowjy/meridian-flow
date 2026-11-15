@@ -476,6 +476,7 @@ export function createSourceTree(deps: {
           const parsed = storedFilename(input.leaf, {
             extension: extensionOf(node),
             editable: node.kind === "document",
+            filetype: node.filetype,
           });
           if (!parsed.ok) return Err(parsed.error);
           filename = parsed.name;

@@ -1,19 +1,27 @@
 # domains/packages
 
-This domain reads Mars packages, decides which Agents are available, publishes
-immutable definitions, and resolves skills and execution configuration. The model
+This domain reads Mars packages from the writer's Agent files, saves them, decides which Agents and
+skills are available, retains immutable definitions for the chats bound to them, and resolves execution
+configuration. The model
 is in the [Agent definition][definitions] and [package][packages] pages.
 
 ## Contracts
 
 - `domain/mars.ts` is the only module that imports `@meridian-flow/mars-schema`.
-  Every Agent file, skill file and `mars.toml` is read by its `read`, never
-  `prepare`, which upgrades an old file silently.
-- A file with a Mars diagnostic of any severity defines nothing: its Agent is
-  unavailable, a skill file is not a skill, and a `mars.toml` with one makes
-  every Agent of the package unavailable. Severity says whether `mars sync`
-  goes on, not whether a restriction survived. `compilePackage` holds the
-  table of what makes an Agent available.
+  A package is read whole by `readPackage` (Mars's `prepare`, `migrate` off), the one reader path
+  for `compilePackage`: it adds the package's `[package.tools]` to each Agent that does not name
+  the key, and Flow adds no tool rule itself. `prepare` upgrades a pre-v1 package and translates a
+  foreign one in memory, so a package whose classification is not `schema-1` makes every Agent
+  unavailable (`flow.package-not-schema-1`). A `changes` entry on an Agent's file
+  (`field.restriction-lost` above all) is a warning, not an error. A manifest error reaches each Agent as Mars's
+  `package-tools.unreadable`. A lone file (a skill's listing, a package name) is still read with
+  `read`.
+- An `error` finding on a file, Mars's or Flow's, defines nothing: its Agent is unavailable, a skill
+  file is not a skill, and a `mars.toml` with one makes every Agent of the package unavailable. A
+  `warning` or `info` doesn't: it is shown and the Agent runs as its file reads (a restriction
+  `prepare` dropped, `field.restriction-lost`, is a warning). `compilePackage` holds the table.
+  `checkPackage` (`domain/check-package.ts`) is the one place Save asks whether files can be
+  published: it returns the package's errors and warnings, and later calls Mars's `check()`.
 - An unavailable Agent is stored with its diagnostics and no definition, so
   nothing can run it. `AgentRevision` is an available Agent; the store reads the
   runtime uses return only those, and `readThreadBinding` throws on a bound row
@@ -28,18 +36,73 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   `allow` with a warning.
 - A revision's key includes `GRAMMAR_VERSION` (the Mars version and Flow's
   `flow-N`). Whoever changes the availability table or the tool projection bumps
-  `flow-N`. Boot republishes every package with no rows at the running version.
-  A binding keeps its revision; a verdict is made once, at compile.
+  `flow-N`. A revision an older reader compiled is read again with the running reader
+  when something selects it; a binding keeps its revision, and a verdict is made once, at compile.
 - Package files are UTF-8 text only (`Record<string, string>`).
-- Catalog advancement requires an expected revision and retains old membership
-  so a reserved first Send keeps its exact revision.
+- **A package is used only once it is saved.** The catalog reads each package's latest Save
+  (`agent_package_saves`, append-only: the row with the highest `seq` is the saved version, a null
+  revision means the package was removed), never the files. `package-levels.ts` builds the three
+  levels from either source (`fromFiles`, `fromSaves`) and shares one compile cache by content
+  digest; a saved version's package is read once per process by its immutable row id. A package is
+  a level's own files (folder `""`) or one import (`packages/<name>/`, `splitLevel`).
+- `save-packages.ts` is the one Save path, behind `POST /api/agents/save` (the writer) and the
+  `save_agents` tool (the AI, `lib/model-tools/save-agents.ts`). Per package, independently:
+  `checkPackage`. An error in one Agent's or skill's file stops that edit from being used and the
+  rest saves: `keepLastGood` installs, for such an item, the files of its last saved version when
+  that was usable (`kept` on the result; an Agent whose subagent or skill is broken is kept too
+  when that does not fix it), and an item with no usable saved version is out (`leftOut`). The
+  errors are listed first on the result. Only an error in `mars.toml`, which leaves nothing
+  readable, fails the Save (`failed`, nothing written, the previous version stays). A Save installs
+  exactly the cut `AgentLevelFiles.read` returned, which is one repeatable-read snapshot of the
+  tree and of each document's admitted text, so the files are a state the level was in. No change
+  is `unchanged`; otherwise `installSource` and a Save row. A failed Save is a result, never a
+  refused write. A package's Saves and Undos are ordered by one transaction-scoped advisory lock
+  per (owner, folder). `AgentRevisionStore.settleSave` is a Save's whole decision under it: it
+  reads the latest Save row, applies the last-good rule, decides `unchanged` and adds the row in
+  one transaction, so a concurrent Save is never put back by a decision made on an older read
+  (only the captured file cut is read before the lock). `undoSave` runs in one transaction:
+  after the stale check it merges the previous save's text into each file through the documents'
+  own write path (`MarkdownDocumentStore.mergeCodeText`, which takes the document's durable
+  mutation lock before it reads the live text and merges against what it holds then; base: that Save's text, target: the previous save's text; the writer's
+  text wins where both changed the same text) and then adds the row, so a failure changes nothing
+  and a stale Undo answers `undone: false`. Undo never creates or deletes a file. The user level's
+  documents resolve from the account, not from `projectId`.
+  A package's state (`saved`, `unsaved`, `cant-save`, `not-saved`, `removed`) is computed in
+  `files()` from the files and the latest Save and stored nowhere, so it is not a state machine
+  (`cant-save` is only a broken `mars.toml`).
+- `list`, `resolvePrimary`, `userSkills` and `resolveSkill` read saved versions. A new chat binds the
+  newest saved Agent of the selection's name; the selection's revision id is used only when that
+  name is no longer saved, and then only if a Save of the account or the project (the caller has
+  authorized it) points at its package (`readSavedRevision`), or it is a built-in. The same
+  version also stands in when the newest one cannot run, so Send is not refused over a later Save. Definition rows
+  are written when a chat binds or a skill is invoked, never when the picker lists; the picker's ids
+  are computed (`agentRevisionId`) from the saved packages compiled in memory. Rows are immutable and
+  shared by every account that has the same bytes; they are not collected yet.
+- A level owns every name it contains, readable or not (`combine-agents.ts`): project over user over
+  built-in; within a level the root wins silently over its packages, and two packages bringing one
+  name are both renamed `name__package` while the bare name stays as an unavailable item. Rename uses
+  the name before any rename for shadowing. All of it is computed over the saved versions, so a new
+  project `critic` hides nothing until it is saved, and saving one import can rename another's Agent.
+- `save_agents` is off by default: an Agent has it only when its `tools` rules name it
+  (`tools: {save_agents: allow}`, `OPT_IN_TOOLS`). Mars's tool vocabulary has no name for it, so
+  `compile-package.ts` reads those rules itself before `project` and writes the name into `tools`
+  (the full catalog plus it when the file has no allow-list). It requires `packages`; it never
+  means "all".
+- `files` is read from the files, not the saves: every level's Agent and skill file, winner or not,
+  with its reasons (errors only), its `change` since the saved version, whether the writer picks it (`pickable`: false for a subagent or a model-only skill, which are not
+  broken), what it hides and what hides it (`layerByName`; `combineByName` is its winners), and every package's Save state. A
+  file's own findings drop the file name. `builtinFile` reads a built-in's text by that path.
+  Routes: `GET /api/agents/files`, `GET /api/agents/builtin`.
+- A chat's binding keeps its revision whatever is saved later. A skill invoked with `/` pins the files it was first read from; invoking it again reads the pin.
+- A level root with no `mars.toml` is a package named for the level. When package-wide tool
+  rules are supported, deleting that manifest drops them.
+- The adapter reads files one by one, so a multi-file Apply can be seen half done; an Agent's
+  access comes from its own file and the chain takes the minimum, so this never widens one.
 - Callers authorize source, Project, and thread access before selecting or
   binding. Root, child, fork, handoff, and derived-primary creation bind through
   the threads domain's atomic operation.
 - The store is an internal port, and app composition shares one transaction
   owner with thread repositories so a completed transaction cannot leak writes.
-- Project availability filters prospective selection only: bound execution and
-  same-ID creation recovery do not recheck it.
 
 Checks: `tools/qa/probes/agents-through-mars/run.mts` (database) and
 `tools/qa/agents-through-mars/server-gate.mts` (running stack).

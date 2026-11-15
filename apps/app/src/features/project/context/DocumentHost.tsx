@@ -16,6 +16,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
+import { AgentFileNotice } from "@/features/agents/AgentFileNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -448,6 +449,7 @@ function PhoneEditor({
           className="shrink-0 px-2 pt-2"
         />
       ) : null}
+      <AgentFileNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <LiveDraftNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <div className="relative min-h-0 flex-1">
         {children}

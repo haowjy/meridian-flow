@@ -3,7 +3,11 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createBoundAgentCatalog, seedGeneralAgent } from "../domains/packages/index.js";
+import {
+  createBoundAgentCatalog,
+  generalAgentSource,
+  noLevelFiles,
+} from "../domains/packages/index.js";
 import { requireProjectOwner, requireWorkOwner } from "../domains/projects/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import { HTTP_INTERRUPT_ENVELOPE_KEY } from "../shared/interrupt-boundary.js";
@@ -162,9 +166,17 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
   async function fixture() {
     const { app } = await runtimes.compose();
     await app.workRepo.ensureNoWork(PROJECT);
-    await seedGeneralAgent(app.agentRevisions, "mock-model");
-    const entry = await app.agentRevisions.readCatalogEntry(null, "general");
-    if (!entry) throw new Error("Missing General");
+    const agentCatalog = createBoundAgentCatalog({
+      defaultModel: () => "mock-model",
+      store: app.agentRevisions,
+      levelFiles: noLevelFiles,
+      builtins: [generalAgentSource("mock-model")],
+      unavailableReasons: () => [],
+    });
+    const general = (await agentCatalog.list(OWNER, {})).agents.find(
+      (agent) => agent.slug === "general",
+    );
+    if (!general?.selection) throw new Error("Missing General");
     const deps = {
       projects: app.projectRepo,
       workRepo: app.workRepo,
@@ -172,18 +184,14 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
       threadWorks: app.threadRepos.threadWorks,
       transaction: app.threadRepos.transaction,
       agentRevisions: app.agentRevisions,
-      agentCatalog: createBoundAgentCatalog({
-        defaultModel: () => "mock-model",
-        store: app.agentRevisions,
-        unavailableReasons: () => [],
-      }),
+      agentCatalog,
       eventSink: app.eventSink,
     };
     const args = {
       projectId: PROJECT,
       userId: OWNER,
       id: THREAD,
-      agentSelection: { catalogEntryId: entry.id, definitionRevisionId: entry.selectedRevisionId },
+      agentSelection: general.selection,
     };
     const create = async (overrides: Partial<typeof args> = {}) => {
       try {

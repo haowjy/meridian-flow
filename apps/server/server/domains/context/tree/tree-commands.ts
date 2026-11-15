@@ -501,6 +501,7 @@ function moveOne(
       const parsed = storedFilename(toLeaf, {
         extension: ext > 0 ? node.displayName.slice(ext + 1).toLowerCase() : "",
         editable: node.kind === "document",
+        filetype: node.filetype,
       });
       if (!parsed.ok)
         return viaMany

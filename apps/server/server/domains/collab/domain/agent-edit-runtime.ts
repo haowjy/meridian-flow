@@ -1,5 +1,6 @@
 /** Shared agent-edit and markdown runtime construction for collab compositions. */
 import {
+  type AgentEditCodecFactory,
   createAgentEditCodecFactory,
   createAgentEditCore,
   type DocumentCoordinator,
@@ -8,13 +9,14 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import type { TurnId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
+import type { DocumentId, TurnId } from "@meridian/contracts/runtime";
+import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
+import { isCodeDocument } from "./document-schema-type.js";
 import { createImportLinkBinder, createLinkBinder } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
@@ -39,6 +41,7 @@ export function createAgentEditRuntime(input: {
   agentCoordinator: DocumentCoordinator;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
+  lockDocument?(documentId: DocumentId): Promise<void>;
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
@@ -54,6 +57,11 @@ export function createAgentEditRuntime(input: {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodecFactory(markupCodec);
   const model = yProsemirrorModel(schema);
+  /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
+  const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> =>
+    (await isCodeDocument(input.resolveDocumentFiletype, documentId))
+      ? createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, "source"))
+      : codec;
   const liveUtilityCore = asLiveAgentEditCore(
     createAgentEditCore({
       links: createScopedDocumentLinks({
@@ -65,6 +73,7 @@ export function createAgentEditRuntime(input: {
       documentEdits: input.documentEdits,
       coordinator: input.agentCoordinator,
       codec,
+      codecFor,
       model,
       ...input.observability,
     }),
@@ -79,6 +88,7 @@ export function createAgentEditRuntime(input: {
       coordinator: input.coordinator,
       initialDocumentSeeds: input.initialDocumentSeeds,
       deferUntilCommit: input.deferUntilCommit,
+      lockDocument: input.lockDocument,
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
       identityPreservingWrite: ({ documentId, content, actor }) =>
@@ -130,6 +140,7 @@ export function createAgentEditRuntime(input: {
   });
   return {
     codec,
+    codecFor,
     linkBinder,
     importBinder,
     liveUtilityCore,

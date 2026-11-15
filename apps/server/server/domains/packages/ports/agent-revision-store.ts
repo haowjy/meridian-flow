@@ -1,4 +1,4 @@
-/** Immutable Agent content and future-chat catalog selection. Callers own resource authorization. */
+/** Immutable Agent content a chat is bound to. Callers own resource authorization. */
 import type {
   InvocationOverlay,
   ResolvedAgentConfiguration,
@@ -9,6 +9,20 @@ import type {
   CompiledAgentDefinition,
   PackageDiagnostic,
 } from "../domain/compile-package.js";
+
+/** Whose package a Save is: an account's `~/.agents/` or a project's `.agents/`. */
+export type SaveOwner = { userId: string } | { projectId: string };
+
+/** One Save of one package. */
+export interface PackageSave {
+  id: string;
+  /** `""` for the level's own files, `packages/<name>/` for an import. */
+  folder: string;
+  /** The saved version's files; null when the Save removed the package. */
+  packageRevisionId: string | null;
+  contentDigest: string | null;
+  createdAt: Date;
+}
 
 /** An available Agent as one reader version read it. The runtime never sees an unavailable one. */
 export interface AgentRevision {
@@ -37,46 +51,59 @@ export interface AgentRevisionBinding {
   /** Packaged skills the user invoked in this thread, by slug, pinned as read. */
   invokedSkills: Readonly<Record<string, RetainedSkillReference>>;
 }
-export interface AgentCatalogEntry {
-  id: string;
-  ownerUserId: string | null;
-  logicalKey: string;
-  selectedRevisionId: string;
-  name: string;
-  nameSortKey: string;
-  removed: boolean;
-}
-export type AgentCatalogSelectionResult =
-  | { ok: true; entry: AgentCatalogEntry }
-  | { ok: false; reason: "conflict" | "not-found" };
-
-/** Mutable management head over immutable sources, never consulted by bound execution. */
-export interface AgentPackageInstallation {
-  id: string;
-  ownerUserId: string | null;
-  coordinate: string;
-  currentRevisionId: string;
-}
-
 export interface AgentRevisionStore {
-  listInstallations(ownerUserId: string | null): Promise<AgentPackageInstallation[]>;
   /**
-   * Installations of every owner whose current file set has no Agent rows at `grammarVersion`:
-   * what a reader change left behind.
+   * Compiles the files under `grammarVersion` (the running reader by default) and retains them
+   * with their Agent rows, once per (coordinate, content digest, reader version). A Save row or a
+   * chat's binding is what points at them.
    */
-  listInstallationsWithoutRows(grammarVersion: string): Promise<AgentPackageInstallation[]>;
-  /** Exact head CAS, inside the owning publication transaction. */
-  advanceInstallation(
-    input: Omit<AgentPackageInstallation, "id"> & { expectedRevisionId?: string },
-  ): Promise<AgentPackageInstallation | undefined>;
-
-  /** Serialize complete owner-scoped catalog publications in one ambient transaction. */
-  withCatalogTransaction<T>(ownerUserId: string | null, operation: () => Promise<T>): Promise<T>;
-  /** Compiles the files under `grammarVersion` (the running reader by default) and retains them. */
   installSource(
     source: AgentSourceSnapshot,
     grammarVersion?: string,
   ): Promise<{ packageRevisionId: string; definitions: CatalogRevision[] }>;
+  /** Adds a Save row: `packageRevisionId` is the package's new saved version, null when removed. */
+  savePackage(
+    owner: SaveOwner,
+    folder: string,
+    packageRevisionId: string | null,
+  ): Promise<PackageSave>;
+  /**
+   * Settles one package's Save as one operation under its ordering: `decide` gets the package's
+   * latest Save row (any, a removal included) and returns the result with, to publish, the new
+   * saved version (null: removed). It runs and the row is added in one transaction, so what it
+   * read is still the latest when its row lands. `row` is that row, absent when nothing is
+   * published. `decide` must not wait on another Save of the same package.
+   */
+  settleSave<T>(
+    owner: SaveOwner,
+    folder: string,
+    decide: (
+      latest: PackageSave | undefined,
+    ) => Promise<{ value: T; publish?: { packageRevisionId: string | null } }>,
+  ): Promise<{ value: T; row?: PackageSave }>;
+  /** Each package's latest Save of `owner`, one row per folder. */
+  readSaved(owner: SaveOwner): Promise<PackageSave[]>;
+  /**
+   * Saves the version before `saveId` again, unless a later Save of that package exists, which
+   * leaves everything as it is. `undone` is the Save that was undone, with the new row as
+   * `current`. Undefined when `owner` has no such row. `restore` runs after the check and before
+   * the row is added, under the package's one ordering and in the same transaction, with the
+   * Save and the version before it (null: none); if it throws, nothing changed.
+   */
+  undoSave(
+    owner: SaveOwner,
+    saveId: string,
+    restore: (undone: PackageSave, target: PackageSave | null) => Promise<void>,
+  ): Promise<{ current: PackageSave; undone: PackageSave | null } | undefined>;
+  /**
+   * The Agent revision, only when a Save of `userId`, or of `projectId` (which the caller has
+   * authorized), points at its package: what an account may bind by id.
+   */
+  readSavedRevision(
+    userId: string,
+    projectId: string | undefined,
+    id: string,
+  ): Promise<CatalogRevision | undefined>;
   readSource(packageRevisionId: string): Promise<AgentSourceSnapshot | undefined>;
   /** By id, any reader version. Undefined for an unavailable Agent. */
   readRevision(id: string): Promise<AgentRevision | undefined>;
@@ -92,32 +119,6 @@ export interface AgentRevisionStore {
     packageRevisionId: string,
     grammarVersion: string,
   ): Promise<CatalogRevision[]>;
-  /** Null ownership is reserved for trusted system seeding. Existing pointers require an exact CAS. */
-  selectRevision(input: {
-    ownerUserId: string | null;
-    logicalKey: string;
-    revisionId: string;
-    expectedRevisionId?: string;
-  }): Promise<AgentCatalogSelectionResult>;
-  readCatalogEntry(
-    ownerUserId: string | null,
-    logicalKey: string,
-  ): Promise<AgentCatalogEntry | undefined>;
-  /** Only a revision of the running reader's version: a stricter reader reaches held selections. */
-  readSelection(
-    userId: string,
-    catalogEntryId: string,
-    revisionId: string,
-    projectId?: string,
-  ): Promise<{ entry: AgentCatalogEntry; revision: CatalogRevision } | undefined>;
-  listCatalog(input: {
-    userId: string;
-    projectId?: string;
-    limit: number;
-    after?: { nameSortKey: string; id: string };
-  }): Promise<AgentCatalogEntry[]>;
-  removeFromProject(projectId: string, catalogEntryId: string): Promise<void>;
-  removeOwnedEntry(userId: string | null, entryId: string): Promise<boolean>;
   bindThread(
     threadId: string,
     revisionId: string | null,

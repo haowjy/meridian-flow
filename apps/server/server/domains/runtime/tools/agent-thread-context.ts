@@ -3,7 +3,9 @@ import {
   type AgentEffort,
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
+  projectToolPolicy,
   type ResolvedAgentConfiguration,
+  type ToolPolicy,
 } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import type { GenerateRequest, Tool } from "@meridian-flow/gateway";
@@ -12,11 +14,7 @@ import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import { bindingNamesSkills } from "../loop/available-skills.js";
 import { readChainPermission } from "../loop/permissions/agent-chain.js";
-import {
-  advertiseTools,
-  projectToolPolicy,
-  type ToolPolicy,
-} from "../loop/permissions/tool-policy.js";
+import { advertiseTools } from "../loop/permissions/tool-policy.js";
 import { spawnToolDescription } from "./spawn-tools.js";
 import type { ToolRegistry } from "./types.js";
 

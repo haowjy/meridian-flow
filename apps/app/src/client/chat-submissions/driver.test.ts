@@ -40,7 +40,7 @@ function record(): ChatSubmission {
       workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
-      agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+      agentSelection: { slug: "general", definitionRevisionId: "rev" },
     },
   };
 }

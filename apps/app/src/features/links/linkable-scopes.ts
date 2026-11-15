@@ -1,7 +1,7 @@
 /**
  * Which trees the scope's document index walks.
  *
- * The project's manuscript, kb and Unfiled (whatever the Work), the writer's user files, the scope
+ * The project's manuscript, kb, Unfiled and `.agents/` (whatever the Work), the writer's user files, the scope
  * Work's Scratch by row id (including No Work), a No Work chat's lineage Scratch, and the chat's
  * uploads. Unresolved surfaces have no scope. These are the trees a contextual address resolves in
  * on the server, so the local index can answer any address they hold.
@@ -13,6 +13,7 @@ export const LINKABLE_SCHEMES = [
   "manuscript",
   "kb",
   "unfiled",
+  "agents",
   "user",
   "scratch",
   "uploads",
