@@ -83,7 +83,7 @@ const { createDrizzleWorkBranchPendingStore } = await import(
 );
 const { createBranchReviewItems } = await import("../domain/branch-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
-const { branchFolderRevisions, createDrizzleBranchTreeState } = await import(
+const { branchFolderIds, createDrizzleBranchTreeState } = await import(
   "../adapters/drizzle-branch-tree-state.js"
 );
 const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
@@ -491,7 +491,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     branches: workBranches,
     reviewItems,
-    folderRevisions: (branchId) => branchFolderRevisions(db, branchId),
+    folderIds: (branchId) => branchFolderIds(db, branchId),
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({

@@ -10,7 +10,8 @@
 
 import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
 import { draftItemKey } from "@meridian/contracts";
-import type { AppliedReviewItem } from "@meridian/contracts/branches";
+import type { AppliedReviewItem, TreeSaw } from "@meridian/contracts/branches";
+import type { LeftOutWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import {
   applyCommandTrees,
@@ -20,6 +21,7 @@ import {
 } from "@meridian/database/schema";
 import {
   applyDraft,
+  covers,
   LIVE,
   pendingRecords,
   recordsOfItem,
@@ -32,23 +34,25 @@ import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizz
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
-import { ApplyClickRefused } from "../domain/apply-click.js";
+import { ApplyClickUnsynced } from "../domain/apply-click.js";
 import type { BranchDocumentTree } from "../domain/ports/branch-tree-state.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+import { lastSettlementOf } from "./drizzle-settlement-of.js";
 
-export type TreeApplyOutcome =
-  | { kind: "applied"; applied: AppliedReviewItem[]; restored: boolean }
-  | { kind: "changed" }
-  | { kind: "needs_restore" };
+export type TreeApplyOutcome = {
+  applied: AppliedReviewItem[];
+  /** What came back instead of landing, per item (`already`, `overtaken`, `left_out`), and what was restored. */
+  settled: Settlement[];
+  /** Items whose tree half did not resolve (left out or overtaken): their text stays pending too. */
+  held: ReadonlySet<string>;
+};
 
 /** One node of an Apply, as the click read it. */
 export type TreeApplyItem = {
   node: string;
-  /** The revision the click froze; null: a click with no tree cut (a creation revealed whole). */
-  cut: { revision: string | null } | null;
-  /** The Work's row on the node now (`branchRowRevisions`); undefined: none. */
-  revision: string | undefined;
+  /** The click includes the node's tree records. */
+  tree: boolean;
   /** The review item, for a document. */
   item: BranchDocumentTree | null;
 };
@@ -69,27 +73,20 @@ export function createApplyTreeOperations(input: {
 }) {
   /**
    * Applies what the Work has pending on each item: its own records, the drafted creates they
-   * stand on, and the earlier records of the same facts, as one command. An item with a `cut`
-   * must still have the revision the writer saw, else the answer is `changed` and nothing
-   * applies. Without a cut, the records land only when the document exists only in the Work (a
-   * creation is revealed whole); a document live has in Trash is restored first when the click
-   * carries `restore`. An item whose records cannot land stays pending and is left out of the
-   * answer; none landing is refused (`ancestor_taken`).
+   * stand on, and the earlier records of the same facts, as one command. It never refuses: an
+   * item with nothing pending is `already` (an Apply took the records) or `overtaken` (a Discard
+   * did), and a record that cannot land stays pending and is `left_out` with why. `saw` is each
+   * list's state vector at the press; records admitted after it are left out too. A document
+   * live has in Trash comes back before its records land.
    */
   async function apply(click: {
     branchId: BranchId;
     userId: UserId;
     commandId: CommandId;
-    restore: boolean;
+    saw: TreeSaw | undefined;
     items: readonly TreeApplyItem[];
   }): Promise<TreeApplyOutcome> {
     const { branchId, items } = click;
-    if (
-      items.some(
-        ({ cut, revision }) => cut && (revision === undefined || revision !== cut.revision),
-      )
-    )
-      return { kind: "changed" };
     // Every item's document is held under the lists' keys, in id order: the text half of the
     // command writes under them too.
     const lockItems = async () => {
@@ -97,26 +94,37 @@ export function createApplyTreeOperations(input: {
       for (const node of items.map((it) => it.node).sort())
         await lockDocumentMutation(tx, node as DocumentId);
     };
-    // Only the writer's knowledge brings a deleted document back: a delete their view did not
-    // show leaves the click undone and the draft pending.
+    // A deleted document comes back whenever the click lands records on it, except a delete the
+    // writer's own view showed (a document deleted by this click is not restored by it).
     const restoring = (it: TreeApplyItem) =>
       it.item?.deletedLive === true && it.item.change !== "deleting";
-    if (!click.restore && items.some(restoring)) return { kind: "needs_restore" };
-    const landing = (it: TreeApplyItem) => it.cut !== null || it.item?.isNew === true;
+    const landing = (it: TreeApplyItem) => it.tree || it.item?.isNew === true;
     const active = items.filter((it) => landing(it) || restoring(it));
     if (active.length === 0) {
       await lockItems();
-      return { kind: "applied", applied: [], restored: false };
+      return { applied: [], settled: [], held: new Set() };
     }
 
     const lists: TreeList[] = [];
     const listOf = new Map<string, TreeList>();
+    const held = new Set<string>();
+    const settled: Settlement[] = [];
     for (const it of active) {
       const list = await treeListOfNode(input.db, it.node);
-      if (!list) throw new ApplyClickRefused("not_found");
+      if (!list) {
+        // No list holds the node: it was purged.
+        held.add(it.node);
+        settled.push({ rule: "left_out", items: [it.node], why: "purged" });
+        continue;
+      }
       const known = lists.find((other) => sameList(other, list)) ?? list;
       if (known === list) lists.push(list);
       listOf.set(it.node, known);
+    }
+    const here = active.filter((it) => listOf.has(it.node));
+    if (here.length === 0) {
+      await lockItems();
+      return { applied: [], settled, held };
     }
     const actor = `user:${click.userId}`;
     // The lists' keys, then the documents', before anything writes: the lists' rows and the
@@ -125,25 +133,14 @@ export function createApplyTreeOperations(input: {
     const tx = currentDrizzleDb(input.db);
     await lockItems();
     // Where each document is in live now, to say where the Apply moved it.
-    const documents = active.flatMap((it) => (it.item ? [it.node as DocumentId] : []));
+    const documents = here.flatMap((it) => (it.item ? [it.node as DocumentId] : []));
     const before = await input.tree.identityStatus(LIVE_TREE, documents);
 
     const { result } = await input.treeLists.submit({
       lists,
       make: (writers) => {
-        // Nothing is written before the answer is known: a "changed" click stores no restore.
-        const chosen = new Map<string, TreeRecord[]>();
-        for (const [at, { writer }] of writers.entries()) {
-          const pending = pendingRecords(writer.doc, branchId);
-          const draft = writer.view({ draft: branchId });
-          for (const it of active) {
-            if (listOf.get(it.node) !== lists[at] || !landing(it)) continue;
-            const records = recordsOfItem(draft, pending, it.node);
-            if (records.length === 0) return "changed" as const;
-            chosen.set(it.node, records);
-          }
-        }
         const landed = new Set<string>();
+        const restoredNodes = new Set<string>();
         const perList: {
           scope: "project" | "account";
           mark: Uint8Array;
@@ -153,31 +150,74 @@ export function createApplyTreeOperations(input: {
         }[] = [];
         for (const [at, { writer }] of writers.entries()) {
           const list = lists[at] as TreeList;
-          // The restores come first and are the command's: Un-Apply takes them back with the copies.
-          const restored: string[] = [];
-          const restoredNodes: string[] = [];
-          for (const it of active) {
-            if (listOf.get(it.node) !== list || !restoring(it)) continue;
-            if (writer.view(LIVE).nodes.get(it.node)?.trashed === true) {
-              restored.push(writer.restore(LIVE, actor, it.node).id);
-              restoredNodes.push(it.node);
+          const encoded = list.kind === "project" ? click.saw?.project : click.saw?.account;
+          const saw = encoded ? new Uint8Array(Buffer.from(encoded, "base64")) : undefined;
+          // A press that saw records this copy lacks is not yet a cut of it: wait for the sync.
+          if (saw && !covers(writer.doc, saw)) throw new ApplyClickUnsynced();
+          const pending = pendingRecords(writer.doc, branchId);
+          const draft = writer.view({ draft: branchId });
+          const settlementOf = lastSettlementOf(writer.doc, branchId);
+          const mine = here.filter((it) => listOf.get(it.node) === list);
+          const chosen = new Map<string, TreeRecord[]>();
+          for (const it of mine) {
+            if (!landing(it)) continue;
+            const records = recordsOfItem(draft, pending, it.node);
+            if (records.length > 0) {
+              chosen.set(it.node, records);
+              continue;
+            }
+            const last = settlementOf(it.node);
+            if (last?.kind === "applied")
+              settled.push({ rule: "already", state: "applied", item: it.node });
+            else if (last) {
+              held.add(it.node);
+              settled.push({
+                rule: "overtaken",
+                state: "discarded",
+                by: last.command as CommandId,
+                item: it.node,
+              });
+            } else {
+              held.add(it.node);
+              settled.push({ rule: "left_out", items: [it.node], why: "purged" });
             }
           }
-          const mine = active.filter((it) => listOf.get(it.node) === list && chosen.has(it.node));
+          // The restores come first and are the command's: Un-Apply takes them back with the copies.
+          const restored: string[] = [];
+          const restoredHere: string[] = [];
+          for (const it of mine) {
+            if (!restoring(it) || held.has(it.node)) continue;
+            if (writer.view(LIVE).nodes.get(it.node)?.trashed === true) {
+              restored.push(writer.restore(LIVE, actor, it.node).id);
+              restoredHere.push(it.node);
+              restoredNodes.add(it.node);
+            }
+          }
           const applied =
-            mine.length === 0
+            chosen.size === 0
               ? null
               : applyDraft(
                   writer,
                   branchId,
                   actor,
                   click.commandId,
-                  mine.flatMap((it) => (chosen.get(it.node) ?? []).map((record) => record.id)),
+                  [...chosen.values()].flatMap((records) => records.map((record) => record.id)),
+                  saw,
                 );
-          const live = applied ? writer.view(LIVE) : null;
-          for (const it of mine)
-            if (live && recordsOfItem(live, applied?.copies ?? [], it.node).length > 0)
-              landed.add(it.node);
+          if (applied) {
+            for (const { node } of applied.lifted) restoredNodes.add(node);
+            const live = writer.view(LIVE);
+            for (const node of chosen.keys())
+              if (recordsOfItem(live, applied.copies, node).length > 0) landed.add(node);
+            // What stayed pending, and why: a node with nothing landed holds its text back.
+            const byWhy = new Map<LeftOutWhy, Set<string>>();
+            for (const { record, why } of applied.left) {
+              if (!landed.has(record.node) && chosen.has(record.node)) held.add(record.node);
+              byWhy.set(why, (byWhy.get(why) ?? new Set()).add(record.node));
+            }
+            for (const [why, nodes] of byWhy)
+              settled.push({ rule: "left_out", items: [...nodes], why });
+          }
           if (!applied && restored.length === 0) continue;
           perList.push({
             scope: list.kind,
@@ -187,18 +227,13 @@ export function createApplyTreeOperations(input: {
             ),
             restored,
             nodes: [
-              ...new Set([...restoredNodes, ...(applied?.copies ?? []).map((copy) => copy.node)]),
+              ...new Set([...restoredHere, ...(applied?.copies ?? []).map((copy) => copy.node)]),
             ],
           });
         }
-        // A record that cannot land (a move into itself, a change to what live has in Trash)
-        // lands nothing of its item: the item stays pending, and with none landed the click
-        // is refused.
-        if (landed.size === 0 && chosen.size > 0) throw new ApplyClickRefused("ancestor_taken");
-        return { landed, perList };
+        return { landed, restoredNodes, perList };
       },
     });
-    if (result === "changed") return { kind: "changed" };
 
     if (result.perList.length > 0)
       await tx.insert(applyCommandTrees).values(
@@ -217,7 +252,9 @@ export function createApplyTreeOperations(input: {
 
     const after = await input.tree.identityStatus(LIVE_TREE, documents);
     const applied: AppliedReviewItem[] = [];
-    for (const it of active) {
+    for (const it of here) {
+      if (held.has(it.node) || !(result.landed.has(it.node) || result.restoredNodes.has(it.node)))
+        continue;
       const status = after.get(it.node as DocumentId);
       const to = status?.kind === "visible" ? status.address.uri : null;
       const wasAt = before.get(it.node as DocumentId);
@@ -225,7 +262,6 @@ export function createApplyTreeOperations(input: {
         it.item?.uri && to && it.item.uri !== to
           ? { code: "renamed" as const, wanted: it.item.uri, path: to }
           : undefined;
-      if (!landing(it) && !restoring(it)) continue;
       applied.push({
         itemKey: draftItemKey(branchId, it.node as DocumentId),
         ...(result.landed.has(it.node)
@@ -234,9 +270,10 @@ export function createApplyTreeOperations(input: {
         ...(renamed ? { renamed } : {}),
       });
     }
+    for (const documentId of result.restoredNodes) settled.push({ rule: "restored", documentId });
 
-    const deleting = active.flatMap((it) =>
-      it.item?.change === "deleting" ? [it.node as DocumentId] : [],
+    const deleting = here.flatMap((it) =>
+      it.item?.change === "deleting" && result.landed.has(it.node) ? [it.node as DocumentId] : [],
     );
     if (deleting.length > 0) {
       // Their live rooms stay open: a document in Trash still takes text until it is purged.
@@ -250,11 +287,7 @@ export function createApplyTreeOperations(input: {
     await input.arrivals?.settle(documents);
     for (const documentId of documents)
       deferUntilDrizzleCommit(() => input.onCommitted(documentId));
-    return {
-      kind: "applied",
-      applied,
-      restored: click.restore && items.some(restoring),
-    };
+    return { applied, settled, held };
   }
 
   /**

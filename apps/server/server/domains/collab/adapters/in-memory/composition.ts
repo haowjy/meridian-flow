@@ -293,10 +293,17 @@ function createInMemoryBranchStub(): CollabBranches {
   return {
     draftReview: {
       async apply({ request }) {
-        return { status: "closed", commandId: request.commandId };
+        return { status: "applied", commandId: request.commandId, applied: [] };
       },
-      async unapplyClick({ request }) {
-        return { status: "closed", commandId: request.commandId };
+      async unapplyClick({ request, branchId }) {
+        return {
+          status: "unapplied",
+          commandId: request.commandId,
+          branchId: branchId as BranchId,
+          draftHalfWaits: false,
+          reversedGroupIds: [],
+          skippedGroupIds: [],
+        };
       },
       commandDocuments: {
         async ofApply() {

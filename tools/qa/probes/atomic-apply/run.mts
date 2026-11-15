@@ -24,7 +24,11 @@ import { createDrizzleDocumentCommands } from "../../../../apps/server/server/do
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createReopenDrafts } from "../../../../apps/server/server/domains/collab/adapters/drizzle-reopen-drafts.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
-import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
+import {
+  ApplyClickMalformed,
+  ApplyClickUnsynced,
+  createApplyClickService,
+} from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
 import { createBranchReviewItems } from "../../../../apps/server/server/domains/collab/domain/branch-review-items.ts";
 import { createBranches } from "../../../../apps/server/server/domains/collab/domain/branches.ts";
@@ -172,6 +176,7 @@ async function fixture(
     onCommitted: async () => {},
     merged: () => {},
     measured: (m) => measure.push(m),
+    answeredWithoutLanding: () => {},
   });
   const pending = createDrizzleWorkBranchPendingStore(h.db);
   const identity = createBranchReviewIdentity({
@@ -439,13 +444,13 @@ try {
       const f = await fixture(["Base."], ["Changed."]);
       const bad = f.click();
       bad.request.groupIds = ["unknown"];
-      assert.equal((await f.send(bad)).status, "refused");
+      await assert.rejects(f.send(bad), ApplyClickMalformed);
       const overlap = f.click();
       overlap.request.baseViewDelta = [
         { base: { from: 0, to: 1 }, draft: { from: 0, to: 1 }, blocks: [paragraph("O").toJSON()] },
         { base: { from: 0, to: 1 }, draft: { from: 0, to: 1 }, blocks: [] },
       ];
-      assert.equal((await f.send(overlap)).status, "refused");
+      await assert.rejects(f.send(overlap), ApplyClickMalformed);
       assert.equal(
         (
           await h.raw`select count(*)::int as n from commands where id in (${bad.request.commandId},${overlap.request.commandId})`
@@ -521,7 +526,7 @@ try {
     await f.type(["The big cat sat."]);
     const second = f.click(first.patched);
     first.request.groupIds = ["bad"];
-    assert.equal((await f.send(first)).status, "refused");
+    await assert.rejects(f.send(first), ApplyClickMalformed);
     await applied(f, second);
     assert.deepEqual(await f.liveText(), ["The big cat sat."]);
     f.close();
@@ -543,7 +548,13 @@ try {
     await applied(f, c);
     const next = f.click();
     next.request.commandId = randomUUID();
-    assert.equal((await f.send(next)).status, "closed");
+    // A draft closed with no command (a purge) is gone: nothing to apply, said so.
+    assert.deepEqual(await f.send(next), {
+      status: "applied",
+      commandId: next.request.commandId,
+      applied: [],
+      settled: [{ rule: "left_out", items: [f.documentId], why: "purged" }],
+    });
     f.close();
   });
   await row("delayed deletion click stays bound to discarded draft after replacement", async () => {
@@ -555,9 +566,15 @@ try {
       close: draftClose,
       treeLists,
     });
+    const discarding = h.discardCommand(a.branchId);
     await discard.discardLocked({
-      kernel: { branchId: a.branchId, userId: h.ids.user, selection: { kind: "whole" } },
-      command: h.discardCommand(a.branchId),
+      kernel: {
+        branchId: a.branchId,
+        userId: h.ids.user,
+        selection: { kind: "whole" },
+        commandId: discarding.envelope.commandId,
+      },
+      command: discarding,
     });
     const branch = await h.projection.mutate({ works: [a.workId] }, () =>
       h.branches.ensureActiveLocked({
@@ -577,7 +594,20 @@ try {
     assert.notEqual(a.branchId, b.branchId);
     const answer = await a.send(click);
     console.log("delayed replacement answer", answer.status, await a.liveText());
-    assert.equal(answer.status, "closed");
+    // The Discard took the draft: the answer names it, so the writer is offered the reverse.
+    assert.deepEqual(answer, {
+      status: "applied",
+      commandId: click.request.commandId,
+      applied: [],
+      settled: [
+        {
+          rule: "overtaken",
+          state: "discarded",
+          by: discarding.envelope.commandId,
+          item: a.documentId,
+        },
+      ],
+    });
     assert.deepEqual(await a.liveText(), ["The big black cat sat."]);
     a.close();
     b.close();
@@ -731,7 +761,7 @@ try {
     await f.type(["The big cat slept."]);
     const c = f.click(b.patched);
     a.request.groupIds = ["unknown"];
-    assert.equal((await f.send(a)).status, "refused");
+    await assert.rejects(f.send(a), ApplyClickMalformed);
     await applied(f, b);
     await applied(f, c);
     assert.deepEqual(await f.liveText(), ["The big cat slept."]);
@@ -749,11 +779,12 @@ try {
     );
     f.room.off("update", capture);
     const c = f.click();
-    assert.deepEqual(await f.send(c), {
-      status: "refused",
-      reason: "unsynced",
-      commandId: c.request.commandId,
-    });
+    // A wait, not an answer: nothing is stored, and the client sends the same command again.
+    await assert.rejects(f.send(c), ApplyClickUnsynced);
+    assert.equal(
+      (await h.raw`select count(*)::int as n from commands where id=${c.request.commandId}`)[0].n,
+      0,
+    );
     assert.ok(update);
     const base = await h.coordinator.loadBase(f.draftId);
     const write = h.coordinator.prepareAppend(base, [
@@ -787,28 +818,19 @@ try {
       ?.living === true;
   const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
     (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
-  /** The click a writer sends knowing the document is deleted. */
-  const restoring = (c: FrozenClick): FrozenClick => ({
-    ...c,
-    request: { ...c.request, restore: true },
-  });
+  const restoredNote = (result: ApplyClickAnswer, f: Awaited<ReturnType<typeof fixture>>) =>
+    result.status === "applied" &&
+    result.settled?.some((one) => one.rule === "restored" && one.documentId === f.documentId);
   await row("a document deleted live: its draft stays, Apply restores it then merges", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     await deleteLive(f);
     assert.equal(await draftStatus(f), "active");
-    // A click that did not know of the delete changes nothing, and its replay says so again.
-    const unknowing = f.click();
-    const asked = await f.send(unknowing);
-    assert.deepEqual(asked, { status: "needs_restore", commandId: unknowing.request.commandId });
-    assert.deepEqual(await f.send(unknowing), asked);
-    assert.equal(await living(f), false);
-    assert.equal(await draftStatus(f), "active");
-    const c = restoring(f.click());
+    const c = f.click();
     const result = await applied(f, c);
-    assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+    assert.equal(restoredNote(result, f), true, JSON.stringify(result));
     assert.equal(await living(f), true);
     assert.deepEqual(await f.liveText(), ["Changed."]);
-    // The replay answers the stored result, restore included.
+    // The replay answers the stored result, the restore included.
     assert.deepEqual(await f.send(c), result);
     f.close();
   });
@@ -817,7 +839,7 @@ try {
     const [{ name }] = await h.raw`select name from tree_nodes where id=${f.documentId}`;
     await deleteLive(f);
     await h.seeds.document(h.ids.source, `${name}.md`);
-    const c = restoring(f.click());
+    const c = f.click();
     const applied = await f.send(c);
     assert.equal(applied.status, "applied", JSON.stringify(applied));
     assert.equal(
@@ -839,13 +861,8 @@ try {
         actor: `user:${h.ids.user}`,
       });
       await deleteLive(f);
-      const unknowing = f.click();
-      assert.deepEqual(await f.send(unknowing), {
-        status: "needs_restore",
-        commandId: unknowing.request.commandId,
-      });
-      const result = await applied(f, restoring(f.click()));
-      assert.equal(result.status === "applied" && result.restored, true, JSON.stringify(result));
+      const result = await applied(f, f.click());
+      assert.equal(restoredNote(result, f), true, JSON.stringify(result));
       assert.equal(await living(f), true);
       assert.deepEqual(await f.liveText(), ["Changed."]);
       assert.equal(
@@ -904,7 +921,7 @@ try {
     },
   );
   await row(
-    "a delete after compilation overtakes the live grant; the click asks first",
+    "a delete after compilation overtakes the live grant; the click restores the document",
     async () => {
       const f = await fixture(["Base."], ["Changed."]);
       const c = f.click();
@@ -917,9 +934,9 @@ try {
       });
       try {
         const answer = await f.send(c);
-        assert.deepEqual(answer, { status: "needs_restore", commandId: c.request.commandId });
-        assert.equal(await living(f), false);
-        assert.equal(await draftStatus(f), "active");
+        assert.equal(restoredNote(answer, f), true, JSON.stringify(answer));
+        assert.equal(await living(f), true);
+        assert.deepEqual(await f.liveText(), ["Changed."]);
       } finally {
         remove();
         f.close();
@@ -957,7 +974,7 @@ try {
       await g.type(["Big cat.", "Divider.", "Small dog."]);
       const second = g.click(first.patched);
       first.request.groupIds = ["unknown"];
-      assert.equal((await g.send(first)).status, "refused");
+      await assert.rejects(g.send(first), ApplyClickMalformed);
       await applied(g, second);
       assert.deepEqual(await g.liveText(), ["Cat.", "Divider.", "Small dog."]);
       g.close();

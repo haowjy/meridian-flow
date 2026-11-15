@@ -50,14 +50,10 @@ export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (
-    state.failure.serverCode === "needs_restore" ? (
-      <ReviewMessageText failure={state.failure} />
-    ) : (
-      <InlineErrorRow
-        message={<ReviewMessageText failure={state.failure} />}
-        className="min-w-0 flex-1 p-0"
-      />
-    )
+    <InlineErrorRow
+      message={<ReviewMessageText failure={state.failure} />}
+      className="min-w-0 flex-1 p-0"
+    />
   ) : null;
   if (!content) return null;
   return (

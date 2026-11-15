@@ -19,15 +19,15 @@ export type FrozenApply = {
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
 
-function isFinalApplyRefusal(
-  answer: ApplyClickObservation,
-): answer is Exclude<ApplyClickResult, { status: "applied" }> {
-  return ["closed", "refused", "needs_restore", "changed"].includes(answer.status);
-}
-
 export type ApplyClickLanded = { status: "landed"; commandId: string };
-export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
-export type UnapplyClickOutcome = UnapplyClickResult | { status: "cancelled" };
+/** The click never reached the server: its room could not acknowledge it, or its id is another command's. */
+export type ClickUnsent = { status: "unsent"; commandId: string };
+export type ApplyClickOutcome =
+  | ApplyClickResult
+  | ApplyClickLanded
+  | ClickUnsent
+  | { status: "cancelled" };
+export type UnapplyClickOutcome = UnapplyClickResult | ClickUnsent | { status: "cancelled" };
 
 type ApplyCommand = FrozenApply & {
   kind: "apply";
@@ -371,7 +371,7 @@ export class ApplyClickQueue {
     const index = this.commands.indexOf(command);
     if (command.sent || index < 0) return;
     this.commands.splice(index, 1);
-    command.finish({ status: "refused", commandId: command.body.commandId, reason: "unsynced" });
+    command.finish({ status: "unsent", commandId: command.body.commandId });
     this.moveOn();
   }
 
@@ -417,18 +417,16 @@ export class ApplyClickQueue {
       return;
     }
     if (answer?.status === "applied") {
-      if (!command.body.draftId || command.closed || this.isRecorded(command))
+      // An Apply record in the room is the proof a text cut landed: with none written (the text
+      // came back settled, or there was none) the answer is final.
+      if (!command.body.draftId || command.closed || !answer.textEffect || this.isRecorded(command))
         this.settle(command, answer);
-      return;
-    }
-    if (answer && isFinalApplyRefusal(answer)) {
-      this.settle(command, answer);
       return;
     }
     // The id is the server's for another command: resending it can only answer the same. A
     // closed head reads its durable outcome instead, below.
     if (answer?.status === "conflict" && !command.closed) {
-      this.settle(command, { status: "refused", commandId: answer.commandId, reason: "malformed" });
+      this.settle(command, { status: "unsent", commandId: answer.commandId });
       return;
     }
     if (command.closed && answer?.status === "none") {
@@ -468,12 +466,8 @@ export class ApplyClickQueue {
       this.reconcileUnapply(command);
       return;
     }
-    if (answer?.status === "closed" || answer?.status === "refused") {
-      this.settle(command, answer);
-      return;
-    }
     if (answer?.status === "conflict") {
-      this.settle(command, { status: "refused", commandId: answer.commandId });
+      this.settle(command, { status: "unsent", commandId: answer.commandId });
       return;
     }
     this.scheduleRetry(command);
@@ -504,7 +498,7 @@ export class ApplyClickQueue {
     try {
       const result = await this.port.lookup(command.body);
       if (this.commands[0] !== command || result.commandId !== command.body.commandId) return;
-      if (result.status === "applied" || isFinalApplyRefusal(result)) {
+      if (result.status === "applied") {
         this.settle(command, result);
         return;
       }

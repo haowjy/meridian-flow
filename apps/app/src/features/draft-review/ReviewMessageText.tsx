@@ -25,18 +25,28 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This change belongs with others. Select all of them and try again.`;
     case "gone":
       return msg`That change is no longer in the draft.`;
-    case "needs_restore":
-      return msg`This document was deleted from the manuscript. Apply again to bring it back.`;
-    case "changed":
-      return msg`This move or delete changed since you looked. Check it, then apply again.`;
+    case "overtaken_discarded":
+      return msg`This was discarded before Apply reached it. Restore it to apply it.`;
+    case "overtaken_removed":
+      return msg`This document was deleted before its changes could be applied.`;
+    case "left_out_would_loop":
+      return msg`This move would put a folder inside itself, so it wasn't applied.`;
+    case "left_out_purged":
+      return msg`This is no longer in the draft, so it wasn't applied.`;
+    case "left_out_after_press":
+      return msg`This changed after you pressed Apply, so it wasn't applied. Check it, then apply again.`;
+    case "left_out_needs":
+      return msg`This depends on a change that wasn't applied, so it was left out.`;
+    case "left_out_changed_since":
+      return msg`This draft moved on since you pressed Apply, so it wasn't applied.`;
+    case "unsynced":
+      return msg`Apply couldn't be sent. Try again.`;
     case "draft_changed":
       return msg`This draft changed since you looked. Check it, then discard again.`;
     case "read_only":
       return msg`This draft just became read-only, so nothing was discarded. Check it, then try again.`;
     case "chat_frozen":
       return msg`This chat is in the trash, so its drafts are frozen. Restore the chat to apply them.`;
-    case "ancestor_taken":
-      return msg`A document blocks part of this location. Move or rename it, then apply again.`;
     default:
       return undefined;
   }
@@ -44,7 +54,12 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "stale" || serverCode === "needs_restore" || serverCode === "changed";
+  return (
+    serverCode === "stale" ||
+    serverCode === "unsynced" ||
+    (serverCode?.startsWith("overtaken_") ?? false) ||
+    (serverCode?.startsWith("left_out_") ?? false)
+  );
 }
 
 /**

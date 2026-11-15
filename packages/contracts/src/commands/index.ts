@@ -53,10 +53,10 @@ export type CommandOutcome<R = StoredResult> =
  * carries the subject as it stands and `why` names how it is closed.
  */
 export type Settlement =
-  | { rule: "already"; state: string }
+  | { rule: "already"; state: string; item?: string }
   | { rule: "returned"; why: ReturnedWhy }
   /** Another command settled the item first (`by`), so this one left it as that left it. */
-  | { rule: "overtaken"; state: string; by: CommandId }
+  | { rule: "overtaken"; state: string; by: CommandId; item?: string }
   /** Part of the command could not land: `items` name what was left out. */
   | { rule: "left_out"; items: string[]; why: LeftOutWhy }
   /** A deleted document came back (it was in Trash) so the command could land. */

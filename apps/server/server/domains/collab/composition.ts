@@ -54,7 +54,7 @@ import {
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
 import {
-  branchFolderRevisions,
+  branchFolderIds,
   createDrizzleBranchTreeState,
 } from "./adapters/drizzle-branch-tree-state.js";
 import {
@@ -526,6 +526,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
             payload: { commandId, rules, overrode },
           });
       },
+      answeredWithoutLanding: ({ commandId, settled }) => {
+        if (deps.eventSink)
+          emitEvent(deps.eventSink, {
+            level: "info",
+            source: "collab.draft_review",
+            name: "apply.answered_without_landing",
+            payload: { commandId, settled },
+          });
+      },
       measured: (measurement) => {
         if (deps.eventSink)
           emitEvent(deps.eventSink, {
@@ -560,7 +569,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     discard,
     commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
-    folderRevisions: (branchId) => branchFolderRevisions(deps.db, branchId),
+    folderIds: (branchId) => branchFolderIds(deps.db, branchId),
     pending: workBranchPendingStore,
   });
   const draftPeers = scopeDraftPeer(

@@ -32,21 +32,19 @@ export type ApplyClick = {
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
   /**
-   * The writer knew this document was deleted from the manuscript and chose to bring it back:
-   * a per-document Apply on an item showing it deleted, or an Apply all for a document its
-   * confirmation named. Without it, a deleted document answers `needs_restore`.
+   * The click includes the document's tree records: its move, delete or creation. Without it a
+   * text cut leaves a pending move or delete pending. A click with no text cut and no tree cut
+   * is malformed.
    */
-  restore?: true;
-  /**
-   * The tree cut: the revision of the branch's row on the document the writer saw (the
-   * item's `tree.revision`). The click applies the move, delete or creation that revision
-   * holds, and answers `changed` if the row holds another now. A click with no text cut and
-   * no tree cut is malformed; a text cut alone leaves a pending move or delete pending.
-   */
-  tree?: { revision: string | null };
+  tree?: true;
+  saw?: TreeSaw;
 };
 
-export type ApplyClickRefusalReason = "unsynced" | "malformed" | "not_found" | "ancestor_taken";
+/**
+ * What each tree list held when the writer pressed: the list's Yjs state vector (base64), by
+ * list. Records admitted after it are ones the writer had not seen; they stay pending.
+ */
+export type TreeSaw = { project?: string; account?: string };
 
 export type ApplyRenamedNote = {
   code: "renamed";
@@ -63,33 +61,20 @@ export type AppliedReviewItem = {
   renamed?: ApplyRenamedNote;
 };
 
-export type ApplyClickResult =
-  | {
-      status: "applied";
-      commandId: CommandId;
-      /** Every item whose tree or text this click applied, dependency-first. */
-      applied: AppliedReviewItem[];
-      overrode?: number;
-      /**
-       * The document had been deleted from the manuscript, and this Apply, sent with
-       * `restore`, brought it back before merging. The client words the notice from
-       * this flag, per document.
-       */
-      restored?: true;
-      /** A frozen text cut committed, including a cut whose live update was already contained. */
-      textEffect?: true;
-    }
-  /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
-  | { status: "changed"; commandId: CommandId }
-  /**
-   * The document is deleted from the manuscript and the click did not carry `restore`: the
-   * writer's view did not know (a delete landed after it read the item, or after an Apply
-   * all's confirmation named its documents). Nothing changed and the draft stays pending;
-   * the client asks the writer, then sends a new click with `restore`.
-   */
-  | { status: "needs_restore"; commandId: CommandId }
-  | { status: "closed"; commandId: CommandId }
-  | { status: "refused"; commandId: CommandId; reason: ApplyClickRefusalReason };
+/**
+ * Every item lands or comes back in `settled` (`already`, `overtaken`, `left_out`; each names its
+ * `item`). `applied` holds the items that landed; it is empty when none did.
+ */
+export type ApplyClickResult = {
+  status: "applied";
+  commandId: CommandId;
+  /** Every item whose tree or text this click applied, dependency-first. */
+  applied: AppliedReviewItem[];
+  overrode?: number;
+  /** A frozen text cut committed, including a cut whose live update was already contained. */
+  textEffect?: true;
+  settled?: Settlement[];
+};
 
 export type ApplyClickAnswer = ApplyClickResult | { status: "conflict"; commandId: CommandId };
 export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; commandId: CommandId };
@@ -107,19 +92,18 @@ export type UnapplyClick = {
   commandId: CommandId;
   applyCommandId: CommandId;
 };
-export type UnapplyClickResult =
-  | {
-      status: "unapplied";
-      commandId: CommandId;
-      /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
-      branchId: BranchId;
-      /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
-      draftHalfWaits: boolean;
-      reversedGroupIds: string[];
-      skippedGroupIds: string[];
-    }
-  | { status: "closed"; commandId: CommandId }
-  | { status: "refused"; commandId: CommandId; reason?: "gone" | "superseded" };
+export type UnapplyClickResult = {
+  status: "unapplied";
+  commandId: CommandId;
+  /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
+  branchId: BranchId;
+  /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
+  draftHalfWaits: boolean;
+  reversedGroupIds: string[];
+  skippedGroupIds: string[];
+  /** `already` (everything was taken back before), `left_out` (what could not come back, and why). */
+  settled?: Settlement[];
+};
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 
 /** The text cut of one document in an Apply: the writer's frozen click on its review room. */
@@ -133,15 +117,13 @@ export type ApplyTextCut = {
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
- * cut (the revision of the branch's row the writer saw; any row that holds another now answers
- * `changed` and nothing applies) and its text cut. An item has at least one of the two. The
- * per-document click is this command with one item.
+ * cut (`tree`: land its pending tree records) and its text cut. An item has at least one of the
+ * two. The per-document click is this command with one item.
  */
 export type ApplyItemsClick = {
   commandId: CommandId;
-  items: { node: string; tree?: { revision: string | null }; text?: ApplyTextCut }[];
-  /** As on `ApplyClick`: the writer knew an item was deleted from the manuscript. */
-  restore?: true;
+  items: { node: string; tree?: true; text?: ApplyTextCut }[];
+  saw?: TreeSaw;
 };
 
 /**
@@ -301,12 +283,10 @@ export interface ThreadDraftListItem {
    */
   deletedLive: boolean;
   /**
-   * The branch's move, delete or creation of the document, when it has one: what a tree cut
-   * applies (`revision`, frozen into the click) and what the row says. `movedFrom` is where
+   * The branch's move, delete or creation of the document, when it has one. `movedFrom` is where
    * live has it now (`contextLocation` is where the branch puts it).
    */
   tree: {
-    revision: string | null;
     movedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
     deleted?: true;
   } | null;
@@ -348,11 +328,8 @@ export interface ThreadDraftListResponse {
    * the browser replays as the Work's tree (a change to a folder alone lists no item).
    */
   branchId: BranchId | null;
-  /**
-   * The folders the Work's tree changes (it has a row on), each with the revision of that row:
-   * the tree cut an Apply of the folder carries, as an item's `tree.revision` is a document's.
-   */
-  folders: { id: string; revision: string }[];
+  /** The folders the Work's tree changes (it has a row on). */
+  folders: { id: string }[];
   /**
    * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
    * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.

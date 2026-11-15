@@ -28,7 +28,7 @@ export function createWorkBranchReviewService(input: {
   listDiscards: CollabBranches["draftReview"]["listDiscards"];
   commandDocuments: CollabBranches["draftReview"]["commandDocuments"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
-  folderRevisions(branchId: BranchId): Promise<{ id: string; revision: string }[]>;
+  folderIds(branchId: BranchId): Promise<{ id: string }[]>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument" | "countPendingInProject">;
 }): CollabBranches {
   async function ownerItems(
@@ -99,7 +99,7 @@ export function createWorkBranchReviewService(input: {
         const threadTitles = await input.resolveThreadTitles([
           ...new Set(items.flatMap((item) => item.actorThreadIds)),
         ]);
-        const folders = branchId ? await input.folderRevisions(branchId) : [];
+        const folders = branchId ? await input.folderIds(branchId) : [];
         return { branchId, items, folders, threadTitles };
       },
       pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),

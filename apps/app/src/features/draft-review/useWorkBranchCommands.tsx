@@ -11,7 +11,6 @@ import { unapplyCommand, undoDiscard } from "@/client/api/branches-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   cachedOwnerDrafts,
-  ownerDraftsQueryOptions,
   patchOwnerDrafts,
   relistedOwnerDraft,
   useOwnerDraftsFrozen,
@@ -32,7 +31,6 @@ import {
   useOptionalDraftOnlyPresentations,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
-import { isDeletedFromManuscript } from "./deleted-drafts";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import type {
   AppliedFact,
@@ -84,6 +82,8 @@ export function useWorkBranchCommands({
   const draftOnly = useOptionalDraftOnlyPresentations();
   return useMemo(() => {
     const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
+    /** What this tab's tree lists hold at the press: records after it are ones the writer hadn't seen. */
+    const sawNow = () => treeLists?.sawOf(projectId);
     const row = (draft: DraftReviewSelection) =>
       cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
         (item) => item.itemKey === draft.itemKey,
@@ -224,7 +224,9 @@ export function useWorkBranchCommands({
           });
           if (answer.status === "conflict") return { answer: "failed" };
           refresh(documentIds);
-          if (answer.status !== "unapplied") return { answer: "skipped" };
+          // Tree changes the Un-Apply could not take back (changed since, or purged with their Work).
+          const treeLeft = answer.settled?.some((one) => one.rule === "left_out") ?? false;
+          if (treeLeft && answer.reversedGroupIds.length === 0) return { answer: "skipped" };
           for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
           return { answer: "unapplied", textLeft: answer.skippedGroupIds.length };
         } catch {
@@ -257,8 +259,8 @@ export function useWorkBranchCommands({
       const started = owner.apply(
         ref(draft),
         target,
-        isDeletedFromManuscript(item),
-        (tree && item?.tree) || undefined,
+        Boolean(tree && item?.tree),
+        sawNow(),
         editorHistoryOf(reviewEditor?.(draft)),
       );
       if (!started) return blocked();
@@ -276,20 +278,17 @@ export function useWorkBranchCommands({
               : null;
           applied(draft, [{ item, outcome }], step);
         }
-        if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending)
-          refresh([draft.documentId]);
+        if (!owner.state(draft.itemKey).pending) refresh([draft.documentId]);
       });
       return started;
     };
     /**
      * Several drafts and folders as one Apply command, one step of Undo: Apply all, a folder's ✓.
-     * `restore`: the documents its confirmation named, which it brings back from a delete; it
-     * brings back no other. `folders`: the folder changes it takes, with what is listed under
-     * them. Resolves to each item's outcome.
+     * `folders`: the folder changes it takes, with what is listed under them. Resolves to each
+     * item's outcome.
      */
     const applyMany = (
       items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
-      restore: ReadonlySet<string> = new Set(),
       folders: readonly string[] = [],
       name?: string,
     ): Promise<CommandOutcome[]> => {
@@ -303,62 +302,26 @@ export function useWorkBranchCommands({
       const members = items.map(({ draft, target }) => {
         const item = row(draft);
         const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
-        return { draft, item, target, tree: (tree && item?.tree) || undefined };
+        return { draft, item, target, tree: Boolean(tree && item?.tree) };
       });
-      // A folder changed alone lists no item, so the cached list may predate it: read it again.
-      const revisions = async () => {
-        const known = (response: ThreadDraftListResponse) =>
-          folders.every((node) => response.folders.some((folder) => folder.id === node));
-        const read = known(listed)
-          ? listed
-          : await queryClient.fetchQuery({
-              ...ownerDraftsQueryOptions(projectId, ownerKey),
-              staleTime: 0,
-            });
-        return new Map(read.folders.map((folder) => [folder.id, folder.revision]));
-      };
       const started = owner.applyGroup({
         projectId,
         ownerKey,
         branchId,
-        members: members.map(({ draft, target, tree }) => ({
-          ref: ref(draft),
-          target,
-          restore: restore.has(draft.documentId),
-          ...(tree ? { tree } : {}),
-        })),
+        members: members.map(({ draft, target, tree }) => ({ ref: ref(draft), target, tree })),
         folders,
-        revisions,
-        restore: restore.size > 0,
+        saw: sawNow(),
       });
       started.outcomes.forEach((outcome, index) => {
         const member = members[index];
         if (!member) return;
         void outcome.then((settled) => {
           if (settled.kind === "done" && member.tree && member.item) dropTreeLine(member.item);
-          if (settled.kind === "needs-restore" || !owner.state(member.draft.itemKey).pending)
-            refresh([member.draft.documentId]);
+          if (!owner.state(member.draft.itemKey).pending) refresh([member.draft.documentId]);
         });
       });
       const [first] = members;
-      // A delete the writer wasn't shown holds the whole command back: the list read again says
-      // which items live deleted, for the question asked next.
-      const outcomes = Promise.all(started.outcomes.slice(0, members.length)).then(
-        async (settled) => {
-          if (!settled.some((outcome) => outcome.kind === "needs-restore")) return settled;
-          await queryClient.refetchQueries({
-            queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
-          });
-          return settled.map((outcome, index): CommandOutcome => {
-            const member = members[index];
-            return outcome.kind === "needs-restore" &&
-              member &&
-              isDeletedFromManuscript(row(member.draft))
-              ? { kind: "needs-restore", deleted: true }
-              : outcome;
-          });
-        },
-      );
+      const outcomes = Promise.all(started.outcomes.slice(0, members.length));
       void Promise.all([outcomes, Promise.all(started.outcomes), started.answer]).then(
         ([settled, _all, answer]) => {
           const taken = [...members.map(({ draft }) => draft.documentId), ...folders];

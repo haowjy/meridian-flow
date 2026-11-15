@@ -11,6 +11,7 @@ export {
   type ApplyResult,
   appliedCreates,
   applyDraft,
+  covers,
   type DiscardedBy,
   discardDraft,
   discardedBy,

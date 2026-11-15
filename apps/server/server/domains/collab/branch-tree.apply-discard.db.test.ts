@@ -37,10 +37,7 @@ import { createTreeReader } from "../context/tree/tree-view.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
 import { createDrizzleApplyClick } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleBranchDiscard } from "./adapters/drizzle-branch-discard.js";
-import {
-  branchRowRevisions,
-  createDrizzleBranchTreeState,
-} from "./adapters/drizzle-branch-tree-state.js";
+import { createDrizzleBranchTreeState } from "./adapters/drizzle-branch-tree-state.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
@@ -122,6 +119,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       onCommitted: async () => {},
       merged: () => {},
       measured: () => {},
+      answeredWithoutLanding: () => {},
     });
     const discard = createBranchDiscard({
       branches: workBranches,
@@ -210,15 +208,16 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       };
     }
 
-    async function click(documentId: DocumentId, revision: string | null, restore = false) {
-      return applyNodes([[documentId, revision]], randomUUID(), restore);
+    async function click(documentId: DocumentId) {
+      return applyNodes([documentId], randomUUID());
     }
 
-    /** Apply of nodes at the revisions given, as one command; no text cut reaches the text half. */
+    /** Apply of nodes, as one command; no text cut reaches the text half. */
     async function applyNodes(
-      nodes: readonly (readonly [string, string | null | undefined])[],
+      nodes: readonly string[],
       commandId: string,
-      restore = false,
+      saw?: { project?: string; account?: string },
+      tree = true,
     ) {
       return apply.apply(
         {
@@ -226,21 +225,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           envelope: envelope(commandId),
           request: {
             commandId: commandId as CommandId,
-            items: nodes.map(([node, revision]) => ({ node, tree: { revision } })),
-            ...(restore ? { restore: true as const } : {}),
+            items: nodes.map((node) => ({ node, ...(tree ? { tree: true as const } : {}) })),
           },
         } as never,
-        nodes.map(([node, revision]) => ({
-          node,
-          tree: revision === undefined ? null : { revision },
-          text: null,
-        })),
+        nodes.map((node) => ({ node, tree, text: null })),
+        saw,
       );
-    }
-
-    async function revisionOf(documentId: DocumentId) {
-      const [item] = await branchTree.read(branchId, [], [documentId]);
-      return item?.revision ?? null;
     }
 
     const liveRow = async (id: string) =>
@@ -272,7 +262,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         pending: true,
       });
 
-      const answer = await click(id, item?.revision ?? null);
+      const answer = await click(id);
       expect(answer.status).toBe("applied");
       expect(await liveRow(id)).toMatchObject({ name: "chapter", trashRecord: null });
       expect(await branchRow(id)).toBeUndefined();
@@ -292,38 +282,42 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect(await liveRow(a)).toMatchObject({ name: "alpha" });
       expect(await branchRow(c)).toMatchObject({ deleted: true });
 
-      expect((await click(a, await revisionOf(a))).status).toBe("applied");
+      expect((await click(a)).status).toBe("applied");
       expect(await liveRow(a)).toMatchObject({ name: "alpha two" });
 
-      expect((await click(b, await revisionOf(b))).status).toBe("applied");
+      expect((await click(b)).status).toBe("applied");
       expect(await liveRow(b)).toMatchObject({ parentId: folder });
       expect(await liveRow(folder)).toMatchObject({ kind: "folder", name: "Arc" });
 
-      expect((await click(c, await revisionOf(c))).status).toBe("applied");
+      expect((await click(c)).status).toBe("applied");
       expect((await liveRow(c))?.trashRecord).not.toBeNull();
       expect(await branchRow(c)).toBeUndefined();
     });
 
-    it("answers `changed` for a revision the writer did not see, and lands nothing", async () => {
+    it("answers a second press `already`, and lands nothing twice", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "first"));
-      const seen = await revisionOf(a);
-      await submit((writer) => writer.rename(viewOf(), AGENT, a, "second"));
-      expect((await click(a, seen)).status).toBe("changed");
-      expect(await liveRow(a)).toMatchObject({ name: "alpha" });
-      expect(await branchRow(a)).toMatchObject({ name: "second" });
+      expect((await click(a)).status).toBe("applied");
+      const second = await click(a);
+      expect(second).toMatchObject({
+        status: "applied",
+        applied: [],
+        settled: [{ rule: "already", state: "applied", item: a }],
+      });
+      expect(await liveRow(a)).toMatchObject({ name: "first" });
     });
 
-    it("asks before bringing back a document live deleted, and restores it on `restore`", async () => {
+    it("brings back a document live deleted, and says so", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "kept"));
       await submit((writer) => writer.delete(LIVE, "system", a));
-      const revision = await revisionOf(a);
-      expect((await click(a, revision)).status).toBe("needs_restore");
       expect((await liveRow(a))?.trashRecord).not.toBeNull();
 
-      const answer = await click(a, revision, true);
-      expect(answer).toMatchObject({ status: "applied", restored: true });
+      const answer = await click(a);
+      expect(answer).toMatchObject({
+        status: "applied",
+        settled: [{ rule: "restored", documentId: a }],
+      });
       expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
     });
 
@@ -404,8 +398,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         actor: AGENT,
       })) as DocumentId;
       expect(await branchRow(id)).toMatchObject({ existsOnlyInDraft: true });
-      const [item] = await branchTree.read(branchId, [], [id]);
-      expect((await click(id, item?.revision ?? null)).status).toBe("applied");
+      expect((await click(id)).status).toBe("applied");
       const [account] = await db
         .select({ listId: users.treeListId })
         .from(users)
@@ -446,7 +439,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         stateVector: Buffer.alloc(0),
       });
       await submit((writer) => writer.delete(viewOf(), AGENT, a));
-      const revision = await revisionOf(a);
       const otherWork = randomUUID();
       await db.insert(works).values({
         id: otherWork,
@@ -469,7 +461,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         bWaited,
       } = await interleave(
         db,
-        () => click(a, revision),
+        () => click(a),
         "treeList.afterRows",
         () =>
           discard.discardItems({
@@ -487,7 +479,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     it("Apply writes the list's rows only under the document's key, which derivation takes first", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
-      const revision = await revisionOf(a);
       // Derivation's certification (`certifyDocumentDerivation`): the document's key, then the
       // location row of the document.
       const certify = () =>
@@ -504,7 +495,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         a: applied,
         b: certified,
         bWaited,
-      } = await interleave(db, () => click(a, revision), "treeList.afterRows", certify);
+      } = await interleave(db, () => click(a), "treeList.afterRows", certify);
       expect(bWaited).toBe(true);
       expect(applied).toMatchObject({ ok: true, value: { status: "applied" } });
       expect(certified).toMatchObject({ ok: true });
@@ -532,13 +523,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       });
       /** Apply of several nodes, as the group route sends it, at the revisions now on screen. */
       async function applyGroup(nodes: readonly string[], commandId: string = randomUUID()) {
-        const revisions = await branchRowRevisions(db, branchId, nodes);
         return service.apply({
           branchId,
           envelope: envelopeOf("apply", commandId),
           request: {
             commandId: commandId as CommandId,
-            items: nodes.map((node) => ({ node, tree: { revision: revisions.get(node) ?? null } })),
+            items: nodes.map((node) => ({ node, tree: true as const })),
           },
         });
       }
@@ -617,7 +607,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await branchRow(folder)).toMatchObject({ name: "Arc two" });
         expect(await unapply(commandId, undo)).toMatchObject({ status: "unapplied" });
         // Taken back already: nothing of it is left to take back.
-        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
+        expect(await unapply(commandId)).toMatchObject({
+          status: "unapplied",
+          settled: [{ rule: "already", state: "unapplied" }],
+        });
       });
 
       it("applies a folder and what is under it as one command, and one Un-Apply takes both", async () => {
@@ -833,11 +826,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
         await submit((writer) => writer.rename(viewOf(), AGENT, a, "kept"));
         await submit((writer) => writer.delete(LIVE, "system", a));
-        const revision = await revisionOf(a);
         const commandId = randomUUID();
-        expect(await applyNodes([[a, revision]], commandId, true)).toMatchObject({
+        expect(await applyNodes([a], commandId)).toMatchObject({
           status: "applied",
-          restored: true,
+          settled: [{ rule: "restored", documentId: a }],
         });
         expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
 
@@ -853,7 +845,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         await submit((writer) => writer.delete(LIVE, "system", a));
         const commandId = randomUUID();
         // A click with a text cut only has no tree cut: the restore is all it does in the tree.
-        expect(await applyNodes([[a, undefined]], commandId, true)).toMatchObject({
+        expect(await applyNodes([a], commandId, undefined, false)).toMatchObject({
           status: "applied",
         });
         expect(await liveRow(a)).toMatchObject({ trashRecord: null });

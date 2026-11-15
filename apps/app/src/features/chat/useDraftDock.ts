@@ -147,13 +147,9 @@ export function useDraftDock({
       target: whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
     }));
   };
-  /**
-   * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
-   * it resolves to the files a delete the strip hadn't shown yet held the command back for
-   * (`needs-restore`).
-   */
+  /** Sends the strip's command. */
   const send = useCallback(
-    (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set()) => {
+    (mode: "apply" | "discard") => {
       const files = mode === "apply" ? applicable : actionableFiles;
       const items =
         mode === "discard"
@@ -162,17 +158,9 @@ export function useDraftDock({
               draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
               target: targetOfChanges(file.actionable),
             }));
-      if (items.length === 0) return Promise.resolve([]);
+      if (items.length === 0) return;
       // An Apply is one command over every file; a Discard is one notice with one Undo.
-      const sent = mode === "apply" ? runner.applyMany(items, restore) : runner.discardMany(items);
-      return sent.then(
-        (outcomes) =>
-          files.filter((_file, index) => {
-            const outcome = outcomes[index];
-            return outcome?.kind === "needs-restore" && outcome.deleted === true;
-          }),
-        () => [],
-      );
+      void (mode === "apply" ? runner.applyMany(items) : runner.discardMany(items));
     },
     [actionableFiles, applicable, runner, controller.frozen],
   );
@@ -211,7 +199,7 @@ export function useDraftDock({
     deletedToApply: applicable.filter((file) => isDeletedFromManuscript(file.row.draft)),
     /** The files Apply would delete from the manuscript; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
-    apply: (restore: ReadonlySet<string>) => send("apply", restore),
-    discard: () => void send("discard"),
+    apply: () => send("apply"),
+    discard: () => send("discard"),
   };
 }
