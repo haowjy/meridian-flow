@@ -175,7 +175,7 @@ export function createDrizzleTreeHistory(
       });
     },
 
-    async nodeLeftAt(threadId, at) {
+    async nodeLeftAt(threadId, at, holds) {
       const [written] = await tx()
         .select({ node: treeEditReceipts.nodeId })
         .from(treeEditReceipts)
@@ -195,11 +195,15 @@ export function createDrizzleTreeHistory(
       // from a path never stands in for what was deleted there.
       if (written) return { node: written.node, folder: at.endsWith("/") };
       // A folder's move writes a row for the folder only, so what was inside it is found by the
-      // folder's address above `at` (a folder's address ends in "/"). The rows that touched `at`
-      // or a folder above it are walked in order, carrying what stood at `at`: a folder that
-      // moved after the node had already left `at` took nothing from it.
-      const above = (address: string | null) =>
-        address !== null && (address === at || (address.endsWith("/") && at.startsWith(address)));
+      // folder's address above `at` (a folder's address ends in "/"). A folder's row touched `at`
+      // only when that folder holds a node at the rest of `at` now; the rows that touched it are
+      // walked in order, carrying what stood at `at`.
+      const touched = (address: string | null, node: string) =>
+        address === at ||
+        (address !== null &&
+          address.endsWith("/") &&
+          at.startsWith(address) &&
+          holds(node, at.slice(address.length)));
       const rows = await tx()
         .select({
           node: treeEditReceiptNodes.nodeId,
@@ -231,11 +235,11 @@ export function createDrizzleTreeHistory(
       let left: { node: string; folder: boolean } | null = null;
       for (const row of rows) {
         if (row.beforeAt === row.afterAt) continue;
-        if (above(row.beforeAt) && standing) {
+        if (standing && touched(row.beforeAt, row.node)) {
           left = { node: row.node, folder: (row.beforeAt as string).endsWith("/") };
           standing = false;
         }
-        if (above(row.afterAt)) standing = true;
+        if (touched(row.afterAt, row.node)) standing = true;
       }
       return left;
     },

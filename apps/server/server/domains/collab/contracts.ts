@@ -282,9 +282,14 @@ export type AgentTreeHistory = {
    * The node this chat's receipts took away from `at`, so an undo there finds it: the latest
    * deleted there or its create undone (the path the model wrote); else what last stood at `at`
    * and was moved or deleted from it, itself or with a folder above it, by this chat's receipts
-   * in order (a node's address before the call).
+   * in order (a node's address before the call). A folder's row counts only when `holds` says
+   * that folder holds a node at the rest of `at` now: a receipt can't say what a folder held.
    */
-  nodeLeftAt(threadId: ThreadId, at: string): Promise<{ node: string; folder: boolean } | null>;
+  nodeLeftAt(
+    threadId: ThreadId,
+    at: string,
+    holds: (folder: string, rest: string) => boolean,
+  ): Promise<{ node: string; folder: boolean } | null>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */
   historyOf(threadId: ThreadId, nodeId: string, isDocument: boolean): Promise<NodeHistory>;
   /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
