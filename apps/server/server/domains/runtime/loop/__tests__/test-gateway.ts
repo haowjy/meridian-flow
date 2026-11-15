@@ -1,5 +1,10 @@
 /** Runtime-loop test gateway and port defaults. */
-import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "@meridian-flow/gateway";
+import type {
+  Gateway,
+  GenerateRequest,
+  GenerateResult,
+  StreamEvent,
+} from "@meridian-flow/runtime/gateway";
 
 export const gatewayStubDefaults = {
   listModels: () => [],

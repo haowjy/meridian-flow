@@ -19,7 +19,7 @@ import {
   type ProviderModel,
   type ReasoningSupport,
   type TokenizerFamily,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import {
   createLayeredTokenRateSource,
   MOCK_FIXTURE_TOKEN_RATES,

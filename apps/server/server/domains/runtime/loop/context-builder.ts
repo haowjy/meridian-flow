@@ -17,8 +17,8 @@ import type {
   TextPart,
   Tool,
   ToolUsePart,
-} from "@meridian-flow/gateway";
-import { assistant, system, text, toolResult } from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
+import { assistant, system, text, toolResult } from "@meridian-flow/runtime/gateway";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
