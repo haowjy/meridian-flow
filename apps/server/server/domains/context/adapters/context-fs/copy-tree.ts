@@ -134,6 +134,7 @@ export async function insertPlannedTrees(
   }
   let refusal: AdapterFault | null = null;
   let replan = false;
+  let folders: string[] = [];
   // Rows, then each tracked document's first state, then its arrival: one unit.
   let created: Awaited<ReturnType<DocumentCreationAggregate["createDocumentsAtomically"]>>;
   try {
@@ -154,6 +155,7 @@ export async function insertPlannedTrees(
           replan = true;
           return null;
         }
+        folders = inserted.value.folders;
         // Arrivals settle ahead refs under the source's namespace key, taken after the list's.
         await deps.arrivals?.lockNamespaces(ids as DocumentId[], [
           (await deps.writes.sourceId()) as never,
@@ -187,7 +189,11 @@ export async function insertPlannedTrees(
     };
     void Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
   });
-  return Ok({ kind: "copied", entries: inputs.flatMap(({ plan }) => entriesOf(plan.roots)) });
+  return Ok({
+    kind: "copied",
+    entries: inputs.flatMap(({ plan }) => entriesOf(plan.roots)),
+    folders,
+  });
 }
 
 /**

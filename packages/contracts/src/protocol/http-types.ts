@@ -242,6 +242,8 @@ export const copyContextEntriesResultSchema = z.object({
       copiedFrom: z.string().min(1),
     }),
   ),
+  /** The ids of the folders the copy made to reach its destination, outermost first. */
+  folders: z.array(z.string().min(1)),
 });
 export type CopyContextEntriesResult = z.infer<typeof copyContextEntriesResultSchema>;
 

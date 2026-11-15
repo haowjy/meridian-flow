@@ -18,7 +18,7 @@ export const UNNAMED_RELEASES: readonly string[] = ["dev", "0.0.0"];
 export const PROTOCOL_HEADER = "x-meridian-protocol";
 
 /** The wire contract this code speaks. Bump on a contract change an older tab would misread. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /**
  * The oldest protocol a tab may keep running against this server. Raise it, with
@@ -27,7 +27,7 @@ export const PROTOCOL_VERSION = 1;
  * reload at a pause. Keep a compatibility answer for them until they have reloaded, so nothing they
  * send meanwhile is refused; delete it in a later release.
  */
-export const MIN_PROTOCOL_VERSION = 1;
+export const MIN_PROTOCOL_VERSION = 2;
 
 export const serverProtocolSchema = z.object({
   current: z.number().int().nonnegative(),

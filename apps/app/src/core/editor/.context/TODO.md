@@ -46,24 +46,12 @@ committed text: `ni` → `你`, with more than 500ms between updates, undoes fir
 objects. Group the composition as one user action rather than depending on
 capture timing.
 
-## Cell selection restoration
+## Whole-table selection extent
 
-A peer edit elsewhere in a document turns a full-table CellSelection into a
-TextSelection over its head cell; the table ring disappears and typing can replace
-that cell's text. This also happens with native caret projection disabled.
-`getRelativeSelection` in y-tiptap records the `cell` type but uses the selection's
-text endpoints; `restoreRelativeSelection` handles only all/node/nodeRange and
-falls back to TextSelection for cells. Preserve the cell boundary endpoints and
-selection type at that binding boundary, including partial selections, deleted or
-moved cells and Undo restore. Reproduce with two tabs: select the whole table in
-one, type in a following paragraph in the other, then inspect or type in the first.
-
-The same selection has two different extents: its cells cover a rectangle, while
+A whole-table CellSelection has two different extents: its cells cover a rectangle, while
 its native `$anchor`/`$head` cover only the head cell. A table that ends the document
 therefore narrows to its head-cell text on Shift+PageDown or Ctrl+Shift+Right when
-the browser makes no move after native range preparation. No text changes. Track
-this representation mismatch alongside peer restoration; whether one fix can
-solve both is not yet proved. Do not add per-key boundary guards. A proposal to
+the browser makes no move after native range preparation. No text changes. The native range does not describe the selected cell rectangle. Do not add per-key boundary guards. A proposal to
 separate whole-table NodeSelection from cell ranges changes what writers select
 and what typing replaces; take that design to the product lead for review first.
 

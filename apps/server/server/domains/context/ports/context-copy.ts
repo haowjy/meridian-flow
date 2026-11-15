@@ -123,7 +123,14 @@ export interface CopyPlan {
 }
 
 /** What an insert did: the identities it created, or that its plan no longer holds. */
-export type CopyOutcome = { kind: "copied"; entries: CopyCreatedEntry[] } | { kind: "replan" };
+export type CopyOutcome =
+  | {
+      kind: "copied";
+      entries: CopyCreatedEntry[];
+      /** The folders the insert made to reach its destination, outermost first. */
+      folders: string[];
+    }
+  | { kind: "replan" };
 
 /** The copy capability of one scheme adapter. */
 export interface ContextCopyAdapter {

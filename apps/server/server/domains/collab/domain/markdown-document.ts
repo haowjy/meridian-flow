@@ -568,6 +568,7 @@ export function createMarkdownDocumentEngine(
     async readForExport(documentId, scope) {
       try {
         const typedDocumentId = documentId as DocumentId;
+        await ensureDocumentAuthority(typedDocumentId);
         const format = await documentFormat(typedDocumentId);
         if (!format.ok) return format;
         return Ok(
@@ -595,6 +596,7 @@ export function createMarkdownDocumentEngine(
 
     async readVersionedMarkdown(documentId) {
       try {
+        await ensureDocumentAuthority(documentId as DocumentId);
         const format = await documentFormat(documentId as DocumentId);
         if (!format.ok) return format;
         const markdown = await deps.coordinator.withDocument(documentId, async (doc) => {
