@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { getAccountContextSources, getProjectContextSources } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 
 /**
  * A source ended while this browser was offline is learned on reconnect, whatever the age of the
@@ -19,7 +20,7 @@ function useProjectContextSourcesResult(projectId: string) {
   return useQuery<ContextSourcesResult>({
     queryKey: projectQueryKeys.contextSources(projectId),
     queryFn: ({ signal }) => getProjectContextSources(projectId, signal),
-    enabled: Boolean(projectId),
+    enabled: projectReadEnabled(Boolean(projectId)),
     ...FRESHNESS,
   });
 }

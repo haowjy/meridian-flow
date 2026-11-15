@@ -15,6 +15,7 @@ import {
 } from "@/core/completion";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 import { useProjectContextSources } from "./useContextSources";
 import { useProjectTreeView } from "./useProjectTree";
 
@@ -43,7 +44,7 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
   const facts = useQuery({
     queryKey: projectQueryKeys.chatUploads(projectId, chatId ?? "", files.length),
     queryFn: ({ signal }) => getChatUploadFacts(projectId, chatId ?? "", signal),
-    enabled: Boolean(chatId),
+    enabled: projectReadEnabled(Boolean(chatId)),
     staleTime: 5_000,
     refetchOnWindowFocus: true,
   });
