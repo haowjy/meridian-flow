@@ -75,15 +75,12 @@ const cross: Array<[string, string, object, Writer]> = [
 
 const W = (content: string) => ({ command: "replace", wholeDocument: true, content });
 const more: Array<[string, string, object, Writer]> = [
-  ["pinned 1, find", "A disciple. DRAFT-B line. SIDETEXT", R("DRAFT-B line.", "DRAFT-B3 line."), del(" DRAFT-B line.")],
-  ["pinned 1, block form", "A disciple. DRAFT-B line. SIDETEXT", W("A disciple. DRAFT-B3 line. SIDETEXT"), del(" DRAFT-B line.")],
-  ["pinned 2, find", "Keep this. Cut sentence there. Keep end.", R("Keep this. Cut sentence there. Keep end.", "Keep this. Cut sentence there, polished. Keep end."), del("Cut sentence there. ")],
-  ["pinned 2, block form", "Keep this. Cut sentence there. Keep end.", W("Keep this. Cut sentence there, polished. Keep end."), del("Cut sentence there. ")],
-  ["kept word deleted, block form", "One small step for a cat.", W("One big step for a cat."), del("One ")],
-  ["type before changed word, block form", "One small step for a cat.", W("One big step for a cat."), typeBefore("small", "very ")],
-  ["119ce case, find replace", "A disciple. DRAFT-B line. SIDETEXT", R("disciple.", "disciple. DRAFT-B2."), del(" DRAFT-B line.")],
-  ["119ce case, find insert", "A disciple. DRAFT-B line. SIDETEXT", { command: "insert", find: "disciple.", content: " DRAFT-B2." }, del(" DRAFT-B line.")],
-  ["find insert, type at match end", "One small step.", { command: "insert", find: "small", content: " quiet" }, typeBefore(" step", "er")],
+  ["break added in window", "Line one and more words.", R("one and more", "one\\\nand more"), none],
+  ["break added, writer types in tail", "Line one and more words.", R("one and more", "one\\\nand more"), typeBefore(" words", "XX")],
+  ["break removed in window", "Line one\\\nand more words.", R("one\\\nand more", "one and more"), none],
+  ["image added in window", "A small B.", R("A small", "A ![pic](https://example.com/a.png) small"), none],
+  ["link added over kept words", "See the old map now.", R("See the old map", "See [the old map](https://example.com/m)"), typeBefore("old", "very ")],
+  ["bold added, writer deletes kept", "One small step for a cat.", R("One small step", "One **small** step"), del("small ")],
 ];
 
 function run(markdown: string, write: object, writer: Writer) {
@@ -116,5 +113,5 @@ it("prints", () => {
     lines.push(`  today: ${today.out}\n         ${today.ops}`);
     lines.push(today.out === next.out && today.ops === next.ops ? "  change: same" : `  change: ${next.out}\n         ${next.ops}`);
   }
-  writeFileSync("/tmp/p17768/cases3.txt", lines.join("\n"));
+  writeFileSync("/tmp/p17768/cases4.txt", lines.join("\n"));
 });
