@@ -110,6 +110,9 @@ export async function runTreeToolCommand(
   }
   const primary = areaOfPath(command.path)?.area as string;
   // The file policy decides per source whether the change is the chat's draft or live.
+  const crossing =
+    command.command === "move" &&
+    command.from.some((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary));
   const grants: FileGrant<"edit">[] = [];
   let draftArea: string | undefined;
   const checked: AgentsCheckTarget = {};
@@ -121,7 +124,8 @@ export async function runTreeToolCommand(
     if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);
     // A change to an Agents level lands in the chat's branch whatever the chat's mode; the
     // check then decides whether it applies (the same rule `writeUnderGrant` follows).
-    const level = agentsLevelOfUri(uriOfWritten(path));
+    // A move between lists isn't checked yet: it keeps its place's own destination.
+    const level = crossing ? null : agentsLevelOfUri(uriOfWritten(path));
     if (level) {
       if (granted.destination.kind === "live") {
         const drafted = await deps.fileAccess.authorizeAt(
@@ -143,9 +147,6 @@ export async function runTreeToolCommand(
     grants.push(granted);
     if (granted.destination.kind === "draft") draftArea ??= area;
   }
-  const crossing =
-    command.command === "move" &&
-    command.from.some((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary));
   if (crossing && draftArea !== undefined)
     return writeToolError(
       input.command,
@@ -255,7 +256,8 @@ export async function runTreeToolCommand(
         ...(result.alreadyDeleted ? { alreadyDeleted: true as const } : {}),
         ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
         ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
-        ...(drafted && firstDrafted && result.made.length > 0
+        // An Agents change says on its own receipt line whether it waits or applied.
+        ...(drafted && firstDrafted && !checked.level && result.made.length > 0
           ? { firstDrafted: true as const }
           : {}),
         ...(result.concurrent.length > 0 ? { concurrent: result.concurrent } : {}),

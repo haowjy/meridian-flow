@@ -550,6 +550,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           call,
           written as Parameters<typeof runTreeInverse>[2],
           ctx,
+          checked,
         );
         if (tree?.kind === "answer") return tree.answer;
         if (tree?.kind === "then_text") {

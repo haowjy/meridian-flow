@@ -13,9 +13,15 @@ import type { BranchId, ThreadId, TurnId } from "@meridian/contracts";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
 import { reachPath, runTreeUndo } from "../../domains/context/tree/tree-commands.js";
-import { runWithEditGrants } from "../../domains/file-policy/index.js";
+import {
+  appliesAfterCheck,
+  isFileAccessDenied,
+  runWithEditGrants,
+} from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import { agentsLevelOfUri } from "../agents-widening.js";
 import { threadContainerTarget } from "../file-targets.js";
+import { type AgentsCheckTarget, draftContext } from "./agents-check.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, namesEvidence, shownNamesOf } from "./shown-paths.js";
 import {
@@ -113,6 +119,7 @@ export async function runTreeInverse(
   call: ToolCall,
   input: InverseInput,
   ctx: ToolHandlerContext,
+  checked: AgentsCheckTarget,
 ): Promise<TreeInverse | null> {
   const parts = areaOfPath(input.path);
   if (!parts) return null;
@@ -149,7 +156,7 @@ export async function runTreeInverse(
 
   const done: Array<Awaited<ReturnType<typeof reverseReceipt>>> = [];
   for (const receipt of chosen.receipts) {
-    const answer = await reverseReceipt(deps, call, input, ctx, receipt, node.id);
+    const answer = await reverseReceipt(deps, call, input, ctx, receipt, node.id, checked);
     done.push(answer);
     if ("isError" in answer && answer.isError) break;
   }
@@ -172,13 +179,36 @@ async function reverseReceipt(
   ctx: ToolHandlerContext,
   receipt: TreeReceipt,
   nodeId: string,
+  checked: AgentsCheckTarget,
 ) {
   const parts = areaOfPath(input.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const history = deps.documentSync.treeHistory();
   const threadId = ctx.threadId as ThreadId;
   const target = await threadContainerTarget(deps.works, call.context.resolution, input.path);
-  const grant = target ? await deps.fileAccess.authorize(call.principal, target, "edit") : null;
+  let grant = target ? await deps.fileAccess.authorize(call.principal, target, "edit") : null;
   if (grant && "denied" in grant) return fileAccessDeniedError(input.command, grant, input.path);
+  // An Agents level takes its inverse in the chat's branch, whether the change it takes back is
+  // still a draft or was applied, and the check then decides whether the inverse applies.
+  const level = receipt.across ? null : agentsLevelOfUri(`${parts.area}${parts.rest}`);
+  if (level && grant && target) {
+    if (grant.destination.kind === "live") {
+      const drafted = await deps.fileAccess.authorizeAt(
+        call.principal,
+        target,
+        {
+          kind: "draft",
+          owner: call.execution.branchOwner,
+          ownerHandle: call.execution.scope.workHandle,
+        },
+        "edit",
+      );
+      if (isFileAccessDenied(drafted))
+        return fileAccessDeniedError(input.command, drafted, input.path);
+      grant = drafted;
+    }
+    checked.level ??= level;
+    checked.apply = appliesAfterCheck(call.principal, { ...grant.facts, agentsLevel: level });
+  }
   if (receipt.across) {
     // The other end of a move between lists: its own container, its own grant.
     const otherTarget = await threadContainerTarget(
@@ -200,9 +230,11 @@ async function reverseReceipt(
       receipt as TreeReceipt & { across: { from: string; to: string } },
     );
   }
-  const drafted = receipt.draftBranchId !== null;
+  const drafted = receipt.draftBranchId !== null || level !== null;
   const port = drafted
-    ? call.context.port
+    ? level
+      ? draftContext(deps, call).port
+      : call.context.port
     : contextPortForThread(deps.contextPorts, call.context.resolution, {
         destination: { kind: "live" },
       });
