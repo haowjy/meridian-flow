@@ -9,8 +9,8 @@ import type { WorkId } from "@meridian/contracts/runtime";
 /**
  * Archive, unarchive, delete or restore of a Work: its own files (drafts, scratch). Or a
  * lineage gaining or losing its last live chat: its drafts freeze and thaw. `closed` is set when
- * the change closed the owner (archive, delete, last chat to Trash) and names why; an unarchive,
- * a restore, or a thaw leaves it out.
+ * the change leaves the owner closed (archive, delete, last chat to Trash, or a restore of a Work
+ * that is still archived) and names why; an unarchive, a restore to open, or a thaw leaves it out.
  */
 export type FileAccessChange =
   | { workId: WorkId; closed?: AccessChangedWhy }
