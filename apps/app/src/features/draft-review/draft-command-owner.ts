@@ -500,7 +500,12 @@ export class DraftCommandOwner {
       // A failed read or an undecided answer decides nothing: the draft stays held, and is asked
       // about again while a surface shows it (and on its next `gone` metadata answer).
       for (let wait = RESOLVE_RETRY_MS; ; wait = Math.min(wait * 2, RESOLVE_RETRY_MAX_MS)) {
-        const end = await this.lifecycle.resolveEnd?.(ref, id).catch(() => null);
+        let end: Exclude<DraftEnd, "here"> | "open" | null | undefined;
+        try {
+          end = await this.lifecycle.resolveEnd?.(ref, id);
+        } catch {
+          end = null;
+        }
         if (end === undefined || !this.active || this.records.get(id)?.ended) return;
         if (end) {
           // A restore landed before this close: the session on screen joins the reopened draft.
