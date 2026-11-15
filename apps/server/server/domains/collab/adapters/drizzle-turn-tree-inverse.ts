@@ -76,13 +76,14 @@ export function createTurnTreeInverse(deps: {
   ): Promise<TreePlan> {
     const all = await deps.history().turnSteps(threadId, turnId, direction);
     if (all.length === 0) return NO_TREE_STEPS;
-    // A drafted step is applicable while its branch still places the node; once a Discard took it
-    // out there is no file to ask a grant about and nothing to reverse. Every other denial of a
-    // step's document refuses the reversal.
+    // A drafted Undo is applicable while its branch still places the node; once a Discard took it
+    // out there is no file to ask a grant about and nothing to reverse. A Redo's node is out of
+    // the branch (its Undo took it), and a Discard shows there as a record that no longer
+    // reverses. Every other denial of a step's document refuses the reversal.
     const held = new Set<string>();
     const draftedIn = new Map<string, string[]>();
     for (const step of all)
-      if (step.draftBranchId)
+      if (step.draftBranchId && direction === "undo")
         draftedIn.set(step.draftBranchId, [
           ...(draftedIn.get(step.draftBranchId) ?? []),
           step.subject,
@@ -96,7 +97,10 @@ export function createTurnTreeInverse(deps: {
         )})`))
         held.add(`${branchId}:${row.id}`);
     const gone = all.filter(
-      (step) => step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`),
+      (step) =>
+        direction === "undo" &&
+        step.draftBranchId &&
+        !held.has(`${step.draftBranchId}:${step.subject}`),
     );
     const steps = all.filter((step) => !gone.includes(step));
     const lists = new Map<string, TreeList>();

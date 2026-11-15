@@ -84,7 +84,11 @@ Undo after a pull equals Undo of the same typing on the draft when the writer in
 the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
 Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
 item can still be removed or restored, `undone` when only Redo can, else `changed`.
-A turn's edit targets include its create transition even when the document is empty. A create
+A card's Redo of a create restores the document first and then writes its text: nothing writes a
+document in Trash, so the restore leads and the text step is planned and admitted as the restore's
+(`restoredByRedo`, `admitInverse`). The document's text is a target for that Redo although the
+document is in Trash. A drafted create's Redo does not ask whether its branch still places the node
+(an Undo took it out); a Discard shows as a record that no longer reverses. A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
 the Work its draft row's branch belongs to, and the card's lineage and Undo

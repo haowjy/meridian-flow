@@ -52,6 +52,8 @@ export type TurnInverseQuery = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
+  /** A card reversal's direction: a Redo plans a document it restores as live, not as removed. */
+  direction?: "undo" | "redo";
   draftId?: string | null;
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
