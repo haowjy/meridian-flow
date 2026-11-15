@@ -8,7 +8,7 @@
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { TurnId } from "@meridian/contracts/runtime";
 import type { Block, StoredMediaPart, Thread, ToolContentPart } from "@meridian/contracts/threads";
-import { type MediaPart, type ModelInfo, placeMedia } from "@meridian-flow/gateway";
+import { type MediaPart, type ModelInfo, placeMedia } from "@meridian-flow/runtime/gateway";
 import type { MediaContextBreak } from "../../threads/index.js";
 import {
   type LinkWindow,

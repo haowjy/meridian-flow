@@ -34,7 +34,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@meridian-flow/gateway": "catalog:",
+    "@meridian-flow/runtime": "catalog:",
     "@ag-ui/core": "0.0.57",
     "@noble/hashes": "2.4.0",
     "zod": "^4.4.3"
