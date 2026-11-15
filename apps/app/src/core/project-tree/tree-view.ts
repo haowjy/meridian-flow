@@ -26,30 +26,13 @@ import {
   type TreeProjection,
 } from "@meridian/project-tree";
 
-/** Where a refused record would have put a node: the writer's repair offers it again. */
+/** A place in a tree: a restore's or a move's destination. */
 export type TreeDestination = Readonly<{
   /** A folder's id, or the id of a source (the top of its tree). */
   parentId: string;
   /** Where among the siblings, when the writer chose a place. */
   index?: number;
 }>;
-
-/** What the server refused of the writer's own work, shown on the row it concerns. */
-export type NamespaceFailure = "create";
-
-export type TreeFailure = {
-  namespaceFailure: NamespaceFailure;
-  /** The server's reason, in its own words. */
-  failureReason?: string;
-  /** The name the writer asked for, for a rename the server refused. */
-  namespaceRepairName?: string;
-  /** The place the writer asked for, for a move (or a create the server kept in Unfiled) it refused. */
-  namespaceRepairMove?: TreeDestination;
-  /** When this tab first saw the refusal; undefined for one already settled when the list loaded. */
-  namespaceFailureAt?: number;
-  /** The refused record, to dismiss. */
-  failureRecord: string;
-};
 
 type TreeFileBase = {
   kind: "file";
@@ -66,7 +49,7 @@ type TreeFileBase = {
   provisionalName: boolean;
   /** The document has imported properties to show; they load by document id. */
   hasProperties: boolean;
-} & Partial<TreeFailure>;
+};
 
 export type TreeFile =
   | (TreeFileBase & { editable: true; filetype: Filetype; schemaType: YjsTrackedSchemaType })
@@ -85,7 +68,7 @@ export type TreeDirectory = {
   name: string;
   path: string;
   uri: string;
-} & Partial<TreeFailure>;
+};
 
 export type TreeEntry = TreeDirectory | TreeFile;
 
@@ -152,17 +135,15 @@ function classification(node: TreeNode) {
 }
 
 /**
- * The tree of one source. `failures` are the refusals of the writer's own records, by node.
- * The replay's order is the sidebar's order (rank, then id); a node in Trash is not shown.
+ * The tree of one source. The replay's order is the sidebar's order (rank, then id); a node in Trash is not shown.
  */
 export function buildTreeView(input: {
   projection: TreeProjection;
   scheme: ProjectContextTreeScheme;
   source: Pick<ContextSource, "id">;
   authority: CanonicalContextAuthority;
-  failures?: ReadonlyMap<string, TreeFailure>;
 }): TreeView {
-  const { projection, scheme, source, authority, failures } = input;
+  const { projection, scheme, source, authority } = input;
   const sourceId = source.id;
   const uriOf = (path: string) => canonicalContextUri(scheme, path, authority);
   const root: TreeDirectory = {
@@ -193,7 +174,6 @@ export function buildTreeView(input: {
     const cached = entryCache.get(node.id);
     if (cached) return cached;
     const path = pathOf(node);
-    const failure = failures?.get(node.id);
     const built: TreeEntry =
       node.kind === "folder"
         ? {
@@ -203,7 +183,6 @@ export function buildTreeView(input: {
             name: node.displayName,
             path,
             uri: uriOf(path),
-            ...failure,
           }
         : {
             kind: "file",
@@ -218,7 +197,6 @@ export function buildTreeView(input: {
             provisionalName: node.provisional,
             hasProperties: node.hasProperties,
             ...classification(node),
-            ...failure,
           };
     entryCache.set(node.id, built);
     return built;

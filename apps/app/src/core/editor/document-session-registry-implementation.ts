@@ -168,6 +168,10 @@ export class DocumentSessionRegistry {
     return (await Promise.all(settled)).every(Boolean);
   }
 
+  localText(documentId: DocumentId): Promise<string | null> {
+    return this.copies.text(documentId);
+  }
+
   /** Calls `observer` with the documents this browser holds a copy of for the account, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void {
     return this.copies.observe(observer);

@@ -2,10 +2,10 @@
  * The writer's tree actions: each appends a record to the browser's own copy of the list, so
  * the change shows at once from the replay and Yjs carries it to the server. A name is numbered
  * when the clash is visible in the copy (`TreeWriter`). No action is refused: a node or parent the
- * copy lacks is made as asked and the replay places it or skips it, and a dropped create comes
- * back as a `dropped` settlement on the record (`tree-failures.ts`). A Work that has ended
- * (`TreeVersion.ended`) gets no tree control from the shell; a gesture already under way when it
- * ended lands like any other, and the server drops its creates ("Work was closed").
+ * copy lacks is made as asked and the replay places it or skips it. A change to a Work that was
+ * closed is sent like any other; the server stamps it `dropped` ("Work was closed"), every replay
+ * leaves it out, and its row says so (`tree-bounces.ts`). A deleted Work (`TreeVersion.ended`)
+ * gets no tree control from the shell; an archived one keeps them.
  * Copy and a move between two lists stay server routes. Each acts in the version the writer is
  * looking at: live, or on Draft the Work's tree, whose records carry the Work's `draft`. Each
  * gesture's records go on the list's sidebar Undo stack (`tree-undo.ts`).

@@ -74,16 +74,22 @@ the replay uses them (package `AGENTS.md`).
   `MAX_RECORDS` records. It throws `CopyFault`; nothing is stored, and the room closes the
   connection with the one terminal code. Names, sources, drafts and types are not its business.
 - **`admit` stamps `dropped`** (`Admission.dropped`, settled by `system`, reason "Work was
-  closed") on a create whose draft is not open, whose source is a closed Work's, or that is
-  made inside a dropped node. The source is where the create's parent stands at the create's
-  place in the update: the server's list before it, then the update's own moves and creates in
-  order (a move rule 1 would skip doesn't count). So a folder moved out of a closed Work and then
-  written into keeps its chapter, and an honest catch-up gets the same stamps however it is cut
-  into parts. With no closed source nothing is replayed for it. The server's arrival order is the only true order of "raced the
-  close", so this one verdict is the server's. The replay needs no rule: `viewValues` leaves a
-  settled drafted record out and filters `dropped` in the live branch. The projection's `dropped`
-  list comes from the settle log; a dropped create stays dropped after the Work is restored.
-  `Connection` is `{ drafts, closedSources }`.
+  closed") on every client record that changes a closed Work, raced or not (owner decisions 5
+  and 7: what changes the closed Work bounces, what changes live lands): one drafted in a draft
+  that is not open, and a create, move, rename, delete or restore of a node in a closed Work's
+  source (a move counts its destination's source too) or of a node made inside a dropped one.
+  A node's source is where it stands at the record's place in the update: the server's list
+  before it, then the update's own moves and creates in order (a move rule 1 would skip, or one
+  stamped, doesn't count). So a folder moved out of a closed Work and then written into keeps
+  its chapter, and an honest catch-up gets the same stamps however it is cut into parts. With no
+  closed source nothing is replayed for it. The server's arrival order is the only true order of
+  "raced the close", so this one verdict is the server's. The server's own records (Apply, a
+  restored Discard's copies, the AI's tree commands) are never admitted, so never stamped. The
+  replay needs no rule: `viewValues` leaves a settled drafted record out and filters `dropped` in
+  the live branch, so the node stands as it was. The projection's `dropped` list (`droppedRecords`:
+  each record with the reason) comes from the settle log, for the browser's row to say so; a
+  dropped record stays dropped after the Work is restored. `Connection` is
+  `{ drafts, closedSources }`.
 - **Parts of one client's offline history** arrive in causal order and are admitted in order
   (the room queues a connection's messages); an honest client's parts are never a fault.
 - **Undo is by history.** The replay keeps, per node, the record that last set its name and

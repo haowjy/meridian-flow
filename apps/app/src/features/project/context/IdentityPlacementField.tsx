@@ -41,12 +41,6 @@ import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ValidationNote } from "./validation-note";
 
 type ExitReason = "escape" | "blur" | "commit";
-export type QueuedIdentityFailure = {
-  kind: "error";
-  name: string;
-  /** The server refused the document's creation, not a rename. */
-  created: boolean;
-};
 
 type IdentityNote = { kind: "error"; message: string } | null;
 
@@ -55,7 +49,6 @@ export function IdentityPlacementField({
   editorWorkId,
   document,
   location,
-  failure,
   commit,
   onExit,
   onOpenExisting,
@@ -64,7 +57,6 @@ export function IdentityPlacementField({
   editorWorkId: string | null;
   document: OpenDocument;
   location: TabLocation;
-  failure: QueuedIdentityFailure | null;
   commit: (target: IdentityCommitTarget) => Promise<IdentityCommitOutcome>;
   onExit: (reason: ExitReason) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
@@ -87,17 +79,9 @@ export function IdentityPlacementField({
     folderPath: string;
     parentId?: string;
   } | null>(null);
-  const [value, setValue] = useState(
-    () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
-  );
+  const [value, setValue] = useState(() => (provisionalPlacement ? "" : location.leaf));
   const [ghost, setGhost] = useState("");
-  const [requestError, setRequestError] = useState<string | null>(() =>
-    failure
-      ? failure.created
-        ? t`Couldn't create this document. Try another place.`
-        : t`Couldn't rename this document. Try another name.`
-      : null,
-  );
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [commitReason, setCommitReason] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 

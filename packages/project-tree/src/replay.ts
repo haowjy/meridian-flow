@@ -6,6 +6,7 @@ import {
   isListRoot,
   isSourceRoot,
   type NodeKind,
+  type PurgeRecord,
   sourceIdOf,
   sourceRoot,
   type TreeRecord,
@@ -109,17 +110,12 @@ export type TreeProjection = {
   standingDeletes: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
   gone: ReadonlySet<string>;
-  /** Creates the server dropped at admission (from the settle log; `replayView` fills it, `replay` has no log). */
-  dropped: DroppedCreate[];
+  /** Records the server dropped at admission (from the settle log; `replayView` fills it, `replay` has no log). */
+  dropped: DroppedRecord[];
 };
 
-export type DroppedCreate = {
-  record: string;
-  node: string;
-  reason: string;
-  parent: string;
-  name: string;
-};
+/** A record the server stamped `dropped` (it changed a closed Work), and the reason it gave. */
+export type DroppedRecord = { record: Exclude<TreeRecord, PurgeRecord>; reason: string };
 
 type Working = {
   id: string;

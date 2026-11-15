@@ -16,8 +16,11 @@
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
+import { IndexeddbPersistence } from "y-indexeddb";
+import * as Y from "yjs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
+import { documentText } from "./rescued-text";
 
 const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
 const DRAFT_PREFIX = `meridian:document:${collabSchemaKeyTag()}:draft/`;
@@ -98,6 +101,40 @@ export class LocalDocumentCopies {
       .catch(acquired.reject);
     await acquired.promise;
     return { release: () => released.resolve() };
+  }
+
+  /**
+   * The words this browser holds of the document, read from its copies (live, or a Work's draft
+   * room) under a shared hold, so no tab deletes one while it is read; the longest wins. Null
+   * with none.
+   */
+  async text(documentId: DocumentId): Promise<string | null> {
+    const names = (await this.names()).filter(
+      (name) => documentOf(name, this.accountId) === documentId,
+    );
+    if (names.length === 0) return null;
+    const hold = await this.hold(documentId);
+    try {
+      const texts = await Promise.all(
+        names.map(async (name) => {
+          const document = new Y.Doc();
+          const persistence = new IndexeddbPersistence(name, document);
+          try {
+            await persistence.whenSynced;
+            return documentText(document);
+          } finally {
+            await persistence.destroy();
+            document.destroy();
+          }
+        }),
+      );
+      return texts.reduce<string | null>(
+        (longest, text) => (text && text.length > (longest?.length ?? 0) ? text : longest),
+        null,
+      );
+    } finally {
+      hold.release();
+    }
   }
 
   /**

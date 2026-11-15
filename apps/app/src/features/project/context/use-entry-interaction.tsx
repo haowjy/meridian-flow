@@ -3,10 +3,8 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OpenDocumentOwner } from "@/client/stores";
-import { dismissFailure } from "@/core/project-tree/failure-dismissals";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
 import { focusWhenFree } from "@/lib/focus-follow";
-import { useAccountId } from "./account-feature-context";
 import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
@@ -90,7 +88,6 @@ export function useEntryInteraction({
   const entry = useMemo(() => dragEntry(node), [node]);
   const id = node.entryId;
   const kind: "file" | "folder" = node.kind === "file" ? "file" : "folder";
-  const accountId = useAccountId();
   const parsed = parseContextUri(node.uri);
   let resolvedOwner: OpenDocumentOwner = { workId: owner.workId ?? undefined };
   if (owner.rootThreadId) {
@@ -102,10 +99,11 @@ export function useEntryInteraction({
     if (!rootThreadRef) throw new Error("Scratch lineage entry requires its URI authority");
     resolvedOwner = { rootThreadId: owner.rootThreadId, rootThreadRef };
   }
-  const actions: readonly EntryAction[] = [
-    ...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined),
-    ...(node.failureRecord ? (["dismiss"] as const) : []),
-  ];
+  const actions: readonly EntryAction[] = entryActions(
+    capabilities,
+    create,
+    node.kind === "dir" ? importHere : undefined,
+  );
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
     if (action === "rename") setRenaming(true);
@@ -118,8 +116,6 @@ export function useEntryInteraction({
         node.kind === "dir" ? node.path : parentContextEntryPath(node.path),
       );
     else if (action === "delete") onRequestDelete([entry]);
-    else if (action === "dismiss" && node.failureRecord)
-      dismissFailure(accountId, node.failureRecord);
   };
   const menu = useEntryMenu(entry, actions, (action, selection) => {
     if (!selection) {
@@ -135,8 +131,6 @@ export function useEntryInteraction({
     entryId: id,
     currentName: node.name,
     ...(node.kind === "file" ? { row: node } : {}),
-    repairName: node.namespaceRepairMove ? undefined : node.namespaceRepairName,
-    repairReason: node.failureReason,
     siblings,
     kind,
     onDone: () => {
@@ -160,7 +154,6 @@ export function useEntryInteraction({
       from: { scheme, owner: resolvedOwner },
       entry: { id, name: node.name, path: node.path, kind },
       selection: pickedSelection ?? undefined,
-      repairMove: node.namespaceRepairMove,
       open: picking !== null && actions.includes(picking),
       onOpenChange: (open: boolean) => {
         if (!open) {

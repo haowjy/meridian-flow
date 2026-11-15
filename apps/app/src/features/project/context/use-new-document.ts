@@ -54,7 +54,7 @@ export function useNewDocument(
       if (result.kind === "failed") throw result.error;
     });
   }, [actions, open, openCreated, captureNavigation, session, unfiledId, version]);
-  return open && unfiledId && !version.ended
+  return open && unfiledId && version.ended !== "deleted"
     ? () => void create().catch((error: unknown) => reportError(error))
     : undefined;
 }

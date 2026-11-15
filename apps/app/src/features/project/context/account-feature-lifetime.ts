@@ -2,6 +2,7 @@
 
 import { plural } from "@lingui/core/macro";
 import type { AccountId } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -67,14 +68,17 @@ export class AccountFeatureLifetime {
     connectivityHints?: ConnectivityHintsPort,
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
-    this.treeLists = new TreeListRegistry(accountId, (records) =>
-      notifyFailure({
-        key: "tree-list-dropped",
-        title: plural(records.length, {
-          one: "# change made on this device couldn't be kept.",
-          other: "# changes made on this device couldn't be kept.",
+    this.treeLists = new TreeListRegistry(
+      accountId,
+      (records) =>
+        notifyFailure({
+          key: "tree-list-dropped",
+          title: plural(records.length, {
+            one: "# change made on this device couldn't be kept.",
+            other: "# changes made on this device couldn't be kept.",
+          }),
         }),
-      }),
+      (documentId) => this.runtime.registry.localText(documentId as DocumentId),
     );
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;

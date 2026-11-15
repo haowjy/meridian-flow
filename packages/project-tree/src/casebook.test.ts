@@ -1056,8 +1056,6 @@ describe("replay rules 9 to 13", () => {
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
     t.w.settle("system", [made.id], "dropped", { reason: "Work was closed" });
     expect(t.at(made.node)).toBeUndefined();
-    expect(replayView(t.doc, LIVE).dropped).toEqual([
-      { record: made.id, node: made.node, reason: "Work was closed", parent: ROOT, name: "Raced" },
-    ]);
+    expect(replayView(t.doc, LIVE).dropped).toEqual([{ record: made, reason: "Work was closed" }]);
   });
 });

@@ -44,7 +44,7 @@ export {
   type TreeRecordInput,
 } from "./record.js";
 export {
-  type DroppedCreate,
+  type DroppedRecord,
   deleteCovering,
   type LabelBefore,
   type NodeSetters,
@@ -75,6 +75,7 @@ export {
 export { deleteStands, undoChange } from "./undo.js";
 export type { ReadRecord } from "./validate.js";
 export {
+  droppedRecords,
   LIVE,
   lastSettlements,
   listRecords,

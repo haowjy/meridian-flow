@@ -94,7 +94,7 @@ type WriteSources = {
   /** After a pick that opens something elsewhere (the phone drawer closes). */
   onPicked?: () => void;
   catalogs: Record<TreeKey, TreeViewResult>;
-  /** Whether each tree shown takes changes: an ended Work's Scratch takes none, and on Draft no tree of an ended Work does. */
+  /** Whether each tree shown takes changes: an ended Work's Scratch takes none, and on Draft no tree of a deleted Work does. */
   writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
@@ -364,8 +364,9 @@ export function SourcesBody({
     },
     [drafting, shell, onSelectFile, openReviewFile, onPicked],
   );
-  // An ended Work's tree, on Draft, takes no change: no tree offers a control for it.
-  const ended = version.ended !== undefined;
+  // A deleted Work's tree, on Draft, takes no change. An archived one offers its controls as an
+  // active one does, and the server bounces what they change ("Work was closed").
+  const ended = version.ended === "deleted";
   const writable = useMemo(
     () =>
       Object.fromEntries(

@@ -63,8 +63,13 @@ export function installTreeListDebugHook(
       role,
       clientId: doc.clientID,
       records: listRecords(doc).length,
-      /** The creates the server dropped (its Work was closed), with its reason. */
-      dropped: live.dropped.map(({ name, reason }) => ({ name, reason })),
+      /** The records the server dropped (their Work was closed), with its reason. */
+      dropped: live.dropped.map(({ record, reason }) => ({
+        type: record.type,
+        node: record.node,
+        ...("name" in record ? { name: record.name } : {}),
+        reason,
+      })),
       rows,
     };
   };

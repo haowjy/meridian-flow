@@ -233,7 +233,7 @@ describe("a create raced into a closed Work is stamped dropped", () => {
     );
     const live = replayView(doc, LIVE);
     expect(live.nodes.has((folder as { node: string }).node)).toBe(false);
-    expect(live.dropped.map((each) => each.record).sort()).toEqual(
+    expect(live.dropped.map((each) => each.record.id).sort()).toEqual(
       [folder.id, inside.id, stray.id].sort(),
     );
   });

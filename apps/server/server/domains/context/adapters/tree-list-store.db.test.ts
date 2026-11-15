@@ -333,7 +333,7 @@ describe("the tree list store (postgres)", () => {
       });
       await store.admit({ list, accountId: ACCOUNT, update: honest.send() });
       const settled = await journalReplay();
-      expect(settled.dropped.map((each) => [each.node, each.reason])).toEqual([
+      expect(settled.dropped.map((each) => [each.record.node, each.reason])).toEqual([
         [raced.node, "Work was closed"],
         [inside.node, "Work was closed"],
       ]);

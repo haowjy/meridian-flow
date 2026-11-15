@@ -1,14 +1,12 @@
 import type * as Y from "yjs";
-import { shownName } from "./names.js";
 import {
-  type CreateRecord,
   recordsOf,
   type Settlement,
   type SettleRecord,
   settleLogOf,
   type TreeRecord,
 } from "./record.js";
-import { type DroppedCreate, replay, type TreeProjection } from "./replay.js";
+import { type DroppedRecord, replay, type TreeProjection } from "./replay.js";
 import { readStored } from "./validate.js";
 
 /** Live (`draft: null`), or live and then one Work's pending records. */
@@ -110,29 +108,18 @@ export function pendingRecords(doc: Y.Doc, draft: string): TreeRecord[] {
 }
 
 /**
- * The creates the server stamped `dropped` at admission, each with what the writer made, for a
- * row that says "Work was closed" and hands back what they typed. The settle log and the records
- * together say it: the replay never sees a dropped create.
+ * The records the server stamped `dropped` at admission, in list order, for the row each changed
+ * to say so ("Work was closed") and hand back what the writer typed. The settle log and the
+ * records together say it: the replay never sees a dropped record.
  */
-export function droppedCreates(doc: Y.Doc): DroppedCreate[] {
-  const dropped = [...lastSettlements(doc)].filter(([, settle]) => settle.to === "dropped");
-  if (dropped.length === 0) return [];
-  const creates = new Map<string, CreateRecord>();
-  for (const record of listRecords(doc))
-    if (record.type === "create") creates.set(record.id, record);
-  return dropped.flatMap(([id, settle]) => {
-    const create = creates.get(id);
-    return create
-      ? [
-          {
-            record: id,
-            node: create.node,
-            reason: settle.reason ?? "",
-            parent: create.parent,
-            name: shownName(create.kind, create.name),
-          },
-        ]
-      : [];
+export function droppedRecords(doc: Y.Doc): DroppedRecord[] {
+  const dropped = new Map(
+    [...lastSettlements(doc)].filter(([, settle]) => settle.to === "dropped"),
+  );
+  if (dropped.size === 0) return [];
+  return listRecords(doc).flatMap((record) => {
+    const settle = dropped.get(record.id);
+    return settle && record.type !== "purge" ? [{ record, reason: settle.reason ?? "" }] : [];
   });
 }
 
@@ -144,6 +131,6 @@ export function replayView(
 ): TreeProjection {
   return {
     ...replay(viewValues(doc, view), { draft: view.draft, pendingText }),
-    dropped: droppedCreates(doc),
+    dropped: droppedRecords(doc),
   };
 }

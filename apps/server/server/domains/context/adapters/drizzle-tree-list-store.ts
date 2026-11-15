@@ -363,7 +363,7 @@ export function createDrizzleTreeListStore(deps: {
         const admitted = admit(copy.writer, update, connection);
         if (sameBytes(Y.encodeStateVector(copy.doc), before)) return { committed: null };
         copy.pending = owner;
-        // A dropped create is in no view: no claim, no row. A create whose node id is another's
+        // A dropped record is in no view: no claim, no row change. A create whose node id is another's
         // fails its claim alone, and the rest of the update stands.
         const dropped = new Set(admitted.dropped);
         const live = admitted.records.filter((record) => !dropped.has(record.id));

@@ -5,10 +5,9 @@
  * review's controls take a line of their own above the toolbar.
  */
 import "./document-identity-row.css";
-import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useProjectTreeView, useTreeList } from "@/client/query/useProjectTree";
+import { useTreeList } from "@/client/query/useProjectTree";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
@@ -22,17 +21,14 @@ import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
 import { useAiDraftLauncher } from "../review-launch";
 import { useAccountId } from "./account-feature-context";
-import { schemeLabel } from "./context-schemes";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { tabLocation } from "./identity-location";
-import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
   type IdentityCommitOwnership,
   type IdentityCommitted,
   useIdentityCommit,
 } from "./use-identity-commit";
-import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
 
 export type DocumentIdentityBarProps = {
   projectId: string;
@@ -66,59 +62,17 @@ export function DocumentIdentityBar({
   focusReview,
   onFocusReview,
 }: DocumentIdentityBarProps) {
-  // On Draft of an ended Work the placement field is not offered: its tree takes no change.
-  const ended = useTreeVersion().ended !== undefined;
-  const readOnly = readOnlyDocument || ended;
+  // On Draft of a deleted Work the placement field is not offered: its tree takes no change.
+  const workDeleted = useTreeVersion().ended === "deleted";
+  const readOnly = readOnlyDocument || workDeleted;
   const location = tabLocation(document);
   const [fieldOpen, setFieldOpen] = useState(false);
-  const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
   const commit = useIdentityCommit({
     projectId,
     document,
     editorWorkId: editorWorkId,
     onCommitted,
   });
-
-  // Only provisional placement can be repaired here; homed refusals stay in lists.
-  const { tree } = useProjectTreeView(projectId, location.scheme, {
-    workId: location.workId ?? editorWorkId,
-    rootThreadId: location.rootThreadId,
-    chatId: location.chatId,
-  });
-  const file = tree?.findDocument(document.documentId) ?? null;
-  // A create the server dropped is repaired here by choosing a place.
-  const failure = file?.namespaceFailure;
-  const repair =
-    file && failure && file.failureRecord
-      ? {
-          kind: failure,
-          record: file.failureRecord,
-          name: file.namespaceRepairName ?? file.name,
-          move: file.namespaceRepairMove,
-          failedAt: file.namespaceFailureAt,
-        }
-      : null;
-  const identityFailure =
-    location.provisional && repair && repair.record !== dismissedRepairId
-      ? ({
-          kind: "error",
-          name: repair.name,
-          created: repair.kind === "create",
-        } as const)
-      : null;
-  const repairMove = repair?.move;
-  const failedFolder = repairMove
-    ? repairMove.parentId === tree?.root.entryId
-      ? schemeLabel(location.scheme)
-      : (tree?.entry(repairMove.parentId)?.name ?? t`that folder`)
-    : null;
-  const passiveFailure = failedFolder
-    ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
-    : t`Couldn't rename. Use Rename in the file list to try again.`;
-  const failureAt = repair?.failedAt;
-  useRepairOnFreshFailure(identityFailure && !readOnly ? failureAt : undefined, () =>
-    setFieldOpen(true),
-  );
 
   const { controller } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
@@ -137,8 +91,6 @@ export function DocumentIdentityBar({
   const showChip =
     !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
-  // Only a provisional placement can be repaired here.
-  const repairable = location.provisional && !readOnly;
   const manuscriptState = useManuscriptState(projectId, document);
   const notice = useDocumentNotice(projectId, document.documentId);
   const lineFocus = useRef<HTMLDivElement>(null);
@@ -175,35 +127,15 @@ export function DocumentIdentityBar({
               editorWorkId={editorWorkId}
               document={document}
               location={location}
-              failure={identityFailure}
               commit={commit}
               onExit={(reason) => {
                 setFieldOpen(false);
-                if (repair) setDismissedRepairId(repair.record);
                 if (reason === "escape") focusEditorProse(document.documentId);
               }}
               onOpenExisting={onOpenExisting}
             />
           ) : null}
           <ManuscriptStateSlot state={manuscriptState} />
-          {repair && !placementOpen ? (
-            repairable ? (
-              <button
-                type="button"
-                className="focus-ring flex min-w-0 text-left"
-                onClick={() => {
-                  setDismissedRepairId(null);
-                  setFieldOpen(true);
-                }}
-              >
-                <NamespaceFailureMark labelled />
-              </button>
-            ) : (
-              <NamespaceFailureMark
-                message={repair.kind === "create" ? undefined : passiveFailure}
-              />
-            )
-          ) : null}
           <IdentityChipSlot
             projectId={projectId}
             document={document}

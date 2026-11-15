@@ -49,10 +49,10 @@ Whoever makes a record names it as its own copy shows it: a create, a rename, an
 name that is taken record the numbered name (a move is a `move` and a `rename` in one update;
 a move record has no name). The replay numbers only a clash nobody could see.
 
-The only verdict the server writes is `dropped` on a create raced into a closed Work: it comes back
-as a settlement on the record and shows on the row as its failure mark with the repair the writer
-asked for (`tree-failures.ts`). A tree action returns what it made and is never refused; one on an
-ended Work throws, since the shell offers no control for it.
+The only verdict the server writes is `dropped` on a change to a Work that was closed (a create,
+rename, move or delete in its draft or its Scratch): it comes back as a settlement on the record,
+every replay leaves the record out, and the row says so (`core/project-tree/tree-bounces.ts`,
+the tree's notice words). A tree action returns what it made and is never refused.
 
 The close of `AccountFeatureLifetime` releases the lists with the rest of the account's state.
 ## Visible Editor ownership

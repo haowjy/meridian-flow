@@ -23,13 +23,11 @@ import { useTreeActions } from "@/client/query/useTreeActions";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
-import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
 import { copyRows } from "./entry-drag/execute-copy";
 import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
-import { moveRepairTrail } from "./move-repair-trail";
 import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
 
@@ -50,7 +48,6 @@ type EntryDestinationPickerProps = {
   /** A selection the row's menu acted on, moved together in screen order; absent moves the row alone. */
   selection?: readonly DragEntry[];
   open: boolean;
-  repairMove?: TreeDestination;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 };
@@ -72,7 +69,6 @@ function OpenPicker({
   entry,
   selection: picked,
   open,
-  repairMove,
   onOpenChange,
   rowRef,
 }: Omit<EntryDestinationPickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
@@ -94,19 +90,7 @@ function OpenPicker({
     [scheme, owner],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
-  const currentTrail = own ? source.own.openAt(entry.path) : [];
-  const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
-  const failedFolder =
-    action === "move" && repairMove
-      ? (() => {
-          const folder = source.folderFor(repairMove.parentId);
-          if (!folder) return t`that folder`;
-          return folder.path === "/" ? schemeLabel(folder.scheme) : folder.path.split("/").at(-1);
-        })()
-      : null;
-  const refusal = failedFolder
-    ? t`Couldn't move to ${failedFolder}. Try again or pick another folder.`
-    : null;
+  const openAt = own ? source.own.openAt(entry.path) : [];
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
   const several = picked !== undefined && picked.length > 1;
@@ -208,9 +192,6 @@ function OpenPicker({
     if (!destination || pending || (index === undefined && refusalAt(destination))) return;
     setError(null);
     const actions = destination.scheme === "user" ? accountActions : projectActions;
-    const at =
-      index ??
-      (!several && repairMove?.parentId === destination.entryId ? repairMove.index : undefined);
     const moving = placed.filter(
       ({ at: here }) => here && !(several && here.entry.parentId === destination.entryId),
     );
@@ -222,7 +203,7 @@ function OpenPicker({
       within.map(({ row }) => ({
         node: row.ref.id,
         parentId: destination.entryId,
-        ...(at === undefined ? {} : { index: at }),
+        ...(index === undefined ? {} : { index }),
       })),
     );
     const moved = moving.map(({ row }) => row.ref);
@@ -313,7 +294,7 @@ function OpenPicker({
       // The trees may resolve the initial destination after this open picker mounts.
       key={openAt.map((node) => node.id).join("/")}
       tree={source.tree}
-      hereIds={currentTrail.map((node) => node.id)}
+      hereIds={openAt.map((node) => node.id)}
       openAt={openAt}
       open={open}
       onOpenChange={(next) => {
@@ -325,7 +306,7 @@ function OpenPicker({
         if (movedSeveral.current && selection) return selection.focus();
         rowRef.current?.querySelector<HTMLElement>("[data-list-item]")?.focus();
       }}
-      status={error ?? refusal}
+      status={error}
       foldersOnly
       isDisabled={(node) => {
         const folder = source.folderFor(node.id);

@@ -23,7 +23,9 @@ through `client/query/useProjectTree.ts` (a source's tree from the replay) and w
 - Resolve an address only when the status is `synced`, `offline` or `broken`; `waiting` is
   "waiting for the list", not "not there". The snapshot's `version` counts changes to the copy:
   `session.replay(view)` is a view's replay (live by default, or live then a Work's pending records) once per version, shared by every reader. The registry's `onDropped` is told the records a
-  recovered copy left out because this build of the client never writes them (one toast).
+  recovered copy left out because this build of the client never writes them (one toast). Each session
+  the registry opens is watched for the server bouncing the account's own records
+  (`core/project-tree/tree-bounces.ts`): a `dropped` stamp that arrives after the stored copy was read.
 - Closing a session cancels its queued lock request, and the connection lives exactly as long as
   the lock callback.
 - `window.__meridianTreeList` (dev builds) opens a list and reads its replay for a browser run.

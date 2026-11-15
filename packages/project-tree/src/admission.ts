@@ -2,7 +2,7 @@ import * as Y from "yjs";
 import { isSourceRoot, recordsOf, sourceIdOf, type TreeRecord } from "./record.js";
 import { replay, type TreeProjection } from "./replay.js";
 import { readStored, SERVER_BASE, SERVER_FIELDS } from "./validate.js";
-import { droppedCreates, viewRecords } from "./view.js";
+import { droppedRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** What only the server knows about the connection that sent an update. */
@@ -179,21 +179,26 @@ function integrate(doc: Y.Doc, update: Uint8Array): Added[] {
 export type Admission = {
   /** The records the update adds (not those the server already held), in list order. */
   records: TreeRecord[];
-  /** The creates stamped `dropped`: their Work or source is closed. They get no row and no claim. */
+  /**
+   * The records stamped `dropped`: each changes a closed Work (its draft, or a node in the closed
+   * Work's source). They are in no view, and a dropped create gets no row and no claim.
+   */
   dropped: string[];
 };
 
 /**
- * Stamps `dropped` on each create whose draft is not open, whose parent is a dropped node, or
- * whose source is a closed Work's: the source its parent stands in at the create's place in the
- * update, after the update's own moves and creates before it (a folder moved out of a closed Work
- * and then written into keeps its chapter; one moved in takes it). The same answer however an
- * honest catch-up is cut into parts: a part's moves are the server's before the next part arrives.
- * Only the server can tell a create raced the close: its arrival order is the only true one, and
- * a replay can't see the Work's state.
+ * Stamps `dropped` on each client record that changes a closed Work: one drafted in a draft that
+ * is not open, or a create, move, rename, delete or restore of a node in a closed Work's source
+ * (a move counts its destination's source too), or of a node made inside a dropped one. A node's
+ * source is where it stands at the record's place in the update, after the update's own moves and
+ * creates before it that stand (a folder moved out of a closed Work and then written into keeps
+ * its chapter; one moved in takes it). The same answer however an honest catch-up is cut into
+ * parts: a part's moves are the server's before the next part arrives. Only the server can tell:
+ * its arrival order is the only true one, and a replay can't see the Work's state.
  */
 function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): string[] {
-  if (!added.some((record) => record.type === "create")) return [];
+  const closing = connection.closedSources.size > 0;
+  if (!closing && !added.some((record) => record.draft !== null)) return [];
   const fresh = new Set(added.map((record) => record.id));
   // What the server held before this update, by view: replayed only when a source is closed.
   const before = new Map<string | null, TreeProjection>();
@@ -220,7 +225,7 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
     placedIn(null).get(node) ??
     baseParent(draft, node);
   // The source a place is in, or undefined when its folder is not in the view (rule 6 then puts
-  // the create at the top of its own source).
+  // a create at the top of its own source).
   const sourceOf = (draft: string | null, place: string): string | undefined => {
     const seen = new Set<string>();
     for (let at: string | undefined = place; at !== undefined; at = parentOf(draft, at)) {
@@ -229,6 +234,11 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
       seen.add(at);
     }
     return undefined;
+  };
+  const inClosed = (draft: string | null, place: string, fallback?: string) => {
+    if (!closing) return false;
+    const source = sourceOf(draft, place) ?? fallback;
+    return source !== undefined && connection.closedSources.has(source);
   };
   // Whether a move would put a folder inside itself, which the replay skips (rule 1).
   const intoItself = (draft: string | null, node: string, parent: string) => {
@@ -242,37 +252,48 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
   };
 
   let droppedBefore: Set<string> | undefined;
+  const droppedNode = (node: string) => {
+    if (isSourceRoot(node)) return false;
+    droppedBefore ??= new Set(
+      droppedRecords(doc).flatMap(({ record }) => (record.type === "create" ? [record.node] : [])),
+    );
+    return droppedBefore.has(node) || dropped.has(node);
+  };
   const dropped = new Set<string>();
   const out: string[] = [];
   for (const record of added) {
-    if (record.type === "move") {
-      if (
-        connection.closedSources.size > 0 &&
-        !intoItself(record.draft, record.node, record.parent)
-      )
+    if (record.type === "purge") continue;
+    const draftClosed = record.draft !== null && !connection.drafts.has(record.draft);
+    let closed: boolean;
+    switch (record.type) {
+      case "create":
+        closed =
+          draftClosed ||
+          droppedNode(record.parent) ||
+          inClosed(record.draft, record.parent, record.source);
         placedIn(record.draft).set(record.node, record.parent);
-      continue;
+        if (closed) dropped.add(record.node);
+        break;
+      case "move":
+        closed =
+          draftClosed ||
+          droppedNode(record.node) ||
+          inClosed(record.draft, record.node) ||
+          inClosed(record.draft, record.parent);
+        if (!closed && closing && !intoItself(record.draft, record.node, record.parent))
+          placedIn(record.draft).set(record.node, record.parent);
+        break;
+      default:
+        closed = draftClosed || droppedNode(record.node) || inClosed(record.draft, record.node);
     }
-    if (record.type !== "create") continue;
-    const inside = isSourceRoot(record.parent);
-    if (!inside) droppedBefore ??= new Set(droppedCreates(doc).map((each) => each.node));
-    const closed =
-      (!inside && (droppedBefore?.has(record.parent) || dropped.has(record.parent))) ||
-      (record.draft !== null && !connection.drafts.has(record.draft)) ||
-      (connection.closedSources.size > 0 &&
-        connection.closedSources.has(sourceOf(record.draft, record.parent) ?? record.source));
-    placedIn(record.draft).set(record.node, record.parent);
-    if (closed) {
-      dropped.add(record.node);
-      out.push(record.id);
-    }
+    if (closed) out.push(record.id);
   }
   return out;
 }
 
 /**
  * Admits an update to the server's copy: the guard first (it throws `CopyFault`, nothing
- * stored), then the update is applied, and each create raced into a closed Work is stamped
+ * stored), then the update is applied, and each record that changes a closed Work is stamped
  * `dropped`, in one transaction. The copy is changed in place, which is safe under the list's
  * lock: if anything throws, the caller reloads the copy from the journal. The caller has the
  * update journaled with the stamps.

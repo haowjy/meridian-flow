@@ -165,6 +165,11 @@ export class TreeListSession {
 
   getSnapshot = (): TreeListSnapshot => this.current;
 
+  /** The stored copy is read: what the list held when this tab opened it is in the snapshot's `doc`. */
+  get loaded(): Promise<void> {
+    return this.copy.loaded;
+  }
+
   private readonly replayed = new Map<
     string | null,
     { doc: Y.Doc; edits: number; pendingText?: ReadonlySet<string>; projection: TreeProjection }

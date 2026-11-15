@@ -46,12 +46,13 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    closed Works) and run the package's `admit`: the guard, which throws `CopyFault` on a copy
    that does something an honest client's never does (nothing is stored, the copy reloads, the
    room closes the connection with `COPY_BROKEN`), then the update is applied to the copy and
-   each create into a closed Work is stamped `dropped` ("Work was closed"). Nothing else is
-   judged: a name, a type, a place or an actor is never refused;
+   each record that changes a closed Work (a create, rename, move, delete or restore in its draft
+   or its Scratch) is stamped `dropped` ("Work was closed"). Nothing else is judged: a name, a
+   type, a place or an actor is never refused;
 3. claim the node ids the admitted creates name, each on its own (`claimNodeIdsEach`): one insert
    into `tree_node_ids`, whose key is the claim. An id that is not a uuid, or that a document,
    a list's journal or another list has, is a failed claim: no row, no claim, and the rest of
-   the update commits. A `dropped` create makes no claim or row either. `syncRows` also drops
+   the update commits. A `dropped` record makes no claim or row change either. `syncRows` also drops
    from the rows any node the list holds no claim on (`dropUnowned`) and any node under a
    source that is not the list's project's, so a forged id can't overwrite another's row;
 4. append what the copy gained to the journal through its system path (`origin: "system"`;

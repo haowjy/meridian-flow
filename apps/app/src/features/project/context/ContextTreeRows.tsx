@@ -33,7 +33,6 @@ import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
 import type { DragEntry } from "./entry-drag/entry";
 import { useEntryRow } from "./entry-drag/use-entry-row";
-import { NotPlacedWord } from "./NamespaceFailureMark";
 import { DropRegion, InsertionLine } from "./tree-drop/DropRegion";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
 import { useCreateEntryForm } from "./use-create-entry-form";
@@ -264,10 +263,7 @@ function DirRow({
           frameProps={drop.dropProps}
           menu={interaction.menu}
           revealActions
-          notice={
-            env.notices.word(dir.entryId) ??
-            (dir.namespaceFailure ? <NotPlacedWord reason={dir.failureReason} folder /> : null)
-          }
+          notice={env.notices.word(dir.entryId)}
           trailing={env.changed?.has(dir.entryId) ? <DraftChangeMark /> : null}
         />
       </EntryDestinationPicker>
@@ -358,10 +354,7 @@ function FileRow({
         frameProps={drop.dropProps}
         menu={interaction.menu}
         revealActions
-        notice={
-          env.notices.word(file.entryId) ??
-          (file.namespaceFailure ? <NotPlacedWord reason={file.failureReason} /> : null)
-        }
+        notice={env.notices.word(file.entryId)}
         trailing={env.changed?.has(file.documentId) ? <DraftChangeMark /> : null}
       />
     </EntryDestinationPicker>
