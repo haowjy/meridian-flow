@@ -61,14 +61,7 @@ export function draftRoomPersistenceKey(
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";
 
-export type CopyHold = {
-  release(): void;
-  /**
-   * Releases the hold, then deletes the database if no tab holds it: a copy whose words were
-   * handed back must not be offered again. A tab that still holds it deletes it at its own drop.
-   */
-  drop(): Promise<void>;
-};
+export type CopyHold = { release(): void };
 
 /** The document a database name belongs to, for one account; null for another account's or another kind of database. */
 function documentOf(name: string, accountId: AccountId): DocumentId | null {
@@ -203,7 +196,7 @@ export class LocalDocumentCopies {
       this.known = new Set([...(this.known ?? []), documentId]);
       this.publish();
     }
-    if (!this.locks) return { release: () => undefined, drop: () => this.deleteDatabase(name) };
+    if (!this.locks) return { release: () => undefined };
     const acquired = deferred<void>();
     const released = deferred<void>();
     const held = this.locks.request(this.lockName(name), { mode: "shared" }, async () => {
@@ -214,17 +207,6 @@ export class LocalDocumentCopies {
     await acquired.promise;
     return {
       release: () => released.resolve(),
-      drop: async () => {
-        released.resolve();
-        await held;
-        await this.locks?.request(
-          this.lockName(name),
-          { mode: "exclusive", ifAvailable: true },
-          async (lock) => {
-            if (lock) await this.deleteDatabase(name);
-          },
-        );
-      },
     };
   }
 

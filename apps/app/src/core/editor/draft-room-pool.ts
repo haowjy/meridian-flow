@@ -45,7 +45,7 @@ export class DraftRoomPool {
       open(
         roomKey: string,
         documentId: string,
-        replaced?: { access: DocumentSessionAccess | null },
+        replaced?: { session: DocumentSession; hold: Promise<CopyHold> | null | undefined },
       ): { session: DocumentSession; hold: Promise<CopyHold> };
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
@@ -133,16 +133,12 @@ export class DraftRoomPool {
     const documentId = this.documents.get(roomKey);
     if (!documentId) throw new Error(`Draft room was never retained: ${roomKey}`);
     const { session: next, hold } = this.deps.open(roomKey, documentId, {
-      access: session.getSnapshot().access,
+      session,
+      hold: this.holds.get(roomKey),
     });
-    const replacedHold = this.holds.get(roomKey);
     this.holds.set(roomKey, hold);
     this.rooms.set(roomKey, next);
     this.watch(roomKey, next);
-    void this.deps.teardownOwner
-      .retireReplaced("draft", session)
-      .catch((error: unknown) => reportError(error))
-      .then(async () => (await replacedHold)?.drop());
     return next;
   }
 

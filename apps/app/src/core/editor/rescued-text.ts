@@ -173,16 +173,15 @@ export function typedText(
 }
 
 /**
- * The live words of `copy` (an update) that `known` lacks: what an older incarnation of a room's
- * copy held that the server never got, once `known` has the server's state.
+ * The live words of `copy` (an update) beyond `known` (a state vector): what a room's older copy
+ * held that the server never got, once `known` covers the server's state.
  */
-export function missingText(copy: Uint8Array, known: Y.Doc): string | null {
+export function missingText(copy: Uint8Array, known: Uint8Array): string | null {
   const scratch = new Y.Doc();
   try {
     Y.applyUpdate(scratch, copy);
     const missing = new Map<number, { clock: number; len: number }[]>();
-    for (const struct of Y.decodeUpdate(Y.encodeStateAsUpdate(scratch, Y.encodeStateVector(known)))
-      .structs) {
+    for (const struct of Y.decodeUpdate(Y.encodeStateAsUpdate(scratch, known)).structs) {
       if (!(struct instanceof Y.Item)) continue;
       const ranges = missing.get(struct.id.client) ?? [];
       ranges.push({ clock: struct.id.clock, len: struct.length });

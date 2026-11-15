@@ -132,7 +132,7 @@ export class UnsentEdits {
     this.ownClients.add(client);
     const display = this.isDisplayWrite(transaction);
     // Every local write that is not the binding's own: typing, Undo and Redo, a Discard. What the
-    // transport, the copy and peer tabs apply is not local; an origin-less one is a repair.
+    // transport, the copy and peer tabs apply is not local. An origin-less local write is left out as a repair: the one such write known is `readRepairedRoot`'s, and a writer's transaction always carries an origin.
     const writer = !display && transaction.local && transaction.origin !== null;
     if (!display && !writer) return;
     const inserted = display ? this.displayInserted : this.ledgerInserted;

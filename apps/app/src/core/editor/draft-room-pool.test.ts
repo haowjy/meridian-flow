@@ -37,7 +37,7 @@ describe("DraftRoomPool.release", () => {
         } as never;
         return {
           session,
-          hold: Promise.resolve({ release: () => undefined, drop: async () => undefined }),
+          hold: Promise.resolve({ release: () => undefined }),
         };
       },
     });

@@ -4,7 +4,7 @@
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-
+import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
@@ -384,12 +384,16 @@ export class DocumentSessionRegistry {
 
   /**
    * A session on the room's current incarnation, and the hold on it. The words an older incarnation
-   * held that the server lacks are handed back once the session has synced, and it goes.
+   * held that the server lacks are handed back once the session has synced, and it goes. A copy is
+   * never deleted on one session's say-so: a session that `replaced` another retires it by the
+   * same path, once its editors have gone and its hold is released, so words another tab wrote
+   * into the same copy meanwhile come back too. Only what the old session had already handed back
+   * is not offered again.
    */
   private openCopy(
     roomKey: string,
     copyKey: string,
-    replaced?: { access: DocumentSessionAccess | null },
+    replaced?: { session: DocumentSession; hold: Promise<CopyHold> | null | undefined },
   ): { session: DocumentSession; hold: Promise<CopyHold> } {
     const incarnation = this.copies.current(copyKey);
     const name = this.copies.nameOf(copyKey);
@@ -397,12 +401,20 @@ export class DocumentSessionRegistry {
     const session = this.createSession(
       roomKey,
       { kind: "indexeddb", key: name },
-      replaced?.access ?? null,
+      replaced?.session.getSnapshot().access ?? null,
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
-    // A replacing session's predecessor already handed its words back.
-    if (incarnation > 0 && !replaced)
+    if (replaced) {
+      const handedBack = Y.encodeStateAsUpdate(replaced.session.document);
+      void this.teardownOwner
+        .retireReplaced(replaced.session.room.kind === "live" ? "live" : "draft", replaced.session)
+        .catch((error: unknown) => reportError(error))
+        .then(async () => (await replaced.hold)?.release())
+        .then(() => this.handBackOlder(session, copyKey, incarnation, handedBack))
+        .catch(reportError);
+    } else if (incarnation > 0) {
       void this.handBackOlder(session, copyKey, incarnation).catch(reportError);
+    }
     return { session, hold };
   }
 
@@ -410,16 +422,23 @@ export class DocumentSessionRegistry {
     session: DocumentSession,
     copyKey: string,
     incarnation: number,
+    handedBack?: Uint8Array,
   ): Promise<void> {
     const older = await this.copies.openOlder(copyKey, incarnation);
     if (older.length === 0) return;
     // Until the first handshake the document is not the server's, and everything would look unsent.
     await session.whenSynced();
     const settled = session.getSnapshot().status !== "destroyed";
+    const known = Y.encodeStateVectorFromUpdate(
+      Y.mergeUpdates([
+        Y.encodeStateAsUpdate(session.document),
+        ...(handedBack ? [handedBack] : []),
+      ]),
+    );
     try {
       if (settled)
         for (const { update } of older) {
-          const text = missingText(update, session.document);
+          const text = missingText(update, known);
           if (text) this.handBack(text, "owner-closed");
         }
     } finally {
@@ -502,16 +521,12 @@ export class DocumentSessionRegistry {
       const state = this.liveRooms.get(old.documentId as DocumentId);
       if (!state) return;
       const { session, hold } = this.openCopy(old.roomKey, copy.key, {
-        access: old.getSnapshot().access,
+        session: old,
+        hold: state.hold,
       });
-      const replacedHold = state.hold;
       state.session = session;
       state.hold = hold;
       this.attachSessionTransport(session);
-      void this.teardownOwner
-        .retireReplaced("live", old)
-        .catch((error: unknown) => reportError(error))
-        .then(async () => (await replacedHold)?.drop());
       this.notifyReplacement(old.roomKey, session);
     } else {
       const session = this.draftRooms.replace(old.roomKey, old);

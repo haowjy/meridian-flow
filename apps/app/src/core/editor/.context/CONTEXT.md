@@ -575,8 +575,11 @@ from the wire alone, with nothing stored between handshakes.
   other tabs: the copy's database name has a trailing incarnation number (none means 0),
   `LocalDocumentCopies.current/advance` keep the pointer in `localStorage` under a Web Lock, and two
   tabs advancing at once end on the same number. The old session is destroyed when its editors
-  have unmounted (`retireReplaced`, quarantined by persistence name), and its copy is deleted if no
-  tab holds it (`CopyHold.drop`), so those words are not offered again. Holders follow through
+  have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
+  older-copy path below, like any older incarnation: read whole against the new session's first
+  handshake, so words another tab wrote into the same copy meanwhile come back (once), while what
+  the old session already handed back is not offered again. A copy a tab still holds, or one read
+  before the server's state arrives, stays for the next open. Holders follow through
   `observeReplacement` (live bindings and open tabs, draft room reads); a review mount carries its
   reading position across it (`use-reading-position.ts`).
 - A session that opens a room's current incarnation reads the older ones no tab holds against
