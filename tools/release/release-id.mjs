@@ -1,9 +1,9 @@
 /**
  * The release id both Nitro builds stamp at build time: the app bundle and the API server must get
  * the same one, or every tab reads its own deploy as stale. `MERIDIAN_RELEASE` names it (the release
- * manifest's id once one exists); otherwise the git SHA. A production build with neither fails
- * instead of inventing an id, since two builds would invent two. Dev gets one fixed id, so it never
- * differs between the two halves.
+ * manifest's id once one exists) and wins in every mode, so a dev stack can stand in for a deploy.
+ * Without it a production build takes the git SHA, or fails instead of inventing an id, since two
+ * builds would invent two. Dev gets one fixed id, so it never differs between the two halves.
  */
 import { execFileSync } from "node:child_process";
 
@@ -15,9 +15,9 @@ export const DEV_RELEASE_ID = "dev";
  * @returns {string}
  */
 export function resolveReleaseId({ dev }) {
-  if (dev) return DEV_RELEASE_ID;
   const named = process.env.MERIDIAN_RELEASE?.trim();
   if (named) return named;
+  if (dev) return DEV_RELEASE_ID;
   try {
     return execFileSync("git", ["rev-parse", "--short=12", "HEAD"], {
       encoding: "utf8",
