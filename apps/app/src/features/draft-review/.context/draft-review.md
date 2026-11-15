@@ -327,9 +327,8 @@ While frozen:
 - Discard draft, and the chat strip's Discard, is the server's whole-item Discard
   (`ends: "item"`), move or delete included. The item stays in review, `discarding`, until the answer, so a refusal shows
   on it. It carries the row's `updatedAt` as `draftSeenAt`, so a chat restored on another
-  device and written to since refuses `draft_changed` instead of closing text the writer
-  never saw. A created document's Discard in a live chat sends no fence: the writer's own
-  typing would refuse it.
+  device and written to since answers `newerThanSeen`: it still discards, and Undo brings the
+  text back. A created document's Discard in a live chat sends no fence.
 
 A local revert checks its room's access when it writes. A room the server already admits
 read-only refuses it (`read_only`) and the list re-reads, so a stale `frozen: false` never

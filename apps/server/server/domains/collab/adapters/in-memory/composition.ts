@@ -290,7 +290,11 @@ function createInMemoryDraftPeerStub(
 function createInMemoryBranchStub(): CollabBranches {
   const gone = async (input: { branchId: string }): Promise<CommandOutcome> => ({
     kind: "result",
-    result: { status: "gone", branchId: input.branchId as BranchId },
+    result: {
+      status: "discarded",
+      branchId: input.branchId as BranchId,
+      settled: [{ rule: "already", state: "discarded" }],
+    },
   });
   return {
     draftReview: {
@@ -333,8 +337,20 @@ function createInMemoryBranchStub(): CollabBranches {
       async listDiscards() {
         return [];
       },
-      async undoDiscard({ request }) {
-        return { status: "refused", commandId: request.commandId, reason: "not_found" };
+      async purgeDiscards() {
+        return 0;
+      },
+      async undoDiscard({ branchId, request }) {
+        return {
+          status: "restored",
+          commandId: request.commandId,
+          discardCommandId: request.discardCommandId,
+          branchId,
+          restored: 0,
+          swapped: 0,
+          leftOut: 0,
+          settled: [{ rule: "left_out", items: [], why: "purged" }],
+        };
       },
       async list() {
         return [];

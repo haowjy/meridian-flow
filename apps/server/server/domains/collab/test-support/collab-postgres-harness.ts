@@ -490,6 +490,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       ofDiscard: async () => [],
     },
     listDiscards: async () => [],
+    purgeDiscards: async () => 0,
     undoDiscard: async () => {
       throw new Error("Undo of a Discard is not configured in the collab fixture");
     },

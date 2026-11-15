@@ -787,17 +787,18 @@ export async function restoreDiscard(
         queryKey: projectQueryKeys.documentDraftHints(projectId, documentId),
       });
     }
-    // A closed owner stores the restore as `restored` with a `returned` settlement: nothing came back.
-    const closed = answer.status === "restored" ? returnedIn(answer.settled) : null;
+    if (answer.status === "conflict") return { answer: "failed" };
+    // A restore that brought nothing back says why: a closed owner, a restore that took it first,
+    // or an entry Trash no longer holds.
+    const closed = returnedIn(answer.settled);
     if (closed) {
       if (closed === "work-closed")
         void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
       return { answer: "returned", why: closed };
     }
-    if (answer.status === "restored")
+    if (answer.restored > 0)
       return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
-    if (answer.status === "conflict") return { answer: "failed" };
-    return answer.reason === "already_restored" || answer.reason === "nothing_to_restore"
+    return answer.settled?.some((one) => one.rule === "already")
       ? { answer: "gone" }
       : { answer: "returned", why: "gone-from-trash" };
   } catch {

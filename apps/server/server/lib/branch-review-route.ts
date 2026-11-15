@@ -8,6 +8,7 @@
 
 import type { BranchId, CommandId, DraftOwner } from "@meridian/contracts";
 import {
+  type DraftItemKey,
   type DraftOwnerKey,
   draftItemKey,
   draftOwnerFromKey,
@@ -104,25 +105,14 @@ async function requireProjectOwned(
   }
 }
 
-/** The branch the URL names: this writer's project, whatever its status or owner's state. */
+/** The branch the URL names: this writer's project, whatever its status or owner's state; a purged Work's branch is gone. */
 async function requireBranchIdentity(
   deps: Pick<BranchRouteServices, "projects" | "documentSync">,
   input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
 ): Promise<BranchAccess> {
-  const access = await branchIdentityOrGone(deps, input);
-  if (!access) throw createError({ statusCode: 404, message: "Branch not found" });
-  return access;
-}
-
-/** `requireBranchIdentity`, or null when the branch is gone (its Work was purged). */
-async function branchIdentityOrGone(
-  deps: Pick<BranchRouteServices, "projects" | "documentSync">,
-  input: { projectId: ProjectId; branchId: BranchId; userId: UserId },
-): Promise<BranchAccess | null> {
   await requireProjectOwned(deps, input);
   const found = await deps.documentSync.draftReview.branchOwner(input.branchId);
-  if (!found) return null;
-  if (found.branch.projectId !== input.projectId)
+  if (!found || found.branch.projectId !== input.projectId)
     throw createError({ statusCode: 404, message: "Branch not found" });
   return { branchId: input.branchId, owner: found.owner, lifecycle: found.lifecycle };
 }
@@ -577,18 +567,18 @@ async function commandItem(
     : null;
 }
 
-/** What a command's pre-effect phase decided: refuse it, or run its effect under these grants. */
-type PreparedCommand =
-  | { refusal: () => CommandRouteResult }
-  | { grants: FileGrant<"edit" | "command">[]; effect: () => Promise<CommandOutcome> };
+/** What a command's pre-effect phase decided: its effect, and the grants it runs under. */
+type PreparedCommand = {
+  grants: FileGrant<"edit" | "command">[];
+  effect: () => Promise<CommandOutcome>;
+};
 
 /**
  * The one ingress every branch command goes through. After authenticated project and branch
  * access the id is looked up (a resend answers its stored outcome, §4.6); `prepare` then
  * resolves the item and acquires grants, and the grants are confirmed again before the
- * effect. A refusal at either point, a missing item or a grant that has become unavailable,
- * looks the id up once more before it answers (LA-1): a request that lost a race to its own
- * twin gets the winner's outcome, a new effect gets the refusal. Nothing here skips
+ * effect. A grant that has become unavailable looks the id up once more before it answers
+ * (LA-1): a request that lost a race to its own twin gets the winner's outcome. Nothing here skips
  * authorization; the grants still gate every effect.
  */
 async function commandIngress(
@@ -613,7 +603,6 @@ async function commandIngress(
   } catch (cause) {
     return replayOr(cause);
   }
-  if ("refusal" in prepared) return (await recorded(deps, envelope)) ?? prepared.refusal();
   let outcome: Awaited<ReturnType<typeof prepared.effect>>;
   try {
     outcome = await withEditGrants(deps.fileAccess, prepared.grants, () =>
@@ -798,19 +787,21 @@ export async function handleApplyClickRequest(
 }
 
 /** A branch-level command: the project's branch, the parsed body and the command's envelope. */
-async function branchCommand<Request extends { commandId: string }, Answer, Access = BranchAccess>(
+async function branchCommand<Request extends { commandId: string }, Answer>(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
   command: {
     kind: CommandKind;
     what: string;
     schema: z.ZodType<Request>;
-    /** Resolves the branch; the default answers a missing one with 404. */
-    identity?: (deps: BranchRouteServices, input: CommandScope) => Promise<Access>;
-    run(call: { request: Request; envelope: CommandEnvelope; access: Access }): Promise<Answer>;
+    run(call: {
+      request: Request;
+      envelope: CommandEnvelope;
+      access: BranchAccess;
+    }): Promise<Answer>;
   },
 ): Promise<Answer> {
-  const access = await (command.identity ?? (requireBranchIdentity as never))(deps, input);
+  const access = await requireBranchIdentity(deps, input);
   const request = parseBody(command.schema, input.request, command.what);
   return command.run({
     request,
@@ -936,8 +927,6 @@ export function handleUndoDiscardRequest(
     kind: "undo_discard",
     what: "Undo of a Discard",
     schema: UndoDiscardBody,
-    // A stale Trash screen may name a purged Work's branch: the command stores `work_purged`.
-    identity: branchIdentityOrGone,
     run: async ({ request, envelope, access }) => {
       const commandId = request.commandId as CommandId;
       const lookup = async () =>
@@ -947,18 +936,18 @@ export function handleUndoDiscardRequest(
         );
       const recorded = await lookup();
       if (recorded) return recorded;
+      // A grant denied here is about who is acting: a 404.
+      const refused = async (): Promise<UndoDiscardAnswer> =>
+        (await lookup()) ?? Promise.reject(createError({ statusCode: 404, message: "Not found" }));
       const grants: FileGrant<"edit" | "command">[] = [];
-      for (const documentId of access
-        ? await deps.documentSync.draftReview.commandDocuments.ofDiscard({
-            discardCommandId: request.discardCommandId as CommandId,
-            accountId: input.userId,
-            branchId: input.branchId,
-          })
-        : []) {
-        const grant = await documentGrant(deps, input, documentId, access?.owner ?? null);
+      for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofDiscard({
+        discardCommandId: request.discardCommandId as CommandId,
+        accountId: input.userId,
+        branchId: input.branchId,
+      })) {
+        const grant = await documentGrant(deps, input, documentId, access.owner);
         if (unseen(grant)) continue;
-        if (isFileAccessDenied(grant))
-          return (await lookup()) ?? { status: "refused", commandId, reason: "not_found" };
+        if (isFileAccessDenied(grant)) return refused();
         grants.push(grant);
       }
       const result = await runWithEditGrants(deps.fileAccess, grants, () =>
@@ -969,28 +958,10 @@ export function handleUndoDiscardRequest(
           envelope,
         }),
       );
-      return result.ok
-        ? result.value
-        : ((await lookup()) ?? {
-            status: "refused",
-            commandId,
-            reason: "not_found" as const,
-          });
+      return result.ok ? result.value : refused();
     },
   });
 }
-
-/** An item the branch no longer holds, as a 200 body status. */
-const goneItem = (request: { branchId: string; itemKey: string }) => (): CommandRouteResult => ({
-  httpStatus: 200,
-  body: { status: "gone", branchId: request.branchId as BranchId, itemKey: request.itemKey },
-});
-
-/** A branch that is not active any more, as a 200 body status. */
-const goneBranch = (branchId: BranchId) => (): CommandRouteResult => ({
-  httpStatus: 200,
-  body: { status: "gone", branchId },
-});
 
 /**
  * Item Discard through the one kernel (§12.3): the move or delete only, or the whole item, as
@@ -1012,14 +983,22 @@ export async function handleDiscardWorkDraftRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
+  if (request.branchId !== input.branchId)
+    throw createError({ statusCode: 400, message: "Invalid Discard request" });
   return commandIngress(deps, input, envelope, async ({ owner }) => {
-    const item = request.branchId === input.branchId ? await commandItem(deps, input) : null;
-    if (!item || !owner) return { refusal: goneItem(request) };
+    // An item the branch holds nothing on has no row to resolve or authorize: the kernel says what
+    // became of it.
+    const item = await commandItem(deps, input);
     return {
-      grants: await discardGrants(deps, { ...input, owner, items: [item] }),
+      grants: item && owner ? await discardGrants(deps, { ...input, owner, items: [item] }) : [],
       effect: () =>
         deps.documentSync.draftReview.discardItem({
-          item,
+          item: item ?? {
+            branchId: input.branchId,
+            itemKey: request.itemKey as DraftItemKey,
+            documentId: input.documentId,
+            origin: "edited",
+          },
           ends: request.ends,
           ...(request.ends === "item" && request.draftSeenAt !== undefined
             ? { draftSeenAt: request.draftSeenAt }
@@ -1035,7 +1014,6 @@ export async function handleDiscardWorkDraftRequest(
  * The branch's Discard (§12.3), one server command: Discard all, which always closes the branch,
  * or a selection of nodes. A selected document needs the draft's grant, as an item Discard does;
  * a folder has no file of its own, and the branch's identity proved the writer owns the project.
- * A node the branch holds no change on refuses the whole selection as `stale`.
  */
 export async function handleDiscardBranchRequest(
   deps: BranchRouteServices,
@@ -1052,9 +1030,10 @@ export async function handleDiscardBranchRequest(
   });
   const { branchId } = input;
   return commandIngress(deps, input, envelope, async ({ owner }) => {
-    if (!owner) return { refusal: goneBranch(branchId) };
-    const listed = await deps.documentSync.draftReview.listItems({ owner });
-    if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
+    // A branch that is not the owner's active one has nothing to authorize: the Discard answers
+    // `already` for every item.
+    const listed = owner ? await deps.documentSync.draftReview.listItems({ owner }) : null;
+    const live = owner && listed?.branchId === branchId ? { owner, items: listed.items } : null;
     const discard = (selection: DiscardSelection) => () =>
       deps.documentSync.draftReview.discardBranch({
         branchId,
@@ -1064,21 +1043,18 @@ export async function handleDiscardBranchRequest(
       });
     if ("all" in request)
       return {
-        grants: await discardGrants(deps, { ...input, owner, items: listed.items }),
+        grants: live ? await discardGrants(deps, { ...input, ...live }) : [],
         effect: discard({ kind: "whole" }),
       };
-    const byNode = new Map(listed.items.map((item) => [item.documentId as string, item]));
-    const folders = new Set(listed.folders.map((folder) => folder.id));
-    const items = request.items.flatMap((entry) => {
-      const item = byNode.get(entry.node);
-      return item ? [item] : [];
-    });
-    if (request.items.some((entry) => !byNode.has(entry.node) && !folders.has(entry.node)))
-      return {
-        refusal: () => ({ httpStatus: 200, body: { status: "stale", branchId } }),
-      };
+    const byNode = new Map((live?.items ?? []).map((item) => [item.documentId as string, item]));
     return {
-      grants: await discardGrants(deps, { ...input, owner, items }),
+      grants: live
+        ? await discardGrants(deps, {
+            ...input,
+            ...live,
+            items: request.items.flatMap((entry) => byNode.get(entry.node) ?? []),
+          })
+        : [],
       effect: discard({
         kind: "items",
         items: request.items.map((entry) => ({

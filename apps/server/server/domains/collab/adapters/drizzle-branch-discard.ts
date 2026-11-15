@@ -16,35 +16,34 @@
  */
 
 import type { BranchId, CommandId, UserId, WorkId } from "@meridian/contracts";
+import type { Settlement } from "@meridian/contracts/commands";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
 import { discardDraft, newId, pendingRecords, recordsOfItem } from "@meridian/project-tree";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
-import {
-  BranchDiscardApplicableStateChangedError,
-  BranchDiscardDraftChangedError,
-  type BranchDiscardStore,
-  type DiscardEnded,
-  type DiscardKernelInput,
-  type DiscardKernelResult,
-  type DiscardRefusal,
+import type {
+  BranchDiscardStore,
+  DiscardEnded,
+  DiscardKernelInput,
+  DiscardKernelResult,
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
-import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { treeListOfNode, treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+import { noteOf, type Settled, settlementOf } from "./drizzle-settlement-of.js";
 
 type KernelDeps = {
   close: Pick<DraftClose, "closeDrafts">;
   branches: Pick<Branches, "close">;
-  treeLists: Pick<TreeListStore, "lock" | "submit" | "resync">;
+  treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
 };
 
 /**
@@ -143,17 +142,30 @@ async function discardWholeLocked(
   await deps.branches.close(input.branchId, new Date());
   // The branch ended and its drafts closed: the rows of its view go.
   await deps.treeLists.resync(await treeListsOfBranch(db, input.branchId));
-  return { closed: [] };
+  return { closed: [], settled: [], newerThanSeen: false };
 }
 
-/** The branch's active text drafts on these documents, row-locked: each one's `updated_at`. */
+type ActiveDraft = {
+  /** The draft's last committed write, as the writer's `draftSeenAt` names it. */
+  updatedAt: string;
+  /** It holds a change: `has_effect`, or not judged since its last write. */
+  changed: boolean;
+};
+
+/** The branch's active text drafts on these documents, row-locked. */
 async function lockActiveDrafts(
   db: Database,
   branchId: BranchId,
   documentIds: readonly DocumentId[],
-): Promise<ReadonlyMap<DocumentId, string>> {
+): Promise<ReadonlyMap<DocumentId, ActiveDraft>> {
   const rows = await currentDrizzleDb(db)
-    .select({ documentId: documentDrafts.documentId, updatedAt: documentDrafts.updatedAt })
+    .select({
+      documentId: documentDrafts.documentId,
+      updatedAt: documentDrafts.updatedAt,
+      hasEffect: documentDrafts.hasEffect,
+      revision: documentDrafts.revision,
+      judgedAt: documentDrafts.hasEffectRevision,
+    })
     .from(documentDrafts)
     .where(
       and(
@@ -164,7 +176,70 @@ async function lockActiveDrafts(
       ),
     )
     .for("update");
-  return new Map(rows.map((row) => [row.documentId, row.updatedAt.toISOString()]));
+  return new Map(
+    rows.map((row) => [
+      row.documentId,
+      {
+        updatedAt: row.updatedAt.toISOString(),
+        changed: row.hasEffect || row.judgedAt < row.revision,
+      },
+    ]),
+  );
+}
+
+/**
+ * What became of the selected items this Discard found nothing to take on: an Apply settled them
+ * (`overtaken`, by that Apply), else an earlier Discard did, or nothing is left of them
+ * (`already`). An Apply's note wins when the two halves differ, so a Discard that took nothing is
+ * never reported as `already discarded` for an item an Apply landed.
+ */
+async function untakenNotes(
+  db: Database,
+  deps: KernelDeps,
+  branchId: BranchId,
+  nodes: readonly DocumentId[],
+): Promise<Settlement[]> {
+  if (nodes.length === 0) return [];
+  const drafts = await currentDrizzleDb(db)
+    .selectDistinctOn([documentDrafts.documentId], {
+      documentId: documentDrafts.documentId,
+      id: documentDrafts.id,
+    })
+    .from(documentDrafts)
+    .where(
+      and(
+        eq(documentDrafts.branchId, branchId),
+        eq(documentDrafts.kind, "work_draft"),
+        inArray(documentDrafts.documentId, [...nodes]),
+      ),
+    )
+    .orderBy(documentDrafts.documentId, desc(documentDrafts.createdAt));
+  const draftOf = new Map(drafts.map((draft) => [draft.documentId, draft.id]));
+  const found = await settlementOf(
+    db,
+    deps,
+    branchId,
+    await Promise.all(
+      nodes.map(async (node) => {
+        const draftId = draftOf.get(node);
+        return {
+          node,
+          list: await treeListOfNode(db, node),
+          ...(draftId ? { draftId } : {}),
+        };
+      }),
+    ),
+  );
+  return nodes.map((node): Settlement => {
+    const one = found.get(node);
+    const evidence = [one?.tree.last, one?.text?.last].filter(
+      (last): last is Settled => last != null && last.kind !== "purged",
+    );
+    const last = evidence.find((one) => one.kind !== "discarded") ?? evidence[0] ?? null;
+    const note = noteOf(last, node, "discarded");
+    // Nothing found is an item that is gone: the Discard has nothing left to take.
+    return note.rule === "left_out" ? { rule: "already", state: "discarded", item: node } : note;
+  });
 }
 
 export type DrizzleBranchDiscard = BranchDiscardStore & {
@@ -203,34 +278,36 @@ export function createDrizzleBranchDiscard(
       documents,
     });
     const drafts = await lockActiveDrafts(db, branchId, documents);
-    for (const item of items)
-      if (
+    const newerThanSeen = items.some(
+      (item) =>
         item.ends === "item" &&
         item.draftSeenAt !== undefined &&
-        (drafts.get(item.documentId) ?? null) !== item.draftSeenAt
-      )
-        throw new BranchDiscardDraftChangedError();
+        (drafts.get(item.documentId)?.updatedAt ?? null) !== item.draftSeenAt,
+    );
     // A tree-only Discard leaves the text to the writer's own Discard in the room; a whole-item
-    // Discard closes the document's text draft too. Whatever the Work holds on the document
-    // after this is the item's text alone, so an item with neither a record nor a draft was
-    // already gone.
+    // Discard closes the document's text draft too. An item with no record and no changed draft
+    // has nothing for this command to take: `untaken` says what became of it.
     const textClosed: DocumentId[] = [];
     const closed: DocumentId[] = [];
+    const untaken: DocumentId[] = [];
     for (const item of items) {
-      if (created.has(item.documentId)) {
-        closed.push(item.documentId);
+      const id = item.documentId;
+      if (created.has(id)) {
+        closed.push(id);
         continue;
       }
-      const hasText = drafts.has(item.documentId);
-      const hasTree = had.has(item.documentId);
+      const holdsText = drafts.get(id)?.changed ?? false;
       if (item.ends === "tree") {
-        if (!hasTree) throw new BranchDiscardApplicableStateChangedError();
-        if (!hasText) closed.push(item.documentId);
+        if (!had.has(id)) untaken.push(id);
+        else if (!holdsText) closed.push(id);
         continue;
       }
-      if (!hasTree && !hasText) throw new BranchDiscardApplicableStateChangedError();
-      if (hasText) textClosed.push(item.documentId);
-      closed.push(item.documentId);
+      if (!had.has(id) && !holdsText) {
+        untaken.push(id);
+        continue;
+      }
+      if (drafts.has(id)) textClosed.push(id);
+      closed.push(id);
     }
     await closeBranchDrafts(
       db,
@@ -239,7 +316,8 @@ export function createDrizzleBranchDiscard(
       "document_discarded",
       [...new Set([...created, ...textClosed])],
     );
-    return { closed };
+    const settled = await untakenNotes(db, deps, branchId, untaken);
+    return { closed: [...closed, ...untaken], settled, newerThanSeen };
   }
 
   return {
@@ -264,22 +342,14 @@ export function createDrizzleBranchDiscard(
           ),
         (cause) => {
           const returned = closedOwnerBounce(cause);
-          const refused = returned ? { returned } : discardRefusal(cause);
-          if (!refused) return undefined;
-          settled.ended = refused;
-          return command.result(refused);
+          if (!returned) return undefined;
+          settled.ended = { returned };
+          return command.result(settled.ended);
         },
       );
       return settled.ended;
     },
   };
-}
-
-/** The kernel's final refusals: the branch's state no longer allows this item's Discard. */
-function discardRefusal(cause: unknown): DiscardRefusal | undefined {
-  if (cause instanceof BranchDiscardApplicableStateChangedError) return { refused: "stale" };
-  if (cause instanceof BranchDiscardDraftChangedError) return { refused: "draft_changed" };
-  return undefined;
 }
 
 /**

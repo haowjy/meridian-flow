@@ -11,15 +11,18 @@ import { DraftCasConflictError } from "./draft-store.js";
 
 export type DiscardSelection = { kind: "items"; items: readonly DiscardItem[] } | { kind: "whole" };
 
-export type DiscardResult =
-  | { status: "discarded"; branchId: BranchId; branchClosed: true }
-  /** `closed`: the selected documents whose item left review (the kernel closed all it held). */
-  | { status: "discarded"; branchId: BranchId; branchClosed: false; closed: readonly DocumentId[] }
-  | { status: "gone"; branchId: BranchId }
-  /** The drafts' owner is closed: nothing ended. */
-  | { status: "returned"; branchId: BranchId; settled: Settlement[] }
-  /** An item's Discard the branch's state no longer allows: nothing ended. */
-  | { status: "refused"; branchId: BranchId; reason: DiscardRefusal["refused"] };
+/**
+ * What a Discard ended with, whatever it found: `closed` the selected documents whose item left
+ * review (the kernel closed all it held, or an earlier command already had), `settled` what
+ * became of the items this command did not take, and `branchClosed` for Discard all.
+ */
+export type DiscardResult = {
+  branchId: BranchId;
+  branchClosed: boolean;
+  closed: readonly DocumentId[];
+  settled: Settlement[];
+  newerThanSeen: boolean;
+};
 
 export interface BranchDiscard {
   /**
@@ -51,7 +54,7 @@ export type DiscardItem = {
   ends: "tree" | "item";
   /**
    * For `item`: the text draft's `updated_at` as the writer saw it (ISO; null, no text draft).
-   * A draft that moved on refuses the Discard (`BranchDiscardDraftChangedError`). Absent: no fence.
+   * A draft that moved on is still discarded, and the result says `newerThanSeen`. Absent: no check.
    */
   draftSeenAt?: string | null;
 };
@@ -64,34 +67,20 @@ export type DiscardKernelInput = {
   selection: DiscardSelection;
 };
 
-export class BranchDiscardApplicableStateChangedError extends Error {
-  constructor() {
-    super("The Work has nothing left to discard on this document");
-    this.name = "BranchDiscardApplicableStateChangedError";
-  }
-}
-
-/** The item's text draft is not the one the writer saw: nothing ended. */
-export class BranchDiscardDraftChangedError extends Error {
-  constructor() {
-    super("This draft changed since the writer saw it");
-    this.name = "BranchDiscardDraftChangedError";
-  }
-}
-
 export type DiscardKernelResult = {
   /** The selected documents whose item left review: nothing of the branch remains on them. */
   closed: readonly DocumentId[];
+  /** One line per item this command did not take: `already discarded`, or `overtaken` by an Apply. */
+  settled: Settlement[];
+  /** A selected item's text draft had moved on since the writer saw it. */
+  newerThanSeen: boolean;
 };
-
-/** A final answer from the kernel: the branch's state no longer allows this Discard. */
-export type DiscardRefusal = { refused: "stale" | "draft_changed" };
 
 /** A final answer from the Work lock: the drafts' owner is closed, and nothing ended. */
 export type DiscardReturned = { returned: Settlement[] };
 
 /** What a Discard transaction ended with; null: the branch is not active. */
-export type DiscardEnded = DiscardKernelResult | DiscardRefusal | DiscardReturned | null;
+export type DiscardEnded = DiscardKernelResult | DiscardReturned | null;
 
 /** The writer's command, settled in the kernel's transaction; null: the branch is not active. */
 export type DiscardCommandClaim = {
@@ -102,9 +91,8 @@ export type DiscardCommandClaim = {
 export interface BranchDiscardStore {
   /**
    * `discardItems`' command transaction (§12.2): the claim; the branch's owner, refusing an
-   * archived or deleted Work; the branch (null: not active any more); the lists and
-   * documents; the kernel inside the Work's pending projection. The kernel's refusals are
-   * stored with the command and returned, not thrown.
+   * archived or deleted Work, which stores a `returned` bounce; the branch (null: not active
+   * any more); the lists and documents; the kernel inside the Work's pending projection.
    */
   discardLocked(input: {
     kernel: DiscardKernelInput;
@@ -121,12 +109,35 @@ function discardResult(
   selection: DiscardSelection,
   ended: DiscardEnded,
 ): DiscardResult {
-  if (!ended) return { status: "gone", branchId };
-  if ("returned" in ended) return { status: "returned", branchId, settled: ended.returned };
-  if ("refused" in ended) return { status: "refused", branchId, reason: ended.refused };
-  return selection.kind === "whole"
-    ? { status: "discarded", branchId, branchClosed: true }
-    : { status: "discarded", branchId, branchClosed: false, closed: ended.closed };
+  const whole = selection.kind === "whole";
+  if (!ended) {
+    // Discard all closed the branch already: nothing here is left to take.
+    const items = selection.kind === "items" ? selection.items : [];
+    return {
+      branchId,
+      branchClosed: whole,
+      closed: items.map((item) => item.documentId),
+      settled: whole
+        ? [{ rule: "already", state: "discarded" }]
+        : items.map((item) => ({ rule: "already", state: "discarded", item: item.documentId })),
+      newerThanSeen: false,
+    };
+  }
+  if ("returned" in ended)
+    return {
+      branchId,
+      branchClosed: false,
+      closed: [],
+      settled: ended.returned,
+      newerThanSeen: false,
+    };
+  return {
+    branchId,
+    branchClosed: whole,
+    closed: ended.closed,
+    settled: ended.settled,
+    newerThanSeen: ended.newerThanSeen,
+  };
 }
 
 export function createBranchDiscard(deps: {
@@ -176,14 +187,15 @@ export function createBranchDiscard(deps: {
 
   return {
     async discardItems(input) {
-      const { branchId } = input;
-      const gone = { status: "gone" as const, branchId };
+      const { branchId, selection } = input;
       const [branch] = await deps.branches.byIds([branchId]);
-      if (branch?.status !== "active") return gone;
-
-      const { selection } = input;
+      if (branch?.status !== "active") return discardResult(branchId, selection, null);
       if (selection.kind === "items" && selection.items.length === 0)
-        return { status: "discarded", branchId, branchClosed: false, closed: [] };
+        return discardResult(branchId, selection, {
+          closed: [],
+          settled: [],
+          newerThanSeen: false,
+        });
       const kernel = {
         userId: input.userId,
         branchId,

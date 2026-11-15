@@ -13,7 +13,7 @@
 
 import type { BranchId, ProjectId } from "@meridian/contracts";
 import type { UndoDiscardResult } from "@meridian/contracts/branches";
-import { deletionPurgeCutoff } from "@meridian/contracts/retention";
+import type { Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { commands } from "@meridian/database/schema";
 import { discardedBy, restoreDiscard } from "@meridian/project-tree";
@@ -23,24 +23,15 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { ApplyClickRefused } from "../domain/apply-click.js";
 import type { Branches } from "../domain/branches.js";
 import type { UndoDiscardCommand, UndoDiscardStore } from "../domain/undo-discard.js";
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { ENTRY_KINDS } from "./drizzle-discard-entries.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import type { ReopenDrafts } from "./drizzle-reopen-drafts.js";
 
-/** The commands whose id can name closed drafts that Trash lists and Restore reopens. */
-const REOPENABLE: ReadonlySet<string> = new Set(["discard", "undo_discard", "unapply"]);
-
-type Refusal = Extract<UndoDiscardResult, { status: "refused" }>["reason"];
-
-class UndoDiscardRefused extends Error {
-  constructor(readonly reason: Refusal) {
-    super(reason);
-  }
-}
+const REOPENABLE: ReadonlySet<string> = new Set(ENTRY_KINDS);
 
 /** A restore of this command that brought something back: stored with the Discard it named. */
 async function restoredBefore(
@@ -79,7 +70,19 @@ export function createDrizzleUndoDiscard(
     async run(command: UndoDiscardCommand): Promise<UndoDiscardResult> {
       const { branchId, userId, request, envelope } = command;
       const commandId = envelope.commandId;
-      const refused = (reason: Refusal) => ({ status: "refused", commandId, reason }) as const;
+      /** Nothing came back, and `settled` says why. */
+      const nothing = (settled: Settlement[], leftOut = 0): UndoDiscardResult => ({
+        status: "restored",
+        commandId,
+        discardCommandId: request.discardCommandId,
+        branchId,
+        restored: 0,
+        swapped: 0,
+        leftOut,
+        settled,
+      });
+      const purged = (items: string[] = []) =>
+        nothing([{ rule: "left_out", items, why: "purged" }]);
       return runDocumentCommand(
         db,
         envelope,
@@ -88,28 +91,18 @@ export function createDrizzleUndoDiscard(
             { branches: [branchId] },
             async (): Promise<UndoDiscardResult> => {
               const tx = currentDrizzleDb(db);
-              // It must be this account's own command that took effect, inside the retention.
+              // It must be this account's own Discard, Restore or Un-Apply: Trash lists these and
+              // nothing else. None found is an entry the purge took, which is no refusal.
               const [discard] = await tx
-                .select({
-                  kind: commands.kind,
-                  outcome: commands.outcome,
-                  at: commands.createdAt,
-                })
+                .select({ kind: commands.kind })
                 .from(commands)
                 .where(
                   and(eq(commands.id, request.discardCommandId), eq(commands.accountId, userId)),
                 );
-              if (!discard || !REOPENABLE.has(discard.kind) || discard.outcome.status !== "done")
-                throw new ApplyClickRefused("not_found");
-              if (discard.at <= deletionPurgeCutoff(new Date()))
-                throw new UndoDiscardRefused("expired");
+              if (!discard || !REOPENABLE.has(discard.kind)) return purged();
               // A purged Work's branches went with it: no row names an owner to lock or write.
-              const found = await deps.branches.ownerOf(branchId);
-              if (!found) throw new UndoDiscardRefused("work_purged");
-              if (found.branch.projectId !== envelope.projectId)
-                throw new ApplyClickRefused("not_found");
-              const { owner } = found;
-              if (!owner) throw new UndoDiscardRefused("work_purged");
+              const owner = (await deps.branches.ownerOf(branchId))?.owner;
+              if (!owner) return purged();
               approveBranchWriteJoin();
               const target = await deps.branches.ensureActiveForWrite({
                 owner,
@@ -170,22 +163,25 @@ export function createDrizzleUndoDiscard(
                 owner,
               });
 
-              const leftOut = restoredTree.reduce((sum, one) => sum + one.leftOut.length, 0);
+              const leftOut = restoredTree.flatMap((one) => one.leftOut);
               const treeCopies = restoredTree.reduce((sum, one) => sum + one.copies.length, 0);
-              if (treeCopies + reopened === 0) {
-                // The entry has no member left. A node left out was purged; a restore that
-                // took the members says so; a Discard's text drafts leave only by their
-                // document's purge, which deletes them.
-                if (leftOut > 0) throw new UndoDiscardRefused("document_purged");
-                if (
+              const settled: Settlement[] = [];
+              if (leftOut.length > 0)
+                settled.push({
+                  rule: "left_out",
+                  items: [...new Set(leftOut.map(({ record }) => record.node))],
+                  why: "purged",
+                });
+              // An entry with no member left: a restore took the members, or another Work holds
+              // the records, or what it held left with its document's purge.
+              if (treeCopies + reopened === 0 && leftOut.length === 0)
+                settled.push(
                   treeAlreadyRestored ||
-                  (await restoredBefore(tx, envelope.projectId, userId, request))
-                )
-                  throw new UndoDiscardRefused("already_restored");
-                throw new UndoDiscardRefused(
-                  foreignRecords ? "nothing_to_restore" : "document_purged",
+                    foreignRecords ||
+                    (await restoredBefore(tx, envelope.projectId, userId, request))
+                    ? { rule: "already", state: "restored" }
+                    : { rule: "left_out", items: [], why: "purged" },
                 );
-              }
               return {
                 status: "restored",
                 commandId,
@@ -193,7 +189,8 @@ export function createDrizzleUndoDiscard(
                 branchId: target.id as BranchId,
                 restored: treeCopies + reopened,
                 swapped,
-                leftOut,
+                leftOut: leftOut.length,
+                ...(settled.length > 0 ? { settled } : {}),
               };
             },
             { requireActive: true, seam: true },
@@ -201,22 +198,7 @@ export function createDrizzleUndoDiscard(
         },
         (cause) => {
           const settled = closedOwnerBounce(cause);
-          if (settled)
-            return {
-              status: "restored",
-              commandId,
-              discardCommandId: request.discardCommandId,
-              branchId,
-              restored: 0,
-              swapped: 0,
-              leftOut: 0,
-              settled,
-            };
-          return cause instanceof UndoDiscardRefused
-            ? refused(cause.reason)
-            : cause instanceof ApplyClickRefused
-              ? refused(cause.reason as "not_found")
-              : undefined;
+          return settled ? nothing(settled) : undefined;
         },
       );
     },

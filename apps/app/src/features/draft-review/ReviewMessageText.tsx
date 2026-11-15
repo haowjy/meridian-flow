@@ -19,14 +19,10 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This draft is no longer here. It may have been applied or discarded already.`;
     case "stale":
       return msg`This document changed since you opened the review. The review now shows the latest, so look again before you apply.`;
-    case "whole_item":
-      return msg`This change only applies together with the rest of the document. Apply the whole document instead.`;
-    case "incomplete_class":
-      return msg`This change belongs with others. Select all of them and try again.`;
-    case "gone":
-      return msg`That change is no longer in the draft.`;
     case "overtaken_discarded":
       return msg`This was discarded before Apply reached it. Restore it to apply it.`;
+    case "overtaken_applied":
+      return msg`This was applied before your Discard reached it.`;
     case "overtaken_removed":
       return msg`This document was deleted before its changes could be applied.`;
     case "left_out_would_loop":
@@ -41,8 +37,6 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This draft moved on since you pressed Apply, so it wasn't applied.`;
     case "unsynced":
       return msg`Apply couldn't be sent. Try again.`;
-    case "draft_changed":
-      return msg`This draft changed since you looked. Check it, then discard again.`;
     case "read_only":
       return msg`This draft just became read-only, so nothing was discarded. Check it, then try again.`;
     case "chat_frozen":

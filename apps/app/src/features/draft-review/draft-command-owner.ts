@@ -153,18 +153,36 @@ type Entry = {
 /** A click that is one member of a several-item Apply: it takes the group's id and send. */
 type Joint = { commandId: string; send(body: ApplyClick): Promise<ApplyClickAnswer> };
 export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
-/** A Discard that changed nothing: a closed owner's return, else the answer's status as a refusal. */
-function notDiscarded(result: DiscardCommandResult): {
-  failure: BranchCommandFailure | null;
-  outcome: CommandOutcome;
-} {
-  const why = returnedIn("settled" in result ? result.settled : undefined);
-  return why
-    ? { failure: null, outcome: { kind: "returned", why } }
-    : {
-        failure: { code: "discard-refused", serverCode: result.status },
-        outcome: { kind: "change-refused", code: result.status },
-      };
+/**
+ * A Discard's answer for the `expected` items it was sent. `done` when it took something; `returned`
+ * when a closed owner changed nothing; `settled` when what each item holds was settled before it
+ * (`already`, quiet, or `overtaken` by an Apply, with its line).
+ */
+function discardAnswer(
+  result: DiscardCommandResult,
+  expected: number,
+): { failure: BranchCommandFailure | null; outcome: CommandOutcome } {
+  const why = returnedIn(result.settled);
+  if (why) return { failure: null, outcome: { kind: "returned", why } };
+  const views = (result.settled ?? []).flatMap((one) =>
+    one.rule === "already" || one.rule === "overtaken"
+      ? [{ item: one.item ?? "", view: viewOf(one) }]
+      : [],
+  );
+  // A line naming no item is about the whole command.
+  const tookNothing =
+    views.some(({ item }) => item === "") ||
+    new Set(views.map(({ item }) => item)).size >= expected;
+  if (!tookNothing) return { failure: null, outcome: { kind: "done" } };
+  const lines = views.flatMap(({ view }): ApplyLine[] =>
+    view?.kind === "overtaken"
+      ? [{ half: "tree", code: `overtaken_${view.state}`, by: view.by }]
+      : [],
+  );
+  return {
+    failure: lines.length ? { code: "apply-left-out", landed: false, lines } : null,
+    outcome: { kind: "settled", lines },
+  };
 }
 /**
  * Every line an item shows for what of it didn't land, each with its half: `overtaken_<state>`
@@ -1011,7 +1029,8 @@ export class DraftCommandOwner {
         ...(frozen ? { draftSeenAt: item.hasDraft ? item.updatedAt : null } : {}),
       });
       if (!this.active) return { kind: "blocked" };
-      if (result.status === "discarded") {
+      const { failure, outcome } = discardAnswer(result, 1);
+      if (outcome.kind === "done") {
         // State held under the item key itself (no draft room ever bound, as for a picture)
         // would hide the document's next item in this branch too; the caller drops the row.
         const hides = item.isNew || this.generation(ref.itemKey) !== ref.itemKey;
@@ -1021,10 +1040,9 @@ export class DraftCommandOwner {
           hides ? { hidden: true, discarding: null } : { discarding: null },
         );
         if (item.isNew) this.lifecycle.closeCreated?.(ref);
-        return { kind: "done" };
+        return outcome;
       }
       this.discardedHere.delete(own);
-      const { failure, outcome } = notDiscarded(result);
       this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
       return outcome;
     } catch {
@@ -1077,9 +1095,8 @@ export class DraftCommandOwner {
         ends: "tree",
       });
       if (!this.active) return { kind: "blocked" };
-      if (result.status === "discarded") return { kind: "done" };
-      const { failure, outcome } = notDiscarded(result);
-      this.setState(ref.itemKey, { failure });
+      const { failure, outcome } = discardAnswer(result, 1);
+      if (outcome.kind !== "done") this.setState(ref.itemKey, { failure });
       return outcome;
     } catch {
       if (this.active) this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
@@ -1142,13 +1159,16 @@ export class DraftCommandOwner {
               })),
             }),
       });
-      if (answer.status === "discarded") {
+      const { failure, outcome } = discardAnswer(
+        answer,
+        "all" in selection ? 1 : selection.items.length,
+      );
+      if (outcome.kind === "done") {
         // The caller drops the rows with this answer, as an item's server Discard does: the
         // keys stay live, since the Discard's Undo reopens the same items, even a closed branch's.
         for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
-        return { kind: "done" };
+        return outcome;
       }
-      const { failure, outcome } = notDiscarded(answer);
       failed(failure);
       return outcome;
     } catch {

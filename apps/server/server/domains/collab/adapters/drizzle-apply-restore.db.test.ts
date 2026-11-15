@@ -367,7 +367,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           result: () => ({ status: "discarded", branchId: f.branchId }) as never,
         },
       });
-      expect((out as { status: string }).status).not.toBe("refused");
+      expect(out.settled).toEqual([]);
+      expect(out.closed).toEqual([f.documentId]);
       return commandId;
     }
     const envelope = (kind: string, commandId: string) =>
