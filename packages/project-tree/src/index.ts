@@ -18,6 +18,7 @@ export {
   restoreDiscard,
   undoApply,
 } from "./apply.js";
+export { changedFolders, type LandingFault, landingFaults } from "./changes.js";
 export { shownName } from "./names.js";
 export {
   type Actor,

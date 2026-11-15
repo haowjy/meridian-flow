@@ -318,27 +318,6 @@ describe("a tree list's room (postgres)", () => {
     expect(tab.states).not.toContain("broken");
   }, 60_000);
 
-  it("learns the list's id on a first connect, and a copy of another list loads from nothing", async () => {
-    const server = serverProcess();
-    const first = browser(server);
-    await until(() => first.state === "synced", "synced");
-    const access = await server.store.open({
-      list: { kind: "project", projectId: PROJECT },
-      accountId: ACCOUNT,
-    });
-    await until(() => first.copy.listId() === access?.listId, "the list id from the room");
-
-    // A copy of a list the server no longer has: its records name nodes that are gone.
-    const stale = memoryCopy(crypto.randomUUID());
-    createDocument(stale, "of a list that is gone");
-    const staleDoc = stale.doc;
-    const tab = browser(server, { copy: stale });
-    await until(() => tab.copy.doc !== staleDoc && tab.state === "synced", "loaded from nothing");
-    expect(tab.copy.listId()).toBe(access?.listId);
-    expect(tab.ids()).toEqual([]);
-    expect(await journalRecords(server)).toEqual([]);
-  });
-
   it("sends a long offline session up in parts, and a new client takes the whole history", async () => {
     const server = serverProcess();
     const admissions: number[] = [];

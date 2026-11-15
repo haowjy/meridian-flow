@@ -105,7 +105,8 @@ its heads, `purged`) stays and is named in `settled` as `left_out`; one already 
 nothing was left to take back, the answer is `already { unapplied }`, and so is a second Un-Apply of a
 delete. When the Work's purge took the tree rows of the Apply, the document it moved or deleted is
 `left_out purged`. A text
-group a later edit overlaps stays applied and is named in `skippedGroupIds`; when every group stays
+group whose reversal would change a word holding writing made after the Apply (the word rule,
+`reversal.md`) stays applied and is named in `skippedGroupIds`; when every group stays
 and the tree half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created (and of the
 drafts the Apply closed, below).

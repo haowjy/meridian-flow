@@ -5,6 +5,7 @@ import {
   type ParsedContextUri,
   parseContextUri,
   splitDocumentHrefSuffix,
+  writtenForm,
 } from "./context-uri.js";
 import { addressCandidates, canonicalLeaf, filenameSplits } from "./protocol/document-filename.js";
 import { filetypeForExtension } from "./protocol/filetype.js";
@@ -24,15 +25,14 @@ export function resolveDocumentHref(
   const kind = rawPath.endsWith("/") ? "folder" : "document";
   const path = decodePath(kind === "folder" ? rawPath.slice(0, -1) : rawPath);
   if (path === null || !path) return null;
-  // A full URI is only one that starts with `scheme://`; the scheme is
-  // case-insensitive, as in any URI. Anything else is a path relative to the
-  // base, wherever a `://` might appear inside it.
-  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(path)?.[1];
-  if (scheme) {
-    const full = parseContextUri(scheme.toLowerCase() + path.slice(scheme.length));
+  // Only an address written with its scheme is a full one; another scheme's is no document's;
+  // anything else is a path relative to the base.
+  const form = writtenForm(path);
+  if (form === "foreign") return null;
+  if (form === "address") {
+    const full = parseContextUri(path);
     return full.ok && full.value.path ? { kind, uri: full.value.normalized, suffix } : null;
   }
-  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return null;
   if (!baseUri) return null;
   const base = parseContextUri(baseUri);
   if (!base.ok || !base.value.path) return null;

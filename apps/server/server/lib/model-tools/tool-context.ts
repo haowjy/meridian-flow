@@ -11,7 +11,11 @@ import type {
 import { modelResult, splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ResponseAuthorship } from "@meridian/contracts";
 import type { AgentPermission } from "@meridian/contracts/agents";
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import {
+  CONTEXT_URI_SCHEMES,
+  contextRootUri,
+  parseUnifiedContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   type MeridianError,
   meridianErrorFromStructuredToolOutput,
@@ -192,7 +196,10 @@ export function contextToolError(error: ContextError): ToolErrorOutput {
 }
 
 // skills:// is model-only, so the shared context parser doesn't name it.
-const MODEL_SCHEMES = [...CONTEXT_URI_SCHEMES, SKILLS_URI_ROOT.slice(0, -"://".length)];
+const MODEL_ADDRESS_ROOTS = [
+  ...CONTEXT_URI_SCHEMES.map((scheme) => contextRootUri(scheme)),
+  SKILLS_URI_ROOT,
+];
 
 export function contextErrorMessage(error: ContextError): string {
   if (error.code === "context_unavailable") {
@@ -206,7 +213,7 @@ export function contextErrorMessage(error: ContextError): string {
       : `${work} is unavailable.`;
   }
   if (error.code === "invalid_uri" && error.unknownScheme !== undefined) {
-    const known = MODEL_SCHEMES.map((scheme) => `${scheme}://`).join(", ");
+    const known = MODEL_ADDRESS_ROOTS.join(", ");
     return `Unknown scheme "${error.unknownScheme}". Known schemes: ${known}`;
   }
   if (error.code === "invalid_uri") return error.reason;
@@ -234,7 +241,8 @@ export function documentRevisionMetadata(
 /** The path as a canonical URI: its folder's own URI (with any owner), then its name. */
 export async function canonicalPath(call: ToolCall, path: string): Promise<string> {
   const { filePath } = splitDocumentFile(path);
-  const uri = filePath.includes("://") ? filePath : `manuscript://${filePath}`;
+  const parsed = parseUnifiedContextUri(filePath);
+  const uri = parsed.ok ? parsed.value.normalized : filePath;
   const slash = uri.lastIndexOf("/");
   const listing = await call.context.port.list(uri.slice(0, slash + 1));
   const folder = listing.ok ? listing.value.uri : null;

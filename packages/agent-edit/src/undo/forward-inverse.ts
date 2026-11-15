@@ -480,6 +480,88 @@ function classify(index: Lineage, part: InversePart): PartClassification {
     return changed(error instanceof Error ? error.message : String(error));
   }
 }
+type Unit = { k: Key; ch: string } | null;
+/** A text block's visible characters in reading order; `null` is an inline atom. */
+function blockUnits(block: Y.AbstractType<unknown>): Unit[] {
+  const out: Unit[] = [];
+  for (let child = block._start; child; child = child.right) {
+    if (child.deleted) continue;
+    const text = child.content instanceof Y.ContentType ? child.content.type : null;
+    if (!(text instanceof Y.XmlText)) {
+      out.push(null);
+      continue;
+    }
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted) continue;
+      if (item.content instanceof Y.ContentString)
+        for (let n = 0; n < item.length; n++)
+          out.push({
+            k: key({ client: item.id.client, clock: item.id.clock + n }),
+            ch: item.content.str[n],
+          });
+      else if (!(item.content instanceof Y.ContentFormat)) out.push(null);
+    }
+  }
+  return out;
+}
+/** Each word (a run with no whitespace and no atom) that holds a character `later` accepts, by that character. */
+function laterWords(units: readonly Unit[], later: (k: Key) => boolean): Map<Key, string> {
+  const out = new Map<Key, string>();
+  let word: { k: Key; ch: string }[] = [];
+  const close = () => {
+    const held = word.filter((unit) => later(unit.k));
+    if (held.length) {
+      const str = word.map((unit) => unit.ch).join("");
+      for (const unit of held) out.set(unit.k, str);
+    }
+    word = [];
+  };
+  for (const unit of units) {
+    if (unit && !/\s/.test(unit.ch)) word.push(unit);
+    else close();
+  }
+  close();
+  return out;
+}
+/**
+ * Whether the inverse that took `before` to `after` changed a word holding later writing: a
+ * visible character written after `part` (a clock at or past its frontier, read on the original
+ * of an Undo- or Redo-restored copy) that is not the part's own.
+ */
+function changesLaterWord(
+  index: Lineage,
+  part: InversePart,
+  before: Y.Doc,
+  after: Y.Doc,
+  receipt: CapturedPart,
+): boolean {
+  const own = new Set(index.rootsFor(part.effect));
+  const later = (k: Key) => {
+    const root = index.root(k);
+    if (own.has(root)) return false;
+    const origin = parse(root);
+    return origin.clock >= (part.frontier[origin.client] ?? 0);
+  };
+  const blocks = new Map<Key, Y.Item>();
+  for (const range of [...receipt.effect.inserted, ...receipt.effect.deleted])
+    for (const { item } of itemsInRange(after, range)) {
+      const parent = item.parent instanceof Y.XmlText ? item.parent._item?.parent : item.parent;
+      const block = parent instanceof Y.AbstractType ? parent._item : null;
+      if (block) blocks.set(key(block.id), block);
+    }
+  for (const [k, block] of blocks) {
+    const was = find(before, k);
+    if (!was || !(was.content instanceof Y.ContentType)) continue;
+    const words = laterWords(blockUnits(was.content.type), later);
+    if (!words.size) continue;
+    const now = laterWords(
+      block.deleted ? [] : blockUnits((block.content as Y.ContentType).type),
+      (unit) => words.has(unit),
+    );
+    for (const [unit, word] of words) if (now.get(unit) !== word) return true;
+  }
+  return false;
+}
 /** Dry run only. Policy decides selection, destination, locking and partial acceptance. */
 export function classifyEditParts(
   doc: Y.Doc,
@@ -577,12 +659,18 @@ function admitPreparedInverseReceipt(
     after.destroy();
   }
 }
+export interface InverseAction {
+  actionId: string;
+  allocateClient: (doc: Y.Doc) => number;
+  /** Leave a part standing (`changed`) when its inverse would change a word holding later writing. */
+  keepLaterWords?: boolean;
+}
 /** Compute on an owned cold replica. The caller admits/persists the deltas under its lock. */
 export function computeInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
   selection: readonly InverseSelection[],
-  action: { actionId: string; allocateClient: (doc: Y.Doc) => number },
+  action: InverseAction,
 ): ComputedInverse {
   return computePreparedInverse(doc, history, selection, action);
 }
@@ -591,12 +679,12 @@ function computePreparedInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
   selection: readonly InverseSelection[],
-  action: { actionId: string; allocateClient: (doc: Y.Doc) => number },
+  action: InverseAction,
   prepared?: Lineage,
 ): ComputedInverse {
   if (!action.actionId) throw new Error("Inverse requires an action ID");
   if (!selection.length) return { actionId: action.actionId, edits: [], skipped: [] };
-  const scratch = new Y.Doc({ gc: false });
+  let scratch = new Y.Doc({ gc: false });
   Y.applyUpdate(scratch, Y.encodeStateAsUpdate(doc));
   const local = [...history],
     result: ComputedInverse = { actionId: action.actionId, edits: [], skipped: [] };
@@ -633,7 +721,7 @@ function computePreparedInverse(
         snapshot = snapshotRedone(scratch);
       const client = action.allocateClient(scratch);
       if (frontier[client] !== undefined) throw new Error("Inverse client is not fresh");
-      const before = new Y.Doc({ gc: false });
+      let before = new Y.Doc({ gc: false });
       Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
       let updates: Uint8Array[];
       try {
@@ -649,6 +737,11 @@ function computePreparedInverse(
         const update = Y.mergeUpdates(updates),
           receipt = captureEditParts(scratch, [{ update, frontier }])[0];
         receipt.aliases = captureAliases(scratch, snapshot);
+        if (action.keepLaterWords && changesLaterWord(index, part, before, scratch, receipt)) {
+          result.skipped.push({ part, state: "changed", reasons: ["later writing in its word"] });
+          [scratch, before] = [before, scratch];
+          continue;
+        }
         admitPreparedInverseReceipt(before, local, [part], receipt, index);
         const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal, direction }];
         let edit = groups.get(part.editId);
@@ -688,10 +781,7 @@ export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): P
 export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
   classify(parts: readonly InversePart[]): PartClassification[];
-  compute(
-    selection: readonly InverseSelection[],
-    action: { actionId: string; allocateClient: (doc: Y.Doc) => number },
-  ): ComputedInverse;
+  compute(selection: readonly InverseSelection[], action: InverseAction): ComputedInverse;
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
 }

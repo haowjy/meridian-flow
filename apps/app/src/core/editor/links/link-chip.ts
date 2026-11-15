@@ -18,13 +18,22 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
+import {
+  addressScheme,
+  CONTEXT_URI_SCHEMES,
+  type ContextUriScheme,
+} from "@meridian/contracts/context-uri";
 import type { UploadState } from "@/core/uploads/upload-store";
 import { fileTypeLabel } from "@/lib/file-type-label";
 import { formatBytes } from "@/lib/format-size";
 
 import type { LinkResolutionEntry } from "./link-resolution";
-import type { LinkTarget } from "./link-target";
+import {
+  classifyLinkTarget,
+  type InternalLinkTarget,
+  isInternalLinkTarget,
+  type LinkTarget,
+} from "./link-target";
 
 /**
  * A document family by scheme. Every internal link knows its family from its
@@ -35,6 +44,16 @@ import type { LinkTarget } from "./link-target";
 export type LinkChipIcon = ContextUriScheme | "file" | "folder";
 
 export type LinkChip = { state: "filled" | "dashed" | "draft"; icon: LinkChipIcon };
+
+/**
+ * The target of a link drawn as a chip, or null for one that stays text: an
+ * internal address draws as a chip, an external one keeps its underline. Every
+ * surface that asks "is this link a chip" reads this.
+ */
+export function chipLinkTarget(href: unknown): InternalLinkTarget | null {
+  const target = typeof href === "string" ? classifyLinkTarget(href) : null;
+  return target && isInternalLinkTarget(target) ? target : null;
+}
 
 /** Every icon a chip can ask for; the app supplies one image per entry. */
 export const LINK_CHIP_ICONS: readonly LinkChipIcon[] = [...CONTEXT_URI_SCHEMES, "file", "folder"];
@@ -78,7 +97,7 @@ export function referenceChip(
 ): LinkChip {
   return {
     state: available ? "filled" : "dashed",
-    icon: reference.kind === "folder" ? "folder" : (uriFamily(reference.uri) ?? "file"),
+    icon: reference.kind === "folder" ? "folder" : (addressScheme(reference.uri) ?? "file"),
   };
 }
 
@@ -91,15 +110,8 @@ export function linkChipAttributes(chip: LinkChip): {
 }
 
 function targetFamily(target: LinkTarget, baseUri: string | null): ContextUriScheme | null {
-  if (target.kind === "scheme") return uriFamily(target.uri);
-  return baseUri ? uriFamily(baseUri) : null;
-}
-
-const SCHEMES: ReadonlySet<string> = new Set(CONTEXT_URI_SCHEMES);
-
-function uriFamily(uri: string): ContextUriScheme | null {
-  const scheme = /^([a-z][a-z\d+.-]*):\/\//i.exec(uri.trim())?.[1]?.toLowerCase();
-  return scheme && SCHEMES.has(scheme) ? (scheme as ContextUriScheme) : null;
+  if (target.kind === "scheme") return addressScheme(target.uri);
+  return baseUri ? addressScheme(baseUri) : null;
 }
 
 /** A file's type and size in one detail row; null when nothing is known. */

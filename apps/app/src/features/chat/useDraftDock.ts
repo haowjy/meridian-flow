@@ -19,6 +19,7 @@ import { hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line"
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
+import { useShellTreeVersion } from "@/features/project/tree-version";
 import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-files";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
@@ -33,6 +34,7 @@ export function useDraftDock({
   active?: boolean;
 }) {
   const controller = useBoundWorkBranchCommands();
+  const shell = useShellTreeVersion();
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -177,6 +179,8 @@ export function useDraftDock({
     notice,
     mounted: files.length > 0 || notice !== null,
     changeCount: totalChanges(files),
+    /** The one review count (`reviewCount`): the Work's changed documents and folders. */
+    reviewCount: shell?.ownerKey === ownerKey ? shell.changeCount : files.length,
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
     canApply:

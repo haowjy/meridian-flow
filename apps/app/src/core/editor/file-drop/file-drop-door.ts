@@ -13,6 +13,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import { ASSETS_FOLDER, classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -28,7 +29,7 @@ import type { ImageIngressStore } from "../images/image-ingress-store";
 import { insertImageFile } from "../images/image-uploads";
 import { acceptsInlineImage, isImageFile } from "../images/image-workflow";
 import type { DropDoor } from "../landing/drop-plan";
-import { snapOutOfCode } from "../landing/inline-snap";
+import { snapOutOfUnits } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
 import { type FileDropHost, fileDropHost } from "./FileDropExtension";
 
@@ -61,7 +62,7 @@ export const fileDropDoor: DropDoor = {
       listed.length > 0 && listed.every((file) => !isUnread(file) && isImageFile(file));
     const at: Exclude<Landing, { kind: "source" }> =
       landing.kind === "inline"
-        ? { kind: "inline", pos: snapOutOfCode(editor.state.doc, landing.pos) }
+        ? { kind: "inline", pos: snapOutOfUnits(editor.state.doc, landing.pos) }
         : landing;
     if (picturesOnly) {
       if (at.kind === "inline" && !acceptsInlineImage(editor.state.doc, at.pos))
@@ -85,12 +86,20 @@ export const fileDropDoor: DropDoor = {
   },
 };
 
-function chipFor(editor: Editor, name: string, documentId: string, scheme: string): PMNode | null {
-  return documentReferenceNode(editor.state.schema, {
-    label: name,
-    documentId,
-    uri: `${scheme}://${ASSETS_FOLDER}/${name}`,
-  });
+function chipFor(
+  editor: Editor,
+  name: string,
+  documentId: string,
+  scheme: ContextUriScheme,
+): PMNode | null {
+  // A dropped file's name is the writer's: `@notes.png` is no address segment.
+  let uri: string;
+  try {
+    uri = canonicalContextUri(scheme, `${ASSETS_FOLDER}/${name}`);
+  } catch {
+    return null;
+  }
+  return documentReferenceNode(editor.state.schema, { label: name, documentId, uri });
 }
 
 type Reserved = { ok: true; name: string } | { ok: false; reason: unknown };

@@ -84,9 +84,9 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * everything it settled in the tree (a restore it made included), in one command. The tree half
  * is allowed only while nothing else has changed the list since (`gone`), and refuses as
  * `superseded` when a record it would bring back no longer fits; either refuses the whole
- * command. A text group a later edit overlaps stays applied and is named in `skippedGroupIds`;
- * when every group stays, the tree half still comes back and the answer is `unapplied` with no
- * `reversedGroupIds`.
+ * command. A text group whose reversal would change a word that holds writing made after the
+ * Apply stays applied and is named in `skippedGroupIds`; when every group stays, the tree half
+ * still comes back and the answer is `unapplied` with no `reversedGroupIds`.
  */
 export type UnapplyClick = {
   commandId: CommandId;
