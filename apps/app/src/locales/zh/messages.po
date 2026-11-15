@@ -2493,12 +2493,17 @@ msgstr ""
 #~ msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 #~ msgstr ""
 
+#: src/features/project/context/open-project-document.ts
+msgid "Couldn't open {name}."
+msgstr ""
+
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr ""
 
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/DocumentHost.tsx
+#: src/features/project/context/open-project-document.ts
 msgid "Couldn't open this document."
 msgstr ""
 
@@ -6277,6 +6282,10 @@ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "That document is no longer available, so this change can't be reversed."
+msgstr ""
+
+#: src/features/project/context/open-project-document.ts
+msgid "That document is no longer available."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

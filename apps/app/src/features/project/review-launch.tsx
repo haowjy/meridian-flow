@@ -18,7 +18,11 @@ import type { LinkDocumentRef } from "@/features/links";
 import type { ContextUri } from "@/lib/context-uri";
 import { useAccountId } from "./context/account-feature-context";
 import { openDocumentFromDraftGroup } from "./context/open-document-from-draft";
-import { type OpenDocumentOutcome, useOpenProjectDocument } from "./context/open-project-document";
+import {
+  type OpenDocumentOutcome,
+  useOpenProjectDocument,
+  useOpensInViewer,
+} from "./context/open-project-document";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
@@ -249,6 +253,7 @@ export type LinkPlacement = (
  * "Drafted N documents" rows. The pane is `place`'s.
  * - A page only a draft holds (`document.review`) opens on that draft.
  * - A page `ownerKey` drafted opens on that draft, as the draft strip does.
+ * - A chat's upload opens through `live` in its viewer, wherever the link is: no pane holds one.
  * - Any other page opens live, placed beside in the link's Work, or through `live` in main. A page
  *   in the trash opens in main.
  */
@@ -256,8 +261,9 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
   const openDraft = useOpenDraft();
   const place = useOptionalPlaceHere();
+  const opensInViewer = useOpensInViewer(projectId);
   return useCallback(
-    (document, live, workId) => {
+    async (document, live, workId) => {
       if (document.review)
         return openDraft({
           documentId: document.documentId,
@@ -275,15 +281,16 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
           documentName: drafted.documentName ?? undefined,
           draftOnly: drafted.draftOnly,
         });
+      if (await opensInViewer(document.documentId)) return live(document);
       const placed = {
         kind: "document",
         documentId: document.documentId,
         ...(workId ? { workId } : {}),
       } as const;
       if (place?.(placed) !== "side") return live(document);
-      return Promise.resolve(committed(document.documentId));
+      return committed(document.documentId);
     },
-    [fileForDocument, ownerKey, openDraft, place],
+    [fileForDocument, ownerKey, openDraft, place, opensInViewer],
   );
 }
 

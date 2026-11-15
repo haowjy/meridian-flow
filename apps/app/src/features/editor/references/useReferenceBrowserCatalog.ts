@@ -38,7 +38,7 @@ export function useReferenceBrowserCatalog(
         sourceFor(trees.sources, "kb", {}),
         sourceFor(trees.sources, "user", {}),
         sourceFor(trees.sources, "scratch", { workId, rootThreadId }),
-        sourceFor(trees.sources, "uploads", { chatId }),
+        sourceFor(trees.sources, "uploads", { chatThreadId: chatId }),
       ].flatMap((source) => (source ? [source.id] : [])),
     [trees.sources, workId, rootThreadId, chatId],
   );

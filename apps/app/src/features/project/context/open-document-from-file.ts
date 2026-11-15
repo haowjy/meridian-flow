@@ -42,7 +42,7 @@ export function openDocumentFromFile(
     throw new Error("Scratch tabs require a Work row id or a lineage");
   const tabOwner: OpenDocumentOwner =
     scheme === "uploads" && owner.chatThreadId
-      ? { chatId: owner.chatThreadId, chatRef: chatRefOf(file) }
+      ? { chatThreadId: owner.chatThreadId, chatRef: chatRefOf(file) }
       : scheme === "scratch" && owner.rootThreadId
         ? { rootThreadId: owner.rootThreadId, rootThreadRef: lineageRefOf(file) }
         : isWorkScopedScheme(scheme) && owner.workId

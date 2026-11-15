@@ -11,7 +11,7 @@ import type { DocumentProperties as DocumentPropertiesDto } from "@meridian/cont
 import { useId } from "react";
 import { useDocumentProperties } from "@/client/query/useDocumentProperties";
 import { useProjectTreeView } from "@/client/query/useProjectTree";
-import type { OpenDocument } from "@/client/stores";
+import { documentContextOwner, type OpenDocument } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { editorColumnChrome } from "@/features/editor/editor-column";
@@ -22,9 +22,7 @@ import { DocumentPropertyValue, YamlBlock } from "./DocumentPropertyValue";
 /** The create record's word on whether a document has properties; false until the list has said so. */
 function useHasProperties(projectId: string, tab: OpenDocument): boolean {
   const { tree } = useProjectTreeView(projectId, tab.kind === "new" ? "unfiled" : tab.scheme, {
-    ...(tab.kind === "new"
-      ? {}
-      : { workId: tab.workId, rootThreadId: tab.rootThreadId, chatId: tab.chatId }),
+    ...(tab.kind === "new" ? {} : documentContextOwner(tab)),
     enabled: tab.kind !== "new",
   });
   return tree?.findDocument(tab.documentId)?.hasProperties === true;
