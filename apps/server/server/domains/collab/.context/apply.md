@@ -122,16 +122,19 @@ ordinal, rebuilds each effect's base from the Apply's rows (reversed ones includ
 stored once), and runs the same body as the open path (`reverseBaseHalf`): merge the group's text
 out of the base, remove its Apply records. Without it the base keeps text the Un-Apply took out of
 live, and a pull merges that deletion into the draft's own text. `draft_reversed` is what stops a
-second replay of an effect the open path already reversed. Un-Apply reopens before it reads any
-base, so the draft half of its own text effects on a draft its delete closed runs on an open draft.
+second replay of an effect the open path already reversed. Un-Apply runs its tree half first, reopens
+only the drafts whose documents that half restored (a document the writer restored by hand and
+deleted again keeps its draft closed), then reads the bases, so the draft half of its own text
+effects on a draft its delete closed runs on an open draft. A tree refusal throws and the command's
+savepoint takes the reopen back. Every reopen schedules a live pull for the document.
 Where the draft goes: `ensureActiveForWrite` with `{ requireActive: false }`, called only when the
 Apply closed a draft, so an Un-Apply with nothing to reopen makes no branch; an archived Work whose
 branch closed gets a new one.
 
 A newer draft the reopen swaps out is closed with the reopening command's id, and that command
 (`undo_discard` or `unapply`) is a Trash entry with that draft as a member, so the swap stays
-restorable. The entry query lists `discard`, `undo_discard` and `unapply` commands, and Restore
-accepts the same three; the Un-Apply's answer carries `branchId` for it.
+restorable. The entry query lists `discard` and `undo_discard` commands, and an `unapply` only while a draft
+it swapped out is still closed under it; Restore accepts all three; the Un-Apply's answer carries `branchId` for it.
 
 Every route that writes documents on behalf of a command takes the same grants before it runs:
 Apply the draft's `command` grant and the live `edit` grant on each document (and a restore grant

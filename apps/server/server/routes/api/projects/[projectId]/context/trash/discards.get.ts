@@ -18,12 +18,14 @@ export default defineEventHandler(async (event): Promise<ListDiscardEntriesRespo
     { kind: "account", userId: user.userId },
   ] as const;
   const listed = await app.documentSync.draftReview.listDiscards(projectId);
-  const commands = listed.map((entry) => entry.commandId);
+  // An Un-Apply has no tree half to read.
+  const commands = listed.flatMap((entry) => (entry.kind === "unapply" ? [] : [entry.commandId]));
   const halves = await Promise.all(
     lists.map((list) => discardedTree(app.treeLists, list, commands)),
   );
   const entries: ListDiscardEntriesResponse["entries"] = [];
-  listed.forEach((entry, at) => {
+  listed.forEach((entry) => {
+    const at = commands.indexOf(entry.commandId);
     const taken = halves.flatMap((half) => (half[at] && !half[at].restored ? [half[at]] : []));
     const records = taken.reduce((sum, half) => sum + half.records.length, 0);
     if (entry.drafts.length === 0 && records === 0) return;

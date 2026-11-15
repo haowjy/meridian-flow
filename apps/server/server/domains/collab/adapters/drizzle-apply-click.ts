@@ -340,17 +340,40 @@ export function createDrizzleApplyClick(
                 for (const draft of closedByApply) documentIds.add(draft.documentId);
                 for (const id of [...documentIds].sort())
                   await lockDocumentMutation(tx, id as DocumentId);
+                // The tree half goes first: a refusal throws, and the command's savepoint takes
+                // the reopen below back with it.
+                const restored = new Set<string>();
+                if (lists.length > 0) {
+                  const written = await textWrittenSince(
+                    db,
+                    Object.assign({}, ...prepared.trees.map((tree) => tree.createdHeads)),
+                  );
+                  await deps.treeLists.submit({
+                    lists,
+                    make: (ends) => {
+                      for (const [at, { writer }] of ends.entries()) {
+                        const { tree } = pairs[at] as (typeof pairs)[number];
+                        const { undone } = undoApply(writer, applyCommandId, by, commandId, {
+                          writtenSince: written,
+                          restoredByApply: tree.restored,
+                        });
+                        for (const record of undone)
+                          if (record.type === "restore") restored.add(record.node);
+                      }
+                    },
+                  });
+                }
+                // Only a draft whose document the tree half brought back reopens: a document the
+                // writer restored by hand and deleted again stays in Trash with its draft closed.
                 if (target && found?.owner)
-                  // Read again under the keys: a Restore may have taken some meanwhile.
                   await deps.reopen.reopen({
-                    drafts: await deps.reopen.closedBy(applyCommandId, prepared.branchId),
+                    drafts: closedByApply.filter((draft) => restored.has(draft.documentId)),
                     target: target.id,
                     commandId,
                     owner: found.owner,
                   });
 
-                // What each document's text would give back, read before anything is written:
-                // the tree half can still refuse the whole command.
+                // What each document's text would give back, read before any text is written.
                 const stillActive = await tx
                   .select({ ordinal: applyCommandEffects.ordinal })
                   .from(applyCommandEffects)
@@ -437,26 +460,7 @@ export function createDrizzleApplyClick(
                 }
                 // Text recorded and none of it left to take back: an earlier Un-Apply took it.
                 if (prepared.texts.length > 0 && plans.length === 0)
-                  return { status: "refused", commandId };
-
-                if (lists.length > 0) {
-                  const written = await textWrittenSince(
-                    db,
-                    Object.assign({}, ...prepared.trees.map((tree) => tree.createdHeads)),
-                  );
-                  await deps.treeLists.submit({
-                    lists,
-                    make: (ends) => {
-                      for (const [at, { writer }] of ends.entries()) {
-                        const { tree } = pairs[at] as (typeof pairs)[number];
-                        undoApply(writer, applyCommandId, by, commandId, {
-                          writtenSince: written,
-                          restoredByApply: tree.restored,
-                        });
-                      }
-                    },
-                  });
-                }
+                  throw new ApplyClickRefused("not_found");
 
                 let unappliedSeq: string | undefined;
                 for (const plan of plans) {

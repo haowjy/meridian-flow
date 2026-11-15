@@ -32,8 +32,8 @@ stateDiagram-v2
   (`undo_discard`, from the notice or Trash) sets the same row `active` again in the Work's
   current branch (moving it there when the Discard closed another) and clears `closed_by` and
   `closed_cause`; a newer draft of the document closes under the restore's own id, so restoring
-  that entry swaps back. An Un-Apply of an Apply whose drafted delete closed a draft reopens it the
-  same way, under the Un-Apply's id, and replays the Un-Applies the draft waited on. A retirement acts on a command-closed draft only while `closed_by`
+  that entry swaps back. An Un-Apply of an Apply whose drafted delete closed a draft reopens it, when its tree half
+  restores the document, the same way, under the Un-Apply's id, and replays the Un-Applies the draft waited on. A retirement acts on a command-closed draft only while `closed_by`
   still names its command, so a late one leaves a reopened draft's room alone. Only an `active`
   draft accepts writes, and a draft room for a closed
   draft is refused at the [handshake](../../../lib/.context/state-machines.md).

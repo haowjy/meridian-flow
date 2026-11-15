@@ -556,13 +556,22 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    that holds a document key writes its rows after it, and one that writes first never takes that
    document's key afterwards.
 
-Un-Apply and Restore reopen closed drafts (`reopenDrafts`, `apply.md`) within this list: the Work
-lock; a plain read of the drafts the Apply (Un-Apply) or Discard (Restore) closed; only when that
-selection is not empty, `ensureActiveForWrite` (it joins the command's transaction only while it
-has locked nothing but Works, so no list or document key comes before it, and an Un-Apply with
-nothing to reopen creates no branch); the branch; the lists; the documents of the Apply's text and
-of the selected drafts; then the draft rows. The selection is read again under the document keys
-before the reopen.
+Restore and Un-Apply reopen closed drafts (`reopenDrafts`, `apply.md`) within this list, each in
+its own order.
+
+- **Restore:** the Work lock (`mutate`); `ensureActiveForWrite`, always; the branch; the lists; a
+  plain read of the drafts the Discard closed; the documents of the Discard's records and of those
+  drafts; then the draft rows. The selection is read once, before the document keys: the Work
+  lock keeps another command from taking those drafts.
+- **Un-Apply:** the Work lock; a plain read of the drafts the Apply's delete closed; only when that
+  selection is not empty, `ensureActiveForWrite` (it joins the command's transaction only while it
+  has locked nothing but Works, so no list or document key comes before it, and an Un-Apply with
+  nothing to reopen creates no branch); the branch; the lists; the documents of the Apply's text
+  and of the selected drafts; the tree half; then the draft rows of only those drafts whose
+  documents the tree half restored. The tree half goes before the reopen so a refusal (a throw)
+  rolls the reopen back with the command's savepoint.
+
+`reopen` writes the draft rows in ID order.
 
 `submit` and `resync` take the list keys themselves when a path holds no document key, as the
 tree tools do. `resync` (and so `DraftClose.closeDrafts`, which resyncs the list that holds each

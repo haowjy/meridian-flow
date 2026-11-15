@@ -1,5 +1,5 @@
 /** Command-scoped receipt and base-effect reads for durable Un-Apply. */
-import { applySpanPatches } from "@meridian/agent-edit/diff";
+import { applySpanPatches, type SpanPatch } from "@meridian/agent-edit/diff";
 import type { InversePart } from "@meridian/agent-edit/integration";
 import type { DocumentId, EditOrigin } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
@@ -91,7 +91,7 @@ export function effectBases<Row extends EffectRow>(
   return rows.map((row) => {
     const following = applySpanPatches(
       preceding as Node[],
-      (row.baseDelta as import("@meridian/agent-edit/diff").SpanPatch[]).map((patch) => ({
+      (row.baseDelta as SpanPatch[]).map((patch) => ({
         ...patch,
         blocks: patch.blocks.map((node) => schema.nodeFromJSON(node)),
       })),

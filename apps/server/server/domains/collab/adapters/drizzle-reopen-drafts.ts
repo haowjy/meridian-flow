@@ -25,13 +25,13 @@ import {
   removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
-import type { BranchId, CommandId, DraftOwner } from "@meridian/contracts";
+import type { BranchId, CommandId, DocumentId, DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, documentDrafts } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type * as Y from "yjs";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -90,6 +90,7 @@ export function reverseBaseHalf(
   } finally {
     prefix.off("update", capture);
   }
+  if (!row && reversals.length > 0) throw new Error("Un-Apply must remove its Apply records");
   return { rows: row ? [row] : [], rules: total.counts, overrode };
 }
 
@@ -102,6 +103,8 @@ export function createReopenDrafts(
     close: Pick<DraftClose, "closeDrafts">;
     treeLists: Pick<TreeListStore, "resync">;
     workProjection: Pick<WorkProjectionMutation, "draftMembershipChanged">;
+    /** Live text written while the draft was closed has not reached its base. */
+    scheduleLivePull(documentId: DocumentId): void;
   },
 ) {
   return {
@@ -123,7 +126,8 @@ export function createReopenDrafts(
       const tx = currentDrizzleDb(db);
       const { drafts, target, commandId } = input;
       let swapped = 0;
-      for (const draft of drafts) {
+      // Draft rows lock in id order: two reopens of overlapping drafts cannot deadlock.
+      for (const draft of [...drafts].sort((a, b) => a.draftId.localeCompare(b.draftId))) {
         const [newer] = await tx
           .select({ id: documentDrafts.id })
           .from(documentDrafts)
@@ -153,6 +157,7 @@ export function createReopenDrafts(
             revision: sql`${documentDrafts.revision} + 1`,
           })
           .where(eq(documentDrafts.id, draft.draftId));
+        deferUntilDrizzleCommit(() => deps.scheduleLivePull(draft.documentId as DocumentId));
       }
       if (drafts.length === 0) return { reopened: 0, swapped };
       await replay(drafts.map((draft) => draft.draftId));

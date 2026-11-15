@@ -106,6 +106,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       close: draftClose,
       treeLists,
       workProjection,
+      scheduleLivePull: () => {},
     });
     const apply = createDrizzleApplyClick(db, {
       workProjection,

@@ -156,6 +156,7 @@ async function fixture(
       close: draftClose,
       treeLists,
       workProjection: h.projection,
+      scheduleLivePull: () => {},
     }),
     live: h.persistence.journal,
     liveCoordinator: {

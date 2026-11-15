@@ -10,7 +10,7 @@ import type { DiscardEntry } from "@meridian/contracts/branches";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
 export function createDrizzleDiscardEntries(db: Database) {
@@ -28,7 +28,20 @@ export function createDrizzleDiscardEntries(db: Database) {
         .where(
           and(
             eq(commands.projectId, projectId),
-            inArray(commands.kind, ["discard", "undo_discard", "unapply"]),
+            // An Un-Apply is an entry only through a draft it swapped out, still closed.
+            or(
+              inArray(commands.kind, ["discard", "undo_discard"]),
+              and(
+                eq(commands.kind, "unapply"),
+                inArray(
+                  commands.id,
+                  tx
+                    .select({ id: documentDrafts.closedBy })
+                    .from(documentDrafts)
+                    .where(eq(documentDrafts.status, "closed")),
+                ),
+              ),
+            ),
             gt(commands.createdAt, deletionPurgeCutoff(now)),
             sql`${commands.outcome}->>'status' = 'done'`,
           ),

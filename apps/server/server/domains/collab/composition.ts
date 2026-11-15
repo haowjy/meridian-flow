@@ -496,6 +496,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     close: deps.draftClose,
     treeLists: deps.treeLists,
     workProjection: deps.workProjectionMutation,
+    scheduleLivePull: (documentId) => draftPulls.scheduleLivePull(documentId),
   });
   const applyCommands = createApplyClickService({
     commands,
