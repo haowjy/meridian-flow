@@ -3122,6 +3122,10 @@ msgstr "Details about removed text"
 msgid "Diagram"
 msgstr "Diagram"
 
+#: src/features/editor/RescuedText.tsx
+msgid "Didn't go through. Try again."
+msgstr "Didn't go through. Try again."
+
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "Didn't run: {calls}."
 msgstr "Didn't run: {calls}."
