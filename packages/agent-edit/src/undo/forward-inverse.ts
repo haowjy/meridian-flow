@@ -364,7 +364,7 @@ interface InversePlan {
   blocked: boolean;
   /** The runs of `restoring` that go back beside the text that replaced them, not at their tombstones. */
   place: () => RestorePlacement[];
-  /** `main`'s stranded rule kept a run with a recorded replacement out. */
+  /** `main`'s stranded rule, not the record, decided a run that has a recorded replacement. */
   inferredOut: boolean;
 }
 function planInverse(
@@ -469,10 +469,11 @@ function planInverse(
       .filter(({ original }) => {
         if (!process.env.RECORD_STRAND)
         {
-          if (!strandedByRemoval(original)) return true;
           if (recordedPairs().replacementStands(original)) return true;
-          if (process.env.SIDE && onlyFarSide(original)) return true;
+          // The record no longer settles this run: `main`'s rule decides it, either way.
           if (recordedPairs().replacementOf(original)) inferredOut = true;
+          if (!strandedByRemoval(original)) return true;
+          if (process.env.SIDE && onlyFarSide(original)) return true;
           return false;
         }
         const recorded = part.effect.replacements?.length
