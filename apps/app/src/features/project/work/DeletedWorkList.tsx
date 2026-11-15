@@ -1,22 +1,28 @@
 /**
  * The Work list's Deleted tab: soft-deleted Works stay restorable, with
  * everything that went with them, until the server purges them. Each row
- * restores in place; a purged Work's Restore says it is gone.
+ * restores in place; a Work found purged keeps its row, saying so, until dismissed.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
+import { withGone } from "@/components/app/RowWord";
 import { ListLine } from "@/components/ui/list-row";
 import { RuledList } from "../RuledList";
+import { GoneWord } from "./GoneWord";
+import { type WorkPlace, workPlace } from "./useWorkDeletion";
 import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
-import type { ListedWorkEntry } from "./work-list-model";
+import type { GoneEntry, ListedWorkEntry } from "./work-list-model";
 
 export function DeletedWorkList({
   entries,
+  list,
   onRestore,
 }: {
-  entries: readonly ListedWorkEntry[];
-  onRestore: (work: Work) => void;
+  entries: readonly (ListedWorkEntry | GoneEntry)[];
+  /** This list's name, for the place a restored row leaves. */
+  list: string;
+  onRestore: (work: Work, place: WorkPlace) => void;
 }) {
   if (!entries.length)
     return (
@@ -26,41 +32,63 @@ export function DeletedWorkList({
         </ListLine>
       </div>
     );
+  const listed = entries.filter((entry): entry is ListedWorkEntry => entry.state !== "gone");
+  const gone = entries.filter((entry): entry is GoneEntry => entry.state === "gone");
+  const ids = listed.map((entry) => entry.work.id);
   return (
     <RuledList
-      rows={entries.map(({ key, work, failure }) => ({
+      rows={withGone(
+        listed,
+        (entry) => entry.key,
+        gone.map((entry) => ({
+          key: entry.key,
+          row: entry,
+          after: workPlace(entry.work.id)?.after ?? [],
+        })),
+      ).map(({ row: entry, key }) => ({
         key,
-        node: (
-          <>
-            <DeletedRow work={work} onRestore={() => onRestore(work)} />
-            {failure ? (
-              <div className="px-2">
-                <WorkCommandFailureRow failure={failure} />
-              </div>
-            ) : null}
-          </>
-        ),
+        node:
+          entry.state === "gone" ? (
+            <DeletedRow name={entry.work.name} word={<GoneWord entry={entry} />} />
+          ) : (
+            <>
+              <DeletedRow
+                name={entry.work.name}
+                word={
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onRestore(entry.work, {
+                        list,
+                        after: ids.slice(0, ids.indexOf(entry.work.id)).reverse(),
+                      })
+                    }
+                    aria-label={t`Restore ${entry.work.name}`}
+                    className="text-button shrink-0 text-sm coarse:min-h-11"
+                  >
+                    <Trans>Restore</Trans>
+                  </button>
+                }
+              />
+              {entry.failure ? (
+                <div className="px-2">
+                  <WorkCommandFailureRow failure={entry.failure} />
+                </div>
+              ) : null}
+            </>
+          ),
       }))}
     />
   );
 }
 
-function DeletedRow({ work, onRestore }: { work: Work; onRestore: () => void }) {
+function DeletedRow({ name, word }: { name: string; word: React.ReactNode }) {
   return (
     <div className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5">
       <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-muted-foreground">
-          {work.name}
-        </span>
+        <span className="block truncate text-sm font-medium text-muted-foreground">{name}</span>
       </div>
-      <button
-        type="button"
-        onClick={onRestore}
-        aria-label={t`Restore ${work.name}`}
-        className="text-button shrink-0 text-sm coarse:min-h-11"
-      >
-        <Trans>Restore</Trans>
-      </button>
+      {word}
     </div>
   );
 }

@@ -46,8 +46,8 @@ transaction that makes its project, account or Work, so a tree without one is a 
 nothing), each Work's authority, Trash times and retention, and a chat's uploads.
 
 Whoever makes a record names it as its own copy shows it: a create, a rename, and a move into a
-name that is taken record the numbered name (a move is a `move` and a `rename` in one update;
-a move record has no name). The replay numbers only a clash nobody could see.
+name that is taken record the numbered name (a move that numbers its arrival carries the name
+itself; no paired `rename`). The replay numbers only a clash nobody could see.
 
 The only verdict the server writes is `dropped` on a change to a Work that was closed (a create,
 rename, move or delete in its draft or its Scratch): it comes back as a settlement on the record,

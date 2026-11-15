@@ -4,6 +4,8 @@ import { plural } from "@lingui/core/macro";
 import { createdDraftId } from "@meridian/contracts";
 import { type AccountId, draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { getDraftMetadata } from "@/client/api/branches-api";
+import { getTrashDiscards } from "@/client/api/projects-api";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -91,15 +93,36 @@ export class AccountFeatureLifetime {
     this.registry = this.runtime.registry;
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner(this.registry, {
-      // A draft's room closed: where the document stands says whether it went to live or was removed.
-      resolveGone: async (ref) => {
+      // The server's state now, whichever arrived first: the close, or a restore after it.
+      resolveEnd: async (ref, draftId) => {
+        const answer = await getDraftMetadata(ref);
+        if (answer.status === "active" && answer.draftId === draftId) return "open";
+        const trash = await getTrashDiscards(ref.projectId);
+        if (trash.entries.some(({ drafts }) => drafts.some((draft) => draft.draftId === draftId)))
+          return "in-trash";
         const standing = this.standings.standing(ref.projectId, ref.documentId);
-        return standing.kind === "in-tree"
-          ? { disposition: "closed" }
-          : standing.kind === "waiting"
-            ? null
-            : { disposition: "removed" };
+        return standing.kind === "waiting"
+          ? null
+          : standing.kind === "in-trash"
+            ? "document"
+            : "other";
       },
+      documentBack: (ref) =>
+        new Promise<void>((resolve) => {
+          const back = () => {
+            const kind = this.standings.standing(ref.projectId, ref.documentId).kind;
+            return kind !== "in-trash" && kind !== "waiting";
+          };
+          const stop = this.standings.watch(ref.projectId, () => {
+            if (!back()) return;
+            stop();
+            resolve();
+          });
+          if (back()) {
+            stop();
+            resolve();
+          }
+        }),
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },

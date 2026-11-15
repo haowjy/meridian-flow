@@ -94,7 +94,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
           density="full"
           disabled={!dock.canCommand}
-          discardAsks={dock.discardAsks}
           onDiscard={dock.discard}
           onApply={dock.canApply ? startApply : undefined}
         />

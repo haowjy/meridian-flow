@@ -286,16 +286,16 @@ go accepts it; Escape or another target declines it. A drop moves every carried 
 `moveRows` (`entry-drag/execute-move.ts`), reselects them and reveals the destination (the target's
 own `reveal`, the same one the spring calls). The tree is the whole report of a move that works.
 A row no list will take (read-only, not open) toasts "Couldn't move chapter-3 to Act 2."
-("Couldn't move 3 items to Act 2." for several) with Retry for the rows it refused. A row the
-server refuses later goes back with its failure mark and the server's reason; there is no toast.
+("Couldn't move 3 items to Act 2." for several) with Retry for the rows it refused. The server
+refuses no move; one into a Work that closed meanwhile bounces on its row ("Not moved").
 
 Move… and Copy to… report the same way, whether or not a list is mounted. A desktop list
 selects the moved row; the phone browser needs no selection or drop scope. Move… does not reveal a
 collapsed destination (expansion belongs to each section); moving the open
 document reveals it through the active-document reveal.
 
-Placement is optimistic, exactly as for Move…: the record shows at once and a later server
-refusal lands on the row as its failure mark. Verdicts likewise resolve each
+Placement is optimistic, exactly as for Move…: the record shows at once, and the server never
+refuses it (a change to a Work that closed meanwhile bounces on its row). Verdicts likewise resolve each
 dragged row by identity from the trees the list shows (rows another list
 dragged included), so a peer's rename or move during the drag can't slip a
 folder inside itself. A lone moved row stays selected on its own (an explicit
@@ -462,8 +462,8 @@ the entry's node (a document or a folder, `trashRef`). The entries route recogni
 `move` to the destination as one gesture (`TreeActions.restore` with its destination), one Undo step.
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
 refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
-destination at once from the replay. A restore the server refuses comes back as a settlement on its
-record: the entry goes back to Trash with the server's reason. Until the writer's next gesture,
+destination at once from the replay. The server never refuses a restore; one into a Work that
+closed meanwhile bounces on its row ("Not restored") and the entry stays in Trash. Until the writer's next gesture,
 the restored rows say "Undo" in the tree and stay struck through in Trash with the same Undo, the
 step Ctrl+Z takes, which puts them back in Trash. The struck-through Trash rows are the entries as
 Trash listed them at the restore (`restored` on the provider), shown while the step's notice

@@ -166,6 +166,7 @@ const customNodes = {
     tableRole: "header_cell",
     isolating: true,
     attrs: {
+      id: idAttr,
       alignment: { default: null },
       colspan: { default: 1 },
       rowspan: { default: 1 },
@@ -178,6 +179,7 @@ const customNodes = {
     tableRole: "cell",
     isolating: true,
     attrs: {
+      id: idAttr,
       alignment: { default: null },
       colspan: { default: 1 },
       rowspan: { default: 1 },

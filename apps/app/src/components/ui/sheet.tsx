@@ -7,6 +7,7 @@ import { t } from "@lingui/core/macro";
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 import type * as React from "react";
+import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { IconButton } from "@/components/ui/icon-button";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,7 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
@@ -77,6 +79,10 @@ function SheetContent({
             "inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
           className,
         )}
+        onEscapeKeyDown={(event) => {
+          ignoreFieldEscape(event);
+          onEscapeKeyDown?.(event);
+        }}
         {...props}
       >
         {children}

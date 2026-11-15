@@ -21,9 +21,18 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
   const registry = useLiveDocumentSessionRegistry();
   const owner = useDraftCommandOwner();
   const metadata = useDraftMetadata(drafts);
-  const names = metadata.map((entry) =>
-    entry.data?.status === "active" ? entry.data.reviewRoomName : null,
-  );
+  // A draft that closed while on screen keeps its room: its text stays, read-only, in Trash.
+  const shownRooms = useRef(new Map<string, string>());
+  const names = metadata.map((entry, index) => {
+    const itemKey = drafts[index].itemKey;
+    if (entry.data?.status === "active") {
+      shownRooms.current.set(itemKey, entry.data.reviewRoomName);
+      return entry.data.reviewRoomName;
+    }
+    if (entry.data?.status === "gone") return shownRooms.current.get(itemKey) ?? null;
+    shownRooms.current.delete(itemKey);
+    return null;
+  });
   const namesKey = JSON.stringify(names);
   const metadataKey = JSON.stringify(
     metadata.map((result, index) => [
@@ -36,16 +45,41 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       result.isError,
     ]),
   );
-  useEffect(() => {
-    for (const [index, result] of metadata.entries())
-      if (result.data?.status === "gone") void owner.metadataGone(drafts[index]);
-  }, [metadataKey, owner]);
   const [held, setHeld] = useState<ReadonlyMap<string, HeldReview>>(new Map());
   const leases = useRef(new Map<string, () => void>());
+  const reads = useRef(new Map<string, DraftRoomRead>());
+  // The answer each room last asked again on: one retry per answer, so a room that keeps failing
+  // waits for the next one.
+  const retriedOn = useRef(new Map<string, number>());
+  const roomsKey = JSON.stringify([...held].map(([name, room]) => [name, room.read.state().kind]));
+  useEffect(() => {
+    for (const [index, result] of metadata.entries()) {
+      const { data } = result;
+      if (data?.status === "gone") void owner.askEnd(drafts[index]);
+      // A restore reopened a draft this tab saw end: its room joins again under the same id.
+      else if (
+        data?.status === "active" &&
+        owner.metadataActive(drafts[index], data.draftId, data.readAt)
+      ) {
+        const read = reads.current.get(data.reviewRoomName);
+        const kind = read?.state().kind;
+        if (
+          kind !== undefined &&
+          kind !== "usable" &&
+          kind !== "rebuilding" &&
+          retriedOn.current.get(data.reviewRoomName) !== result.dataUpdatedAt
+        ) {
+          retriedOn.current.set(data.reviewRoomName, result.dataUpdatedAt);
+          read?.retry();
+        }
+      }
+    }
+  }, [metadataKey, roomsKey, owner]);
   useEffect(
     () => () => {
       for (const release of leases.current.values()) release();
       leases.current.clear();
+      reads.current.clear();
       setHeld(new Map());
     },
     [registry],
@@ -56,6 +90,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       if (wanted.has(name)) continue;
       release();
       leases.current.delete(name);
+      reads.current.delete(name);
       setHeld((prior) => {
         const next = new Map(prior);
         next.delete(name);
@@ -101,6 +136,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       };
       const unwatch = read.subscribe(follow);
       follow();
+      reads.current.set(name, read);
       leases.current.set(name, () => {
         unwatch();
         releaseAttribution();
@@ -122,7 +158,8 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
         const status =
           meta?.data?.status === "tree-only"
             ? ("ready" as const)
-            : meta?.data?.status === "gone"
+            : // A room this tab still holds stays on screen after its draft closed (in Trash).
+              meta?.data?.status === "gone" && !current?.session
               ? "gone"
               : metadataFailed || roomFailed
                 ? "error"

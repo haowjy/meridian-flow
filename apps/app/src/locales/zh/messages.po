@@ -405,6 +405,14 @@ msgstr ""
 msgid "{count, plural, one {# document to review} other {# documents to review}}"
 msgstr ""
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "{count, plural, one {# draft discarded from {workName}} other {# drafts discarded from {workName}}}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "{count, plural, one {# draft discarded} other {# drafts discarded}}"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -1630,6 +1638,7 @@ msgstr ""
 
 #: src/features/project/mobile/MobileChangeSheet.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Changes"
 msgstr ""
 
@@ -2167,6 +2176,10 @@ msgstr ""
 msgid "Couldn't create a Work"
 msgstr ""
 
+#: src/features/home/NewProjectView.tsx
+msgid "Couldn’t create the project."
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 #~ msgid "Couldn't create this document. Try another place."
 #~ msgstr ""
@@ -2373,6 +2386,10 @@ msgstr ""
 msgid "Couldn’t pin {title}"
 msgstr ""
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Couldn't put them back in Trash. Retry tries again."
+msgstr ""
+
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
 msgstr ""
@@ -2444,8 +2461,16 @@ msgstr ""
 msgid "Couldn't restore {title}. Retry tries again."
 msgstr ""
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Couldn't restore it. Retry tries again."
+msgstr ""
+
 #: src/features/draft-review/TrashedChatNotice.tsx
 msgid "Couldn't restore the chat. Try again."
+msgstr ""
+
+#: src/features/editor/InTrashStatus.tsx
+msgid "Couldn't restore this draft"
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -2897,12 +2922,12 @@ msgid "Discard draft of {name}"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
-msgid "Discard these drafts? This can't be undone."
-msgstr ""
+#~ msgid "Discard these drafts? This can't be undone."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
-msgid "Discard this change? This can't be undone."
-msgstr ""
+#~ msgid "Discard this change? This can't be undone."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Discard this chat's changes to {documents} documents"
@@ -2913,8 +2938,8 @@ msgid "Discard this chat's changes to {name}"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
-msgid "Discard this draft? This can't be undone."
-msgstr ""
+#~ msgid "Discard this draft? This can't be undone."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2948,7 +2973,12 @@ msgstr ""
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/RescuedText.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
+#: src/features/project/work/GoneWord.tsx
 msgid "Dismiss"
+msgstr ""
+
+#: src/features/project/work/GoneWord.tsx
+msgid "Dismiss {name}"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
@@ -3008,6 +3038,14 @@ msgstr ""
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Draft discarded"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Draft discarded from {workName}"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
@@ -3386,6 +3424,8 @@ msgstr ""
 msgid "Gone for good: this document was emptied from Trash."
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+#: src/features/project/work/GoneWord.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Gone from Trash."
 msgstr ""
@@ -3679,6 +3719,10 @@ msgstr ""
 msgid "Italic"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash."
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its document wasn't restored"
 msgstr ""
@@ -3699,7 +3743,6 @@ msgstr "跳转到聊天中的位置"
 msgid "Just now"
 msgstr ""
 
-#: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Keep"
 msgstr ""
@@ -4433,7 +4476,9 @@ msgstr ""
 msgid "Not reported"
 msgstr "未报告"
 
+#: src/features/draft-review/CommandNotice.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Not restored"
 msgstr ""
@@ -4707,7 +4752,11 @@ msgid "Partial result"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Partly back"
+#~ msgid "Partly back"
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Partly restored"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
@@ -5041,6 +5090,14 @@ msgstr "切换设备时，会重新打开你之前打开的文档。"
 msgid "Replace image"
 msgstr ""
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Replaced by a restore"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Replaced by a restore in {workName}"
+msgstr ""
+
 #: src/features/chat/SpawnReportCard.tsx
 msgid "Report is unavailable"
 msgstr ""
@@ -5066,15 +5123,17 @@ msgid "Response complete"
 msgstr "回复完成"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
+#: src/features/editor/InTrashStatus.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "Restore"
 msgstr ""
 
+#. placeholder {0}: entry.work.name
 #. placeholder {0}: scoped.name
-#. placeholder {0}: work.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
@@ -5090,6 +5149,10 @@ msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Restore to {destinationName}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored"
 msgstr ""
 
 #. placeholder {0}: only.name
@@ -5119,8 +5182,25 @@ msgstr ""
 msgid "Restored from Trash just now. Undo puts it back in Trash."
 msgstr ""
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now: the drafts are back in {workName}. Undo puts them back in Trash."
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now: the drafts are back. Undo puts them back in Trash."
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restored just now."
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Restoring the drafts."
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -5152,6 +5232,7 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
@@ -5184,6 +5265,7 @@ msgid "Retry restoring {name}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Retry restoring {title}"
 msgstr ""
 
@@ -5197,6 +5279,10 @@ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Retry undoing applying {name}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Retry undoing the restore of {title}"
 msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
@@ -6350,6 +6436,10 @@ msgstr ""
 msgid "This diagram stopped parsing. The preview is the last version that rendered."
 msgstr ""
 
+#: src/features/editor/InTrashStatus.tsx
+msgid "this document"
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document can't be edited now, so this change can't be reversed."
 msgstr ""
@@ -6361,6 +6451,10 @@ msgstr ""
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "This document couldn't be created where you put it."
 #~ msgstr ""
+
+#: src/features/editor/InTrashStatus.tsx
+msgid "This document is in Trash"
+msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 msgid "This document is not taking changes right now."
@@ -6431,6 +6525,14 @@ msgstr ""
 msgid "This draft is archived"
 msgstr ""
 
+#: src/features/editor/InTrashStatus.tsx
+msgid "This draft is gone from Trash"
+msgstr ""
+
+#: src/features/editor/InTrashStatus.tsx
+msgid "This draft is in Trash"
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded already."
 msgstr ""
@@ -6444,8 +6546,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/ReviewToast.tsx
-msgid "This draft was discarded."
-msgstr ""
+#~ msgid "This draft was discarded."
+#~ msgstr ""
 
 #: src/features/import/reason-copy.ts
 msgid "This file couldn't be read."
@@ -6681,6 +6783,7 @@ msgstr ""
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
+#: src/features/editor/InTrashStatus.tsx
 #: src/features/editor/SyncStatus.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -6784,9 +6887,14 @@ msgstr ""
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "撤销"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo applying {name}"
+msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -6829,6 +6937,10 @@ msgstr ""
 msgid "Undo restore of {name}"
 msgstr ""
 
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
+msgid "Undo restore of {title}"
+msgstr ""
+
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped applying {name}: the tree changed since."
 msgstr ""
@@ -6843,6 +6955,14 @@ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Undo switch to draft mode"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the whole Apply, all {count} changes."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes them back out."
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
@@ -6893,6 +7013,7 @@ msgstr ""
 #: src/features/draft-review/tree-line.ts
 #: src/features/draft-review/useWorkBranchCommands.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Untitled document"
 msgstr ""
 
@@ -7103,6 +7224,10 @@ msgstr ""
 
 #: src/components/app/WorkClosedChip.tsx
 msgid "Work was closed"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Work was closed."
 msgstr ""
 
 #: src/features/chat/SpawnReportCard.tsx

@@ -9242,7 +9242,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 3000000
+          "default": 3001000
         },
         "revision": {
           "name": "revision",
@@ -9589,7 +9589,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 3000000
+          "default": 3001000
         },
         "retired_through_seq": {
           "name": "retired_through_seq",

@@ -332,9 +332,9 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..83dc9e239363fea2a4b55a73f75afda1
    }
    meta.mapping.set(yDomFragment, pNode);
 +  // Children pair by block id only under a parent that stays the same block (or the document).
-+  // A table cell has no id, so cells pair by position; a container a column move rewrote in
-+  // place as another block is not the same block either. Pairing by id there would delete the
-+  // children that crossed, with a peer's text; positional pairing keeps it (as stock y-tiptap).
++  // A container rewritten in place as another block is not the same block. Pairing its
++  // children by id would delete the children that crossed, with a peer's text; positional
++  // pairing keeps it (as stock y-tiptap). Rows, cells and headers all carry permanent ids.
 +  const keyed = !(yDomFragment instanceof Y__namespace.XmlElement) ||
 +    (yDomFragment.getAttribute('id') != null && yDomFragment.getAttribute('id') === pNode.attrs.id);
    // update attributes
@@ -984,9 +984,9 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..6c59594a9bb7fd6d94c782fbb86c42c0
    }
    meta.mapping.set(yDomFragment, pNode);
 +  // Children pair by block id only under a parent that stays the same block (or the document).
-+  // A table cell has no id, so cells pair by position; a container a column move rewrote in
-+  // place as another block is not the same block either. Pairing by id there would delete the
-+  // children that crossed, with a peer's text; positional pairing keeps it (as stock y-tiptap).
++  // A container rewritten in place as another block is not the same block. Pairing its
++  // children by id would delete the children that crossed, with a peer's text; positional
++  // pairing keeps it (as stock y-tiptap). Rows, cells and headers all carry permanent ids.
 +  const keyed = !(yDomFragment instanceof Y.XmlElement) ||
 +    (yDomFragment.getAttribute('id') != null && yDomFragment.getAttribute('id') === pNode.attrs.id);
    // update attributes
