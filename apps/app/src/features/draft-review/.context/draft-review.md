@@ -220,12 +220,12 @@ the `prosemirror` fragment (writer typing, a model write), the room closing or r
 (`binding.notices`), or Ctrl+Z popping the item from the reviewing editor ends it silently. So
 the notice and Ctrl+Z can never undo the same Discard twice. While the reviewing editor lives and
 the item is on top of its stack, the notice's Undo is that editor's Undo; once the editor is gone
-(a band Discard sends the page to Live) the item is undone alone through a short-lived manager.
+the item is undone alone through a short-lived manager.
 Both paths record restorations, so marks after an Undo match marks before the Discard. Each Undo
 handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
 kept open; `DraftCommandOwner.close()` ends every notice.
 
-A whole-draft Discard on a draft-only page (live deleted it elsewhere), local or on the server,
+A whole-draft Discard (always a server command) on a draft-only page (live deleted it elsewhere)
 sends main back through `ContextRemovalCoordinator.beginOwnRemoval` once the Discard is written,
 so a refused Discard leaves main on the page that shows the refusal; the go-back reports where
 main landed, and an Undo while main is still there returns it to the draft's review address.
