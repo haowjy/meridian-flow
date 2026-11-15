@@ -154,6 +154,9 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
+const RESOLVE_RETRY_MS = 1_000;
+const RESOLVE_RETRY_MAX_MS = 30_000;
+
 export class DraftCommandOwner {
   private readonly items = new Map<string, Item>();
   private readonly entries = new Map<string, Entry>();
@@ -188,7 +191,7 @@ export class DraftCommandOwner {
       /**
        * What became of a draft whose room closed or whose metadata answered gone, read from the
        * server now: `open` when it holds the draft open (a restore that arrived before the close),
-       * null when it can't tell yet.
+       * null when it can't tell yet; a rejection is a failed read. Neither decides an end.
        */
       resolveEnd?(
         ref: DraftRef,
@@ -493,11 +496,20 @@ export class DraftCommandOwner {
     if (entry) entry.users++;
     this.setState(ref.itemKey, { checkingClose: true }, id);
     const resolving = (async () => {
-      const end = await this.lifecycle.resolveEnd?.(ref, id).catch(() => "other" as const);
-      if (!this.active || !end) return;
-      // A restore landed before this close: the session on screen joins the reopened draft.
-      if (end === "open") this.registry.reopenDraftRoom(draftRoomName(id));
-      else this.finishClose(ref, id, end);
+      // A failed read or an undecided answer decides nothing: the draft stays held, and is asked
+      // about again while a surface shows it (and on its next `gone` metadata answer).
+      for (let wait = RESOLVE_RETRY_MS; ; wait = Math.min(wait * 2, RESOLVE_RETRY_MAX_MS)) {
+        const end = await this.lifecycle.resolveEnd?.(ref, id).catch(() => null);
+        if (end === undefined || !this.active || this.records.get(id)?.ended) return;
+        if (end) {
+          // A restore landed before this close: the session on screen joins the reopened draft.
+          if (end === "open") this.registry.reopenDraftRoom(draftRoomName(id));
+          else this.finishClose(ref, id, end);
+          return;
+        }
+        if (!this.entries.get(id)?.binding) return;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
     })().finally(() => {
       this.resolvingGone.delete(id);
       if (this.active) this.setState(ref.itemKey, { checkingClose: false }, id);
