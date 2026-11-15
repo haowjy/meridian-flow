@@ -4,15 +4,18 @@ import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "reac
 import { useTreeList } from "@/client/query/useProjectTree";
 import { type GoneRow, RowWord } from "@/components/app/RowWord";
 import {
+  type Bounce,
   endTreeNotice,
   type Said,
   subscribeTreeNotices,
   type TreeStep,
+  treeBounces,
   treeNotice,
   treeNoticeRevision,
   type Was,
 } from "@/core/project-tree/tree-undo";
 import type { TreeView } from "@/core/project-tree/tree-view";
+import { useShellTreeVersion } from "../tree-version";
 import { useAccountId } from "./account-feature-context";
 import { useEntryActions } from "./entry-drag/entry-actions";
 
@@ -22,7 +25,10 @@ export type TreeNoticeWords = {
    * (`gone`), its Undo takes the focus the row had.
    */
   word: (node: string, gone?: boolean) => ReactNode;
-  /** The rows the latest delete took from under `parent` (a folder's or a source's id). */
+  /**
+   * The rows gone from under `parent` (a folder's or a source's id) that still say something: the
+   * latest delete's, and the creates the server bounced, where the writer made them.
+   */
   deleted: (parent: string) => GoneRow<Was>[];
   /** The node was restored out of Trash by the latest gesture: its Trash row stays, struck through. */
   restored: (node: string) => boolean;
@@ -69,13 +75,16 @@ export const entryRowOf = (node: string) =>
  * latest gesture with its Undo, the same step Ctrl+Z takes, or what a press or a row's Undo
  * skipped or couldn't take back. A word goes on its row when the list draws it, else on the
  * nearest drawn folder above it, else on the list's heading; a list that doesn't hold the node
- * says nothing. Read once per list.
+ * says nothing. A change the server bounced (`treeBounces`) says so on its own row while the list
+ * draws it, and nowhere else; on a row with two words the bounce, which came later, wins. Read
+ * once per list.
  */
 export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeNoticeWords {
   const accountId = useAccountId();
   const project = useTreeList({ kind: "project", projectId }).session;
   const account = useTreeList({ kind: "account", userId: accountId }).session;
   const actions = useEntryActions(projectId);
+  const workName = useShellTreeVersion()?.name ?? null;
   const revision = useSyncExternalStore(
     subscribeTreeNotices,
     treeNoticeRevision,
@@ -93,7 +102,9 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
     const steps = shown.flatMap(({ notice, list }) =>
       notice.kind === "step" ? [{ step: notice.step, list }] : [],
     );
-    // A row the latest delete took stays drawn, struck through, where it was.
+    const bounced = [project, account].flatMap((session) => treeBounces(session));
+    // A row the latest delete took, or a create the server bounced, stays drawn, struck through,
+    // where it was.
     const gone = new Map<string, Was>();
     for (const { step } of steps)
       if (step.gesture === "delete")
@@ -101,6 +112,7 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
           const was = step.was.get(node);
           if (was) gone.set(node, was);
         }
+    for (const { record, made } of bounced) if (made) gone.set(record.node, made);
     const parentOf = (node: string) =>
       place.holds(node) ? place.parent(node) : (gone.get(node)?.parent ?? null);
     const holds = (node: string): boolean => {
@@ -131,6 +143,12 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
         words.set(above, () => word(first, false));
       else header ??= word(first, false);
     };
+    // The latest bounce of a node speaks for it, before any other word.
+    for (const bounce of [...bounced].reverse())
+      if (holds(bounce.record.node) && drawn(bounce.record.node) && !words.has(bounce.record.node))
+        words.set(bounce.record.node, () => (
+          <BounceWord key={bounce.record.node} bounce={bounce} work={workName} />
+        ));
     for (const { step, list } of steps) {
       const takes = step.gesture === "delete" || step.gesture === "restore";
       put(step.nodes, (node, gone) => (
@@ -172,7 +190,65 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
       restored: (node) =>
         steps.some(({ step }) => step.gesture === "restore" && step.nodes.includes(node)),
     };
-  }, [revision, project, account, actions, end, place]);
+  }, [revision, project, account, actions, end, place, workName]);
+}
+
+/**
+ * What a bounced change says: what didn't happen ("Not created", "Not renamed", "Not moved", "Not
+ * deleted"), why, and the Copy it offers when the writer typed something it can hand back (a
+ * created document's text, a rename's name). `work` is the Work that was closed, when the shell
+ * knows it. A row's word and a not-created document's tab say it the same.
+ */
+export function bounceSaying(
+  bounce: Bounce,
+  work: string | null,
+): {
+  word: ReactNode;
+  sentence: string;
+  copy: { word: ReactNode; label: string; take: () => void } | null;
+} {
+  const closed = work ? t`${work} was closed.` : t`The Work was closed.`;
+  const { record, typed } = bounce;
+  if (typed) {
+    const created = record.type === "create";
+    const lead = created ? t`Not created:` : t`Not renamed:`;
+    const takes = created ? t`Copy takes what you typed.` : t`Copy takes the name you typed.`;
+    const word = <Trans>Copy</Trans>;
+    return {
+      word,
+      sentence: `${lead} ${closed} ${takes}`,
+      copy: {
+        word,
+        label: created ? t`Copy what you typed` : t`Copy the name you typed`,
+        take: () => void navigator.clipboard.writeText(typed),
+      },
+    };
+  }
+  return {
+    word:
+      record.type === "create" ? (
+        <Trans>Not created</Trans>
+      ) : record.type === "move" ? (
+        <Trans>Not moved</Trans>
+      ) : record.type === "delete" ? (
+        <Trans>Not deleted</Trans>
+      ) : record.type === "restore" ? (
+        <Trans>Not restored</Trans>
+      ) : (
+        <Trans>Not renamed</Trans>
+      ),
+    sentence: closed,
+    copy: null,
+  };
+}
+
+function BounceWord({ bounce, work }: { bounce: Bounce; work: string | null }) {
+  const { word, sentence, copy } = bounceSaying(bounce, work);
+  return copy ? (
+    <RowWord word={copy.word} label={copy.label} sentence={sentence} onAction={copy.take} />
+  ) : (
+    <RowWord tone="warning" word={word} sentence={sentence} />
+  );
 }
 
 function undoLabel(step: TreeStep, node: string): string {

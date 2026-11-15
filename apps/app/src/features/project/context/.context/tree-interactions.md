@@ -111,11 +111,8 @@ A row's Delete, a selection's Delete N and a drop onto Trash are each one `runDe
 (`entry-drag/entry-failure.ts`): a `delete` record per entry, appended to the browser's copy of the
 list that holds it (`TreeActions.remove`, one update per list). The row leaves the tree at once and
 the document waits in Trash. One own removal covers every document the gesture takes away, and an
-entry inside another entry's folder goes with that folder, never on its own. A list that cannot
-take the records (read-only, not open) toasts and keeps the documents. A delete the server refuses
-comes back as a `refused` settlement: the row returns saying "Not deleted" in its trailing place
-(`RefusalWord`; the sentence is "Couldn't delete this document." and the server's reason) and its
-menu offers Delete again or Dismiss.
+entry inside another entry's folder goes with that folder, never on its own. Nothing refuses a
+delete: the record lands, and the replay settles it with whatever else reached the list.
 Writer deletion has no confirmation step. In the sidebar the deleted row stays where it was,
 struck through, with "Undo" in its trailing place (`RowWord`, from the list's `TreeNotice`), and
 the focus the row had goes to that Undo; after Undo it goes back to the row. The struck-through row
@@ -147,23 +144,21 @@ A rename is a `rename` record, appended at once (`useRenameEntryForm`, `TreeActi
 list numbers the name when the clash is visible in its copy, and the tree, headers, tabs and routes
 show the new name from the same replay. Nothing is sent or retried by the UI: Yjs carries the record.
 
-A refusal comes back as a `refused` settlement on the record, and `treeFailures`
-(`core/project-tree/tree-failures.ts`) puts it on the row as `TreeFailure` fields:
-`namespaceFailure` (`delete`, `set-location`, `create`), the server's `failureReason`, the repair
-(`namespaceRepairName` for a rename, `namespaceRepairMove` for a move) and `failureRecord`. The row
-returns to where it was saying so in its trailing place (`RefusalWord`: "Moved back", "Name back",
-"Not placed", the reason in its sentence, the repairs in its menu); the identity bar of a homed document shows a
-passive status directing the writer to Rename in the file list. The list's repair field opens once,
-as the refusal arrives (`use-repair-on-fresh-failure.ts`): a failure already there on mount, a
-remount, or one that lands while another input is active leaves only the mark; blur dismisses the
-field without retrying and Enter retries. A later record of the writer's on the node ends the
-failure, which is the repair. The row menu's Dismiss (`dismissFailure`) puts a refusal away without
-repairing it; it stays in the list and no longer shows.
-
-A document whose create the server kept in Unfiled stands there with its text and the same mark
-(`namespaceFailure: "create"`, "This document couldn't be created where you put it." and the
-reason). Its row menu repairs it: Move… offers the place the writer asked for
-(`namespaceRepairMove`), Rename the name.
+Nothing refuses a rename, move or delete. The one thing the server turns back is a change to a
+Work that was closed (archived or deleted): a create, rename, move, delete or restore in its draft
+or its Scratch, raced or not. The record is sent like any other; the server stamps it `dropped`
+("Work was closed"), every replay leaves it out, and the row goes back to how it stood. The row
+says so in lead 5's shape (`core/project-tree/tree-bounces.ts` hears the stamp arrive and
+`useTreeNoticeWords` puts the word on the row): a created row stays where the writer made it,
+struck through, with "Copy" when the writer typed into it (Copy puts the text from the document's
+local copy on the clipboard; hover "Not created: <Work> was closed. Copy takes what you typed.")
+or "Not created" ("<Work> was closed."). A renamed row reads its old name with "Copy" (the name the
+writer typed); a moved or deleted row reads as it stood with "Not moved" or "Not deleted". Each
+word is on its own row only (a row inside a closed folder gets none and the folder doesn't open),
+the later of two words on one row wins, and the words last as the tree's notice does: until the
+writer's next gesture, press or open in that list, or leaving the project. A stamp the stored copy
+already held when the tab opened the list is not said again. An archived Work's Draft view keeps
+its tree controls; a deleted Work's offers none.
 
 A move or rename shows no "Updated N links" line: the links name the document's id, which does
 not change, and a record has no receipt to carry the count.

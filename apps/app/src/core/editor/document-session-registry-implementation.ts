@@ -168,6 +168,14 @@ export class DocumentSessionRegistry {
     return (await Promise.all(settled)).every(Boolean);
   }
 
+  localText(documentId: DocumentId): Promise<string | null> {
+    // A copy that can't be read is a tab without the typed words, not a failed bounce.
+    return this.copies.text(documentId).catch((error: unknown) => {
+      reportError(error);
+      return null;
+    });
+  }
+
   /** Calls `observer` with the documents this browser holds a copy of for the account, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void {
     return this.copies.observe(observer);
@@ -252,6 +260,12 @@ export class DocumentSessionRegistry {
   closeDraftRoom(roomKey: string): Promise<void> {
     const session = this.draftRooms.peek(roomKey);
     if (session) this.handBackUnsent(session, "closed");
+    return this.draftRooms.close(roomKey);
+  }
+
+  abandonDraftRoom(roomKey: string): Promise<void> {
+    const session = this.draftRooms.peek(roomKey);
+    if (session) this.handedBack.add(session);
     return this.draftRooms.close(roomKey);
   }
 

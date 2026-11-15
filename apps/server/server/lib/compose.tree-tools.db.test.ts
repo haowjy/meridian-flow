@@ -423,24 +423,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await placement(CH1)).toMatchObject({ name: "The Fall" });
     });
 
-    it("a name given to another document since is refused as path_changed, and nothing is touched", async () => {
+    it("a name given to another document since still reaches the node the model was shown", async () => {
       const script = await start();
       const { call } = await script.begin();
       await call("ls", { path: "manuscript://" });
       await asWriter((writer) => writer.rename(LIVE, WRITER, CH1, "The Fall"));
       const fresh = await treeSeeder(db).document(SOURCE_ID, "ch1", { actor: WRITER });
-      const refused = await call("write", { command: "delete", path: "ch1" });
-      expect(text(refused)).toContain("status: path_changed; path: manuscript://ch1");
-      expect(text(refused)).toContain(
-        "Nothing done: manuscript://ch1 now names a different document. The one you were shown is now manuscript://The Fall.",
-      );
-      expect((await placement(CH1))?.deletedAt).toBeNull();
-      expect((await placement(fresh))?.deletedAt).toBeNull();
-      // The refusal showed both names: the old path now means the new document, the old one is reached by its new name.
-      const deleted = await call("write", { command: "delete", path: "The Fall" });
+      const deleted = await call("write", { command: "delete", path: "ch1" });
       expect(deleted.isError, text(deleted)).toBeFalsy();
+      expect(text(deleted)).toContain("renamed: manuscript://ch1 → The Fall");
       expect((await placement(CH1))?.deletedAt).not.toBeNull();
       expect((await placement(fresh))?.deletedAt).toBeNull();
+      const again = await call("write", { command: "delete", path: "ch1" });
+      expect(text(again)).toContain("already deleted");
     });
 
     it("moves several into a folder, deletes it with what is inside, and restores it whole", async () => {
@@ -697,8 +692,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(text(await call("read", { path: "ch1" }))).toContain("path: manuscript://NewName");
         await asWriter((writer) => writer.rename(LIVE, WRITER, CH1, "Third"));
         const fresh = await asNewDoc("NewName");
-        const refused = await call("write", { command: "delete", path: "NewName" });
-        expect(text(refused)).toContain("status: path_changed");
+        const deleted = await call("write", { command: "delete", path: "NewName" });
+        expect(deleted.isError, text(deleted)).toBeFalsy();
+        expect((await placement(CH1))?.deletedAt).not.toBeNull();
         expect((await placement(fresh))?.deletedAt).toBeNull();
       });
 
@@ -709,12 +705,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).toContain("ch1");
         await asWriter((writer) => writer.rename(LIVE, WRITER, CH1, "Moved"));
         const fresh = await asNewDoc("ch1");
-        const refused = await call("write", { command: "delete", path: "ch1" });
-        expect(text(refused)).toContain("status: path_changed");
+        const deleted = await call("write", { command: "delete", path: "ch1" });
+        expect(deleted.isError, text(deleted)).toBeFalsy();
+        expect((await placement(CH1))?.deletedAt).not.toBeNull();
         expect((await placement(fresh))?.deletedAt).toBeNull();
       });
 
-      it("a name shown in the other view and reused in this one is path_changed, not today's occupant", async () => {
+      it("a name shown in the other view and reused in this one names nothing", async () => {
         const script = await start();
         const shared = drafting(script);
         const draftEdit = await shared.begin();
@@ -733,7 +730,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .where(eq(schema.threads.id, OTHER.threadId));
         const now = await shared.begin();
         const refused = await now.call("write", { command: "delete", path: "private/" });
-        expect(text(refused), text(refused)).toContain("status: path_changed");
+        expect(text(refused), text(refused)).toContain("status: document_not_found");
         expect((await placementsNamed("private")).every((row) => row.deletedAt === null)).toBe(
           true,
         );

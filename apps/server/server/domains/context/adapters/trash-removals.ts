@@ -71,6 +71,7 @@ export async function trashActorsOf(
  */
 export function createTrashRemovals(db: Database): DocumentRemovals {
   return {
+    actors: (authors) => trashActorsOf(db, authors),
     async lookup(documentIds) {
       const out = new Map<DocumentId, DocumentRemovalRecord>();
       if (documentIds.length === 0) return out;

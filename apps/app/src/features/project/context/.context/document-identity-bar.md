@@ -56,16 +56,6 @@ Contracts:
   A same-name explicit Save clears provisional presentation. Navigation additionally requires
   that the committed document is still active. The field does not blur-dismiss while a save is
   pending. A move between a project and the account's files is a server route, not offered here.
-- **Repair**: a server refusal of the writer's record comes back as a `refused` settlement,
-  which the replay's reader (`useProjectTreeViews`) puts on the node (`namespaceFailure`,
-  `namespaceRepairName`, `namespaceRepairMove`). Only a provisional document's refusal reopens
-  the identity field with the writer's name and recovery note, automatically or through its
-  failure mark. A refused create counts: the document stays in Unfiled and the labelled mark
-  reads "Couldn't create this document. Try another place.", the same sentence as the field's
-  note. The mark sits on a line of its own under the path, wrapping, so a phone-width bar never
-  cuts it. Homed documents show a passive failure mark whose tooltip names the failed move
-  destination (or rename) and directs retry to Move… (or Rename) in the file list. The mark
-  never opens a field.
 - **Field buttons**: the open field renders ✓/× icon buttons after it —
   additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
   contract can't fire before the click lands). Keyboard behavior unchanged.

@@ -24,7 +24,7 @@ import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { documentGrant } from "./file-access.js";
 import { type ReadSelection, readDocument } from "./read-document.js";
-import { reachShown } from "./shown-paths.js";
+import { goneMessage, reachShown } from "./shown-paths.js";
 import {
   contextErrorMessage,
   isToolError,
@@ -89,14 +89,15 @@ export async function resolveCopySource(
   const call = await resolveToolCall(deps, ctx, source.version);
   if (isToolError(call)) return writeToolError(command, fromMessage(source, call.output.message));
   const { context } = call;
-  const reached = await reachShown(call, ctx, command, source.path, {
+  const reached = await reachShown(deps, call, ctx, source.path, {
     ...(source.version ? { version: source.version } : {}),
   });
-  if (isToolError(reached))
-    return {
-      ...reached,
-      output: { ...reached.output, message: fromMessage(source, reached.output.message ?? "") },
-    };
+  if (reached.gone)
+    return writeToolError(
+      command,
+      fromMessage(source, goneMessage(source.path, reached.gone)),
+      "document_not_found",
+    );
   const { filePath: basePath, fragment } = splitDocumentFile(reached.path);
   const ref = await context.port.stat(basePath);
   if (!ref.ok) {

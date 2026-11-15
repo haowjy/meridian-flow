@@ -17,15 +17,31 @@ An update with a deletion, a type or anything but `ContentAny` comes back whole.
 updates, the last keeps the original's shape (a SyncStep2 stays one) so the receiver's own
 bookkeeping happens once. Frames under 16 KB are not decoded.
 
-## Rebuild (`connect.ts`)
+## The handshake (`connect.ts`, `ListWebsocket`)
 
-After a close with `4210` the copy's `replace()` keeps the records the copy held (`carried()`) and
-gives an empty document under a new client id, and once the server's state has arrived
-(`onSynced`) the records the new copy lacks (by record id) are appended again, then
-`settleCarried()`. The first rebuild appends them in one update (an honest client's rebuild is one
-admission, never a stream that meets the rate limit). When the server's refusal names a
-record (the close reason is `list-rebuild:<record id>`; `admit` returns the record in its whole
-refusal), that record is given up on (`onRejected`) and the rest go again in one update, so one
-hostile record cannot starve the honest ones behind it. A refusal about the update's own
-structure names none: after more than three rebuilds within a minute all the carried records are
-given up on, so the copy cannot rebuild forever.
+The provider sends each edit as an Update frame as soon as it can, and on a reconnect that is
+before the client's SyncStep2, which carries what the server lacks: records of an earlier session
+(a reloaded copy has a new client id) or an update lost in flight. Ahead of the SyncStep2 such an
+edit sits beside a record the server does not hold, which the guard can't decide and faults
+(`a neighbour the server lacks`, `not the next clock`). So the socket holds every Update frame of a
+connection until that connection's SyncStep2 has gone, then sends the held ones. They are already
+inside the SyncStep2 (the guard skips what it holds) but each still gets its `SyncStatus`, so the
+provider's count of unconfirmed updates reaches zero. With this, an honest client never meets the
+guard's faults; the room tests "takes a reloaded copy's earlier session…" and "reconnects a client
+whose admission failed" prove it.
+
+## Recovery (`connect.ts`)
+
+After a close with `4212` the copy's `replace({ kind: "recover", carried, listId })` keeps the
+records the copy held, as the package reader reads them (`listRecords`: a value that is no record
+is skipped by every replay and isn't carried), and gives an empty document under a new client id; once the server's state has
+arrived (`onSynced`) the records the new copy lacks (by record id) are appended in one update,
+then `settleCarried()`. A record `clientMayWrite` refuses is not appended: it is what a client of
+another build wrote, and `onDropped` reports the lot. `recovering` stays set until the server
+has taken the appended records (`onUnsyncedChanges` reaching 0), so a second `4212` in that
+window is `broken` and nothing loops; a later fault is a new recovery. A sync with nothing to
+append, and a `4213`, end the recovery too.
+
+A close with `4213` names the list the room serves: `replace({ kind: "discard", listId })`, nothing carried, since the
+old records name nodes of a list that is gone. The id also arrives as the room's first stateless
+message for a copy that has none, and goes on the socket URL as `?list=`.

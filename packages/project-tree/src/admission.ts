@@ -1,77 +1,53 @@
 import * as Y from "yjs";
-import { listIndex } from "./list-index.js";
-import { nameFault } from "./names.js";
-import {
-  type CreateRecord,
-  isSourceRoot,
-  nameSet,
-  newId,
-  recordsOf,
-  sourceIdOf,
-  sourceRoot,
-  type TreeRecord,
-} from "./record.js";
-import { placeIn, replay, type TreeProjection } from "./replay.js";
-import { readRecord, readStored, writable } from "./validate.js";
-import { viewRecords } from "./view.js";
+import { isSourceRoot, recordsOf, sourceIdOf, type TreeRecord } from "./record.js";
+import { replay, type TreeProjection } from "./replay.js";
+import { readStored, SERVER_BASE, SERVER_FIELDS } from "./validate.js";
+import { droppedRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** What only the server knows about the connection that sent an update. */
 export type Connection = {
-  /** The account on the socket, as the server authenticated it. */
-  user: string;
-  /** Branches this account may draft into: its Works that are open. */
+  /** Branches that are open: a Work's that is neither archived nor deleted, and chats'. */
   drafts: ReadonlySet<string>;
-  /**
-   * Source ids this account may write. A chat's uploads are never among them: a record that
-   * would delete, move or rename an upload is then refused as a source the account cannot change.
-   */
-  writableSources: ReadonlySet<string>;
-  /** The project's Unfiled source id: where a create the server will not allow is kept. */
-  unfiledSource: string;
-  /** The types a client may give a document: an editable one. A file's type is the server's. */
-  editableTypes: ReadonlySet<string>;
-  /** Whether a type change stays within one Yjs schema (markdown to text does; to a canvas does not). */
-  sameSchema: (from: string, to: string) => boolean;
-  /** Whether a row anywhere in the database already uses this node id. */
-  takenElsewhere: (id: string) => boolean;
-};
-
-/** A create the server will not allow where it was made, and where it is kept instead. */
-export type KeptCreate = {
-  /** The refused client create. */
-  create: string;
-  /**
-   * The create the server appended in its place, directly after the refused one in the list,
-   * under the account's own actor. It carries that create's name, type and provisional mark; the
-   * client's later records on the node replay against it, each judged as usual.
-   */
-  record: CreateRecord;
+  /** Sources of archived or deleted Works: nothing may be created in them. */
+  closedSources: ReadonlySet<string>;
 };
 
 /**
- * An update refused whole. `record` is the id of the record that earned it, when one did (not
- * when the update's own structure is at fault): the client gives that record up and sends the
- * rest again.
+ * A copy that does something an honest client's never does (a deletion, a struct whose position
+ * can't be decided, a server-only kind). Nothing was stored. The room closes the connection with
+ * one terminal code; the client does not retry (`COPY_BROKEN`).
  */
-export type WholeRefusal = { ok: false; reason: string; record?: string };
+export class CopyFault extends Error {
+  constructor(readonly why: string) {
+    super(`a copy the list cannot take: ${why}`);
+  }
+}
 
-export type Admission =
-  | WholeRefusal
-  | {
-      ok: true;
-      /** The records the update adds (not those the server already held), in list order. */
-      records: TreeRecord[];
-      /** Records the account may not make now: settled `refused`, in no view. */
-      refused: Array<{ id: string; reason: string }>;
-      /** For each refused create, the create the server appended so the node is never left without a place. */
-      kept: KeptCreate[];
-    };
-
-/** Keeps the whole-refusal check cheap: no honest update holds this many records. */
+/** Keeps the guard cheap: no honest update holds this many records. Honest clients send parts of 250. */
 export const MAX_RECORDS = 2000;
 /** Yjs client ids below this are the server's, as they are for text. */
 const SERVER_CLIENT_IDS = 1000;
+
+/**
+ * Whether a client may write this value: not a kind or field only the server writes. A value the
+ * reader cannot read passes (every replay skips it the same way); a `purge` is final in every
+ * replay and `blob`, `carries` and the rest name storage or misattribute copies, so a client
+ * that sends one is broken, not mistaken.
+ */
+export function clientMayWrite(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return true;
+  const fields = value as Record<string, unknown>;
+  const serverKeys = [...SERVER_BASE, ...(SERVER_FIELDS.get(String(fields.type)) ?? [])];
+  if (fields.type === "purge" || (fields.type === "create" && fields.kind === "file")) return false;
+  if (serverKeys.some((key) => fields[key] !== undefined)) return false;
+  const from = fields.from;
+  const places = [
+    fields.parent,
+    typeof from === "object" && from !== null ? (from as { parent?: unknown }).parent : undefined,
+  ];
+  return !places.some((place) => typeof place === "string" && place.startsWith("list:"));
+}
 
 /** The part of one Yjs struct the server does not hold yet. */
 type Struct = {
@@ -86,48 +62,45 @@ type Struct = {
 };
 
 /**
- * The faults that refuse an update whole, nothing stored: it does something an honest client's
- * copy never does (design, section 4). The update is read without being applied, so a refused
- * one never touches the server's copy `doc`. What the server holds is cut away from each struct
- * first, with Yjs's own offset (a struct may start inside what the server has), so what is read
- * is only what the update would add. Returns why (and the record at fault, when there is one), or null.
+ * The one structural guard: what an honest client's copy never does, judged on the update's bytes
+ * and each struct's client id, never on a writer's act. Throws `CopyFault`, having read the
+ * update without applying it. Every new struct is an item of plain values in `ops` from a client
+ * id of 1,000 or more; it follows what the server holds from that client with no gap; every
+ * neighbour is already held, with no loop (a struct whose position can't be decided now would
+ * stay pending in Yjs and reach the journal later, where it could land in `settle`); it carries
+ * no server-only kind or field; and there are at most `MAX_RECORDS` records.
  */
-function refuseWhole(
-  doc: Y.Doc,
-  update: Uint8Array,
-  connection: Connection,
-): Omit<WholeRefusal, "ok"> | null {
+export function guard(doc: Y.Doc, update: Uint8Array): void {
   let decoded: ReturnType<typeof Y.decodeUpdate>;
   try {
     decoded = Y.decodeUpdate(update);
   } catch {
-    return { reason: "not an update" };
+    throw new CopyFault("not an update");
   }
-  if (decoded.ds.clients.size > 0) return { reason: "a deletion" };
+  if (decoded.ds.clients.size > 0) throw new CopyFault("a deletion");
   const list = recordsOf(doc);
   const state = (client: number) => Y.getState(doc.store, client);
 
   // Each client's new structs must follow what the server holds from it, with no gap.
   const byClient = new Map<number, Struct[]>();
   for (const item of decoded.structs) {
-    if (!(item instanceof Y.Item)) return { reason: "not an item" };
+    if (!(item instanceof Y.Item)) throw new CopyFault("not an item");
     const { client, clock } = item.id;
-    if (client < SERVER_CLIENT_IDS) return { reason: "a reserved client id" };
+    if (client < SERVER_CLIENT_IDS) throw new CopyFault("a reserved client id");
     // Held already, as when two tabs of one browser each forward the same update.
     if (clock + item.length <= state(client)) continue;
     const cut = Math.max(0, state(client) - clock);
     const structs = byClient.get(client) ?? [];
     const last = structs[structs.length - 1];
-    if (clock + cut !== (last ? last.to : state(client))) return { reason: "not the next clock" };
-    if (item.parentSub !== null) return { reason: "a map entry" };
+    if (clock + cut !== (last ? last.to : state(client))) throw new CopyFault("not the next clock");
+    if (item.parentSub !== null) throw new CopyFault("a map entry");
     if (!(item.content instanceof Y.ContentAny)) {
       // Anything but plain records: text, a type, a format. Said by where it sits, when it names that.
-      return {
-        reason:
-          typeof item.parent === "string" && item.parent !== "ops"
-            ? "not the list"
-            : "not plain records",
-      };
+      throw new CopyFault(
+        typeof item.parent === "string" && item.parent !== "ops"
+          ? "not the list"
+          : "not plain records",
+      );
     }
     structs.push({
       client,
@@ -168,188 +141,31 @@ function refuseWhole(
     return null;
   };
 
-  const records: TreeRecord[] = [];
+  let records = 0;
   for (const structs of byClient.values())
     for (const struct of structs) {
       const why = sitsInList(struct, new Set());
-      if (why) return { reason: why };
-      for (const value of struct.values) {
-        const read = readRecord(value, connection.user);
-        if (!read.ok) {
-          const id = (value as { id?: unknown } | null)?.id;
-          return {
-            reason: `a record that is ${read.why}`,
-            ...(typeof id === "string" ? { record: id } : {}),
-          };
-        }
-        const record = read.record;
-        if (
-          (record.type === "create" || record.type === "rename") &&
-          record.filetype !== undefined &&
-          !connection.editableTypes.has(record.filetype)
-        )
-          return { reason: "a type that is not editable", record: record.id };
-        records.push(record);
-      }
-      if (records.length > MAX_RECORDS) return { reason: "too many records" };
+      if (why) throw new CopyFault(why);
+      for (const value of struct.values)
+        if (!clientMayWrite(value)) throw new CopyFault("a kind or field only the server writes");
+      records += struct.values.length;
+      if (records > MAX_RECORDS) throw new CopyFault("too many records");
     }
-
-  // A record is judged against the list it joins. An id already there would let a client
-  // cancel, rewrite or redefine someone's record or node, wherever Yjs places the new item. Only
-  // the server may reuse the node id of a create it refused, so a refused create's node counts
-  // as made.
-  const index = listIndex(doc);
-  const ids = new Set<string>();
-  const fresh = new Set<string>();
-  for (const record of records) {
-    if (ids.has(record.id)) return { reason: "a record id twice", record: record.id };
-    ids.add(record.id);
-    if (index.records.has(record.id))
-      return { reason: "a record id already in the list", record: record.id };
-    if (record.type !== "create") continue;
-    if (
-      index.nodes.has(record.node) ||
-      fresh.has(record.node) ||
-      connection.takenElsewhere(record.node)
-    )
-      return { reason: "a node id already in use", record: record.id };
-    fresh.add(record.node);
-  }
-  return null;
 }
 
-/** A record the update added, and where it landed in the list. */
-type Added = { record: TreeRecord; at: number };
+/** A record the update added. */
+type Added = TreeRecord;
 
-/**
- * What this account may not do now: a Work that is not theirs or is closed, a node or place in a
- * source they cannot write, a place that is not a folder (or was purged), a source touched as a
- * node, a name a document cannot have. Each record is judged in the view it is written in (live,
- * or live and its Work), as that view stood before the update, plus what the records of the
- * update before it made. Yjs groups an update by client, not by where the records land, so
- * `added` is in list order: the order they take effect in, which decides every one of these
- * judgments (a folder made by one client, a chapter made inside it by another).
- */
-function judge(doc: Y.Doc, added: readonly Added[], connection: Connection) {
-  const fresh = new Set(added.map(({ record }) => record.id));
-  const views = new Map<string | null, TreeProjection>();
-  const viewOf = (draft: string | null) => {
-    const cached = views.get(draft);
-    if (cached) return cached;
-    const records = viewRecords(doc, { draft }).filter((record) => !fresh.has(record.id));
-    const view = replay(records, { draft });
-    views.set(draft, view);
-    return view;
-  };
-  // Nodes this update creates, as they will stand: where, and what.
-  const created = new Map<string, { source: string; kind: string }>();
-  // The type each node has as the update goes: its view's, a create's, an admitted rename's.
-  const types = new Map<string, string | undefined>();
-  const typeOf = (id: string, draft: string | null) =>
-    types.has(id) ? types.get(id) : viewOf(draft).nodes.get(id)?.filetype;
-  const kindOf = (id: string, draft: string | null) =>
-    placeIn(viewOf(draft).nodes, id)?.kind ?? created.get(id)?.kind;
-  const sourceOf = (id: string, draft: string | null): string | undefined =>
-    isSourceRoot(id)
-      ? sourceIdOf(id)
-      : (viewOf(draft).nodes.get(id)?.source ?? created.get(id)?.source);
-  const known = (id: string, draft: string | null) =>
-    viewOf(draft).nodes.has(id) || created.has(id);
-  const mayWrite = (id: string, draft: string | null) => {
-    const source = sourceOf(id, draft);
-    return source !== undefined && connection.writableSources.has(source);
-  };
-
-  const refused: Array<{ id: string; reason: string }> = [];
-  const kept: Array<KeptCreate & { at: number }> = [];
-  const keptNodes = new Set<string>();
-  for (const { record, at } of added) {
-    const draft = record.draft;
-    const into = record.type === "create" || record.type === "move" ? record.parent : null;
-    let reason: string | null = null;
-    if (draft !== null && !connection.drafts.has(draft)) reason = "not your Work";
-    else if (record.type !== "create" && isSourceRoot(record.node)) reason = "a source";
-    else if (record.type !== "create" && known(record.node, draft) && !mayWrite(record.node, draft))
-      reason = "a source you cannot change";
-    else if (record.type === "create" && !connection.writableSources.has(record.source))
-      reason = "a source you cannot change";
-    else if (into !== null && !isSourceRoot(into) && kindOf(into, draft) !== "folder")
-      reason = "not a folder";
-    else if (into !== null && !mayWrite(into, draft)) reason = "a source you cannot change";
-    else if (
-      record.type === "delete" &&
-      record.cascade.some((member) => known(member, draft) && !mayWrite(member, draft))
-    )
-      reason = "a source you cannot change";
-    else if (nameSet(record) !== undefined) {
-      const kind = viewOf(draft).nodes.get(record.node)?.kind ?? created.get(record.node)?.kind;
-      if (kind === "document" && nameFault(kind, nameSet(record) as string) !== null)
-        reason = "a name a document cannot have";
-      else if (record.type === "rename" && record.filetype !== undefined) {
-        const was = typeOf(record.node, draft);
-        if (was === undefined || !connection.sameSchema(was, record.filetype))
-          reason = "a type across schemas";
-      }
-    }
-    if (reason === null) {
-      if (record.type === "create") {
-        created.set(record.node, {
-          source: sourceOf(record.parent, draft) ?? record.source,
-          kind: record.kind,
-        });
-        types.set(record.node, record.filetype);
-      } else if (record.type === "rename" && record.filetype !== undefined)
-        types.set(record.node, record.filetype);
-      continue;
-    }
-    refused.push({ id: record.id, reason });
-    if (record.type !== "create") continue;
-    // A new node is never left without a place. It is kept, live, under its parent when that
-    // was itself kept in this update, else in Unfiled. A live parent is never used: under it
-    // the node would publish what nobody reviewed, or sit where the account may not write.
-    const parent = keptNodes.has(record.parent)
-      ? record.parent
-      : sourceRoot(connection.unfiledSource);
-    keptNodes.add(record.node);
-    created.set(record.node, { source: connection.unfiledSource, kind: record.kind });
-    types.set(record.node, record.filetype);
-    kept.push({
-      create: record.id,
-      at,
-      record: writable({
-        type: "create",
-        id: newId(),
-        node: record.node,
-        actor: connection.user,
-        draft: null,
-        kind: record.kind,
-        name: record.name,
-        parent,
-        source: connection.unfiledSource,
-        rank: record.rank,
-        ...(record.filetype ? { filetype: record.filetype } : {}),
-        ...(record.provisional ? { provisional: true as const } : {}),
-        replaces: record.id,
-      }) as CreateRecord,
-    });
-  }
-  return { refused, kept };
-}
-
-/** The records of the update, inside the Yjs transaction that applies it, with where each lands. */
+/** The records of the update, inside the Yjs transaction that applies it, in the order they landed. */
 function integrate(doc: Y.Doc, update: Uint8Array): Added[] {
   const list = recordsOf(doc);
   const added: Added[] = [];
   const watch = (event: Y.YArrayEvent<TreeRecord>) => {
-    let at = 0;
-    for (const change of event.changes.delta) {
-      at += change.retain ?? 0;
+    for (const change of event.changes.delta)
       for (const value of change.insert ?? []) {
         const read = readStored(value);
-        if (read.ok) added.push({ record: read.record, at });
-        at += 1;
+        if (read.ok) added.push(read.record);
       }
-    }
   };
   list.observe(watch);
   try {
@@ -360,33 +176,135 @@ function integrate(doc: Y.Doc, update: Uint8Array): Added[] {
   return added;
 }
 
+export type Admission = {
+  /** The records the update adds (not those the server already held), in list order. */
+  records: TreeRecord[];
+  /**
+   * The records stamped `dropped`: each changes a closed Work (its draft, or a node in the closed
+   * Work's source). They are in no view, and a dropped create gets no row and no claim.
+   */
+  dropped: string[];
+};
+
 /**
- * Admits an update to the server's copy: refuses it whole when it does something an honest
- * client never does, else applies it and judges its records in the order they landed in the
- * list, then appends the server's verdicts (`refused` settlements, and a create kept for each
- * refused one, right after it) in one transaction. The copy is changed in place, which is safe
- * under the list's lock: if anything throws, the caller reloads the copy from the journal. The
- * caller has the update journaled with the verdicts.
+ * Stamps `dropped` on each client record that changes a closed Work: one drafted in a draft that
+ * is not open, or a create, move, rename, delete or restore of a node in a closed Work's source
+ * (a move counts its destination's source too), or of a node made inside a dropped one. A node's
+ * source is where it stands at the record's place in the update, after the update's own moves and
+ * creates before it that stand (a folder moved out of a closed Work and then written into keeps
+ * its chapter; one moved in takes it). The same answer however an honest catch-up is cut into
+ * parts: a part's moves are the server's before the next part arrives. Only the server can tell:
+ * its arrival order is the only true one, and a replay can't see the Work's state.
+ */
+function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): string[] {
+  const closing = connection.closedSources.size > 0;
+  if (!closing && !added.some((record) => record.draft !== null)) return [];
+  const fresh = new Set(added.map((record) => record.id));
+  // What the server held before this update, by view: replayed only when a source is closed.
+  const before = new Map<string | null, TreeProjection>();
+  const baseParent = (draft: string | null, node: string) => {
+    let view = before.get(draft);
+    if (!view) {
+      view = replay(
+        viewRecords(doc, { draft }).filter((record) => !fresh.has(record.id)),
+        { draft },
+      );
+      before.set(draft, view);
+    }
+    return view.nodes.get(node)?.parent;
+  };
+  // Where the update's own records put each node so far: live ones in every view, a Work's in its.
+  const placed = new Map<string | null, Map<string, string>>();
+  const placedIn = (draft: string | null) => {
+    const map = placed.get(draft) ?? new Map<string, string>();
+    placed.set(draft, map);
+    return map;
+  };
+  const parentOf = (draft: string | null, node: string) =>
+    (draft === null ? undefined : placedIn(draft).get(node)) ??
+    placedIn(null).get(node) ??
+    baseParent(draft, node);
+  // The source a place is in, or undefined when its folder is not in the view (rule 6 then puts
+  // a create at the top of its own source).
+  const sourceOf = (draft: string | null, place: string): string | undefined => {
+    const seen = new Set<string>();
+    for (let at: string | undefined = place; at !== undefined; at = parentOf(draft, at)) {
+      if (isSourceRoot(at)) return sourceIdOf(at);
+      if (seen.has(at)) return undefined;
+      seen.add(at);
+    }
+    return undefined;
+  };
+  const inClosed = (draft: string | null, place: string, fallback?: string) => {
+    if (!closing) return false;
+    const source = sourceOf(draft, place) ?? fallback;
+    return source !== undefined && connection.closedSources.has(source);
+  };
+  // Whether a move would put a folder inside itself, which the replay skips (rule 1).
+  const intoItself = (draft: string | null, node: string, parent: string) => {
+    const seen = new Set<string>();
+    for (let at: string | undefined = parent; at !== undefined && !isSourceRoot(at); ) {
+      if (at === node || seen.has(at)) return true;
+      seen.add(at);
+      at = parentOf(draft, at);
+    }
+    return false;
+  };
+
+  let droppedBefore: Set<string> | undefined;
+  const droppedNode = (node: string) => {
+    if (isSourceRoot(node)) return false;
+    droppedBefore ??= new Set(
+      droppedRecords(doc).flatMap(({ record }) => (record.type === "create" ? [record.node] : [])),
+    );
+    return droppedBefore.has(node) || dropped.has(node);
+  };
+  const dropped = new Set<string>();
+  const out: string[] = [];
+  for (const record of added) {
+    if (record.type === "purge") continue;
+    const draftClosed = record.draft !== null && !connection.drafts.has(record.draft);
+    let closed: boolean;
+    switch (record.type) {
+      case "create":
+        closed =
+          draftClosed ||
+          droppedNode(record.parent) ||
+          inClosed(record.draft, record.parent, record.source);
+        placedIn(record.draft).set(record.node, record.parent);
+        if (closed) dropped.add(record.node);
+        break;
+      case "move":
+        closed =
+          draftClosed ||
+          droppedNode(record.node) ||
+          inClosed(record.draft, record.node) ||
+          inClosed(record.draft, record.parent);
+        if (!closed && closing && !intoItself(record.draft, record.node, record.parent))
+          placedIn(record.draft).set(record.node, record.parent);
+        break;
+      default:
+        closed = draftClosed || droppedNode(record.node) || inClosed(record.draft, record.node);
+    }
+    if (closed) out.push(record.id);
+  }
+  return out;
+}
+
+/**
+ * Admits an update to the server's copy: the guard first (it throws `CopyFault`, nothing
+ * stored), then the update is applied, and each record that changes a closed Work is stamped
+ * `dropped`, in one transaction. The copy is changed in place, which is safe under the list's
+ * lock: if anything throws, the caller reloads the copy from the journal. The caller has the
+ * update journaled with the stamps.
  */
 export function admit(server: TreeWriter, update: Uint8Array, connection: Connection): Admission {
-  const why = refuseWhole(server.doc, update, connection);
-  if (why !== null) return { ok: false, ...why };
-  const added = integrate(server.doc, update);
-  const { refused, kept } = judge(server.doc, added, connection);
-  server.transact(() => {
-    const byReason = new Map<string, string[]>();
-    for (const { id, reason } of refused)
-      byReason.set(reason, [...(byReason.get(reason) ?? []), id]);
-    for (const [reason, targets] of byReason)
-      server.settle("system", targets, "refused", { reason });
-    // From the end, so an insert does not move the places of those still to come.
-    for (const { at, record } of [...kept].sort((a, b) => b.at - a.at))
-      recordsOf(server.doc).insert(at + 1, [record]);
-  });
-  return {
-    ok: true,
-    records: added.map(({ record }) => record),
-    refused,
-    kept: kept.map(({ create, record }) => ({ create, record })),
-  };
+  guard(server.doc, update);
+  const records = integrate(server.doc, update);
+  const dropped = stamp(server.doc, records, connection);
+  if (dropped.length > 0)
+    server.transact(() =>
+      server.settle("system", dropped, "dropped", { reason: "Work was closed" }),
+    );
+  return { records, dropped };
 }
