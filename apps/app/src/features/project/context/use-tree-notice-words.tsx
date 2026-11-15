@@ -236,7 +236,9 @@ function SaidWord({
           word={<Trans>Skipped</Trans>}
           sentence={
             said.of === "apply"
-              ? t`Undo skipped applying ${name}: the tree changed since.`
+              ? said.by === "text"
+                ? t`Undo skipped applying ${name}: it was edited since.`
+                : t`Undo skipped applying ${name}: the tree changed since.`
               : t`Undo skipped your change to ${name}: it was changed again since.`
           }
         />

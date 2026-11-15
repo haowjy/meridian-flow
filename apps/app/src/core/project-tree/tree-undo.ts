@@ -69,10 +69,20 @@ export type ApplyStep = {
   /** The nodes it took, whose rows say what an Undo of it couldn't do. */
   nodes: readonly string[];
   /** `textLeft`: the text changes a later edit overlaps, which stay applied. */
-  unapply(): Promise<{ answer: "unapplied" | "skipped" | "failed"; textLeft?: number }>;
+  unapply(): Promise<{
+    answer: "unapplied" | "skipped" | "failed";
+    textLeft?: number;
+    /** What stopped a skipped Undo: text written in a document the Apply created; else the tree. */
+    by?: "text";
+  }>;
 };
 
-export type Skipped = { kind: "tree" | "apply"; name: string; nodes: readonly string[] };
+export type Skipped = {
+  kind: "tree" | "apply";
+  name: string;
+  nodes: readonly string[];
+  by?: "text";
+};
 
 /**
  * What a list's rows say: the latest gesture, whose rows offer its Undo, or what the latest press
@@ -81,7 +91,13 @@ export type Skipped = { kind: "tree" | "apply"; name: string; nodes: readonly st
 export type TreeNotice = { kind: "step"; step: TreeStep } | { kind: "said"; said: readonly Said[] };
 
 export type Said =
-  | { kind: "skipped"; of: Skipped["kind"]; name: string; nodes: readonly string[] }
+  | {
+      kind: "skipped";
+      of: Skipped["kind"];
+      name: string;
+      nodes: readonly string[];
+      by?: "text";
+    }
   /** An Apply taken back but for `textLeft` text changes edited since. */
   | { kind: "partial"; name: string; nodes: readonly string[]; textLeft: number }
   /** An Apply's Un-Apply didn't reach the server; `step` is still on the stack. */
@@ -228,7 +244,7 @@ async function takeLatest(
     stack.splice(at, 1);
     if (step.kind === "tree") step.ended?.();
     if (step.kind === "apply") {
-      const { answer, textLeft = 0 } = await step.unapply();
+      const { answer, textLeft = 0, by } = await step.unapply();
       if (answer === "unapplied")
         return {
           kind: "undone",
@@ -240,7 +256,7 @@ async function takeLatest(
         stack.splice(at, 0, step);
         return { kind: "failed", skipped, name: step.name, step };
       }
-      skipped.push({ kind: "apply", name: step.name, nodes: step.nodes });
+      skipped.push({ kind: "apply", name: step.name, nodes: step.nodes, ...(by && { by }) });
       continue;
     }
     const names = step.nodes.flatMap(
@@ -292,7 +308,7 @@ export async function undoApply(session: TreeListSession, step: ApplyStep): Prom
   if (at < 0) return false;
   stack.splice(at, 1);
   show(session, null);
-  const { answer, textLeft = 0 } = await step.unapply();
+  const { answer, textLeft = 0, by } = await step.unapply();
   if (answer === "failed") stack.splice(Math.min(at, stack.length), 0, step);
   show(
     session,
@@ -300,7 +316,10 @@ export async function undoApply(session: TreeListSession, step: ApplyStep): Prom
       answer === "failed"
         ? { kind: "failed", skipped: [], name: step.name, step }
         : answer === "skipped"
-          ? { kind: "nothing", skipped: [{ kind: "apply", name: step.name, nodes: step.nodes }] }
+          ? {
+              kind: "nothing",
+              skipped: [{ kind: "apply", name: step.name, nodes: step.nodes, ...(by && { by }) }],
+            }
           : {
               kind: "undone",
               skipped: [],
