@@ -88,4 +88,14 @@ a directed TextSelection that includes the selected inline object, then leaves t
 extension to the browser. Shift-click uses the same transaction in `mousedown`,
 before ProseMirror starts deferring native selection updates for a drag. Preparing
 it in the later object-press listener would leave the projected caret in the DOM
-and exclude the image. Cell selections retain their table-specific extension.
+and exclude the image. Cell selections retain their table-specific extension. Only after the table plugin
+and ProseMirror's own key capture decline does the Chrome native route restore the
+selection's original `$anchor`/`$head` as a text range. Those are the old native
+range, not the selected cell corners. Modified PageUp/Down shortcuts are not
+converted: some switch browser tabs rather than extending text.
+
+Table pointer preparation sits in [table-press.ts](../../landing/table-press.ts),
+after the stock table handlers and the inert-cell press claim, but before
+ProseMirror's native drag setup. Thus stock Shift-click still selects cells, while
+unclaimed Ctrl/Meta+Shift-click starts from the old text range. The early inline
+image pointer handler must not convert a cell selection.

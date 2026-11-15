@@ -247,7 +247,12 @@ export function objectTextSelectionTransaction(
   direction: 1 | -1,
 ): Transaction | null {
   const object = selectedObject(state);
-  if (!object?.node.isInline) return null;
+  if (!object) return null;
+  if (!object.node.isInline) {
+    if (objectBody(object.node) !== "text") return null;
+    const { $anchor, $head } = state.selection;
+    return state.tr.setSelection(TextSelection.between($anchor, $head));
+  }
   const from = object.pos;
   const to = from + object.node.nodeSize;
   return state.tr.setSelection(

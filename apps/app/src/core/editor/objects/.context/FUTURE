@@ -35,3 +35,10 @@ Remaining native-input failures:
 
 Reproduce with real selection plus Chromium `Input.imeSetComposition` updates and
 commit. This does not verify Android InputConnection or an operating-system IME.
+
+- Native range preparation has two accepted no-movement limits in Chromium/Linux:
+  select a whole table that is last in its document, then Shift+PageDown or
+  Ctrl+Shift+Right. The selection narrows to the head cell's text; no text changes.
+  CellSelection covers all selected cells, but its native endpoints cover only
+  that cell. Carry this root into the editor's cell-selection restoration work,
+  rather than adding a key-specific edge guard or a delayed selection rollback.

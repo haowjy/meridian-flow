@@ -202,6 +202,16 @@ export const ObjectPhysicsExtension = Extension.create({
               bindings: objectSelectionExtensionBindings(),
             }),
             chrome?.registerKeymap({
+              id: "object-native-extend-selection",
+              scope: "object",
+              route: "native",
+              appliesTo: (context) =>
+                EDITOR_OBJECT_TYPES.some(
+                  (spec) => spec.id === context.objectSpec && spec.body === "text",
+                ),
+              bindings: objectSelectionExtensionBindings(),
+            }),
+            chrome?.registerKeymap({
               id: "object-walk",
               scope: "block",
               bindings: {
@@ -300,6 +310,7 @@ export const ObjectPhysicsExtension = Extension.create({
             mousedown(view, event) {
               if (!view.editable || !event.shiftKey || event.button !== 0 || event.defaultPrevented)
                 return false;
+              if (!selectedObject(view.state)?.node.isInline) return false;
               const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
               if (!at) return false;
               const transaction = objectTextSelectionTransaction(
@@ -422,10 +433,12 @@ function objectSelectionExtensionBindings(): Record<string, KeymapBinding> {
   } satisfies Record<string, 1 | -1>;
   const bindings = Object.fromEntries(
     (mac ? ["", "Mod-", "Alt-", "Ctrl-"] : ["", "Mod-"]).flatMap((modifier) =>
-      Object.entries(nativeSelectionKeys).map(([key, direction]) => [
-        `${modifier}Shift-${key}`,
-        prepareObjectSelectionExtension(direction),
-      ]),
+      Object.entries(nativeSelectionKeys)
+        .filter(([key]) => modifier === "" || (key !== "PageUp" && key !== "PageDown"))
+        .map(([key, direction]) => [
+          `${modifier}Shift-${key}`,
+          prepareObjectSelectionExtension(direction),
+        ]),
     ),
   );
   if (mac) {

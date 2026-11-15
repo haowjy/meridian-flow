@@ -57,3 +57,11 @@ falls back to TextSelection for cells. Preserve the cell boundary endpoints and
 selection type at that binding boundary, including partial selections, deleted or
 moved cells and Undo restore. Reproduce with two tabs: select the whole table in
 one, type in a following paragraph in the other, then inspect or type in the first.
+
+The same selection has two different extents: its cells cover a rectangle, while
+its native `$anchor`/`$head` cover only the head cell. A table that ends the document
+therefore narrows to its head-cell text on Shift+PageDown or Ctrl+Shift+Right when
+the browser makes no move after native range preparation. No text changes. Solve
+this representation issue with restoration, not per-key boundary guards. If the
+fix separates a whole-table NodeSelection from cell ranges, get a design-lead
+review before changing those semantics.

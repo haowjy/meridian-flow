@@ -28,11 +28,18 @@ The backstop can't read `event.defaultPrevented` to decide whether Escape was
 handled: ProseMirror prevents key 27 while dispatching, whether or not the chain
 found a step. Read the resulting kernel state instead.
 
-## Keymap reach and collisions
+## Keymap routes and collisions
+
+A contribution's `route` names where it runs: `prose` (default) in ProseMirror's
+key handler, `chrome` there and in the portalled-layer capture listener, or `native`
+in the document bubble listener after all ProseMirror handlers decline. Native
+bindings prepare the model selection for browser default and never consume the key;
+only editable editor-root events outside composition reach them. A layer cannot
+register on that route. Each map is cached by the same registration revision.
 
 A layer contribution reaches the document only while its layer is the active
 owner. Same scope, same key and overlapping predicates are a collision that
-registration rejects; different scopes and explicit predicates are the intended
+registration rejects; the native stage is separate, while prose/chrome routes overlap. Different scopes and explicit predicates are the intended
 fall-through chain. Undo is mounted above the kernel, so don't raise the kernel to
 compete with it.
 
