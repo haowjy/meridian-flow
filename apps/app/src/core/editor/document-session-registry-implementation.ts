@@ -589,10 +589,11 @@ export class DocumentSessionRegistry {
     this.unsentTypingObservers.add(observer);
     // The account's start: what any tab stored and no tab acted on, wherever its document is.
     if (!this.stopNotices) {
-      this.stopNotices = this.notices.subscribe(() => void this.showUnacted().catch(reportError));
+      const report = (error: unknown) => reportError(error);
+      this.stopNotices = this.notices.subscribe(() => void this.showUnacted().catch(report));
       void this.showUnacted()
         .then(() => this.notices.forgetActed())
-        .catch(reportError);
+        .catch(report);
     }
     return () => {
       this.unsentTypingObservers.delete(observer);
