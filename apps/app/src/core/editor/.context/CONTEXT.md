@@ -548,7 +548,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   whose vector does not cover the mark replaces it instead of merging. The client sees a
   replacement only at its next handshake, whatever it is keyed on, so this is the same check a
   generation id would give. Items the replaced room lost and a copy still holds stay within the mark
-  until then: the server had them, and the replacement dropped them.
+  until then: the server had them, and the replacement dropped them. When a restore gets a
+  caller, it should tell open clients, so their marks are replaced before an offline purge.
 - **Who hands back from the mark.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s
   `retiring`) reads its copy beyond its mark (`LocalDocumentCopies.beyondMark`) and claims that; the
   copy has every write of the session's by then. Not at the reset: a session kept on screen still
