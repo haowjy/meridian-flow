@@ -2010,6 +2010,7 @@ msgstr "Clear the goal"
 msgid "Clear the status"
 msgstr "Clear the status"
 
+#: src/components/app/ViewerDialog.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
 #: src/features/editor/EditorView.tsx
@@ -2573,12 +2574,17 @@ msgstr "Couldn't move"
 #~ msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 #~ msgstr "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 
+#: src/features/project/context/open-project-document.ts
+msgid "Couldn't open {name}."
+msgstr "Couldn't open {name}."
+
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
 
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/DocumentHost.tsx
+#: src/features/project/context/open-project-document.ts
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
@@ -5575,8 +5581,8 @@ msgid "Restored {count} items from Trash just now. Undo puts them back in Trash.
 msgstr "Restored {count} items from Trash just now. Undo puts them back in Trash."
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Restored {name}, but couldn't open it. Try again from the file list."
-msgstr "Restored {name}, but couldn't open it. Try again from the file list."
+#~ msgid "Restored {name}, but couldn't open it. Try again from the file list."
+#~ msgstr "Restored {name}, but couldn't open it. Try again from the file list."
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -6456,6 +6462,10 @@ msgstr "That document couldn't be found."
 #: src/features/chat/turn-receipt-copy.ts
 msgid "That document is no longer available, so this change can't be reversed."
 msgstr "That document is no longer available, so this change can't be reversed."
+
+#: src/features/project/context/open-project-document.ts
+msgid "That document is no longer available."
+msgstr "That document is no longer available."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That file is binary."

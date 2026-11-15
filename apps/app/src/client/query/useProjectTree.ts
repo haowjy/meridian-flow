@@ -24,11 +24,12 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 
-/** Whose source a view reads: a Work or lineage holds Scratch, and a chat holds its uploads. */
+/**
+ * Whose sources a view reads, under `ContextOwner`'s names: a Work or lineage holds Scratch, and a
+ * chat holds its uploads. One read can name all three, one per owned scheme.
+ */
 export type TreeOwner = {
-  workId?: string | null;
-  rootThreadId?: string | null;
-  chatId?: string | null;
+  [K in "workId" | "rootThreadId" | "chatThreadId"]?: string | null;
 };
 
 /**
@@ -84,7 +85,7 @@ export function sourceFor(
       return scheme === "scratch" && !owner.rootThreadId && by.workId === owner.workId;
     if (by.kind === "lineage")
       return scheme === "scratch" && by.rootThreadId === owner.rootThreadId;
-    return scheme === "uploads" && by.chatId === owner.chatId;
+    return scheme === "uploads" && by.chatId === owner.chatThreadId;
   };
   return sources.find((source) => source.scheme === scheme && owns(source)) ?? null;
 }
@@ -111,7 +112,7 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
   schemes: readonly S[],
   options: { enabled?: boolean; version?: TreeVersion } & TreeOwner,
 ): Record<S, TreeViewResult> {
-  const { workId, rootThreadId, chatId } = options;
+  const { workId, rootThreadId, chatThreadId } = options;
   const { view, pendingText } = options.version ?? LIVE_VERSION;
   const enabled = (options.enabled ?? true) && Boolean(projectId);
   const accountId = useAccountId();
@@ -124,7 +125,10 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
   const projectSources = useProjectContextSources(enabled && wantsProject ? projectId : "");
   const accountSources = useAccountContextSources(enabled && wantsAccount);
 
-  const owner = useMemo(() => ({ workId, rootThreadId, chatId }), [workId, rootThreadId, chatId]);
+  const owner = useMemo(
+    () => ({ workId, rootThreadId, chatThreadId }),
+    [workId, rootThreadId, chatThreadId],
+  );
 
   return useMemo(() => {
     const results = {} as Record<S, TreeViewResult>;

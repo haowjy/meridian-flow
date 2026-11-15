@@ -2010,6 +2010,7 @@ msgstr "清除目标"
 msgid "Clear the status"
 msgstr "清除状态"
 
+#: src/components/app/ViewerDialog.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
 #: src/features/editor/EditorView.tsx
@@ -2573,12 +2574,17 @@ msgstr ""
 #~ msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 #~ msgstr ""
 
+#: src/features/project/context/open-project-document.ts
+msgid "Couldn't open {name}."
+msgstr ""
+
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr ""
 
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/DocumentHost.tsx
+#: src/features/project/context/open-project-document.ts
 msgid "Couldn't open this document."
 msgstr ""
 
@@ -5575,8 +5581,8 @@ msgid "Restored {count} items from Trash just now. Undo puts them back in Trash.
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
-msgid "Restored {name}, but couldn't open it. Try again from the file list."
-msgstr ""
+#~ msgid "Restored {name}, but couldn't open it. Try again from the file list."
+#~ msgstr ""
 
 #. placeholder {0}: documentDisplayName(landing.landedAt)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -6455,6 +6461,10 @@ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "That document is no longer available, so this change can't be reversed."
+msgstr ""
+
+#: src/features/project/context/open-project-document.ts
+msgid "That document is no longer available."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

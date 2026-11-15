@@ -18,5 +18,5 @@ hover approach and gesture suppression. React surfaces live in
   changes. Lanes contribute target-specific facts; private timers and pointer
   listeners create competing answers.
 
-Reach, scope, collision and backstop contracts:
+Route, scope, collision and backstop contracts:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

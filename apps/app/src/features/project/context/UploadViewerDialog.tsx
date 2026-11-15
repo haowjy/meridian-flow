@@ -1,4 +1,4 @@
-import type { OpenDocument } from "@/client/stores";
+import type { ServerOpenDocument } from "@/client/stores";
 import { ViewerDialog } from "@/components/app/ViewerDialog";
 import { ContextViewerHost } from "./ContextViewerHost";
 
@@ -13,7 +13,7 @@ export function UploadViewerDialog({
   onClose,
 }: {
   projectId: string;
-  document: Extract<OpenDocument, { kind: "viewer" }> | null;
+  document: ServerOpenDocument | null;
   onClose: () => void;
 }) {
   return (
