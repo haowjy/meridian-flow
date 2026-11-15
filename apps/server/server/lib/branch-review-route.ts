@@ -968,6 +968,16 @@ const goneItem = (request: { branchId: string; itemKey: string }) => (): Command
   body: { status: "gone", branchId: request.branchId as BranchId, itemKey: request.itemKey },
 });
 
+/** A closed Work keeps its drafts as they are: a Discard on it is refused, as an Apply is. */
+const closedItem = (request: { branchId: string; itemKey: string }) => (): CommandRouteResult => ({
+  httpStatus: 200,
+  body: {
+    status: "work_archived",
+    branchId: request.branchId as BranchId,
+    itemKey: request.itemKey,
+  },
+});
+
 /** A branch that is not active any more, as a 200 body status. */
 const goneBranch = (branchId: BranchId) => (): CommandRouteResult => ({
   httpStatus: 200,
@@ -994,7 +1004,8 @@ export async function handleDiscardWorkDraftRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  return commandIngress(deps, input, envelope, async ({ owner }) => {
+  return commandIngress(deps, input, envelope, async ({ owner, lifecycle }) => {
+    if (lifecycle === "archived") return { refusal: closedItem(request) };
     const item = request.branchId === input.branchId ? await commandItem(deps, input) : null;
     if (!item || !owner) return { refusal: goneItem(request) };
     return {
@@ -1033,7 +1044,9 @@ export async function handleDiscardBranchRequest(
     body,
   });
   const { branchId } = input;
-  return commandIngress(deps, input, envelope, async ({ owner }) => {
+  return commandIngress(deps, input, envelope, async ({ owner, lifecycle }) => {
+    if (lifecycle === "archived")
+      return { refusal: () => ({ httpStatus: 200, body: { status: "work_archived", branchId } }) };
     if (!owner) return { refusal: goneBranch(branchId) };
     const listed = await deps.documentSync.draftReview.listItems({ owner });
     if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
