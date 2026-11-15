@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import { roomContent } from "@/features/draft-review/review-frame";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
 import { useAccountId } from "./account-feature-context";
@@ -74,7 +75,7 @@ export function TrashedDocument({
 
   if (standing.kind === "purged" || standing.kind === "not-in-list") {
     return (
-      <div className="p-4">
+      <MainSurface joined className="p-4">
         <p className={role.emptyLine}>
           {standing.kind === "purged" ? (
             <Trans>Gone for good: this document was emptied from Trash.</Trans>
@@ -82,7 +83,7 @@ export function TrashedDocument({
             <Trans>No longer available</Trans>
           )}
         </p>
-      </div>
+      </MainSurface>
     );
   }
   if (standing.kind === "waiting" || binding.state.kind === "opening") {
@@ -94,9 +95,9 @@ export function TrashedDocument({
   }
   if (binding.state.kind === "failed") {
     return (
-      <div className="p-4">
+      <MainSurface joined className="p-4">
         <InlineErrorRow message={t`Couldn't load this document.`} onRetry={binding.retry} />
-      </div>
+      </MainSurface>
     );
   }
   const name = standing.kind === "in-trash" ? standing.node.displayName : "";
@@ -104,43 +105,45 @@ export function TrashedDocument({
     ? t`Restored ${name}, but couldn't open it. Try again from the file list.`
     : null;
   return (
-    <ReadOnlyViewerFrame className="bg-transparent">
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="shrink-0 px-4 pt-3">
-          <DocumentNotice
-            icon={<ArchiveRestore className="size-4" aria-hidden />}
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  standing.kind === "in-trash" &&
-                  restore([{ ref: { kind: "file", id: documentId }, name }])
-                }
-              >
-                <Trans>Restore</Trans>
-              </Button>
-            }
-          >
-            {details ? trashSentence(details, i18n.locale, accountId) : null}
-          </DocumentNotice>
-          {failure ? <InlineErrorRow message={failure} className="px-0 pt-2 pb-0" /> : null}
+    <MainSurface joined className="flex h-full min-h-0 flex-col">
+      <ReadOnlyViewerFrame className="bg-transparent">
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="shrink-0 px-4 pt-3">
+            <DocumentNotice
+              icon={<ArchiveRestore className="size-4" aria-hidden />}
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    standing.kind === "in-trash" &&
+                    restore([{ ref: { kind: "file", id: documentId }, name }])
+                  }
+                >
+                  <Trans>Restore</Trans>
+                </Button>
+              }
+            >
+              {details ? trashSentence(details, i18n.locale, accountId) : null}
+            </DocumentNotice>
+            {failure ? <InlineErrorRow message={failure} className="px-0 pt-2 pb-0" /> : null}
+          </div>
+          {file ? (
+            <div className="grid min-h-0 flex-1 place-items-center px-6 py-10">
+              <FileCard
+                name={name}
+                mimeType={file.blob?.mime ?? ""}
+                sizeBytes={file.blob?.size ?? null}
+              />
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1">
+              <TextViewer source={{ content: text }} name={name} markdown />
+            </div>
+          )}
         </div>
-        {file ? (
-          <div className="grid min-h-0 flex-1 place-items-center px-6 py-10">
-            <FileCard
-              name={name}
-              mimeType={file.blob?.mime ?? ""}
-              sizeBytes={file.blob?.size ?? null}
-            />
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1">
-            <TextViewer source={{ content: text }} name={name} markdown />
-          </div>
-        )}
-      </div>
-    </ReadOnlyViewerFrame>
+      </ReadOnlyViewerFrame>
+    </MainSurface>
   );
 }
 

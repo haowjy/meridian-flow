@@ -1,7 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
-import { useBlocker, useRouterState } from "@tanstack/react-router";
+import { useBlocker } from "@tanstack/react-router";
 import { Maximize2, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
@@ -25,6 +25,7 @@ import { PanePlaceContext } from "../pane-place";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useTrashNavigation } from "../routing/ProjectNavigationContext";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
+import { useOnOpen } from "../routing/use-on-open";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideChatName } from "../side/SideHeader";
 import { SidePicker } from "../side/SidePicker";
@@ -51,15 +52,8 @@ export function MobileProject(props: MobileProjectProps) {
     () => !onChat && isThreadAwaitingCreation(accountId, chat.lastShownChatId),
   );
   // Any open goes to main: the sheet closes rather than cover where the writer went. Arriving is
-  // not an open, so a recovering first send keeps its sheet. The history position, not the
-  // entry's key: an address repair (a rename, a stripped param) replaces the entry in place.
-  const position = useRouterState({ select: (state) => state.location.state.__TSR_index });
-  const arrivedAt = useRef(position);
-  useEffect(() => {
-    if (arrivedAt.current === position) return;
-    arrivedAt.current = position;
-    setSheetOpen(false);
-  }, [position]);
+  // not an open, so a recovering first send keeps its sheet.
+  useOnOpen(() => setSheetOpen(false));
   // An item placed in the side (a chat link in a document) shows the sheet, as it opens the side
   // on the desktop.
   const revealed = useSideRevealed();

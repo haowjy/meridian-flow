@@ -33,8 +33,8 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   reviewItemKey?: string | null;
   /** The hosted document, whose focus-on-open intent the live editor claims. */
   focusKey?: string;
-  /** Main's document: the page load's caret goes to it, not to a side's or a sheet's. */
-  loadFocus?: boolean;
+  /** Main's document: the caret main gives goes to it, not to a side's or a sheet's. */
+  inMain?: boolean;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
@@ -193,7 +193,7 @@ export function EditorView(props: EditorViewProps) {
               }}
               session={liveSession}
               focusKey={props.focusKey}
-              loadFocus={props.loadFocus}
+              inMain={props.inMain}
             />
           </div>
         </PaintScope>

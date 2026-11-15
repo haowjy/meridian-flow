@@ -38,9 +38,10 @@ unsent. The registry can then retire the session without holding it for delivery
 whether local persistence alone carries that edit to the server on the next open; if not,
 count local-only updates as unsent while detached.
 
-## Selection on mount beside a table
+## Composition undo grouping
 
-Opening a document whose first block is a table logs ProseMirror's "TextSelection endpoint not
-pointing into a node with inline content (table)": y-tiptap's mount rerender rebuilds the
-selection as a text selection at the document's start, inside the table. Nothing the writer sees
-changes. The fix is a selection that falls back to a gap cursor there.
+Delayed IME composition can create separate undo entries for provisional and
+committed text: `ni` → `你`, with more than 500ms between updates, undoes first to
+`ni`, then to the original text. This occurs in ordinary prose as well as beside
+objects. Follow up after the native-selection fixes from PR #1573:
+group the composition as one user action rather than depending on capture timing.

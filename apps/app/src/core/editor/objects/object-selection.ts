@@ -1,5 +1,3 @@
-/** Resolves selected editor objects and their transactions. */
-
 import { GapCursor } from "@tiptap/pm/gapcursor";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
 import {
@@ -214,12 +212,8 @@ function paragraphAfterTransaction(state: EditorState, $after: ResolvedPos): Tra
   return transaction.setSelection(TextSelection.near(transaction.doc.resolve($after.pos), 1));
 }
 
-/** Where a printable character lands while an object is selected: the text position after it, or a paragraph made for the purpose. */
-export function typeBesideObjectTransaction(
-  state: EditorState,
-  pos: number,
-  text: string,
-): Transaction | null {
+/** Prepare writable text beside the object, making a paragraph when none follows. */
+export function typeBesideObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);
   if (!node) return null;
 
@@ -233,7 +227,7 @@ export function typeBesideObjectTransaction(
   const transaction = visible
     ? state.tr.setSelection(visible)
     : paragraphAfterTransaction(state, $after);
-  return transaction?.insertText(text).scrollIntoView() ?? null;
+  return transaction?.scrollIntoView() ?? null;
 }
 
 /** Remove the object at `pos` outright. */
