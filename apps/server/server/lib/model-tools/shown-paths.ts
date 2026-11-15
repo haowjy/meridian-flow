@@ -85,8 +85,8 @@ export async function reachShown(
   ctx: Pick<ToolHandlerContext, "shownNames">,
   command: Parameters<typeof modelResult>[0]["command"] | "ls",
   path: string,
-  options: { version?: "draft" | "live"; folderOf?: boolean } = {},
-): Promise<Reached | (WriteToolErrorOutput & { evidence?: ResultEvidence; gone?: string })> {
+  options: { version?: "draft" | "live"; folderOf?: boolean; allowGone?: boolean } = {},
+): Promise<Reached | (WriteToolErrorOutput & { evidence?: ResultEvidence })> {
   const { filePath, fragment } = splitDocumentFile(path);
   const parts = areaOfPath(filePath);
   if (!parts) return { path };
@@ -98,7 +98,10 @@ export async function reachShown(
   if (looked === "") return { path };
   const reached = await call.context.port.readTree(parts.area, {
     ...(options.version ? { version: options.version } : {}),
-    read: (scope) => reachPath(scope, parts.area, shown, looked, command),
+    read: (scope) =>
+      reachPath(scope, parts.area, shown, looked, command, {
+        ...(options.allowGone ? { allowGone: true } : {}),
+      }),
   });
   if (!reached.ok || reached.value.kind === "unresolved") return { path };
   const value = reached.value;
@@ -117,7 +120,6 @@ export async function reachShown(
       ...(value.refused.status === "path_changed"
         ? { evidence: { shown: [], ...namesEvidence(value.refused.delta) } }
         : {}),
-      ...(value.refused.gone ? { gone: value.refused.gone } : {}),
     };
   return {
     path: `${value.uri}${leaf}${fragment === undefined ? "" : `#${fragment}`}`,

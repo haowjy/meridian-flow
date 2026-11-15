@@ -40,7 +40,7 @@ export type UndoRedoOutcome =
   | "nothing_to_revert";
 
 // Keep in sync with @meridian/agent-edit WriteStatus; do not couple the extractable package to wire contracts.
-export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoRedoOutcome;
 
 export interface DocumentReversalResult {
   documentId: string;

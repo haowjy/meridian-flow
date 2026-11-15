@@ -68,7 +68,7 @@ export type DraftClose = {
   /**
    * Close exactly the selection's active drafts and retire them after the root transaction
    * commits. Already-closed rows keep their cause. A removal cause registers its selection's documents too.
-   * `by` is the Discard, restore or Apply command doing the close; each row names it until a restore reopens it. A null `closed_by` is the purge's disposal only: a model's edit reads it to tell a discarded draft from a removed document.
+   * `by` is the Discard, restore or Apply command doing the close; each row names it until a restore reopens it. A null `closed_by` is a Work purge's disposal (its chats go with it): a model's edit reads a close with no command as a removed document.
    */
   closeDrafts(
     db: DrizzleDb,

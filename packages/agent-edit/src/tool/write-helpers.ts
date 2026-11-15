@@ -1,4 +1,5 @@
 // Shared parsing, identity, and error helpers for the write command pipeline.
+import { EDIT_FAILED_MESSAGE } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import { isDocumentNotFoundError } from "../ports/document-coordinator.js";
@@ -63,9 +64,6 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
     },
   };
 }
-
-/** What the model reads when an edit did not land because the server failed; it asks for no retry. */
-export const EDIT_FAILED_MESSAGE = "The edit did not land: the server failed while applying it.";
 
 /** A write that threw, as the model's answer: a file gone under it is `document_not_found`. */
 export function writeError(cause: unknown, commandName: DocumentCommandName): InternalWriteResult {

@@ -58,12 +58,13 @@ export type Settlement =
 
 /**
  * Why an act was returned. The first two close a Work; the rest are a model's edit that cannot
- * land: the draft it edited was discarded, its document was removed, or the block it named is gone.
+ * land: the draft it edited was discarded or replaced by a restore, its document was removed, or the block it named is gone.
  */
 export type ReturnedWhy =
   | "work_archived"
   | "work_deleted"
   | "draft_discarded"
+  | "draft_replaced"
   | "document_removed"
   | "block_gone";
 

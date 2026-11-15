@@ -63,7 +63,7 @@ export type ModelEditWriteDeps = {
     drafts: readonly {
       draftId: string;
       status: string;
-      closedAs: "discarded" | "document_removed" | null;
+      closedAs: "discarded" | "replaced" | "document_removed" | null;
     }[];
   }>;
   /** The document as this chat reads it now, which a returned edit shows: a read never opens a draft. */
@@ -77,22 +77,22 @@ export type ModelEditWriteDeps = {
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
   /**
    * Why the draft the model last saw closed, when it has: that edit was planned on text that is
-   * no longer a draft. A Discard or a Restore's swap closed it as discarded; the document's
+   * no longer a draft. A Discard closed it as discarded, a Restore's swap as replaced; the document's
    * removal, an Apply of its delete or its purge as a removed document.
    */
   async function closedDraftSeen(
-    documentId: DocumentId,
+    { liveRoom: live, drafts }: Awaited<ReturnType<ModelEditWriteDeps["roomsOf"]>>,
     creditedBlockIds: readonly string[] | undefined,
   ): Promise<ReturnedWhy | null> {
     if (!creditedBlockIds) return null;
-    const { liveRoom: live, drafts } = await deps.roomsOf(documentId);
     const latest = await deps.evidence.latestRoom(
       [...(live ? [live] : []), ...drafts.map((draft) => draftRoom(draft.draftId))],
       creditedBlockIds,
     );
     const seen = drafts.find((draft) => draftRoom(draft.draftId) === latest);
     if (seen?.status !== "closed") return null;
-    return seen.closedAs === "discarded" ? "draft_discarded" : "document_removed";
+    if (seen.closedAs === "discarded") return "draft_discarded";
+    return seen.closedAs === "replaced" ? "draft_replaced" : "document_removed";
   }
 
   /**
@@ -169,7 +169,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     if (documentId) {
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
-      const closed = await closedDraftSeen(documentId, given.creditedBlockIds);
+      const closed = await closedDraftSeen(await deps.roomsOf(documentId), given.creditedBlockIds);
       if (closed) return returnedEdit(command, given, grant, closed);
     }
     const outcome = await deps.liveCore.write(command, {
@@ -190,7 +190,8 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   ): Promise<WriteOutcome> {
     await deps.enterDraftSeam();
     // Before anything opens: an edit that is going to be returned makes no branch and no draft.
-    const closed = documentId && (await closedDraftSeen(documentId, given.creditedBlockIds));
+    const rooms = documentId ? await deps.roomsOf(documentId) : null;
+    const closed = rooms && (await closedDraftSeen(rooms, given.creditedBlockIds));
     if (closed) return returnedEdit(command, given, grant, closed);
     approveBranchWriteJoin();
     const branch = await deps.branches.ensureActiveForWrite({
@@ -201,9 +202,9 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     });
     const linkView: LinkView = { kind: "branch", branchId: branch.id };
     // An unaddressable file has no draft: the core answers it as the invalid write it is.
-    if (!documentId)
+    if (!documentId || !rooms)
       return threadCoreFor(given).write(command, { ...given, linkView, documentVersion: "draft" });
-    const { liveRoom } = await deps.roomsOf(documentId);
+    const { liveRoom } = rooms;
     const seen = liveRoom ? ((await given.frontiers?.planning?.(liveRoom)) ?? null) : null;
     const workDraft = await deps.ensureWorkDraft({ documentId, branchId: branch.id, seen });
     await deps.lockDraft(workDraft.draftId);

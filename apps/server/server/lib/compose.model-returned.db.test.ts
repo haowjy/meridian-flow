@@ -172,7 +172,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       db
         .select({ outcome: schema.commands.outcome })
         .from(schema.commands)
-        .where(eq(schema.commands.kind, "model_edit"));
+        .where(eq(schema.commands.kind, "model_edit"))
+        .orderBy(schema.commands.createdAt);
     const draftRows = () => db.select({ id: schema.documentDrafts.id }).from(schema.documentDrafts);
     const branchRows = () => db.select({ id: schema.branches.id }).from(schema.branches);
     const hashOf = (read: string, word: string) =>
@@ -309,13 +310,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text.indexOf("Between them.")).toBeLessThan(text.indexOf("Charlie three."));
     });
 
-    it("the writer deletes the document: the edit is returned, naming who", async () => {
+    it("the writer deletes the document under the edit: it is returned, naming who", async () => {
       const { call } = await reply(LIVE_CHAT);
       await call("read", { path: "ch1" });
-      const seeds = treeSeeder(db);
-      await seeds.store.submit({
-        lists: [await treeListOfSource(db, SOURCE_ID)],
-        make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, CH1),
+      // The path resolved when the call began; the delete lands before the edit takes its lock.
+      let deleted = false;
+      const remove = setTestHook("command.afterClaim", async () => {
+        if (deleted) return;
+        deleted = true;
+        await treeSeeder(db).store.submit({
+          lists: [await treeListOfSource(db, SOURCE_ID)],
+          make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, CH1),
+        });
       });
       const returned = await call("write", {
         command: "replace",
@@ -323,8 +329,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Alpha one.",
         content: "Alpha, edited.",
       });
+      remove();
       expect(returned.isError, returned.text).toBeFalsy();
       expect(returned.text).toContain("status: returned");
+      expect(returned.text).toContain("deleted by Ana");
       const [last] = (await modelEditRows()).slice(-1);
       expect(JSON.stringify(last?.outcome)).toContain("document_removed");
     });
@@ -367,20 +375,58 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(twice.text).not.toMatch(/retry|again|re-?read/i);
     });
 
-    it("after the model deletes a document itself, a write on its path says it is deleted, by it", async () => {
+    it("a Copy whose first attempt rolled back links the copy to the document that committed", async () => {
+      const { runtime, call } = await reply(LIVE_CHAT);
+      await writeMarkdown(runtime.ports.documentSync, {
+        documentId: CH1,
+        markdown: "[Self](manuscript://ch1)",
+        origin: { type: "user", actorUserId: USER_ID },
+        threadId: LIVE_CHAT.threadId,
+      });
+      await call("read", { path: "ch1" });
+      let failures = 0;
+      const remove = setTestHook("command.beforeCommit", async () => {
+        failures += 1;
+        if (failures === 1) throw new Error("transient");
+      });
+      const copied = await call("write", { command: "copy", from: { path: "ch1" }, path: "copy" });
+      remove();
+      expect(copied.isError, copied.text).toBeFalsy();
+      expect(failures).toBe(2);
+      const moved = await call("write", {
+        command: "move",
+        from: { path: "copy" },
+        path: "renamed",
+      });
+      expect(moved.isError, moved.text).toBeFalsy();
+      const now = await call("read", { path: "renamed" });
+      expect(now.text).toContain("[Self](renamed)");
+    });
+
+    it("undo, redo and revert on a document the writer deleted are returned, naming who", async () => {
       const { call } = await reply(LIVE_CHAT);
       await call("read", { path: "ch1" });
-      const deleted = await call("write", { command: "delete", path: "ch1" });
-      expect(deleted.isError, deleted.text).toBeFalsy();
-      const again = await call("write", {
+      const landed = await call("write", {
         command: "replace",
         path: "ch1",
         find: "Alpha one.",
         content: "Alpha, edited.",
       });
-      expect(again.isError, again.text).toBeFalsy();
-      expect(again.text).toContain("status: returned");
-      expect(again.text).toContain("deleted by you");
+      expect(landed.isError, landed.text).toBeFalsy();
+      await treeSeeder(db).store.submit({
+        lists: [await treeListOfSource(db, SOURCE_ID)],
+        make: ([{ writer }]) => writer.delete(LIVE, `user:${USER_ID}`, CH1),
+      });
+      for (const args of [
+        { command: "undo", path: "ch1" },
+        { command: "redo", path: "ch1" },
+        { command: "revert", path: "ch1", edit: "e1" },
+      ]) {
+        const answer = await call("write", args);
+        expect(answer.isError, `${args.command}: ${answer.text}`).toBeFalsy();
+        expect(answer.text, args.command).toContain("status: returned");
+        expect(answer.text, args.command).toContain("deleted by Ana");
+      }
     });
 
     it("the turn's Undo takes back what landed and leaves the returned edit out cleanly", async () => {

@@ -948,6 +948,10 @@ msgstr "A folder named {name} already exists in this location."
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "A source is no longer there."
 msgstr "A source is no longer there."

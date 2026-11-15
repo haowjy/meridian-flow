@@ -237,6 +237,10 @@ function withDestination(
 
 const isTextEdit = (command: string) =>
   command === "insert" || command === "replace" || command === "remove";
+const isInverseCommand = (command: string) =>
+  command === "undo" || command === "redo" || command === "revert";
+/** What a call to a removed document is answered for: a text edit, or an undo, redo or revert. */
+const settlesOnRemoval = (command: string) => isTextEdit(command) || isInverseCommand(command);
 
 /**
  * A write the file policy refused: a text edit whose Work is closed or whose document was
@@ -252,7 +256,10 @@ async function deniedWrite(
   denial: FileAccessDenied,
 ) {
   const removal = await removalBehind(deps, principal, denial);
-  const why = isTextEdit(parsed.command) ? returnedWhy(denial, removal) : null;
+  const returned = returnedWhy(denial, removal);
+  // An undo, redo or revert is returned only for a removed document; a closed Work is its refusal.
+  const why =
+    returned === "document_removed" || (returned && isTextEdit(parsed.command)) ? returned : null;
   if (!why) return fileAccessDeniedError(parsed.command, denial, address.filePath, removal);
   return returnedEdit(deps, principal, parsed, address, ctx, why, {
     ...(removal ? { removal } : {}),
@@ -365,7 +372,7 @@ async function writeUnderGrant(
     // commit): a text edit is returned with who removed it; any other call's interim answer is
     // `document_not_found`, with the record's sentence.
     if (isDocumentNotFoundError(cause)) {
-      if (cause.removal && isTextEdit(parsed.command))
+      if (cause.removal && settlesOnRemoval(parsed.command))
         return returnedEdit(deps, principal, parsed, address, ctx, "document_removed", {
           removal: cause.removal,
         });
@@ -543,39 +550,16 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     )
       return runTreeToolCommand(deps, call, written, ctx, settle);
     const { context, principal } = call;
-    const isInverse =
-      written.command === "undo" || written.command === "redo" || written.command === "revert";
+    const isInverse = isInverseCommand(written.command);
     const creates = written.command === "create" || written.command === "copy";
-    // The path the model wrote is the node it was shown: a create only looks up its folders. An
-    // inverse reaches it after its tree half, which may have moved the node.
-    const reach = (path: string) =>
-      reachShown(call, ctx, written.command, path, { folderOf: creates });
     let reached: Reached | undefined;
     let parsed = written;
     if (!isInverse) {
-      const first = await reach(written.path);
-      if (isToolError(first)) {
-        // A path whose document was deleted since the model was shown it: a text edit is
-        // returned with who deleted it, as one on a document found removed under the lock is.
-        const gone = "gone" in first ? first.gone : undefined;
-        if (!gone || !isTextEdit(written.command)) return first;
-        const documentId = gone;
-        return settle(async () => {
-          const removal = (await deps.documentRemovals.lookup([documentId as DocumentId])).get(
-            documentId as DocumentId,
-          );
-          const outcome = await returnedEdit(
-            deps,
-            principal,
-            written,
-            { documentId, filePath: written.path, uri: written.path },
-            ctx,
-            "document_removed",
-            { ...(removal ? { removal } : {}) },
-          );
-          return { output: outcome.result, evidence: outcome.evidence };
-        });
-      }
+      // The path the model wrote is the node it was shown: a create only looks up its folders.
+      const first = await reachShown(call, ctx, written.command, written.path, {
+        folderOf: creates,
+      });
+      if (isToolError(first)) return first;
       reached = first;
       parsed = { ...written, path: first.path } as typeof written;
     }
@@ -650,6 +634,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
 
     let refresh: DocumentId | undefined;
     const effect = async () => {
+      refresh = undefined;
       // What the tree took back of this call's `count`, said before the text engine's own line.
       let treeUndone: string[] = [];
       let engine = parsed;
@@ -665,9 +650,30 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           treeUndone = tree.undone;
           engine = { ...written, count: tree.count } as typeof written;
         }
-        const first = await reach(written.path);
+        // The node the model was shown, deleted or not: a removed document is answered below.
+        const first = await reachShown(call, ctx, written.command, written.path, {
+          allowGone: true,
+        });
         // A reversed creation took the document and its text steps with it.
         if (isToolError(first)) return tree?.kind === "then_text" ? tree.answer : first;
+        if (first.node?.kind === "document") {
+          const removal = (await deps.documentRemovals.lookup([first.node.id as DocumentId])).get(
+            first.node.id as DocumentId,
+          );
+          if (removal) {
+            if (tree?.kind === "then_text") return tree.answer;
+            const outcome = await returnedEdit(
+              deps,
+              principal,
+              written,
+              { documentId: first.node.id, filePath: first.path, uri: first.path },
+              ctx,
+              "document_removed",
+              { removal },
+            );
+            return { output: outcome.result, evidence: outcome.evidence };
+          }
+        }
         reached = first;
         engine = { ...engine, path: first.path } as typeof written;
       }
@@ -711,11 +717,14 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         ));
       if (isToolError(address)) return address;
 
+      // The effect can run again: `copied` stays what the source read gave, and each attempt
+      // remaps its own copy of it to the document that attempt made.
+      let placed = copied;
       if (engine.command === "copy" && copied) {
         // The copy's new identity is known now: a whole document's own links name the copy, not
         // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
         // A selection is not the copied set: its links to the whole source keep naming it.
-        copied = {
+        placed = {
           ...copied,
           nodes: remapCopiedBlocks({
             blocks: copied.nodes,
@@ -743,7 +752,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         principal,
         engine,
         address,
-        copied,
+        placed,
         ctx,
         context.resolution.uploadsOwner?.chatRef,
       );
@@ -819,7 +828,19 @@ function effectSettler(
   edit: NonNullable<ToolHandlerContext["modelEdit"]>,
   command: WriteToolInput["command"],
 ): (effect: () => Promise<unknown>) => Promise<unknown> {
-  const run = (effect: () => Promise<unknown>, retried: boolean) =>
+  // What a command's effect leaves in memory outlives its rollback. The reply's own updates are
+  // the one such state an effect writes; each attempt starts from, and a rolled-back one returns
+  // to, what the reply held before it.
+  const run = async (effect: () => Promise<unknown>, retried: boolean) => {
+    const restore = ctx.frontiers?.reply?.checkpoint();
+    const settled = await attempt(effect, retried).catch((cause) => {
+      restore?.();
+      throw cause;
+    });
+    if (settled.outcome.status === "refused") restore?.();
+    return settled;
+  };
+  const attempt = (effect: () => Promise<unknown>, retried: boolean) =>
     deps.documentSync.modelEdits().run({
       key: edit.key,
       owner: { threadId: ctx.threadId, turnId: ctx.turnId },

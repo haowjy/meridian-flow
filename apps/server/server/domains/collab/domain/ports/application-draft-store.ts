@@ -10,14 +10,15 @@ export type ApplicationDraftStore = DraftStore & {
   listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
   /**
    * Every Work draft of the document, any status and branch. A closed draft says why: a Discard
-   * or a Restore's swap closes it `discarded`; the document's removal, an Apply of its delete
-   * or its purge close it `document_removed`.
+   * closes it `discarded`; a Restore's swap, `replaced`; the document's removal, an Apply of its
+   * delete or a Work's purge, `document_removed` (a purge closes with no command, and the chat
+   * goes with its Work).
    */
   listWorkDraftStates(documentId: DocumentId): Promise<
     {
       draftId: string;
       status: DraftSnapshot["status"];
-      closedAs: "discarded" | "document_removed" | null;
+      closedAs: "discarded" | "replaced" | "document_removed" | null;
     }[]
   >;
   /** The branch's active draft of the document, or null. */

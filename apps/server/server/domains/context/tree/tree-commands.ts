@@ -59,8 +59,6 @@ export type Refused = {
   path: string;
   message: string;
   delta: ShownDelta;
-  /** The deleted node a `gone` names, so a write inside it can say who deleted it. */
-  gone?: string;
 };
 
 export type Done = {
@@ -169,7 +167,7 @@ const refuse = (
   status: Refused["status"],
   path: string,
   message: string,
-  extra: Partial<Pick<Refused, "refusal" | "delta" | "gone">> = {},
+  extra: Partial<Pick<Refused, "refusal" | "delta">> = {},
 ): Refused => ({
   ok: false,
   status,
@@ -177,7 +175,6 @@ const refuse = (
   message,
   delta: extra.delta ?? { whole: [], names: [] },
   ...(extra.refusal ? { refusal: extra.refusal } : {}),
-  ...(extra.gone ? { gone: extra.gone } : {}),
 });
 
 /** A refusal for a resolution that is not a node. */
@@ -228,7 +225,7 @@ function unresolved(
           "unattributed deleted",
           "it was deleted",
         ),
-        { refusal: "target_gone", gone: resolution.node.id },
+        { refusal: "target_gone" },
       );
     case "not_a_folder":
       return refuse(
@@ -945,9 +942,7 @@ export function runTreeCommand(
         taken: took,
         arrived: [],
         touched: [],
-        // The name still means the node, now in Trash: a later write on that path finds it by
-        // the name it was shown and says it was deleted, instead of finding nothing.
-        delta: changeDelta([], [{ folder: node.parent, name: node.displayName, node: node.id }]),
+        delta: changeDelta([{ folder: node.parent, name: node.displayName }], []),
       });
     }
 

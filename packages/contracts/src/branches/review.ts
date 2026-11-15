@@ -266,11 +266,11 @@ export type ModelEditKey = {
 };
 
 /**
- * A model's edit settled: `edited` committed it, or answered it as `settled` says (a `returned`
- * edit changed nothing); `refused` answered it with nothing changed.
+ * A model's edit settled: `edited` committed it; `returned` answered it with the document as it
+ * stands and changed nothing (`settled` says why); `refused` answered it with nothing changed.
  */
 export type ModelEditCommandResult = {
-  status: "edited" | "refused";
+  status: "edited" | "returned" | "refused";
   toolResult: ModelEditToolResult;
   settled?: Settlement[];
 };
