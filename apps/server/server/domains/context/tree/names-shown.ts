@@ -146,7 +146,9 @@ export function resolveShown(
       const written = segments.slice(at, at + width).join(SLASH_LOOKALIKE);
       const last = at + width === segments.length;
       for (name of candidates(written, last, path.folder)) {
-        const now = childrenOf(projection, folder).find((child) => child.displayName === name);
+        // The name's holder now: a standing node before one in Trash that kept the same name.
+        const named = childrenOf(projection, folder).filter((child) => child.displayName === name);
+        const now = named.find((child) => !child.trashed) ?? named[0];
         const was = shownAt(shown, folder, name);
         const meant = was ? projection.nodes.get(was) : undefined;
         // A node the map names but this view lacks was shown in the other view: its name here

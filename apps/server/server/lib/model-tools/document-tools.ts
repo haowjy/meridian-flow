@@ -68,6 +68,7 @@ import { readDocument } from "./read-document.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   areaOfPath,
+  goneMessage,
   namesEvidence,
   printedNames,
   type Reached,
@@ -337,6 +338,11 @@ export async function readTrackedDocument(
   const reached = await reachShown(call, ctx, path, {
     ...(version ? { version } : {}),
   });
+  if (reached.gone)
+    return {
+      ...writeToolError("read", goneMessage(path, reached.gone), "document_not_found", { path }),
+      revision: null,
+    };
   const wrongKind = reached.node ? wrongKindMessage(reached.path, reached.node, "read") : null;
   if (wrongKind)
     return { ...writeToolError("read", wrongKind, "document_not_found", { path }), revision: null };
@@ -453,6 +459,12 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     let parsed = written;
     if (!isInverse) {
       const first = await reach(written.path);
+      if (first.gone)
+        return writeToolError(
+          written.command,
+          goneMessage(written.path, first.gone),
+          "document_not_found",
+        );
       reached = first;
       parsed = { ...written, path: first.path } as typeof written;
     }
@@ -545,6 +557,12 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         const first = await reach(written.path);
         // A reversed creation took the document and its text steps with it.
         if (tree?.kind === "then_text" && !first.node) return tree.answer;
+        if (first.gone)
+          return writeToolError(
+            written.command,
+            goneMessage(written.path, first.gone),
+            "document_not_found",
+          );
         reached = first;
         engine = { ...engine, path: first.path } as typeof written;
       }

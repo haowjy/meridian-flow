@@ -71,12 +71,26 @@ export type Reached = {
   delta?: ShownDelta;
   /** The node the path reached, when the names shown or the tree hold it. */
   node?: { id: string; kind: "folder" | "document" | "file"; entries: number };
+  /**
+   * The node the path names is not available here (in Trash, purged, or of the other version):
+   * the tool answers with `goneMessage` and never looks `path` up again, which could reach
+   * another node that holds the name now.
+   */
+  gone?: "deleted" | "purged" | "other_version";
 };
+
+/** What a tool says for a path whose node is not available (`Reached.gone`). */
+export function goneMessage(path: string, gone: NonNullable<Reached["gone"]>): string {
+  if (gone === "deleted") return `${path} is in Trash; restore it to use it.`;
+  if (gone === "purged") return `${path} was emptied from Trash and is gone for good.`;
+  return `${path} names something in the other version of the tree, not this one.`;
+}
 
 /**
  * The path as it is now for the node the model meant (`#fragment` kept). A path neither the names
- * shown nor the tree hold a live node for comes back as written: the tool reports it as it
- * always did. `create` resolves the folder it goes into, not the name it makes.
+ * shown nor the tree hold a node for comes back as written: the tool reports it as it always did.
+ * One whose node is not available comes back `gone`. `create` resolves the folder it goes into,
+ * not the name it makes.
  */
 export async function reachShown(
   call: ToolCall,
@@ -98,6 +112,7 @@ export async function reachShown(
     read: (scope) => reachPath(scope, parts.area, shown, looked),
   });
   if (!reached.ok || reached.value.kind === "unresolved") return { path };
+  if (reached.value.kind === "gone") return { path, gone: reached.value.why };
   const value = reached.value;
   return {
     path: `${value.uri}${leaf}${fragment === undefined ? "" : `#${fragment}`}`,

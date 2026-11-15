@@ -22,6 +22,7 @@ import {
 import { containerReadonly, withBranchOwner } from "./file-access.js";
 import {
   areaOfPath,
+  goneMessage,
   namesEvidence,
   type Reached,
   reachShown,
@@ -75,6 +76,8 @@ export function createLsHandler(deps: ToolWiringDeps) {
     const reached = path
       ? await reachShown(call, ctx, path, { ...(version ? { version } : {}) })
       : null;
+    if (path && reached?.gone)
+      return toolError({ code: "not_found", message: goneMessage(path, reached.gone) });
     const wrongKind = reached?.node ? wrongKindMessage(reached.path, reached.node, "ls") : null;
     if (wrongKind) return toolError({ message: wrongKind });
     const result = await context.port.list(reached?.path ?? path, { wordCounts: verbose });

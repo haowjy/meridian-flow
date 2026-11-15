@@ -578,12 +578,16 @@ export type PathReach =
       uri: string;
       delta: ShownDelta;
     }
+  /** The path names a node this view can't act on: in Trash, purged, or of the other version. */
+  | { kind: "gone"; why: "deleted" | "purged" | "other_version" }
   | { kind: "unresolved" };
 
 /**
  * Resolves a path through the names shown, for the tools that read or write inside a document:
- * the live node it meant and where it is now, or nothing when the map and the tree hold no live
- * node for the path (a deleted one included: those tools answer for it themselves).
+ * the live node it meant and where it is now; `gone` when the node it names (the one the model
+ * was shown, or else the one holding the name) is not available here, so no caller looks the
+ * path up again and reaches whatever holds that name now; or nothing when neither the map nor the
+ * tree holds a node for it.
  */
 export function reachPath(
   scope: Pick<TreeScope, "writer" | "view" | "root">,
@@ -604,11 +608,11 @@ export function reachPath(
   };
   const projection = scope.writer.view(scope.view);
   const found = resolveShown(projection, shown, scope.root, pathFrom(cx, path));
-  if (
-    found.kind !== "node" ||
-    (!options.deleted && (found.node.trashed || found.trashed.length > 0))
-  )
-    return { kind: "unresolved" };
+  if (found.kind === "purged" || found.kind === "other_version")
+    return { kind: "gone", why: found.kind };
+  if (found.kind !== "node") return { kind: "unresolved" };
+  if (!options.deleted && (found.node.trashed || found.trashed.length > 0))
+    return { kind: "gone", why: "deleted" };
   return {
     kind: "node",
     node: {

@@ -170,7 +170,12 @@ export async function runMoveAcrossLists(
       });
       const reached = found.ok ? found.value : undefined;
       if (reached?.kind !== "node" || reached.node.kind === "folder") {
-        const why = reached?.kind === "node" ? "a folder" : "not found";
+        const why =
+          reached?.kind === "node"
+            ? "a folder"
+            : reached?.kind === "gone" && reached.why === "deleted"
+              ? "in Trash"
+              : "not found";
         if (!command.many) return writeToolError("move", `Nothing moved: ${from} (${why}).`);
         notMoved.push(`${from} (${why})`);
         continue;
