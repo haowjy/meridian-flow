@@ -211,11 +211,20 @@ function RecentDocumentRow({
   // A filed document moves and deletes from here; an Untitled one, or a note in a chat's
   // Scratch (whose owner the list doesn't know), grants nothing.
   const actions = address && address.scheme !== "scratch" ? MOVE_DELETE : NONE;
-  const [moving, setMoving] = useState<readonly DragEntry[] | null>(null);
-  const menu = useEntryMenu(entry, actions, (action, selection) => {
-    if (action === "delete") onDelete(selection ?? [entry]);
-    else if (action === "move") setMoving(selection ?? [entry]);
-  });
+  const [picking, setPicking] = useState<{
+    action: "move" | "copy";
+    rows: readonly DragEntry[];
+  } | null>(null);
+  const menu = useEntryMenu(
+    entry,
+    actions,
+    (action, selection) => {
+      if (action === "delete") onDelete(selection ?? [entry]);
+      else if (action === "move" || action === "copy")
+        setPicking({ action, rows: selection ?? [entry] });
+    },
+    address?.scheme === "user" ? "account" : "project",
+  );
   // A link can't be pressed; `ListRow` names a selected link instead.
   const { "aria-pressed": _pressed, ...selectionProps } = row.rowProps;
   const listRow = (
@@ -244,12 +253,12 @@ function RecentDocumentRow({
       {address && projectId ? (
         <EntryDestinationPicker
           projectId={projectId}
-          action="move"
+          action={picking?.action ?? "move"}
           from={{ scheme: address.scheme, owner: {} }}
           entry={{ id: item.documentId, name: item.name, path: address.path, kind: "file" }}
-          selection={moving ?? undefined}
-          open={moving !== null}
-          onOpenChange={(open) => !open && setMoving(null)}
+          selection={picking?.rows}
+          open={picking !== null}
+          onOpenChange={(open) => !open && setPicking(null)}
         >
           {listRow}
         </EntryDestinationPicker>

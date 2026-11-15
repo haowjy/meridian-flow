@@ -40,13 +40,7 @@ export function clientMayWrite(value: unknown): boolean {
   const fields = value as Record<string, unknown>;
   const serverKeys = [...SERVER_BASE, ...(SERVER_FIELDS.get(String(fields.type)) ?? [])];
   if (fields.type === "purge" || (fields.type === "create" && fields.kind === "file")) return false;
-  if (serverKeys.some((key) => fields[key] !== undefined)) return false;
-  const from = fields.from;
-  const places = [
-    fields.parent,
-    typeof from === "object" && from !== null ? (from as { parent?: unknown }).parent : undefined,
-  ];
-  return !places.some((place) => typeof place === "string" && place.startsWith("list:"));
+  return !serverKeys.some((key) => fields[key] !== undefined);
 }
 
 /** The part of one Yjs struct the server does not hold yet. */

@@ -41,7 +41,7 @@ A document the turn moved, deleted or copied carries its net tree line in lineag
 and its row says so: "Moved ch4 to ch4-old" (the folder, section or owner kept only
 when it tells the destination apart: "Scratch for Ascension/notes/ch4"),
 "Deleted ch2", or "Copied ch2 to ch2 (copy)" (a create whose document records
-`metadata.copiedFrom`; its `from` is that source). An owner is named by its Work's
+`metadata.copiedFrom`; its `from` is that source). A folder copy records its source on the tree receipt node and uses the same copy line. An owner is named by its Work's
 name or its chat's title, never its
 handle (#914): the project shell supplies `OwnerNames` (`owner-names.tsx`,
 `ProjectOwnerNamesProvider`), and outside it a location reads "Scratch". The

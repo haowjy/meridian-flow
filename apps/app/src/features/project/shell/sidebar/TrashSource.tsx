@@ -174,8 +174,11 @@ function TrashRow({
   const location = documentPlace(entry.scheme, entry.formerPath);
   const dragged = useMemo(() => trashDragEntry(entry), [entry]);
   const row = useEntryRow(dragged, { active, draggable: true, source: "trash" });
-  const menu = useEntryMenu(dragged, RESTORE, (_action, rows) =>
-    onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.nodeId]),
+  const menu = useEntryMenu(
+    dragged,
+    RESTORE,
+    (_action, rows) => onRestore(rows ? rows.map(({ ref }) => ref.id) : [entry.nodeId]),
+    entry.scheme === "user" ? "account" : "project",
   );
   return (
     <ListRow

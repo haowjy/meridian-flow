@@ -39,8 +39,12 @@ through `seedFromMarkdown`, or `ensureDocumentAuthority` for an empty create),
 and explicit repair of a living document whose authority is absent (the same
 `ensureDocumentAuthority`, seeded as an empty document: it reads first and
 writes only when the document has no state).
-Repair runs only on an explicit touch: live overwrite and the held
-live lease, and Hocuspocus room admission before its first generation read.
+Repair runs on a document text read (Markdown or export), live overwrite, the held
+live lease, and Hocuspocus room admission before its first generation read. A client
+can create a tree node without ever opening its text room; that document has no
+authority yet and reads as empty. Text reads use the same initialize-only repair
+as room admission, so they neither mistake it for a missing document nor overwrite
+text that arrives concurrently.
 Everything else requires an existing head and creates nothing. Draft creation
 (a Work draft) passes `requireLivingDocument` under the same
 lock. A miss answers `DocumentNotFoundError`, carrying the removal record
