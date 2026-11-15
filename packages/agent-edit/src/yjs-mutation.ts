@@ -230,6 +230,7 @@ export function executeUndo(
     meta: Map<unknown, unknown>;
   },
   deleteFilter: (item: Y.Item) => boolean,
+  placements: readonly RestorePlacement[] = [],
 ): Uint8Array[] {
   const updates: Uint8Array[] = [];
   const collect = (update: Uint8Array) => updates.push(update);
@@ -242,12 +243,63 @@ export function executeUndo(
   manager.undoStack.push(stack);
   doc.on("update", collect);
   try {
+    if (placements.length)
+      doc.transact((transaction) => {
+        for (const placement of placements) restoreBefore(transaction, placement);
+      });
     manager.undo();
   } finally {
     doc.off("update", collect);
     manager.destroy();
   }
   return updates;
+}
+
+/** Deleted sibling ranges, in reading order, to restore as one run directly left of `before`. */
+export interface RestorePlacement {
+  ranges: readonly { client: number; clock: number; len: number }[];
+  before: { client: number; clock: number };
+}
+
+/**
+ * Yjs's `redoItem` with the neighbours given instead of read from the tombstone: copy each range
+ * in order directly left of `before` and link it through `redone`, so the undo that follows
+ * reuses the copy and the receipt's aliases record it. Decides nothing; the planner chose the place.
+ */
+function restoreBefore(transaction: Y.Transaction, placement: RestorePlacement): void {
+  const doc = transaction.doc;
+  // Yjs's redoItem also marks the copy `keep`, which only a collecting document reads.
+  if (doc.gc) throw new Error("Restoring beside an item needs a document that keeps tombstones");
+  const right = Y.getItemCleanStart(
+    transaction,
+    Y.createID(placement.before.client, placement.before.clock),
+  );
+  const parent = right.parent;
+  if (!(parent instanceof Y.AbstractType)) throw new Error("Restore anchor has no parent");
+  let left = right.left;
+  for (const range of placement.ranges)
+    for (let clock = range.clock; clock < range.clock + range.len; ) {
+      const item = Y.getItemCleanStart(transaction, Y.createID(range.client, clock));
+      const rest = range.clock + range.len - clock;
+      if (item.length > rest)
+        Y.getItemCleanEnd(transaction, doc.store, Y.createID(range.client, clock + rest - 1));
+      if (!item.deleted || item.redone !== null || item.parent !== parent)
+        throw new Error("Restore placement names an item that cannot be restored there");
+      const copy = new Y.Item(
+        Y.createID(doc.clientID, Y.getState(doc.store, doc.clientID)),
+        left,
+        left?.lastId ?? null,
+        right,
+        right.id,
+        parent,
+        null,
+        item.content.copy(),
+      );
+      item.redone = copy.id;
+      copy.integrate(transaction, 0);
+      left = copy;
+      clock += item.length;
+    }
 }
 
 /** String clocks only; container and formatting structs have no textual excerpt. */

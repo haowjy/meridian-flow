@@ -10,15 +10,17 @@ import {
   ancestorItems,
   changedRedone,
   executeUndo,
-  findItem,
   hydrateRedone,
   itemIsInFragment,
   itemIsVisible,
   itemsInRange,
+  type RestorePlacement,
   snapshotRedone,
 } from "../yjs-mutation.js";
 import { shouldDeleteUndoItem } from "./delete-filter.js";
 import { withoutClocks } from "./held-deletes.js";
+import { clocks, find, type Key, key, parse, ranges } from "./item-keys.js";
+import { readSeams } from "./restore-seam.js";
 
 export interface EditRange {
   client: number;
@@ -81,28 +83,6 @@ export interface ComputedInverse {
   skipped: PartClassification[];
 }
 const ROOT = "prosemirror";
-type Key = string;
-const key = (id: { client: number; clock: number }): Key => `${id.client}:${id.clock}`;
-const parse = (k: Key): Y.ID => {
-  const separator = k.indexOf(":");
-  return Y.createID(Number(k.slice(0, separator)), Number(k.slice(separator + 1)));
-};
-const clocks = (ranges: readonly EditRange[]): Key[] =>
-  ranges.flatMap((r) =>
-    Array.from({ length: r.len }, (_, n) => key({ client: r.client, clock: r.clock + n })),
-  );
-function ranges(keys: Iterable<Key>): EditRange[] {
-  const sorted = [...new Set(keys)]
-    .map(parse)
-    .sort((a, b) => a.client - b.client || a.clock - b.clock);
-  const out: EditRange[] = [];
-  for (const id of sorted) {
-    const last = out.at(-1);
-    if (last?.client === id.client && last.clock + last.len === id.clock) last.len++;
-    else out.push({ ...id, len: 1 });
-  }
-  return out;
-}
 const lineageRange = (range: EditRange): LineageRange => ({
   clientID: range.client,
   clock: range.clock,
@@ -122,7 +102,6 @@ function proseRanges(doc: Y.Doc, input: readonly EditRange[]): EditRange[] {
       if (inFragment(doc, item)) out.push({ client: range.client, clock, len });
   return normalizedRanges(out);
 }
-const find = (doc: Y.Doc, k: Key) => findItem(doc, parse(k)) ?? undefined;
 const inFragment = (doc: Y.Doc, item: Y.Item) => itemIsInFragment(doc, item, ROOT);
 function rawEffect(update: Uint8Array, held?: ReadonlySet<string>): EditEffect {
   const decoded = Y.decodeUpdate(update);
@@ -356,6 +335,8 @@ interface InversePlan {
   acts: boolean;
   /** A restore skipped because its parent is gone. */
   blocked: boolean;
+  /** The runs of `restoring` that go back beside the text that replaced them, not at their tombstones. */
+  place: () => RestorePlacement[];
 }
 function planInverse(
   index: Lineage,
@@ -374,9 +355,16 @@ function planInverse(
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
+  const seams = readSeams(index, {
+    frontier: part.frontier,
+    own: new Set(index.rootsFor(part.effect)),
+    returning: returning.map((pair) => pair.original),
+    leaving: removingSet,
+  });
   // A replacement is a deleted run with the part's insertion beside it. Bringing the deleted run back
   // alone doubles the text only when that insertion is gone and someone wrote there after the part
   // (a replacement by the writer or a pull); a plain deletion of the insertion leaves the gap empty.
+  // While the text the part put in its place still stands, past the writer's typing, it was not replaced.
   const removingItems = new Set<Y.Item>();
   for (const { original } of removing) {
     const item = find(index.doc, original);
@@ -407,7 +395,7 @@ function planInverse(
         newer ||= origin.clock >= (part.frontier[origin.client] ?? 0);
       }
     }
-    const stranded = paired && !standing && newer;
+    const stranded = paired && !standing && newer && !seams.leavingStands(item);
     strandedItems.set(item, stranded);
     return stranded;
   };
@@ -454,6 +442,7 @@ function planInverse(
     restoring,
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
+    place: () => seams.placements(restoring),
   };
 }
 function itemsRightOf(item: Y.Item): Y.Item[] {
@@ -711,10 +700,12 @@ function computePreparedInverse(
         continue;
       }
       index.hydrate();
-      const plan = planInverse(index, part, direction);
+      const plan = planInverse(index, part, direction),
+        placements = plan.place(),
+        placed = new Set(placements.flatMap((placement) => clocks(placement.ranges)));
       const stack = {
         insertions: deleteSet(plan.removing),
-        deletions: deleteSet(plan.restoring),
+        deletions: deleteSet(plan.restoring.filter((k) => !placed.has(k))),
         meta: new Map(),
       };
       const frontier = captureEditFrontier(scratch),
@@ -725,8 +716,13 @@ function computePreparedInverse(
       Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
       let updates: Uint8Array[];
       try {
-        updates = executeUndo(scratch, ROOT, client, stack, (item) =>
-          shouldDeleteUndoItem(item, stack),
+        updates = executeUndo(
+          scratch,
+          ROOT,
+          client,
+          stack,
+          (item) => shouldDeleteUndoItem(item, stack),
+          placements,
         );
       } catch (error) {
         before.destroy();
