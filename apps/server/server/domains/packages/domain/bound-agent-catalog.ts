@@ -32,7 +32,7 @@ import {
   type CompiledPackage,
   isError,
 } from "./compile-package.js";
-import { agentRevisionId } from "./helpers.js";
+import { agentRevisionId, canonicalizeJsonObject } from "./helpers.js";
 import { PACKAGES_DIR } from "./level-packages.js";
 import { agentPath, GRAMMAR_VERSION, skillPath } from "./mars.js";
 import {
@@ -425,14 +425,15 @@ export function createBoundAgentCatalog(input: {
         { slug: bound.revision.slug, definitionRevisionId: bound.revision.id },
         projectId,
       );
-      const moved = newest.ok && newest.revision.id !== bound.revision.id ? newest : undefined;
+      const moved =
+        newest.ok &&
+        runsDifferently(bound, { definition: newest.revision.definition, ...newest.configuration })
+          ? newest
+          : undefined;
       const pins: Record<string, RetainedSkillReference> = {};
       for (const slug of Object.keys(bound.invokedSkills)) {
         const skill = await skillIn(saved, slug);
-        if (
-          skill &&
-          skill.reference.packageRevisionId !== bound.invokedSkills[slug]?.packageRevisionId
-        ) {
+        if (skill && skill.reference.contentDigest !== bound.invokedSkills[slug]?.contentDigest) {
           pins[slug] = skill.reference;
         }
       }
@@ -446,6 +447,43 @@ export function createBoundAgentCatalog(input: {
     },
   };
   return catalog;
+}
+
+/**
+ * What a chat would run: the compiled definition and its configuration, without the ids that
+ * name a package version. A Save of other files in the package changes those ids, not this.
+ */
+function behaviourOf(agent: {
+  definition: CompiledAgentDefinition;
+  model: string;
+  skills: ResolvedAgentConfiguration["skills"];
+  namedTargets: ResolvedAgentConfiguration["namedTargets"];
+  tools?: string[];
+  "disallowed-tools"?: string[];
+  effort?: string;
+  permission: string;
+}): string {
+  const { skills, namedTargets, ...rest } = agent;
+  const digests = (list: RetainedSkillReference[]) =>
+    list.map(({ path, contentDigest }) => ({ path, contentDigest }));
+  return JSON.stringify(
+    canonicalizeJsonObject({
+      ...rest,
+      skills: { load: digests(skills.load), available: digests(skills.available) },
+      namedTargets: namedTargets.map(({ name }) => name),
+    } as never),
+  );
+}
+
+function runsDifferently(
+  bound: { revision: AgentRevision | null; configuration: ResolvedAgentConfiguration },
+  next: Parameters<typeof behaviourOf>[0],
+): boolean {
+  return (
+    !bound.revision ||
+    behaviourOf({ definition: bound.revision.definition, ...bound.configuration }) !==
+      behaviourOf(next)
+  );
 }
 
 /** Whether a writer can start a conversation with the Agent, not only another Agent call it. */
