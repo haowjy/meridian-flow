@@ -3311,8 +3311,8 @@ msgid "flowchart"
 msgstr "flowchart"
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "Folder"
-msgstr "Folder"
+#~ msgid "Folder"
+#~ msgstr "Folder"
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
@@ -6542,8 +6542,8 @@ msgid "This Work is archived."
 msgstr "This Work is archived."
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is archived. Unarchive it to apply or discard its changes."
-msgstr "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgid "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgstr "This Work is archived. Unarchive it to apply or discard its changes."
 
 #: src/features/project/context/tree-action-message.ts
 msgid "This Work is archived. Unarchive it to change its tree."
@@ -6562,8 +6562,8 @@ msgid "This Work is deleted."
 msgstr "This Work is deleted."
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is deleted. Restore it to apply or discard its changes."
-msgstr "This Work is deleted. Restore it to apply or discard its changes."
+#~ msgid "This Work is deleted. Restore it to apply or discard its changes."
+#~ msgstr "This Work is deleted. Restore it to apply or discard its changes."
 
 #: src/features/project/context/tree-action-message.ts
 msgid "This Work is deleted. Restore it to change its tree."
@@ -7060,6 +7060,7 @@ msgid "Work couldn’t load"
 msgstr "Work couldn’t load"
 
 #: src/components/app/WorkClosedChip.tsx
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "Work was closed"
 msgstr "Work was closed"
 
