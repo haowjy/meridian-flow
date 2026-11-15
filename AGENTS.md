@@ -71,13 +71,7 @@ onto the new version. Nothing specific to Flow goes in it, such as the models Fl
 prices, or the `FLOW_` variables: that stays in `apps/server/server/lib/gateway/`
 ([wiring](apps/server/server/lib/gateway/.context/CONTEXT.md)).
 
-To try a gateway change here before it is published: in the runtime checkout run
-`pnpm --filter @meridian-flow/gateway dev` (tsc watch), add `"@meridian-flow/gateway": link:<path to
-that checkout>/packages/gateway` under `overrides:` in `pnpm-workspace.yaml`, `pnpm install`, then
-`pnpm dev --restart` after each compile (the server does not reload a linked package). Undo with
-`git checkout pnpm-workspace.yaml pnpm-lock.yaml && pnpm install`; a `link:` left in a commit fails
-CI's frozen install. Details:
-[the package's AGENTS.md](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/AGENTS.md#trying-a-change-in-flow-before-it-is-published).
+To try a gateway change here before it is published, follow [the package's AGENTS.md](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/AGENTS.md#trying-a-change-in-flow-before-it-is-published).
 
 **Diagrams stay current.** The [architecture map](.context/system-architecture/README.md)
 draws the system, the code, the writer journeys and the broken dependency rules; each state
