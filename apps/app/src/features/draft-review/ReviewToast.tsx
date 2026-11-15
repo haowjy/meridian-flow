@@ -35,7 +35,6 @@ export function ReviewToast({
         className,
       )}
     >
-      {toast.code === "draft-closed" ? <Trans>This draft was discarded.</Trans> : null}
       {toast.code === "change-gone" ? <Trans>That change is no longer in the draft.</Trans> : null}
     </div>
   );

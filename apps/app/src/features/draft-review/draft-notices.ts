@@ -6,6 +6,7 @@
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { DiscardRestores } from "./discard-restores";
 
 export type NoticeSurface =
   | { kind: "changes" }
@@ -24,11 +25,19 @@ export type NoticeSubject =
   | { kind: "drafts"; count: number }
   | { kind: "deletes"; count: number };
 
+/**
+ * Why a restore came back with nothing done: the Work is archived or deleted (or its chat is in
+ * Trash), or Trash no longer holds what the Discard took.
+ */
+export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
+
 export type DiscardUndoAnswer = {
-  answer: "ok" | "failed" | "gone";
+  /** `returned`: the restore was answered and did nothing, for `why`. */
+  answer: "ok" | "failed" | "gone" | "returned";
   landed: Promise<void>;
   /** What the Discard held that could not come back (`UndoDiscardResult.leftOut`). */
   leftOut?: number;
+  why?: RestoreReturned;
 };
 
 /**
@@ -55,6 +64,12 @@ export type DiscardPart = {
   /** Every document and folder the share brings back, when more than `documentId`. */
   covers?: readonly string[];
   handle: DiscardUndo;
+  /**
+   * The server Discard the share takes back, by its command id: its progress is the one every view
+   * reads (`DiscardRestores`), so a restore sent from Trash or the editor ends or answers the
+   * notice too.
+   */
+  restore?: string;
   /** The draft's review, for the view to follow an Undo back to. */
   review?: ReviewFileTarget;
   /**
@@ -73,9 +88,13 @@ export type DraftNotice =
       documentIds: readonly string[];
       /** A single draft's review, which an Undo may return main to. */
       review: ReviewFileTarget | null;
-      /** `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back. */
-      status: "ready" | "undoing" | "failed" | "partial";
+      /**
+       * `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back.
+       * `returned`: the Undo was answered with nothing done, for `returned`.
+       */
+      status: "ready" | "undoing" | "failed" | "partial" | "returned";
       leftOut: number;
+      returned: RestoreReturned | null;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
       /** `ok` once the server lists every restored draft again; `unlisted` if one never was. */
@@ -110,14 +129,28 @@ export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
 export const hasLine = (notice: DraftNotice) =>
   notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
 
+type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
+
 export class DraftNotices {
   private readonly notices = new Map<string, DraftNotice>();
-  /** A Discard notice's rooms still holding an Undo. */
+  /** A Discard notice's shares still holding an Undo. */
   private readonly parts = new Map<number, DiscardPart[]>();
+  /**
+   * The notice's own Undo: in flight, or a room's share that failed. A server share's progress is
+   * `DiscardRestores`'.
+   */
+  private readonly pressed = new Map<number, "undoing" | "failed">();
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
   private closed = false;
+
+  constructor(private readonly restores: DiscardRestores) {
+    restores.subscribe(() => {
+      for (const notice of [...this.notices.values()])
+        if (notice.kind === "discarded") this.settle(notice.ownerKey, notice.id);
+    });
+  }
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -210,6 +243,7 @@ export class DraftNotices {
       left: null,
       status: "ready",
       leftOut: 0,
+      returned: null,
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
       dismiss: () => this.endIf(ownerKey, id),
@@ -238,6 +272,7 @@ export class DraftNotices {
       if (parts.length === 0) {
         this.notices.delete(notice.ownerKey);
         this.parts.delete(id);
+        this.pressed.delete(id);
       } else this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
       this.publish();
       return;
@@ -262,34 +297,99 @@ export class DraftNotices {
     const parts = this.parts.get(id);
     if (notice?.id !== id || notice.kind !== "discarded" || notice.status === "undoing" || !parts)
       return "failed";
-    this.update(ownerKey, id, () => ({ status: "undoing" }));
-    // Retry takes back only the shares that failed: a share that undid has left the list. Every
-    // room's share is taken back in this event turn; the server's answers come back.
+    this.pressed.set(id, "undoing");
+    this.settle(ownerKey, id);
+    // Retry takes back only the shares still out: a room's share that undid leaves the list, and a
+    // server's is done once its restore is. Every room's share is taken back in this event turn;
+    // the server's answers come back.
     const answers = await Promise.all(
-      [...parts].map(async (part) => ({ part, ...(await part.handle.undo()) })),
+      this.outstanding(parts).map(async (part) => ({ part, ...(await part.handle.undo()) })),
     );
-    const leftOut = answers.reduce((sum, { leftOut: left = 0 }) => sum + left, 0);
     const listed = answers.flatMap(({ part, answer, landed }) =>
       answer !== "ok" ? [] : [part.undone ? part.undone(landed) : landed.then(() => true)],
     );
-    const failed = answers.flatMap(({ part, answer }) => (answer === "failed" ? [part] : []));
-    if (this.notices.get(ownerKey)?.id === id) {
-      if (failed.length === 0 && leftOut > 0) {
-        this.parts.set(id, []);
-        this.update(ownerKey, id, () => ({ status: "partial", leftOut }));
-      } else if (failed.length === 0) {
-        this.notices.delete(ownerKey);
-        this.parts.delete(id);
-        this.publish();
-      } else {
-        this.parts.set(id, failed);
-        this.update(ownerKey, id, () => ({ status: "failed", ...this.subjectOf(failed) }));
-      }
+    const roomFailed = answers.some(({ part, answer }) => !part.restore && answer === "failed");
+    if (this.parts.has(id)) {
+      this.parts.set(
+        id,
+        parts.filter(
+          (part) =>
+            part.restore ||
+            (answers.find((answered) => answered.part === part)?.answer ?? "failed") === "failed",
+        ),
+      );
+      if (roomFailed) this.pressed.set(id, "failed");
+      else this.pressed.delete(id);
+      this.settle(ownerKey, id);
     }
-    if (failed.length) return "failed";
+    if (answers.some(({ answer }) => answer === "failed")) return "failed";
+    if (listed.length === 0) return "unlisted";
     // A view following the Undo waits until the server lists the draft again: a draft-only
     // document opened on a draft the list omits closes as discarded.
     return (await Promise.all(listed)).every(Boolean) ? "ok" : "unlisted";
+  }
+
+  /** The shares an Undo still has to take back: every room's left, and each server's not yet back. */
+  private outstanding(parts: readonly DiscardPart[]) {
+    return parts.filter((part) => {
+      const state = part.restore ? this.restores.state(part.restore) : undefined;
+      return state?.kind !== "restored" && state?.kind !== "returned";
+    });
+  }
+
+  /**
+   * The notice as its shares stand: its own Undo, each server share's restore wherever it was sent,
+   * and gone once everything is back.
+   */
+  private settle(ownerKey: string, id: number) {
+    const notice = this.notices.get(ownerKey);
+    const parts = this.parts.get(id);
+    if (notice?.id !== id || notice.kind !== "discarded" || !parts) return;
+    const restores = parts.flatMap((part) =>
+      part.restore ? [this.restores.state(part.restore)] : [],
+    );
+    const pressed = this.pressed.get(id);
+    const returned = restores.find((state) => state?.kind === "returned");
+    const leftOut = restores.reduce(
+      (sum, state) => sum + (state?.kind === "restored" ? state.leftOut : 0),
+      0,
+    );
+    const out = this.outstanding(parts);
+    const status: Discarded["status"] | null =
+      pressed === "undoing" || restores.some((state) => state?.kind === "restoring")
+        ? "undoing"
+        : pressed === "failed" || restores.some((state) => state?.kind === "failed")
+          ? "failed"
+          : returned
+            ? "returned"
+            : out.length > 0
+              ? "ready"
+              : leftOut > 0
+                ? "partial"
+                : null;
+    if (status === null) {
+      this.notices.delete(ownerKey);
+      this.parts.delete(id);
+      this.pressed.delete(id);
+      this.publish();
+      return;
+    }
+    const next = {
+      ...notice,
+      status,
+      leftOut,
+      returned: returned?.kind === "returned" ? returned.why : null,
+      ...(status === "failed" ? this.subjectOf(out) : {}),
+    };
+    if (
+      next.status === notice.status &&
+      next.leftOut === notice.leftOut &&
+      next.returned === notice.returned &&
+      next.subject === notice.subject
+    )
+      return;
+    this.notices.set(ownerKey, next);
+    this.publish();
   }
 
   private subjectOf(parts: readonly DiscardPart[]) {
@@ -327,6 +427,7 @@ export class DraftNotices {
     this.notices.delete(notice.ownerKey);
     const parts = this.parts.get(notice.id) ?? [];
     this.parts.delete(notice.id);
+    this.pressed.delete(notice.id);
     for (const part of parts) part.handle.end();
   }
 

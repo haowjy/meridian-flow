@@ -18,9 +18,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         // Every variant takes its hover, pressed and open states from `interactive`, an
-        // ink layer over whatever fill the variant paints.
-        default: "interactive bg-primary text-primary-foreground focus-ring-on-fill",
-        destructive: "interactive bg-destructive text-primary-foreground focus-ring-on-fill",
+        // ink layer over whatever fill the variant paints. A disabled fill gives way to ink:
+        // a faded jade still reads as a button to press.
+        default:
+          "interactive bg-primary text-primary-foreground focus-ring-on-fill disabled:bg-ink-fill-strong disabled:text-muted-foreground",
+        destructive:
+          "interactive bg-destructive text-primary-foreground focus-ring-on-fill disabled:bg-ink-fill-strong disabled:text-muted-foreground",
         outline: "interactive border border-border bg-card shadow-raise",
         secondary: "interactive bg-ink-fill text-foreground",
         ghost: "interactive",

@@ -27,7 +27,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
+import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
@@ -81,9 +81,7 @@ export function DraftReviewBand({
     ...props,
     onEndedWithFocus: () => setRefocusFor(props.itemKey),
   });
-  const questionRef = useRef<HTMLSpanElement>(null);
-  const focusInControls = () =>
-    [controlsRef, questionRef].some((ref) => ref.current?.contains(document.activeElement));
+  const focusInControls = () => controlsRef.current?.contains(document.activeElement) ?? false;
   const { controller, view, locked, finished } = header;
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
@@ -186,7 +184,7 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
-      {finished || header.asking ? null : (
+      {finished ? null : (
         <ReviewActions
           scope="document"
           disabled={locked}
@@ -198,29 +196,7 @@ export function DraftReviewBand({
       )}
     </span>
   );
-  // The question is a sentence: beside the controls when the line has room, else on a line of
-  // its own, never cut by the controls' fixed width.
-  const question =
-    !finished && header.asking ? (
-      <span ref={questionRef} className="contents">
-        <DiscardQuestion
-          scope="document"
-          className="ml-auto"
-          onKeep={header.keepDraft}
-          returnFocus={() => controlsRef.current?.querySelector("[data-review-actions] button")}
-          onConfirm={() => header.confirmDiscard(focusInControls())}
-        />
-      </span>
-    ) : null;
-  return children({
-    version,
-    controls: (
-      <>
-        {controls}
-        {question}
-      </>
-    ),
-  });
+  return children({ version, controls });
 }
 
 /**

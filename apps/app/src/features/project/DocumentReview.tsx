@@ -121,21 +121,18 @@ export function useDocumentReview(
       // device) has already ended its review: the room owner exits it. A draft-only document
       // keeps naming it until settlement closes its tab, and admitting it again would re-open
       // what the room owner just closed, every render. The view names an item, not a draft:
-      // the server decides whether a newer draft replaced the closed one.
+      // the server decides whether a restore reopened it or a newer draft replaced it.
       admit: async (target) => {
-        if (draftCommands.state(target.itemKey).hidden) return false;
-        if (draftCommands.state(target.itemKey).closed) {
-          const ref = {
-            projectId,
-            ownerKey: target.ownerKey,
-            documentId: target.documentId,
-            itemKey: target.itemKey,
-          };
-          const current = await draftCommands.reconcileClosed(ref, () =>
-            fetchCurrentDraftMetadata(queryClient, ref),
-          );
-          if (!current) return false;
-        }
+        const ref = {
+          projectId,
+          ownerKey: target.ownerKey,
+          documentId: target.documentId,
+          itemKey: target.itemKey,
+        };
+        const open = await draftCommands.reconcileClosed(ref, () =>
+          fetchCurrentDraftMetadata(queryClient, ref),
+        );
+        if (!open) return false;
         enterInlineReview(target.documentId, target.itemKey);
         return true;
       },

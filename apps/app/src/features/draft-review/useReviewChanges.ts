@@ -97,8 +97,6 @@ export function useReviewChanges(
   );
   const apply = useCallback((change: ReviewChange) => run(change, "apply", false), [run]);
   const discard = useCallback((change: ReviewChange) => run(change, "discard", true), [run]);
-  const discardAsks = (change: ReviewChange) =>
-    !review || controller.discardAsks(review, targetOfChanges([change]));
 
   return {
     documentId,
@@ -116,6 +114,5 @@ export function useReviewChanges(
     step,
     apply,
     discard,
-    discardAsks,
   };
 }

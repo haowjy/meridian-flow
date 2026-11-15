@@ -83,5 +83,7 @@ created, renamed or moved opens where the Work puts it; a drafted delete is abse
 plain address stays live-only, and no caller guesses an item from a path or a Work's draft list.
 
 `ReadableProjectRoute` keeps `useDraftMetadata` above editor address admission, so a list change can't
-unmount the room first and strand the destination as unavailable. See the
+unmount the room first and strand the destination as unavailable. A draft that closed is found where live has
+its document while its end is asked (`askEnd`) and after it ends in Trash; only another end lets the
+address go, so a page holding the draft keeps it through a reconnect. See the
 [review runtime](../../draft-review/.context/draft-review.md).
