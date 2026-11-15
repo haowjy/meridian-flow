@@ -2,6 +2,7 @@ import type { ParsedContent } from "@meridian/markup";
 import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { replacing } from "../undo/replacement-record.js";
 import type { BlockRef } from "../handles.js";
 import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
 import type {
@@ -253,19 +254,26 @@ function applyTextOp(leaf: Y.XmlElement, op: Extract<EditOp, { kind: "text" }>):
   // Right to left, so earlier offsets stay where they were planned.
   for (const { from, to, content } of [...op.splices].reverse()) {
     let deleted = 0;
-    for (const { child, index, start, length } of slotsOf(leaf).reverse()) {
-      const lo = Math.max(from, start);
-      const hi = Math.min(to, start + length);
-      if (lo >= hi) continue;
-      if (child instanceof Y.XmlText) {
-        child.delete(lo - start, hi - lo);
-        deleted += hi - lo;
-      } else {
-        leaf.delete(index, 1);
-        deleted += 1;
+    const remove = () => {
+      for (const { child, index, start, length } of slotsOf(leaf).reverse()) {
+        const lo = Math.max(from, start);
+        const hi = Math.min(to, start + length);
+        if (lo >= hi) continue;
+        if (child instanceof Y.XmlText) {
+          child.delete(lo - start, hi - lo);
+          deleted += hi - lo;
+        } else {
+          leaf.delete(index, 1);
+          deleted += 1;
+        }
       }
+    };
+    // PROTOTYPE (#1591): the splice knows which run it deleted and what it wrote in its place.
+    if (leaf.doc) replacing(leaf.doc, remove, () => insertContent(leaf, to - deleted, content));
+    else {
+      remove();
+      insertContent(leaf, to - deleted, content);
     }
-    insertContent(leaf, to - deleted, content);
   }
 }
 

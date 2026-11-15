@@ -21,16 +21,26 @@ import {
 import { shouldDeleteUndoItem } from "./delete-filter.js";
 import { withoutClocks } from "./held-deletes.js";
 import { clocks, find, type Key, key, parse, ranges } from "./item-keys.js";
-import { readSeams } from "./restore-seam.js";
+import { readPairs } from "./restore-seam.js";
+import { installHarnessRecorder, pendingReplacements } from "./replacement-record.js";
+
+if (process.env.VITEST) installHarnessRecorder();
 
 export interface EditRange {
   client: number;
   clock: number;
   len: number;
 }
+/** One splice of a text write: the run it deleted and the text it put in its place. */
+export interface Replacement {
+  deleted: EditRange[];
+  inserted: EditRange[];
+}
 export interface EditEffect {
   inserted: EditRange[];
   deleted: EditRange[];
+  /** Absent on a part stored before replacements were recorded. */
+  replacements?: Replacement[];
 }
 export interface EditAlias {
   source: { client: number; clock: number };
@@ -133,7 +143,12 @@ export function captureEditFrontier(doc: Y.Doc): EditFrontier {
  */
 export function captureEditParts(
   doc: Y.Doc,
-  receipts: readonly { update: Uint8Array; frontier: EditFrontier; held?: ReadonlySet<string> }[],
+  receipts: readonly {
+    update: Uint8Array;
+    frontier: EditFrontier;
+    held?: ReadonlySet<string>;
+    replacements?: readonly Replacement[];
+  }[],
 ): CapturedPart[] {
   const raw = receipts.map((r) => rawEffect(r.update, r.held));
   const inserted = normalizedRanges(raw.flatMap((effect) => effect.inserted)),
@@ -141,21 +156,30 @@ export function captureEditParts(
     transient = intersectLineageRanges(inserted.map(lineageRange), deleted.map(lineageRange));
   return receipts.map((receipt, i) => {
     if (!receipt.frontier) throw new Error("Missing edit frontier");
-    return {
-      update: receipt.update,
-      frontier: receipt.frontier,
-      effect: {
-        inserted: subtractLineageRanges(
-          proseRanges(doc, raw[i].inserted).map(lineageRange),
-          transient,
-        ).map(editRange),
-        deleted: subtractLineageRanges(
-          proseRanges(doc, raw[i].deleted).map(lineageRange),
-          transient,
-        ).map(editRange),
-      },
-      aliases: [],
+    const effect: EditEffect = {
+      inserted: subtractLineageRanges(
+        proseRanges(doc, raw[i].inserted).map(lineageRange),
+        transient,
+      ).map(editRange),
+      deleted: subtractLineageRanges(
+        proseRanges(doc, raw[i].deleted).map(lineageRange),
+        transient,
+      ).map(editRange),
     };
+    // A pair is kept as far as both its sides are this part's effect: a held delete, a transient
+    // or a non-prose item is no side of a replacement.
+    const recorded = receipt.replacements ?? (process.env.VITEST ? pendingReplacements(doc) : undefined);
+    if (recorded) {
+      const within = (side: readonly EditRange[], all: readonly EditRange[]) =>
+        intersectLineageRanges(side.map(lineageRange), all.map(lineageRange)).map(editRange);
+      effect.replacements = recorded
+        .map((pair) => ({
+          deleted: within(pair.deleted, effect.deleted),
+          inserted: within(pair.inserted, effect.inserted),
+        }))
+        .filter((pair) => pair.deleted.length && pair.inserted.length);
+    }
+    return { update: receipt.update, frontier: receipt.frontier, effect, aliases: [] };
   });
 }
 
@@ -356,14 +380,18 @@ function planInverse(
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
-  // Read only for a run the stranded rule would keep out, or an inverse being executed.
-  let seams: ReturnType<typeof readSeams> | undefined;
-  const seam = () =>
-    (seams ??= readSeams(index, {
+  // The recorded pairs, read only for a run the stranded rule would keep out or an executing inverse.
+  let read: ReturnType<typeof readPairs> | undefined;
+  const recordedPairs = () =>
+    (read ??= readPairs(index, {
       frontier: part.frontier,
       own: new Set(index.rootsFor(part.effect)),
-      returning: returning.map((pair) => pair.original),
+      pairs: (part.effect.replacements ?? []).map((pair) => ({
+        back: clocks(forward ? pair.deleted : pair.inserted),
+        gone: clocks(forward ? pair.inserted : pair.deleted),
+      })),
       leaving: removingSet,
+      owned: (k) => index.owners.has(k),
     }));
   // A replacement is a deleted run with the part's insertion beside it. Bringing the deleted run back
   // alone doubles the text only when that insertion is gone and someone wrote there after the part
@@ -399,13 +427,52 @@ function planInverse(
         newer ||= origin.clock >= (part.frontier[origin.client] ?? 0);
       }
     }
-    const stranded = paired && !standing && newer && !seam().leavingStands(item);
+    const stranded = paired && !standing && newer;
     strandedItems.set(item, stranded);
     return stranded;
   };
+  // Later writing counts against a recorded run only on the side its replacement stood: writing
+  // on the far side of the run was never typed in the replacement's place.
+  const onlyFarSide = (original: Key): boolean => {
+    const roots = recordedPairs().replacementOf(original),
+      item = find(index.doc, original);
+    if (!roots || !item) return false;
+    let crossed = false,
+      newerThere = false;
+    for (const step of ["left", "right"] as const) {
+      let near = item[step],
+        own = false;
+      for (; near?.deleted; near = near[step])
+        for (let n = 0; !own && n < near.length; n++)
+          own = roots.has(index.root(key({ client: near.id.client, clock: near.id.clock + n })));
+      if (!own) continue;
+      crossed = true;
+      if (!near) continue;
+      const edge = key({
+        client: near.id.client,
+        clock: near.id.clock + (step === "left" ? near.length - 1 : 0),
+      });
+      if (removingSet.has(edge)) continue;
+      const origin = parse(index.root(edge));
+      newerThere ||= origin.clock >= (part.frontier[origin.client] ?? 0);
+    }
+    return crossed && !newerThere;
+  };
   const candidates = new Set(
     returning
-      .filter(({ original }) => !strandedByRemoval(original))
+      // One struct can hold characters of two pairs, so the record is asked per character.
+      .filter(({ original }) => {
+        if (!process.env.RECORD_STRAND)
+          return (
+            !strandedByRemoval(original) ||
+            recordedPairs().replacementStands(original) ||
+            (!!process.env.SIDE && onlyFarSide(original))
+          );
+        const recorded = part.effect.replacements?.length
+          ? recordedPairs().replacedSince(original)
+          : undefined;
+        return recorded === undefined ? !strandedByRemoval(original) : !recorded;
+      })
       .map((pair) => pair.effective)
       .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
   );
@@ -446,7 +513,7 @@ function planInverse(
     restoring,
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
-    place: () => seam().placements(restoring),
+    place: () => (part.effect.replacements?.length ? recordedPairs().placements(restoring) : []),
   };
 }
 function itemsRightOf(item: Y.Item): Y.Item[] {
@@ -502,13 +569,20 @@ function blockUnits(block: Y.AbstractType<unknown>): Unit[] {
  * Each word (a run with no whitespace and no atom) that holds a character `later` accepts, by that
  * character: the word's text and the marks on its accepted characters.
  */
-function laterWords(units: readonly Unit[], later: (k: Key) => boolean): Map<Key, string> {
+function laterWords(
+  units: readonly Unit[],
+  later: (k: Key) => boolean,
+  withMarks: boolean,
+): Map<Key, string> {
   const out = new Map<Key, string>();
   let word: { k: Key; ch: string; marks: string }[] = [];
   const close = () => {
     const held = word.filter((unit) => later(unit.k));
     if (held.length) {
-      const str = JSON.stringify([word.map((unit) => unit.ch).join(""), held.map((u) => u.marks)]);
+      const str = JSON.stringify([
+        word.map((unit) => unit.ch).join(""),
+        withMarks ? held.map((u) => u.marks) : [],
+      ]);
       for (const unit of held) out.set(unit.k, str);
     }
     word = [];
@@ -532,6 +606,7 @@ function changesLaterWord(
   before: Y.Doc,
   after: Y.Doc,
   receipt: CapturedPart,
+  withMarks: boolean,
 ): boolean {
   const own = new Set(index.rootsFor(part.effect));
   const later = (k: Key) => {
@@ -550,11 +625,12 @@ function changesLaterWord(
   for (const [k, block] of blocks) {
     const was = find(before, k);
     if (!was || !(was.content instanceof Y.ContentType)) continue;
-    const words = laterWords(blockUnits(was.content.type), later);
+    const words = laterWords(blockUnits(was.content.type), later, withMarks);
     if (!words.size) continue;
     const now = laterWords(
       block.deleted ? [] : blockUnits((block.content as Y.ContentType).type),
       (unit) => words.has(unit),
+      withMarks,
     );
     for (const [unit, word] of words) if (now.get(unit) !== word) return true;
   }
@@ -695,78 +771,102 @@ function computePreparedInverse(
         throw new Error("One target edit cannot transition both ways");
       directions.set(chosen.part.editId, chosen.direction);
     }
-    for (const { part, direction } of selection) {
-      const index = new Lineage(
-          scratch,
-          local,
-          local.length === history.length ? prepared : undefined,
-          undefined,
-          true,
-        ),
-        state = classify(index, part);
-      if (state.state !== (direction === "invert" ? "active" : "undone")) {
-        result.skipped.push(state);
-        continue;
-      }
-      index.hydrate();
-      const plan = planInverse(index, part, direction),
-        placements = plan.place(),
-        placed = new Set(placements.flatMap((placement) => clocks(placement.ranges)));
-      const stack = {
-        insertions: deleteSet(plan.removing),
-        deletions: deleteSet(plan.restoring.filter((k) => !placed.has(k))),
-        meta: new Map(),
-      };
-      const frontier = captureEditFrontier(scratch),
-        snapshot = snapshotRedone(scratch);
-      const client = action.allocateClient(scratch);
-      if (frontier[client] !== undefined) throw new Error("Inverse client is not fresh");
-      let before = new Y.Doc({ gc: false });
-      Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
-      let updates: Uint8Array[];
-      try {
-        updates = executeUndo(
-          scratch,
-          ROOT,
-          client,
-          stack,
-          (item) => shouldDeleteUndoItem(item, stack),
-          placements,
-        );
-      } catch (error) {
-        before.destroy();
-        throw error;
-      }
-      try {
-        if (!updates.length) continue;
-        const update = Y.mergeUpdates(updates),
-          receipt = captureEditParts(scratch, [{ update, frontier }])[0];
-        receipt.aliases = captureAliases(scratch, snapshot);
-        if (action.keepLaterWords && changesLaterWord(index, part, before, scratch, receipt)) {
-          result.skipped.push({ part, state: "changed", reasons: ["later writing in its word"] });
-          [scratch, before] = [before, scratch];
-          continue;
+    for (const { part: chosen, direction } of selection) {
+      // Un-Apply tries the recorded replacements first and keeps the result only when it leaves
+      // later writing's words and marks alone; otherwise the part runs as one with no record.
+      const recorded = !!chosen.effect.replacements?.length && !process.env.NO_PAIRS;
+      const bare: InversePart = recorded
+        ? { ...chosen, effect: { inserted: chosen.effect.inserted, deleted: chosen.effect.deleted } }
+        : chosen;
+      const attempts =
+        recorded && action.keepLaterWords && !process.env.NO_FALLBACK
+          ? [chosen, bare]
+          : [recorded ? chosen : bare];
+      for (const [n, part] of attempts.entries()) {
+        const final = n === attempts.length - 1;
+        const index = new Lineage(
+            scratch,
+            local,
+            local.length === history.length ? prepared : undefined,
+            undefined,
+            true,
+          ),
+          state = classify(index, part);
+        if (state.state !== (direction === "invert" ? "active" : "undone")) {
+          result.skipped.push({ ...state, part: chosen });
+          break;
         }
-        admitPreparedInverseReceipt(before, local, [part], receipt, index);
-        const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal, direction }];
-        let edit = groups.get(part.editId);
-        if (!edit) {
-          edit = { targetEditId: part.editId, parts: [] };
-          groups.set(part.editId, edit);
-          result.edits.push(edit);
+        index.hydrate();
+        const plan = planInverse(index, part, direction),
+          placements = plan.place(),
+          placed = new Set(placements.flatMap((placement) => clocks(placement.ranges)));
+        const stack = {
+          insertions: deleteSet(plan.removing),
+          deletions: deleteSet(plan.restoring.filter((k) => !placed.has(k))),
+          meta: new Map(),
+        };
+        const frontier = captureEditFrontier(scratch),
+          snapshot = snapshotRedone(scratch);
+        const client = action.allocateClient(scratch);
+        if (frontier[client] !== undefined) throw new Error("Inverse client is not fresh");
+        let before = new Y.Doc({ gc: false });
+        Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
+        let updates: Uint8Array[];
+        try {
+          updates = executeUndo(
+            scratch,
+            ROOT,
+            client,
+            stack,
+            (item) => shouldDeleteUndoItem(item, stack),
+            placements,
+          );
+        } catch (error) {
+          before.destroy();
+          throw error;
         }
-        edit.parts.push({ ...receipt, targets });
-        local.push({
-          ...receipt,
-          targets,
-          id: Math.max(0, ...local.map((p) => p.id)) + 1,
-          editId: `computed:${result.edits.indexOf(edit)}`,
-          ordinal: edit.parts.length - 1,
-          kind: direction === "invert" ? "undo" : "redo",
-          actionId: action.actionId,
-        });
-      } finally {
-        before.destroy();
+        try {
+          if (!updates.length) break;
+          const update = Y.mergeUpdates(updates),
+            receipt = captureEditParts(scratch, [{ update, frontier }])[0];
+          receipt.aliases = captureAliases(scratch, snapshot);
+          if (
+            action.keepLaterWords &&
+            changesLaterWord(index, part, before, scratch, receipt, part !== bare)
+          ) {
+            [scratch, before] = [before, scratch];
+            if (!final) continue;
+            result.skipped.push({
+              part: chosen,
+              state: "changed",
+              reasons: ["later writing in its word"],
+            });
+            break;
+          }
+          admitPreparedInverseReceipt(before, local, [chosen], receipt, index);
+          const targets: EditTarget[] = [
+            { editId: chosen.editId, ordinal: chosen.ordinal, direction },
+          ];
+          let edit = groups.get(chosen.editId);
+          if (!edit) {
+            edit = { targetEditId: chosen.editId, parts: [] };
+            groups.set(chosen.editId, edit);
+            result.edits.push(edit);
+          }
+          edit.parts.push({ ...receipt, targets });
+          local.push({
+            ...receipt,
+            targets,
+            id: Math.max(0, ...local.map((p) => p.id)) + 1,
+            editId: `computed:${result.edits.indexOf(edit)}`,
+            ordinal: edit.parts.length - 1,
+            kind: direction === "invert" ? "undo" : "redo",
+            actionId: action.actionId,
+          });
+          break;
+        } finally {
+          before.destroy();
+        }
       }
     }
     for (const edit of result.edits) {
