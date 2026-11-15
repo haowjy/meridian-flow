@@ -97,7 +97,7 @@ export interface CompiledPackage {
   findings: PackageDiagnostic[];
 }
 
-export const isError = (item: PackageDiagnostic): boolean => item.severity === "error";
+export const isError = (item: { severity: string }): boolean => item.severity === "error";
 
 export function compilePackage(
   input: AgentSourceSnapshot,
@@ -106,7 +106,7 @@ export function compilePackage(
   const files = validatedFiles(input);
   const problems = input.problems ?? {};
   const prepared = readPackage(files);
-  const verdict = checkFiles(files);
+  const verdict = checkFiles(files, Object.keys(problems));
   const manifest = manifestFindings(prepared, verdict, files, problems);
   const packageErrors = manifest.filter(isError);
   const skills = readSkills(prepared, verdict, problems);
@@ -211,13 +211,23 @@ function validatedFiles(input: AgentSourceSnapshot): SkillFiles {
 /** Keys of an Agent file whose retirement means the Agent is no longer limited by them. */
 const RESTRICTING_KEYS = new Set(["permission", "disallowed-tools"]);
 
+/** A warning that an Agent may run wider than its file reads: the writer sees these first. */
+export const losesRestriction = (item: PackageDiagnostic): boolean =>
+  item.code === "flow.tools-ask" ||
+  item.code === "field.restriction-lost" ||
+  (item.code === "field.retired" && RESTRICTING_KEYS.has(String(item.path[0])));
+
+const quoted = (message: string, pattern: RegExp) => pattern.exec(message)?.slice(1);
+
 /**
- * Flow grades some of Mars's findings differently, and words two of them for its writers:
+ * Flow grades some of Mars's findings differently and writes its own message for the grade:
  * - `skill-ref.external`, a warning in Mars when the package has no `[dependencies]` (a consumer
  *   may hold the skill): Flow resolves a ref inside the package only, so there the skill is missing;
- * - `definition.duplicate-name`, an error in Mars: two Agents of one name both work here, and the
- *   picker tells them apart by file;
+ * - `definition.duplicate-name`, an error in Mars: two Agents, or two skills, of one name both
+ *   work here (a ref names a skill by its folder, the picker tells Agents apart by file). Mars
+ *   compares names case-sensitively, and so does this;
  * - `field.retired` says, for a restricting key, that the Agent is not limited by it.
+ * Mars gives these two no structured parts but the path, so the names come out of its message.
  */
 const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => {
   const base = {
@@ -228,14 +238,28 @@ const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => {
     message: diagnostic.message,
   };
   switch (diagnostic.code) {
-    case "skill-ref.external":
+    case "skill-ref.external": {
+      const [skill] = quoted(diagnostic.message, /references skill `([^`]+)`/) ?? [];
       return {
         ...base,
         severity: "error",
-        message: diagnostic.message.replace("; a consumer must hold a package that does", ""),
+        message: skill
+          ? `This package does not ship the skill \`${skill}\``
+          : "This package does not ship a skill it names",
       };
-    case "definition.duplicate-name":
-      return { ...base, severity: "warning" };
+    }
+    case "definition.duplicate-name": {
+      const [name, other] =
+        quoted(diagnostic.message, /name `([^`]+)` is also the name of `([^`]+)`/) ?? [];
+      return {
+        ...base,
+        severity: "warning",
+        message:
+          name && other
+            ? `\`${file}\` and \`${other}\` are both named \`${name}\`; both work here`
+            : "Another file of this package has this name; both work here",
+      };
+    }
     case "field.retired": {
       const key = String(diagnostic.path[0] ?? "");
       return RESTRICTING_KEYS.has(key)
@@ -289,6 +313,7 @@ function manifestFindings(
       ),
     );
   }
+  // Fires only once imports pass dependencies to `checkFiles`; until then Mars has none to list.
   for (const { name } of verdict.unreadable_dependencies) {
     findings.push(
       flow(MANIFEST_PATH, "dependency-unreadable", `Dependency "${name}" can't be read`, "error", [

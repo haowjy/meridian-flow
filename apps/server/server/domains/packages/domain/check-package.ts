@@ -10,7 +10,12 @@
  * Info stays in the package's findings; `shownFindings` (contracts) is what drops it for a list.
  */
 
-import { type CompiledPackage, isError, type PackageDiagnostic } from "./compile-package.js";
+import {
+  type CompiledPackage,
+  isError,
+  losesRestriction,
+  type PackageDiagnostic,
+} from "./compile-package.js";
 import { agentPath, MANIFEST_PATH, skillPath } from "./mars.js";
 
 export interface PackageCheck {
@@ -22,17 +27,13 @@ export interface PackageCheck {
   leftOut: string[];
 }
 
-/** A warning that an Agent may run wider than its file reads: the writer sees these first. */
-const isLostRestriction = (item: PackageDiagnostic) =>
-  /^field\.(restriction-lost|execution-ignored|retired)$/.test(item.code);
-
 export function checkPackage(pkg: CompiledPackage): PackageCheck {
   const warnings = pkg.findings.filter((item) => item.severity === "warning");
   return {
     findings: [
       ...pkg.findings.filter(isError),
-      ...warnings.filter(isLostRestriction),
-      ...warnings.filter((item) => !isLostRestriction(item)),
+      ...warnings.filter(losesRestriction),
+      ...warnings.filter((item) => !losesRestriction(item)),
       ...pkg.findings.filter((item) => item.severity === "info"),
     ],
     blocking: pkg.findings.filter((item) => isError(item) && item.file === MANIFEST_PATH),

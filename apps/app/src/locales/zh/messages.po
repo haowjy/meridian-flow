@@ -306,8 +306,8 @@ msgstr ""
 #. placeholder {0}: clash[2]
 #. placeholder {1}: clash[1]
 #: src/features/agents/findings.ts
-msgid "{0} is also named {1}. Give one of them another name."
-msgstr ""
+#~ msgid "{0} is also named {1}. Give one of them another name."
+#~ msgstr ""
 
 #. placeholder {0}: file.name
 #: src/core/editor/images/image-uploads.ts

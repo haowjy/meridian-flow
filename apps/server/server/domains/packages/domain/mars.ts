@@ -30,7 +30,7 @@ export { rewriteBlock };
  * part of a revision's key, and without a bump the same bytes are never read twice, so the
  * change never reaches a stored Agent.
  */
-export const GRAMMAR_VERSION = `mars-${version()}+flow-7`;
+export const GRAMMAR_VERSION = `mars-${version()}+flow-8`;
 
 const AGENT_PATH = /^agents\/([^/]+)\.md$/;
 const SKILL_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
@@ -51,10 +51,20 @@ export const readPackage = (files: Record<string, string>): Prepared =>
   prepare({ files: treeOf(files), context: "package" });
 /**
  * Mars's verdict on a package's files. No dependency is passed because Flow vendors none yet: a
- * package that declares one comes back with it in `missing_dependencies`.
+ * package that declares one comes back with it in `missing_dependencies`. Flow couldn't read the
+ * `unreadable` paths, so each goes to Mars as an empty file, which keeps Mars's rules about what
+ * the package holds true (a skill ref to it resolves, its folder has a `SKILL.md`), and Mars's
+ * findings on those stand-ins are dropped: Flow alone speaks of a file it couldn't read.
  */
-export const checkFiles = (files: Record<string, string>): Check =>
-  check({ files: treeOf(files), context: "package", dependencies: {} });
+export const checkFiles = (files: Record<string, string>, unreadable: string[]): Check => {
+  const verdict = check({
+    files: treeOf({ ...files, ...Object.fromEntries(unreadable.map((path) => [path, ""])) }),
+    context: "package",
+    dependencies: {},
+  });
+  for (const path of unreadable) delete verdict.diagnostics[path];
+  return verdict;
+};
 
 export const readManifest = (text: string): ManifestRead => read(MANIFEST_PATH, text);
 export const readAgent = (slug: string, text: string): DefinitionRead<AgentFields> =>

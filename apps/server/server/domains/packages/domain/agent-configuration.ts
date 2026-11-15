@@ -5,6 +5,7 @@ import {
   type RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import type { AgentRevision, AgentRevisionStore } from "../ports/agent-revision-store.js";
+import { isError } from "./compile-package.js";
 import { canonicalizeJsonObject, sha256 } from "./helpers.js";
 import { readSkill, skillPath, skillSlugOf } from "./mars.js";
 import type { SkillFiles } from "./types.js";
@@ -32,7 +33,7 @@ export function skillReference(
 
 /**
  * The skills a file set offers now, by package revision. Read with the running reader: the
- * question is about now, so a skill with a diagnostic is not offered.
+ * question is about now, so a skill with an Error is not offered.
  */
 export async function retainedPackageSkillMaps(
   packageRevisionId: string,
@@ -43,7 +44,8 @@ export async function retainedPackageSkillMaps(
   const skills = new Map<string, RetainedSkillReference>();
   for (const path of Object.keys(source.files).sort()) {
     const slug = skillSlugOf(path);
-    if (slug === undefined || readSkill(slug, source.files[path]).diagnostics.length) continue;
+    if (slug === undefined || readSkill(slug, source.files[path]).diagnostics.some(isError))
+      continue;
     skills.set(slug, skillReference(packageRevisionId, source.files, slug));
   }
   return new Map([[packageRevisionId, skills]]);
