@@ -3144,6 +3144,10 @@ msgstr "Details about removed text"
 msgid "Diagram"
 msgstr "Diagram"
 
+#: src/features/editor/RescuedText.tsx
+msgid "Didn't go through. Try again."
+msgstr "Didn't go through. Try again."
+
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "Didn't run: {calls}."
 msgstr "Didn't run: {calls}."
@@ -7959,6 +7963,18 @@ msgstr "Your files"
 msgid "Your imports in this project, with their controls."
 msgstr "Your imports in this project, with their controls."
 
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest changes didn't reach the server before the document was removed."
+msgstr "Your latest changes didn't reach the server before the document was removed."
+
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest changes didn't reach the server before the draft closed."
+msgstr "Your latest changes didn't reach the server before the draft closed."
+
+#: src/features/editor/RescuedText.tsx
+msgid "Your latest changes didn't reach the server before this document became read-only."
+msgstr "Your latest changes didn't reach the server before this document became read-only."
+
 #: src/features/agents/AgentFileState.tsx
 msgid "Your latest edit isn't in use"
 msgstr "Your latest edit isn't in use"
@@ -7976,12 +7992,16 @@ msgstr "Your latest edit isn't in use:"
 #~ msgstr "Your latest edit isn't in use: {message}"
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest typing didn't reach the server before the document was removed."
-msgstr "Your latest typing didn't reach the server before the document was removed."
+#~ msgid "Your latest typing didn't reach the server before the document was removed."
+#~ msgstr "Your latest typing didn't reach the server before the document was removed."
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest typing didn't reach the server before the draft closed."
-msgstr "Your latest typing didn't reach the server before the draft closed."
+#~ msgid "Your latest typing didn't reach the server before the draft closed."
+#~ msgstr "Your latest typing didn't reach the server before the draft closed."
+
+#: src/features/editor/RescuedText.tsx
+#~ msgid "Your latest typing didn't reach the server before this document became read-only."
+#~ msgstr "Your latest typing didn't reach the server before this document became read-only."
 
 #: src/features/editor/RescuedText.tsx
 #~ msgid "Your latest typing didn't reach the server before your access to the document changed."

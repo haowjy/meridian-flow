@@ -177,7 +177,7 @@ primitives in `server/lib/`:
 ## Model gateway deadlines
 
 Each model attempt has a stall timer and an absolute ceiling, owned by
-`packages/gateway` ([gateway context](../../../packages/gateway/.context/CONTEXT.md)).
+`@meridian-flow/gateway`; Flow's overrides are in the [gateway wiring context](../server/lib/gateway/.context/CONTEXT.md#retry-and-deadlines).
 
 ## Observability event sink
 

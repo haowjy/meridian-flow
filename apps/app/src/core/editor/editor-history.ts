@@ -79,7 +79,11 @@ function createDocumentUndoManager(document: Y.Doc): Y.UndoManager {
     trackedOrigins: new Set([ySyncPluginKey]),
     deleteFilter: (item) =>
       item.parentSub !== "id" && defaultDeleteFilter(item, defaultProtectedNodes),
-    captureTransaction: (transaction) => transaction.meta.get("addToHistory") !== false,
+    // A binding write is the writer's only with the sync plugin's mark: its own repairs open a
+    // transaction with the same origin and no mark, and never land on the writer's undo stack. Other
+    // origins (this manager's undo and redo, a Discard, an Apply) are tracked by their own.
+    captureTransaction: (transaction) =>
+      transaction.origin !== ySyncPluginKey || transaction.meta.get("addToHistory") === true,
   });
 }
 

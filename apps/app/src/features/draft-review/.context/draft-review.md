@@ -303,8 +303,11 @@ While frozen:
 A local revert checks its room's access when it writes. A room the server already admits
 read-only refuses it (`read_only`) and the list re-reads, so a stale `frozen: false` never
 shows a revert the room drops. The freeze itself closes the socket with `ACCESS_CHANGED`,
-which marks the room read-only at once; an unacknowledged revert stays on screen, held
-until a Restore admits the room for editing again.
+which marks the room read-only at once. An unacknowledged revert is found at the read admission's
+handshake: the room is replaced by one loaded from the server, so the revert's change is back in
+the list, and its typing (not a Discard, which has no words) is handed back. Until the Discard's
+`returned` answer on replacement lands (it needs the closed-Work notices of never-refuse PR B),
+the Discard's local write is simply gone with the old room and shows no chip.
 
 Restore restores the lineage's first chat and thaws only once the list says so. Thawing
 first would let the writer type into a room that still drops their text.

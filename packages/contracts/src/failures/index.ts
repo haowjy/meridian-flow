@@ -160,7 +160,7 @@ export type ClientRescueRecord = {
     | { kind: "schema-removed-text"; chars: number; passages: number }
     | {
         kind: "unsent-typing";
-        cause: "closed" | "removed" | "access-changed";
+        cause: "closed" | "removed" | "access-changed" | "owner-closed";
         chars: number;
         passages: number;
       };
