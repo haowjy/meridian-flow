@@ -355,7 +355,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         projectionMutation.recountAfterCommit({ workIds: [id], lineageRootIds: [] });
         await lineageScratch.reconcile(lockedTree.threadIds);
         if (arriving.length > 0) await deps.arrivals?.settle(arriving);
-        await lifecycleChanged(existing);
+        // A restored Work that was archived stays closed: its rooms reopen read-only, so they say why.
+        await lifecycleChanged(existing, existing.archivedAt ? "work_archived" : undefined);
         return { before: existing, after: mapWork(row), changed: true };
       });
     },
