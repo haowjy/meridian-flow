@@ -58,8 +58,13 @@ pnpm --filter @meridian/app lingui:extract   # scan source → update .po
 pnpm --filter @meridian/app lingui:compile   # .po → .ts (committed)
 ```
 
-`lingui extract` is idempotent — running it twice doesn't churn the catalog
-beyond a regenerated header timestamp.
+These commands write the catalogs and can reload an open dev app. To check without
+writing, run `pnpm check:i18n` from the repo root. It generates in scratch space
+and reports any missing or stale catalog; it never restores or overwrites your
+files. Finish concurrent catalog edits and rerun if they cause a drift report.
+
+`lingui extract` is idempotent: unchanged source and catalogs keep the same
+contents, including the existing header timestamp.
 
 ## How to add a new locale
 
