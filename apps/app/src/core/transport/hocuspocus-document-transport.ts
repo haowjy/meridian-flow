@@ -369,6 +369,7 @@ export function createHocuspocusDocumentTransport({
     if (terminal) return;
     terminal = true;
     document.off("update", handleDocumentUpdate);
+    document.off("beforeTransaction", notePending);
     stopHints();
     acknowledgement.terminate();
     publish(state);
@@ -398,14 +399,22 @@ export function createHocuspocusDocumentTransport({
         notifyYjsRoomAttached(roomName, observedClientID);
       }
     }
-    // What the server sent: it holds those items and, per client, every one before them.
-    // (`encodeStateVectorFromUpdate` counts only runs from clock 0, so it reads a later update as nothing.)
-    if (origin === provider) serverHas(Y.encodeStateVector(Y.parseUpdateMeta(update).to), false);
-    else {
-      const wasEmpty = outbox === null;
-      outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
-      if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
+    if (origin === provider) {
+      // A server frame can supply what a local peer's pending items waited on: Yjs integrates them
+      // in the provider's transaction, which Hocuspocus never uploads. They go up as local changes,
+      // so a full acknowledgement still means the server holds the whole document.
+      if (pendingBefore === null || document.store.pendingStructs === pendingBefore) return;
+      provider.documentUpdateHandler(update, null);
     }
+    const wasEmpty = outbox === null;
+    outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
+    if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
+  }
+
+  // Yjs replaces `pendingStructs` only when a transaction retries, that is integrates, them.
+  let pendingBefore: unknown = null;
+  function notePending(): void {
+    pendingBefore = document.store.pendingStructs;
   }
 
   function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
@@ -467,6 +476,7 @@ export function createHocuspocusDocumentTransport({
 
   // Store local bytes before the provider's listener sends and publishes its
   // acknowledgement edge. Session observers must see one complete pending edge.
+  document.on("beforeTransaction", notePending);
   document.on("update", handleDocumentUpdate);
   const provider = new HocuspocusProvider({
     name: roomName,
@@ -553,6 +563,7 @@ export function createHocuspocusDocumentTransport({
       destroyed = true;
       stopHints();
       document.off("update", handleDocumentUpdate);
+      document.off("beforeTransaction", notePending);
       acknowledgement.terminate();
       provider.destroy();
       websocket.destroy();

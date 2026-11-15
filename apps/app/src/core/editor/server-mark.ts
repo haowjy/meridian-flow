@@ -1,13 +1,15 @@
 /**
  * The copy's mark of what the server is known to have: a Yjs state vector in the copy's `custom`
  * store. Per client, the server holds every item below the mark's clock, so what the copy holds
- * beyond it is all the server can still lack (`beyondMark`). A copy with no mark was written
- * before marks existed and has no measure.
+ * beyond it is all the server can still lack (`beyondMark`). A copy with no mark counts as one
+ * that marks nothing.
  *
  * The mark only grows, per client, in one transaction, except when a handshake's state vector does
  * not cover it: the server no longer holds items it counts (a room restored from a checkpoint or
  * reseeded), and that handshake's vector replaces it. A mark too low offers words the server has;
- * one too high would lose words, so nothing writes a vector the server has not shown.
+ * one too high would lose words, so only the server's own vector and, once it has acknowledged
+ * everything, the document's are written; never an update's, which can carry a local peer's
+ * items the server lacks.
  */
 import * as Y from "yjs";
 
@@ -34,8 +36,8 @@ function grow(mark: Clocks, vector: Clocks): boolean {
 
 export type ServerMark = {
   /**
-   * `handshake`: the server's own SyncStep1, its whole state. Otherwise the state vector of items
-   * the server is known to hold (an update it sent, or the document once it acknowledged everything).
+   * `handshake`: the server's own SyncStep1, its whole state. Otherwise the document's state
+   * vector once the server acknowledged everything.
    */
   note(vector: Uint8Array, handshake: boolean): void;
 };
@@ -44,13 +46,11 @@ export type ServerMark = {
 export function createServerMark(database: () => IDBDatabase | null): ServerMark {
   // What this session already wrote: a vector it covers changes nothing and costs no transaction.
   const written: Clocks = new Map();
-  let first = true;
   return {
     note(vector, handshake) {
       const clocks = Y.decodeStateVector(vector);
       const copy = database();
-      if (!copy || (!handshake && !first && covers(written, clocks))) return;
-      first = false;
+      if (!copy || (!handshake && covers(written, clocks))) return;
       // A handshake can replace the mark: what was written before it may no longer stand.
       if (handshake) written.clear();
       grow(written, clocks);

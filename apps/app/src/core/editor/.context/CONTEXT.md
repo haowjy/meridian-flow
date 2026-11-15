@@ -536,12 +536,16 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 - **What the server has.** Each copy holds a mark in its `custom` store (`server-mark.ts`): a Yjs
   state vector of what the server is known to hold. The transport reports the server's SyncStep1
-  at each handshake, the items of each update the server sends, and the whole document each time
-  the server has acknowledged everything (`subscribeServerHas`); the session merges each into the
-  mark by per-client maximum in one transaction, skipping a vector it already wrote. Per client the
-  server holds every item below the mark, so the items the copy holds beyond it are all the server
-  can lack. A mark too low offers words the server has; one too high would lose words, so nothing
-  writes a vector the server has not shown.
+  at each handshake and the whole document each time the server has acknowledged everything
+  (`subscribeServerHas`); the session merges each into the mark by per-client maximum in one
+  transaction, skipping a vector it already wrote. Per client the server holds every item below the
+  mark, so the items the copy holds beyond it are all the server can lack. A mark too low offers
+  words the server has; one too high would lose words, so nothing writes a vector the server has
+  not shown. An update the server sends is not evidence: Yjs can integrate a local peer's pending
+  items in the same transaction, once the update supplies what they waited on. Hocuspocus never
+  uploads a provider-origin update, so the transport sends such a one up as a local change
+  (`handleDocumentUpdate`); without that, a later full acknowledgement would mark the peer's words
+  as the server's.
 - **A replaced room.** The server can replace a room's document with one that lacks items a mark
   counts: a restore from a checkpoint (`CollabDomain.restore`, no caller yet) installs an older
   state as a new generation, and a document with no authority head is reseeded empty. A handshake
@@ -558,8 +562,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   only deletion on a final fact, claims each copy beyond its mark before deleting it and keeps a
   copy whose claim the store can't take, so the next start claims it again. So typing from before an
   offline reload, in a document purged before its room reconnects, comes back, and a room with no
-  session in this tab is measured too. A copy with no mark (last written before marks, not
-  connected since) is deleted unread; an empty copy gets an empty mark at its first open. The
+  session in this tab is measured too. A copy with no mark (written before marks, or whose first
+  mark write was lost) counts as marking nothing: all of it is offered. The
   account lifetime shows the words in a toast (`unsentTypingToasts`,
   `features/editor/RescuedText.tsx`). A closed draft's copy also stays for an Undo of its Discard,
   which delivers it.

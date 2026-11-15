@@ -282,9 +282,6 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
   recovered no model word.
 - Typing into a live document's block that a peer or the model deletes, from a tab that was offline, is
   swallowed (collab TODO); the Work draft case is recovered.
-- Unsent typing in a copy with no mark of what the server has: a copy last written by a build
-  before the mark, and not connected since, is deleted unread when its document is purged. Every
-  copy gets a mark at its first handshake (an empty copy at its first open).
 - The words a schema repair removed, after a reload: the notice lives in the session's memory, and
   the words are no longer in the document.
 - Undoing a Discard, or restoring a document, after its room closed brings back the server's text

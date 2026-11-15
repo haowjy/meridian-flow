@@ -208,8 +208,8 @@ export type DocumentSessionTransportProvider = {
   subscribeDifference?: (listener: (difference: HandshakeDifference | null) => void) => () => void;
   /**
    * What the server is known to hold, as a state vector: its SyncStep1 at each handshake
-   * (`handshake`), and the items of each update it sent and the whole document once it
-   * acknowledged everything. Written into the copy's mark (`server-mark.ts`).
+   * (`handshake`), and the whole document once it acknowledged everything. Written into the copy's
+   * mark (`server-mark.ts`).
    */
   subscribeServerHas?: (listener: (vector: Uint8Array, handshake: boolean) => void) => () => void;
   /** The origin of the updates the server's answers apply; every other origin is a local change. */
@@ -1000,9 +1000,6 @@ export class DocumentSession {
     // The copy's updates are in the document; its display records are read after them.
     await this.unsent.readRecords().catch((error) => reportError(error));
     if (this.destroyed) return;
-    // An empty copy is all beyond the server: its mark starts at nothing, where one is missing.
-    if (this.document.store.clients.size === 0)
-      this.serverMark.note(Y.encodeStateVector(new Map()), false);
     this.localPersistenceSynced = true;
     this.startLocalPeers();
     this.recomputeStatus();

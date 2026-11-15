@@ -110,14 +110,18 @@ function documentOf(name: string, accountId: AccountId): DocumentId | null {
   return null;
 }
 
+const NO_MARK = Y.encodeStateVector(new Map());
+
 /** A copy's items beyond its mark, and the copy they are read from. */
 export type BeyondMark = { update: Uint8Array; lacking: Ranges };
 
 function markedBeyond(
   loaded: { update: Uint8Array; mark: Uint8Array | null } | null,
 ): BeyondMark | null {
-  if (!loaded?.mark) return null;
-  const lacking = beyondMark(loaded.update, loaded.mark);
+  if (!loaded) return null;
+  // No mark proves nothing the server holds (a copy written before marks, or a first write lost):
+  // the whole copy is offered.
+  const lacking = beyondMark(loaded.update, loaded.mark ?? NO_MARK);
   return lacking.size > 0 ? { update: loaded.update, lacking } : null;
 }
 
@@ -318,8 +322,8 @@ export class LocalDocumentCopies {
   }
 
   /**
-   * What the copy `name` holds beyond its mark, read under a shared hold; null when it is gone, has
-   * no mark, or holds nothing beyond it.
+   * What the copy `name` holds beyond its mark, read under a shared hold; null when it is gone or
+   * holds nothing beyond it.
    */
   async beyondMark(name: string): Promise<BeyondMark | null> {
     const idb = this.idb;
@@ -335,7 +339,7 @@ export class LocalDocumentCopies {
   /**
    * Deletes every copy of the document, which can never come back, once `claim` has stored what
    * each holds beyond its mark; a copy whose claim fails stays, and the next start claims it again.
-   * A copy with no mark is deleted unread. False when another tab holds one open: that tab's own
+   * False when another tab holds one open: that tab's own
    * reading of the list clears it, and a copy left behind is found at the next start.
    */
   async clear(
