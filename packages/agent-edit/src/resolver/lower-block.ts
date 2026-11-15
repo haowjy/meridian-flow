@@ -237,26 +237,25 @@ function lowerText(
 ): LoweredText {
   const { a, b, isAtom } = unitStrings(before, after);
 
-  // A find's window is one change, placed by the model; otherwise the word diff places them.
+  // A find's window is placed by the model and word-diffed on its own, so a word outside the
+  // match anchors nothing and a word inside it that the model kept is not written.
   let hunks: Hunk[] = [];
   const olds = placed?.[0];
   const news = placed?.[1];
   if (olds && news && windowsDescribe(a, b, [olds, news])) {
     for (const [index, old] of olds.entries()) {
       const next = news[index];
-      // A cut that rewrites its text unchanged (marks included) is no edit.
-      if (
-        old.to > old.from &&
-        before.content.cut(old.from, old.to).eq(after.content.cut(next.from, next.to))
-      )
+      if (old.from === old.to) {
+        hunks.push({ from: old.from, to: old.to, at: next.from, end: next.to, anchored: true });
         continue;
-      hunks.push({
-        from: old.from,
-        to: old.to,
-        at: next.from,
-        end: next.to,
-        ...(old.from === old.to ? { anchored: true as const } : {}),
-      });
+      }
+      for (const hunk of wordHunks(a.slice(old.from, old.to), b.slice(next.from, next.to), isAtom))
+        hunks.push({
+          from: hunk.from + old.from,
+          to: hunk.to + old.from,
+          at: hunk.at + next.from,
+          end: hunk.end + next.from,
+        });
     }
   } else {
     hunks = wordHunks(a, b, isAtom);
