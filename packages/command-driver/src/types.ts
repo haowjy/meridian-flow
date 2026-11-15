@@ -72,6 +72,11 @@ export type CommandKind<Body = unknown> = {
   migrate(body: unknown, from: number): Body;
   request(record: Pick<CommandRecord<Body>, "id" | "body">): HttpRequest;
   /**
+   * A refused record of this kind keeps its lanes closed to later records until it is retried
+   * or dismissed, instead of releasing them. For a command later ones depend on succeeding.
+   */
+  holdsLane?: boolean;
+  /**
    * Every tab runs this once for each record it sees settle (also for one settled before it
    * opened), so it must be safe in every tab and safe to run twice. The domain then reads its
    * own data and tells the driver through `observe` which outcomes that read included.

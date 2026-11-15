@@ -17,6 +17,7 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
+import { projectLane, unsettledProjectCreation } from "./project-commands";
 import { convergeWorkProjection } from "./work-projection-cache";
 import { observeWorksReads, refreshWorksSnapshot } from "./works-projection-acquisition";
 
@@ -163,13 +164,21 @@ export const workCommandSpecs: { [Op in WorkOperation]: WorkCommandSpec<Op> } = 
 
 /**
  * What a Work command waits behind. Every one waits for its Work's earlier commands; the
- * lifecycle moves (archive, unarchive, delete, restore) also take their project's turn, as they
- * did before the driver, so they run one at a time per project.
+ * lifecycle moves (archive, unarchive, delete, restore) also take their project's turn, so they
+ * run one at a time per project. While the project's own create has not succeeded
+ * (`records` hold one), the command also waits on its lane: the server has no such project, and a
+ * refused create keeps the lane closed until it is retried or discarded.
  */
-export const workLanes = (operation: WorkOperation, projectId: string, workId: string): string[] =>
-  operation === "create" || operation === "update"
-    ? [`work:${workId}`]
-    : [`work:${workId}`, `project-works:${projectId}`];
+export const workLanes = (
+  operation: WorkOperation,
+  projectId: string,
+  workId: string,
+  records: readonly CommandRecord[],
+): string[] => [
+  `work:${workId}`,
+  ...(operation === "create" || operation === "update" ? [] : [`project-works:${projectId}`]),
+  ...(unsettledProjectCreation(records, projectId) ? [projectLane(projectId)] : []),
+];
 
 /** The kind a Work operation is stored and delivered as. */
 export const workKindOf = (operation: WorkOperation): string => KINDS[operation];

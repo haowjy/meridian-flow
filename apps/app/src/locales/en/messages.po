@@ -2167,6 +2167,10 @@ msgstr "Couldn't copy. Select the text to copy it."
 msgid "Couldn't create a Work"
 msgstr "Couldn't create a Work"
 
+#: src/features/home/NewProjectView.tsx
+msgid "Couldn’t create the project."
+msgstr "Couldn’t create the project."
+
 #: src/features/project/context/IdentityPlacementField.tsx
 #~ msgid "Couldn't create this document. Try another place."
 #~ msgstr "Couldn't create this document. Try another place."
