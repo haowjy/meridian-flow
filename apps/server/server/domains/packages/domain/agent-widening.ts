@@ -38,7 +38,7 @@ export type EffectiveAgents = ReadonlyMap<string, EffectiveAgent>;
  * What a broken Agent that gets fixed is compared with: an Agent that can only read, with the
  * whole tool catalog (the permission caps what its writes do, not its tool list). Fixing a
  * read-only Agent therefore changes nothing, whether or not it lists tools; fixing one that
- * edits or may spawn Agents asks.
+ * edits or may spawn Agents is a widening.
  */
 const READ_ONLY_BASELINE: NonNullable<AgentCapability> = {
   permission: "read",
@@ -111,18 +111,8 @@ export function compareAgents(before: EffectiveAgents, after: EffectiveAgents): 
   return widened.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
-/** An Agent no level held before: what a receipt says when it appears. */
-export function newAgents(
-  before: EffectiveAgents,
-  after: EffectiveAgents,
-): Array<EffectiveAgent & { slug: string }> {
-  return [...after]
-    .filter(([slug]) => !before.has(slug))
-    .map(([slug, agent]) => ({ slug, ...agent }));
-}
-
 /**
- * The one sentence for a widening, on the receipt, in Changes and in the policy copy. The slug
+ * The one sentence for a widening, in Changes and on the chat card. The slug
  * always prints; the display name goes beside it only when the same change did not rename the
  * Agent, so a rename cannot disguise what was widened.
  */
@@ -143,11 +133,4 @@ export function widenedLabel(item: Widened): string {
           ...(item.subagents.length ? [`can now spawn ${item.subagents.join(", ")}`] : []),
         ];
   return `${who}${place}: ${[permission, ...causes].filter(Boolean).join("; ")}`;
-}
-
-/** The receipt line for a new Agent. */
-export function newAgentLabel(agent: EffectiveAgent & { slug: string }): string {
-  const can = agent.capability?.permission === "edit" ? "can edit" : "is read-only";
-  const who = agent.name !== agent.slug ? `${agent.name} (${agent.slug})` : agent.slug;
-  return `New Agent: ${who}${agent.capability ? `, ${can}` : ", unavailable"}`;
 }

@@ -17,7 +17,7 @@ import {
   visibleReasoningText,
 } from "./partition-turn";
 import { type FoldDigest, foldDigest } from "./thinking-digest";
-import { workReceipt } from "./tool-command";
+import { agentsWidened, workReceipt } from "./tool-command";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ViewRun =
@@ -55,6 +55,8 @@ export type AssistantView = {
   /** Tool calls the writer sees elsewhere (a card, or the per-tool policy), so they have no row. */
   hiddenToolCallIds: string[];
   workReceipts: WorkReceipt[];
+  /** What the turn's live writes into Agents levels made wider, one label each. */
+  agentsWidened: string[];
 };
 
 const cache = new WeakMap<readonly Block[], AssistantView>();
@@ -81,6 +83,7 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
       const receipt = workReceipt(tool);
       return receipt ? [receipt] : [];
     }),
+    agentsWidened: [...new Set(tools.flatMap(agentsWidened))],
   };
   cache.set(turn.blocks, view);
   return view;

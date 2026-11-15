@@ -127,6 +127,7 @@ function AssistantTurnComponent({
 
 const NO_DELIVERIES: NonNullable<AssistantTurnProps["deliveries"]> = [];
 const NO_WORK_RECEIPTS: AssistantView["workReceipts"] = [];
+const NO_WIDENED: AssistantView["agentsWidened"] = [];
 
 const TurnLineageReceipt = memo(function TurnLineageReceipt({
   threadId,
@@ -160,6 +161,7 @@ const TurnLineageReceipt = memo(function TurnLineageReceipt({
       documents={editedDocuments}
       receipt={liveLineage.receipt}
       workReceipts={workReceipts}
+      widened={isLive ? NO_WIDENED : view.agentsWidened}
     />
   ) : null;
 });

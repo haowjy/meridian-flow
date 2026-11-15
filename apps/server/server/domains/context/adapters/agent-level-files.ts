@@ -10,11 +10,7 @@ import { documentDrafts, documentYjsHeads } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { Branches, DraftPeerShadowAccess, MarkdownDocumentStore } from "../../collab/index.js";
-import type {
-  AgentLevelFiles,
-  AgentsBranch,
-  LevelFiles,
-} from "../../packages/ports/agent-level-files.js";
+import type { AgentLevelFiles, LevelFiles } from "../../packages/ports/agent-level-files.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import type { ContextDocument } from "../ports/context-document-store.js";
 import { LIVE_TREE } from "../tree/tree-view.js";
@@ -160,20 +156,18 @@ export function createAgentLevelFiles(deps: {
       }
       const versions = await versionsOf(readable.map((candidate) => candidate.document.id));
       // A branch read shows its drafts' text over live's; a document it holds no draft of is live
-      // and shares live's per-version cache. A read with frozen texts has exactly those.
+      // and shares live's per-version cache.
       const placed = (id: string) => !only || only.includes(id);
       const drafted =
-        branch && !branch.texts && branchView.kind === "branch"
+        branch && branchView.kind === "branch"
           ? await draftedIn(
               branchView.branchId,
               readable.map((candidate) => candidate.document.id).filter(placed),
             )
           : new Set<string>();
       for (const { document, path } of readable) {
-        const frozen = branch?.texts?.[document.id];
         let text: string;
-        if (frozen !== undefined) text = frozen;
-        else if (branch && drafted.has(document.id)) {
+        if (branch && drafted.has(document.id)) {
           const read = await deps.documentSync.readOwnerMarkdown({
             documentId: document.id as DocumentId,
             owner: branch.owner,

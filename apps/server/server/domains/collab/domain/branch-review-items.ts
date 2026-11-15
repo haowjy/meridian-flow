@@ -57,12 +57,6 @@ export interface BranchReviewItems {
   /** The branch's listed items. */
   list(branchId: BranchId): Promise<DraftReviewItem[]>;
   /**
-   * Every document the branch holds a draft of or a change on, listed or not: a write's own
-   * `has_effect` lags the write until its derivations run, so what the writer's list shows now
-   * can leave out a draft that was just made.
-   */
-  all(branchId: BranchId): Promise<DraftReviewItem[]>;
-  /**
    * One document's item and whether it is listed, for every document the branch has a view
    * of (an active draft, or a change row); null only when it is not addressable.
    */
@@ -116,9 +110,6 @@ export function createBranchReviewItems(deps: {
           return { ...item, actorThreadIds: [...new Set([...members, ...item.actorThreadIds])] };
         }),
       );
-    },
-    async all(branchId) {
-      return (await items(branchId)).map(({ item }) => item);
     },
     async resolve(branchId, documentId) {
       const resolved = await items(branchId, [documentId]);

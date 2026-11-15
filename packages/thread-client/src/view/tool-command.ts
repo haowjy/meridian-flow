@@ -49,6 +49,15 @@ export function workReceipt(tool: ToolView): WorkReceipt | null {
   return parseWorkReceipt(tool.metadata?.workReceipt);
 }
 
+/**
+ * The Agents a write made wider, one label each, for a write that landed live in an Agents level
+ * (set by the server on the tool result; absent when nothing widened).
+ */
+export function agentsWidened(tool: ToolView): string[] {
+  const labels = tool.metadata?.agentsWidened;
+  return Array.isArray(labels) ? labels.filter((label) => typeof label === "string") : [];
+}
+
 function workToolCommand(tool: ToolView): ToolCommand {
   // The receipt is the server's record of what changed, so its operation wins;
   // a result-only view has no input to classify from.

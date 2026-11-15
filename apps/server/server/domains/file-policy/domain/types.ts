@@ -4,7 +4,7 @@
  */
 
 import type { DraftOwner } from "@meridian/contracts";
-import type { AgentPermission, AgentsLevel } from "@meridian/contracts/agents";
+import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { FileAccessDenial } from "@meridian/contracts/protocol";
 import type {
@@ -186,12 +186,6 @@ export interface FileFacts {
    */
   survivingDraft?: boolean;
   scheme: ContextUriScheme;
-  /**
-   * The Agents level the document is a file of (`agents://`, or `user://.agents/`), set from its
-   * folder chain in the view the facts were loaded in. A place that is one of these is checked
-   * before an AI's write lands (`checkedPlace`).
-   */
-  agentsLevel?: AgentsLevel;
   /** The durable content source; branch moves change `scheme`, never this routing fact. */
   contentScheme: ContextUriScheme;
   /** The document itself; null for a container. */

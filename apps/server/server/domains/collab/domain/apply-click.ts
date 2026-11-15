@@ -191,28 +191,6 @@ export function compileClick(
   }
 }
 
-/**
- * The text cut that applies a draft whole, the one the server freezes for an Apply no writer
- * clicked: every group of what the draft changes against its base, with no optimistic base of
- * its own. Null when the draft changes nothing.
- */
-export function wholeDraftCut(
-  doc: Y.Doc,
-): Pick<ApplyTextCut, "snapshot" | "baseViewDelta" | "groupIds"> | null {
-  const projection = projectReview(
-    diffBlocks(
-      readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
-      readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-    ),
-  );
-  if (projection.groups.length === 0) return null;
-  return {
-    snapshot: Buffer.from(Y.encodeSnapshotV2(Y.snapshot(doc))).toString("base64"),
-    baseViewDelta: [],
-    groupIds: projection.groups.map((group) => group.id),
-  };
-}
-
 export function createApplyClickService(input: {
   commands: DocumentCommands;
   evidence: DraftDispositionStore;

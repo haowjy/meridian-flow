@@ -69,21 +69,18 @@ export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
  * force, or its opposite already stands), or `unknown` (no such record). A move back into a folder
  * in Trash needs no answer: the node stands in it, and rule 3 keeps the folder standing.
  * A drafted change an Apply landed is taken back in live, where its copy now stands: the
- * opposite record's `draft` says which view it went to. With `keepInAsked` it goes to the asked
- * view instead (a draft that holds the node live now has), for a place where nothing may change
- * live without the draft's review.
+ * opposite record's `draft` says which view it went to.
  */
 export function undoChange(
   writer: TreeWriter,
   asked: View,
   actor: Actor,
   recordId: string,
-  options: { keepInAsked?: boolean } = {},
 ): TreeRecord | NotUndone {
   const record = inForce(writer.doc, asked, recordId);
   if (record === "unknown") return record;
   if (!record) return "already";
-  const view = record.draft === null && !options.keepInAsked ? LIVE : asked;
+  const view = record.draft === null ? LIVE : asked;
   const projection = writer.view(view);
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "purged";

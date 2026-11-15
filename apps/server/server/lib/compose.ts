@@ -269,14 +269,12 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import { createAgentsLevelLocks } from "../shared/agents-level-lock.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { type AgentsWidening, createAgentsWidening } from "./agents-widening.js";
-import { getLevelLockClient } from "./db.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
@@ -659,11 +657,7 @@ export async function createProductionAppPorts(input: {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
   });
-  const agentsWidening = createAgentsWidening({
-    catalog: agentCatalog,
-    locks: createAgentsLevelLocks(getLevelLockClient()),
-    draftReview: documentSync.draftReview,
-  });
+  const agentsWidening = createAgentsWidening({ catalog: agentCatalog });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
     db,
@@ -1857,11 +1851,7 @@ export function createInMemoryAppServices(): AppServices {
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog,
-    agentsWidening: createAgentsWidening({
-      catalog: agentCatalog,
-      locks: { hold: async (_owners, operation) => ({ held: true, value: await operation() }) },
-      draftReview: documentSync.draftReview,
-    }),
+    agentsWidening: createAgentsWidening({ catalog: agentCatalog }),
     eventSink: createNoopEventSink(),
     accountSettings,
     workingSet,

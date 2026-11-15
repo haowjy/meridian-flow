@@ -65,6 +65,8 @@ export type TurnEditsReceiptProps = {
   receipt: TurnReceiptChip | null;
   /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
+  /** The Agents this turn's live writes made wider, one label each: the words Changes uses. */
+  widened?: readonly string[];
 };
 
 export function TurnEditsReceipt({
@@ -73,6 +75,7 @@ export function TurnEditsReceipt({
   documents,
   receipt,
   workReceipts = [],
+  widened = [],
 }: TurnEditsReceiptProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
@@ -252,6 +255,15 @@ export function TurnEditsReceipt({
           </Button>
         ) : null}
       </div>
+      {widened.map((label) => (
+        <p
+          key={label}
+          className="px-[var(--chat-card-pad-x)] pb-1 text-muted-foreground"
+          data-turn-widened
+        >
+          <Trans>Wider Agent: {label}</Trans>
+        </p>
+      ))}
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
           {skips.length > 0 ? (

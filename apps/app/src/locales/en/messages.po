@@ -7201,6 +7201,7 @@ msgstr "What's on your mind?"
 msgid "Where were we?"
 msgstr "Where were we?"
 
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Wider Agent: {label}"
 msgstr "Wider Agent: {label}"

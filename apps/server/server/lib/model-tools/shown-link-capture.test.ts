@@ -73,7 +73,7 @@ vi.mock("./file-access.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./file-access.js")>();
   return {
     ...actual,
-    documentGrant: async () => ({ facts: {}, destination: { kind: "live" } }),
+    documentGrant: async () => ({ destination: { kind: "live" } }),
   };
 });
 

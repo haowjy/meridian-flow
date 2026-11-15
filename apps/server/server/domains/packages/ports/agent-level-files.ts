@@ -5,13 +5,11 @@ import type { SkillFiles } from "../domain/types.js";
 
 /**
  * A branch a level is read through: its owner's drafts over live. `only` limits it to the rows of
- * those nodes (live plus exactly those changes; every other row reads as live). `texts` are the
- * drafts' text frozen by an Apply click, by document id; without it a draft reads as it is now.
+ * those nodes (live plus exactly those changes; every other row reads as live).
  */
 export interface AgentsBranch {
   owner: DraftOwner;
   only?: readonly string[];
-  texts?: Readonly<Record<string, string>>;
 }
 
 export interface LevelFiles {

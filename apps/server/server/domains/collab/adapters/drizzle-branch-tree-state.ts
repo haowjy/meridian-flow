@@ -2,9 +2,7 @@
  * The tree half of the review list, read from the Work's rows (`branch_tree_nodes`, written by
  * the replay of the list) against live's (`tree_nodes`). Addresses are spelled by the tree reader.
  */
-
 import type { BranchId } from "@meridian/contracts";
-import { type ContextUriScheme, formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
@@ -65,34 +63,6 @@ export async function branchFolderRevisions(
     FROM branch_tree_nodes b
     WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder'`);
   return [...rows];
-}
-
-/** The branch's folder rows with the address each has in the branch's view. */
-export async function branchFolderPlaces(
-  db: Database,
-  tree: Pick<TreeReader, "findFolderById">,
-  branchId: BranchId,
-): Promise<Array<{ id: string; revision: string; uri: string | null }>> {
-  if (!isUuid(branchId)) return [];
-  const rows = await currentDrizzleDb(db).execute<{
-    id: string;
-    revision: string;
-    scheme: string;
-  }>(sql`
-    SELECT b.id::text AS id, ${REVISION} AS revision, cs.slug AS scheme
-    FROM branch_tree_nodes b JOIN context_sources cs ON cs.id = b.context_source_id
-    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder'`);
-  return Promise.all(
-    [...rows].map(async ({ scheme, ...row }) => {
-      const folder = await tree.findFolderById({ kind: "branch", branchId }, row.id);
-      return {
-        ...row,
-        uri: folder
-          ? formatParsedContextUri(scheme as ContextUriScheme, folder.path, { kind: "contextual" })
-          : null,
-      };
-    }),
-  );
 }
 
 export function createDrizzleBranchTreeState(

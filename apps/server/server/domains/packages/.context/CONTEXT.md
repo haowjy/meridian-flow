@@ -80,12 +80,12 @@ is in the [Agent definition][definitions] and [package][packages] pages.
 the winners by name at one level and the levels below it, read live or through an owner's branch)
 and says which Agents became wider: the permission rose, the runtime's tool set (`projectToolPolicy`
 in `@meridian/contracts/agents`) gained a tool, or `subagents` gained a name. Capability is what
-the runtime grants: `ask`/`confirm` run as `allow` today, so they never count. An Agent with no
-item of its name before is new, never a widening. A broken Agent that is fixed is compared with a
-read-only Agent that has the whole tool catalog. One formatter (`widenedLabel`) serves the receipt
-and Changes. `effectiveAgents` takes a branch read limited to some nodes (`AgentsBranch.only`, with
-`texts` when an Apply click froze them): the check reads live plus its frozen click, and Changes
-labels each item by what Applying that item alone would do.
+the runtime grants: `ask`/`confirm` run as `allow` today, so they never count. An Agent with no item of its name before is new, never a widening. A broken Agent that
+is fixed is compared with a read-only Agent that has the whole tool catalog. One formatter
+(`widenedLabel`) serves Changes and the chat card. It is display only and never routes, holds or
+blocks a write. `effectiveAgents` takes a branch read limited to some nodes (`AgentsBranch.only`):
+Changes labels each draft item by what Applying that item alone would do, and the chat card reads
+live before and after a write.
 
 Checks: `tools/qa/probes/agents-through-mars/run.mts` (database) and
 `tools/qa/agents-through-mars/server-gate.mts` (running stack).

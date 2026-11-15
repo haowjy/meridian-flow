@@ -68,7 +68,7 @@ export interface ToolWiringDeps {
   /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
   branches: Pick<CollabBranches, "draftReview">;
-  /** The check on an AI write into an Agents level. */
+  /** What an AI write into an Agents level makes wider, for the chat card. */
   agentsWidening: AgentsWidening;
   eventSink: EventSink;
   /** Binary copies duplicate the stored object. */
