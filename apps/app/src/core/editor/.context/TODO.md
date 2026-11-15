@@ -43,8 +43,8 @@ count local-only updates as unsent while detached.
 Delayed IME composition can create separate undo entries for provisional and
 committed text: `ni` → `你`, with more than 500ms between updates, undoes first to
 `ni`, then to the original text. This occurs in ordinary prose as well as beside
-objects. Follow up after the native-selection fixes from PR #1573:
-group the composition as one user action rather than depending on capture timing.
+objects. Group the composition as one user action rather than depending on
+capture timing.
 
 ## Cell selection restoration
 
@@ -61,7 +61,16 @@ one, type in a following paragraph in the other, then inspect or type in the fir
 The same selection has two different extents: its cells cover a rectangle, while
 its native `$anchor`/`$head` cover only the head cell. A table that ends the document
 therefore narrows to its head-cell text on Shift+PageDown or Ctrl+Shift+Right when
-the browser makes no move after native range preparation. No text changes. Solve
-this representation issue with restoration, not per-key boundary guards. If the
-fix separates a whole-table NodeSelection from cell ranges, get a design-lead
-review before changing those semantics.
+the browser makes no move after native range preparation. No text changes. Track
+this representation mismatch alongside peer restoration; whether one fix can
+solve both is not yet proved. Do not add per-key boundary guards. A proposal to
+separate whole-table NodeSelection from cell ranges changes what writers select
+and what typing replaces; take that design to the product lead for review first.
+
+## Upstream projection hook
+
+The owner will submit the prepared `selectionForDOM` proposal linked from the
+[patch contract](CONTEXT.md#interaction-mechanics-and-recovery) to ProseMirror's
+replacement tracker. Both GitHub trackers are archived; filing is blocked on a
+tracker account. The proposal is not an upstream issue or an endorsement. Keep
+this task until the submitted issue is linked from that contract.
