@@ -105,8 +105,7 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * Take back one Apply command: the surviving text groups of every document it applied, and
  * everything it settled in the tree (a restore it made included), in one command. The tree half
  * is allowed only while nothing else has changed the list since (`gone`), and refuses as
- * `superseded` when a record it would bring back no longer fits, and as `written` when text was
- * written in a document the Apply created; each refuses the whole
+ * `superseded` when a record it would bring back no longer fits; either refuses the whole
  * command. A text group a later edit overlaps stays applied and is named in `skippedGroupIds`;
  * when every group stays, the tree half still comes back and the answer is `unapplied` with no
  * `reversedGroupIds`.
@@ -123,7 +122,7 @@ export type UnapplyClickResult =
       skippedGroupIds: string[];
     }
   | { status: "closed"; commandId: CommandId }
-  | { status: "refused"; commandId: CommandId; reason?: "gone" | "written" | "superseded" };
+  | { status: "refused"; commandId: CommandId; reason?: "gone" | "superseded" };
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 
 /** The text cut of one document in an Apply: the writer's frozen click on its review room. */

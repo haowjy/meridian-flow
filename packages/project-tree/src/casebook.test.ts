@@ -720,11 +720,11 @@ describe("Undo of an Apply by the simple rule: only while nothing has been admit
     expect(undoApply(t.w, command, mark, WRITER, cmd())).toBe("gone");
   });
 
-  it("written after text was written in a chapter the Apply created", () => {
+  it("gone after text was written in a chapter the Apply created", () => {
     const t = start();
     const ch = t.chapter("Chapter 50", ROOT, D, CHAT);
     const { command, mark } = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(undoApply(t.w, command, mark, WRITER, cmd(), new Set([ch]))).toBe("written");
+    expect(undoApply(t.w, command, mark, WRITER, cmd(), new Set([ch]))).toBe("gone");
     expect(undoApply(t.w, command, mark, WRITER, cmd())).toBe("undone");
   });
 });

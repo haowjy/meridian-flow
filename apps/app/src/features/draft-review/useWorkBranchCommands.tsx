@@ -234,11 +234,7 @@ export function useWorkBranchCommands({
           });
           if (answer.status === "conflict") return { answer: "failed" };
           refresh(documentIds);
-          if (answer.status !== "unapplied")
-            return {
-              answer: "skipped",
-              ...(answer.status === "refused" && answer.reason === "written" ? { by: "text" } : {}),
-            };
+          if (answer.status !== "unapplied") return { answer: "skipped" };
           for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
           return { answer: "unapplied", textLeft: answer.skippedGroupIds.length };
         } catch {

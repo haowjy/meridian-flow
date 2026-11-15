@@ -6792,10 +6792,6 @@ msgid "Undo restore of {name}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undo skipped applying {name}: it was edited since."
-msgstr ""
-
-#: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped applying {name}: the tree changed since."
 msgstr ""
 
