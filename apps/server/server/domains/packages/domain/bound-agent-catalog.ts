@@ -186,6 +186,7 @@ export function createBoundAgentCatalog(input: {
     return {
       selection: id ? { slug: entry.slug, definitionRevisionId: id } : null,
       slug: entry.slug,
+      path: id && entry.value && found ? `${entry.value.folder}${agentPath(found.slug)}` : null,
       name: found?.name ?? entry.slug,
       description: found?.description ?? "",
       model: found?.definition

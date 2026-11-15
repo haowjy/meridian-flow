@@ -27,6 +27,11 @@ export interface AgentCatalogItem {
   /** Null for a name two packages bring: it is held, unavailable, and nothing to pick. */
   selection: AgentSelection | null;
   slug: string;
+  /**
+   * The Agent's file, relative to its level's root (`agentsRootOf`), as `AgentFileStatus.path`.
+   * Null exactly when `selection` is: two packages bring the name, so there are two files.
+   */
+  path: string | null;
   name: string;
   description: string;
   model: string | null;
@@ -45,6 +50,7 @@ export const agentCatalogSchema = z.object({
     z.object({
       selection: agentSelectionSchema.nullable(),
       slug: z.string().min(1),
+      path: z.string().nullable(),
       name: z.string(),
       description: z.string(),
       model: z.string().nullable(),

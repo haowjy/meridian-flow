@@ -1,194 +1,335 @@
-/**
- * Compact prospective Agent choices; the composer lists selectable catalog rows only, which are
- * saved versions. A closing line counts the packages with unsaved changes, so an Agent missing
- * from the list has its reason one press away.
- */
-
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FileClock } from "lucide-react";
-import { type RefObject, useRef, useState } from "react";
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
+import { agentsRootOf } from "@meridian/contracts/agents";
+import { Check, Settings2 } from "lucide-react";
+import { type RefObject, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
-import { useAgentFiles } from "@/client/query/useAgentFiles";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Chip } from "@/components/ui/chip";
+import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { Picker, PickerResults, PickerSection } from "@/components/ui/picker";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { hidesSentence, levelLabel } from "./AgentFileState";
-import type { CreationAgent, PickableAgent } from "./creation-agent";
+import { DisclosureMark } from "@/components/ui/marks";
+import { Picker, PickerSection } from "@/components/ui/picker";
+import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
+import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
+import { cn } from "@/lib/utils";
+import { useOpenAgentFile } from "./agent-file-document";
+import type { CreationAgent } from "./creation-agent";
+import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
+
+export type ModelOption = { id: string; name: string; available: boolean };
+/** An Agent with the model this chat runs it on; null is the Agent's own model. */
+export type AgentChoice = { agent: CreationAgent; model: string | null };
+
+const ROW_PX = 32;
+const VISIBLE_ROWS = 8;
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
-  agents: PickableAgent[];
-  selectedAgent: CreationAgent | null;
-  onSelect: (agent: CreationAgent) => void;
-  /** The project whose `.agents/` the picker lists; without one, only `~/.agents/` and built-ins. */
-  projectId?: string;
-  /** Opens the Agents tab, closing the picker. */
-  onOpenAgents?: () => void;
-  focusRefs?: {
+  /** Every catalog row, the ones that can't be used included: they keep their place. */
+  agents: AgentCatalogItem[];
+  /** The chosen Agent's slug and model override (for a started chat, the bound ones). */
+  current: { slug: string | null; model: string | null };
+  /** A started chat: its Agent is pinned under "This chat", and the rest hand off. */
+  started?: { threadId: string };
+  models: ModelOption[] | null;
+  onChoose: (choice: AgentChoice) => void;
+  /** The project whose Agent files "Open" and "Manage Agents" reach. */
+  projectId: string;
+  /** Closes the picker's popover, before it opens a file or the Agents tab. */
+  onClose: () => void;
+  focusRefs: {
     selected: RefObject<HTMLButtonElement | null>;
     first: RefObject<HTMLButtonElement | null>;
     retry: RefObject<HTMLButtonElement | null>;
   };
 };
 
+/**
+ * The Agent picker: names on the left, the Agent pointed at on the right. Its size follows the
+ * number of Agents alone, so nothing moves while the writer points or opens "Runs on"; each side
+ * scrolls inside it.
+ */
 export function AgentPickerPanel({
   status,
   agents,
-  selectedAgent,
-  onSelect,
+  current,
+  started,
+  models,
+  onChoose,
   projectId,
-  onOpenAgents,
+  onClose,
   focusRefs,
 }: AgentPickerPanelProps) {
-  const firstId = agents[0]?.selection.slug;
-  // A row's tooltip waits until the writer moves through the list: the picker
-  // focuses a row as it opens, and that tooltip would cover the rows below
-  // before the writer has looked at them.
-  const engaged = useRef(false);
-  const [tooltipRowId, setTooltipRowId] = useState<string | null>(null);
-  const engage = () => {
-    engaged.current = true;
-  };
-  return (
-    <TooltipProvider delayDuration={500}>
+  const [pointed, setPointed] = useState<string | null>(null);
+  const openAgentFile = useOpenAgentFile(projectId);
+  if (status.status !== "ready" || agents.length === 0)
+    return (
       <Picker>
-        <PickerResults>
-          {status.status === "loading" || status.status === "disabled" ? (
-            <ListLine density="menu" status>
-              <Trans>Loading agents…</Trans>
-            </ListLine>
-          ) : status.status === "error" ? (
-            <InlineErrorRow
-              message={t`Couldn't load agents.`}
-              onRetry={status.refetch}
-              retryRef={focusRefs?.retry}
-            />
-          ) : status.status === "empty" || agents.length === 0 ? (
-            <ListLine density="menu">
-              <Trans>No agents available.</Trans>
-            </ListLine>
-          ) : (
-            // biome-ignore lint/a11y/noStaticElementInteractions: only notes that the writer has moved through the list. slop-lint: allow suppression the reason is stated in this comment
-            <div onPointerMove={engage} onKeyDown={engage}>
-              <PickerSection>
-                {agents.map((agent) => {
-                  const rowId = agent.selection.slug;
-                  const active = rowId === selectedAgent?.selection.slug;
-                  return (
-                    <li key={rowId}>
-                      <ListRow
-                        density="menu"
-                        current={active}
-                        ref={
-                          active
-                            ? focusRefs?.selected
-                            : rowId === firstId
-                              ? focusRefs?.first
-                              : undefined
-                        }
-                        onOpen={() =>
-                          onSelect({
-                            selection: agent.selection,
-                            slug: agent.slug,
-                            name: agent.name,
-                          })
-                        }
-                        title={agent.name}
-                        meta={
-                          // The level, only where a writer could wonder which one this is.
-                          agent.shadows.length > 0 ? (
-                            <>
-                              <Chip kind="label" className="mr-1.5">
-                                {levelLabel(agent.level)}
-                              </Chip>
-                              {agent.model ?? t`No model`}
-                            </>
-                          ) : (
-                            (agent.model ?? t`No model`)
-                          )
-                        }
-                        detail={agent.description}
-                        wrapControl={(button) => (
-                          <Tooltip
-                            open={tooltipRowId === rowId}
-                            onOpenChange={(open) =>
-                              setTooltipRowId((current) =>
-                                open
-                                  ? engaged.current
-                                    ? rowId
-                                    : current
-                                  : current === rowId
-                                    ? null
-                                    : current,
-                              )
-                            }
-                          >
-                            <TooltipTrigger asChild>{button}</TooltipTrigger>
-                            {/* Below the row, kept inside the viewport: beside it has no room on a phone. */}
-                            <TooltipContent
-                              side="bottom"
-                              align="start"
-                              collisionPadding={8}
-                              className="max-w-xs space-y-1"
-                            >
-                              <p>
-                                {agent.name}
-                                {agent.model ? ` (${agent.model})` : ""}
-                              </p>
-                              {agent.shadows.length > 0 ? (
-                                <p>{hidesSentence(agent.level, agent.shadows)}</p>
-                              ) : null}
-                              {agent.description ? <p>{agent.description}</p> : null}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      />
-                    </li>
-                  );
-                })}
-              </PickerSection>
-            </div>
-          )}
-          {status.status === "ready" || status.status === "empty" ? (
-            <UnsavedAgentsLine projectId={projectId} onOpen={onOpenAgents} />
-          ) : null}
-        </PickerResults>
+        {status.status === "loading" || status.status === "disabled" ? (
+          <ListLine density="menu" status>
+            <Trans>Loading agents…</Trans>
+          </ListLine>
+        ) : status.status === "error" ? (
+          <InlineErrorRow
+            message={t`Couldn't load agents.`}
+            onRetry={status.refetch}
+            retryRef={focusRefs.retry}
+          />
+        ) : (
+          <ListLine density="menu">
+            <Trans>No agents available.</Trans>
+          </ListLine>
+        )}
       </Picker>
-    </TooltipProvider>
+    );
+
+  const own = started ? agents.find((agent) => agent.slug === current.slug) : undefined;
+  const listed = own ? agents.filter((agent) => agent !== own) : agents;
+  const shown =
+    agents.find((agent) => agent.slug === (pointed ?? current.slug)) ?? own ?? agents[0];
+  const sameName = new Set(
+    agents.map((agent) => agent.name).filter((name, index, names) => names.indexOf(name) !== index),
+  );
+  const firstPickable = listed.find(pickable)?.slug;
+  const rows = Math.min(listed.length + (own ? 2 : 0), VISIBLE_ROWS);
+  // Header and footer lines plus the rows: the one height, whatever is pointed at.
+  const height = (rows + 1) * ROW_PX + 24;
+
+  const row = (agent: AgentCatalogItem) => {
+    const isCurrent = agent.slug === current.slug;
+    return (
+      <li
+        key={agent.slug}
+        onPointerEnter={() => setPointed(agent.slug)}
+        onFocus={() => setPointed(agent.slug)}
+      >
+        <ListRow
+          density="menu"
+          current={isCurrent}
+          crossedOut={!pickable(agent)}
+          ref={
+            isCurrent
+              ? focusRefs.selected
+              : agent.slug === firstPickable
+                ? focusRefs.first
+                : undefined
+          }
+          onOpen={() => {
+            if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), model: null });
+          }}
+          title={agent.name}
+          meta={sameName.has(agent.name) ? fileName(agent) : undefined}
+          describedBy={pickable(agent) ? undefined : `agent-unusable-${agent.slug}`}
+        />
+      </li>
+    );
+  };
+
+  return (
+    <Picker>
+      <div
+        className="@container/agents flex min-h-0 shrink flex-col"
+        style={{ height: `${height}px` }}
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-1 @[28rem]/agents:flex-row">
+          <div className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-52 @[28rem]/agents:flex-none @[28rem]/agents:border-r @[28rem]/agents:border-border-subtle @[28rem]/agents:pr-1">
+            {own ? (
+              <section aria-label={t`This chat`} className="shrink-0">
+                <h3 className={dropdownGroupLabelClass}>
+                  <Trans>This chat</Trans>
+                </h3>
+                <ul className="flex flex-col">{row(own)}</ul>
+              </section>
+            ) : null}
+            <section
+              aria-label={own ? t`Hand off to` : t`Agents`}
+              className="app-scroll flex min-h-0 flex-1 flex-col"
+            >
+              {own ? (
+                <h3 className={dropdownGroupLabelClass}>
+                  <Trans>Hand off to</Trans>
+                </h3>
+              ) : null}
+              <PickerSection>{listed.map(row)}</PickerSection>
+            </section>
+            <ul className="mt-1 shrink-0 border-t border-border-subtle pt-1">
+              <li>
+                <ListRow
+                  density="menu"
+                  icon={Settings2}
+                  title={<span className="text-muted-foreground">{t`Manage Agents`}</span>}
+                  onOpen={() => {
+                    onClose();
+                    useSidebarTabs.getState().reveal("agents");
+                    useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
+                  }}
+                />
+              </li>
+            </ul>
+          </div>
+          <AgentDetail
+            key={shown.slug}
+            agent={shown}
+            thisChat={started && shown === own ? started.threadId : null}
+            model={shown.slug === current.slug ? current.model : null}
+            models={models}
+            onChoose={(model) => onChoose({ agent: creationAgentOf(shown), model })}
+            onOpenFile={() => {
+              if (!shown.path || shown.level === "builtin") return;
+              onClose();
+              openAgentFile(shown.level, shown.path);
+            }}
+          />
+        </div>
+      </div>
+    </Picker>
   );
 }
 
-/** "2 unsaved Agent changes": packages whose new chats don't have their edits yet. */
-function UnsavedAgentsLine({
-  projectId,
-  onOpen,
+function AgentDetail({
+  agent,
+  thisChat,
+  model,
+  models,
+  onChoose,
+  onOpenFile,
 }: {
-  projectId: string | undefined;
-  onOpen: (() => void) | undefined;
+  agent: AgentCatalogItem;
+  /** The chat's id when this is the Agent the chat runs. */
+  thisChat: string | null;
+  /** The override this Agent runs with here, if any. */
+  model: string | null;
+  models: ModelOption[] | null;
+  onChoose: (model: string | null) => void;
+  onOpenFile: () => void;
 }) {
-  const files = useAgentFiles(projectId ?? "");
-  const count = (files?.packages ?? []).filter((item) => item.state !== "saved").length;
-  if (count === 0 || !onOpen) return null;
+  const [open, setOpen] = useState(false);
+  const runsOn = model ?? agent.model;
+  const usable = pickable(agent);
   return (
-    <PickerSection>
-      <li>
-        <ListRow
-          density="menu"
-          icon={FileClock}
-          title={
+    <div className="app-scroll flex min-h-0 flex-1 flex-col gap-2 border-t border-border-subtle px-2 pt-2 @[28rem]/agents:border-t-0 @[28rem]/agents:pt-1.5">
+      <div className="flex flex-col gap-0.5">
+        <p className="text-sm font-medium">{agent.name}</p>
+        {agent.description ? (
+          <p className="text-sm text-muted-foreground">{agent.description}</p>
+        ) : null}
+        {agent.path && agent.level !== "builtin" ? (
+          <p className="truncate font-mono text-xs text-muted-foreground">{fileAddress(agent)}</p>
+        ) : null}
+      </div>
+      {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
+      {!usable ? (
+        <div id={`agent-unusable-${agent.slug}`} className="flex flex-col gap-1 text-sm">
+          <p className="text-muted-foreground">
+            <Trans>Can't be used right now.</Trans>
+          </p>
+          <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+            {agent.unavailableReasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          {agent.path && agent.level !== "builtin" ? (
+            <button
+              type="button"
+              className="self-start text-sm font-medium text-jade-text hover:underline underline-offset-2"
+              onClick={onOpenFile}
+            >
+              {t`Open ${fileName(agent)}`}
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex flex-col">
+          <button
+            type="button"
+            aria-expanded={open}
+            className="flex items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm hover:bg-ink-fill"
+            onClick={() => setOpen((value) => !value)}
+          >
             <span className="text-muted-foreground">
-              {plural(count, {
-                one: "# unsaved Agent change",
-                other: "# unsaved Agent changes",
-              })}
+              {thisChat ? <Trans>This chat runs on</Trans> : <Trans>Runs on</Trans>}
             </span>
-          }
-          onOpen={onOpen}
-        />
-      </li>
-    </PickerSection>
+            <span className={cn("min-w-0 truncate", model && "text-jade-text")}>
+              {runsOn ?? t`the default model`}
+            </span>
+            <DisclosureMark open={open} className="ml-auto" />
+          </button>
+          {open ? (
+            <ModelChoices
+              own={agent.model}
+              runsOn={runsOn}
+              models={models}
+              onChoose={(id) => onChoose(id === agent.model ? null : id)}
+            />
+          ) : null}
+          {open && thisChat ? (
+            <p className="px-1 pt-1 text-xs text-muted-foreground">
+              <Trans>Changing the model rebuilds this chat's cache on the next reply.</Trans>
+            </p>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
+}
+
+function ModelChoices({
+  own,
+  runsOn,
+  models,
+  onChoose,
+}: {
+  own: string | null;
+  runsOn: string | null;
+  models: ModelOption[] | null;
+  onChoose: (id: string) => void;
+}) {
+  if (!models)
+    return (
+      <ListLine density="menu" status>
+        <Trans>Loading models…</Trans>
+      </ListLine>
+    );
+  return (
+    <ul className="flex flex-col">
+      {models.map((option) => (
+        <li key={option.id}>
+          <ListRow
+            density="menu"
+            disabled={!option.available}
+            leading={
+              <Check
+                aria-hidden
+                className={cn("size-3.5 text-jade-text", option.id !== runsOn && "invisible")}
+              />
+            }
+            current={option.id === runsOn}
+            title={option.name}
+            meta={option.id === own ? t`its own` : undefined}
+            onOpen={() => onChoose(option.id)}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function pickable(agent: AgentCatalogItem): boolean {
+  return agent.selection !== null && agent.unavailableReasons.length === 0;
+}
+
+function creationAgentOf(agent: AgentCatalogItem): CreationAgent {
+  if (!agent.selection) throw new Error(`Agent ${agent.slug} has nothing to pick`);
+  return { selection: agent.selection, slug: agent.slug, name: agent.name };
+}
+
+function fileName(agent: AgentCatalogItem): string {
+  return agent.path?.split("/").pop() ?? agent.slug;
+}
+
+function fileAddress(agent: AgentCatalogItem): string {
+  if (agent.level === "builtin" || !agent.path) return fileName(agent);
+  const root = agentsRootOf(agent.level).path;
+  return root ? `~/${root}/${agent.path}` : `.agents/${agent.path}`;
 }

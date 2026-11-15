@@ -15,6 +15,7 @@ import {
   useWriteModeToolbarControl,
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
+import type { AgentChoice } from "@/features/agents/AgentPicker";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { workDisplayName } from "@/lib/work-name";
@@ -27,6 +28,7 @@ export function NewThreadComposerToolbar({
   noWork,
   worksStatus,
   agent: selectedAgent,
+  model,
   writeMode,
   onAgentChange,
   onWorkChange,
@@ -40,9 +42,10 @@ export function NewThreadComposerToolbar({
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   agent: CreationAgent | null;
+  model: string | null;
   /** The selected Work's default, or the mode the writer chose in this composer. */
   writeMode: AiWriteMode;
-  onAgentChange(agent: CreationAgent): void;
+  onAgentChange(choice: AgentChoice): void;
   onWorkChange(work: Work): void;
   onWriteModeChange(mode: AiWriteMode): void;
   onRetryWorks(): void;
@@ -51,7 +54,8 @@ export function NewThreadComposerToolbar({
     mode: "interactive",
     projectId,
     selectedAgent,
-    onSelectedAgentChange: onAgentChange,
+    model,
+    onChoose: onAgentChange,
   });
   const workControl = useProspectiveWorkControl({
     work,

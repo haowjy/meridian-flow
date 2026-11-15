@@ -16,7 +16,7 @@ export function ThreadAgentDefinition({ threadId }: { threadId: string }) {
     <>
       <button
         type="button"
-        className="mt-1 w-full border-t border-border-subtle px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground"
+        className="self-start text-sm font-medium text-jade-text underline-offset-2 hover:underline"
         onClick={() => setOpen(true)}
       >
         <Trans>View this chat's Agent definition</Trans>

@@ -36,6 +36,7 @@ export function useCreationComposer(projectId: string) {
         workAiWriteMode: AiWriteMode;
         aiWriteMode?: AiWriteMode;
         agent: CreationAgent;
+        modelOverride: string | null;
       },
     ) {
       return (
@@ -49,6 +50,7 @@ export function useCreationComposer(projectId: string) {
           draft: submission.draft,
           activatedSkillSlugs: submission.activatedSkillSlugs,
           agent: context.agent,
+          modelOverride: context.modelOverride,
           workId: context.workId,
           workAiWriteMode: context.workAiWriteMode,
           ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),

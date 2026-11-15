@@ -42,6 +42,7 @@ import {
 } from "@meridian/thread-client";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
+import { useSetThreadModel } from "@/client/query/thread-model-command";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useTopChat } from "@/client/query/useTopChat";
@@ -59,9 +60,9 @@ import {
   useFileDrop,
 } from "@/components/app/composer";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
+import type { AgentChoice } from "@/features/agents/AgentPicker";
 import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
 import { DEFAULT_AGENT_NAME } from "@/features/agents/constants";
-import type { CreationAgent } from "@/features/agents/creation-agent";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
 import {
@@ -574,6 +575,7 @@ export function ChatView({
         originTurnId,
         agent: null,
         agentName: activeThread.agentName,
+        modelOverride: activeThread.modelOverride,
       },
       {
         ...deps,
@@ -588,23 +590,28 @@ export function ChatView({
       },
     );
   });
-  const handoffTurn = useCommittedEvent(
-    (originTurnId: string, agent: Parameters<NonNullable<TurnDerivation>["handoff"]>[1]) => {
-      if (!activeThread || !openThread) return;
-      const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
-      const base = {
-        projectId,
-        sourceThreadId: threadId,
-        sourceTitle: activeThread.title,
-        workId: activeWork?.id ?? activeThread.workId,
-        aiWriteMode: activeThread.aiWriteMode,
-      };
-      startDerivation(
-        { ...base, kind: "handoff", originTurnId, agent, agentName: agent.name },
-        { ...deps, source: activeThread, inherited: null, open: openThread },
-      );
-    },
-  );
+  const handoffTurn = useCommittedEvent((originTurnId: string, choice: AgentChoice) => {
+    if (!activeThread || !openThread) return;
+    const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
+    const base = {
+      projectId,
+      sourceThreadId: threadId,
+      sourceTitle: activeThread.title,
+      workId: activeWork?.id ?? activeThread.workId,
+      aiWriteMode: activeThread.aiWriteMode,
+    };
+    startDerivation(
+      {
+        ...base,
+        kind: "handoff",
+        originTurnId,
+        agent: choice.agent,
+        agentName: choice.agent.name,
+        modelOverride: choice.model,
+      },
+      { ...deps, source: activeThread, inherited: null, open: openThread },
+    );
+  });
   const turnDerivation = useMemo<TurnDerivation | null>(() => {
     if (!canDerive || !activeThread || !openThread) return null;
     return {
@@ -634,9 +641,11 @@ export function ChatView({
         (turn) => turn.status === "complete" && !queuedWriterTurnIds.has(turn.id),
       )?.id ?? null)
     : null;
-  const handoffFromLatest = useCommittedEvent((agent: CreationAgent) => {
-    if (handoffCutoff) handoffTurn(handoffCutoff, agent);
+  const handoffFromLatest = useCommittedEvent((choice: AgentChoice) => {
+    if (handoffCutoff) handoffTurn(handoffCutoff, choice);
   });
+  const setThreadModel = useSetThreadModel(threadId);
+  const modelOverride = activeThread?.modelOverride ?? null;
   const agentName = activeThread?.agentName ?? null;
   const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
   // Busy only while the server has yet to accept the chat's first send; a chat with nothing to
@@ -649,6 +658,8 @@ export function ChatView({
             projectId,
             threadId,
             bound: { name: agentName, definitionRevisionId: agentRevisionId },
+            modelOverride,
+            onModelChange: setThreadModel,
             onHandoff: handoffCutoff ? handoffFromLatest : null,
           }
         : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME },
@@ -657,7 +668,9 @@ export function ChatView({
       agentRevisionId,
       handoffCutoff,
       handoffFromLatest,
+      modelOverride,
       pendingCreation,
+      setThreadModel,
       projectId,
       threadId,
     ],

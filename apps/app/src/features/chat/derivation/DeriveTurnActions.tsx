@@ -15,19 +15,15 @@ import { t } from "@lingui/core/macro";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
+import { useModelOptions } from "@/client/query/useModelOptions";
 import {
   dropdownGroupLabelClass,
   dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { AgentPickerPanel } from "@/features/agents/AgentPicker";
-import {
-  type BoundAgent,
-  boundAgentRow,
-  type CreationAgent,
-  pickableAgents,
-} from "@/features/agents/creation-agent";
+import { type AgentChoice, AgentPickerPanel } from "@/features/agents/AgentPicker";
+import { type BoundAgent, boundAgentRow, pickableAgents } from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 
@@ -36,7 +32,7 @@ export type TurnDerivation = {
   /** The Agent the source chat is bound to, for the picker's default. */
   sourceAgent: BoundAgent;
   fork: (turnId: string) => void;
-  handoff: (turnId: string, agent: CreationAgent) => void;
+  handoff: (turnId: string, choice: AgentChoice) => void;
 };
 
 const TurnDerivationContext = createContext<TurnDerivation | null>(null);
@@ -110,8 +106,9 @@ function HandoffPicker({
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const agents = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
-  const selected = boundAgentRow(agents, derivation.sourceAgent);
+  const models = useModelOptions(open);
+  const agents = catalog.status === "ready" ? (catalog.agents ?? []) : [];
+  const selected = boundAgentRow(pickableAgents(agents), derivation.sourceAgent);
   const label = t`Hand off from here`;
   const ready = catalog.status;
   // Land on the source's Agent so Enter hands off to it. The catalog may load
@@ -137,7 +134,7 @@ function HandoffPicker({
         tabIndex={-1}
         align={align}
         aria-label={t`Hand off to an Agent`}
-        className={cn(dropdownSurfaceVariants({ measure: "identity" }), "text-tier-chat")}
+        className={cn(dropdownSurfaceVariants({ measure: "split" }), "text-tier-chat")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current?.focus();
@@ -147,12 +144,15 @@ function HandoffPicker({
         <AgentPickerPanel
           status={catalog}
           agents={agents}
-          selectedAgent={selected}
+          current={{ slug: selected?.selection.slug ?? null, model: null }}
+          models={models}
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
-          onSelect={(agent) => {
+          onChoose={(choice) => {
             setOpen(false);
-            derivation.handoff(turnId, agent);
+            derivation.handoff(turnId, choice);
           }}
+          projectId={derivation.projectId}
+          onClose={() => setOpen(false)}
         />
       </PopoverContent>
     </Popover>

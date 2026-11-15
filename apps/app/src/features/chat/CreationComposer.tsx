@@ -95,6 +95,7 @@ export function CreationComposer({
           workAiWriteMode: work.defaultAiWriteMode,
           ...(choices?.aiWriteMode ? { aiWriteMode: choices.aiWriteMode } : {}),
           agent,
+          modelOverride: choices?.model ?? null,
         }
       : undefined;
   const unavailableWork =
@@ -164,8 +165,11 @@ export function CreationComposer({
             noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
+            model={choices?.model ?? null}
             writeMode={writeMode}
-            onAgentChange={(next) => creation.updateChoices({ agent: next })}
+            onAgentChange={(next) =>
+              creation.updateChoices({ agent: next.agent, model: next.model })
+            }
             // Picking a Work never changes the mode on screen: the mode shown becomes the pick.
             // A Work's default shows only for the Work the composer opened with.
             onWorkChange={(selected) =>

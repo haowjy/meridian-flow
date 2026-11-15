@@ -8,6 +8,8 @@ export type CreationAgent = Pick<PickableAgent, "selection" | "slug" | "name">;
 export type CreationChoices = {
   workId?: string;
   agent?: CreationAgent;
+  /** The model the new chat runs its Agent on, when not the Agent's own. */
+  model?: string | null;
   /** Only a mode the writer picked in this composer; otherwise the Work's default rules. */
   aiWriteMode?: AiWriteMode;
 };

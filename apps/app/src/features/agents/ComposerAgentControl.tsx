@@ -1,19 +1,18 @@
 /**
- * Composer Agent control. A new chat picks its Agent; a started chat is bound to one, so
- * picking another hands off to it; a subagent's chat only shows its Agent.
+ * Composer Agent control. A new chat picks its Agent and the model it runs on; a started chat is
+ * bound to one, so it can change only the model, and picking another Agent hands off to it; a
+ * subagent's chat only shows its Agent.
  */
 import { t } from "@lingui/core/macro";
 import { useRef } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
+import { useModelOptions } from "@/client/query/useModelOptions";
 import {
   ComposerCurrentValueStatus,
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
-import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
-import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
-import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
-import { AgentPickerPanel } from "./AgentPicker";
+import { type AgentChoice, AgentPickerPanel } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
 import {
   type BoundAgent,
@@ -21,14 +20,15 @@ import {
   type CreationAgent,
   pickableAgents,
 } from "./creation-agent";
-import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
 
 export type ComposerAgentControlProps =
   | {
       mode: "interactive";
       projectId?: string;
       selectedAgent: CreationAgent | null;
-      onSelectedAgentChange: (agent: CreationAgent) => void;
+      /** The model the new chat will run its Agent on, when not its own. */
+      model: string | null;
+      onChoose: (choice: AgentChoice) => void;
     }
   | {
       mode: "handoff";
@@ -36,8 +36,10 @@ export type ComposerAgentControlProps =
       /** The chat, whose bound definition the panel can open. */
       threadId: string;
       bound: BoundAgent;
+      modelOverride: string | null;
+      onModelChange: (model: string | null) => void;
       /** Null until the server has a turn to hand off from. */
-      onHandoff: ((agent: CreationAgent) => void) | null;
+      onHandoff: ((choice: AgentChoice) => void) | null;
     }
   | { mode: "readonly"; name: string };
 
@@ -48,10 +50,12 @@ export function useComposerAgentToolbarControl(
     props.mode !== "readonly",
     props.mode === "readonly" ? undefined : props.projectId,
   );
+  const models = useModelOptions(props.mode !== "readonly");
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
-  const selectable = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
+  const agents = catalog.status === "ready" ? (catalog.agents ?? []) : [];
+  const selectable = pickableAgents(agents);
   const selectedAgent =
     props.mode === "interactive"
       ? props.selectedAgent
@@ -64,7 +68,14 @@ export function useComposerAgentToolbarControl(
       : props.mode === "handoff"
         ? (props.bound.name ?? DEFAULT_AGENT_NAME)
         : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
-  const item = { ariaLabel: t`Agent: ${name}`, label: t`Agent`, value: name };
+  const model =
+    props.mode === "interactive"
+      ? props.model
+      : props.mode === "handoff"
+        ? props.modelOverride
+        : null;
+  const value = model ? t`${name} on ${model}` : name;
+  const item = { ariaLabel: t`Agent: ${value}`, label: t`Agent`, value };
   if (props.mode === "readonly")
     return {
       kind: "status",
@@ -85,29 +96,36 @@ export function useComposerAgentToolbarControl(
   const pageId =
     catalog.status === "error"
       ? "error"
-      : catalog.status === "ready" && selectable.length > 0
+      : catalog.status === "ready" && agents.length > 0
         ? "ready"
         : catalog.status === "empty" || catalog.status === "ready"
           ? "empty"
           : "loading";
-  const choose = (next: CreationAgent) => {
-    if (props.mode === "interactive") props.onSelectedAgentChange(next);
-    else if (next.selection.slug !== selectedAgent?.selection.slug) props.onHandoff?.(next);
+  const choose = (next: AgentChoice) => {
+    if (props.mode === "interactive") props.onChoose(next);
+    else if (next.agent.selection.slug === selectedAgent?.selection.slug)
+      props.onModelChange(next.model);
+    else props.onHandoff?.(next);
   };
   return {
     kind: "panel",
     id: "agent",
     priority: 300,
     interaction: props.mode === "handoff" && !props.onHandoff ? "busy" : "enabled",
-    item: { ...item, ariaLabel: t`Choose agent, currently ${name}` },
+    item: { ...item, ariaLabel: t`Choose agent, currently ${value}` },
     inline: ({ trigger }) => (
-      <ComposerCurrentValueTrigger binding={trigger} ariaLabel={t`Agent: ${name}`}>
+      <ComposerCurrentValueTrigger
+        binding={trigger}
+        ariaLabel={t`Agent: ${value}`}
+        className="max-w-[16rem]"
+      >
         {name}
+        {model ? <span className="ml-1.5 font-normal text-jade-text">{model}</span> : null}
       </ComposerCurrentValueTrigger>
     ),
     panel: {
-      ariaLabel: props.mode === "handoff" ? t`Hand off to an Agent` : t`Choose agent`,
-      size: "identity",
+      ariaLabel: props.mode === "handoff" ? t`This chat's Agent` : t`Choose agent`,
+      size: "split",
       focus: {
         pageId,
         repairRevision: focusableIds.join("\0"),
@@ -126,28 +144,20 @@ export function useComposerAgentToolbarControl(
         fallback: "content",
       },
       render: ({ terminalClose }) => (
-        <>
-          {props.mode === "handoff" ? (
-            <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
-          ) : null}
-          <AgentPickerPanel
-            focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
-            status={catalog}
-            agents={selectable}
-            selectedAgent={selectedAgent}
-            onSelect={(next) => {
-              choose(next);
-              terminalClose();
-            }}
-            projectId={props.projectId}
-            onOpenAgents={() => {
-              terminalClose();
-              useSidebarTabs.getState().reveal("agents");
-              useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
-            }}
-          />
-          {props.mode === "handoff" ? <ThreadAgentDefinition threadId={props.threadId} /> : null}
-        </>
+        <AgentPickerPanel
+          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
+          status={catalog}
+          agents={agents}
+          current={{ slug: selectedAgent?.selection.slug ?? null, model }}
+          started={props.mode === "handoff" ? { threadId: props.threadId } : undefined}
+          models={models}
+          onChoose={(next) => {
+            choose(next);
+            terminalClose();
+          }}
+          projectId={props.projectId ?? ""}
+          onClose={terminalClose}
+        />
       ),
     },
   };
