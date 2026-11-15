@@ -303,6 +303,12 @@ msgstr "{0} for {ownerName}"
 msgid "{0} imported, but its link had moved on."
 msgstr "{0} imported, but its link had moved on."
 
+#. placeholder {0}: clash[2]
+#. placeholder {1}: clash[1]
+#: src/features/agents/findings.ts
+#~ msgid "{0} is also named {1}. Give one of them another name."
+#~ msgstr "{0} is also named {1}. Give one of them another name."
+
 #. placeholder {0}: file.name
 #: src/core/editor/images/image-uploads.ts
 msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
@@ -852,8 +858,8 @@ msgstr "{needsYou} waiting on you"
 #~ msgstr "{notInUse, plural, one {# not in use} other {# not in use}}"
 
 #: src/features/agents/findings.ts
-msgid "{others} is also named {name}. Both work under that name."
-msgstr "{others} is also named {name}. Both work under that name."
+#~ msgid "{others} is also named {name}. Both work under that name."
+#~ msgstr "{others} is also named {name}. Both work under that name."
 
 #: src/features/agents/PackageSave.tsx
 msgid "{path} added"
@@ -4745,8 +4751,12 @@ msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
 
 #: src/features/agents/findings.ts
-msgid "No skill is named {name} in this package."
-msgstr "No skill is named {name} in this package."
+#~ msgid "No skill is named {name} in this package."
+#~ msgstr "No skill is named {name} in this package."
+
+#: src/features/agents/findings.ts
+msgid "No skill is named {skill} in this package."
+msgstr "No skill is named {skill} in this package."
 
 #: src/features/chat/SubagentHeader.tsx
 msgid "No subagents match “{search}”."

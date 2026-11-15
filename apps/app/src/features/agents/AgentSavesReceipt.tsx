@@ -5,7 +5,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AgentFinding, SaveOutcome } from "@meridian/contracts/agents";
+import { type AgentFinding, type SaveOutcome, shownFindings } from "@meridian/contracts/agents";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
 import { Button } from "@/components/ui/button";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -37,7 +37,9 @@ export function AgentSavesReceipt({ outcomes }: { outcomes: readonly SaveOutcome
 function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: string | null }) {
   const label = packageLabel(outcome);
   const held = heldBack(outcome);
-  const warnings = outcome.findings.filter((finding) => finding.severity === "warning");
+  const warnings = shownFindings(outcome.findings).filter(
+    (finding) => finding.severity !== "error",
+  );
   const heldPaths = new Set(
     [...outcome.kept, ...outcome.leftOut].map((file) => `${outcome.folder}${file}`),
   );

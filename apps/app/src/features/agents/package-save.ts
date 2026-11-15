@@ -9,6 +9,7 @@ import {
   type AgentsLevel,
   agentsFileOf,
   type SaveOutcome,
+  shownFindings,
 } from "@meridian/contracts/agents";
 import { notifyManager, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
@@ -175,7 +176,10 @@ function predicted(status: AgentPackageStatus): PackageWord {
     changes: status.changes,
     findings: fails
       ? errors
-      : [...errors, ...status.findings.filter((finding) => finding.severity === "warning")],
+      : [
+          ...errors,
+          ...shownFindings(status.findings).filter((finding) => finding.severity !== "error"),
+        ],
     kept: [],
     leftOut,
     renamed: [],

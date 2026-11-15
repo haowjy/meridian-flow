@@ -7,6 +7,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -24,6 +25,7 @@ import { createTestRemovalDeps } from "../../../test-support/document-removal.js
 import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
@@ -317,6 +319,9 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   };
   const resolveDocumentUri = async (documentId: string) =>
     `manuscript/${documentName(documentId as DocumentId)}.md`;
+  const documentLastAddress = createDocumentLastAddress(db);
+  const resolveLastDocumentUri = async (documentId: string, branchId?: BranchId) =>
+    (await documentLastAddress(documentId as DocumentId, branchId))?.uri ?? null;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},
@@ -428,12 +433,12 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri,
-    resolveLastDocumentUri: resolveDocumentUri,
+    resolveLastDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
     flushLivePull: draftPulls.flushLivePull,
     notices: createReversalNoticePort({
       notices,
-      documentUriResolver: resolveDocumentUri,
+      resolveLastDocumentUri,
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
     workProjection: createTestWorkProjectionMutation(db),
