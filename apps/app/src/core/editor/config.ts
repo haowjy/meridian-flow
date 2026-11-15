@@ -11,8 +11,7 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Fragment, Slice } from "@tiptap/pm/model";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
@@ -225,32 +224,18 @@ const CodeDocument = Node.create({
   topNode: true,
   content: "code_block",
 
-  // ProseMirror keeps clipboard text literal only when the selection's parent is
-  // a code block. After Ctrl+A the parent is `doc`, so it would split the text
-  // into paragraphs and the code-only `doc` would keep the first. In a code
-  // document every selection is in code: the clipboard's text lands as it is.
+  // The only block is the whole document, so no selection belongs at the doc
+  // level: Ctrl+A would make paste split into paragraphs (a code-only doc keeps
+  // the first) and typing or Delete replace the block, dropping its language
+  // and id. Select-all becomes the text of the block instead.
   addProseMirrorPlugins() {
     return [
       new Plugin({
-        props: {
-          handlePaste(view, event) {
-            const text = event.clipboardData?.getData("text/plain");
-            if (!view.editable || !text || view.state.selection.$from.parent.type.spec.code) {
-              return false;
-            }
-            const block = view.state.schema.nodes.code_block.create(
-              null,
-              view.state.schema.text(text),
-            );
-            view.dispatch(
-              view.state.tr
-                .replaceSelection(new Slice(Fragment.from(block), 1, 1))
-                .scrollIntoView()
-                .setMeta("paste", true)
-                .setMeta("uiEvent", "paste"),
-            );
-            return true;
-          },
+        appendTransaction(_trs, _old, state) {
+          if (state.selection.$from.depth > 0) return null;
+          return state.tr.setSelection(
+            TextSelection.create(state.doc, 1, state.doc.content.size - 1),
+          );
         },
       }),
     ];
