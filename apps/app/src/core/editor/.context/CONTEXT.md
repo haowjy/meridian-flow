@@ -72,7 +72,8 @@ and remain quarantined until their retryable destroy ledger succeeds.
   block rewrites everything after the empty text and duplicates words. The browser
   editor, the server and `packages/agent-edit` all bind through the one patched
   `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
-  is not a dependency); `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
+  is not a dependency). Its forced initial render resolves a text selection between the old
+  offsets: a clamped offset can now be a table boundary rather than text. `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
   rule by addressing units across a block's texts. Stock y-tiptap and y-prosemirror fold the run into
   its first text, delete the rest, and fold again on read (a read that writes).
   To drop the patch when upstream stops doing either, remove the grouping
