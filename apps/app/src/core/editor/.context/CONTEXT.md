@@ -93,7 +93,9 @@ and remain quarantined until their retryable destroy ledger succeeds.
   head if neither survives. This deliberately differs from stock column-delete
   mapping, which can select neighboring cells. Undo's explicit range restore leaves
   the binding's mapped result alone if its cell endpoints cannot be recovered.
-  Row/column expansion follows stock `CellSelection.map` in row-first order. The
+  As in stock `CellSelection.map`, a full-row selection expands across added
+  columns; otherwise a full-column selection expands across added rows. When both
+  apply (all cells selected), the row rule wins, not both rules. The
   corners define the rectangle: inserted interior rows join it; a moved corner can
   reshape it. A whole table can lose whole-table status on an exterior row addition,
   as stock does; this is not a new whole-table selection model. Cells without IDs

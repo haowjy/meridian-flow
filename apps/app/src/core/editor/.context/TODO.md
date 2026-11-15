@@ -51,8 +51,7 @@ capture timing.
 A whole-table CellSelection has two different extents: its cells cover a rectangle, while
 its native `$anchor`/`$head` cover only the head cell. A table that ends the document
 therefore narrows to its head-cell text on Shift+PageDown or Ctrl+Shift+Right when
-the browser makes no move after native range preparation. No text changes. Peer restoration now preserves cell selections, but does not fix this
-representation mismatch. Do not add per-key boundary guards. A proposal to
+the browser makes no move after native range preparation. No text changes. The native range does not describe the selected cell rectangle. Do not add per-key boundary guards. A proposal to
 separate whole-table NodeSelection from cell ranges changes what writers select
 and what typing replaces; take that design to the product lead for review first.
 
