@@ -87,7 +87,7 @@ in either pane, nulls the chat slot (`openNewChat` arrives at the composer; the 
 chat writes it). `fitsBeside` is "the item's kind differs from main's mode". The picker
 (`side/SidePicker.tsx`) offers only the other kind. Beside a document: New chat,
 then the scoped Work's chats (pinned first) and Other chats, grouped by `useChatGroups` as the
-sidebar's Chats list is; Beside a chat:
+sidebar's Chats list is. Beside a chat:
 `DocumentChoices`, one list also drawn inline in the side's empty pane: the documents open in
 main's tabs, Recently opened, then the file explorer (`SideExplorer`: the project's areas through
 `useProjectMenuSource`, stepping into folders with `DrillInMenu`'s drill model). Only documents

@@ -1,4 +1,4 @@
-# Thread filing state machine
+# Thread trash state machine
 
 A thread (a chat) is filed as visible or in the Trash, changed in `domain/thread-trash-lifecycle.ts`.
 That does not say whether a run is live: that is the

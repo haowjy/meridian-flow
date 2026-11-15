@@ -101,8 +101,8 @@ stateDiagram-v2
   `status = 'open'`, and a replayed answer with the same submission id returns the stored result.
 - **Resolving writes the tool result and the turn status together**; apart, the card and the
   turn disagree.
-- **Lock order: ask rows, then the thread.** Delete takes the same order when they
-  race a settlement.
+- **Lock order: ask rows, then the thread.** Delete takes the same order when it
+  races a settlement.
 - A resolved ask also carries `continuation`: `pending` while the run that continues from the
   answer is owed, `done` once that turn exists, `cancelled` when it never will. An expired
   question resolves from the stored draft answers.
