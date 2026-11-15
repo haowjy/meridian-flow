@@ -401,7 +401,16 @@ export function ChangesSource({
                 everyDraft.length > 0 || changedFolders.length > 0
                   ? () => {
                       hold();
-                      void controller.discardAll(everyDraft, changedFolders);
+                      void controller.discardAll(
+                        everyDraft,
+                        changedFolders,
+                        // A lone folder change names itself in the notice.
+                        everyDraft.length === 0 && changedFolders.length === 1
+                          ? (groupsOf(groups).find(
+                              (group) => group.folder?.id === changedFolders[0],
+                            )?.folder?.name ?? null)
+                          : null,
+                      );
                     }
                   : undefined
               }
