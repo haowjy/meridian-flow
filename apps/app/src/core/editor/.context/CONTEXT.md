@@ -84,6 +84,22 @@ and remain quarantined until their retryable destroy ledger succeeds.
   It resolves offsets from the previous document to a valid selection in the rendered one,
   a text selection when text is available. A clamped offset alone can land at a table
   boundary, where a text selection is invalid.
+- Cell selections cross peer updates as cell-boundary positions, cell IDs and
+  whole-row/whole-column coverage, not the ending cell's text range. The binding's
+  `resolveRelativeCellSelection` first uses live Yjs references, then a unique cell
+  ID if a move or Undo recreated the element. It shares that resolution with local
+  history. A deleted endpoint never becomes a selected neighboring cell: peer
+  updates collapse to a legal caret in the surviving endpoint, or near the mapped
+  head if neither survives. This deliberately differs from stock column-delete
+  mapping, which can select neighboring cells. Undo's explicit range restore leaves
+  the binding's mapped result alone if its cell endpoints cannot be recovered.
+  Row/column expansion follows stock `CellSelection.map` in row-first order. The
+  corners define the rectangle: inserted interior rows join it; a moved corner can
+  reshape it. A whole table can lose whole-table status on an exterior row addition,
+  as stock does; this is not a new whole-table selection model. Cells without IDs
+  can follow live references but not recreated elements. Duplicate-ID fallback is
+  unresolved rather than choosing a copy. Keep both runtime bundles and selection
+  declarations aligned when updating the y-tiptap patch.
 - A block keeps its Yjs element: `updateYFragment` pairs the children it can't
   match from either end by block `id` (`pairByBlockId`), deletes an old element
   with no partner, inserts a node with none, and never writes a node into an
@@ -222,7 +238,7 @@ identity in anchors or holds.
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
-  boundary while skipping native no-ops. Undo gives back the range a change
+  boundary while skipping native no-ops. Undo gives back the text or cell range a change
   started from (a drag, a cut, typing over a selection), captured by
   `editor-history.ts` on `beforeTransaction` and carried through the stack items
   that UndoManager generates. It is never read from y-tiptap's copy, which a
