@@ -35,8 +35,9 @@ export {
 } from "./image-workflow";
 export { RemoteImagePlaceholder } from "./RemoteImagePlaceholder";
 export {
+  clipboardRemoteSource,
   loadRemoteImage,
-  proxiedImageSrc,
+  REMOTE_SRC_ATTRIBUTE,
   remotePictureSource,
   useRemoteImageLoaded,
 } from "./remote-image";

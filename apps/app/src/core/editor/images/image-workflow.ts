@@ -70,6 +70,9 @@ export type PastedImageImport = {
  * with the picture. Where the import cannot happen, the link is already the
  * right answer and nothing has to be undone.
  *
+ * A remote picture Flow itself copied (`data-remote-src`, `remotePictures`) is the exception: it
+ * pastes back as the same remote picture, which fetches nothing until the writer clicks.
+ *
  * A `data:` image is treated the same way, ugly link text and all: it is the
  * rare door (the clipboard's own file item wins for a copied picture), the
  * import nearly always succeeds, and the alternative is base64 on the wire.
@@ -77,6 +80,7 @@ export type PastedImageImport = {
 export function linkExternalPastedImages(
   slice: Slice,
   schema: Schema,
+  remotePictures: ReadonlySet<string>,
 ): { slice: Slice; imports: PastedImageImport[] } {
   const imports: PastedImageImport[] = [];
   const linkType = schema.marks.link ?? null;
@@ -87,6 +91,8 @@ export function linkExternalPastedImages(
       // A picture naming a document address (with a ref, or ref-less and
       // resolved by its address) is the project's own, never a web import.
       if (!src || src.startsWith("asset:") || pictureKeyOfNode(node.attrs)) return node;
+      // Flow's own copy of a remote picture lands as that picture, to be loaded on a click.
+      if (remotePictures.has(src)) return node;
       const alt = node.attrs.alt ? String(node.attrs.alt) : null;
       imports.push({ url: src, alt });
       const marks = linkType ? [...node.marks, linkType.create({ href: src })] : node.marks;

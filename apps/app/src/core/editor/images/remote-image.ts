@@ -23,13 +23,43 @@ export function remotePictureSource(src: string): string | null {
   return WEB_ADDRESS.test(src) ? (src.startsWith("//") ? `https:${src}` : src) : null;
 }
 
-export const proxiedImageSrc = apiImageProxyPath;
+/**
+ * Where Flow's own clipboard HTML and drag HTML carry a remote picture's address. The browser
+ * never fetches a `data-` attribute, so copying a picture out of the editor starts no request;
+ * the parse rule reads it back, and pasting inside Flow lands the same remote picture.
+ */
+export const REMOTE_SRC_ATTRIBUTE = "data-remote-src";
+
+/** A web address read back from untrusted clipboard HTML, or null. */
+export function clipboardRemoteSource(value: string | null): string | null {
+  const address = value === null ? null : remotePictureSource(value.trim());
+  if (!address) return null;
+  try {
+    const url = new URL(address);
+    return url.hostname ? address : null;
+  } catch {
+    return null;
+  }
+}
 
 export type RemoteImageStatus =
   | { kind: "loading" }
   | { kind: "loaded" }
   /** `null` when the proxy never answered (offline, signed out). */
   | { kind: "failed"; reason: ImageProxyReason | null };
+
+/** The remote pictures in pasted HTML that carry Flow's `data-remote-src`. */
+export function flowRemotePictureAddresses(html: string): ReadonlySet<string> {
+  const addresses = new Set<string>();
+  if (!html.includes(REMOTE_SRC_ATTRIBUTE)) return addresses;
+  const container = document.createElement("template");
+  container.innerHTML = html;
+  for (const img of container.content.querySelectorAll(`img[${REMOTE_SRC_ATTRIBUTE}]`)) {
+    const address = clipboardRemoteSource(img.getAttribute(REMOTE_SRC_ATTRIBUTE));
+    if (address) addresses.add(address);
+  }
+  return addresses;
+}
 
 const statuses = new Map<string, RemoteImageStatus>();
 const listeners = new Set<() => void>();
@@ -44,7 +74,7 @@ export async function loadRemoteImage(address: string): Promise<void> {
   if (current?.kind === "loading" || current?.kind === "loaded") return;
   setStatus(address, { kind: "loading" });
   try {
-    const response = await fetch(proxiedImageSrc(address));
+    const response = await fetch(apiImageProxyPath(address));
     if (!response.ok) {
       setStatus(address, {
         kind: "failed",

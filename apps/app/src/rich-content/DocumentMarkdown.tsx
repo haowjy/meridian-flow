@@ -1,4 +1,5 @@
 /** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
+import { apiImageProxyPath } from "@meridian/contracts/protocol";
 import type { PresentationSourceRun } from "@meridian/markup";
 import { type NestedNode, nestNodes, nestTree } from "@meridian/prosemirror-schema";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
@@ -14,7 +15,6 @@ import {
 
 import {
   inlinePictureSource,
-  proxiedImageSrc,
   RemoteImagePlaceholder,
   remotePictureSource,
   useRemoteImageLoaded,
@@ -322,7 +322,7 @@ function MarkdownImage({ node }: { node: PMNode }) {
   const source = String(node.attrs.src);
   const remote = remotePictureSource(source);
   const loaded = useRemoteImageLoaded(remote);
-  const src = inlinePictureSource(source) ?? (remote && loaded ? proxiedImageSrc(remote) : null);
+  const src = inlinePictureSource(source) ?? (remote && loaded ? apiImageProxyPath(remote) : null);
   if (src) {
     return (
       <img

@@ -33,6 +33,7 @@
 import { t } from "@lingui/core/macro";
 import { resolveDocumentHref } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import { apiImageProxyPath } from "@meridian/contracts/protocol";
 import {
   type Dispatch,
   type SetStateAction,
@@ -50,7 +51,6 @@ import { httpErrorStatus } from "@/client/api/http-client";
 import {
   assetDocumentIdFromSrc,
   inlinePictureSource,
-  proxiedImageSrc,
   remotePictureSource,
   signedUrlRefreshDelayMs,
   useRemoteImageLoaded,
@@ -134,7 +134,7 @@ function usePictureTarget(
     if (url) return { kind: "literal", url };
     if (remote) {
       return remoteLoaded
-        ? { kind: "literal", url: proxiedImageSrc(remote) }
+        ? { kind: "literal", url: apiImageProxyPath(remote) }
         : { kind: "remote", address: remote };
     }
     return { kind: "unavailable", message: t`Image could not be displayed.` };
