@@ -204,15 +204,15 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
 function UnsentTypingSentence({ cause }: { cause: UnsentTyping["cause"] }) {
   switch (cause) {
     case "closed":
-      return <Trans>Your latest typing didn't reach the server before the draft closed.</Trans>;
+      return <Trans>Your latest changes didn't reach the server before the draft closed.</Trans>;
     case "removed":
       return (
-        <Trans>Your latest typing didn't reach the server before the document was removed.</Trans>
+        <Trans>Your latest changes didn't reach the server before the document was removed.</Trans>
       );
     case "owner-closed":
       return (
         <Trans>
-          Your latest typing didn't reach the server before this document became read-only.
+          Your latest changes didn't reach the server before this document became read-only.
         </Trans>
       );
   }

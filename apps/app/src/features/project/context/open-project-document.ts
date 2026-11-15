@@ -226,6 +226,8 @@ type NavigationAdapterDependencies = {
   openTrash(documentId: string, options: { replace?: boolean }): Promise<unknown>;
   /** Where the replay of the list shows a document, or null while it shows none. */
   locate(documentId: string): KnownDocumentIdentity | null;
+  /** Resolves once `locate` can place what the list shows; rejects only when `signal` aborts. */
+  whenLocatable(signal: AbortSignal): Promise<void>;
   /** Shows a chat's upload, which belongs to no main address, in its viewer. */
   viewUpload(tab: ServerOpenDocument): void;
   /** Says that an open found nothing to show, with what tries it again. */
@@ -332,8 +334,10 @@ export class ProjectDocumentNavigationAdapter {
   }
 
   /**
-   * Where a document lives now: the caller's known row, or the replay of the list, which is
-   * waited for only while the list has not been read.
+   * Where a document lives now: the caller's known row, or the replay of the list. It waits while
+   * the list has not been read, and while the list shows the document but the server's answer of
+   * the sources that place it has not come (a list read from this browser's copy, offline or
+   * reconnecting): a lookup then waits for the connection instead of failing.
    */
   private async identify(
     projectId: string,
@@ -366,13 +370,22 @@ export class ProjectDocumentNavigationAdapter {
       }
       if (!isCurrent()) return { kind: "cancelled" };
     }
-    const located = this.dependencies.locate(documentId);
+    let located = this.dependencies.locate(documentId);
+    if (!located && standings.standing(projectId, documentId).kind === "in-tree") {
+      try {
+        await this.dependencies.whenLocatable(signal);
+      } catch {
+        return isCurrent() ? { kind: "refused", reason: "lookup-failed" } : { kind: "cancelled" };
+      }
+      if (!isCurrent()) return { kind: "cancelled" };
+      located = this.dependencies.locate(documentId);
+    }
     if (located) return { kind: "identified", identity: located };
     switch (standings.standing(projectId, documentId).kind) {
       case "in-trash":
         return { kind: "trashed" };
       case "in-tree":
-        // The list shows it but its source has not come yet.
+        // The list shows it in a source the server did not list.
         return { kind: "refused", reason: "lookup-failed" };
       default:
         return { kind: "refused", reason: "gone" };
@@ -486,6 +499,13 @@ export function ProjectDocumentNavigationProvider({
   // Read at each open, so a change of the list does not make a new adapter.
   const treesRef = useRef(trees);
   treesRef.current = trees;
+  const locatable = useRef(new Set<() => void>());
+  useEffect(() => {
+    if (!trees.ready) return;
+    const waiting = [...locatable.current];
+    locatable.current.clear();
+    for (const resolve of waiting) resolve();
+  }, [trees]);
   const openContextRoute = useOpenContextRoute();
   const [upload, setUpload] = useState<ServerOpenDocument | null>(null);
   const owner = useMemo<ProjectDocumentNavigationOwner>(
@@ -501,6 +521,21 @@ export function ProjectDocumentNavigationProvider({
           if (!place || !isProjectContextTreeScheme(place.source.scheme)) return null;
           return { scheme: place.source.scheme, file: place.file, ...ownerOfSource(place.source) };
         },
+        whenLocatable: (signal) =>
+          new Promise<void>((resolve, reject) => {
+            if (treesRef.current.ready) return resolve();
+            const abort = () => {
+              locatable.current.delete(located);
+              reject(signal.reason);
+            };
+            const located = () => {
+              signal.removeEventListener("abort", abort);
+              resolve();
+            };
+            if (signal.aborted) return reject(signal.reason);
+            locatable.current.add(located);
+            signal.addEventListener("abort", abort, { once: true });
+          }),
         viewUpload: setUpload,
         refused: (outcome, retry) =>
           notifyFailure({

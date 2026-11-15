@@ -11,7 +11,7 @@
  * A room whose updates the server kept refusing (`updatesRefused`), or whose draft the server
  * closed (`draftClosed`: it is in Trash), is not retired on that close: it stays open, read-only,
  * so its owner can show its text, until the owner rebuilds it (a restore reopened the draft) or
- * the last owner leaves.
+ * the last owner leaves, when it retires without the grace.
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
@@ -186,6 +186,10 @@ export class DraftRoomPool {
 
   private scheduleTeardown(roomKey: string): void {
     if (this.teardownTimers.has(roomKey) || this.draining.has(roomKey)) return;
+    const kept = this.rooms.get(roomKey);
+    // A room kept only for its owner never reopens, and its retirement hands back the typing
+    // that just left the screen, so it waits only for a host remounting in the same commit.
+    const graceMs = kept && keptForOwner(kept) ? 0 : this.deps.teardownGraceMs;
     const timer = setTimeout(() => {
       this.teardownTimers.delete(roomKey);
       const session = this.rooms.get(roomKey);
@@ -195,7 +199,7 @@ export class DraftRoomPool {
         return;
       }
       this.retire(roomKey, session);
-    }, this.deps.teardownGraceMs);
+    }, graceMs);
     this.teardownTimers.set(roomKey, timer);
   }
 

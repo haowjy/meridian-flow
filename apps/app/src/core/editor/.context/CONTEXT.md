@@ -626,7 +626,9 @@ from the wire alone, with nothing stored between handshakes.
   draft-generation replacement or writer-operation handoff to a new draft.
 - Terminal `4205` (`closed`) and `4208` (`removed`) end the session's transport; its cache
   stays, and a retained session stays readable until its owner releases it or a restore
-  restarts it. The account command owner asks the server what each close means (fresh
+  restarts it. Once its last owner releases it, it retires on the next task, not after the
+  grace: it can never reopen, and its retirement is what hands back typing that just left the
+  screen. The account command owner asks the server what each close means (fresh
   metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
   whichever arrives first; see Draft end and reopen in the
   [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the
