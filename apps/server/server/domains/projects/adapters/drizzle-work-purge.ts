@@ -18,6 +18,7 @@ import {
   projectResults,
   promptBakes,
   threads,
+  threadWorks,
   treeNodes,
   turns,
   uploadIntakes,
@@ -260,6 +261,11 @@ export function createDrizzleWorkPurger(deps: {
             purgedRoots.length ? inArray(branches.originRootThreadId, purgedRoots) : undefined,
           ),
         );
+      // A chat that moved to another Work keeps this Work's membership as non-primary history,
+      // and nothing reads it. A primary membership still blocks the delete: those chats went above.
+      await activeDb
+        .delete(threadWorks)
+        .where(and(eq(threadWorks.workId, workId), eq(threadWorks.isPrimary, false)));
       const deleted = await activeDb
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
