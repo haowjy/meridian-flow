@@ -11,7 +11,10 @@ const MAX_NAME = 255;
  */
 export function shownName(kind: NodeKind, name: string, filetype?: string | null): string {
   // A `source` document (an Agents file, `agents/critic.md`) keeps its suffix: Mars reads those bytes.
-  return normalEntryName(kind === "document" && filetype !== "source" ? "document" : "folder", name);
+  return normalEntryName(
+    kind === "document" && filetype !== "source" ? "document" : "folder",
+    name,
+  );
 }
 
 /** The parts of a stored name that a numbered copy keeps apart: `notes (2).txt`, not `notes.txt (2)`. */

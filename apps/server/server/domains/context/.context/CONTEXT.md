@@ -12,7 +12,7 @@ account's; `packages/contracts/src/agents/location.ts` is the one place that spe
 addresses (`agentsLocationOf`, `agentsRootOf`), so a different layout changes it and provisioning.
 A file created there is a `source` document (code text, `x.md` keeps its suffix), chosen once at
 create by `documentFilenameAt`; every later naming path follows the stored kind (`storedFilename`,
-`nameFault` take the filetype). A client that creates a node itself (`./mf doc put`, the app)
+the project tree's `shownName` take the filetype). A client that creates a node itself (`./mf doc put`, the app)
 states the kind in its create record. A prose document or a stored file at an Agent path is read
 as a problem, not as an Agent (`adapters/agent-level-files.ts`, whose text cache is keyed on the
 head's admission sequence: every admitted update moves it, a checkpoint need not come first); Copy keeps the source's kind, so a

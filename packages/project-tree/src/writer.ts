@@ -138,11 +138,7 @@ export class TreeWriter {
         }
         const name = freeName(
           input.kind,
-          shownName(
-            input.kind,
-            input.name,
-            input.kind === "document" ? input.filetype : undefined,
-          ),
+          shownName(input.kind, input.name, input.kind === "document" ? input.filetype : undefined),
           new Set(kids.map((kid) => kid.name)),
         );
         const at = Math.max(0, Math.min(input.index ?? kids.length, kids.length));
