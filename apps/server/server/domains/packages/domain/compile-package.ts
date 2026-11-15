@@ -221,13 +221,11 @@ const quoted = (message: string, pattern: RegExp) => pattern.exec(message)?.slic
 
 /**
  * Flow grades some of Mars's findings differently and writes its own message for the grade:
- * - `skill-ref.external`, a warning in Mars when the package has no `[dependencies]` (a consumer
- *   may hold the skill): Flow resolves a ref inside the package only, so there the skill is missing;
  * - `definition.duplicate-name`, an error in Mars: two Agents, or two skills, of one name both
  *   work here (a ref names a skill by its folder, the picker tells Agents apart by file). Mars
  *   compares names case-sensitively, and so does this;
  * - `field.retired` says, for a restricting key, that the Agent is not limited by it.
- * Mars gives these two no structured parts but the path, so the names come out of its message.
+ * Mars gives the duplicate name no structured parts but the path, so the names come out of its message.
  */
 const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => {
   const base = {
@@ -238,16 +236,6 @@ const fromMars = (file: string, diagnostic: Diagnostic): PackageDiagnostic => {
     message: diagnostic.message,
   };
   switch (diagnostic.code) {
-    case "skill-ref.external": {
-      const [skill] = quoted(diagnostic.message, /references skill `([^`]+)`/) ?? [];
-      return {
-        ...base,
-        severity: "error",
-        message: skill
-          ? `This package does not ship the skill \`${skill}\``
-          : "This package does not ship a skill it names",
-      };
-    }
     case "definition.duplicate-name": {
       const [name, other] =
         quoted(diagnostic.message, /name `([^`]+)` is also the name of `([^`]+)`/) ?? [];
