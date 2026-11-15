@@ -39,6 +39,7 @@ import type { UnifiedContextPortFactory } from "../../domains/context/unified-co
 import type { AgentChain, FileAccess, Principal } from "../../domains/file-policy/index.js";
 import type { NoticePort } from "../../domains/notices/index.js";
 import type { EventSink } from "../../domains/observability/index.js";
+import type { BoundAgentCatalog } from "../../domains/packages/index.js";
 import type {
   ProjectWorkAuthorityResolver,
   WorkContextNotices,
@@ -70,6 +71,8 @@ export interface ToolWiringDeps {
   branches: Pick<CollabBranches, "draftReview">;
   /** What an AI write into an Agents level makes wider, for the chat card. */
   agentsWidening: AgentsWidening;
+  /** `save_agents` saves through the same path as the writer's Save. */
+  agentCatalog: Pick<BoundAgentCatalog, "savePackages">;
   eventSink: EventSink;
   /** Binary copies duplicate the stored object. */
   objectStore: ObjectStorePort;

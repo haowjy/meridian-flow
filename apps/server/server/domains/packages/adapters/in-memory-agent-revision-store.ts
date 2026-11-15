@@ -16,12 +16,15 @@ import type {
   AgentRevision,
   AgentRevisionStore,
   CatalogRevision,
+  PackageSave,
+  SaveOwner,
 } from "../ports/agent-revision-store.js";
 
 type State = {
   sources: Map<string, { digest: string; source: AgentSourceSnapshot }>;
   revisions: Map<string, CatalogRevision>;
-  picks: Set<string>;
+  /** In insertion order, which is the Save order. */
+  saves: Map<string, PackageSave & { owner: string }>;
   bindings: Map<
     string,
     {
@@ -48,10 +51,12 @@ export function createInMemoryAgentRevisionStore(input: {
   const current: State = {
     sources: transactionOwner.map(),
     revisions: transactionOwner.map(),
-    picks: transactionOwner.set(),
+    saves: transactionOwner.map(),
     bindings: transactionOwner.map(),
   };
   const state = () => current;
+  const ownerKey = (owner: SaveOwner) =>
+    "userId" in owner ? `user:${owner.userId}` : `project:${owner.projectId}`;
   const copy = <T>(value: T): T => structuredClone(value);
   const available = (row: CatalogRevision | undefined): AgentRevision | undefined =>
     row?.definition
@@ -104,11 +109,51 @@ export function createInMemoryAgentRevisionStore(input: {
         };
       });
     },
-    async recordPicks(userId, revisionIds) {
-      for (const id of revisionIds) state().picks.add(`${userId}:${id}`);
+    async savePackage(owner, folder, packageRevisionId) {
+      const digest = packageRevisionId
+        ? (state().sources.get(packageRevisionId)?.digest ?? null)
+        : null;
+      const save = {
+        id: randomUUID(),
+        folder,
+        packageRevisionId,
+        contentDigest: digest,
+        createdAt: new Date(),
+      };
+      state().saves.set(save.id, { ...save, owner: ownerKey(owner) });
+      return copy(save);
     },
-    async readPickedRevision(userId, id) {
-      return state().picks.has(`${userId}:${id}`) ? copy(state().revisions.get(id)) : undefined;
+    async readSaved(owner) {
+      const latest = new Map<string, PackageSave>();
+      for (const { owner: by, ...save } of state().saves.values()) {
+        if (by === ownerKey(owner)) latest.set(save.folder, save);
+      }
+      return copy([...latest.values()]);
+    },
+    async undoSave(owner, saveId) {
+      const rows = [...state().saves.values()].filter((save) => save.owner === ownerKey(owner));
+      const index = rows.findIndex((save) => save.id === saveId);
+      if (index < 0) return undefined;
+      const same = rows.filter((save) => save.folder === rows[index].folder);
+      const latest = same[same.length - 1];
+      if (latest.id !== saveId) return { current: copy(latest), undone: false };
+      const before = same[same.length - 2];
+      return {
+        current: await store.savePackage(owner, latest.folder, before?.packageRevisionId ?? null),
+        undone: true,
+      };
+    },
+    async readSavedRevision(userId, projectId, id) {
+      const row = state().revisions.get(id);
+      const saved =
+        row &&
+        [...state().saves.values()].some(
+          (save) =>
+            save.packageRevisionId === row.packageRevisionId &&
+            (save.owner === ownerKey({ userId }) ||
+              (projectId !== undefined && save.owner === ownerKey({ projectId }))),
+        );
+      return saved ? copy(row) : undefined;
     },
     async readSource(id) {
       return copy(state().sources.get(id)?.source);

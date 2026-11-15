@@ -1,12 +1,12 @@
 /**
  * Reads one package's files with Mars and decides which Agents are available.
  *
- * The rule this keeps: anything Mars reports on an Agent's file, of any severity, makes that
- * Agent unavailable, and an unavailable Agent has no definition for anything to run. An Agent
- * never runs with more access than its file says. Mars's severity says whether `mars sync`
- * goes on, not whether a restriction survived (a misspelled `harness-overrides` is a warning
- * that drops the block), so availability is decided by the table in `agentErrors`, not by
- * filtering on severity.
+ * The rule this keeps: a finding of severity `error`, Mars's or Flow's, on an Agent's file makes
+ * that Agent unavailable, and an unavailable Agent has no definition for anything to run. A
+ * `warning` or `info` doesn't: it is shown, and the Agent runs as its file reads (a restriction
+ * `prepare` dropped, `field.restriction-lost`, is such a warning). Save fails on an error in the
+ * package's own files and publishes with warnings (`checkPackage`), so no saved Agent is one an
+ * Error made unavailable, unless a newer reader finds one.
  */
 import { canonicalizeJsonObject, sha256 } from "./helpers.js";
 import {
@@ -85,9 +85,13 @@ export interface CompiledPackage {
   /** The source's unreadable paths; part of what the digest identifies. */
   problems: Record<string, string>;
   agents: CompiledAgent[];
-  /** Skills the package holds; one with a diagnostic of any severity is not offered. */
+  /** Skills the package holds; one with an `error` is not offered. */
   skills: Array<{ slug: string; diagnostics: PackageDiagnostic[] }>;
+  /** Every finding of the package's own files, each once: the manifest's, the Agents' and the skills'. */
+  findings: PackageDiagnostic[];
 }
+
+export const isError = (item: PackageDiagnostic): boolean => item.severity === "error";
 
 export function compilePackage(
   input: AgentSourceSnapshot,
@@ -96,7 +100,8 @@ export function compilePackage(
   const files = validatedFiles(input);
   const problems = input.problems ?? {};
   const prepared = readPackage(files);
-  const packageErrors = manifestErrors(prepared, files, problems);
+  const manifest = manifestFindings(prepared, files, problems);
+  const packageErrors = manifest.filter(isError);
   const skills = readSkills(prepared, problems);
 
   const drafts = new Map<string, Draft>();
@@ -112,6 +117,13 @@ export function compilePackage(
   }
   rejectBrokenSubagents(drafts);
 
+  const agents = [...drafts.values()].map((draft) => ({
+    slug: draft.slug,
+    name: draft.fields?.name ?? draft.slug,
+    description: draft.fields?.description ?? "",
+    diagnostics: [...draft.errors, ...draft.warnings],
+    definition: draft.errors.length === 0 ? definitionOf(draft) : null,
+  }));
   return {
     coordinate: input.coordinate,
     grammarVersion,
@@ -119,14 +131,21 @@ export function compilePackage(
     files,
     problems,
     skills: [...skills].map(([slug, diagnostics]) => ({ slug, diagnostics })),
-    agents: [...drafts.values()].map((draft) => ({
-      slug: draft.slug,
-      name: draft.fields?.name ?? draft.slug,
-      description: draft.fields?.description ?? "",
-      diagnostics: [...draft.errors, ...draft.warnings],
-      definition: draft.errors.length === 0 ? definitionOf(draft) : null,
-    })),
+    agents,
+    findings: distinct([
+      ...manifest,
+      ...agents.flatMap((agent) => agent.diagnostics),
+      ...[...skills.values()].flat(),
+    ]),
   };
+}
+
+function distinct(items: PackageDiagnostic[]): PackageDiagnostic[] {
+  const seen = new Map<string, PackageDiagnostic>();
+  for (const item of items) {
+    seen.set(JSON.stringify([item.file, item.code, item.path, item.message]), item);
+  }
+  return [...seen.values()];
 }
 
 /** What identifies a source: its coordinate, files and problems, in canonical form. */
@@ -193,11 +212,11 @@ const flow = (
 ): PackageDiagnostic => ({ file, code: `flow.${code}`, severity, path, message });
 
 /**
- * Findings on `mars.toml` that make every Agent of the package unavailable. `prepare` upgrades
- * a pre-v1 package and translates a foreign one in memory, and says so only in its
- * classification: Flow reads a package as authored, so anything but schema 1 is refused.
+ * Findings on `mars.toml`; its errors make every Agent of the package unavailable. `prepare`
+ * upgrades a pre-v1 package and translates a foreign one in memory, and says so only in its
+ * classification: Flow reads a package as authored, so anything but schema 1 is an error.
  */
-function manifestErrors(
+function manifestFindings(
   prepared: Prepared,
   files: SkillFiles,
   problems: Record<string, string>,
@@ -208,13 +227,13 @@ function manifestErrors(
   if (files[MANIFEST_PATH] === undefined) {
     return [flow(MANIFEST_PATH, "manifest-missing", "The package has no mars.toml")];
   }
-  const errors = (prepared.manifest?.reading.diagnostics ?? []).map((item) =>
+  const findings = (prepared.manifest?.reading.diagnostics ?? []).map((item) =>
     fromMars(MANIFEST_PATH, item),
   );
   const { classification } = prepared;
   if (classification.kind !== "schema-1") {
     const schema = classification.kind === "schema-newer" ? ` ${classification.schema}` : "";
-    errors.push(
+    findings.push(
       flow(
         MANIFEST_PATH,
         "package-not-schema-1",
@@ -222,10 +241,10 @@ function manifestErrors(
       ),
     );
   }
-  return errors;
+  return findings;
 }
 
-/** Skills of the package whose file reads with no diagnostic, by slug; the rest by their reasons. */
+/** The package's skills by slug, with every finding on each. */
 function readSkills(
   prepared: Prepared,
   problems: Record<string, string>,
@@ -253,8 +272,9 @@ interface Draft {
   file: string;
   fields: AgentFields | null;
   body: string;
-  /** Blocking: Mars's findings of any severity, and Flow's own errors. */
+  /** Blocking: findings of severity `error`, Mars's and Flow's. */
   errors: PackageDiagnostic[];
+  /** Shown, never blocking: warnings and info. */
   warnings: PackageDiagnostic[];
   permission: "read" | "edit" | undefined;
   tools: ToolProjection | undefined;
@@ -282,7 +302,7 @@ function problemAgent(
 function draftAgent(
   slug: string,
   file: string,
-  text: string,
+  _text: string,
   prepared: Prepared,
   packageErrors: PackageDiagnostic[],
   skills: Map<string, PackageDiagnostic[]>,
@@ -297,18 +317,15 @@ function draftAgent(
     file,
     fields: reading.fields,
     body: bodyOf(reading),
-    // A change `prepare` made to the file (a `field.restriction-lost` above all) means the Agent
-    // is less restricted than its file says.
-    errors: [
-      ...packageErrors,
-      ...[...reading.diagnostics, ...(prepared.changes?.[file] ?? [])].map((item) =>
-        fromMars(file, item),
-      ),
-    ],
+    errors: [...packageErrors],
     warnings: [],
     permission: undefined,
     tools: undefined,
   };
+  // A change `prepare` made to the file (`field.restriction-lost` above all) is a warning too.
+  for (const item of [...reading.diagnostics, ...(prepared.changes?.[file] ?? [])]) {
+    (item.severity === "error" ? draft.errors : draft.warnings).push(fromMars(file, item));
+  }
   const { fields } = reading;
   if (!fields) return draft;
 
@@ -334,9 +351,13 @@ function draftAgent(
     const skill = skills.get(name);
     if (skill === undefined) {
       draft.errors.push(flow(file, "skill-missing", `Skill "${name}" is not in this package`));
-    } else if (skill.length) {
+    } else if (skill.some(isError)) {
       draft.errors.push(
-        flow(file, "skill-unavailable", `Skill "${name}" has a problem: ${skill[0].message}`),
+        flow(
+          file,
+          "skill-unavailable",
+          `Skill "${name}" has a problem: ${skill.find(isError)?.message}`,
+        ),
       );
     }
   }

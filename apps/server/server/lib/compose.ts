@@ -920,6 +920,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentRemovals: ports.documentRemovals,
     documentTrash: ports.documentTrash,
     agentsWidening: ports.agentsWidening,
+    agentCatalog: ports.agentCatalog,
   };
   const asks = createAskService({
     repos: ports.threadRepos,

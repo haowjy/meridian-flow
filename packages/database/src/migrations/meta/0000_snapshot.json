@@ -187,21 +187,57 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.agent_revision_picks": {
-      "name": "agent_revision_picks",
+    "public.agent_package_saves": {
+      "name": "agent_package_saves",
       "schema": "",
       "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "user_id": {
           "name": "user_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "definition_revision_id": {
-          "name": "definition_revision_id",
+        "project_id": {
+          "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
+          "notNull": false
+        },
+        "folder": {
+          "name": "folder",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
+        },
+        "package_revision_id": {
+          "name": "package_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "agent_package_saves_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
         },
         "created_at": {
           "name": "created_at",
@@ -211,11 +247,81 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "agent_package_saves_user_folder_seq": {
+          "name": "agent_package_saves_user_folder_seq",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "folder",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_package_saves_project_folder_seq": {
+          "name": "agent_package_saves_project_folder_seq",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "folder",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_package_saves_package_revision": {
+          "name": "agent_package_saves_package_revision",
+          "columns": [
+            {
+              "expression": "package_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "agent_revision_picks_user_id_users_id_fk": {
-          "name": "agent_revision_picks_user_id_users_id_fk",
-          "tableFrom": "agent_revision_picks",
+        "agent_package_saves_user_id_users_id_fk": {
+          "name": "agent_package_saves_user_id_users_id_fk",
+          "tableFrom": "agent_package_saves",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
@@ -226,12 +332,25 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "agent_revision_picks_definition_revision_id_agent_definition_revisions_id_fk": {
-          "name": "agent_revision_picks_definition_revision_id_agent_definition_revisions_id_fk",
-          "tableFrom": "agent_revision_picks",
-          "tableTo": "agent_definition_revisions",
+        "agent_package_saves_project_id_projects_id_fk": {
+          "name": "agent_package_saves_project_id_projects_id_fk",
+          "tableFrom": "agent_package_saves",
+          "tableTo": "projects",
           "columnsFrom": [
-            "definition_revision_id"
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_package_saves_package_revision_id_agent_package_revisions_id_fk": {
+          "name": "agent_package_saves_package_revision_id_agent_package_revisions_id_fk",
+          "tableFrom": "agent_package_saves",
+          "tableTo": "agent_package_revisions",
+          "columnsFrom": [
+            "package_revision_id"
           ],
           "columnsTo": [
             "id"
@@ -240,18 +359,15 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "agent_revision_picks_user_id_definition_revision_id_pk": {
-          "name": "agent_revision_picks_user_id_definition_revision_id_pk",
-          "columns": [
-            "user_id",
-            "definition_revision_id"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "agent_package_saves_one_owner": {
+          "name": "agent_package_saves_one_owner",
+          "value": "(\"agent_package_saves\".\"user_id\" IS NULL) <> (\"agent_package_saves\".\"project_id\" IS NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.thread_agent_bindings": {

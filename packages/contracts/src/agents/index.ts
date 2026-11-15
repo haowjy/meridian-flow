@@ -2,9 +2,11 @@
 import { z } from "zod";
 import { isUuid } from "../request-id.js";
 import type { InvocationPatch } from "./execution-knobs.js";
+import { type AgentPackageStatus, agentPackageStatusSchema } from "./save.js";
 
 export * from "./execution-knobs.js";
 export * from "./location.js";
+export * from "./save.js";
 export * from "./tool-policy.js";
 
 /**
@@ -75,9 +77,13 @@ export interface AgentFileStatus {
   shadows: AgentLevel[];
   /** The level above that has the same name and hides this file; null when this file is used. */
   hiddenBy: AgentLevel | null;
+  /** Against the saved version of its package; null when unchanged since the Save (a deleted file has no row). */
+  change: "added" | "changed" | null;
 }
 export interface AgentFiles {
   files: AgentFileStatus[];
+  /** Every package of the writer's levels, the removed ones included, with its Save state. */
+  packages: AgentPackageStatus[];
 }
 export const agentFilesSchema = z.object({
   files: z.array(
@@ -90,8 +96,10 @@ export const agentFilesSchema = z.object({
       pickable: z.boolean(),
       shadows: z.array(agentLevelSchema),
       hiddenBy: agentLevelSchema.nullable(),
+      change: z.enum(["added", "changed"]).nullable(),
     }),
   ),
+  packages: z.array(agentPackageStatusSchema),
 }) satisfies z.ZodType<AgentFiles>;
 /** A built-in file's text: built-ins are not documents, so they are read here. */
 export const agentBuiltinFileSchema = z.object({ text: z.string() });

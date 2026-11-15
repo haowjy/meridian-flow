@@ -10,6 +10,7 @@ import {
 import { createReadHandler, createWriteHandler } from "./document-tools.js";
 import { createGrepHandler } from "./grep-handler.js";
 import { createLsHandler } from "./listing-tools.js";
+import { createSaveAgentsRegistration } from "./save-agents.js";
 import type { ToolWiringDeps } from "./tool-context.js";
 import { createWorkHandler } from "./work-tool.js";
 
@@ -25,6 +26,7 @@ export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistra
       ls: createLsHandler(deps),
       grep: createGrepHandler(deps),
     }),
+    createSaveAgentsRegistration(deps),
     ...createSkillToolRegistrations(deps),
   ];
 }

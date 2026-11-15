@@ -23,11 +23,15 @@ CREATE TABLE "agent_package_revisions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_revision_picks" (
-	"user_id" uuid NOT NULL,
-	"definition_revision_id" uuid NOT NULL,
+CREATE TABLE "agent_package_saves" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" uuid,
+	"project_id" uuid,
+	"folder" text NOT NULL,
+	"package_revision_id" uuid,
+	"seq" bigint GENERATED ALWAYS AS IDENTITY (sequence name "agent_package_saves_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "agent_revision_picks_user_id_definition_revision_id_pk" PRIMARY KEY("user_id","definition_revision_id")
+	CONSTRAINT "agent_package_saves_one_owner" CHECK (("agent_package_saves"."user_id" IS NULL) <> ("agent_package_saves"."project_id" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "thread_agent_bindings" (
@@ -989,8 +993,9 @@ CREATE TABLE "pending_notices" (
 );
 --> statement-breakpoint
 ALTER TABLE "agent_definition_revisions" ADD CONSTRAINT "agent_definition_revisions_package_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("package_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_revision_picks" ADD CONSTRAINT "agent_revision_picks_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_revision_picks" ADD CONSTRAINT "agent_revision_picks_definition_revision_id_agent_definition_revisions_id_fk" FOREIGN KEY ("definition_revision_id") REFERENCES "public"."agent_definition_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_package_saves" ADD CONSTRAINT "agent_package_saves_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_package_saves" ADD CONSTRAINT "agent_package_saves_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_package_saves" ADD CONSTRAINT "agent_package_saves_package_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("package_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_agent_bindings" ADD CONSTRAINT "thread_agent_bindings_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_agent_bindings" ADD CONSTRAINT "thread_agent_bindings_definition_revision_id_agent_definition_revisions_id_fk" FOREIGN KEY ("definition_revision_id") REFERENCES "public"."agent_definition_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "event_journal" ADD CONSTRAINT "event_journal_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -1112,6 +1117,9 @@ ALTER TABLE "draft_write_journal" ADD CONSTRAINT "draft_write_journal_actor_user
 ALTER TABLE "pending_notices" ADD CONSTRAINT "pending_notices_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_definition_revisions_package_slug_grammar" ON "agent_definition_revisions" USING btree ("package_revision_id","slug","grammar_version");--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_package_revisions_coordinate_digest" ON "agent_package_revisions" USING btree ("coordinate","content_digest");--> statement-breakpoint
+CREATE INDEX "agent_package_saves_user_folder_seq" ON "agent_package_saves" USING btree ("user_id","folder","seq" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "agent_package_saves_project_folder_seq" ON "agent_package_saves" USING btree ("project_id","folder","seq" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "agent_package_saves_package_revision" ON "agent_package_saves" USING btree ("package_revision_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "event_journal_thread_seq_unique" ON "event_journal" USING btree ("thread_id","seq");--> statement-breakpoint
 CREATE UNIQUE INDEX "event_journal_event_id_unique" ON "event_journal" USING btree (("payload"->>'eventId')) WHERE "event_journal"."payload"->>'eventId' IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "event_journal_thread_seq" ON "event_journal" USING btree ("thread_id","seq");--> statement-breakpoint

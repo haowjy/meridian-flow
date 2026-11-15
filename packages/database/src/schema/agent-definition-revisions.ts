@@ -5,9 +5,10 @@ import type {
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
-import { check, jsonb, pgTable, primaryKey, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, check, index, jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createdAt, idColumn } from "./_shared";
 import { threads } from "./agent-threads";
+import { projects } from "./content";
 import { users } from "./users";
 
 export const agentPackageRevisions = pgTable(
@@ -59,21 +60,39 @@ export const agentDefinitionRevisions = pgTable(
 );
 
 /**
- * The Agent revisions an account's picker has shown: a chat binds a revision only from its
- * owner's rows here or a built-in. Ids are content-derived, so rows grow with distinct versions.
+ * Each Save of one package: the package's own files or one import, of an account's `~/.agents/`
+ * (`userId`) or a project's `.agents/` (`projectId`). Rows are only added: a package's saved
+ * version is its row with the highest `seq`, a null revision means the package was removed, and
+ * a chat binds a revision only when a row of its account or project points at its package.
  */
-export const agentRevisionPicks = pgTable(
-  "agent_revision_picks",
+export const agentPackageSaves = pgTable(
+  "agent_package_saves",
   {
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    definitionRevisionId: uuid("definition_revision_id")
-      .notNull()
-      .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
+    id: idColumn(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    /** `""` for the level's own files, `packages/<name>/` for an import. */
+    folder: text("folder").notNull(),
+    packageRevisionId: uuid("package_revision_id").references(() => agentPackageRevisions.id, {
+      onDelete: "restrict",
+    }),
+    /** Orders the rows; `created_at` is a transaction's start, so two Saves can tie or invert. */
+    seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
     createdAt: createdAt(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.definitionRevisionId] })],
+  (table) => [
+    check(
+      "agent_package_saves_one_owner",
+      sql`(${table.userId} IS NULL) <> (${table.projectId} IS NULL)`,
+    ),
+    index("agent_package_saves_user_folder_seq").on(table.userId, table.folder, table.seq.desc()),
+    index("agent_package_saves_project_folder_seq").on(
+      table.projectId,
+      table.folder,
+      table.seq.desc(),
+    ),
+    index("agent_package_saves_package_revision").on(table.packageRevisionId),
+  ],
 );
 
 export const threadAgentBindings = pgTable("thread_agent_bindings", {

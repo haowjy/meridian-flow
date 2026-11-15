@@ -1,6 +1,7 @@
 /**
- * The catalog the writer sees, computed from the levels' files at the moment it is asked, and the
- * binding of a chat to one Agent of it. Nothing is published: an edit to a file is the change.
+ * The catalog the writer sees, computed from the levels' saved versions, and the binding of a
+ * chat to one Agent of it. A package is used only once it is saved (`save-packages.ts`); `files`
+ * reads the files besides, to say what each package's state is and what a Save would publish.
  */
 import type {
   AgentCatalog,
@@ -22,20 +23,29 @@ import {
   resolveAgentConfiguration,
   skillReference,
 } from "./agent-configuration.js";
-import { capabilityOf, type EffectiveAgents } from "./agent-widening.js";
-import { type Combined, type Layered, type LevelItems, layerByName } from "./combine-agents.js";
+import type { EffectiveAgents } from "./agent-widening.js";
+import type { Combined } from "./combine-agents.js";
 import {
   type AgentSourceSnapshot,
   type CompiledAgent,
   type CompiledAgentDefinition,
   type CompiledPackage,
-  compilePackage,
-  type PackageDiagnostic,
-  sourceDigest,
+  isError,
 } from "./compile-package.js";
 import { agentRevisionId } from "./helpers.js";
-import { PACKAGES_DIR, splitLevel } from "./level-packages.js";
-import { agentPath, GRAMMAR_VERSION, MANIFEST_PATH, readManifest, skillPath } from "./mars.js";
+import { PACKAGES_DIR } from "./level-packages.js";
+import { agentPath, GRAMMAR_VERSION, skillPath } from "./mars.js";
+import {
+  type AgentEntry,
+  agentsOf,
+  createPackageLevels,
+  effectiveAgentsOf,
+  type PackageLevels,
+  type SkillEntry,
+  skillsOf,
+  winners,
+} from "./package-levels.js";
+import { createPackageSaver, type PackageSaver } from "./save-packages.js";
 import { type SkillListing, skillListingFromMarkdown } from "./skill-listing.js";
 
 export type {
@@ -49,28 +59,19 @@ export class AgentSelectionError extends Error {
   }
 }
 
-/** An Agent of one compiled package. */
-interface AgentEntry {
-  package: CompiledPackage;
-  agent: CompiledAgent;
-  /** The package's folder in its level: `""` for the root, `packages/<name>/` for an import. */
-  folder: string;
-}
-/** A skill of one compiled package; one with a diagnostic is held but never offered. */
-interface SkillEntry {
-  package: CompiledPackage;
-  slug: string;
-  diagnostics: PackageDiagnostic[];
-  folder: string;
-}
-
 /** A skill the `/` menu offers or a writer invoked. */
 export interface CatalogSkill extends SkillListing {
   level: AgentLevel;
 }
 
-export interface BoundAgentCatalog {
+export interface BoundAgentCatalog extends PackageSaver {
+  /** The saved Agents of the built-in, user and (with `projectId`) project levels. */
   list(userId: string, input: { projectId?: string }): Promise<AgentCatalog>;
+  /**
+   * Binds the newest saved Agent of the selection's name; the selection's revision id is used
+   * only when that name is no longer saved, and only if a Save of this account or project (which
+   * the caller has authorized) holds it, or it is a built-in.
+   */
   resolvePrimary(
     userId: string,
     selection: AgentSelection,
@@ -79,13 +80,17 @@ export interface BoundAgentCatalog {
     | { ok: true; revision: AgentRevision; configuration: ResolvedAgentConfiguration }
     | { ok: false; reason: "not-found" | "unavailable"; details: string[] }
   >;
-  /** Every level's Agent and skill files, with Mars's verdict and what each hides. */
+  /**
+   * Every level's Agent and skill files as the files are now, with Mars's verdict and what each
+   * hides, and every package's Save state.
+   */
   files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
   /**
    * The Agents a write at `level` can change the meaning of: that level and the levels below it,
    * never the writing Project's full catalog (`subagents` and `skills` resolve only inside their
-   * package, so a higher level that has a name keeps its winner whatever `level` holds). `branch`
-   * reads the files as that owner's branch holds them, its drafts' text over live's.
+   * package, so a higher level that has a name keeps its winner whatever `level` holds). Read
+   * from the files, through `branch` as that owner's branch holds them, its drafts' text over
+   * live's: the write-time widening label.
    */
   effectiveAgents(
     userId: string,
@@ -93,22 +98,17 @@ export interface BoundAgentCatalog {
   ): Promise<EffectiveAgents>;
   /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
   builtinFile(path: string): string | undefined;
-  /** The skills a writer can invoke with `/`: built-in, user and project, combined by name. */
+  /** The saved skills a writer can invoke with `/`: built-in, user and project, combined by name. */
   userSkills(userId: string, input: { projectId?: string }): Promise<CatalogSkill[]>;
   /**
-   * A skill by name for a writer's `/skill`, with the reference that pins the exact files it was
-   * read from. Undefined when no level offers it.
+   * A saved skill by name for a writer's `/skill`, with the reference that pins the exact files it
+   * was read from. Undefined when no level offers it.
    */
   resolveSkill(
     userId: string,
     input: { projectId?: string; slug: string },
   ): Promise<{ skill: CatalogSkill; reference: RetainedSkillReference } | undefined>;
 }
-
-/** Compiled packages kept between reads, by content digest; a level is a few packages. */
-const CACHED_PACKAGES = 200;
-/** (account, revision) pairs known to be recorded, so a picker read inserts only what is new. */
-const RECORDED_PICKS = 5000;
 
 export function createBoundAgentCatalog(input: {
   store: AgentRevisionStore;
@@ -120,33 +120,8 @@ export function createBoundAgentCatalog(input: {
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
 }): BoundAgentCatalog {
   const { store } = input;
-  const compiled = new Map<string, CompiledPackage>();
-  const installed = new Map<string, Awaited<ReturnType<AgentRevisionStore["installSource"]>>>();
-  const remember = <V>(
-    cache: Map<string, V>,
-    key: string,
-    value: V,
-    limit = CACHED_PACKAGES,
-  ): V => {
-    cache.delete(key);
-    cache.set(key, value);
-    if (cache.size > limit) cache.delete(cache.keys().next().value as string);
-    return value;
-  };
-  const compile = (source: AgentSourceSnapshot): CompiledPackage => {
-    const digest = sourceDigest(source);
-    return compiled.get(digest) ?? remember(compiled, digest, compilePackage(source));
-  };
-  const recorded = new Map<string, true>();
-  /** Retains a package the first time this process binds or shows it; later reads find it in `installed`. */
-  const install = async (pkg: CompiledPackage) =>
-    installed.get(pkg.contentDigest) ??
-    remember(installed, pkg.contentDigest, await store.installSource(pkg));
-
-  const builtinPackages = input.builtins.map((source) => ({
-    name: readManifest(source.files[MANIFEST_PATH]).fields?.name ?? source.coordinate,
-    package: compile(source),
-  }));
+  const levels: PackageLevels = createPackageLevels(input);
+  const { builtinPackages, install } = levels;
   const builtinShown = new Map(
     builtinPackages.flatMap(({ package: pkg }) =>
       pkg.agents.map((agent) => [
@@ -159,59 +134,7 @@ export function createBoundAgentCatalog(input: {
   const rowOf = async (pkg: CompiledPackage, slug: string) =>
     (await install(pkg)).definitions.find((definition) => definition.slug === slug);
 
-  /** The three levels' packages, lowest first, compiled from the files as they are now. */
-  async function levels(userId: string, projectId: string | undefined, branch?: AgentsBranch) {
-    const read = async (level: "user" | "project") =>
-      splitLevel(level, await input.levelFiles.read({ level, userId, projectId, branch }));
-    const [user, project] = await Promise.all([read("user"), read("project")]);
-    const compileLevel = (split: typeof user) => ({
-      root: compile(split.root),
-      imports: split.imports.map((item) => ({ name: item.name, package: compile(item.source) })),
-    });
-    return [
-      { level: "builtin" as const, root: null, imports: builtinPackages },
-      { level: "user" as const, ...compileLevel(user) },
-      { level: "project" as const, ...compileLevel(project) },
-    ];
-  }
-  type Levels = Awaited<ReturnType<typeof levels>>;
-
-  /** Each level's items of `pick`, by name, with the package folder each came from. */
-  const layered = <T>(
-    all: Levels,
-    pick: (pkg: CompiledPackage, folder: string) => Array<{ name: string; value: T }>,
-  ): Array<Layered<T>> =>
-    layerByName(
-      all.map(
-        (level): LevelItems<T> => ({
-          level: level.level,
-          root: level.root ? pick(level.root, "") : [],
-          imports: level.imports.map((item) => ({
-            package: item.name,
-            items: pick(item.package, `${PACKAGES_DIR}${item.name}/`),
-          })),
-        }),
-      ),
-    );
-  const agentsOf = (all: Levels) =>
-    layered(
-      all,
-      (pkg, folder): Array<{ name: string; value: AgentEntry }> =>
-        pkg.agents.map((agent) => ({ name: agent.slug, value: { package: pkg, agent, folder } })),
-    );
-  const skillsOf = (all: Levels) =>
-    layered(
-      all,
-      (pkg, folder): Array<{ name: string; value: SkillEntry }> =>
-        pkg.skills.map(({ slug, diagnostics }) => ({
-          name: slug,
-          value: { package: pkg, slug, diagnostics, folder },
-        })),
-    );
-  const winners = <T>(items: Array<Layered<T>>): Array<Combined<T>> =>
-    items.filter((item) => item.hiddenBy === null);
-
-  /** Why an Agent cannot run: what the compile found, then what the host adds. */
+  /** Why an Agent cannot run: its errors, then what the host adds. */
   const reasonsOf = (
     agent: Pick<CompiledAgent, "definition" | "diagnostics">,
     /** The file the reasons are read on: its own findings need no file name. */
@@ -222,7 +145,7 @@ export function createBoundAgentCatalog(input: {
     const { definition } = agent;
     if (!definition) {
       return agent.diagnostics
-        .filter((item) => item.severity === "error" || !item.code.startsWith("flow."))
+        .filter(isError)
         .map((item) => (item.file === ownFile ? item.message : `${item.file}: ${item.message}`));
     }
     if (asPrimary && !isPrimary(definition)) {
@@ -233,7 +156,7 @@ export function createBoundAgentCatalog(input: {
     return input.unavailableReasons(definition, model);
   };
 
-  /** The item a writer sees; its revision id names the content shown, stored when the picker lists it. */
+  /** The item a writer sees; its revision id names the content shown. */
   const itemOf = (entry: Combined<AgentEntry>): AgentCatalogItem => {
     const found = entry.value?.agent;
     const id =
@@ -254,32 +177,8 @@ export function createBoundAgentCatalog(input: {
     };
   };
 
-  /**
-   * Stores the versions the picker shows that are not stored yet, and records that this account
-   * was shown them: a bind takes the shown revision, whatever the files say by then.
-   */
-  const showToAccount = async (userId: string, won: Array<Combined<AgentEntry>>) => {
-    const fresh = new Map<string, CompiledPackage>();
-    for (const { value } of won) {
-      if (!value) continue;
-      const id = agentRevisionId(value.package, value.agent.slug, GRAMMAR_VERSION);
-      if (!builtinShown.has(id) && !recorded.has(`${userId}:${id}`)) fresh.set(id, value.package);
-    }
-    if (fresh.size === 0) return;
-    for (const pkg of new Set(fresh.values())) await install(pkg);
-    await store.recordPicks(userId, [...fresh.keys()]);
-    for (const id of fresh.keys()) remember(recorded, `${userId}:${id}`, true, RECORDED_PICKS);
-  };
-
-  const currentRow = async (userId: string, slug: string, projectId: string | undefined) => {
-    const current = winners(agentsOf(await levels(userId, projectId))).find(
-      (entry) => entry.slug === slug,
-    )?.value;
-    return current && rowOf(current.package, slug);
-  };
-
   const listingOf = (entry: Combined<SkillEntry>): CatalogSkill | null =>
-    entry.value?.diagnostics.length === 0
+    entry.value && !entry.value.diagnostics.some(isError)
       ? {
           ...skillListingFromMarkdown(
             entry.value.package.files[skillPath(entry.value.slug)],
@@ -290,11 +189,13 @@ export function createBoundAgentCatalog(input: {
         }
       : null;
 
+  const { statuses, ...saver } = createPackageSaver({ store, levels });
+
   return {
+    ...saver,
+
     async list(userId, { projectId }) {
-      const won = winners(agentsOf(await levels(userId, projectId)));
-      await showToAccount(userId, won);
-      const items = won.map(itemOf);
+      const items = winners(agentsOf(await levels.saved(userId, projectId))).map(itemOf);
       const key = (item: AgentCatalogItem) => item.name.normalize("NFC").toLowerCase();
       return {
         agents: items.sort((a, b) =>
@@ -312,29 +213,21 @@ export function createBoundAgentCatalog(input: {
     },
 
     async effectiveAgents(userId, { projectId, level, branch }) {
-      const all = await levels(userId, projectId, branch);
-      const scope = level === "user" ? all.filter((each) => each.level !== "project") : all;
-      return new Map(
-        winners(agentsOf(scope)).map((entry) => [
-          entry.slug,
-          {
-            name: entry.value?.agent.name ?? entry.slug,
-            level: entry.level,
-            capability: capabilityOf(entry.value?.agent),
-          },
-        ]),
-      );
+      return effectiveAgentsOf(await levels.fromFiles(userId, projectId, branch), level);
     },
 
     async resolvePrimary(userId, selection, projectId) {
-      // The picker showed this revision, so this is the one that binds, whatever the files say
-      // now. An id this account's picker did not show (another account's, or one never shown)
-      // binds the Agent's current files by name instead.
-      const builtin = builtinShown.get(selection.definitionRevisionId);
-      const row = builtin
-        ? await rowOf(builtin.package, builtin.slug)
-        : ((await store.readPickedRevision(userId, selection.definitionRevisionId)) ??
-          (await currentRow(userId, selection.slug, projectId)));
+      const current = winners(agentsOf(await levels.saved(userId, projectId))).find(
+        (entry) => entry.slug === selection.slug,
+      )?.value;
+      let row = current && (await rowOf(current.package, current.agent.slug));
+      if (!row) {
+        // The name is no longer saved (removed or renamed): bind the version the picker showed.
+        const builtin = builtinShown.get(selection.definitionRevisionId);
+        row = builtin
+          ? await rowOf(builtin.package, builtin.slug)
+          : await store.readSavedRevision(userId, projectId, selection.definitionRevisionId);
+      }
       if (!row) return { ok: false, reason: "not-found", details: [] };
       const reasons = reasonsOf(row);
       if (!row.definition || reasons.length) {
@@ -356,42 +249,62 @@ export function createBoundAgentCatalog(input: {
     },
 
     async files(userId, { projectId }) {
-      const all = await levels(userId, projectId);
+      const [all, saves] = await Promise.all([
+        levels.fromFiles(userId, projectId),
+        levels.readSaves(userId, projectId),
+      ]);
+      const packages = await statuses(all, saves);
+      const changed = new Map<string, string>(
+        packages.flatMap((item) =>
+          item.changes.map((change): [string, string] => [
+            `${item.level}:${change.path}`,
+            change.change,
+          ]),
+        ),
+      );
+      const changeOf = (level: AgentLevel, path: string): "added" | "changed" | null => {
+        const change = changed.get(`${level}:${path}`);
+        return change === "added" || change === "changed" ? change : null;
+      };
       const agents = agentsOf(all).flatMap((entry) => {
         if (!entry.value) return [];
         const file = agentPath(entry.value.agent.slug);
+        const path = `${entry.value.folder}${file}`;
         return [
           {
             kind: "agent" as const,
             slug: entry.slug,
             level: entry.level,
-            path: `${entry.value.folder}${file}`,
+            path,
             unavailableReasons: reasonsOf(entry.value.agent, file, false),
             pickable: entry.value.agent.definition ? isPrimary(entry.value.agent.definition) : true,
             shadows: entry.shadows,
             hiddenBy: entry.hiddenBy,
+            change: changeOf(entry.level, path),
           },
         ];
       });
       const skills = skillsOf(all).flatMap((entry) => {
         if (!entry.value) return [];
         const file = skillPath(entry.value.slug);
+        const path = `${entry.value.folder}${file}`;
         return [
           {
             kind: "skill" as const,
             slug: entry.slug,
             level: entry.level,
-            path: `${entry.value.folder}${file}`,
-            unavailableReasons: entry.value.diagnostics.map((item) =>
-              item.file === file ? item.message : `${item.file}: ${item.message}`,
-            ),
+            path,
+            unavailableReasons: entry.value.diagnostics
+              .filter(isError)
+              .map((item) => (item.file === file ? item.message : `${item.file}: ${item.message}`)),
             pickable: listingOf(entry)?.userInvocable ?? true,
             shadows: entry.shadows,
             hiddenBy: entry.hiddenBy,
+            change: changeOf(entry.level, path),
           },
         ];
       });
-      return { files: [...agents, ...skills] };
+      return { files: [...agents, ...skills], packages };
     },
 
     builtinFile(path) {
@@ -405,13 +318,13 @@ export function createBoundAgentCatalog(input: {
     },
 
     async userSkills(userId, { projectId }) {
-      return winners(skillsOf(await levels(userId, projectId)))
+      return winners(skillsOf(await levels.saved(userId, projectId)))
         .map(listingOf)
         .filter((skill): skill is CatalogSkill => skill?.userInvocable === true);
     },
 
     async resolveSkill(userId, { projectId, slug }) {
-      const winner = winners(skillsOf(await levels(userId, projectId))).find(
+      const winner = winners(skillsOf(await levels.saved(userId, projectId))).find(
         (entry) => entry.slug === slug,
       );
       const skill = winner && listingOf(winner);

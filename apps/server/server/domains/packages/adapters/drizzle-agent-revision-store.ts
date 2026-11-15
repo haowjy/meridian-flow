@@ -4,10 +4,10 @@ import type { Database } from "@meridian/database";
 import {
   agentDefinitionRevisions,
   agentPackageRevisions,
-  agentRevisionPicks,
+  agentPackageSaves,
   threadAgentBindings,
 } from "@meridian/database/schema";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import {
   type CompiledAgentDefinition,
@@ -21,6 +21,8 @@ import type {
   AgentRevision,
   AgentRevisionStore,
   CatalogRevision,
+  PackageSave,
+  SaveOwner,
 } from "../ports/agent-revision-store.js";
 
 export function createDrizzleAgentRevisionStore(database: Database): AgentRevisionStore {
@@ -47,6 +49,33 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
           },
         ]
       : [];
+
+  const ownerColumns = (owner: SaveOwner) =>
+    "userId" in owner
+      ? { userId: owner.userId, projectId: null }
+      : { userId: null, projectId: owner.projectId };
+  const ownerIs = (owner: SaveOwner) =>
+    "userId" in owner
+      ? eq(agentPackageSaves.userId, owner.userId)
+      : eq(agentPackageSaves.projectId, owner.projectId);
+  const saveOf = (
+    row: typeof agentPackageSaves.$inferSelect,
+    digest: string | null,
+  ): PackageSave => ({
+    id: row.id,
+    folder: row.folder,
+    packageRevisionId: row.packageRevisionId,
+    contentDigest: digest,
+    createdAt: row.createdAt,
+  });
+  const digestOf = async (packageRevisionId: string | null) => {
+    if (!packageRevisionId) return null;
+    const [row] = await db()
+      .select({ digest: agentPackageRevisions.contentDigest })
+      .from(agentPackageRevisions)
+      .where(eq(agentPackageRevisions.id, packageRevisionId));
+    return row.digest;
+  };
 
   const store: AgentRevisionStore = {
     async installSource(input, grammarVersion = GRAMMAR_VERSION) {
@@ -110,25 +139,78 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         available,
       );
     },
-    async recordPicks(userId, revisionIds) {
-      if (revisionIds.length === 0) return;
-      await db()
-        .insert(agentRevisionPicks)
-        .values(revisionIds.map((definitionRevisionId) => ({ userId, definitionRevisionId })))
-        .onConflictDoNothing();
+    async savePackage(owner, folder, packageRevisionId) {
+      const [row] = await db()
+        .insert(agentPackageSaves)
+        .values({ ...ownerColumns(owner), folder, packageRevisionId })
+        .returning();
+      return saveOf(row, await digestOf(row.packageRevisionId));
     },
-    async readPickedRevision(userId, id) {
+    async readSaved(owner) {
+      const rows = await db()
+        .selectDistinctOn([agentPackageSaves.folder], {
+          save: agentPackageSaves,
+          digest: agentPackageRevisions.contentDigest,
+        })
+        .from(agentPackageSaves)
+        .leftJoin(
+          agentPackageRevisions,
+          eq(agentPackageRevisions.id, agentPackageSaves.packageRevisionId),
+        )
+        .where(ownerIs(owner))
+        .orderBy(agentPackageSaves.folder, desc(agentPackageSaves.seq));
+      return rows.map((row) => saveOf(row.save, row.digest));
+    },
+    async undoSave(owner, saveId) {
+      return runInDrizzleTransaction(database, async () => {
+        const [target] = await db()
+          .select()
+          .from(agentPackageSaves)
+          .where(and(eq(agentPackageSaves.id, saveId), ownerIs(owner)));
+        if (!target) return undefined;
+        const [latest] = await db()
+          .select()
+          .from(agentPackageSaves)
+          .where(and(ownerIs(owner), eq(agentPackageSaves.folder, target.folder)))
+          .orderBy(desc(agentPackageSaves.seq))
+          .limit(1);
+        if (latest.id !== target.id) {
+          return {
+            current: saveOf(latest, await digestOf(latest.packageRevisionId)),
+            undone: false,
+          };
+        }
+        const [before] = await db()
+          .select()
+          .from(agentPackageSaves)
+          .where(
+            and(
+              ownerIs(owner),
+              eq(agentPackageSaves.folder, target.folder),
+              lt(agentPackageSaves.seq, target.seq),
+            ),
+          )
+          .orderBy(desc(agentPackageSaves.seq))
+          .limit(1);
+        const current = await store.savePackage(
+          owner,
+          target.folder,
+          before?.packageRevisionId ?? null,
+        );
+        return { current, undone: true };
+      });
+    },
+    async readSavedRevision(userId, projectId, id) {
       const [row] = await db()
         .select({ revision: agentDefinitionRevisions })
-        .from(agentRevisionPicks)
-        .innerJoin(
-          agentDefinitionRevisions,
-          eq(agentDefinitionRevisions.id, agentRevisionPicks.definitionRevisionId),
-        )
+        .from(agentDefinitionRevisions)
         .where(
           and(
-            eq(agentRevisionPicks.userId, userId),
-            eq(agentRevisionPicks.definitionRevisionId, id),
+            eq(agentDefinitionRevisions.id, id),
+            sql`exists (select 1 from ${agentPackageSaves} where ${agentPackageSaves.packageRevisionId} = ${agentDefinitionRevisions.packageRevisionId} and (${or(
+              eq(agentPackageSaves.userId, userId),
+              projectId ? eq(agentPackageSaves.projectId, projectId) : undefined,
+            )}))`,
           ),
         );
       return row ? catalogRevision(row.revision) : undefined;

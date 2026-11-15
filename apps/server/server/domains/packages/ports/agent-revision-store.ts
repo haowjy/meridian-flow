@@ -10,6 +10,20 @@ import type {
   PackageDiagnostic,
 } from "../domain/compile-package.js";
 
+/** Whose package a Save is: an account's `~/.agents/` or a project's `.agents/`. */
+export type SaveOwner = { userId: string } | { projectId: string };
+
+/** One Save of one package. */
+export interface PackageSave {
+  id: string;
+  /** `""` for the level's own files, `packages/<name>/` for an import. */
+  folder: string;
+  /** The saved version's files; null when the Save removed the package. */
+  packageRevisionId: string | null;
+  contentDigest: string | null;
+  createdAt: Date;
+}
+
 /** An available Agent as one reader version read it. The runtime never sees an unavailable one. */
 export interface AgentRevision {
   id: string;
@@ -40,17 +54,38 @@ export interface AgentRevisionBinding {
 export interface AgentRevisionStore {
   /**
    * Compiles the files under `grammarVersion` (the running reader by default) and retains them
-   * with their Agent rows, once per (coordinate, content digest, reader version). Nothing else
-   * points at them but a chat's binding.
+   * with their Agent rows, once per (coordinate, content digest, reader version). A Save row or a
+   * chat's binding is what points at them.
    */
   installSource(
     source: AgentSourceSnapshot,
     grammarVersion?: string,
   ): Promise<{ packageRevisionId: string; definitions: CatalogRevision[] }>;
-  /** Records that `userId`'s picker showed these revisions; one row per account and version. */
-  recordPicks(userId: string, revisionIds: string[]): Promise<void>;
-  /** The revision, only when `userId`'s picker showed it. */
-  readPickedRevision(userId: string, id: string): Promise<CatalogRevision | undefined>;
+  /** Adds a Save row: `packageRevisionId` is the package's new saved version, null when removed. */
+  savePackage(
+    owner: SaveOwner,
+    folder: string,
+    packageRevisionId: string | null,
+  ): Promise<PackageSave>;
+  /** Each package's latest Save of `owner`, one row per folder. */
+  readSaved(owner: SaveOwner): Promise<PackageSave[]>;
+  /**
+   * Saves the version before `saveId` again, unless a later Save of that package exists, which
+   * leaves everything as it is. Undefined when `owner` has no such row.
+   */
+  undoSave(
+    owner: SaveOwner,
+    saveId: string,
+  ): Promise<{ current: PackageSave; undone: boolean } | undefined>;
+  /**
+   * The Agent revision, only when a Save of `userId`, or of `projectId` (which the caller has
+   * authorized), points at its package: what an account may bind by id.
+   */
+  readSavedRevision(
+    userId: string,
+    projectId: string | undefined,
+    id: string,
+  ): Promise<CatalogRevision | undefined>;
   readSource(packageRevisionId: string): Promise<AgentSourceSnapshot | undefined>;
   /** By id, any reader version. Undefined for an unavailable Agent. */
   readRevision(id: string): Promise<AgentRevision | undefined>;

@@ -15,8 +15,11 @@ const defaultManifest = (level: AgentsLevel): string =>
   `[package]\nname = "${level}"\nversion = "0.0.0"\nschema = 1\n`;
 
 export interface LevelPackages {
-  /** The level's own files, which win their names over every package beneath it, as `_self` does. */
-  root: AgentSourceSnapshot;
+  /**
+   * The level's own files, which win their names over every package beneath it, as `_self` does;
+   * null when the level has none, so there is nothing to save or compile.
+   */
+  root: AgentSourceSnapshot | null;
   /** Imported packages by directory name; each needs its own `mars.toml`. */
   imports: Array<{ name: string; source: AgentSourceSnapshot }>;
 }
@@ -48,11 +51,12 @@ export function splitLevel(level: AgentsLevel, read: LevelFiles): LevelPackages 
       if (isPackagePath(rest)) problems[rest] = message;
     });
   }
+  const rootPresent = Object.keys(rootFiles).length > 0 || Object.keys(rootProblems).length > 0;
   if (!Object.hasOwn(rootFiles, MANIFEST_PATH) && !Object.hasOwn(rootProblems, MANIFEST_PATH)) {
     rootFiles[MANIFEST_PATH] = defaultManifest(level);
   }
   return {
-    root: { coordinate: level, files: rootFiles, problems: rootProblems },
+    root: rootPresent ? { coordinate: level, files: rootFiles, problems: rootProblems } : null,
     imports: [...imports]
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([name, { files, problems }]) => ({
