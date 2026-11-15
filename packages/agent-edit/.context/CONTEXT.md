@@ -81,26 +81,13 @@ holding a live descendant outside the receipt stays (`delete-filter.ts`) with al
 (`id` first: an element without one is not a block); only the AI's own text inside it goes. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
 leaves a writer's later attribute value.
 
-A replacement is a deleted run with the part's insertion beside it. The deleted run stays gone
-only when the part's inserted side is no longer visible beside it *and* an item written after
-the part (a clock at or past the part's `frontier`, read on the original of an Undo- or
-Redo-restored copy) bounds the gap: the writer or a pull replaced the text, and restoring would
-double it. A plain deletion of the insertion leaves nothing there, so the original comes back.
+A replacement undoes as plain Yjs does: the deleted run comes back wherever it was, beside whatever
+the writer put there. Over "One small cat." (the AI's replacement of "big"), a writer who typed
+"huge" over "big" gets "One smallhuge cat." on Undo, and one who typed before the word gets
+"One smallvery  cat.". Undo never drops an original word to avoid doubling or joining text.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
 Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced
 word never has letters of two authors. A writer's letter swap or deletion inside the AI's word
-therefore lands as a replacement, and Undo leaves it as the writer edited it (`changed`).
-Review grouping and the model's text-derived status never use this rule.
-
-**Word rule (Un-Apply only).** With `keepLaterWords: true`, `computePreparedInverse` compares the
-text blocks a part's inverse touched, before and after, on the scratch copy. If a word (visible
-characters with no whitespace, inside one text block; an inline atom or hard break ends it) that
-holds a later character reads differently afterwards, the part is left standing as `changed`
-(`changesLaterWord`) and the scratch is swapped back, so the next part is computed as if this one
-was never tried. A later character is a visible one that is not the part's own, whose original
-(`Lineage.root`, so restored text counts as its original) is at or past the part's `frontier`.
-Marks are not characters. The chat card's Undo leaves it off (an owner question: the recorded rule
-is that Undo never refuses over a writer's typing). Not covered: a later deletion that glues words
-("One small" + restored "cat." gives "One smallcat"), because no later character is visible.
+therefore lands as a replacement, and Undo restores the original beside the writer's letters.

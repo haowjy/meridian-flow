@@ -32,7 +32,7 @@ afterAll(() => closeDatabase(db));
 it.each([
   "live",
   "draft",
-] as const)("Undo after the writer replaced the model's text restores what the writer left of the original and Redo leaves it (%s)", async (destination) => {
+] as const)("Undo after the writer replaced the model's text restores the original beside the writer's text and Redo leaves it (%s)", async (destination) => {
   const { harness, view, context, responseId } = await fixture();
   try {
     await harness.seedWriterDocument("red\n\nblue\n\nblack", responseId);
@@ -129,7 +129,7 @@ it.each([
       status: "success",
       result: { message: expect.stringContaining("undone: e2") },
     });
-    expect(await text()).toBe("gold\n\npink\n\nblack\n");
+    expect(await text()).toBe("gold\n\nbluepink\n\nblack\n");
     expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
       status: "success",
     });
@@ -142,7 +142,7 @@ it.each([
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "partial", acceptedParts: 1 });
-    expect(await text()).toBe("gold\n\npink\n\nblack\n");
+    expect(await text()).toBe("gold\n\nbluepink\n\nblack\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, currentTurn)).toMatchObject({
       state: "live-reversed",
       control: "redo",

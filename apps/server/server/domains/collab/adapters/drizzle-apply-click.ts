@@ -385,12 +385,7 @@ export function createDrizzleApplyClick(
                     [...targeted]
                       .reverse()
                       .map(({ part }) => ({ part, direction: "invert" as const })),
-                    // A group whose inverse would cut or join a word holding later writing stays applied.
-                    {
-                      actionId: commandId,
-                      allocateClient: allocateDocumentClient,
-                      keepLaterWords: true,
-                    },
+                    { actionId: commandId, allocateClient: allocateDocumentClient },
                   );
                   const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
                   const reversed = effects.filter(
