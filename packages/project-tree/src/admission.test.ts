@@ -16,6 +16,7 @@ import {
   sourceRoot,
   type TreeRecord,
   TreeWriter,
+  undoChange,
 } from "./index.js";
 
 const source = sourceRoot;
@@ -215,6 +216,42 @@ describe("a create raced into a closed Work is stamped dropped", () => {
     expect(dropped(doc)).toEqual([closed.id]);
     expect([...lastSettlements(doc).values()][0]?.reason).toBe("Work was closed");
     expect(replayView(doc, LIVE).nodes.has((live as { node: string }).node)).toBe(true);
+  });
+
+  it("a stale Undo of a move counts where the changes in force put the node, not the place it carries", () => {
+    const doc = server();
+    new TreeWriter(doc).create(LIVE, "system", {
+      kind: "folder",
+      name: "Kept",
+      parent: source("old-scratch"),
+      node: "kept",
+    });
+    new TreeWriter(doc).create(LIVE, "system", {
+      kind: "folder",
+      name: "P",
+      parent: ROOT,
+      node: "p",
+    });
+    const open: Connection = { drafts: connection.drafts, closedSources: new Set() };
+    // Two copies of one list, neither seeing the other's move of Ch1; the server orders a's first.
+    const a = client(doc, (copy) => new TreeWriter(copy).move(LIVE, ME, "ch1", "kept"), 5000);
+    const offline = new Y.Doc({ gc: false });
+    offline.clientID = 6000;
+    Y.applyUpdate(offline, Y.encodeStateAsUpdate(doc));
+    const b = new TreeWriter(offline);
+    let since = Y.encodeStateVector(offline);
+    const move = b.move(LIVE, ME, "ch1", "p");
+    admit(doc, a.update, open);
+    admit(doc, Y.encodeStateAsUpdate(offline, since), open);
+    expect(replayView(doc, LIVE).nodes.get("ch1")?.parent).toBe("p");
+    // The Work closes. b's Undo carries Arc, where b saw Ch1; the server's list sends it to Kept.
+    since = Y.encodeStateVector(offline);
+    const back = undoChange(b, LIVE, ME, move.id) as TreeRecord;
+    expect(back).toMatchObject({ type: "move", parent: "arc" });
+    expect(admit(doc, Y.encodeStateAsUpdate(offline, since), connection).dropped).toEqual([
+      back.id,
+    ]);
+    expect(replayView(doc, LIVE).nodes.get("ch1")?.parent).toBe("p");
   });
 
   it("a live create into a closed Work's source, and what is made inside a dropped folder", () => {

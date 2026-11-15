@@ -73,27 +73,63 @@ export type TrashEntry = {
 };
 
 /**
- * The record that last set a fact of a node, with the fact's values just before it. Undo is
- * allowed while a record is still the one that last set what it set, and the opposite record
- * carries these values back; an opposite record takes its target off the top, so the record
- * before it is the last again.
+ * A change in force that sets a fact of a node, and what it says the fact is. A node's fact is what
+ * the last of these in list order says, or what it was created with when there is none.
  */
-export type Setter<Before> = {
+export type Holder<Says> = {
   id: string;
   /** The root original this record carries, which an Undo's `undoes` names. */
   carries?: string;
-  before: Before;
-  /** The node's arrival before it, which the opposite record puts back. */
-  arrivedBefore: number;
+  says: Says;
+  /** Its place in the replay: the last holder by this is the one that shows. */
+  index: number;
+  /** Where it last came into force: its own place, or the Redo's that brought it back. */
+  at: number;
 };
-export type LabelBefore = { name: string; filetype?: string };
-export type PlaceBefore = { parent: string; rank: string };
-export type NodeSetters = { label?: Setter<LabelBefore>; place?: Setter<PlaceBefore> };
+export type LabelSays = { name: string; filetype?: string };
+export type PlaceSays = { parent: string; rank: string };
+export type NodeSetters = { label?: Holder<LabelSays>; place?: Holder<PlaceSays> };
+/** A node's name and place as it was created, the changes in force on each, and where it entered the list. */
+export type NodeHistory = {
+  born: LabelSays & PlaceSays;
+  label: ReadonlyArray<Holder<LabelSays>>;
+  place: ReadonlyArray<Holder<PlaceSays>>;
+  createdAt: number;
+};
+/**
+ * One record the replay took, and whether it is in force. Every Undo of a record, every Redo of
+ * such an Undo (an Undo of an Undo), and so on, is about that record: an Undo says out, a Redo
+ * says in, and the last one in the list (`head`) decides. `base` is the change at the bottom of
+ * the chain of `undoes`, which they are all about.
+ */
+export type Change = {
+  id: string;
+  root: string;
+  index: number;
+  /** 0 for a change, 1 for an Undo of it, 2 for a Redo. */
+  depth: number;
+  inForce: boolean;
+  base: Change;
+  /** The last record about this one (its Undos, their Redos, and so on), itself when there is none. */
+  head: Change;
+  target?: Change;
+  /** On a move or rename that is no Undo: what it says of each fact it sets. */
+  sets?: Sets;
+  /** On an Undo or Redo of a move or rename: the parent it left the node under, which its own `parent` need not be. */
+  parent?: string;
+};
 
 export type TreeProjection = {
   nodes: Map<string, TreeNode>;
-  /** Per node, who last set its name and type (a rename) and its place (a move). */
+  /** Per node, the change in force that holds its name and type, and the one that holds its place. */
   setters: Map<string, NodeSetters>;
+  /** Per node, what it was created with and every change in force on its name and its place, in list order. */
+  history: ReadonlyMap<string, NodeHistory>;
+  /** Every record the replay took, by its id. */
+  changes: ReadonlyMap<string, Change>;
+  /** The ids of the records in force. */
+  inForce: ReadonlySet<string>;
+
   /** Children of a folder or source root, in display order: by rank, then id. Trashed ones included. */
   children: Map<string, TreeNode[]>;
   /** Records the replay skipped, with why: what a review shows as "couldn't apply". */
@@ -135,11 +171,14 @@ type Working = {
   createdAt: number;
   /** Position of the record that last brought it to its parent under its name: who gets a number. */
   arrivedAt: number;
+  /** Where it last came to stand in this list: its create, or the restore that brought it back. */
+  stoodAt: number;
+  born: LabelSays & PlaceSays;
   purged: boolean;
   /** The create it was made by, or the original a copy of that create carries. */
   root: string;
-  label: Array<Setter<LabelBefore>>;
-  place: Array<Setter<PlaceBefore>>;
+  label: Array<Holder<LabelSays>>;
+  place: Array<Holder<PlaceSays>>;
 };
 
 /** The deletes a restore lifted, and the members it took out of the deletes of folders above it; `by` is the kind of record that lifted them. */
@@ -205,15 +244,6 @@ export function replay(
     pendingOn.set(record.node, on);
   };
 
-  const isAncestor = (maybeAncestor: string, of: string): boolean => {
-    let at: string | undefined = of;
-    for (let guard = 0; at !== undefined && guard <= nodes.size; guard += 1) {
-      if (at === maybeAncestor) return true;
-      at = nodes.get(at)?.parent;
-    }
-    return false;
-  };
-
   // A node still in this list that something may be placed under or done to: purged nodes are in
   // no view, for placement as for display.
   const placeable = (id: string) => placeIn(nodes, id);
@@ -244,7 +274,10 @@ export function replay(
     };
     deletes = deletes.filter((entry) => !took.entries.includes(entry));
     for (const entry of took.entries) entry.putBackBy.clear();
-    if (!touch) node.arrivedAt = how.index;
+    if (!touch) {
+      node.stoodAt = how.index;
+      node.arrivedAt = how.index;
+    }
     const takeOut = (entry: DeleteInForce, member: string) => {
       entry.cascade.delete(member);
       for (const nodes of entry.putBackBy.values()) nodes.delete(member);
@@ -253,9 +286,10 @@ export function replay(
     if (again) for (const [entry, member] of again.members) takeOut(entry, member);
     else if (record.undoes === undefined)
       for (const entry of deletes) {
-        if (!may(entry) || !isAncestor(entry.node, record.node)) continue;
+        if (!may(entry) || !wouldLoop(nodes, entry.node, record.node)) continue;
         for (const member of [...entry.cascade])
-          if (member === record.node || isAncestor(record.node, member)) takeOut(entry, member);
+          if (member === record.node || wouldLoop(nodes, record.node, member))
+            takeOut(entry, member);
       }
     // A create's Undo is a plain delete of the node: nothing to put back.
     if (record.type !== "create") lifted.set(record.carries ?? record.id, took);
@@ -278,35 +312,89 @@ export function replay(
     lifted.set(root, back);
   };
 
-  // A record sets a fact: it goes on the node's stack of setters, and an Undo's opposite record
-  // takes its target off instead, putting back the arrival it moved (so an undone move or
-  // rename shows the names it showed before, not a numbered copy).
-  const setFact = <Before>(
-    stack: Array<Setter<Before>>,
-    node: Working,
-    record: TreeRecord,
-    index: number,
-    before: Before,
-    changed: boolean,
-    arrivedBefore = node.arrivedAt,
-  ) => {
-    const top = stack[stack.length - 1];
-    if (
-      record.undoes !== undefined &&
-      top &&
-      (top.id === record.undoes || top.carries === record.undoes)
-    ) {
-      stack.pop();
-      node.arrivedAt = top.arrivedBefore;
-      return;
-    }
-    stack.push({
+  // Every record the replay took, by its id, and by root (`carries ?? id`) the last of each family:
+  // the one an Undo's `undoes` reaches.
+  const changes = new Map<string, Change>();
+  const families = new Map<string, Change>();
+  const seen: TreeRecord[] = [];
+  // A record the replay took: it is in force, and it says of each record up its chain of `undoes`
+  // whether that one is (an Undo's target is out, the target's own target back in, and so on).
+  const take = (record: TreeRecord, index: number, sets?: Sets) => {
+    const target = record.undoes === undefined ? undefined : families.get(record.undoes);
+    const change = {
       id: record.id,
-      ...(record.carries ? { carries: record.carries } : {}),
-      before,
-      arrivedBefore,
-    });
-    if (changed) node.arrivedAt = index;
+      root: record.carries ?? record.id,
+      index,
+      depth: target ? target.depth + 1 : 0,
+      inForce: true,
+      ...(target ? { target } : {}),
+      ...(sets ? { sets } : {}),
+    } as Change;
+    change.base = target?.base ?? change;
+    change.head = change;
+    for (let up = target, steps = 1; up; up = up.target, steps += 1) {
+      up.inForce = steps % 2 === 0;
+      up.head = change;
+    }
+    changes.set(change.id, change);
+    families.set(change.root, change);
+    return change;
+  };
+  const holder = <Says>(record: TreeRecord, index: number, says: Says): Holder<Says> => ({
+    id: record.id,
+    ...(record.carries ? { carries: record.carries } : {}),
+    says,
+    index,
+    at: index,
+  });
+  // A node shows what the last change in force on each fact says.
+  const settle = (node: Working, named = true) => {
+    const place = node.place[node.place.length - 1]?.says ?? node.born;
+    node.parent = place.parent;
+    node.rank = place.rank;
+    if (named) {
+      const label = labelOf(node.kind, node.born, node.label);
+      node.name = label.name;
+      if (label.filetype) node.filetype = label.filetype;
+      else delete node.filetype;
+    }
+    node.arrivedAt = arrival(node);
+  };
+  // An Undo or Redo of a move or rename sets nothing itself: it puts the change it speaks about
+  // out of force or back in, and the node shows what the changes in force then say. One that
+  // would leave the node somewhere it cannot stand is skipped whole. Returns whether it was taken.
+  const turn = (record: TreeRecord, node: Working, index: number): boolean => {
+    const target = families.get(record.undoes as string);
+    const base = target?.base;
+    const on = target !== undefined && target.depth % 2 === 1;
+    if (!base?.sets || base.sets.node !== node.id || base.inForce === on) {
+      take(record, index).parent = node.parent;
+      return true;
+    }
+    const place = withTurned(node.place, base.sets.place, on);
+    const to = place[place.length - 1]?.says ?? node.born;
+    if (to.parent !== node.parent) {
+      const why = cannotStand(record.node, to.parent);
+      if (why) {
+        skipped.push({ record: record.id, reason: why });
+        return false;
+      }
+    }
+    if (on) for (const mine of [base.sets.place, base.sets.label]) if (mine) mine.at = index;
+    node.place = [...place];
+    node.label = [...withTurned(node.label, base.sets.label, on)];
+    settle(node);
+    take(record, index).parent = node.parent;
+    return true;
+  };
+  // Why a node cannot be put under `parent`, if it cannot.
+  const cannotStand = (node: string, parent: string): SkipReason | undefined => {
+    if (!isSourceRoot(parent)) {
+      const folder = placeable(parent);
+      if (!folder) return "missing-parent";
+      if (folder.kind !== "folder") return "parent-not-folder";
+    }
+    return wouldLoop(nodes, node, parent) ? "cycle" : undefined;
   };
 
   for (const [index, value] of values.entries()) {
@@ -317,6 +405,7 @@ export function replay(
       continue;
     }
     const record = read.record;
+    seen.push(record);
     const skip = (reason: SkipReason) => skipped.push({ record: record.id, reason });
     if (record.type === "create") {
       const existing = nodes.get(record.node);
@@ -329,6 +418,7 @@ export function replay(
         }
         lift(record, existing, { ownOnly: record.draft !== null });
         pend(record);
+        take(record, index);
         continue;
       }
       if (record.kind === "document" && !isTracked(record.filetype)) {
@@ -358,11 +448,19 @@ export function replay(
         lastChangedBy: record.actor,
         createdAt: index,
         arrivedAt: index,
+        stoodAt: index,
+        born: {
+          name: record.name,
+          ...(record.filetype ? { filetype: record.filetype } : {}),
+          parent: parentId,
+          rank: record.rank,
+        },
         purged: false,
         root: record.carries ?? record.id,
         label: [],
         place: [],
       });
+      take(record, index);
       continue;
     }
     // A node is acted on only while it stands in this view (`placeIn`): the same test Undo and
@@ -383,55 +481,39 @@ export function replay(
         // Out to another list: the node is in no view of this one, and its Trash entries go.
         if (isListRoot(record.parent)) {
           nodes.delete(record.node);
+          take(record, index);
           break;
         }
-        if (!isSourceRoot(record.parent)) {
-          const parent = placeable(record.parent);
-          if (!parent) {
-            skip("missing-parent");
-            continue;
-          }
-          if (parent.kind !== "folder") {
-            skip("parent-not-folder");
-            continue;
-          }
+        if (record.undoes !== undefined) {
+          if (!turn(record, node, index)) continue;
+          const back = lifted.get(record.undoes);
+          if (back) putBack(record, back);
+          pend(record);
+          if (record.name !== undefined && record.actor.startsWith("user:"))
+            node.provisional = false;
+          node.lastChangedBy = record.actor;
+          break;
         }
-        // Rule 1: a move that would put a folder inside itself is skipped.
-        if (isAncestor(record.node, record.parent)) {
-          skip("cycle");
+        const why = cannotStand(record.node, record.parent);
+        if (why) {
+          skip(why);
           continue;
         }
         // Rule 9: acting on a node in Trash brings it back (an Undo's opposite record never does).
-        const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-        if (back) putBack(record, back);
-        else if (record.undoes === undefined)
-          lift(record, node, { ownOnly: record.draft !== null });
+        lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
-        // One arrival sets both facts, so both answer to the arrival before it.
-        const arrivedBefore = node.arrivedAt;
-        setFact(
-          node.place,
-          node,
-          record,
-          index,
-          { parent: node.parent, rank: node.rank },
-          node.parent !== record.parent,
-        );
-        if (record.name !== undefined) {
-          setFact(
-            node.label,
-            node,
-            record,
-            index,
-            { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
-            node.name !== shownName(node.kind, record.name, node.filetype),
-            arrivedBefore,
-          );
-          node.name = shownName(node.kind, record.name, node.filetype);
-          if (record.actor.startsWith("user:")) node.provisional = false;
-        }
-        node.parent = record.parent;
-        node.rank = record.rank;
+        const sets: Sets = {
+          node: node.id,
+          place: holder(record, index, { parent: record.parent, rank: record.rank }),
+          ...(record.name === undefined
+            ? {}
+            : { label: holder(record, index, { name: record.name }) }),
+        };
+        node.place.push(sets.place as Holder<PlaceSays>);
+        if (sets.label) node.label.push(sets.label);
+        take(record, index, sets);
+        settle(node, sets.label !== undefined);
+        if (record.name !== undefined && record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
         break;
       }
@@ -446,22 +528,25 @@ export function replay(
             continue;
           }
         }
-        // A rename that takes back only the name a move set leaves the deletes that move lifted lifted.
-        const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-        if (back?.by === "rename") putBack(record, back);
-        else if (record.undoes === undefined)
+        if (record.undoes !== undefined) {
+          if (!turn(record, node, index)) continue;
+          // A rename that takes back only the name a move set leaves the deletes that move lifted lifted.
+          const back = lifted.get(record.undoes);
+          if (back?.by === "rename") putBack(record, back);
+        } else {
           lift(record, node, { ownOnly: record.draft !== null });
+          const sets: Sets = {
+            node: node.id,
+            label: holder(record, index, {
+              name: record.name,
+              ...(record.filetype ? { filetype: record.filetype } : {}),
+            }),
+          };
+          node.label.push(sets.label as Holder<LabelSays>);
+          take(record, index, sets);
+          settle(node);
+        }
         pend(record);
-        setFact(
-          node.label,
-          node,
-          record,
-          index,
-          { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
-          node.name !== shownName(node.kind, record.name, record.filetype ?? node.filetype),
-        );
-        node.name = shownName(node.kind, record.name, record.filetype ?? node.filetype);
-        if (record.filetype) node.filetype = record.filetype;
         // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
         if (record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
@@ -469,6 +554,7 @@ export function replay(
       }
       case "delete": {
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+        take(record, index);
         if (back) {
           putBack(record, back);
           break;
@@ -486,6 +572,7 @@ export function replay(
       }
       case "restore":
         lift(record, node, { index });
+        take(record, index);
         break;
       case "purge": {
         // Rule 10: final, and exactly what the server found the delete covering when it purged
@@ -504,6 +591,7 @@ export function replay(
           }
         }
         deletes = deletes.filter((d) => d !== entry);
+        take(record, index);
         break;
       }
     }
@@ -512,6 +600,8 @@ export function replay(
   if (purgedAt.size > 0) rescueFromPurged(nodes, purgedAt);
   return {
     ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
+    changes,
+    inForce: inForceOf(seen, changes.values()),
     dropped: [],
   };
 }
@@ -557,6 +647,94 @@ export function placeIn<Node extends { purged: boolean }>(
   return node && !node.purged ? node : undefined;
 }
 
+export type Sets = { node: string; label?: Holder<LabelSays>; place?: Holder<PlaceSays> };
+
+/**
+ * A node's changes in force on one fact with `mine` put out of force, or back in at its own place
+ * in the list. The replay and `undoChange` both read what an Undo or Redo does from this.
+ */
+export function withTurned<Says>(
+  stack: ReadonlyArray<Holder<Says>>,
+  mine: Holder<Says> | undefined,
+  on: boolean,
+): ReadonlyArray<Holder<Says>> {
+  if (!mine) return stack;
+  const rest = stack.filter((each) => each !== mine);
+  if (!on) return rest;
+  const after = rest.findIndex((each) => each.index > mine.index);
+  return after < 0 ? [...rest, mine] : [...rest.slice(0, after), mine, ...rest.slice(after)];
+}
+
+/** Whether putting `node` under `parent` would put a folder inside itself (rule 1). */
+export function wouldLoop(
+  nodes: ReadonlyMap<string, { parent: string }>,
+  node: string,
+  parent: string,
+): boolean {
+  let at: string | undefined = parent;
+  for (let guard = 0; at !== undefined && guard <= nodes.size; guard += 1) {
+    if (at === node) return true;
+    at = nodes.get(at)?.parent;
+  }
+  return false;
+}
+
+/**
+ * The ids of the records in force. A move or rename, and every Undo and Redo about one, by the
+ * last record about it. Any other record (a create, delete or restore and their Undos) while no
+ * later record in force undoes its root, as Trash counts them: each delete of a node counts.
+ */
+function inForceOf(records: readonly TreeRecord[], taken: Iterable<Change>): Set<string> {
+  const undone = new Set<string>();
+  const standing = new Set<string>();
+  for (const record of records.toReversed()) {
+    if (undone.has(record.carries ?? record.id)) continue;
+    standing.add(record.id);
+    if (record.undoes !== undefined) undone.add(record.undoes);
+  }
+  for (const change of taken) {
+    if (!change.base.sets) continue;
+    // In force itself, and saying of its change what the last record about that change says.
+    if (change.inForce && change.base.inForce === (change.depth % 2 === 0)) standing.add(change.id);
+    else standing.delete(change.id);
+  }
+  return standing;
+}
+
+/** The name and type a node shows: what the last change in force says, the type from the last that set one. */
+export function labelOf(
+  kind: NodeKind,
+  born: LabelSays,
+  label: ReadonlyArray<Holder<LabelSays>>,
+): LabelSays {
+  const filetype = label.findLast((each) => each.says.filetype)?.says.filetype ?? born.filetype;
+  const name = label[label.length - 1]?.says.name ?? born.name;
+  return { name: shownName(kind, name, filetype), ...(filetype ? { filetype } : {}) };
+}
+
+/**
+ * Where a node arrived at its parent under its name (rule 4: the later arrival shows the number):
+ * the earliest of the changes in force that, one after another, left it in this folder, and the
+ * same for its name; never before it came to stand in the list.
+ */
+function arrival(node: Working): number {
+  const since = <Says>(stack: Array<Holder<Says>>, same: (says: Says) => boolean) => {
+    let at: number | undefined;
+    for (let i = stack.length - 1; i >= 0; i -= 1) {
+      const each = stack[i] as Holder<Says>;
+      if (!same(each.says)) return at ?? each.at;
+      at = each.at;
+    }
+    return at !== undefined && !same(node.born as unknown as Says) ? at : node.createdAt;
+  };
+  const shows = (says: LabelSays) => shownName(node.kind, says.name, node.filetype) === node.name;
+  return Math.max(
+    node.stoodAt,
+    since(node.place, (says) => says.parent === node.parent),
+    since(node.label, shows),
+  );
+}
+
 type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean; source: string };
 
 /**
@@ -572,7 +750,7 @@ function derive(
   skipped: TreeProjection["skipped"],
   rescued: string[],
   gone: ReadonlySet<string>,
-): Omit<TreeProjection, "dropped"> {
+): Omit<TreeProjection, "dropped" | "changes" | "inForce"> {
   const children = new Map<string, Working[]>();
   for (const node of nodes.values()) {
     const siblings = children.get(node.parent);
@@ -663,9 +841,16 @@ function derive(
 
   const out = new Map<string, TreeNode>();
   const setters = new Map<string, NodeSetters>();
+  const history = new Map<string, NodeHistory>();
   for (const node of nodes.values()) {
     const label = node.label[node.label.length - 1];
     const place = node.place[node.place.length - 1];
+    history.set(node.id, {
+      born: node.born,
+      label: node.label,
+      place: node.place,
+      createdAt: node.createdAt,
+    });
     if (label || place)
       setters.set(node.id, { ...(label ? { label } : {}), ...(place ? { place } : {}) });
     const state = standing.get(node.id) as Standing;
@@ -708,6 +893,7 @@ function derive(
   return {
     nodes: out,
     setters,
+    history,
     children: ordered,
     skipped,
     rescued,

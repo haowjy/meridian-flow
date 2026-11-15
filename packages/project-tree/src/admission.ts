@@ -251,6 +251,20 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
     return false;
   };
 
+  // An Undo or Redo of a move sets nothing itself: the node goes where the changes in force put
+  // it, which a copy that had not seen an earlier move did not know. The replay of the list as it
+  // now stands says where, at the record's place; one it skipped moves nothing.
+  const after = new Map<string | null, TreeProjection>();
+  const destination = (record: TreeRecord & { type: "move" }) => {
+    if (record.undoes === undefined) return record.parent;
+    let view = after.get(record.draft);
+    if (!view) {
+      view = replay(viewRecords(doc, { draft: record.draft }), { draft: record.draft });
+      after.set(record.draft, view);
+    }
+    return view.changes.get(record.id)?.parent;
+  };
+
   let droppedBefore: Set<string> | undefined;
   const droppedNode = (node: string) => {
     if (isSourceRoot(node)) return false;
@@ -274,15 +288,17 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
         placedIn(record.draft).set(record.node, record.parent);
         if (closed) dropped.add(record.node);
         break;
-      case "move":
+      case "move": {
+        const to = closing ? destination(record) : undefined;
         closed =
           draftClosed ||
           droppedNode(record.node) ||
           inClosed(record.draft, record.node) ||
-          inClosed(record.draft, record.parent);
-        if (!closed && closing && !intoItself(record.draft, record.node, record.parent))
-          placedIn(record.draft).set(record.node, record.parent);
+          (to !== undefined && inClosed(record.draft, to));
+        if (!closed && to !== undefined && !intoItself(record.draft, record.node, to))
+          placedIn(record.draft).set(record.node, to);
         break;
+      }
       default:
         closed = draftClosed || droppedNode(record.node) || inClosed(record.draft, record.node);
     }
