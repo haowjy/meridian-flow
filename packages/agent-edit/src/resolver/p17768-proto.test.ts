@@ -75,12 +75,17 @@ const cross: Array<[string, string, object, Writer]> = [
 
 const W = (content: string) => ({ command: "replace", wholeDocument: true, content });
 const more: Array<[string, string, object, Writer]> = [
-  ["break added in window", "Line one and more words.", R("one and more", "one\\\nand more"), none],
-  ["break added, writer types in tail", "Line one and more words.", R("one and more", "one\\\nand more"), typeBefore(" words", "XX")],
-  ["break removed in window", "Line one\\\nand more words.", R("one\\\nand more", "one and more"), none],
-  ["image added in window", "A small B.", R("A small", "A ![pic](https://example.com/a.png) small"), none],
-  ["link added over kept words", "See the old map now.", R("See the old map", "See [the old map](https://example.com/m)"), typeBefore("old", "very ")],
-  ["bold added, writer deletes kept", "One small step for a cat.", R("One small step", "One **small** step"), del("small ")],
+  ["typo gains a letter, word deleted", "The mesenger came.", R("mesenger", "messenger"), del("mesenger ")],
+  ["typo gains a letter, word deleted, block form", "The mesenger came.", W("The messenger came."), del("mesenger ")],
+  ["typo gains a letter, nobody edits", "The mesenger came.", R("mesenger", "messenger"), none],
+  ["typo loses a letter, word deleted", "He promissed it.", R("promissed", "promised"), del("promissed ")],
+  ["bigger, word deleted", "A very big cat.", R("very big", "very bigger"), del("big ")],
+  ["image added at paragraph start, writer types later", "A small B. More words here.", R("A small", "A ![pic](https://example.com/a.png) small"), typeBefore(" here", "XX")],
+  ["image added mid paragraph, writer types later", "The A small B. More words here.", R("A small", "A ![pic](https://example.com/a.png) small"), typeBefore(" here", "XX")],
+  ["image added, block form", "A small B. More words here.", W("A ![pic](https://example.com/a.png) small B. More words here."), typeBefore(" here", "XX")],
+  ["break added at paragraph start, writer types later", "Line one and more words here.", R("Line one", "Line\\\none"), typeBefore(" here", "XX")],
+  ["writer bolds kept word", "One small step.", R("One small", "One big"), none],
+  ["sighed softly", "He sighed, and then he wept.", R("sighed", "sighed softly"), del(" sighed")],
 ];
 
 function run(markdown: string, write: object, writer: Writer) {
@@ -113,5 +118,5 @@ it("prints", () => {
     lines.push(`  today: ${today.out}\n         ${today.ops}`);
     lines.push(today.out === next.out && today.ops === next.ops ? "  change: same" : `  change: ${next.out}\n         ${next.ops}`);
   }
-  writeFileSync("/tmp/p17768/cases4.txt", lines.join("\n"));
+  writeFileSync("/tmp/p17768/cases5.txt", lines.join("\n"));
 });
