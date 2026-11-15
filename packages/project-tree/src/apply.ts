@@ -12,14 +12,7 @@ import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { type NotUndone, undoChange } from "./undo.js";
 import { readStored, writable } from "./validate.js";
-import {
-  LIVE,
-  lastSettlements,
-  listRecords,
-  pendingRecords,
-  settlementsOf,
-  viewRecords,
-} from "./view.js";
+import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** Why a record asked to land did not; it stays pending. */
