@@ -6,7 +6,7 @@ allowBuilds:
   nx: true
 
 catalog:
-  '@meridian-flow/gateway': ^0.1.0
+  '@meridian-flow/runtime': ^0.1.0
   '@types/node': ^24
   '@types/react': ^19.2.17
   '@types/react-dom': ^19.2.3

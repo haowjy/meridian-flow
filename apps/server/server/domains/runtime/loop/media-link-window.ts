@@ -3,7 +3,7 @@
  * prompt prefix, so every request in one window gets the same link; the window is the prompt
  * cache's lifetime, so the one miss when it rolls over costs no more than the cache expiring.
  */
-import type { GenerateRequest } from "@meridian-flow/gateway";
+import type { GenerateRequest } from "@meridian-flow/runtime/gateway";
 import type { LinkWindow } from "../ports/media-resolver.js";
 
 export function linkWindowAt(nowMs: number, lengthSeconds: number): LinkWindow {

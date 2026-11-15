@@ -1,8 +1,8 @@
 # Gateway wiring
 
-The model gateway itself is the npm package `@meridian-flow/gateway`, built in the
+The model gateway itself is the `@meridian-flow/runtime/gateway` entry of the npm package `@meridian-flow/runtime`, built in the
 [`meridian-runtime`](https://github.com/haowjy/meridian-runtime) repository: its
-[package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/.context/CONTEXT.md)
+[package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/src/gateway/.context/CONTEXT.md)
 covers the port, adapters, retry, errors, credentials, media and the mock server. This directory is what Flow
 chooses and reads from its environment: the model registry and prices, the `FLOW_` keys, the
 observability decorator, the dev overrides. To change the package and try it here before it is
@@ -44,7 +44,7 @@ snapshots, journal rows, or JSONL.
 ## Cache, prices and reasoning rows
 
 How the package models cache lifetimes, retention, cache-write billing, tiers, reasoning resolution and tool-schema
-envelopes is in its [CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/packages/gateway/.context/CONTEXT.md).
+envelopes is in its [CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/src/gateway/.context/CONTEXT.md).
 This section is the values Flow puts in the registry.
 
 A provider lists offerings `{ model, pricing, promptCache? }`: what an endpoint caches and charges belongs to the

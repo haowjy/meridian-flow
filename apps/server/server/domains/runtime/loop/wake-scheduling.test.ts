@@ -5,7 +5,7 @@
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Gateway } from "@meridian-flow/gateway";
+import type { Gateway } from "@meridian-flow/runtime/gateway";
 import { describe as __mergedSuite, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryInbox, createInMemoryRunClaim } from "../adapters/in-memory/loop-ports.js";

@@ -66,7 +66,7 @@ import type {
   GenerateRequest,
   GenerateResult,
   Gateway as LlmGateway,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import type { DetachedWorkTracker } from "../../../shared/detached-work.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { BillingUsagePolicy } from "../../billing/index.js";

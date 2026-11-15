@@ -27,7 +27,7 @@ import type { DocumentId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
-import type { ModelInfo } from "@meridian-flow/gateway";
+import type { ModelInfo } from "@meridian-flow/runtime/gateway";
 import {
   createCopyIdentityMap,
   ModelEditRefusal,
