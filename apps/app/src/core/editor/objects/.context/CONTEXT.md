@@ -78,3 +78,10 @@ schema refuses a typing destination, ProseMirror can read back the projected car
 instead. Browser selection changes can also read that caret into the model; the
 projection must therefore always be a valid editing position. Read-only views,
 opaque block objects and partial cell selections keep their normal native range.
+
+Shift-extension is a range operation, not typing. The object-scoped keymap prepares
+a directed TextSelection that includes the selected inline object, then leaves the
+extension to the browser. Shift-click uses the same transaction in `mousedown`,
+before ProseMirror starts deferring native selection updates for a drag. Preparing
+it in the later object-press listener would leave the projected caret in the DOM
+and exclude the image. Cell selections retain their table-specific extension.

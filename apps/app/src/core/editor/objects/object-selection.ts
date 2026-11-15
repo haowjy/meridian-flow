@@ -242,6 +242,19 @@ export function objectSelectionForDOM(state: EditorState): TextSelection | null 
   return text ? TextSelection.create(state.doc, text.head) : null;
 }
 
+export function objectTextSelectionTransaction(
+  state: EditorState,
+  direction: 1 | -1,
+): Transaction | null {
+  const object = selectedObject(state);
+  if (!object?.node.isInline) return null;
+  const from = object.pos;
+  const to = from + object.node.nodeSize;
+  return state.tr.setSelection(
+    TextSelection.create(state.doc, direction === 1 ? from : to, direction === 1 ? to : from),
+  );
+}
+
 /** Remove the object at `pos` outright. */
 export function deleteObjectTransaction(state: EditorState, pos: number): Transaction | null {
   const node = state.doc.nodeAt(pos);

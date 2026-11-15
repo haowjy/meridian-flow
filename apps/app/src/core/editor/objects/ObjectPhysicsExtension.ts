@@ -13,11 +13,12 @@ import {
   type ObjectAt,
   objectBeside,
   objectSelectionForDOM,
+  objectTextSelectionTransaction,
   selectedObject,
   selectObjectTransaction,
   typeBesideObjectTransaction,
 } from "./object-selection";
-import { isEditorObject, objectBody, objectTypeSpec } from "./object-types";
+import { EDITOR_OBJECT_TYPES, isEditorObject, objectBody, objectTypeSpec } from "./object-types";
 import { pictureCapped } from "./picture-cap";
 
 const OBJECT_PHYSICS_NAME = "meridianObjectPhysics";
@@ -186,12 +187,34 @@ export const ObjectPhysicsExtension = Extension.create({
         /** Registration rides the view's lifetime rather than TipTap's `create` event, which is emitted a macrotask late — long enough for a first keystroke to miss it. */
         view(editorView) {
           const chrome = getEditorChrome(editor);
-          // Two contributions, because the arrows and Enter are live in
-          // different places. Walking ONTO an object starts from prose beside
+          // Walking ONTO an object starts from prose beside
           // it, so the arrows cannot be scoped to "an object is selected" —
           // they are block-level movement that declines wherever there is no
           // object to step on. Enter genuinely needs the selection.
           const releases = [
+            chrome?.registerKeymap({
+              id: "object-extend-selection",
+              scope: "object",
+              appliesTo: (context) =>
+                EDITOR_OBJECT_TYPES.some(
+                  (spec) => spec.id === context.objectSpec && spec.body === "inline-drag",
+                ),
+              bindings: Object.fromEntries(
+                ["", "Mod-", "Alt-", ...(isMacOS() ? ["Ctrl-"] : [])].flatMap((modifier) =>
+                  Object.entries({
+                    ArrowLeft: -1,
+                    ArrowUp: -1,
+                    Home: -1,
+                    ArrowRight: 1,
+                    ArrowDown: 1,
+                    End: 1,
+                  } satisfies Record<string, 1 | -1>).map(([key, direction]) => [
+                    `${modifier}Shift-${key}`,
+                    prepareObjectSelectionExtension(direction),
+                  ]),
+                ),
+              ),
+            }),
             chrome?.registerKeymap({
               id: "object-walk",
               scope: "block",
@@ -288,6 +311,20 @@ export const ObjectPhysicsExtension = Extension.create({
           },
 
           handleDOMEvents: {
+            mousedown(view, event) {
+              if (!view.editable || !event.shiftKey || event.button !== 0 || event.defaultPrevented)
+                return false;
+              const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+              if (!at) return false;
+              const transaction = objectTextSelectionTransaction(
+                view.state,
+                at.pos < view.state.selection.from ? -1 : 1,
+              );
+              // Run before PM starts delaying native selection updates for a drag.
+              if (transaction) view.dispatch(transaction);
+              return false;
+            },
+
             beforeinput(view, event) {
               if (
                 !view.editable ||
@@ -385,6 +422,15 @@ function selectedObjectRange(
 }
 
 /** Delete and Backspace take the whole object, not the selection over it. */
+function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
+  return (state, dispatch) => {
+    const transaction = objectTextSelectionTransaction(state, direction);
+    if (transaction) dispatch?.(transaction);
+    // The browser extends this model range, not the native typing caret.
+    return false;
+  };
+}
+
 const removeSelected: KeymapBinding = (state, dispatch) => {
   const selected = selectedObject(state);
   if (!selected) return false;
