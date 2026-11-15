@@ -255,6 +255,11 @@ export class CommandDriver {
     });
   }
 
+  /** Whether a request is mid-send. */
+  get delivering(): boolean {
+    return this.inFlight.size > 0;
+  }
+
   /** Something that may let a send through changed: back online, tab visible. */
   nudge(): void {
     if (this.installedRead === 0) this.refresh();
@@ -415,7 +420,7 @@ export class CommandDriver {
     for (const record of this.heads()) {
       if (this.inFlight.has(record.id)) continue;
       const at = this.retryAt.get(record.id) ?? 0;
-      if (at <= now && this.ports.online() && this.ports.kinds[record.kind])
+      if (at <= now && this.ports.online() && !this.ports.held() && this.ports.kinds[record.kind])
         void this.deliver(record, delivery);
       else if (at > now) next = Math.min(next, at);
     }
@@ -521,6 +526,13 @@ export class CommandDriver {
     const outcome = (resolved.body as Partial<CommandResolveResponse> | null)?.outcome;
     if (resolved.status === 200 && outcome)
       return this.settle(record, outcomeOf(outcome, answer.code));
+    if (
+      resolved.status >= 400 &&
+      resolved.status < 500 &&
+      resolved.status !== 408 &&
+      resolved.status !== 429
+    )
+      this.ports.unreadable();
     this.later(record, `resolve_http_${resolved.status}`, true);
   }
 

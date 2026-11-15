@@ -20,7 +20,7 @@ export type WsServerMessageDispatchDeps = {
   onSubscribed: (message: Extract<WsServerMessage, { type: "subscribed" }>) => void;
   handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void;
   send: (payload: unknown) => void;
-  onConnected: (connectionToken: string) => void;
+  onConnected: (message: Extract<WsServerMessage, { type: "connected" }>) => void;
   onAskAnswerReply: (
     message: Extract<WsServerMessage, { type: "ask.answer.ok" | "ask.answer.error" }>,
   ) => void;
@@ -38,7 +38,7 @@ export function dispatchWsServerMessage(
 ): void {
   switch (message.type) {
     case "connected":
-      deps.onConnected(message.connectionToken);
+      deps.onConnected(message);
       return;
 
     case "subscribed":

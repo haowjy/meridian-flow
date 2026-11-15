@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "nitro/config";
+import { resolveReleaseId } from "../../tools/release/release-id.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -31,6 +32,7 @@ const bundleWorkerEntries = {
 
 export default defineConfig({
   scanDirs: ["server"],
+  replace: { __MERIDIAN_RELEASE__: JSON.stringify(resolveReleaseId()) },
   experimental: { asyncContext: true },
   rolldownConfig: {
     plugins: [bundleWorkerEntries],

@@ -20,6 +20,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { requireReload, sendsHeld, watchDelivery } from "@/client/release/release";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { createBroadcastChannel, createFetchTransport, createWebLock } from "./browser-ports";
@@ -74,6 +75,8 @@ export function CommandDriverProvider({
         transport: createFetchTransport(accountId),
         changes: createBroadcastChannel(accountId),
         online: () => navigator.onLine,
+        held: sendsHeld,
+        unreadable: requireReload,
         routes: {
           lookup: (id) => `/api/commands/${id}`,
           resolve: (id) => `/api/commands/${id}/resolve`,
@@ -92,6 +95,7 @@ export function CommandDriverProvider({
   });
   useEffect(() => {
     if (!driver || !domain) return;
+    watchDelivery(() => driver.delivering);
     const opened = driver.open();
     // A project route loaded before the journal could be read took an unsent project for a missing
     // one: load it again once a read succeeds.
@@ -173,9 +177,4 @@ export function useCommands(filter: CommandFilter = {}): readonly CommandRecord[
 export function useCommand(id: string | null): CommandRecord | undefined {
   const { records } = useDriverSnapshot();
   return useMemo(() => records.find((record) => record.id === id), [records, id]);
-}
-
-/** One app-wide line: something has gone unanswered for a while, or the browser is offline with something waiting. */
-export function useNotSentYet(): boolean {
-  return useDriverSnapshot().notSent;
 }

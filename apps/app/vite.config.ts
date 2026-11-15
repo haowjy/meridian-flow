@@ -8,6 +8,7 @@ import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
 import { architectureMapPlugin } from "../../tools/architecture-map/vite-plugin.mjs";
+import { resolveReleaseId } from "../../tools/release/release-id.mjs";
 
 import { apiHttpDevProxyPlugin } from "./dev/api-http-dev-proxy-plugin";
 import { createPortlessHttpsAgent, resolvePortlessServerOrigin } from "./dev/portless-dev-helpers";
@@ -96,6 +97,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    define: { __MERIDIAN_RELEASE__: JSON.stringify(resolveReleaseId()) },
     envDir: repoRoot,
     build: {
       rollupOptions: {

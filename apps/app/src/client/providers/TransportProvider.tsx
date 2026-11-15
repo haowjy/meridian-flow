@@ -7,12 +7,14 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { PROTOCOL_VERSION } from "@meridian/contracts/release";
 import type { ConnectionState, ThreadTransport } from "@meridian/thread-client";
 import { ThreadSocketClient } from "@meridian/thread-client";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { MeridianApiError } from "@/client/api/meridian-error";
 import { cancelTurn } from "@/client/api/threads-api";
 import { useFailureLog } from "@/client/failures/failure-log";
+import { observeServer } from "@/client/release/release";
 import { announce } from "@/client/stores";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { buildThreadsWsUrl } from "@/core/transport/dev-transport";
@@ -21,7 +23,6 @@ import {
   notifyThreadSocketClose,
   notifyThreadSocketOpen,
 } from "@/core/transport/wire-tap";
-
 import { useConnectivityHints } from "./ConnectivityProvider";
 
 const ThreadTransportContext = createContext<ThreadTransport | null>(null);
@@ -34,7 +35,9 @@ export function TransportProvider({ children }: { children: ReactNode }) {
       new ThreadSocketClient({
         failureLog,
         url: buildThreadsWsUrl,
-        webSocketFactory: (url) => new WebSocket(url),
+        // The socket's hello: browsers can't set headers on a WebSocket, so the protocol rides the URL.
+        webSocketFactory: (url) => new WebSocket(`${url}?protocol=${PROTOCOL_VERSION}`),
+        onServer: ({ release, protocol }) => observeServer({ release, protocol }),
         connectivity: connectivityHints,
         observer: DEBUG_FEATURE_ALLOWED
           ? {
