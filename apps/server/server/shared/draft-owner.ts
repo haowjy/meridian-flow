@@ -50,9 +50,8 @@ export function lineageHasLiveMember(rootThreadId: string | SQLWrapper) {
 }
 
 /**
- * Who owns a chat's drafts: its named Work, or its conversation lineage when it has no Work.
- * Scratch follows the same rule (`scratchOwnerFor`), so the two can't disagree about whose
- * material a chat writes.
+ * Who owns a chat's drafts and its own Scratch: its named Work, or its conversation lineage when
+ * it has no Work. One rule for both, so the two can't disagree about whose material a chat writes.
  */
 export function chatOwner(
   thread: { projectId: string; rootThreadId: string },

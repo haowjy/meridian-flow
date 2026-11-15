@@ -59,6 +59,11 @@ async function otherNotesNames(
   branchId: BranchId,
   addresses: ReadonlyMap<DocumentId, NodeAddress>,
 ): Promise<ReadonlyMap<DocumentId, string>> {
+  const places = [...addresses].flatMap(([documentId, address]) => {
+    const place = scratchOwnerOf(address);
+    return place ? [[documentId, place] as const] : [];
+  });
+  if (places.length === 0) return new Map();
   const tx = currentDrizzleDb(db);
   const [branch] = await tx.execute<{
     project_id: string;
@@ -76,9 +81,8 @@ async function otherNotesNames(
       })
     : null;
   const others = new Map<DocumentId, DraftOwner>();
-  for (const [documentId, address] of addresses) {
-    const place = scratchOwnerOf(address);
-    if (place && !(own && ownsScratch(own, place))) others.set(documentId, place);
+  for (const [documentId, place] of places) {
+    if (!(own && ownsScratch(own, place))) others.set(documentId, place);
   }
   if (others.size === 0) return new Map();
   const idsOf = (kind: DraftOwner["kind"]) => [
