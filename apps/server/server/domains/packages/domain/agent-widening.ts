@@ -123,12 +123,16 @@ export function widenedLabel(item: Widened): string {
       ? `${item.name} (${item.slug})`
       : item.slug;
   const place = item.level !== item.from ? ` (${item.level}, replaces ${item.from})` : "";
-  const causes = [
-    ...(item.tools.length ? [`can now use ${item.tools.join(", ")}`] : []),
-    ...(item.subagents.length ? [`can now spawn ${item.subagents.join(", ")}`] : []),
-  ];
   const permission =
     item.after === "edit" && item.before !== "edit" ? `${item.before} → ${item.after}` : null;
+  // An Agent that comes into being as an editor is told by its permission, not by every tool.
+  const causes =
+    permission && item.before === "unavailable"
+      ? []
+      : [
+          ...(item.tools.length ? [`can now use ${item.tools.join(", ")}`] : []),
+          ...(item.subagents.length ? [`can now spawn ${item.subagents.join(", ")}`] : []),
+        ];
   return `${who}${place}: ${[permission, ...causes].filter(Boolean).join("; ")}`;
 }
 

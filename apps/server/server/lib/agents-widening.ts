@@ -49,7 +49,7 @@ export interface AgentsWidening {
   }): Promise<AgentsCheck>;
 }
 
-/** A command id the same call always derives, so a resend finds its first outcome. */
+/** A command id the same call of the same chat always derives, so a resend finds its first outcome. */
 function applyCommandId(callId: string): CommandId {
   const hex = createHash("sha256").update(`agents-auto-apply:${callId}`).digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}` as CommandId;
@@ -111,7 +111,7 @@ export function createAgentsWidening(deps: {
           owner,
           accountId: thread.userId as UserId,
           projectId: thread.projectId as ProjectId,
-          commandId: applyCommandId(callId),
+          commandId: applyCommandId(`${thread.id}:${callId}`),
           select: (item) => agentsLevelOfUri(item.path) === level,
         });
         return result.status === "applied"
