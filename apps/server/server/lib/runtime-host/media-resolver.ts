@@ -106,8 +106,8 @@ export function createContextMediaResolver(deps: {
       try {
         const reference = part.ref;
         if (part.chatCopy) {
-          // The writer's own picture in their own chat: no placement or grant, and an upload that
-          // is deleted or purged changes nothing here.
+          // A file the chat was sent: no placement or grant, and a file that is deleted or purged
+          // changes nothing here.
           const mediaType = part.mediaType;
           return resolvedMedia({
             key: part.chatCopy.key,
@@ -115,7 +115,7 @@ export function createContextMediaResolver(deps: {
             sizeBytes: part.sizeBytes,
             name: part.name,
             // A copy records no preview flag; a missing preview object reads as none.
-            mayHavePreview: !UNIVERSAL_IMAGE_TYPES.has(mediaType),
+            mayHavePreview: mediaType.startsWith("image/") && !UNIVERSAL_IMAGE_TYPES.has(mediaType),
             window,
           });
         }

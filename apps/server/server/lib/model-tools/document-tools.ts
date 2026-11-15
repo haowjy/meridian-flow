@@ -731,11 +731,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             ...(creates && reached?.node?.kind === "folder" ? { into: reached.node.id } : {}),
             ...(creates
               ? {
-                  recordCreate: async ({ documentId, record, draftBranchId }) => {
+                  recordCreate: async ({ documentId, record, folders, draftBranchId }) => {
                     await deps.documentSync.treeHistory().recordAgentTreeChange({
                       subject: documentId,
                       nodes: [{ nodeId: documentId, beforeAt: null, afterAt: engine.path }],
-                      records: [{ record, node: documentId }],
+                      records: [...folders, { record, node: documentId }],
                       threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
                       ...(ctx.turnId
                         ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }

@@ -214,9 +214,7 @@ export function ContextTreePanel({
             projectId,
             owner,
             scheme,
-            capabilities: writable
-              ? ["rename", "move", "copy", ...(scheme !== "uploads" ? (["delete"] as const) : [])]
-              : READ_ONLY,
+            capabilities: writable ? ["rename", "move", "copy", "delete"] : READ_ONLY,
             activeDocumentId,
             changed,
             creation: creates

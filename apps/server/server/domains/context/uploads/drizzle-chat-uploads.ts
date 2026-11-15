@@ -1,7 +1,7 @@
 import type { ChatUploadsResult } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, uploadIntakes } from "@meridian/database/schema";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 
@@ -11,8 +11,7 @@ export interface ChatUploads {
 }
 
 /**
- * What the chat's own query adds to its uploads in the tree list. `used` is the intake's
- * `already_used` rule: a sent message consumed the upload.
+ * What the chat's own query adds to its uploads in the tree list: when each was attached.
  */
 export function createDrizzleChatUploads(db: Database): ChatUploads {
   return {
@@ -22,7 +21,6 @@ export function createDrizzleChatUploads(db: Database): ChatUploads {
         .select({
           documentId: uploadIntakes.documentId,
           createdAt: uploadIntakes.createdAt,
-          consumedAt: uploadIntakes.consumedAt,
         })
         .from(uploadIntakes)
         .innerJoin(
@@ -44,7 +42,6 @@ export function createDrizzleChatUploads(db: Database): ChatUploads {
           and(
             eq(uploadIntakes.projectId, projectId as never),
             eq(uploadIntakes.ownerThreadId, chatId as never),
-            ne(uploadIntakes.state, "deleted"),
           ),
         )
         .orderBy(desc(uploadIntakes.createdAt), desc(uploadIntakes.documentId));
@@ -52,7 +49,6 @@ export function createDrizzleChatUploads(db: Database): ChatUploads {
         uploads: rows.map((row) => ({
           documentId: row.documentId,
           attachedAt: row.createdAt.toISOString(),
-          used: row.consumedAt !== null,
         })),
       };
     },

@@ -52,6 +52,8 @@ export type TurnTreeEntry = {
    * every other entry: a copy moved later in the same turn keeps this on its create.
    */
   copiedFrom: string | null;
+  /** The turn's own Undo took this change back: it names an address but is no longer a change. */
+  undone: boolean;
 };
 
 export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
@@ -159,7 +161,7 @@ export function createTurnLiveLineageReadModel(deps: {
   }
 }
 
-/** A create's recorded address survives even when it was drafted and never became live. */
+/** A create's recorded address survives even when it was drafted and never became live, or undone. */
 function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string, string> {
   return new Map(
     entries.flatMap((entry) =>
@@ -191,6 +193,7 @@ function treeLines(entries: readonly TurnTreeEntry[]): Map<string, TurnTreeLine>
     { from: string; at: string; living: boolean; repositioned: boolean; copiedFrom: string | null }
   >();
   for (const entry of entries) {
+    if (entry.undone) continue;
     const key = treeLineKey(entry);
     const state = folded.get(key) ?? {
       from: entry.shownAt ?? "",

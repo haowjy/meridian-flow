@@ -14,8 +14,9 @@ export type StoredMediaPart = {
   pageCount?: number;
   name: string;
   /**
-   * A writer's picture only: the chat's own copy of the bytes, made when the message was sent, so
-   * the picture stays in the chat after its upload is deleted or purged.
+   * A file the chat was sent (a writer's picture, or a file a mention's read showed as media): the
+   * chat's own copy of the bytes, made when it was sent, so it stays in the chat after the file is
+   * deleted or purged.
    */
   chatCopy?: { key: string };
 };
