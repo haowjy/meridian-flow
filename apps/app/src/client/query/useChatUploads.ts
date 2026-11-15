@@ -5,7 +5,7 @@
  * chat's id. When each file was attached comes from the
  * chat's uploads query, which a chat that is still being created answers with nothing.
  */
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { getChatUploadFacts } from "@/client/api/projects-api";
 import {
@@ -42,7 +42,8 @@ export function useChatUploads(projectId: string, chatId: string | null | undefi
   const files = useMemo(() => tree?.files() ?? [], [tree]);
   const facts = useQuery({
     queryKey: projectQueryKeys.chatUploads(projectId, chatId ?? "", files.length),
-    queryFn: chatId ? ({ signal }) => getChatUploadFacts(projectId, chatId, signal) : skipToken,
+    queryFn: ({ signal }) => getChatUploadFacts(projectId, chatId ?? "", signal),
+    enabled: Boolean(chatId),
     staleTime: 5_000,
     refetchOnWindowFocus: true,
   });
