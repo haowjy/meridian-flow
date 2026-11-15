@@ -29,9 +29,9 @@ export type Held<T> = { held: true; value: T } | { held: false };
 
 export interface AgentsLevelLocks {
   /**
-   * Runs `operation` holding every level's lock, taken in a fixed order (user, then project) so
-   * two writes that touch both levels cannot wait on each other. `held: false` when a lock or a
-   * connection was not free in time.
+   * Runs `operation` holding every level's lock, taken in a fixed order (sorted by key, so a
+   * project's before a user's) so two writes that touch both levels cannot wait on each other.
+   * `held: false` when a lock or a connection was not free in time.
    */
   hold<T>(owners: AgentsLevelOwner[], operation: () => Promise<T>): Promise<Held<T>>;
 }

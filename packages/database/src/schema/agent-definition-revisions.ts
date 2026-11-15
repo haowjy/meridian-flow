@@ -5,9 +5,10 @@ import type {
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
-import { check, jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, jsonb, pgTable, primaryKey, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createdAt, idColumn } from "./_shared";
 import { threads } from "./agent-threads";
+import { users } from "./users";
 
 export const agentPackageRevisions = pgTable(
   "agent_package_revisions",
@@ -55,6 +56,24 @@ export const agentDefinitionRevisions = pgTable(
       sql`${table.definition} IS NOT NULL OR jsonb_array_length(${table.diagnostics}) > 0`,
     ),
   ],
+);
+
+/**
+ * The Agent revisions an account's picker has shown: a chat binds a revision only from its
+ * owner's rows here or a built-in. Ids are content-derived, so rows grow with distinct versions.
+ */
+export const agentRevisionPicks = pgTable(
+  "agent_revision_picks",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    definitionRevisionId: uuid("definition_revision_id")
+      .notNull()
+      .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
+    createdAt: createdAt(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.definitionRevisionId] })],
 );
 
 export const threadAgentBindings = pgTable("thread_agent_bindings", {

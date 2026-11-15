@@ -47,6 +47,10 @@ export interface AgentRevisionStore {
     source: AgentSourceSnapshot,
     grammarVersion?: string,
   ): Promise<{ packageRevisionId: string; definitions: CatalogRevision[] }>;
+  /** Records that `userId`'s picker showed these revisions; one row per account and version. */
+  recordPicks(userId: string, revisionIds: string[]): Promise<void>;
+  /** The revision, only when `userId`'s picker showed it. */
+  readPickedRevision(userId: string, id: string): Promise<CatalogRevision | undefined>;
   readSource(packageRevisionId: string): Promise<AgentSourceSnapshot | undefined>;
   /** By id, any reader version. Undefined for an unavailable Agent. */
   readRevision(id: string): Promise<AgentRevision | undefined>;

@@ -21,6 +21,7 @@ import type {
 type State = {
   sources: Map<string, { digest: string; source: AgentSourceSnapshot }>;
   revisions: Map<string, CatalogRevision>;
+  picks: Set<string>;
   bindings: Map<
     string,
     {
@@ -47,6 +48,7 @@ export function createInMemoryAgentRevisionStore(input: {
   const current: State = {
     sources: transactionOwner.map(),
     revisions: transactionOwner.map(),
+    picks: transactionOwner.set(),
     bindings: transactionOwner.map(),
   };
   const state = () => current;
@@ -101,6 +103,12 @@ export function createInMemoryAgentRevisionStore(input: {
           definitions: await store.readPackageCatalogRevisions(packageRevisionId, grammarVersion),
         };
       });
+    },
+    async recordPicks(userId, revisionIds) {
+      for (const id of revisionIds) state().picks.add(`${userId}:${id}`);
+    },
+    async readPickedRevision(userId, id) {
+      return state().picks.has(`${userId}:${id}`) ? copy(state().revisions.get(id)) : undefined;
     },
     async readSource(id) {
       return copy(state().sources.get(id)?.source);

@@ -4,6 +4,7 @@ import type { Database } from "@meridian/database";
 import {
   agentDefinitionRevisions,
   agentPackageRevisions,
+  agentRevisionPicks,
   threadAgentBindings,
 } from "@meridian/database/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -108,6 +109,29 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
       return (await store.readPackageCatalogRevisions(packageRevisionId, grammarVersion)).flatMap(
         available,
       );
+    },
+    async recordPicks(userId, revisionIds) {
+      if (revisionIds.length === 0) return;
+      await db()
+        .insert(agentRevisionPicks)
+        .values(revisionIds.map((definitionRevisionId) => ({ userId, definitionRevisionId })))
+        .onConflictDoNothing();
+    },
+    async readPickedRevision(userId, id) {
+      const [row] = await db()
+        .select({ revision: agentDefinitionRevisions })
+        .from(agentRevisionPicks)
+        .innerJoin(
+          agentDefinitionRevisions,
+          eq(agentDefinitionRevisions.id, agentRevisionPicks.definitionRevisionId),
+        )
+        .where(
+          and(
+            eq(agentRevisionPicks.userId, userId),
+            eq(agentRevisionPicks.definitionRevisionId, id),
+          ),
+        );
+      return row ? catalogRevision(row.revision) : undefined;
     },
     async readSource(id) {
       const [row] = await db()

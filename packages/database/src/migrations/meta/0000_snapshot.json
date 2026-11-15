@@ -187,6 +187,73 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.agent_revision_picks": {
+      "name": "agent_revision_picks",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "definition_revision_id": {
+          "name": "definition_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "agent_revision_picks_user_id_users_id_fk": {
+          "name": "agent_revision_picks_user_id_users_id_fk",
+          "tableFrom": "agent_revision_picks",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_revision_picks_definition_revision_id_agent_definition_revisions_id_fk": {
+          "name": "agent_revision_picks_definition_revision_id_agent_definition_revisions_id_fk",
+          "tableFrom": "agent_revision_picks",
+          "tableTo": "agent_definition_revisions",
+          "columnsFrom": [
+            "definition_revision_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "agent_revision_picks_user_id_definition_revision_id_pk": {
+          "name": "agent_revision_picks_user_id_definition_revision_id_pk",
+          "columns": [
+            "user_id",
+            "definition_revision_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.thread_agent_bindings": {
       "name": "thread_agent_bindings",
       "schema": "",

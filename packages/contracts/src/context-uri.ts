@@ -236,7 +236,7 @@ export function parseContextUri(
         ok: false,
         error: {
           uri: raw,
-          reason: `Unknown scheme "${parsedScheme}". Known schemes: ${schemes.map((known) => formatParsedContextUri(known, "", { kind: "contextual" })).join(", ")}`,
+          reason: `Unknown scheme "${parsedScheme}". Known schemes: ${schemes.map((known) => `${known}://`).join(", ")}`,
           unknownScheme: parsedScheme,
         },
       };
@@ -489,27 +489,27 @@ function branchNameRefusal(
   return `${BRANCH_NAME_RULE} Use ${repairedUri}.`;
 }
 
-/**
- * The one serializer for addresses. Spells parsed syntax; it does not resolve or grant authority.
- * The Agents levels are spelled as the writer and model know them, `.agents/…` and
- * `~/.agents/…`; the parser reads those back as `agents://` and `user://.agents/`.
- */
+/** The one serializer for addresses: the canonical identity. Spells parsed syntax; it does not resolve or grant authority. */
 export function formatParsedContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority: ParsedContextAuthority,
 ): string {
   const qualifier = ownerQualifier(authority);
-  if (qualifier === null && scheme === "agents") return path ? `.agents/${path}` : ".agents/";
-  if (
-    qualifier === null &&
-    scheme === "user" &&
-    (path === ".agents" || path.startsWith(".agents/"))
-  )
-    return `~/${path}${path === ".agents" ? "/" : ""}`;
   if (qualifier === null) return path ? `${scheme}://${path}` : `${scheme}://`;
   if (authority.kind === "owners") return `${scheme}://${qualifier}`;
   return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
+}
+
+/**
+ * The outward spelling of the Agents addresses in a text, `.agents/…` and `~/.agents/…`: what the
+ * model and the writer read. Identity stays `agents://` and `user://.agents/`, and the parser
+ * reads the outward spelling back.
+ */
+export function displayContextUri(text: string): string {
+  return text
+    .replace(/(?<![\w/])agents:\/\//g, ".agents/")
+    .replace(/(?<![\w/])user:\/\/\.agents(?![\w.-])/g, "~/.agents");
 }
 
 /** One owner segment of an address, `@w3/`: the text a typed address completes with. */
