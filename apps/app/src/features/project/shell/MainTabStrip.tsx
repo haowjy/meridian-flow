@@ -44,6 +44,7 @@ import { useScrollEdges } from "@/hooks/use-scroll-edges";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 import { useAccountId } from "../context/account-feature-context";
+import { documentPlace } from "../context/context-schemes";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { tabSubject } from "../context/tab-subject";
 import { useIsDraftOnly } from "../context/use-is-draft-only";
@@ -141,6 +142,9 @@ export function MainTabStrip({
   const mainKey = mainTab ? mainTabKey(mainTab) : null;
   const { tabs, unrecorded } = useDrawnTabs(kind, mainTab);
   const commands = useMainTabCommands({ projectId, kind, open, mainKey });
+  const documents = [...tabs, ...(unrecorded ? [unrecorded] : [])]
+    .filter((tab): tab is Extract<MainTab, { kind: "document" }> => tab.kind === "document")
+    .map((tab) => tab.document);
   const stripRef = useRef<HTMLDivElement>(null);
   const more = useScrollEdges(stripRef);
   useActiveTabVisibility(stripRef, mainKey ?? (current ? "current" : null));
@@ -152,6 +156,7 @@ export function MainTabStrip({
         key={mainTabKey(tab)}
         projectId={projectId}
         document={tab.document}
+        documents={documents}
         active={active}
         divider={divider}
         onSelect={() => commands.select(tab)}
@@ -360,6 +365,7 @@ function useDrawnTabs(kind: MainTabKind, mainTab?: MainTab) {
 function DocumentTabChip({
   projectId,
   document,
+  documents,
   active,
   divider,
   onSelect,
@@ -367,6 +373,7 @@ function DocumentTabChip({
 }: {
   projectId: string;
   document: OpenDocument;
+  documents: OpenDocument[];
   active: boolean;
   divider: boolean;
   onSelect: () => void;
@@ -394,6 +401,20 @@ function DocumentTabChip({
     onClose();
   };
   const key = mainTabKey({ kind: "document", document });
+  const place = document.kind === "new" ? null : documentPlace(document.scheme, document.path);
+  const peers = documents.filter(
+    (other) => other.documentId !== document.documentId && other.name === document.name,
+  );
+  const samePlace =
+    place !== null &&
+    peers.some(
+      (other) => other.kind !== "new" && documentPlace(other.scheme, other.path) === place,
+    );
+  const name =
+    samePlace && document.kind !== "new"
+      ? (document.path.split("/").pop() ?? document.name)
+      : document.name;
+  const label = peers.length && place ? `${name}, ${place}` : name;
   return (
     <TabChipFrame
       active={active}
@@ -416,7 +437,7 @@ function DocumentTabChip({
         type="button"
         role="tab"
         aria-selected={active}
-        aria-label={document.name}
+        aria-label={label}
         // One stop in the Tab order; the arrows move along the strip (`moveAlongStrip`).
         tabIndex={active ? 0 : -1}
         data-main-tab={key}
@@ -432,10 +453,11 @@ function DocumentTabChip({
         title={document.kind === "new" ? document.name : document.path}
       />
       <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
-        {document.name}
+        {name}
+        {peers.length > 0 && place && <span className="text-muted-foreground"> {place}</span>}
       </span>
       <TabCloseButton
-        name={document.name}
+        name={label}
         active={active}
         onClose={(event) =>
           event.detail > 0 ? closeByPointer(event.currentTarget.parentElement) : onClose()
