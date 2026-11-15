@@ -20,13 +20,9 @@
  * deleted on a final fact; an incarnation that is no longer current is deleted when no tab holds
  * it (`openOlder`).
  *
- * A copy records each notice from it the writer is done with (`recordHandedBack`, on Copy or
- * Dismiss): exactly the items that notice offered. Another tab can still hold the copy and write
- * into it, so the copy can outlive the notice, and every later read of it, in any tab or after a
- * reload, subtracts the records (`offer`). A notice with words also records what it offered as
- * it shows (`recordOffered`): until the writer acts on it, the copy is never deleted, not even when
- * its document is gone for good (`clear` retires it), and each start of the account offers it
- * again from the copy (`openUnacted`), so the toast is never the only place its words are.
+ * A copy is working storage only: what a notice offered from it and whether the writer acted on
+ * it are in the account's notice store (`hand-back-notices.ts`). A caller about to delete a copy
+ * whose words the server lacks has the store claim them first, and keeps the copy if it can't.
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -35,8 +31,7 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
-import type { UnsentTypingCause } from "./document-session-registry";
-import { addList, hasMoreThan, listOf, type RangeList, type Ranges } from "./item-ranges";
+import { HAND_BACK_NOTICES_PREFIX, handBackNoticesName } from "./hand-back-notices";
 import { documentText, readCopy } from "./rescued-text";
 
 const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
@@ -70,60 +65,6 @@ export function draftRoomPersistenceKey(
 }
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";
-const HANDED_BACK_PREFIX = "meridian:handed-back:";
-const OFFERED_PREFIX = "meridian:offered:";
-const RETIRED_KEY = "meridian:retired";
-
-/** What a notice with words offered from the copy, written as it shows (`recordOffered`). */
-export type OfferedRecord = { id: string; cause: UnsentTypingCause; ranges: Ranges };
-
-/** What a copy's `custom` store says about its notices. */
-export type CopyRecords = {
-  /** The notices from it the writer acted on (`recordHandedBack`), as one set. */
-  handedBack: Ranges;
-  /** Its notices with words, acted on or not. */
-  offered: OfferedRecord[];
-  /** Its document can never come back (`clear`): it goes once nothing it offered is unacted. */
-  retired: boolean;
-};
-
-const keyRange = (prefix: string) => IDBKeyRange.bound(prefix, `${prefix}\uffff`);
-
-function readRecords(database: IDBDatabase): Promise<CopyRecords> {
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction("custom", "readonly");
-    const store = transaction.objectStore("custom");
-    const handedBack = store.getAll(keyRange(HANDED_BACK_PREFIX));
-    const offeredKeys = store.getAllKeys(keyRange(OFFERED_PREFIX));
-    const offered = store.getAll(keyRange(OFFERED_PREFIX));
-    const retired = store.get(RETIRED_KEY);
-    transaction.oncomplete = () => {
-      const records: CopyRecords = {
-        handedBack: new Map(),
-        offered: [],
-        retired: retired.result === true,
-      };
-      for (const record of handedBack.result as RangeList[]) addList(records.handedBack, record);
-      (offered.result as Array<{ cause: UnsentTypingCause; ranges: RangeList }>).forEach(
-        ({ cause, ranges: list }, index) => {
-          const ranges: Ranges = new Map();
-          addList(ranges, list);
-          const key = String(offeredKeys.result[index]);
-          records.offered.push({ id: key.slice(OFFERED_PREFIX.length), cause, ranges });
-        },
-      );
-      resolve(records);
-    };
-    transaction.onabort = () =>
-      reject(transaction.error ?? new Error("Notice record read aborted"));
-  });
-}
-
-/** Whether some notice offered words the writer has not acted on. */
-function unacted({ offered, handedBack }: CopyRecords): boolean {
-  return offered.some(({ ranges }) => hasMoreThan(ranges, handedBack));
-}
-
 /** Opens the database `name` if it exists; null when it does not, and none is created. */
 function openExisting(idb: IDBFactory, name: string): Promise<IDBDatabase | null> {
   return new Promise((resolve, reject) => {
@@ -152,16 +93,6 @@ async function withExisting<T>(
   }
 }
 
-function putRecord(database: IDBDatabase, key: string, value: unknown): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction("custom", "readwrite");
-    transaction.objectStore("custom").put(value, key);
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () =>
-      reject(transaction.error ?? new Error("Notice record write aborted"));
-  });
-}
-
 export type CopyHold = { release(): void };
 
 /** The document a database name belongs to, for one account; null for another account's or another kind of database. */
@@ -176,29 +107,24 @@ function documentOf(name: string, accountId: AccountId): DocumentId | null {
   return null;
 }
 
-/** What a copy holds, read whole. */
-export type CopyContents = CopyRecords & {
-  /** Everything the copy holds. */
-  update: Uint8Array;
-};
-
 /** A copy no tab held, read whole; it stays locked until `finish`. */
-export type UnheldCopy = CopyContents & {
+export type UnheldCopy = {
   /** Its database name. */
   name: string;
-  /** Releases the copy, deleting it unless `keep`; a kept one first records `acted` as notices the writer is done with. */
-  finish(keep: boolean, acted?: ReadonlyMap<string, Ranges>): Promise<void>;
+  /** Everything the copy holds. */
+  update: Uint8Array;
+  /** Releases the copy, deleting it unless `keep`. */
+  finish(keep: boolean): Promise<void>;
 };
 
-/** Reads the database `name`, under a hold that keeps it; null when it is gone, and none is created. */
-async function load(idb: IDBFactory, name: string): Promise<CopyContents | null> {
-  const records = await withExisting(idb, name, readRecords);
-  if (!records) return null;
+/** Everything the database `name` holds, read under a hold that keeps it; null when it is gone, and none is created. */
+async function load(idb: IDBFactory, name: string): Promise<Uint8Array | null> {
+  if (!(await withExisting(idb, name, async () => true))) return null;
   const document = new Y.Doc();
   const persistence = new IndexeddbPersistence(name, document);
   try {
     await persistence.whenSynced;
-    return { ...records, update: Y.encodeStateAsUpdate(document) };
+    return Y.encodeStateAsUpdate(document);
   } finally {
     await persistence.destroy();
     document.destroy();
@@ -263,107 +189,26 @@ export class LocalDocumentCopies {
       const parsed = parseName(name);
       return parsed.key === key && parsed.incarnation < current;
     });
-    const opened = await Promise.all(older.map((name) => this.openIfUnheld(name, () => true)));
+    const opened = await Promise.all(older.map((name) => this.openIfUnheld(name)));
     return opened.filter((copy) => copy !== null);
   }
 
-  /**
-   * The account's copies no tab holds that have words a notice offered and the writer has not
-   * acted on, each locked until `finish`: what the account's start offers again, wherever its
-   * document is. A retired copy with nothing left unacted goes on the way.
-   */
-  async openUnacted(): Promise<UnheldCopy[]> {
-    const names = (await this.names()).filter((name) => documentOf(name, this.accountId));
-    const opened = await Promise.all(names.map((name) => this.openIfUnheld(name, unacted)));
-    return opened.filter((copy) => copy !== null);
-  }
-
-  /**
-   * The copy `name` under its exclusive lock, read whole when `wanted` says so from its records;
-   * null when a tab holds it, it is gone, or it is not wanted (then released, or deleted when it
-   * is retired with nothing left unacted).
-   */
-  private async openIfUnheld(
-    name: string,
-    wanted: (records: CopyRecords) => boolean,
-  ): Promise<UnheldCopy | null> {
+  /** The copy `name` read whole under its exclusive lock; null when a tab holds it or it is gone. */
+  private async openIfUnheld(name: string): Promise<UnheldCopy | null> {
     const { locks, idb } = this;
     if (!locks || !idb) return null;
     const ready = deferred<UnheldCopy | null>();
-    const finished = deferred<{ keep: boolean; acted: ReadonlyMap<string, Ranges> }>();
+    const finished = deferred<boolean>();
     void locks
       .request(this.lockName(name), { mode: "exclusive", ifAvailable: true }, async (lock) => {
         if (!lock) return ready.resolve(null);
-        const records = await withExisting(idb, name, readRecords);
-        if (!records || !wanted(records)) {
-          ready.resolve(null);
-          if (records?.retired && !unacted(records)) await this.deleteDatabase(name);
-          return;
-        }
-        const contents = await load(idb, name);
-        if (!contents) return ready.resolve(null);
-        ready.resolve({
-          name,
-          ...contents,
-          finish: async (keep, acted = new Map()) => finished.resolve({ keep, acted }),
-        });
-        const { keep, acted } = await finished.promise;
-        if (!keep) return this.deleteDatabase(name);
-        for (const [id, ranges] of acted)
-          await withExisting(idb, name, (database) =>
-            putRecord(database, `${HANDED_BACK_PREFIX}${id}`, listOf(ranges)),
-          );
+        const update = await load(idb, name);
+        if (!update) return ready.resolve(null);
+        ready.resolve({ name, update, finish: async (keep) => finished.resolve(keep) });
+        if (!(await finished.promise)) await this.deleteDatabase(name);
       })
       .catch(ready.reject);
     return ready.promise;
-  }
-
-  /**
-   * `value` under `key` in the copy `name`'s records, under its shared lock; a copy already
-   * deleted is not created again. Resolves to its records after.
-   */
-  private async record(name: string, key: string, value: unknown): Promise<CopyRecords | null> {
-    const idb = this.idb;
-    if (!idb) return null;
-    // No database: it was deleted, and with it everything the record would cover.
-    const write = () =>
-      withExisting(idb, name, async (database) => {
-        await putRecord(database, key, value);
-        return readRecords(database);
-      });
-    return this.locks
-      ? this.locks.request(this.lockName(name), { mode: "shared" }, write)
-      : write();
-  }
-
-  /**
-   * Records in the copy `name` what the notice `id` offered, as it shows: until the writer acts
-   * on it (`recordHandedBack`), the copy is kept and every start of the account offers it again.
-   */
-  async recordOffered(
-    name: string,
-    id: string,
-    cause: UnsentTypingCause,
-    ranges: Ranges,
-  ): Promise<void> {
-    await this.record(name, `${OFFERED_PREFIX}${id}`, { cause, ranges: listOf(ranges) });
-  }
-
-  /**
-   * Records in the copy `name` that the writer is done with the notice `id`, which offered
-   * exactly `offered`, so no later read, in any tab or after a reload, offers it again. Taken
-   * under the copy's shared lock, so a tab reading it to delete sees the record or has deleted
-   * it. A retired copy with nothing left unacted then goes, unless a tab holds it.
-   */
-  async recordHandedBack(name: string, id: string, offered: Ranges): Promise<void> {
-    const records = await this.record(name, `${HANDED_BACK_PREFIX}${id}`, listOf(offered));
-    if (records?.retired && !unacted(records)) await this.openIfUnheld(name, () => false);
-  }
-
-  /** The notices from the copy `name` the writer acted on; read by a session that holds it. */
-  async handedBack(name: string): Promise<Ranges> {
-    const records = this.idb && (await withExisting(this.idb, name, readRecords));
-    return records?.handedBack ?? new Map();
   }
 
   private publish() {
@@ -415,8 +260,8 @@ export class LocalDocumentCopies {
     try {
       const texts = await Promise.all(
         names.map(async (name) => {
-          const copy = await load(idb, name);
-          return copy && readCopy(copy.update, documentText);
+          const update = await load(idb, name);
+          return update && readCopy(update, documentText);
         }),
       );
       return texts.reduce<string | null>(
@@ -445,43 +290,29 @@ export class LocalDocumentCopies {
   }
 
   /**
-   * Deletes every copy of the document, which can never come back. A copy with words a notice
-   * offered that the writer has not acted on is retired instead, and goes once they are
-   * (`recordHandedBack`, `openIfUnheld`). False when another tab holds one open: that tab's own
-   * reading of the list clears it, and a copy left behind is found at the next start.
+   * Deletes every copy of the document, which can never come back. False when another tab holds
+   * one open: that tab's own reading of the list clears it, and a copy left behind is found at the
+   * next start.
    */
   async clear(documentId: DocumentId): Promise<boolean> {
     const names = await this.namesOf(documentId);
     if (!this.locks) {
-      await this.retireCopies(documentId, names);
+      await this.deleteCopies(documentId, names);
       return true;
     }
     return (
       (await this.exclusively(names, { ifAvailable: true }, async () => {
-        await this.retireCopies(documentId, names);
+        await this.deleteCopies(documentId, names);
         return true;
       })) ?? false
     );
   }
 
-  private async retireCopies(documentId: DocumentId, names: readonly string[]) {
-    const idb = this.idb;
-    const retired = new Set<string>();
-    if (idb)
-      for (const name of names)
-        await withExisting(idb, name, async (database) => {
-          if (!unacted(await readRecords(database))) return;
-          retired.add(name);
-          await putRecord(database, RETIRED_KEY, true);
-        });
-    await this.deleteCopies(
-      documentId,
-      names.filter((name) => !retired.has(name)),
-      retired,
-    );
-  }
-
-  /** Deletes every copy of the account, waiting for the tabs that hold one; false when one was still held after the wait. */
+  /**
+   * Deletes every copy of the account, waiting for the tabs that hold one, then its notices; false
+   * when a copy was still held after the wait. The notices stay with a copy left behind: they say
+   * which of its words the writer already acted on.
+   */
   async clearAll(): Promise<boolean> {
     const documents = new Set(
       (await this.names()).flatMap((name) => documentOf(name, this.accountId) ?? []),
@@ -516,24 +347,19 @@ export class LocalDocumentCopies {
         .filter((name) => name.startsWith(prefix))
         .map((name) => this.deleteDatabase(name)),
     );
-    return results.every(Boolean);
+    const cleared = results.every(Boolean);
+    if (cleared) await this.deleteDatabase(handBackNoticesName(this.accountId));
+    return cleared;
   }
 
   private async namesOf(documentId: DocumentId): Promise<string[]> {
     return (await this.names()).filter((name) => documentOf(name, this.accountId) === documentId);
   }
 
-  /** `kept`: the document's copies that stay; their rooms keep their pointers, and the document stays known. */
-  private async deleteCopies(
-    documentId: DocumentId,
-    names: readonly string[],
-    kept: ReadonlySet<string> = new Set(),
-  ) {
+  private async deleteCopies(documentId: DocumentId, names: readonly string[]) {
     await Promise.all(names.map((name) => this.deleteDatabase(name)));
-    const keptKeys = new Set([...kept].map((name) => parseName(name).key));
-    for (const { key } of names.map(parseName))
-      if (!keptKeys.has(key)) this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
-    if (kept.size === 0 && this.known?.delete(documentId)) this.publish();
+    for (const { key } of names.map(parseName)) this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
+    if (this.known?.delete(documentId)) this.publish();
   }
 
   private async names(): Promise<string[]> {
@@ -552,12 +378,14 @@ export class LocalDocumentCopies {
   }
 }
 
-/** The accounts that have a copy in this browser. */
+/** The accounts that have a copy or a notice in this browser. */
 async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
   const names = (await idb.databases?.()) ?? [];
   const accounts = new Set<AccountId>();
   for (const { name } of names) {
-    const prefix = [LIVE_PREFIX, DRAFT_PREFIX].find((each) => name?.startsWith(each));
+    const prefix = [LIVE_PREFIX, DRAFT_PREFIX, HAND_BACK_NOTICES_PREFIX].find((each) =>
+      name?.startsWith(each),
+    );
     if (!name || !prefix) continue;
     const account = name.slice(prefix.length).split("/")[0];
     if (account) accounts.add(decodeURIComponent(account) as AccountId);

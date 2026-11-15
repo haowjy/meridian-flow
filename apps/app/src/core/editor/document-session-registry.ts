@@ -34,6 +34,15 @@ export type UnsentTyping = Readonly<{
   done: () => void;
 }>;
 
+/**
+ * What a tab shows of the account's hand-back notices. `show` once per notice; `withdraw` when
+ * another tab's Copy or Dismiss settled one this tab still shows.
+ */
+export type UnsentTypingObserver = Readonly<{
+  show: (typing: UnsentTyping) => void;
+  withdraw: (id: string) => void;
+}>;
+
 export interface LiveDocumentSessionRegistry {
   admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;
   /**
@@ -67,11 +76,11 @@ export interface LiveDocumentSessionRegistry {
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
   /**
-   * The words a room, live or draft, held unacknowledged when it ended or its local copy was
-   * cleared (closed, removed), once per session, read before the copy goes. A room with no
-   * session in this tab has nothing to hand back.
+   * The account's hand-back notices: words a room, live or draft, could not deliver (closed,
+   * removed, read-only), from any tab, until the writer copies or dismisses them in one. The first
+   * observer starts the account's read of the notices stored before.
    */
-  observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
+  observeUnsentTyping(observer: UnsentTypingObserver): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
   /** A restore reopened the draft: its room may open again under the same id. */
   reopenDraftRoom(roomKey: string): void;

@@ -85,15 +85,6 @@ export function subtract(a: Ranges, b: Ranges): Ranges {
   return left;
 }
 
-/** Every clock of any of `sets`. */
-export function union(...sets: readonly Ranges[]): Ranges {
-  const all: Ranges = new Map();
-  for (const set of sets)
-    for (const [client, list] of set)
-      for (const [from, to] of list) addRange(all, client, from, to);
-  return all;
-}
-
 /** The items `update` inserts, skips and garbage collected structs aside. */
 export function insertedBy(update: Uint8Array): Ranges {
   const ranges: Ranges = new Map();

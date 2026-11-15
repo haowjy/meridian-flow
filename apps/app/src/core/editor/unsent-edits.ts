@@ -34,7 +34,6 @@ import {
   within,
   without,
 } from "./item-ranges";
-import { type Offer, offer } from "./rescued-text";
 
 type DisplayRecord = { inserted: RangeList; deleted: RangeList };
 
@@ -170,17 +169,13 @@ export class UnsentEdits {
   }
 
   /**
-   * What a notice offers for an undeliverable difference (`offer`): the items the server lacks
-   * that are typing, outside `handedBack`, with their words, and whether that or a deletion the
-   * server lacks is this session's own. An item of this session's own client ids is typing only
-   * inside the ledger; an item of any other client id counts whole, because something the server
-   * lacks was written in this browser by another tab, or by a session before a reload, and the
-   * copy does not say how.
+   * The typing in an undeliverable difference, as the items the server lacks that the writer
+   * typed, and whether that or a deletion the server lacks is this session's own. An item of this
+   * session's own client ids is typing only inside the ledger; an item of any other client id
+   * counts whole, because something the server lacks was written in this browser by another tab,
+   * or by a session before a reload, and the copy does not say how.
    */
-  undeliverable(
-    { lacking, server }: HandshakeDifference,
-    handedBack: Ranges,
-  ): Offer & { own: boolean } {
+  undeliverable({ lacking, server }: HandshakeDifference): { typing: Ranges; own: boolean } {
     const update = Y.decodeUpdate(lacking);
     const typing: Ranges = new Map();
     for (const struct of update.structs) {
@@ -193,13 +188,12 @@ export class UnsentEdits {
         for (const [a, b] of without(from, to, this.displayInserted.get(client)))
           addRange(typing, client, a, b);
     }
-    const offered = offer(this.document, typing, handedBack);
     const lackingDeleted = this.deletionsLacking(update.ds, rangesOf(Y.decodeSnapshot(server).ds));
     const own =
-      [...offered.ranges.keys()].some((client) => this.ownClients.has(client)) ||
+      [...typing.keys()].some((client) => this.ownClients.has(client)) ||
       [...lackingDeleted].some(([client, list]) =>
         list.some(([from, to]) => within(this.ledgerDeleted, client, from, to).length > 0),
       );
-    return { ...offered, own };
+    return { typing, own };
   }
 }

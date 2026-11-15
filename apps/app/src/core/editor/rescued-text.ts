@@ -5,7 +5,7 @@
  */
 import * as Y from "yjs";
 
-import { insertedBy, type Ranges, subtract } from "./item-ranges";
+import { insertedBy, type Ranges } from "./item-ranges";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type SchemaRepairEvidence = {
@@ -145,7 +145,7 @@ export function documentText(document: Y.Doc): string | null {
 }
 
 /** The live words of the items in `ranges`; null when they hold none. */
-function typedText(document: Y.Doc, ranges: Ranges): string | null {
+export function typedText(document: Y.Doc, ranges: Ranges): string | null {
   const clients = new Map(
     [...ranges].map(([client, list]) => [
       client,
@@ -160,26 +160,12 @@ function typedText(document: Y.Doc, ranges: Ranges): string | null {
   return text || null;
 }
 
-declare const offered: unique symbol;
-/** What a hand-back notice offers. Only `offer` makes one, so no notice skips the acted-on records. */
-export type Offer = Readonly<{ ranges: Ranges; text: string | null; [offered]: true }>;
-
-/**
- * What a hand-back notice offers, for every reader of what a copy holds: the items of `lacking`
- * (what the server lacks) outside `handedBack` (the notices acted on, and those still showing
- * here), and their live words in `document`. The notice records `ranges`, exactly what it offered.
- */
-export function offer(document: Y.Doc, lacking: Ranges, handedBack: Ranges): Offer {
-  const ranges = subtract(lacking, handedBack);
-  return { ranges, text: typedText(document, ranges) } as Offer;
-}
-
-/** `read` on `copy` (an update) in a scratch document. */
-export function readCopy<T>(copy: Uint8Array, read: (document: Y.Doc) => T): T {
+/** `read` on `copy` (an update) in a scratch document, which lives until `read` settles. */
+export async function readCopy<T>(copy: Uint8Array, read: (document: Y.Doc) => T | Promise<T>) {
   const scratch = new Y.Doc();
   try {
     Y.applyUpdate(scratch, copy);
-    return read(scratch);
+    return await read(scratch);
   } finally {
     scratch.destroy();
   }
@@ -189,8 +175,8 @@ export function readCopy<T>(copy: Uint8Array, read: (document: Y.Doc) => T): T {
 export function readBeyond<T>(
   copy: Uint8Array,
   server: Uint8Array,
-  read: (document: Y.Doc, lacking: Ranges) => T,
-): T {
+  read: (document: Y.Doc, lacking: Ranges) => T | Promise<T>,
+) {
   return readCopy(copy, (document) =>
     read(document, insertedBy(Y.encodeStateAsUpdate(document, server))),
   );

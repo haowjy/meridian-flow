@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { useFailureLog } from "@/client/failures/failure-log";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import type { UnsentTyping } from "@/core/editor/document-session-registry";
+import type { UnsentTyping, UnsentTypingObserver } from "@/core/editor/document-session-registry";
 import { writeClipboardText } from "./clipboard";
 
 const COPIED_RESET_MS = 1500;
@@ -155,9 +155,14 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
  * Typing a room ended with, handed back in the app's toaster: the room is gone or reopened on the
  * server's text, so there is no place on screen to show it. It stays until dismissed, never timing
  * out: the writer is done with it once they copy its words or dismiss it (`typing.done`), and until
- * then a reload offers the words again.
+ * then a reload offers the words again. Done in another tab, it leaves this one too.
  */
-export function notifyUnsentTyping(typing: UnsentTyping) {
+export const unsentTypingToasts: UnsentTypingObserver = {
+  show: notifyUnsentTyping,
+  withdraw: (id) => toast.dismiss(`unsent:${id}`),
+};
+
+function notifyUnsentTyping(typing: UnsentTyping) {
   toast.custom(
     (id) => (
       <UnsentTypingToast

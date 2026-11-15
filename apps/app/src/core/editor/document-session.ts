@@ -63,7 +63,6 @@ import {
   type LocalPresence,
   type LocalPresenceFields,
 } from "./local-presence";
-import type { Offer } from "./rescued-text";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import {
   attemptClientSchemaReload,
@@ -598,15 +597,16 @@ export class DocumentSession {
   }
 
   /**
-   * What a notice offers from the last read-admitted handshake (`UnsentEdits.undeliverable`): the
-   * typing the server lacks outside `handedBack`, its words (null when there are none), and whether
-   * this session wrote any of what is left through an editor or its Undo. Null when the room holds
-   * none.
+   * The typing the last read-admitted handshake found the server lacks (`UnsentEdits.undeliverable`),
+   * as the items (`lacking`) and the document they live in, encoded so it can be read after the
+   * session is made inert, and whether this session wrote any of it, or a deletion the server
+   * lacks, through an editor or its Undo. Null when the room holds none.
    */
-  undeliverableEdits(handedBack: Ranges): (Offer & { own: boolean }) | null {
+  undeliverableEdits(): { copy: Uint8Array; lacking: Ranges; own: boolean } | null {
     const difference = this.lastDifference;
     if (!difference || !this.holdsUndeliverable) return null;
-    return this.unsent.undeliverable(difference, handedBack);
+    const { typing, own } = this.unsent.undeliverable(difference);
+    return { copy: Y.encodeStateAsUpdate(this.document), lacking: typing, own };
   }
 
   /**
