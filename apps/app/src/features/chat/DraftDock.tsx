@@ -7,6 +7,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,
+  BounceChip,
   CommandNotice,
   type CommandQuestion,
   noticeAction,
@@ -83,14 +84,17 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       onClick={(event) => event.stopPropagation()}
     >
       {askingApply ? null : dock.showCommands ? (
-        <ReviewActions
-          scope={multi ? "all" : "change"}
-          labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
-          density="full"
-          disabled={!dock.canCommand}
-          onDiscard={dock.discard}
-          onApply={dock.canApply ? startApply : undefined}
-        />
+        <>
+          <BounceChip notice={dock.bounce} />
+          <ReviewActions
+            scope={multi ? "all" : "change"}
+            labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
+            density="full"
+            disabled={!dock.canCommand}
+            onDiscard={dock.discard}
+            onApply={dock.canApply ? startApply : undefined}
+          />
+        </>
       ) : null}
     </div>
   );
@@ -112,7 +116,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           setExpanded((value) => !value);
         }}
         inline
-        className="min-w-[12ch] flex-auto coarse:min-h-11"
+        // The chip joins the line, which gives up the name's room instead of wrapping.
+        className={cn(
+          "coarse:min-h-11",
+          dock.bounce ? "min-w-[4ch] flex-1 basis-0" : "min-w-[12ch] flex-auto",
+        )}
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">

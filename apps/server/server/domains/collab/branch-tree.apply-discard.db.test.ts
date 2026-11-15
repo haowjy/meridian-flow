@@ -847,20 +847,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect((await liveRow(a))?.trashRecord).not.toBeNull();
         expect(await branchRow(a)).toMatchObject({ name: "kept" });
       });
-
-      it("Un-Apply of a restore with nothing else to apply takes the restore back", async () => {
-        const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
-        await draftOf(a, "only text");
-        await submit((writer) => writer.delete(LIVE, "system", a));
-        const commandId = randomUUID();
-        // A click with a text cut only has no tree cut: the restore is all it does in the tree.
-        expect(await applyNodes([a], commandId, undefined, false)).toMatchObject({
-          status: "applied",
-        });
-        expect(await liveRow(a)).toMatchObject({ trashRecord: null });
-        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
-        expect((await liveRow(a))?.trashRecord).not.toBeNull();
-      });
     });
   },
 );

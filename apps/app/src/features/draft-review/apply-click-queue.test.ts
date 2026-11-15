@@ -43,7 +43,7 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls 
   const send = vi
     .fn<(body: ApplyClick) => Promise<ApplyClickAnswer>>()
     .mockRejectedValue(new Error("lost"));
-  const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
+  const queue = new ApplyClickQueue({ node: "d", send, lookup: vi.fn(), changed() {} });
   const first = frozen("first");
   const result = queue.enqueue(first);
   queue.enqueue(frozen("second"));
@@ -56,7 +56,12 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls 
   await vi.advanceTimersByTimeAsync(4000);
   expect(send).toHaveBeenCalledTimes(4);
   expect(send.mock.calls.every(([request]) => request === first.body)).toBe(true);
-  send.mockResolvedValue({ status: "applied", commandId: "first", applied: [], textEffect: true });
+  send.mockResolvedValue({
+    status: "applied",
+    commandId: "first",
+    items: [{ node: "d", text: { landed: true } }],
+    applied: [],
+  });
   queue.retry();
   await flush();
   queue.observe("draft", ["first"]);
@@ -64,8 +69,8 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls 
   expect(await result).toEqual({
     status: "applied",
     commandId: "first",
+    items: [{ node: "d", text: { landed: true } }],
     applied: [],
-    textEffect: true,
   });
   expect(send.mock.calls.at(-1)?.[0].commandId).toBe("second");
   queue.destroy();
@@ -80,10 +85,10 @@ it("releases the head on the record before an answer and reports the answer's ou
     .mockImplementation(async (request) => ({
       status: "applied",
       commandId: request.commandId,
+      items: [{ node: "d", text: { landed: true } }],
       applied: [],
-      textEffect: true,
     }));
-  const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
+  const queue = new ApplyClickQueue({ node: "d", send, lookup: vi.fn(), changed() {} });
   const result = queue.enqueue(frozen("first"));
   const second = queue.enqueue(frozen("second", laterAck.promise));
   await flush();
@@ -98,23 +103,25 @@ it("releases the head on the record before an answer and reports the answer's ou
   answer.resolve({
     status: "applied",
     commandId: "first",
+    items: [
+      { node: "d", text: { landed: true, settled: [{ rule: "restored", documentId: "d" }] } },
+    ],
     applied: [],
-    textEffect: true,
-    settled: [{ rule: "restored", documentId: "d" }],
   });
   expect(await result).toEqual({
     status: "applied",
     commandId: "first",
+    items: [
+      { node: "d", text: { landed: true, settled: [{ rule: "restored", documentId: "d" }] } },
+    ],
     applied: [],
-    textEffect: true,
-    settled: [{ rule: "restored", documentId: "d" }],
   });
   queue.observe("draft", ["first", "second"]);
   await expect(second).resolves.toEqual({
     status: "applied",
     commandId: "second",
+    items: [{ node: "d", text: { landed: true } }],
     applied: [],
-    textEffect: true,
   });
   queue.destroy();
 });
@@ -125,10 +132,16 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
     const lookup = vi.fn(
       async (request: ApplyClick): Promise<ApplyClickObservation> =>
         status === "applied"
-          ? { status, commandId: request.commandId, applied: [], textEffect: true }
+          ? {
+              status,
+              commandId: request.commandId,
+              items: [{ node: "d", text: { landed: true } }],
+              applied: [],
+            }
           : { status, commandId: request.commandId },
     );
     const queue = new ApplyClickQueue({
+      node: "d",
       send: () => answer.promise,
       lookup,
       changed() {},
@@ -144,7 +157,12 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
     expect(lookup).toHaveBeenCalledWith(body("first"));
     expect(await first).toEqual(
       status === "applied"
-        ? { status, commandId: "first", applied: [], textEffect: true }
+        ? {
+            status,
+            commandId: "first",
+            items: [{ node: "d", text: { landed: true } }],
+            applied: [],
+          }
         : { status: "cancelled" },
     );
     expect(queue.pending).toBe(false);
@@ -152,20 +170,26 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
   }
   const answer = deferred<ApplyClickAnswer>();
   const queue = new ApplyClickQueue({
+    node: "d",
     send: () => answer.promise,
     lookup: vi.fn(),
     changed() {},
   });
   const result = queue.enqueue(frozen("answered"));
   await flush();
-  answer.resolve({ status: "applied", commandId: "answered", applied: [], textEffect: true });
+  answer.resolve({
+    status: "applied",
+    commandId: "answered",
+    items: [{ node: "d", text: { landed: true } }],
+    applied: [],
+  });
   await flush();
   queue.close();
   expect(await result).toEqual({
     status: "applied",
     commandId: "answered",
+    items: [{ node: "d", text: { landed: true } }],
     applied: [],
-    textEffect: true,
   });
   queue.destroy();
 });
@@ -176,10 +200,20 @@ it("one settled click in the middle removes only its contribution, answers its o
   const send = vi.fn(
     async (request: ApplyClick): Promise<ApplyClickAnswer> =>
       request.commandId === "second"
-        ? { status: "applied", commandId: request.commandId, applied: [], settled: lost }
-        : { status: "applied", commandId: request.commandId, applied: [], textEffect: true },
+        ? {
+            status: "applied",
+            commandId: request.commandId,
+            items: [{ node: "d", text: { landed: false, settled: lost } }],
+            applied: [],
+          }
+        : {
+            status: "applied",
+            commandId: request.commandId,
+            items: [{ node: "d", text: { landed: true } }],
+            applied: [],
+          },
   );
-  const queue = new ApplyClickQueue({ send, lookup: vi.fn(), changed() {} });
+  const queue = new ApplyClickQueue({ node: "d", send, lookup: vi.fn(), changed() {} });
   queue.enqueue(frozen("first"));
   const second = queue.enqueue(frozen("second"));
   const third = queue.enqueue(frozen("third"));
@@ -189,8 +223,8 @@ it("one settled click in the middle removes only its contribution, answers its o
   expect(await second).toEqual({
     status: "applied",
     commandId: "second",
+    items: [{ node: "d", text: { landed: false, settled: lost } }],
     applied: [],
-    settled: lost,
   });
   expect(send.mock.calls.map(([request]) => request.commandId)).toEqual([
     "first",
@@ -201,8 +235,8 @@ it("one settled click in the middle removes only its contribution, answers its o
   await expect(third).resolves.toEqual({
     status: "applied",
     commandId: "third",
+    items: [{ node: "d", text: { landed: true } }],
     applied: [],
-    textEffect: true,
   });
   queue.destroy();
 });

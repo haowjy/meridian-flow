@@ -2,7 +2,7 @@
  * File-access change buses: Postgres NOTIFY across instances (the transport
  * thread events already use), and an in-process bus for memory compositions.
  */
-import type { AccessChangedWhy } from "@meridian/contracts/protocol";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
@@ -79,7 +79,7 @@ function parseChange(payload: string): FileAccessChange {
     workId?: unknown;
     rootThreadId?: unknown;
     projectId?: unknown;
-    closed?: AccessChangedWhy;
+    closed?: ClosedOwnerWhy;
   };
   if (typeof value.workId === "string")
     return { workId: value.workId as WorkId, closed: value.closed };

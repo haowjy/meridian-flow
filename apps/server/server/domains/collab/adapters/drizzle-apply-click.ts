@@ -26,13 +26,7 @@ import {
 import type { InversePart, JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import {
-  type BranchId,
-  type CommandId,
-  type DocumentId,
-  draftItemKey,
-  type UserId,
-} from "@meridian/contracts";
+import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
   AppliedReviewItem,
   ApplyClickResult,
@@ -43,7 +37,7 @@ import type {
 import type { LeftOutWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
-import { appliedCreates, undoApply } from "@meridian/project-tree";
+import { appliedCreates, listRecords, undoApply } from "@meridian/project-tree";
 import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -112,7 +106,9 @@ function treeResult(
 ): NonNullable<ApplyItemResult["tree"]> {
   const left = new Set(one.left.map(({ record }) => record.id));
   const superseded = new Set(one.superseded.map((record) => record.id));
-  const landed = one.records.some((record) => !left.has(record.id) && !superseded.has(record.id));
+  const landed =
+    one.restored ||
+    one.records.some((record) => !left.has(record.id) && !superseded.has(record.id));
   const notes: Settlement[] = [...new Set(one.left.map(({ why }) => why))].map((why) => ({
     rule: "left_out",
     items: [node],
@@ -411,7 +407,7 @@ export function createDrizzleApplyClick(
               for (const draft of closedByApply) documentIds.add(draft.documentId);
               for (const id of [...documentIds].sort())
                 await lockDocumentMutation(tx, id as DocumentId);
-              const restored = new Set<string>();
+              const backFromDelete = new Set<string>();
               const left: { node: string; why: LeftOutWhy }[] = [];
               const treeUndone = new Set<string>();
               if (lists.length > 0) {
@@ -428,9 +424,20 @@ export function createDrizzleApplyClick(
                         writtenSince: written,
                         restoredByApply: tree.restored,
                       });
+                      const records = new Map(
+                        listRecords(writer.doc).map((record) => [record.id, record]),
+                      );
                       for (const record of result.undone) {
                         treeUndone.add(record.node);
-                        if (record.type === "restore") restored.add(record.node);
+                        if (record.type !== "restore") continue;
+                        // A delete taken back puts every document it covered where it was before
+                        // the Apply, a folder's cascade included.
+                        const taken = record.undoes ? records.get(record.undoes) : undefined;
+                        for (const node of [
+                          record.node,
+                          ...(taken?.type === "delete" ? taken.cascade : []),
+                        ])
+                          backFromDelete.add(node);
                       }
                       // A change already taken back is the answer `already`, not a loss.
                       for (const { record, why } of result.left)
@@ -440,11 +447,11 @@ export function createDrizzleApplyClick(
                   },
                 });
               }
-              // Only a draft whose document the tree half brought back reopens: a document the
+              // Only a draft whose closing delete the tree half took back reopens: a document the
               // writer restored by hand and deleted again stays in Trash with its draft closed.
               if (target && found?.owner)
                 await deps.reopen.reopen({
-                  drafts: closedByApply.filter((draft) => restored.has(draft.documentId)),
+                  drafts: closedByApply.filter((draft) => backFromDelete.has(draft.documentId)),
                   target: target.id,
                   commandId,
                   owner: found.owner,
@@ -819,7 +826,9 @@ export function createDrizzleApplyClick(
                   const text = texts.get(item.node);
                   return {
                     node: item.node,
-                    ...(one.ran || (item.tree && !listOf.get(item.node))
+                    // A restore is a tree fact of this command too: Un-Apply takes it back, and a
+                    // name taken meanwhile gives the document a new path to report.
+                    ...(one.ran || one.restored || (item.tree && !listOf.get(item.node))
                       ? {
                           tree: treeResult(
                             item.node,

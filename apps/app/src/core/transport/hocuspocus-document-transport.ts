@@ -53,7 +53,9 @@ import {
   type onSyncedParameters,
   WebSocketStatus,
 } from "@hocuspocus/provider";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
+  accessChangedWhy,
   type ChangeEventWsMessage,
   isAccessChangedClose,
   parseYjsStatelessMessage,
@@ -286,7 +288,13 @@ export function createHocuspocusDocumentTransport({
   connectivityHints,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
-  const accessListeners = new Set<(access: DocumentSessionAccess) => void>();
+  const accessListeners = new Set<
+    (
+      access: DocumentSessionAccess,
+      closedWhy: ClosedOwnerWhy | null,
+      reasonPending: boolean,
+    ) => void
+  >();
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
@@ -308,6 +316,11 @@ export function createHocuspocusDocumentTransport({
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.
   let currentAccess: DocumentSessionAccess | null = null;
+  // Why a read-only room is read-only, when its owner is closed: named by the admission's
+  // message or the closing 4409, never inferred. It survives a reconnect until the next
+  // admission's message replaces it, and `reasonPending` holds from a read admission until then.
+  let currentClosedWhy: ClosedOwnerWhy | null = null;
+  let reasonPending = false;
   let outbox: Uint8Array | null = null;
   let refusals = 0;
   let terminal = false;
@@ -327,15 +340,24 @@ export function createHocuspocusDocumentTransport({
     for (const listener of listeners) listener(state);
   }
 
-  function publishAccess(access: DocumentSessionAccess): void {
-    if (access === currentAccess) return;
+  function publishAccess(
+    access: DocumentSessionAccess,
+    closedWhy: ClosedOwnerWhy | null,
+    pending = false,
+  ): void {
+    if (access === currentAccess && closedWhy === currentClosedWhy && pending === reasonPending)
+      return;
     currentAccess = access;
-    for (const listener of accessListeners) listener(access);
+    currentClosedWhy = closedWhy;
+    reasonPending = pending;
+    for (const listener of accessListeners) listener(access, closedWhy, pending);
   }
 
   function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
+    // No admission is coming to name a reason.
+    if (currentAccess && reasonPending) publishAccess(currentAccess, currentClosedWhy);
     document.off("update", handleDocumentUpdate);
     stopHints();
     acknowledgement.terminate();
@@ -375,7 +397,8 @@ export function createHocuspocusDocumentTransport({
 
   function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
     if (terminal || destroyed) return;
-    publishAccess(scope === "readonly" ? "read" : "edit");
+    if (scope === "readonly") publishAccess("read", currentClosedWhy, true);
+    else publishAccess("edit", null);
   }
 
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
@@ -385,10 +408,14 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (isAccessChangedClose(event) || event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
-      // Frozen until the reconnect's authenticated message names the new scope;
-      // a removed document has no reconnect, so it stays read-only.
-      publishAccess("read");
+    if (isAccessChangedClose(event)) {
+      // Frozen until the reconnect's authenticated message names the new scope. A close that
+      // names no reason (an unarchive, a restore) leaves it pending too: the answer is on its way.
+      const why = accessChangedWhy(event) ?? null;
+      publishAccess("read", why, !why);
+    } else if (event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
+      // A removed document has no reconnect, so it stays read-only.
+      publishAccess("read", null);
     }
     const state = classifyDocumentTransportClose(event);
     if (state) {
@@ -407,8 +434,9 @@ export function createHocuspocusDocumentTransport({
 
   function handleStateless({ payload }: onStatelessParameters): void {
     const message = parseYjsStatelessMessage(payload);
-    if (message?.type !== "change_event") return;
-    for (const listener of changeEventListeners) listener(message);
+    if (message?.type === "read_only") publishAccess("read", message.why ?? null);
+    else if (message?.type === "change_event")
+      for (const listener of changeEventListeners) listener(message);
   }
 
   // Store local bytes before the provider's listener sends and publishes its
@@ -471,7 +499,7 @@ export function createHocuspocusDocumentTransport({
     },
     subscribeAccess(listener) {
       accessListeners.add(listener);
-      if (currentAccess) listener(currentAccess);
+      if (currentAccess) listener(currentAccess, currentClosedWhy, reasonPending);
       return () => {
         accessListeners.delete(listener);
       };

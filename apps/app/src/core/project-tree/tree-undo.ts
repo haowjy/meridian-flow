@@ -280,8 +280,9 @@ async function takeLatest(
         stack.splice(at, 0, step);
         return { kind: "failed", skipped, name: step.name, step };
       }
+      // A press that reached the server is spent: the writer pressed once, for this step.
       skipped.push({ kind: "apply", name: step.name, nodes: step.nodes });
-      continue;
+      return { kind: "nothing", skipped };
     }
     const names = step.nodes.flatMap(
       (node) => session.replay(view, pendingText).nodes.get(node)?.displayName ?? [],

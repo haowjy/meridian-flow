@@ -9,6 +9,7 @@ import type {
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { itemOf } from "./draft-notices";
 
 export type FrozenApply = {
   body: ApplyClick;
@@ -87,6 +88,8 @@ export class ApplyClickQueue {
 
   constructor(
     private readonly port: {
+      /** The item's node: an Apply's answer is read from its entry, whatever its siblings did. */
+      node: string;
       send(body: ApplyClick): Promise<ApplyClickAnswer>;
       lookup(body: ApplyClick): Promise<ApplyClickObservation>;
       unapply?(body: UnapplyClick): Promise<UnapplyClickAnswer>;
@@ -130,7 +133,8 @@ export class ApplyClickQueue {
     this.startFeedback();
     this.port.changed();
     const landedText = (answer: ApplyClickOutcome) =>
-      answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
+      answer.status === "landed" ||
+      (answer.status === "applied" && itemOf(answer, this.port.node)?.text?.landed === true);
     let handle!: ScheduledApplyHandle;
     handle = {
       current: initial,
@@ -417,9 +421,15 @@ export class ApplyClickQueue {
       return;
     }
     if (answer?.status === "applied") {
-      // An Apply record in the room is the proof a text cut landed: with none written (the text
-      // came back settled, or there was none) the answer is final.
-      if (!command.body.draftId || command.closed || !answer.textEffect || this.isRecorded(command))
+      // An Apply record in the room is the proof this item's text cut landed: with none written
+      // (its text came back settled, or there was none) the answer is final, whatever a sibling
+      // in the same command landed.
+      if (
+        !command.body.draftId ||
+        command.closed ||
+        itemOf(answer, this.port.node)?.text?.landed !== true ||
+        this.isRecorded(command)
+      )
         this.settle(command, answer);
       return;
     }

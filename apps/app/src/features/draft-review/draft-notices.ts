@@ -5,7 +5,12 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type { Settlement } from "@meridian/contracts/commands";
+import type { ApplyClickResult, ApplyItemResult } from "@meridian/contracts/branches";
+import {
+  CLOSED_OWNER_WHYS,
+  type ClosedOwnerWhy,
+  type Settlement,
+} from "@meridian/contracts/commands";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DiscardRestores } from "./discard-restores";
 
@@ -14,6 +19,8 @@ export type NoticeSurface =
   | { kind: "strip"; threadId: string | null }
   /** A document's review band: the notice shows in that document's identity row. */
   | { kind: "band"; documentId: string }
+  /** One change's card in a document: a Discard pressed there answers on the card, not the band. */
+  | { kind: "card"; documentId: string }
   /** Where a delete made on main's Recently opened shows; the sidebar's rows carry their own. */
   | { kind: "landing" };
 
@@ -33,30 +40,76 @@ export type NoticeSubject =
 export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
 
 /**
- * What a command's `settled` says of one item, for the screen: the one place that reads a
- * settlement into what is shown. `already` and `restored` paint the result quietly; `overtaken`
- * names the command that settled the item first (the screen offers its reverse); `left_out`
- * says why the item stayed out. Null: the answer says nothing of the item.
+ * What one settlement line says, for the screen. `already` and `restored` paint the result
+ * quietly; `overtaken` names the command that settled the item first (the screen offers its
+ * reverse); `left_out` says why part of it stayed out; `returned`: a closed owner answered and
+ * changed nothing.
  */
 export type SettledView =
   | { kind: "already"; state: string }
   | { kind: "restored" }
   | { kind: "overtaken"; state: string; by: string }
-  | { kind: "left_out"; why: string };
+  | { kind: "left_out"; why: string }
+  | { kind: "returned"; why: RestoreReturned };
 
+/**
+ * The one place a settlement becomes what is shown. Null: a `returned` whose reason names no
+ * closed owner (a model's edit), which no command surface says.
+ */
+export function viewOf(one: Settlement): SettledView | null {
+  switch (one.rule) {
+    case "already":
+      return { kind: "already", state: one.state };
+    case "restored":
+      return { kind: "restored" };
+    case "overtaken":
+      return { kind: "overtaken", state: one.state, by: one.by };
+    case "left_out":
+      return { kind: "left_out", why: one.why };
+    case "returned":
+      return (CLOSED_OWNER_WHYS as readonly string[]).includes(one.why)
+        ? { kind: "returned", why: closedOwnerWord(one.why as ClosedOwnerWhy) }
+        : null;
+  }
+}
+
+/**
+ * Every line of a flat answer (Discard, Restore, Un-Apply) that names `itemId`, or every line
+ * when it is left out. A line that names no item is about the whole command and always counts.
+ */
 export function settledOf(
   settled: readonly Settlement[] | undefined,
-  itemId: string,
-): SettledView | null {
-  for (const one of settled ?? []) {
-    if (one.rule === "already" && one.item === itemId) return { kind: "already", state: one.state };
-    if (one.rule === "restored" && one.documentId === itemId) return { kind: "restored" };
-    if (one.rule === "overtaken" && one.item === itemId)
-      return { kind: "overtaken", state: one.state, by: one.by };
-    if (one.rule === "left_out" && one.items.includes(itemId))
-      return { kind: "left_out", why: one.why };
-  }
+  itemId?: string,
+): SettledView[] {
+  return (settled ?? []).flatMap((one) => {
+    if (itemId !== undefined && !names(one, itemId)) return [];
+    const view = viewOf(one);
+    return view ? [view] : [];
+  });
+}
+
+function names(one: Settlement, itemId: string): boolean {
+  if (one.rule === "already" || one.rule === "overtaken")
+    return one.item === undefined || one.item === itemId;
+  if (one.rule === "restored") return one.documentId === itemId;
+  if (one.rule === "left_out") return one.items.includes(itemId);
+  return true;
+}
+
+/** Why a command was answered by a closed owner, from its lines; null when it wasn't. */
+export function returnedIn(settled: readonly Settlement[] | undefined): RestoreReturned | null {
+  for (const view of settledOf(settled)) if (view.kind === "returned") return view.why;
   return null;
+}
+
+/** An Apply's answer for one item: each half landed or settled. */
+export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult | undefined {
+  return answer.items.find((item) => item.node === node);
+}
+
+/** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
+export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
+  return why === "chat_frozen" ? "chat-in-trash" : "work-closed";
 }
 
 export type DiscardUndoAnswer = {
@@ -118,9 +171,11 @@ export type DraftNotice =
       review: ReviewFileTarget | null;
       /**
        * `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back.
-       * `returned`: the Undo was answered with nothing done, for `returned`.
+       * `returned`: the Undo was answered with nothing done, for `returned`. `bounced`: the
+       * Discard itself came back for `returned` and discarded nothing (no Undo; it ends after
+       * `BOUNCE_SHOWN_MS`).
        */
-      status: "ready" | "undoing" | "failed" | "partial" | "returned";
+      status: "ready" | "undoing" | "failed" | "partial" | "returned" | "bounced";
       leftOut: number;
       returned: RestoreReturned | null;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
@@ -155,7 +210,11 @@ export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
 
 /** A notice with something to say on a line: a plain Apply's is said only on its rows. */
 export const hasLine = (notice: DraftNotice) =>
-  notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
+  notice.kind === "applied"
+    ? notice.facts.some((fact) => fact.kind !== "applied")
+    : notice.status !== "bounced";
+
+const BOUNCE_SHOWN_MS = 6_000;
 
 type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
 
@@ -168,6 +227,7 @@ export class DraftNotices {
    * `DiscardRestores`'.
    */
   private readonly pressed = new Map<number, "undoing" | "failed">();
+  private readonly bounceTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
@@ -205,6 +265,19 @@ export class DraftNotices {
         (notice.surface.kind === "band"
           ? (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
           : notice.surface.kind === "landing" && documentId === null)
+      )
+        return notice;
+    return null;
+  }
+
+  /** The Discard notice on one change card of `documentId` (`NoticeSurface` `card`). */
+  forCard(projectId: string, documentId: string): DraftNotice | null {
+    for (const notice of this.notices.values())
+      if (
+        notice.kind === "discarded" &&
+        notice.projectId === projectId &&
+        notice.surface.kind === "card" &&
+        notice.surface.documentId === documentId
       )
         return notice;
     return null;
@@ -278,6 +351,45 @@ export class DraftNotices {
     });
     this.publish();
     return id;
+  }
+
+  /**
+   * A Discard that came back with nothing changed, for `why`: the chip on the control pressed,
+   * for a few seconds. `documentIds` are the rows the press named.
+   */
+  showBounce(input: {
+    projectId: string;
+    ownerKey: string;
+    surface: NoticeSurface;
+    documentIds: readonly string[];
+    why: RestoreReturned;
+  }): void {
+    if (this.closed) return;
+    const held = this.notices.get(input.ownerKey);
+    if (held) this.drop(held);
+    const id = this.nextId++;
+    const { ownerKey } = input;
+    this.notices.set(ownerKey, {
+      kind: "discarded",
+      id,
+      projectId: input.projectId,
+      ownerKey,
+      surface: input.surface,
+      subject: { kind: "drafts", count: input.documentIds.length },
+      documentIds: input.documentIds,
+      review: null,
+      left: null,
+      status: "bounced",
+      leftOut: 0,
+      returned: input.why,
+      undo: async () => "failed",
+      dismiss: () => this.endIf(ownerKey, id),
+    });
+    this.bounceTimers.set(
+      id,
+      setTimeout(() => this.endIf(ownerKey, id), BOUNCE_SHOWN_MS),
+    );
+    this.publish();
   }
 
   /**
@@ -456,6 +568,8 @@ export class DraftNotices {
     const parts = this.parts.get(notice.id) ?? [];
     this.parts.delete(notice.id);
     this.pressed.delete(notice.id);
+    clearTimeout(this.bounceTimers.get(notice.id));
+    this.bounceTimers.delete(notice.id);
     for (const part of parts) part.handle.end();
   }
 

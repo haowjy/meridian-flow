@@ -11,7 +11,12 @@ import {
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
-import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import {
+  type BranchId,
+  type DocumentId,
+  draftItemKey,
+  parseDraftItemKey,
+} from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
@@ -42,7 +47,15 @@ import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
-import { type DiscardUndo, DraftNotices, type SettledView, settledOf } from "./draft-notices";
+import {
+  type DiscardUndo,
+  DraftNotices,
+  itemOf,
+  type RestoreReturned,
+  returnedIn,
+  type SettledView,
+  viewOf,
+} from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
@@ -89,6 +102,10 @@ export type CommandOutcome =
       kind: "done";
       /** The Apply command that landed it, which an Un-Apply names. */
       commandId?: string;
+      /** Its tree half landed whole: nothing of its move, delete or creation is still pending. */
+      treeWhole?: boolean;
+      /** Every line of both halves: what stayed out beside what landed, or came with it. */
+      notes?: SettledView[];
       /** The document had been deleted from the manuscript and this Apply brought it back. */
       restored?: true;
       /** Per-item facts committed by this click. */
@@ -98,8 +115,10 @@ export type CommandOutcome =
         renamed?: string;
       }[];
     }
-  /** The server answered for this item without landing it: another command settled it first, or part was left out. */
-  | { kind: "settled"; settled: Extract<SettledView, { kind: "overtaken" | "left_out" }> }
+  /** The server answered for this item and landed neither half: each half's line says why. */
+  | { kind: "settled"; notes: SettledView[] }
+  /** A closed owner answered and changed nothing: the surface says why, once. */
+  | { kind: "returned"; why: RestoreReturned }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -130,29 +149,30 @@ type Entry = {
 /** A click that is one member of a several-item Apply: it takes the group's id and send. */
 type Joint = { commandId: string; send(body: ApplyClick): Promise<ApplyClickAnswer> };
 export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
-/**
- * A refusal the screen already explains reverts silently (offer only what
- * applies): an archived Work removes its commands and shows its own notice with
- * Unarchive, so a held "archived" line would only go stale once it is unarchived.
- */
-function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | null {
-  return failure.serverCode === "work_archived" || failure.serverCode === "work_deleted"
-    ? null
-    : failure;
+/** A Discard that changed nothing: a closed owner's return, else the answer's status as a refusal. */
+function notDiscarded(result: DiscardCommandResult): {
+  failure: BranchCommandFailure | null;
+  outcome: CommandOutcome;
+} {
+  const why = returnedIn("settled" in result ? result.settled : undefined);
+  return why
+    ? { failure: null, outcome: { kind: "returned", why } }
+    : {
+        failure: { code: "discard-refused", serverCode: result.status },
+        outcome: { kind: "change-refused", code: result.status },
+      };
 }
 /**
- * The code a Discard that changed nothing answers with: a closed owner's `returned` settlement
- * names why (`work_archived`, `work_deleted`, `chat_frozen`), else the answer's status.
+ * The line an item shows for what part of it didn't land: `overtaken_<state>` or
+ * `left_out_<why>`. `already` and `restored` are painted quietly and give none.
  */
-function discardCode(result: DiscardCommandResult): string {
-  const settled = "settled" in result ? result.settled : undefined;
-  const returned = settled?.find((one) => one.rule === "returned");
-  if (returned?.rule === "returned") return returned.why;
-  return result.status;
+function lineOf(notes: readonly SettledView[]): string | null {
+  for (const note of notes) {
+    if (note.kind === "overtaken") return `overtaken_${note.state}`;
+    if (note.kind === "left_out") return `left_out_${note.why}`;
+  }
+  return null;
 }
-/** The unlanded item's failure line key: `overtaken_<state>` or `left_out_<why>`. */
-const unlandedCode = (view: Extract<SettledView, { kind: "overtaken" | "left_out" }>) =>
-  view.kind === "overtaken" ? `overtaken_${view.state}` : `left_out_${view.why}`;
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
@@ -291,6 +311,7 @@ export class DraftCommandOwner {
       rooms: new Set(),
       applyEntries: new Set(),
       queue: new ApplyClickQueue({
+        node: ref.documentId,
         send: (body) => applyDraftClick(ref, body),
         lookup: observeDraftClick,
         unapply: (body) => unapplyDraftClick(ref, body),
@@ -639,12 +660,12 @@ export class DraftCommandOwner {
     item.applyEntries.clear();
   }
 
-  /** A click's answer, as its caller's outcome and a failure on the generation it was made for. */
+  /** A click's answer, as its caller's outcome and a line on the generation it was made for. */
   private settled(ref: DraftRef, id: string, answer: ApplyClickOutcome): CommandOutcome {
     const outcome = this.outcomeOf(ref, answer);
     const code =
-      outcome.kind === "settled"
-        ? unlandedCode(outcome.settled)
+      outcome.kind === "settled" || outcome.kind === "done"
+        ? lineOf(outcome.notes ?? [])
         : outcome.kind === "change-refused"
           ? outcome.code
           : null;
@@ -653,31 +674,53 @@ export class DraftCommandOwner {
     return outcome;
   }
 
+  /**
+   * One item's outcome from its entry in the answer: done when either half landed (it gets the
+   * Undo step and the applied facts), settled when neither did. Every line of both halves goes
+   * with it, so a landed delete with a left-out rename reads as applied, with the line.
+   */
   private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
     if (answer.status === "applied") {
-      const view = settledOf(answer.settled, ref.documentId);
-      if (view?.kind === "overtaken" || view?.kind === "left_out")
-        return { kind: "settled", settled: view };
-      const restored = view?.kind === "restored";
-      if (restored) {
-        this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+      const item = itemOf(answer, ref.documentId);
+      const notes = [...(item?.tree?.settled ?? []), ...(item?.text?.settled ?? [])].flatMap(
+        (one) => viewOf(one) ?? [],
+      );
+      const tree = item?.tree?.landed === true;
+      if (!tree && item?.text?.landed !== true) return { kind: "settled", notes };
+      const treeWhole = tree && !item?.tree?.settled?.some((one) => one.rule === "left_out");
+      const restored = notes.some((note) => note.kind === "restored");
+      if (restored) this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+      const branchId = parseDraftItemKey(ref.itemKey)?.branchId;
+      let renamed = false;
+      for (const one of answer.items) {
+        if (!one.tree?.landed || !one.tree.renamed) continue;
+        renamed = true;
+        this.renamedDocuments.set(JSON.stringify([ref.projectId, one.node]), one.tree.renamed.path);
       }
-      for (const item of answer.applied) {
-        if (!item.renamed) continue;
-        const documentId = parseDraftItemKey(item.itemKey)?.documentId;
-        if (documentId)
-          this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
-      }
-      if (restored || answer.applied.some((item) => item.renamed)) this.publish();
+      if (restored || renamed) this.publish();
       return {
         kind: "done",
         commandId: answer.commandId,
+        treeWhole,
+        notes,
         ...(restored ? { restored: true as const } : {}),
-        applied: answer.applied.map((item) => ({
-          itemKey: item.itemKey,
-          ...(item.transition ? { transition: item.transition } : {}),
-          ...(item.renamed ? { renamed: item.renamed.path } : {}),
-        })),
+        applied: branchId
+          ? answer.items.flatMap((one) =>
+              one.tree?.landed || one.text?.landed
+                ? [
+                    {
+                      itemKey: draftItemKey(branchId, one.node as DocumentId),
+                      ...(one.tree?.landed && one.tree.transition
+                        ? { transition: one.tree.transition }
+                        : {}),
+                      ...(one.tree?.landed && one.tree.renamed
+                        ? { renamed: one.tree.renamed.path }
+                        : {}),
+                    },
+                  ]
+                : [],
+            )
+          : [],
       };
     }
     if (answer.status === "landed") return { kind: "done", commandId: answer.commandId };
@@ -815,15 +858,12 @@ export class DraftCommandOwner {
               failure: {
                 code: "apply-refused",
                 serverCode: (() => {
-                  const view =
-                    answer.status === "applied"
-                      ? settledOf(answer.settled, entry.ref.documentId)
-                      : null;
-                  return view?.kind === "overtaken" || view?.kind === "left_out"
-                    ? unlandedCode(view)
-                    : answer.status === "applied"
-                      ? "text_not_applied"
-                      : "unsynced";
+                  if (answer.status !== "applied") return "unsynced";
+                  const text = itemOf(answer, entry.ref.documentId)?.text;
+                  return (
+                    lineOf((text?.settled ?? []).flatMap((one) => viewOf(one) ?? [])) ??
+                    "text_not_applied"
+                  );
                 })(),
               },
             }),
@@ -947,8 +987,9 @@ export class DraftCommandOwner {
   }
   /**
    * Discards a whole item on the server, every Discard of a whole draft: Trash lists it and its
-   * Undo is the server's, by `commandId`. A created document leaves at once; any other stays in review,
-   * discarding, until the server answers, so a refusal shows on it. A Discard decided on the
+   * Undo is the server's, by `commandId`. A created document is hidden at once and closes once the server
+   * says `done`; any other stays in review, discarding, until the server answers. Either way a
+   * refusal or a return shows on it. A Discard decided on the
    * frozen reading names the draft the writer saw, so the server refuses it if the chat came
    * back and the draft moved on. Server-only lifecycle commands share this account owner, never
    * the Apply route.
@@ -966,7 +1007,6 @@ export class DraftCommandOwner {
       ref.itemKey,
       item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
     );
-    if (item.isNew) this.lifecycle.closeCreated?.(ref);
     try {
       const result = await discardDraftItem(ref, {
         branchId: item.branchId,
@@ -985,15 +1025,13 @@ export class DraftCommandOwner {
           ref.itemKey,
           hides ? { hidden: true, discarding: null } : { discarding: null },
         );
+        if (item.isNew) this.lifecycle.closeCreated?.(ref);
         return { kind: "done" };
       }
       this.discardedHere.delete(own);
-      this.setState(ref.itemKey, {
-        hidden: false,
-        discarding: null,
-        failure: shownRefusal({ code: "discard-refused", serverCode: discardCode(result) }),
-      });
-      return { kind: "change-refused", code: discardCode(result) };
+      const { failure, outcome } = notDiscarded(result);
+      this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
+      return outcome;
     } catch {
       this.discardedHere.delete(own);
       if (this.active)
@@ -1045,10 +1083,9 @@ export class DraftCommandOwner {
       });
       if (!this.active) return { kind: "blocked" };
       if (result.status === "discarded") return { kind: "done" };
-      this.setState(ref.itemKey, {
-        failure: shownRefusal({ code: "discard-refused", serverCode: discardCode(result) }),
-      });
-      return { kind: "change-refused", code: discardCode(result) };
+      const { failure, outcome } = notDiscarded(result);
+      this.setState(ref.itemKey, { failure });
+      return outcome;
     } catch {
       if (this.active) this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
       return { kind: "change-refused", code: "unknown" };
@@ -1095,8 +1132,7 @@ export class DraftCommandOwner {
     const failed = (failure: BranchCommandFailure | null) => {
       for (const key of own) this.discardedHere.delete(key);
       if (this.active)
-        for (const ref of scope.values())
-          this.setState(ref.itemKey, { hidden: false, failure: failure && shownRefusal(failure) });
+        for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false, failure });
     };
     try {
       const answer = await discardBranch(projectId, branchId, {
@@ -1117,8 +1153,9 @@ export class DraftCommandOwner {
         for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false });
         return { kind: "done" };
       }
-      failed({ code: "discard-refused", serverCode: discardCode(answer) });
-      return { kind: "change-refused", code: discardCode(answer) };
+      const { failure, outcome } = notDiscarded(answer);
+      failed(failure);
+      return outcome;
     } catch {
       failed({ code: "discard-unknown" });
       return { kind: "change-refused", code: "unknown" };

@@ -12,7 +12,7 @@ stateDiagram-v2
   [*] --> queued: click
   queued --> cancelled: the click is taken back before it is sent
   queued --> sent: it is the head, and nothing else is in flight
-  sent --> settled: applied, or a final refusal
+  sent --> settled: applied (its own text landed and recorded, or settled), or a final refusal
   sent --> retrying: no usable answer
   retrying --> sent: after 1, 2, then 4 seconds, with the same body
   retrying --> stalled: three retries used
@@ -27,15 +27,17 @@ stateDiagram-v2
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
   the head where it is. A stalled head holds every later command behind it, because sending
   them around it would apply changes out of order.
-- **An Apply settles when the server's record shows it**, not on the answer. The server keeps
-  a row for each applied command, and the command settles once its id is among them. An Undo
-  settles when the rows it reversed are gone.
+- **An Apply settles when the server's record shows it**, not on the answer, when its own
+  item's text landed. The server keeps a row for each applied command, and the command settles
+  once its id is among them. An answer whose entry for this item (`itemOf`, by the queue's node)
+  says its text was settled, or carried no text, settles at once, whatever a sibling of the same
+  command landed. An Undo settles when the rows it reversed are gone.
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
   queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.
 - **A member of an Apply of several is `sent` by its group** (`group-apply.ts`): its send waits
   until every member is its own queue's head, then the group posts the one command, and each
-  member's queue settles from the same answer.
+  member's queue settles from its own entry in the same answer.
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).

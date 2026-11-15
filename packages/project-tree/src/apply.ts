@@ -12,14 +12,7 @@ import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { type NotUndone, undoChange } from "./undo.js";
 import { readStored, writable } from "./validate.js";
-import {
-  LIVE,
-  lastSettlements,
-  listRecords,
-  pendingRecords,
-  settlementsOf,
-  viewRecords,
-} from "./view.js";
+import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** Why a record asked to land did not; it stays pending. */
@@ -364,14 +357,6 @@ function appliedBy(writer: TreeWriter, applied: string) {
     (record) => record.carries !== undefined && last.get(record.carries) === record,
   );
   return { settled, copies };
-}
-
-/**
- * The nodes an Apply command's live copies still stand on: what of its tree half is still in
- * force. A copy taken back, or overridden by a later copy of the same record, no longer counts.
- */
-export function appliedStanding(writer: TreeWriter, applied: string): string[] {
-  return [...new Set(appliedBy(writer, applied).copies.map((copy) => copy.node))];
 }
 
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */

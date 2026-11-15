@@ -13,7 +13,7 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
-import type { DiscardUndo } from "./draft-notices";
+import { closedOwnerWord, type DiscardUndo } from "./draft-notices";
 import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
 
@@ -82,8 +82,12 @@ export function startDraftDiscardSession(input: {
   const write = (): CommandOutcome => {
     if (!input.active() || entry.binding !== binding || input.state().ended)
       return { kind: "blocked" };
-    // A read room drops the writer's text: a revert written here would show, then never land.
-    if (binding.session.getSnapshot().access === "read") {
+    // A settled read room drops the writer's text: a revert written here would show, then never land.
+    // While its reason is pending the write goes in, as an offline press does: the next admission decides.
+    const room = binding.session.getSnapshot();
+    if (room.access === "read" && !room.reasonPending) {
+      const { closedWhy } = room;
+      if (closedWhy) return { kind: "returned", why: closedOwnerWord(closedWhy) };
       input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
       return { kind: "change-refused", code: "read_only" };
     }

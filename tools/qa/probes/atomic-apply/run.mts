@@ -24,9 +24,7 @@ import { createDrizzleDocumentCommands } from "../../../../apps/server/server/do
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createReopenDrafts } from "../../../../apps/server/server/domains/collab/adapters/drizzle-reopen-drafts.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
-import {
-  createApplyClickService,
-} from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
+import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
 import { createBranchReviewItems } from "../../../../apps/server/server/domains/collab/domain/branch-review-items.ts";
 import { createBranches } from "../../../../apps/server/server/domains/collab/domain/branches.ts";
@@ -554,8 +552,16 @@ try {
     assert.deepEqual(await f.send(next), {
       status: "applied",
       commandId: next.request.commandId,
+      items: [
+        {
+          node: f.documentId,
+          text: {
+            landed: false,
+            settled: [{ rule: "left_out", items: [f.documentId], why: "purged" }],
+          },
+        },
+      ],
       applied: [],
-      settled: [{ rule: "left_out", items: [f.documentId], why: "purged" }],
     });
     f.close();
   });
@@ -600,15 +606,23 @@ try {
     assert.deepEqual(answer, {
       status: "applied",
       commandId: click.request.commandId,
-      applied: [],
-      settled: [
+      items: [
         {
-          rule: "overtaken",
-          state: "discarded",
-          by: discarding.envelope.commandId,
-          item: a.documentId,
+          node: a.documentId,
+          text: {
+            landed: false,
+            settled: [
+              {
+                rule: "overtaken",
+                state: "discarded",
+                by: discarding.envelope.commandId,
+                item: a.documentId,
+              },
+            ],
+          },
         },
       ],
+      applied: [],
     });
     assert.deepEqual(await a.liveText(), ["The big black cat sat."]);
     a.close();
@@ -822,7 +836,13 @@ try {
     (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
   const restoredNote = (result: ApplyClickAnswer, f: Awaited<ReturnType<typeof fixture>>) =>
     result.status === "applied" &&
-    result.settled?.some((one) => one.rule === "restored" && one.documentId === f.documentId);
+    result.items.some(
+      (item) =>
+        item.node === f.documentId &&
+        [...(item.tree?.settled ?? []), ...(item.text?.settled ?? [])].some(
+          (one) => one.rule === "restored",
+        ),
+    );
   await row("a document deleted live: its draft stays, Apply restores it then merges", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     await deleteLive(f);
@@ -845,7 +865,7 @@ try {
     const applied = await f.send(c);
     assert.equal(applied.status, "applied", JSON.stringify(applied));
     assert.equal(
-      applied.status === "applied" && applied.applied[0]?.renamed?.path.endsWith(" (2)"),
+      applied.status === "applied" && applied.items[0]?.tree?.renamed?.path.endsWith(" (2)"),
       true,
       JSON.stringify(applied),
     );

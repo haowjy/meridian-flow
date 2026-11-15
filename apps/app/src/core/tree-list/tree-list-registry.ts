@@ -1,8 +1,6 @@
 /** The account's open tree lists: one session per list however many views hold it. */
-import type { TreeSaw } from "@meridian/contracts/branches";
 import { type TreeListRef, treeRoomName } from "@meridian/contracts/protocol";
 import type { TreeRecord } from "@meridian/project-tree";
-import * as Y from "yjs";
 import { type BounceHost, watchBounces } from "../project-tree/tree-bounces";
 import { TreeListSession } from "./tree-list-session";
 
@@ -48,23 +46,6 @@ export class TreeListRegistry {
         }
       },
     };
-  }
-
-  /**
-   * What the project's lists and the account's hold now, as the Apply press sends it (`saw`): the
-   * state vector of each list this tab has open and in sync. A list that is not synced is left
-   * out: its own records may not be on the server, and the server would wait for them.
-   */
-  sawOf(projectId: string): TreeSaw {
-    const vectorOf = (list: TreeListRef): string | undefined => {
-      const snapshot = this.sessions.get(treeRoomName(list))?.session.getSnapshot();
-      if (snapshot?.status !== "synced") return undefined;
-      const bytes = Y.encodeStateVector(snapshot.doc);
-      return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
-    };
-    const project = vectorOf({ kind: "project", projectId });
-    const account = vectorOf({ kind: "account", userId: this.accountId });
-    return { ...(project ? { project } : {}), ...(account ? { account } : {}) };
   }
 
   /** The account is signing out or closing: every session ends. */

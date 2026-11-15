@@ -28,8 +28,8 @@ particular, verify that:
   dependent clicks, repeated paragraphs, and another tab's Apply.
 - Live writes, deletions, moves, another Work, and a rebase merge with the
   frozen click. Overlapping live words report `overrode`.
-- A deleted document is restored by the click, with `restored` in `settled`, and a taken
-  path returns a `renamed` note.
+- A deleted document is restored by the click, with `restored` on its text half, and a
+  taken path returns a `renamed` note on its tree half.
 - A Work's drafted create (in the Work's tree view only, no live row) goes live
   inside its Apply with the same document id and no `branch_tree_nodes` row left;
   a live-deleted document sits in Trash until a click brings it
@@ -40,6 +40,6 @@ particular, verify that:
 
 When changing admission or hold timing, pause `apply.beforeBoundary`, close the
 addressed draft through the production close kernel inside its Work boundary,
-then resume. Apply must answer `closed` with unchanged live text, a stored `closed`
-outcome and nothing else, and no room delivery. A previously landed command still wins
-on retry.
+then resume. Apply must answer `applied` with the item's text half `landed: false` and
+`overtaken discarded` naming the Discard, unchanged live text, a stored `done` outcome,
+and no room delivery. A previously landed command still wins on retry.

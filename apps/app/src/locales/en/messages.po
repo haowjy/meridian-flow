@@ -3731,6 +3731,14 @@ msgstr "It's over the import size limit."
 msgid "Italic"
 msgstr "Italic"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash"
+msgstr "Its chat is in Trash"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
+msgstr "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its chat is in Trash, so this stayed as it is"
 msgstr "Its chat is in Trash, so this stayed as it is"
@@ -6742,8 +6750,8 @@ msgid "This Work is archived."
 msgstr "This Work is archived."
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is archived. Unarchive it to apply or discard its changes."
-msgstr "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgid "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgstr "This Work is archived. Unarchive it to apply or discard its changes."
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "This Work is archived. Unarchive it to change its tree."
@@ -6762,8 +6770,8 @@ msgid "This Work is deleted."
 msgstr "This Work is deleted."
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is deleted. Restore it to apply or discard its changes."
-msgstr "This Work is deleted. Restore it to apply or discard its changes."
+#~ msgid "This Work is deleted. Restore it to apply or discard its changes."
+#~ msgstr "This Work is deleted. Restore it to apply or discard its changes."
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "This Work is deleted. Restore it to change its tree."
@@ -7281,6 +7289,10 @@ msgstr "Work couldn’t load"
 #: src/components/app/WorkClosedChip.tsx
 msgid "Work was closed"
 msgstr "Work was closed"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
+msgstr "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Work was closed."

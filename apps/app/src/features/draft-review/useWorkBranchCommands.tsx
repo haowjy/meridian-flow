@@ -32,13 +32,14 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
-import type {
-  AppliedFact,
-  AppliedUndo,
-  DiscardPart,
-  DiscardUndo,
-  DiscardUndoAnswer,
-  NoticeSurface,
+import {
+  type AppliedFact,
+  type AppliedUndo,
+  type DiscardPart,
+  type DiscardUndo,
+  type DiscardUndoAnswer,
+  type NoticeSurface,
+  returnedIn,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
@@ -71,8 +72,7 @@ export function useWorkBranchCommands({
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  // An archived or deleted Work's drafts show, and take no command until it is back.
-  const locked = !ownerKey || !work || workLifecycleState(work) !== "active";
+  const locked = !ownerKey;
   // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
@@ -82,8 +82,11 @@ export function useWorkBranchCommands({
   const draftOnly = useOptionalDraftOnlyPresentations();
   return useMemo(() => {
     const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
-    /** What this tab's tree lists hold at the press: records after it are ones the writer hadn't seen. */
-    const sawNow = () => treeLists?.sawOf(projectId);
+    /** The cut the review rows were read at: records after it are ones the writer hadn't seen. */
+    const sawNow = () =>
+      queryClient.getQueryData<ThreadDraftListResponse>(
+        projectQueryKeys.ownerDrafts(projectId, ownerKey),
+      )?.saw;
     const row = (draft: DraftReviewSelection) =>
       cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
         (item) => item.itemKey === draft.itemKey,
@@ -123,6 +126,21 @@ export function useWorkBranchCommands({
           ? { kind: "strip", threadId }
           : { kind: "changes" };
     const endNotice = () => notices.end(ownerKey);
+    /**
+     * The one place a closed owner's `returned` answer becomes a notice: the chip on the control
+     * pressed (`documentIds`: its rows; none: the bar's), and the Works list read again, since
+     * the writer's view of the Work was stale.
+     */
+    const bounced = (
+      outcomes: readonly CommandOutcome[],
+      surface: NoticeSurface,
+      documentIds: readonly string[],
+    ) => {
+      const returned = outcomes.find((outcome) => outcome.kind === "returned");
+      if (returned?.kind !== "returned") return;
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+      notices.showBounce({ projectId, ownerKey, surface, documentIds, why: returned.why });
+    };
     const titleOf = (item: ThreadDraftListItem | undefined) =>
       item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
     // Apply facts join the owner's notice until its next action. A band's go to the document's
@@ -194,8 +212,8 @@ export function useWorkBranchCommands({
     };
     /**
      * An Apply goes on the sidebar's Undo stack as one step (design §5): its Undo is the server's
-     * Un-Apply of the whole command, which answers `refused` once anything changed since. A
-     * band's Apply has its editor's Undo instead.
+     * Un-Apply of the whole command, fact by fact: what changed since stays, and the step is spent
+     * once pressed. A band's Apply has its editor's Undo instead.
      */
     const rememberApply = (
       commandId: string,
@@ -224,9 +242,11 @@ export function useWorkBranchCommands({
           });
           if (answer.status === "conflict") return { answer: "failed" };
           refresh(documentIds);
-          // Tree changes the Un-Apply could not take back (changed since, or purged with their Work).
-          const treeLeft = answer.settled?.some((one) => one.rule === "left_out") ?? false;
-          if (treeLeft && answer.reversedGroupIds.length === 0) return { answer: "skipped" };
+          // Nothing taken back, and not because an earlier Un-Apply took it all: what is left
+          // changed since (or was purged with its Work).
+          const already = answer.settled?.some((one) => one.rule === "already") ?? false;
+          if (!already && answer.reversedGroupIds.length === 0 && answer.treeUndone.length === 0)
+            return { answer: "skipped" };
           for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
           return { answer: "unapplied", textLeft: answer.skippedGroupIds.length };
         } catch {
@@ -265,7 +285,7 @@ export function useWorkBranchCommands({
       );
       if (!started) return blocked();
       void started.outcome.then((outcome) => {
-        if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
+        if (outcome.kind === "done" && outcome.treeWhole && tree && item?.tree) dropTreeLine(item);
         if (outcome.kind === "done") {
           const step =
             outcome.commandId && item
@@ -316,7 +336,8 @@ export function useWorkBranchCommands({
         const member = members[index];
         if (!member) return;
         void outcome.then((settled) => {
-          if (settled.kind === "done" && member.tree && member.item) dropTreeLine(member.item);
+          if (settled.kind === "done" && settled.treeWhole && member.tree && member.item)
+            dropTreeLine(member.item);
           if (!owner.state(member.draft.itemKey).pending) refresh([member.draft.documentId]);
         });
       });
@@ -327,15 +348,13 @@ export function useWorkBranchCommands({
           const taken = [...members.map(({ draft }) => draft.documentId), ...folders];
           const only = members.length === 1 && folders.length === 0 ? titleOf(first?.item) : null;
           const count = taken.length;
-          const step =
-            answer?.status === "applied"
-              ? rememberApply(
-                  answer.commandId,
-                  branchId,
-                  taken,
-                  name ?? only ?? t`${count} changes`,
-                )
-              : null;
+          // Only an Apply that landed something is a step: Ctrl+Z would take an empty one.
+          const landed =
+            answer?.status === "applied" &&
+            answer.items.some((item) => item.tree?.landed || item.text?.landed);
+          const step = landed
+            ? rememberApply(answer.commandId, branchId, taken, name ?? only ?? t`${count} changes`)
+            : null;
           if (first)
             applied(
               first.draft,
@@ -392,12 +411,7 @@ export function useWorkBranchCommands({
       draft: DraftReviewSelection,
       target: ChangeTarget,
     ): CommandStart => {
-      const started = mode === "apply" ? applyOne(draft, target) : discardOne(draft, target);
-      void started.outcome.then((outcome) => {
-        if (outcome.kind === "change-refused" && outcome.code === "work_archived")
-          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
-      });
-      return started;
+      return mode === "apply" ? applyOne(draft, target) : discardOne(draft, target);
     };
     const discardOne = (draft: DraftReviewSelection, target: ChangeTarget): CommandStart => {
       // A new Discard replaces the owner's notice, with its own or with none.
@@ -409,6 +423,12 @@ export function useWorkBranchCommands({
       const leaves =
         target.kind === "draft" && (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
       const { start, part } = dispatchDiscard(draft, target);
+      // A change card's chip stays on the card pressed; a whole draft's is the band's.
+      const bounceSurface: NoticeSurface =
+        surface === "band" && target.kind === "groups"
+          ? { kind: "card", documentId: draft.documentId }
+          : noticeSurface(draft);
+      void start.outcome.then((outcome) => bounced([outcome], bounceSurface, [draft.documentId]));
       const shown = part
         ? notices.showDiscard({
             projectId,
@@ -434,9 +454,19 @@ export function useWorkBranchCommands({
       const started = items.map(({ draft, target }) => dispatchDiscard(draft, target));
       const parts = started.flatMap(({ part }) => (part ? [part] : []));
       const [first] = items;
-      if (first)
-        notices.showDiscard({ projectId, ownerKey, surface: noticeSurface(first.draft), parts });
-      return Promise.all(started.map(({ start }) => start.outcome));
+      const outcomes = Promise.all(started.map(({ start }) => start.outcome));
+      if (first) {
+        const surface = noticeSurface(first.draft);
+        notices.showDiscard({ projectId, ownerKey, surface, parts });
+        void outcomes.then((settled) =>
+          bounced(
+            settled,
+            surface,
+            items.map(({ draft }) => draft.documentId),
+          ),
+        );
+      }
+      return outcomes;
     };
     /**
      * One Discard and its share of the notice's Undo. A whole draft is one server command, which
@@ -611,10 +641,14 @@ export function useWorkBranchCommands({
       });
       const [first] = input.drafts;
       const count = input.drafts.length + folders.length;
+      const surface: NoticeSurface = first ? noticeSurface(first) : { kind: "changes" };
+      void outcome.then((answer) =>
+        bounced([answer], surface, input.all ? [] : folders.slice(0, 1)),
+      );
       notices.showDiscard({
         projectId,
         ownerKey,
-        surface: first ? noticeSurface(first) : { kind: "changes" },
+        surface,
         parts: [
           {
             documentId: first?.documentId ?? folders[0] ?? "",
@@ -645,6 +679,7 @@ export function useWorkBranchCommands({
       ownerKey,
       threadId,
       owner,
+      /** No owner to act on. A closed Work is not locked: its Apply lands, its Discard bounces. */
       dispositionLocked: locked,
       /** A frozen owner's draft takes no single-change command: only the whole draft's Discard. */
       changesLocked: locked || frozen,
@@ -652,8 +687,7 @@ export function useWorkBranchCommands({
       frozen,
       /**
        * Whether Apply is offered at all. A frozen owner (a lineage with every chat in Trash)
-       * takes no Apply, so every surface hides it; an archived Work still shows it, disabled by
-       * `dispositionLocked`.
+       * takes no Apply, so every surface hides it; a closed Work's Apply lands as any other.
        */
       canApply: !frozen,
       commandChange,
@@ -721,25 +755,18 @@ export async function restoreDiscard(
       });
     }
     // A closed owner stores the restore as `restored` with a `returned` settlement: nothing came back.
-    const returned =
-      answer.status === "restored"
-        ? answer.settled?.find((one) => one.rule === "returned")
-        : undefined;
-    if (answer.status === "restored" && !returned)
+    const closed = answer.status === "restored" ? returnedIn(answer.settled) : null;
+    if (closed) {
+      if (closed === "work-closed")
+        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+      return { answer: "returned", why: closed };
+    }
+    if (answer.status === "restored")
       return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
     if (answer.status === "conflict") return { answer: "failed" };
-    switch (returned?.why ?? (answer.status === "refused" ? answer.reason : undefined)) {
-      case "already_restored":
-      case "nothing_to_restore":
-        return { answer: "gone" };
-      case "work_archived":
-      case "work_deleted":
-        return { answer: "returned", why: "work-closed" };
-      case "chat_frozen":
-        return { answer: "returned", why: "chat-in-trash" };
-      default:
-        return { answer: "returned", why: "gone-from-trash" };
-    }
+    return answer.reason === "already_restored" || answer.reason === "nothing_to_restore"
+      ? { answer: "gone" }
+      : { answer: "returned", why: "gone-from-trash" };
   } catch {
     return { answer: "failed" };
   }

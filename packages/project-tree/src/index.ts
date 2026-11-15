@@ -10,7 +10,6 @@ export {
 export {
   type ApplyResult,
   appliedCreates,
-  appliedStanding,
   applyDraft,
   covers,
   type DiscardedBy,

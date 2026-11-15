@@ -134,36 +134,53 @@ withholds later commands behind any stalled intent. Redo queues a new Apply for 
 text groups the server actually reversed, never the original tree cut.
 
 Existence of a deleted document is its own fact, never read from a name conflict.
-An Apply brings a deleted document back whenever its records land on it: the click carries
-no `restore`, and the server's `settled` says `restored { documentId }`. The question a
+An Apply brings a deleted document back to land what the click carries for it: the click
+carries no `restore`, and the item's answer says `restored`. The question a
 strip or Apply all asks first (it names the deletes and restores) is the writer's
 heads-up, not a precondition. The account owner keeps the answer's `restored` and `renamed`
 facts, so an editor Apply keeps its result after navigation.
 
-An Apply never answers refused. The answer is `applied` with `settled` lines, and for an
-item that did not land (`overtaken_discarded`, `overtaken_removed`, `left_out_<why>`) the
-owner sets the item's `apply-refused` failure with that code and the outcome is
-`change-refused`; `already` is quiet. A click whose room cannot acknowledge it settles
-`unsent` on the client. The press sends `saw`, each open synced tree list's state vector
-(`TreeListRegistry.sawOf`), frozen with the click; a 503 (the server lacks something the
-press saw) is an unknown delivery the queue retries with the same id.
+An Apply never answers refused. The answer is `applied` with one entry per item in `items`,
+each half `landed` or settled with lines (`itemOf`). `outcomeOf` reads them: an item with a
+landed half is `done` (an Undo step and the applied facts) and carries every line of both
+halves beside it, so a landed delete with a left-out rename reads as applied, with the line;
+an item with neither half landed is `settled`. The first `overtaken` or `left_out` line becomes
+the item's `apply-refused` line (`overtaken_discarded`, `overtaken_removed`, `left_out_<why>`);
+`already` and `restored` are quiet. `viewOf` is the one place a settlement line becomes what
+is shown, a closed owner's `returned` included; `settledOf` gives every line of a flat answer
+(Discard, Restore, Un-Apply) that names an item. A click whose room cannot acknowledge it
+settles `unsent` on the client. The press sends `saw`, the cut the cached draft list came
+with, frozen with the click; a 503 (the server lacks something the press saw) is an unknown
+delivery the queue retries with the same id. An Apply goes on the Undo stack only when an
+item landed, and a press of its step that reached the server is spent: `already` or nothing
+taken back never falls through to the next older step.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
 Retry. Transient disconnects keep acknowledgement barriers pending. Each click has two
 independent duties:
 
 - *Release* (the head leaves the FIFO and its optimistic contribution ends) happens once:
-  on the room's record or a terminal answer. An applied answer without the record keeps
-  its contribution.
+  on the room's record or a terminal answer. The queue knows its item's node and reads its
+  own entry: an answer whose entry says this item's text landed waits for the record, and one
+  whose text was settled is final, whatever a sibling in the same command landed.
 - *Completion* (the caller's outcome) comes from the full answer, which alone carries
   `restored`. When the answer is missing or lost, the queue reads the stored result back
   under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
   as `landed`, with `restored` unknown.
 
-A Discard on a closed owner is a `done` that changed nothing (`status: "returned"`, `settled`
-`returned`, `why` `work_archived`, `work_deleted` or `chat_frozen`); the owner reads it as a change
-that was refused with that code. `work_archived` and `work_deleted` store no failure: the Works query
-refetches and `EndedWorkNotice` explains. An Undo of a Discard that returned reports `failed`. Other refusals still move prose in two cases, open in
+A closed owner (an archived or deleted Work, or a chat in Trash) locks nothing: Apply and Un-Apply land and
+leave the Work closed. A Discard, Discard all, a folder's ×, a change's Discard and an Undo of a Discard come
+back on their own: the server answers `done` with a settled `returned { why }` (`work_archived`, `work_deleted`,
+`chat_frozen`) and changes nothing. `returnedOf` reads `settled`, never the status, into the `returned` words the
+Undo already uses (`work-closed`, `chat-in-trash`); the owner's outcome is `returned`, and `bounced` in the command
+hook is the one place that makes it a notice (`showBounce`, a `discarded` notice with status `bounced`) and reads the
+Works list again. The notice is a chip ("Work was closed", "Its chat is in Trash") in the trailing slot of the
+control pressed, for 6 s, with the full sentence on hover, focus or long press: a Changes row's notice slot (a
+folder's ×: the folder's row; Discard all: the bar's), the strip's first line, the document band, a change card's own row (one press, one chip, on the card pressed). It adds no line,
+so `hasLine` is false for it. A change's Discard in a closed Work writes in a room the server admits read-only;
+`startDraftDiscardSession` returns `returned` there, with the word for the room's `closedWhy`, instead of a
+`read_only` refusal. The room names `closedWhy` itself: a `read_only` stateless message after every read admission (`why` only for a closed owner), or the 4409 close's reason; the client infers none. A read admission, and any 4409 that names no reason, holds `reasonPending` (so the review is not `ready`, and the controls show their loading state) until its message arrives, and a known reason survives the reconnect meanwhile. A Discard's deferred write answers from the room only once it is settled read-only; while the reason is pending it writes at once, as an offline press does, and the next admission decides. A created document's Discard closes its tab only after `done`, so a returned answer's chip has a band to show on. A returned Undo of a Discard is the same word on its
+notice, Trash's row and the editor's pill. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
 leaves subscribe to command records; command callbacks and the project controller don't.
@@ -194,7 +211,7 @@ main's band or Recently opened (`landing`); the sidebar's rows carry their own (
 tree's interactions page). A page whose document a Discard took away
 (a Work's new document) shows the Discard's notice, Undo included, while it holds the document
 (`discarding`); after that it says the document was discarded from the draft. A newer Apply or
-Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
+Discard by the owner replaces it; only a bounced one (below) has a timer; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
 there. In the Changes list a notice is said on its rows, never as a line (`useDraftNoticeWords`,
 `RowWord`): every row a Discard took stays struck through with Undo, in the place the list
