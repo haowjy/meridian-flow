@@ -464,7 +464,7 @@ try {
     const item = await listed("critic");
     assert.equal(item.level, "user");
     assert.deepEqual(item.shadows, ["builtin"]);
-    assert.match(item.unavailableReasons.join("\n"), /no frontmatter/);
+    assert.match(item.unavailableReasons.join("\n"), /first line that is exactly/);
     levels.remove("user", "agents/critic.md");
   });
 
