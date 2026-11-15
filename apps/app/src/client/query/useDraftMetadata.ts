@@ -21,10 +21,16 @@ export function useDraftMetadata(drafts: readonly DraftRef[]) {
   return useQueries({ queries: drafts.map(draftMetadataQueryOptions) });
 }
 
-/** A read that starts now, so it cannot report a disposition older than the question. */
-export function fetchCurrentDraftMetadata(
+/**
+ * A read that starts now, so it cannot report a disposition older than the question. It goes to
+ * the server, not through the cached query: a restore or a wake hint invalidates that query, and
+ * the refetch would cancel a read joined to it, which callers would take as no answer.
+ */
+export async function fetchCurrentDraftMetadata(
   queryClient: QueryClient,
   draft: DraftRef,
 ): Promise<DraftMetadataResponse> {
-  return queryClient.fetchQuery({ ...draftMetadataQueryOptions(draft), staleTime: 0 });
+  const answer = await getDraftMetadata(draft);
+  queryClient.setQueryData(draftMetadataQueryOptions(draft).queryKey, answer);
+  return answer;
 }

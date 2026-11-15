@@ -512,19 +512,24 @@ export class DraftCommandOwner {
   }
 
   /**
-   * Whether the item is open after asking the server, for an item whose known generation is
-   * closed. A different active draft is a replacement under the same key: the item follows it.
-   * The closed generation's record (its unsent text, its queue) is kept, and a failed read
-   * leaves the item closed.
+   * Whether the item may open, asking the server when its known generation is closed (it ended,
+   * or this tab's Discard hid it). The same draft active again is a restore, from any tab or
+   * view: it reopens here (`metadataActive`). A different active draft is a replacement under the
+   * same key: the item follows it. The closed generation's record (its unsent text, its queue) is
+   * kept, and a failed read leaves the item closed. A Discard still in flight keeps it hidden.
    */
   reconcileClosed(ref: DraftRef, read: () => Promise<DraftMetadataResponse>): Promise<boolean> {
-    if (!this.state(ref.itemKey).ended) return Promise.resolve(this.active);
+    const closedId = this.generation(ref.itemKey);
+    const state = this.state(ref.itemKey);
+    if (!state.ended && !(state.hidden && this.endedAt.has(closedId)))
+      return Promise.resolve(this.active && !state.hidden);
     const pending = this.reconciling.get(ref.itemKey);
     if (pending) return pending;
-    const closedId = this.generation(ref.itemKey);
+    const asked = Date.now();
     const reconcile = read()
       .then((answer) => {
-        if (!this.active || answer.status !== "active" || answer.draftId === closedId) return false;
+        if (!this.active || answer.status !== "active") return false;
+        if (answer.draftId === closedId) return this.metadataActive(ref, closedId, asked);
         if (this.generation(ref.itemKey) === closedId) {
           this.identities.set(ref.itemKey, answer.draftId);
           this.publish();
