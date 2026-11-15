@@ -1,6 +1,5 @@
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
-import { Trans } from "@lingui/react/macro";
 import {
   type AgentFileStatus,
   type AgentLevel,
@@ -18,8 +17,10 @@ import {
   useAccountId,
   useLiveDocumentSessionRegistry,
 } from "@/features/project/context/account-feature-context";
+import { FindingsChip, SentenceList } from "./FindingsChip";
+import { type FileTrouble, fileTrouble } from "./findings";
 import { PackageSave } from "./PackageSave";
-import { packageFolderOf, packageLabel, statusOf, usePackageSaves } from "./package-save";
+import { packageFolderOf, statusOf } from "./package-save";
 
 /** The verdict on the file at a tree path, when it is an Agent or skill file of a level. */
 export function agentFileAt(
@@ -74,14 +75,6 @@ export function hidesSentence(level: AgentLevel, shadows: readonly AgentLevel[])
   return level === "project"
     ? t`This project's own; it hides ${below}.`
     : t`Your own; it hides ${below}.`;
-}
-
-/** What a row says after its name of what keeps it from use: a built-in's, or the last word of a level's file. */
-export function agentFileMark(file: AgentFileStatus | null | undefined): string | undefined {
-  if (!file) return undefined;
-  if (file.unavailableReasons.length > 0)
-    return file.savedVersionInUse ? t`Edit not in use` : t`Unavailable`;
-  return file.hiddenBy ? t`Hidden` : undefined;
 }
 
 /**
@@ -164,69 +157,126 @@ export function AgentFileStatusNotice({
 }
 
 /**
- * Under an open file of an Agents level: Mars's verdict on an Agent or skill file, and its
- * package's Save state with Save, read again each time the server acknowledges the writer's
- * edits, so both follow the typing. Another file of a level (`mars.toml`) shows only the Save.
+ * An open file of an Agents level, at the end of its toolbar row: what keeps it from use (its
+ * problems, or a level above that hides it), its notes, and its package's Save state with Save.
+ * Read again each time the server acknowledges the writer's edits, so it follows the typing. A
+ * file with nothing to say shows nothing.
  */
-export function AgentFileNotice({
+export function AgentFileState({
   projectId,
   document,
-  className = "px-4 pt-3",
+  touch = false,
 }: {
   projectId: string;
   document: OpenDocument;
-  className?: string;
+  touch?: boolean;
 }) {
-  const inLevel =
-    document.kind === "tracked" &&
-    agentsLocationOf(document.scheme, document.path.replace(/^\//, "")) !== null;
-  return inLevel && document.kind === "tracked" ? (
-    <LevelFileNotice
+  if (document.kind !== "tracked") return null;
+  const at = agentsLocationOf(document.scheme, document.path.replace(/^\//, ""));
+  return at ? (
+    <LevelFileState
       projectId={projectId}
       documentId={document.documentId}
       scheme={document.scheme}
       path={document.path}
-      className={className}
+      touch={touch}
     />
   ) : null;
 }
 
-function LevelFileNotice({
+function LevelFileState({
   projectId,
   documentId,
   scheme,
   path,
-  className,
+  touch,
 }: {
   projectId: string;
   documentId: string;
   scheme: ProjectContextTreeScheme;
   path: string;
-  className: string;
+  touch: boolean;
 }) {
+  useLingui();
   const files = useAgentFiles(projectId);
-  const file = agentFileAt(files?.files ?? null, scheme, path);
   useReadAgainOnSave(projectId, documentId);
-  const saves = usePackageSaves(projectId);
   const at = agentsLocationOf(scheme, path.replace(/^\//, ""));
-  if (!at || file === undefined) return null;
+  const file = agentFileAt(files?.files ?? null, scheme, path);
+  if (!at || !files) return null;
   const pkg = { level: at.level, folder: packageFolderOf(at.path) };
-  const status = statusOf(files?.packages, pkg);
-  const save = <PackageSave projectId={projectId} pkg={pkg} status={status} look="file" />;
-  // A level's file that defines no Agent or skill says only its package's state, when it has one.
-  if (!file && !saves.shows(pkg, status)) return null;
-  const label = packageLabel(pkg);
+  const status = statusOf(files.packages, pkg);
+  const trouble = file ? fileTrouble(file, status) : null;
   return (
-    <div className={className} data-agent-file-notice>
-      {file ? (
-        <AgentFileStatusNotice file={file} action={save} />
-      ) : (
-        <DocumentNotice icon={<FileCog aria-hidden className="size-4" />} action={save}>
-          <Trans>Part of {label}.</Trans>
-        </DocumentNotice>
-      )}
-    </div>
+    <span className="flex min-w-0 shrink-0 items-center gap-1" data-agent-file-state>
+      {file && trouble ? <TroubleChip file={file} trouble={trouble} touch={touch} /> : null}
+      <PackageSave projectId={projectId} pkg={pkg} status={status} look="file" />
+    </span>
   );
+}
+
+function TroubleChip({
+  file,
+  trouble,
+  touch,
+}: {
+  file: AgentFileStatus;
+  trouble: FileTrouble;
+  touch: boolean;
+}) {
+  const name = file.slug;
+  switch (trouble.kind) {
+    case "unavailable":
+      return (
+        <FindingsChip
+          tone="destructive"
+          touch={touch}
+          word={t`Unavailable`}
+          heading={t`${name} is unavailable`}
+          sub={
+            file.saved
+              ? t`The last Save left it out. Fix these and save again.`
+              : t`Save leaves it out until these are fixed.`
+          }
+        >
+          {() => <SentenceList items={trouble.problems} />}
+        </FindingsChip>
+      );
+    case "not-in-use":
+      return (
+        <FindingsChip
+          tone="warning"
+          touch={touch}
+          word={t`Not in use`}
+          heading={t`Your latest edit isn't in use`}
+          sub={t`New chats use the last good save of ${name} until these are fixed and it is saved again.`}
+        >
+          {() => <SentenceList items={trouble.problems} />}
+        </FindingsChip>
+      );
+    case "hidden":
+      return (
+        <FindingsChip
+          tone="neutral"
+          touch={touch}
+          word={t`Hidden`}
+          heading={t`Not used: ${whose(trouble.by, name)} hides it`}
+        >
+          {() => null}
+        </FindingsChip>
+      );
+    case "notes":
+      return (
+        <FindingsChip
+          tone="neutral"
+          touch={touch}
+          word={plural(trouble.notes.length, { one: "# note", other: "# notes" })}
+          heading={plural(trouble.notes.length, { one: "# note", other: "# notes" })}
+          sub={t`${name} works and saves.`}
+        >
+          {() => <SentenceList items={trouble.notes} />}
+        </FindingsChip>
+      );
+  }
 }
 
 /** Each time the server has every edit of this document, the verdicts are read again. */

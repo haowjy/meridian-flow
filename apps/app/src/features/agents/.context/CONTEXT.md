@@ -12,10 +12,10 @@ revisions.
 | Chat with nothing to hand off from (no complete turn, a subagent's) | Readonly bound-Agent status. |
 | Results provenance | Inert attribution from the producing conversation's retained definition, inside the producing-thread link. |
 | Picker | Saved versions only (the catalog lists nothing else). A closing line, "2 unsaved Agent changes", counts the packages not `saved` and opens the Agents tab, so a new Agent missing from the list has its reason. |
-| Agents tab (sidebar) | `.agents/` and `~/.agents/` as trees, built-ins as rows that open read-only. Each package's heading (a level's own files) or folder row (`packages/<name>/`) ends with its state and Save; a removed import, which has no row, gets a line under its level. "Save all" in the tab's heading once two or more packages are not `saved`. A file row ends with the first that applies: Error (Mars can't use it, so a Save leaves it out; the name is struck through), Unsaved, Hidden. |
-| Open file of a level | `AgentFileNotice` under the path bar: for an Agent or skill file, its level, available or Mars's reasons, what it hides or what hides it; for every file, its package's state and Save (the tab is off by default, so this is where most writers meet Save). |
+| Agents tab (sidebar) | `.agents/` and `~/.agents/` as trees, built-ins as rows that open read-only. Each package's heading (a level's own files) or folder row (`packages/<name>/`) ends with Save alone when there is something to save (its tooltip says how many files differ; at 264px a chip beside it pushed the name out), and a package-level problem (a broken `mars.toml`) as a "1 problem" chip: said there once, never copied onto its files. A removed import, which has no row, gets a line under its level. "Save all" in the tab's heading once two or more packages are not `saved`. A file row ends with the first that applies (`fileTrouble`): Unavailable (no good save in use; the name is struck through), Not in use (its edit has an Error and its last good save is used), Unsaved, Hidden. A closed folder says what it holds out of use: "2 unavailable", else "1 not in use". |
+| Open file of a level | `AgentFileState` at the end of the toolbar row, before Live (the identity row's slot), so the page never moves: a chip for what keeps the file from use or its notes, opening each finding in Flow's words, then its package's state and Save, or the Save's result in place ("Saved · 1 left out · Undo"). A file with nothing to say shows nothing. |
 | Applied draft, the AI's write | The Changes row an Apply took, and the chat's edits receipt, show the package's state and Save for each Agents package they landed in. |
-| The AI's `save_agents` | Its fold row says Saved or not; the card after the turn (`AgentSavesReceipt`) gives each package's outcome: the files it left out first, struck through with their Error, then what changed, renames, warnings, and Undo; or the problems. |
+| The AI's `save_agents` | Its fold row says Saved or not; the card after the turn (`AgentSavesReceipt`) gives each package's outcome in the Save result's words: what it kept out of use first (left out struck through, a kept item's "Your latest edit isn't in use"), then what was saved, renames, warnings, and Undo; or the problems. The model reads the same, each file named once above its findings. |
 
 ## Agent files
 
@@ -44,10 +44,16 @@ revisions.
   the latest Save, and read only from the files query: the app keeps no copy of it.
 - `PackageSave` is the one look for a package's state and Save, on every surface above. After a
   Save or Undo it says what happened instead (`package-save.ts`, drawn in
-  [state-machines.md](state-machines.md)): "Saved" with Undo (and "1 left out" when it left
-  files out), "Not saved: 2 problems" opening each finding with a way to its file, "Undone", or
-  Retry when the request got no answer. The word is shown at once from what the files query
-  holds and replaced by the server's outcome.
+  [state-machines.md](state-machines.md)): "Saved" with Undo (and "1 left out", or "1 not in
+  use" when the item kept its last good save, listing those files first), "Not saved: 2
+  problems" opening each finding with a way to its file, "Undone", or Retry when the request got
+  no answer. The word is shown at once from what the files query holds and replaced by the
+  server's outcome.
+- **Words** (`findings.ts`): "Unavailable" only for an item with no good save in use, or a
+  runtime reason such as a model the account can't use; an Error in an edit of an item with a
+  good save is "Not in use". Each finding shows in Flow's sentence where `findingSentence` has
+  one, else Mars's message. A broken `mars.toml` makes Mars read no schema and no Agent in the
+  package; `rootFindings` drops those consequences so the cause is said once.
 - An Error in one Agent's or skill's file leaves that item out of what runs (`leftOut`); the
   rest saves. Only a package-level Error (a broken `mars.toml`, state `cant-save`) fails the
   Save, as a result in a 200, never a refused write: the files and the saved version both stay.

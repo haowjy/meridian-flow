@@ -113,9 +113,9 @@ function set(projectId: string, entry: Entry) {
 }
 
 /**
- * The word a package shows now. A Save's word stays until the package changes again (its
- * `saveId` moves with the Save, so typing after it reads as a change); a failure until the files
- * or their findings change; an Undo's until the package is saved again.
+ * The word a package shows now: until the package changes from what the word speaks of. A
+ * settled Save's or Undo's basis is the package as the files read after it, so typing after it,
+ * or putting a file back by hand, reads as a change; a failure's is the package as pressed.
  */
 function heldWord(entry: Entry, status: AgentPackageStatus | undefined): PackageWord | null {
   const { word, basis } = entry;
@@ -123,7 +123,7 @@ function heldWord(entry: Entry, status: AgentPackageStatus | undefined): Package
   const unchanged = signature(status) === basis;
   switch (word.kind) {
     case "saved":
-      return !word.settled || status.state === "saved" || unchanged ? word : null;
+      return !word.settled || unchanged ? word : null;
     case "failed":
       return !word.settled || unchanged ? word : null;
     case "undone":
@@ -207,9 +207,21 @@ async function save(
     for (const key of bases.keys()) entries.delete(key);
   } catch {
     for (const entry of bases.values()) set(projectId, { ...entry, word: { kind: "unreached" } });
+    publish();
+    void invalidateAgentReads(queryClient, projectId, accountId);
+    return;
   }
   publish();
-  void invalidateAgentReads(queryClient, projectId, accountId);
+  await invalidateAgentReads(queryClient, projectId, accountId);
+  // A Save's word speaks of the package as the Save left it, read once the files are read again.
+  const after = latestAgentFiles(queryClient, projectId)?.packages;
+  for (const status of statuses) {
+    const ref = { level: status.level, folder: status.folder };
+    const entry = entries.get(keyOf(projectId, ref));
+    if (entry?.word.kind !== "saved" || !entry.word.settled) continue;
+    set(projectId, { ...entry, basis: signature(statusOf(after, ref)) });
+  }
+  publish();
 }
 
 /** `nothing`: a later Save of the package exists, so the Undo changed nothing. */

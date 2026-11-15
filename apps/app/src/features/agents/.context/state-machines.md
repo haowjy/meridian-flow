@@ -19,7 +19,7 @@ stateDiagram-v2
   undoing --> [*]: a later Save exists, nothing changed
   undoing --> saved: no usable answer (Undo shows as a retry)
   undone --> saving: Save
-  saved --> [*]: the package changes again
+  saved --> [*]: the package changes from how the Save left it
   failed --> [*]: its files or their findings change
   undone --> [*]: the package changes after Undo's files are read
   unreached --> [*]: the package changes
@@ -33,10 +33,11 @@ stateDiagram-v2
   again and then holds while the package is as Undo left it and reads Unsaved; one that reads Saved
   shows nothing, the state says it. Each Save's Undo (`pending`, `failed`, `undone`, `nothing`) is
   kept by `saveId`, not on the word, so the AI's Save card and the notice show one state.
-- **A word holds while the package is as the writer pressed it** (its state, `saveId`, changes
-  and findings), or, for `saved`, while it reads `saved`. The Save moves `saveId`, so typing after
-  it ends the word even when the same file changes again. Dropping that comparison leaves
-  "Saved" on a package with new unsaved edits.
+- **A word holds while the package is as the word speaks of it** (its state, `saveId`, changes
+  and findings): for a settled `saved` or `undone`, as the files read after it; for the rest, as
+  the writer pressed it. Typing after a Save ends the word even when the same file changes again,
+  and so does putting a file back by hand. Holding `saved` on the state alone left "1 not in use"
+  up after a hand revert made the package read `saved`.
 - **Retry sends the Save again with nothing to match it by.** That is safe: a Save of files
   that already are the saved version answers `unchanged`. A second Undo of one `saveId` answers
   `undone: false`.

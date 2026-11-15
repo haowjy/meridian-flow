@@ -3,7 +3,7 @@ import type { AgentFileStatus } from "@meridian/contracts/agents";
 import { useState } from "react";
 import { useBuiltinAgentFile } from "@/client/query/useAgentFiles";
 import { AgentFileDialog } from "./AgentFileDialog";
-import { AgentFileStatusNotice } from "./AgentFileNotice";
+import { AgentFileStatusNotice } from "./AgentFileState";
 
 /**
  * A built-in Agent or skill opens here, read-only: it is no document, so it has no main address,
