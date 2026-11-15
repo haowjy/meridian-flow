@@ -141,10 +141,6 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
   let content = copied.content;
   // A cell selection's slice is open around its table. The text codec needs the enclosing
   // blocks too; throwing here also prevents ProseMirror from copying the parallel HTML slice.
-  const role = content.firstChild?.type.spec.tableRole;
-  if (role === "cell" || role === "header_cell") {
-    content = Fragment.from(schema.nodes.table_row.create(null, content));
-  }
   if (content.firstChild?.type.spec.tableRole === "row") {
     content = Fragment.from(schema.nodes.table.create(null, content));
   }
