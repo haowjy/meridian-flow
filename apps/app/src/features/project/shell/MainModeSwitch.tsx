@@ -7,6 +7,7 @@ import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useOpenContextRoute, useProjectRouteCommands } from "../routing/ProjectNavigationContext";
 import type { NavigationSettlement } from "../routing/project-navigation";
+import { withoutOpen } from "../routing/use-on-open";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
 import { useSideItem } from "../side/SideView";
 
@@ -78,7 +79,7 @@ export function MainModeSwitch({
         // Main's move holds the thread for a few frames: it starts after the switch has painted.
         requestAnimationFrame(() =>
           setTimeout(() => {
-            go(next)
+            withoutOpen(() => go(next))
               .then((settled) => {
                 if (settled.kind === "applied") onSwitched?.();
               })
