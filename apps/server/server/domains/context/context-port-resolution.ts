@@ -4,6 +4,7 @@
  */
 
 import type { DocumentVersion } from "@meridian/agent-edit";
+import type { DraftOwner } from "@meridian/contracts";
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, Work, WorkHandle } from "@meridian/contracts/works";
@@ -17,7 +18,6 @@ import type {
 } from "../threads/index.js";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import type { ContextPort, UploadsOwner } from "./ports/context-port.js";
-import { scratchOwnerFor } from "./scratch-owner.js";
 import type { UnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
 export interface ThreadContextResolution {
@@ -28,7 +28,7 @@ export interface ThreadContextResolution {
   workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
-  scratchOwner?: import("./scratch-owner.js").ScratchOwner;
+  scratchOwner?: DraftOwner;
   /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
   uploadsOwner: UploadsOwner | null;
   /** Finds another chat by its handle, for `uploads://@c12/` addresses. */
@@ -70,7 +70,7 @@ export async function resolveThreadContext(
     uploadChats: deps.uploadChats,
     uploadsOwner: topChat ? { chatId: topChat.chatId, chatRef: topChat.chatRef } : null,
     scratchLineages: deps.scratchLineages,
-    ...(primaryWork ? { scratchOwner: scratchOwnerFor(thread, primaryWork) } : {}),
+    ...(primaryWork ? { scratchOwner: chatOwner(thread, primaryWork) } : {}),
     primaryWorkId: primaryMembership?.workId ?? null,
     primaryWork,
     workAuthorities,
@@ -96,7 +96,7 @@ export function contextPortForThread(
     resolution.thread.userId,
     resolution.workAuthorities,
     {
-      scratchOwner: scratchOwnerFor(resolution.thread, owner),
+      scratchOwner: chatOwner(resolution.thread, owner),
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
       branchOwner: { owner: chatOwner(resolution.thread, owner), handle: authority.workHandle },

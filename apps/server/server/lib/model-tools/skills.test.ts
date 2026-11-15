@@ -57,7 +57,7 @@ async function criticTools() {
         threadId,
         permission: "edit",
         threadWorkId: "work-1",
-        scratchOwner: { scope: "work", workId: "work-1" },
+        scratchOwner: { kind: "work", workId: "work-1" },
       },
     ],
     readChainPermission: async () => "edit",

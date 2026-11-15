@@ -11,7 +11,7 @@ export { createAllowAllFileAccess } from "./allow-all-file-access.js";
 export {
   holdsDrafts,
   inOthersNotes,
-  type ScratchPlace,
+  ownsScratch,
   skillLevel,
   sourceDestination,
 } from "./domain/policy.js";

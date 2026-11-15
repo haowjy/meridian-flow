@@ -24,6 +24,8 @@ export type BranchDocumentTree = {
   pending: boolean;
   /** Canonical URI in the Work's view (the last address for one the Work deleted). */
   uri: string | null;
+  /** Whose notes `uri` is in when it is a Scratch other than the branch owner's own. */
+  notesName: string | null;
   /** For `moving`: the URI live has it at now. */
   movedFromUri: string | null;
 };

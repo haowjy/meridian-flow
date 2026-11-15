@@ -55,7 +55,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: "thread",
         permission: "edit",
         threadWorkId: w,
-        scratchOwner: { scope: "work", workId: w },
+        scratchOwner: { kind: "work", workId: w },
       },
     ];
     const agent: Principal = {

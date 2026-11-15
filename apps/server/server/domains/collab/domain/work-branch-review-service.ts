@@ -97,7 +97,7 @@ export function createWorkBranchReviewService(input: {
           (item): ModelDraftRow => ({
             documentId: item.documentId,
             documentName: item.documentName,
-            contextLocation: reviewContextLocation(item.path),
+            contextLocation: reviewContextLocation(item.path, item.notesName),
             ...(item.isNew ? { createdDocument: true } : {}),
           }),
         );
@@ -193,13 +193,17 @@ export function createWorkBranchReviewService(input: {
 const notesOf = (ended: DiscardResult) =>
   ended.settled.length > 0 ? { settled: ended.settled } : {};
 
-export function reviewContextLocation(uri: string | null): ThreadDraftListItem["contextLocation"] {
+/** `notesName` is whose notes the document is in when they aren't the branch owner's own. */
+export function reviewContextLocation(
+  uri: string | null,
+  notesName: string | null = null,
+): ThreadDraftListItem["contextLocation"] {
   if (!uri) return null;
   const parsed = parseUnifiedContextUri(uri);
   if (!parsed.ok || !isProjectContextTreeScheme(parsed.value.scheme)) return null;
   const { scheme, path, authority } = parsed.value;
   const location = { scheme, path: `/${path}` };
-  if (authority.kind === "work") return { ...location, scratchOwner: authority };
-  if (authority.kind === "lineage") return { ...location, scratchOwner: authority };
-  return location;
+  return notesName && (authority.kind === "work" || authority.kind === "lineage")
+    ? { ...location, notes: { authority, name: notesName } }
+    : location;
 }

@@ -324,12 +324,6 @@ msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 msgid "{0} items deleted."
 msgstr ""
 
-#. placeholder {0}: possessive(name)
-#. placeholder {0}: possessive(owner.rootThreadRef)
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "{0} notes"
-msgstr ""
-
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0} s"
@@ -372,11 +366,6 @@ msgstr ""
 #. placeholder {1}: finding.message
 #: src/features/agents/PackageSave.tsx
 #~ msgid "{0}: your latest edit isn't in use: {1}"
-#~ msgstr ""
-
-#. placeholder {0}: owner.rootThreadRef
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-#~ msgid "{0}'s notes"
 #~ msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
@@ -839,8 +828,8 @@ msgid "{name}: renaming to {0}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-#~ msgid "{name}'s notes"
-#~ msgstr ""
+msgid "{name}'s notes"
+msgstr "{name} 的笔记"
 
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "{named} and {more} more"

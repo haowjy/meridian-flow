@@ -8,7 +8,7 @@
  */
 import { z } from "zod";
 import { CommandIdSchema, type CommandOutcome, type Settlement } from "../commands/index.js";
-import type { ParsedContextUri } from "../context-uri.js";
+import type { ParsedContextAuthority, ParsedContextUri } from "../context-uri.js";
 import type { BranchId, CommandId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
 import type { ReversalOutcome } from "../protocol/write-reversal.js";
@@ -282,12 +282,15 @@ export type ModelEditCommandResult = {
 };
 
 /**
- * Where a review item's document is: its scheme and path, and the Work or conversation whose
- * Scratch holds it when the address names one (a note the chat wrote in another owner's Scratch
- * is held in the chat's branch, so the row says whose notes it changes).
+ * Where a review item's document is: its scheme and path. `notes` is set when the document is in
+ * another owner's Scratch than the branch's own (a chat's write there is held in its branch): the
+ * owner's address qualifier and display name, decided once on the server.
  */
 export type ReviewContextLocation = Pick<ParsedContextUri, "scheme" | "path"> & {
-  scratchOwner?: { kind: "work"; workHandle: string } | { kind: "lineage"; rootThreadRef: string };
+  notes?: {
+    authority: Extract<ParsedContextAuthority, { kind: "work" | "lineage" }>;
+    name: string;
+  };
 };
 
 /**

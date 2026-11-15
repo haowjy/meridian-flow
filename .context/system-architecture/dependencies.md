@@ -81,7 +81,6 @@ imports one of them fails the check.
 | `loop/orchestrator.ts` | `context` |
 | `loop/orchestrator.ts` | `packages` |
 | `loop/orchestrator.ts` | `@meridian/agent-edit` |
-| `loop/permissions/agent-chain.ts` | `context` |
 | `loop/permissions/agent-chain.ts` | `file-policy` |
 | `loop/permissions/agent-chain.ts` | `packages` |
 | `loop/permissions/agent-chain.ts` | `projects` |

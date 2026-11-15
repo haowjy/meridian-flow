@@ -659,8 +659,16 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         // A binary copy lands where a create would: in a draft-mode chat, a hidden row
         // holding the branch's own object (12b-Q2).
         return settle(() =>
-          inContainer(deps, principal, parsed.command, target, () =>
-            copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
+          inContainer(deps, principal, parsed.command, target, (grant) =>
+            copyBinary(
+              deps,
+              context,
+              parsed,
+              binary,
+              sourceGrant,
+              ctx,
+              !!grant && heldInOthersNotes(principal, [grant]),
+            ),
           ),
         );
       }

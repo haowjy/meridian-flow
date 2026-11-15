@@ -53,7 +53,7 @@ export interface AgentLink {
   permission: AgentPermission;
   /** The thread's current primary Work; follows `work switch`. */
   threadWorkId: WorkId;
-  scratchOwner: import("../../context/scratch-owner.js").ScratchOwner;
+  scratchOwner: DraftOwner;
 }
 
 /** `[calling thread, its parent, …, root]`. Each link caps the result. */

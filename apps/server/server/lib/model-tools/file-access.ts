@@ -196,19 +196,19 @@ export function firstRefusal(refusal: FileEditRefusedError): FileAccessDenied {
 /**
  * Runs `operation` under the edit grant on the container a create or copy
  * makes its file in; the namespace transaction confirms it under its locks
- * (seam C). No target runs it bare.
+ * (seam C). No target runs it bare. `operation` gets the grant it runs under.
  */
 export async function inContainer<T>(
   deps: Pick<ToolWiringDeps, "fileAccess">,
   principal: Principal,
   command: DocumentCommandName,
   target: FileTarget | null,
-  operation: () => Promise<T>,
+  operation: (grant: FileGrant<"edit"> | null) => Promise<T>,
 ): Promise<T | WriteToolErrorOutput> {
-  if (!target) return operation();
+  if (!target) return operation(null);
   const grant = await deps.fileAccess.authorize(principal, target, "edit");
   if (isFileAccessDenied(grant)) return fileAccessDeniedError(command, grant);
-  const result = await runWithEditGrants(deps.fileAccess, [grant], operation);
+  const result = await runWithEditGrants(deps.fileAccess, [grant], () => operation(grant));
   if (result.ok) return result.value;
   return fileAccessDeniedError(command, firstRefusal(result.refusal));
 }

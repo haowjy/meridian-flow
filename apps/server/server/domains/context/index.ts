@@ -162,8 +162,6 @@ export type { ResultProvenance } from "./promotion/result-provenance.js";
 export {
   type ScratchLineage,
   type ScratchLineages,
-  type ScratchOwner,
-  scratchOwnerFor,
 } from "./scratch-owner.js";
 export { createDrizzleDocumentTrash } from "./tree/drizzle-document-trash.js";
 export { createDrizzleContextImportDestinationLookup } from "./tree/import-destination.js";

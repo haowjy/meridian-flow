@@ -8,10 +8,9 @@
  * Skill files (`skills://`) have their own rule, `skillLevel`.
  */
 
-import { draftOwnerKey } from "@meridian/contracts";
+import { type DraftOwner, draftOwnerKey } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { ScratchOwner } from "../../context/scratch-owner.js";
 import { matchAncestors } from "./ancestors.js";
 import {
   type AiAccess,
@@ -55,21 +54,19 @@ export function followsWriteMode(scheme: ContextUriScheme): boolean {
   return holdsDrafts(scheme) && scheme !== "scratch";
 }
 
-/** Whose Scratch a file or a source is, by the ids a Work's or a lineage's Scratch carries. */
-export interface ScratchPlace {
-  workId: string | null;
-  rootThreadId: string | null;
+/** Whether a chat's Scratch (`owner`) is the Scratch of `place`. */
+export function ownsScratch(owner: DraftOwner, place: DraftOwner): boolean {
+  return owner.kind === "lineage"
+    ? place.kind === "lineage" && place.rootThreadId === owner.rootThreadId
+    : place.kind === "work" && place.workId === owner.workId;
 }
 
-/** Whether a chat's Scratch (the owner its writes and its branch go by) is this place. */
-export function ownsScratch(owner: ScratchOwner, place: ScratchPlace): boolean {
-  return owner.scope === "lineage"
-    ? place.rootThreadId === owner.rootThreadId
-    : place.workId === owner.workId;
-}
-
-function factsPlace(facts: FileFacts): ScratchPlace {
-  return { workId: facts.ownerWork?.id ?? null, rootThreadId: facts.ownerRootThreadId ?? null };
+/** Whose Scratch a file is in; null when no owner is on its facts. */
+function factsPlace(facts: FileFacts): DraftOwner | null {
+  if (facts.ownerWork) return { kind: "work", workId: facts.ownerWork.id };
+  return facts.ownerRootThreadId
+    ? { kind: "lineage", projectId: facts.projectId, rootThreadId: facts.ownerRootThreadId }
+    : null;
 }
 
 /**
@@ -79,8 +76,8 @@ function factsPlace(facts: FileFacts): ScratchPlace {
  */
 function fixedAccess(
   scheme: ContextUriScheme,
-  caller: ScratchOwner | undefined,
-  place: ScratchPlace | undefined,
+  caller: DraftOwner | undefined,
+  place: DraftOwner | null,
 ): AiAccess {
   return scheme === "scratch" && caller && place && !ownsScratch(caller, place)
     ? "ask"
@@ -125,12 +122,13 @@ function destinationAt(
  * its chat's branch for a source that follows the write mode in draft mode or where the source
  * asks for review (another owner's Scratch), otherwise live. People always write live. Creates
  * and view paths ask this per source; a document's decision and a tool call's grant carry their
- * own destination (`destinationFor`), and a caller that has one reads it from there.
+ * own destination (`destinationFor`), and a caller that has one reads it from there. A stored
+ * setting (`placeAccess`) decides an edit but not a create here: creates don't ask per path yet.
  */
 export function sourceDestination(
-  agent: { writeMode: AiWriteMode; branchOwner: BranchOwnerRef; scratchOwner?: ScratchOwner },
+  agent: { writeMode: AiWriteMode; branchOwner: BranchOwnerRef; scratchOwner: DraftOwner },
   scheme: ContextUriScheme,
-  place: ScratchPlace | undefined,
+  place: DraftOwner | null,
 ): FileDestination {
   const access = fixedAccess(scheme, agent.scratchOwner, place);
   return destinationAt(agent.writeMode, access, scheme, agent.branchOwner);
@@ -267,9 +265,9 @@ function workTerms(work: FileWorkFacts): Term[] {
 function agentTerms(agent: AgentPrincipal, facts: FileFacts): Term[] {
   const sourceLimit = SOURCE_AGENT_LIMITS[facts.contentScheme];
   const terms: Term[] = sourceLimit ? [sourceLimit] : [];
+  const place = facts.contentScheme === "scratch" ? factsPlace(facts) : null;
   for (const link of agent.chain) {
-    const ownScratch =
-      facts.contentScheme === "scratch" && ownsScratch(link.scratchOwner, factsPlace(facts));
+    const ownScratch = place !== null && ownsScratch(link.scratchOwner, place);
     const cap = link.permission === "edit" || ownScratch ? "edit" : "read";
     terms.push({ cap, limit: "agent_read_only" });
   }

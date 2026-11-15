@@ -19,9 +19,10 @@ built-ins take the default `edit`.
 takes the nearest stored setting on the file's *live* folder chain (`FileFacts.aiAccessSettings`,
 nearest first, never from a draft's view, or a draft move of a file out of a `deny` folder escapes
 it), then the fixed rule (`fixedAccess`), then `auto-apply`. The fixed rule reads the calling link
-(`chain[0].scratchOwner`): a Scratch note it doesn't own (another Work's, or another conversation's)
-is `ask`; the chat's own Scratch is `auto-apply`. `ownsScratch` is the one own test, shared with
-`agentTerms`. `ask` on a source that can't hold a draft (`holdsDrafts`: every source but `uploads`)
+(`chain[0].scratchOwner`, a `DraftOwner`): a Scratch note it doesn't own (another Work's, or another
+conversation's) is `ask`; the chat's own Scratch is `auto-apply`. `ownsScratch` is the one own test,
+shared with `agentTerms`; the review list applies it on the server too, and sends the owner's display
+name only for notes that aren't the branch owner's (`contextLocation.notes`). `ask` on a source that can't hold a draft (`holdsDrafts`: every source but `uploads`)
 reads as `deny`, since landing it live would skip the review it asks for.
 
 - **Destination.** `Principal.agent` always has `branchOwner` and `writeMode`. A write goes to a draft
@@ -29,9 +30,9 @@ reads as `deny`, since landing it live would skip the review it asks for.
   `followsWriteMode` (every source but Scratch and uploads: a chat's own Scratch is live in both
   modes); otherwise live. `destinationFor` decides it per document from facts; `sourceDestination`
   decides it per source for creates and tree views, from the fixed rule alone, taking the source's
-  owner (`ScratchPlace`) because a Scratch source has one. Everything that has a document (revisions,
+  owner (a `DraftOwner`, null for a source with none) because a Scratch source has one. Everything that has a document (revisions,
   reads, lists) reads the destination from its decision or grant, never from the chat's mode. A stored per-folder setting needs creates to ask per path, and `placementFor`
-  (context) must change before then.
+  (context) must change before then: today a stored setting decides edits but not creates.
 - **Facts follow the destination.** An auto-apply chat loads live facts. Only a place whose
   destination is a draft loads the branch's view, `branchOwner` lifecycle and locks (`loadFor`,
   `loadListFor` in `file-access.ts`), and a document only the branch holds is found there. Once live facts say draft, the branch's
@@ -50,9 +51,9 @@ reads as `deny`, since landing it live would skip the review it asks for.
 
 A branch move changes the document's presented `scheme`, not its physical
 `contentScheme`. File policy routes content writes from the physical scheme
-until Apply moves the live identity: Scratch content stays live behind a
-proposed project path, while project content stays drafted behind a proposed
-Scratch path. The physical Scratch owner continues to cap delegation.
+until Apply moves the live identity: a chat's own Scratch content stays live behind a
+proposed project path (another owner's Scratch is held either way), while project content stays
+drafted behind a proposed Scratch path. The physical Scratch owner continues to cap delegation.
 
 The decision also carries `command`: whether the person may run a document command (Apply,
 Un-Apply, Discard, Undo of a Discard) there, or Copy into or out of a closed Work (a Copy's

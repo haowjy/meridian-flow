@@ -9,14 +9,14 @@
 
 import type { BranchId, CanonicalContextAuthority, DraftOwner } from "@meridian/contracts";
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
-import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { approveBranchWriteJoin } from "../../shared/branch-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { Branches } from "../collab/domain/branches.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
-import { type ScratchPlace, sourceDestination } from "../file-policy/index.js";
+import { sourceDestination } from "../file-policy/index.js";
 import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
 import type { TopPrimaryChatResolver } from "../threads/index.js";
 import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
@@ -129,11 +129,11 @@ interface AdapterAssembly {
 function placementFor(
   assembly: AdapterAssembly,
   scheme: ContextScheme,
-  place: ScratchPlace | undefined,
+  place: DraftOwner | undefined,
 ): ContextPlacement {
   const { thread, branches } = assembly;
   if (!thread) return { kind: "live" };
-  const destination = thread.destination ?? sourceDestination(thread, scheme, place);
+  const destination = thread.destination ?? sourceDestination(thread, scheme, place ?? null);
   const branch = (owner: DraftOwner) => ({
     owner,
     threadId: thread.threadId as ThreadId,
@@ -211,7 +211,7 @@ function buildWorkScopedContextFsAdapters(
         },
         scheme,
         holder: { projectId, authority },
-        place: { workId, rootThreadId: null },
+        place: { kind: "work", workId: workId as WorkId },
       }),
     );
   }
@@ -287,7 +287,11 @@ function buildUnifiedContextPort(input: {
         projectId: scope.projectId,
         authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef },
       },
-      place: { workId: null, rootThreadId: lineage.rootThreadId },
+      place: {
+        kind: "lineage",
+        projectId: lineage.projectId as ProjectId,
+        rootThreadId: lineage.rootThreadId as ThreadId,
+      },
     }),
     authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef },
   });
@@ -325,7 +329,7 @@ function buildUnifiedContextPort(input: {
     ]),
   );
   const ownLineageId =
-    scope.kind === "work" && scope.thread?.scratchOwner?.scope === "lineage"
+    scope.kind === "work" && scope.thread?.scratchOwner.kind === "lineage"
       ? scope.thread.scratchOwner.rootThreadId
       : scope.kind === "project"
         ? (scope.lineage?.rootThreadId ?? null)

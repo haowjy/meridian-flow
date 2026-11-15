@@ -45,7 +45,8 @@ export type ContextScheme = ContextUriScheme;
  * live text, without draft changes, when `version` is `live`.
  */
 export interface ThreadContextView {
-  scratchOwner?: import("../scratch-owner.js").ScratchOwner;
+  /** Whose Scratch this chat writes: its Work, or its conversation under No Work. */
+  scratchOwner: DraftOwner;
   /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
   uploadsOwner?: UploadsOwner;
   threadId: string;

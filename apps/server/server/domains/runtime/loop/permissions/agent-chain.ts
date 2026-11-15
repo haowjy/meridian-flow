@@ -7,7 +7,7 @@
 
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { scratchOwnerFor } from "../../../context/index.js";
+import { chatOwner } from "../../../../shared/draft-owner.js";
 import type { AgentChain, AgentLink } from "../../../file-policy/index.js";
 import type { AgentRevisionStore } from "../../../packages/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../../threads/index.js";
@@ -43,7 +43,7 @@ export async function readAgentChain(
       threadId: id,
       permission,
       threadWorkId: primary.workId,
-      scratchOwner: scratchOwnerFor(thread, work),
+      scratchOwner: chatOwner(thread, work),
     });
   }
   return chain;

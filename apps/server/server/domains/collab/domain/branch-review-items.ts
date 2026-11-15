@@ -32,6 +32,8 @@ export type DraftReviewItem = {
   documentName: string | null;
   /** Canonical URI in the branch's view (the last address for one deleted live). */
   path: string | null;
+  /** Whose notes `path` is in when it is a Scratch other than the branch owner's own. */
+  notesName: string | null;
   /**
    * Deleted live (an edited document, or a revealed create): live no longer shows it, the
    * branch's view does while it has pending changes. It authorizes through the
@@ -144,6 +146,7 @@ function toItem(
     hasDraft: !!evidence,
     documentName: documentTitleFromUri(path),
     path,
+    notesName: node.notesName,
     deletedLive: node.deletedLive,
     actorThreadIds: [...treeActorThreadIds],
     updatedAt: evidence?.updatedAt ?? new Date(),

@@ -2,14 +2,16 @@
  * The tree half of the review list, read from the Work's rows (`branch_tree_nodes`, written by
  * the replay of the list) against live's (`tree_nodes`). Addresses are spelled by the tree reader.
  */
-import type { BranchId } from "@meridian/contracts";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { BranchId, DraftOwner } from "@meridian/contracts";
+import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
+import { ownerOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { pendingDocuments } from "../../context/tree/pending-documents.js";
-import { LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
+import { LIVE_TREE, type NodeAddress, type TreeReader } from "../../context/tree/tree-view.js";
+import { ownsScratch } from "../../file-policy/index.js";
 import type {
   BranchDocumentTree,
   BranchTreeChange,
@@ -34,6 +36,88 @@ export async function branchFolderIds(db: Database, branchId: BranchId): Promise
     WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder'`);
   return [...rows];
 }
+
+/** Whose Scratch an address is in; null for any other source. */
+function scratchOwnerOf(address: NodeAddress): DraftOwner | null {
+  if (address.scheme !== "scratch") return null;
+  if (address.workId) return { kind: "work", workId: address.workId };
+  return address.rootThreadId
+    ? {
+        kind: "lineage",
+        projectId: address.projectId,
+        rootThreadId: address.rootThreadId as ThreadId,
+      }
+    : null;
+}
+
+/**
+ * The display name of the notes each document is in, for the documents in a Scratch the branch's
+ * owner doesn't own (`ownsScratch`): a Work's name, or a conversation's title else its ref.
+ */
+async function otherNotesNames(
+  db: Database,
+  branchId: BranchId,
+  addresses: ReadonlyMap<DocumentId, NodeAddress>,
+): Promise<ReadonlyMap<DocumentId, string>> {
+  const tx = currentDrizzleDb(db);
+  const [branch] = await tx.execute<{
+    project_id: string;
+    work_id: string | null;
+    root_thread_id: string | null;
+  }>(sql`
+    SELECT project_id::text, origin_work_id::text AS work_id,
+      origin_root_thread_id::text AS root_thread_id
+    FROM branches WHERE id = ${branchId}::uuid`);
+  const own = branch
+    ? ownerOfColumns({
+        projectId: branch.project_id as ProjectId,
+        workId: branch.work_id,
+        rootThreadId: branch.root_thread_id,
+      })
+    : null;
+  const others = new Map<DocumentId, DraftOwner>();
+  for (const [documentId, address] of addresses) {
+    const place = scratchOwnerOf(address);
+    if (place && !(own && ownsScratch(own, place))) others.set(documentId, place);
+  }
+  if (others.size === 0) return new Map();
+  const idsOf = (kind: DraftOwner["kind"]) => [
+    ...new Set(
+      [...others.values()].flatMap((owner) => (owner.kind === kind ? [ownerId(owner)] : [])),
+    ),
+  ];
+  const named = (list: string[], query: (ids: SQL) => SQL) =>
+    list.length === 0
+      ? []
+      : tx.execute<{ id: string; name: string }>(
+          query(
+            sql.join(
+              list.map((id) => sql`${id}::uuid`),
+              sql`, `,
+            ),
+          ),
+        );
+  const rows = [
+    ...(await named(
+      idsOf("work"),
+      (ids) => sql`SELECT id::text AS id, name FROM works WHERE id IN (${ids})`,
+    )),
+    ...(await named(
+      idsOf("lineage"),
+      (ids) =>
+        sql`SELECT id::text AS id, coalesce(nullif(trim(title), ''), ref) AS name FROM threads WHERE id IN (${ids})`,
+    )),
+  ];
+  const names = new Map(rows.map((row) => [row.id, row.name]));
+  return new Map(
+    [...others].flatMap(([documentId, owner]) => {
+      const name = names.get(ownerId(owner));
+      return name ? [[documentId, name] as const] : [];
+    }),
+  );
+}
+
+const ownerId = (owner: DraftOwner) => (owner.kind === "work" ? owner.workId : owner.rootThreadId);
 
 export function createDrizzleBranchTreeState(
   db: Database,
@@ -78,12 +162,26 @@ export function createDrizzleBranchTreeState(
         LIVE_TREE,
         moving.map((row) => row.id as DocumentId),
       );
+      const addressOf = (id: DocumentId) => {
+        const status = inBranch.get(id);
+        return status?.kind === "visible"
+          ? status.address
+          : status?.kind === "deleted"
+            ? status.lastAddress
+            : null;
+      };
+      const addresses = new Map(
+        documentIds.flatMap((id) => {
+          const address = addressOf(id);
+          return address ? [[id, address] as const] : [];
+        }),
+      );
+      const notesNames = await otherNotesNames(db, branchId, addresses);
       return found.map((row): BranchDocumentTree => {
         const id = row.id as DocumentId;
         const created = row.exists_only_in_draft === true;
         const change: BranchTreeChange | null =
           row.deleted === null ? null : created ? "created" : row.deleted ? "deleting" : "moving";
-        const here = inBranch.get(id);
         const there = inLive.get(id);
         return {
           documentId: id,
@@ -93,12 +191,8 @@ export function createDrizzleBranchTreeState(
           deletedLive: change === "moving" && row.live_trashed,
           change,
           pending: pending.has(id),
-          uri:
-            here?.kind === "visible"
-              ? here.address.uri
-              : here?.kind === "deleted"
-                ? (here.lastAddress?.uri ?? null)
-                : null,
+          uri: addressOf(id)?.uri ?? null,
+          notesName: notesNames.get(id) ?? null,
           movedFromUri: change === "moving" && there?.kind === "visible" ? there.address.uri : null,
         };
       });

@@ -5,8 +5,8 @@ views, sources, arrivals and the storage seam. File access stays with
 [file policy](../file-policy/.context/CONTEXT.md). Owners, schemes and the
 rest of the contracts: [context contracts](.context/CONTEXT.md).
 
-- `scratchOwnerFor(thread, work)` is the one owner rule for bare Scratch, in
-  resolution and in file policy. `skills://` is model-only, not a context scheme.
+- `chatOwner(thread, work)` (`shared/draft-owner.ts`) is the one owner rule for bare Scratch, in
+  resolution and in file policy: a chat's Scratch owner and its draft owner are one `DraftOwner`. `skills://` is model-only, not a context scheme.
 - Routes and tools ask file policy before calling this domain. Storage
   transactions begin with `lockSeamWorks`, then the list's lock (`treeListStore.submit`), then
   namespace and document keys; lifecycle

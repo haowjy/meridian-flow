@@ -137,6 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,
+          scratchOwner: { kind: "work", workId: WORK_ID as never },
           branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
           writeMode: "draft",
         },
@@ -314,6 +315,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,
+          scratchOwner: { kind: "work", workId: WORK_ID as never },
           branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
           writeMode: "draft",
         },

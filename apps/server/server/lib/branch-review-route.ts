@@ -1095,7 +1095,7 @@ export function toWireItem(
         }
       : null,
     documentName: item.documentName,
-    contextLocation: reviewContextLocation(item.path),
+    contextLocation: reviewContextLocation(item.path, item.notesName),
     deletedLive: item.deletedLive,
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,

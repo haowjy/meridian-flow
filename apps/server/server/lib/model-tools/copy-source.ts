@@ -22,7 +22,7 @@ import type {
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
 import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
-import { documentGrant } from "./file-access.js";
+import { documentGrant, HELD_IN_OTHERS_NOTES } from "./file-access.js";
 import { type ReadSelection, readDocument } from "./read-document.js";
 import { goneMessage, reachShown } from "./shown-paths.js";
 import {
@@ -198,6 +198,7 @@ export async function copyBinary(
   source: BinaryFileRef,
   sourceGrant: FileGrant<"read">,
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
+  held: boolean,
 ) {
   const destinationUri = splitDocumentFile(input.path).filePath;
   // Binary files have no drafts or revisions, so the copy always reads the live file.
@@ -228,6 +229,7 @@ export async function copyBinary(
           ? { draftWork: context.resolution.primaryWorkAuthority?.workHandle ?? "/" }
           : {}),
         copied: { from: source.uri },
+        ...(held ? { notice: HELD_IN_OTHERS_NOTES } : {}),
       },
     }),
   };

@@ -127,9 +127,10 @@ export async function threadContainerTarget(
   if (
     scheme === "scratch" &&
     authority.kind === "contextual" &&
-    resolution.scratchOwner?.scope === "lineage"
+    resolution.scratchOwner?.kind === "lineage"
   ) {
-    return { kind: "container", scheme, owner: resolution.scratchOwner };
+    const { projectId, rootThreadId } = resolution.scratchOwner;
+    return { kind: "container", scheme, owner: { scope: "lineage", projectId, rootThreadId } };
   }
   const workId =
     authority.kind === "work"

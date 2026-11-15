@@ -64,11 +64,11 @@ const link = (permission: "read" | "edit", workId: string): AgentLink => ({
   threadId: `t-${permission}-${workId}`,
   permission,
   threadWorkId: workId,
-  scratchOwner: { scope: "work", workId },
+  scratchOwner: { kind: "work", workId },
 });
 const lineageLink = (rootThreadId: string): AgentLink => ({
   ...link("read", "no-work"),
-  scratchOwner: { scope: "lineage", projectId: PROJECT, rootThreadId },
+  scratchOwner: { kind: "lineage", projectId: PROJECT, rootThreadId },
 });
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({

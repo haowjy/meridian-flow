@@ -125,7 +125,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
             threadId,
             permission: "edit",
             threadWorkId: "work-1",
-            scratchOwner: { scope: "work", workId: "work-1" },
+            scratchOwner: { kind: "work", workId: "work-1" },
           },
         ],
         readChainPermission: async () => "edit",

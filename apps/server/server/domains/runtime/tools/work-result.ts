@@ -6,7 +6,7 @@
  */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -109,10 +109,13 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
       [
         "Drafts:",
         ...result.drafts.map((draft) => {
-          const name = draft.contextLocation
-            ? canonicalContextUri(
-                draft.contextLocation.scheme,
-                draft.contextLocation.path.replace(/^\/+/, ""),
+          const location = draft.contextLocation;
+          // Another owner's note reads with its owner's qualifier: bare, the address is the chat's own.
+          const name = location
+            ? formatParsedContextUri(
+                location.scheme,
+                location.path.replace(/^\/+/, ""),
+                location.notes?.authority ?? { kind: "contextual" },
               )
             : (draft.documentName ?? "Untitled");
           return `  ${name}${draft.createdDocument ? " (new document)" : ""}`;

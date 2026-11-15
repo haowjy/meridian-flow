@@ -24,7 +24,7 @@ __mergedSuite("action-policy.test.ts", () => {
       threadId: `thread-${index}` as ThreadId,
       permission,
       threadWorkId: "work" as WorkId,
-      scratchOwner: { scope: "work", workId: "work" },
+      scratchOwner: { kind: "work", workId: "work" },
     }));
   }
 
@@ -100,13 +100,13 @@ __mergedSuite("agent-chain.test.ts", () => {
           threadId: "child",
           permission: "edit",
           threadWorkId: "work-x",
-          scratchOwner: { scope: "work", workId: "work-x" },
+          scratchOwner: { kind: "work", workId: "work-x" },
         },
         {
           threadId: "parent",
           permission: "read",
           threadWorkId: "no-work",
-          scratchOwner: { scope: "lineage", projectId: "project", rootThreadId: "parent" },
+          scratchOwner: { kind: "lineage", projectId: "project", rootThreadId: "parent" },
         },
       ]);
       primaries.set("parent", "work-y");
