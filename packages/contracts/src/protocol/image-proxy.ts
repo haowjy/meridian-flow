@@ -8,6 +8,7 @@ export const IMAGE_PROXY_REASONS = [
   "too_large",
   "not_image",
   "not_allowed",
+  "port",
   "unreachable",
   "timeout",
 ] as const;

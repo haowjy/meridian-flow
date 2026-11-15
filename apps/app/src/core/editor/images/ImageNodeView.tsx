@@ -158,7 +158,7 @@ export function ImageNodeView(props: NodeViewProps) {
           onError={actions.imageLoadFailed}
         />
       ) : state.kind === "remote" ? (
-        <RemoteImagePlaceholder address={state.address} />
+        <RemoteImagePlaceholder address={state.address} alt={alt} />
       ) : (
         <span
           className="meridian-image-node__placeholder"

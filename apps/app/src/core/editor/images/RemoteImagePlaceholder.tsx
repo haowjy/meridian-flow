@@ -16,6 +16,8 @@ function refusalMessage(reason: ImageProxyReason | null): string {
       return t`That address is not an image.`;
     case "not_allowed":
       return t`That address is not allowed (private or local).`;
+    case "port":
+      return t`Only addresses on the standard web ports can be loaded.`;
     case "unreachable":
       return t`The server didn't answer.`;
     case "timeout":
@@ -26,15 +28,18 @@ function refusalMessage(reason: ImageProxyReason | null): string {
 }
 
 /** What a remote picture shows until the writer loads it: its address, and the button that loads it. */
-export function RemoteImagePlaceholder({ address }: { address: string }) {
+export function RemoteImagePlaceholder({ address, alt }: { address: string; alt: string }) {
   const status = useRemoteImageStatus(address);
   const loading = status?.kind === "loading";
   return (
     <span className="inline-flex max-w-full flex-col items-start gap-2 rounded-md border border-border-subtle border-dashed bg-ink-fill p-3 align-top text-muted-foreground text-sm">
       <span className="flex min-w-0 max-w-full items-start gap-2">
         <ImageIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-        <span className="min-w-0 break-all text-xs" data-remote-image-address>
-          {address}
+        <span className="flex min-w-0 flex-col gap-0.5">
+          {alt ? <span className="break-words text-foreground">{alt}</span> : null}
+          <span className="break-all text-xs" data-remote-image-address>
+            {address}
+          </span>
         </span>
       </span>
       {status?.kind === "failed" ? (

@@ -27,6 +27,7 @@ const REFUSAL_STATUS: Record<ImageProxyReason, number> = {
   too_large: 413,
   not_image: 415,
   not_allowed: 403,
+  port: 403,
   unreachable: 502,
   timeout: 504,
 };
@@ -40,9 +41,10 @@ class Refusal extends Error {
 /** Default ports only: a writer-chosen address is not a way to probe other ports. */
 function remoteImageUrl(raw: string): URL {
   const url = URL.canParse(raw) ? new URL(raw) : null;
-  if (!url || (url.protocol !== "http:" && url.protocol !== "https:") || url.port !== "") {
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
     throw new Refusal("not_allowed");
   }
+  if (url.port !== "") throw new Refusal("port");
   return url;
 }
 
@@ -66,6 +68,28 @@ async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array<
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
+}
+
+/** At most this many loads run at once per account; the rest wait their turn. */
+const MAX_CONCURRENT_PER_ACCOUNT = 4;
+const running = new Map<string, { active: number; waiting: Array<() => void> }>();
+
+async function withAccountSlot<T>(accountId: string, run: () => Promise<T>): Promise<T> {
+  const slots = running.get(accountId) ?? { active: 0, waiting: [] };
+  running.set(accountId, slots);
+  if (slots.active >= MAX_CONCURRENT_PER_ACCOUNT) {
+    // The finishing load hands its slot straight to the next one, so `active` stays put.
+    await new Promise<void>((resolve) => slots.waiting.push(resolve));
+  } else {
+    slots.active++;
+  }
+  try {
+    return await run();
+  } finally {
+    const next = slots.waiting.shift();
+    if (next) next();
+    else if (--slots.active === 0) running.delete(accountId);
+  }
 }
 
 async function fetchImage(raw: string): Promise<{ type: string; bytes: Uint8Array<ArrayBuffer> }> {
@@ -99,9 +123,11 @@ async function fetchImage(raw: string): Promise<{ type: string; bytes: Uint8Arra
 }
 
 export default defineEventHandler(async (event) => {
-  await requireAppUser(event);
+  const { user } = await requireAppUser(event);
   try {
-    const { type, bytes } = await fetchImage(String(getQuery(event).url ?? ""));
+    const { type, bytes } = await withAccountSlot(user.userId, () =>
+      fetchImage(String(getQuery(event).url ?? "")),
+    );
     return new Response(bytes, {
       headers: {
         "content-type": type,

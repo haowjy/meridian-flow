@@ -91,7 +91,7 @@ export function FigureNodeView(props: NodeViewProps) {
           />
         ) : renderState.kind === "remote" ? (
           <div className="m-3">
-            <RemoteImagePlaceholder address={renderState.address} />
+            <RemoteImagePlaceholder address={renderState.address} alt={alt ?? ""} />
           </div>
         ) : (
           <div className="meridian-figure-node__placeholder" aria-hidden>

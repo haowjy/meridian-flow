@@ -5080,6 +5080,10 @@ msgstr ""
 msgid "ol"
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Only addresses on the standard web ports can be loaded."
+msgstr "只能加载标准网页端口上的地址。"
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr ""

@@ -333,7 +333,11 @@ function MarkdownImage({ node }: { node: PMNode }) {
       />
     );
   }
-  return remote ? <RemoteImagePlaceholder address={remote} /> : (node.attrs.alt ?? "");
+  return remote ? (
+    <RemoteImagePlaceholder address={remote} alt={node.attrs.alt ?? ""} />
+  ) : (
+    (node.attrs.alt ?? "")
+  );
 }
 
 /** One top-level quote or list (or plain block): the unit that re-renders when its own blocks change. */

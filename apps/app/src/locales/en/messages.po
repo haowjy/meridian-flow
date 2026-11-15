@@ -5080,6 +5080,10 @@ msgstr "Offline"
 msgid "ol"
 msgstr "ol"
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Only addresses on the standard web ports can be loaded."
+msgstr "Only addresses on the standard web ports can be loaded."
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
 msgstr "Only on this device"
