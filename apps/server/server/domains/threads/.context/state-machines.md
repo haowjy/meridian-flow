@@ -1,22 +1,8 @@
-# Thread filing state machines
+# Thread filing state machine
 
-A thread (a chat) has two independent filing states, both changed in `domain/thread-trash-lifecycle.ts`.
-Neither says whether a run is live: that is the
+A thread (a chat) is filed as visible or in the Trash, changed in `domain/thread-trash-lifecycle.ts`.
+That does not say whether a run is live: that is the
 [run lease](../../runtime/.context/state-machines.md), and turn status is documented there too.
-
-## Archive
-
-`threads.status`, checked to `idle` or `archived`.
-
-```mermaid
-stateDiagram-v2
-  [*] --> idle
-  idle --> archived: transitionThreadArchive(archived true), after stopping the run
-  archived --> idle: transitionThreadArchive(archived false)
-```
-
-No HTTP route calls `transitionThreadArchive` yet. Asking for the state a thread is already in
-returns it unchanged; a trashed thread refuses both directions.
 
 ## Trash
 
@@ -29,7 +15,7 @@ stateDiagram-v2
   deleted --> visible: transitionThreadTrash(visible), if restorable
 ```
 
-- **Stop first, then lock.** Archive and delete end the thread's run and its subagent subtree
+- **Stop first, then lock.** Delete ends the thread's run and its subagent subtree
   (`stopThreads`) before taking the thread row lock, because stopping takes thread locks
   parents first, each after its ask rows.
 - **Restore is refused** when the thread was deleted by a Work delete (`deletedByWorkId`), or

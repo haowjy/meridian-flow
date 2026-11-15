@@ -3,7 +3,7 @@
 The durable states a run moves through. A run is one stretch of the server working a thread
 (a chat), and a turn is one entry in the thread; other product words are in the
 [glossary](../../../../../../.context/glossary.md). Thread filing
-(archive, trash) is in [threads](../../threads/.context/state-machines.md); every machine in the
+(trash) is in [threads](../../threads/.context/state-machines.md); every machine in the
 repository is indexed in [the root index](../../../../../../.context/state-machines/index.md).
 
 ## Turn status
@@ -41,7 +41,7 @@ stateDiagram-v2
   a model call owed" all read it: treating `awaiting_answer` as live makes recovery try to
   resume a run that is waiting on the writer.
 - **An ask on an unavailable thread becomes a cancel.** When the cause is "asked" but the thread
-  is deleted or archived, the finalizer settles the turn `cancelled` and cancels the ask instead
+  is deleted, the finalizer settles the turn `cancelled` and cancels the ask instead
   of opening it.
 - **`pending` covers three kinds of turn**: a reply reserved before the model generates; a
   compaction turn, `pending` while it summarizes older history (`loop/local-turn.ts`); and a
@@ -51,7 +51,7 @@ stateDiagram-v2
 
 Whether a thread has a live run, and what the run last said it was doing. The lease is a row in
 `thread_run_leases`; `ThreadStatus` (`packages/contracts/src/threads/index.ts`) is derived from
-it and stored nowhere else. `threads.status` holds only filing (`idle`, `archived`).
+it and stored nowhere else.
 
 ```mermaid
 stateDiagram-v2
@@ -88,7 +88,7 @@ stateDiagram-v2
   pending --> cancelled: the turn ends another way, or the thread is unavailable
   open --> answered: the writer answers, allows or denies
   open --> expired: a question passes its deadline
-  open --> cancelled: Stop, delete or archive
+  open --> cancelled: Stop or delete
   answered --> [*]
   expired --> [*]
   cancelled --> [*]
@@ -101,7 +101,7 @@ stateDiagram-v2
   `status = 'open'`, and a replayed answer with the same submission id returns the stored result.
 - **Resolving writes the tool result and the turn status together**; apart, the card and the
   turn disagree.
-- **Lock order: ask rows, then the thread.** Delete and archive take the same order when they
+- **Lock order: ask rows, then the thread.** Delete takes the same order when they
   race a settlement.
 - A resolved ask also carries `continuation`: `pending` while the run that continues from the
   answer is owed, `done` once that turn exists, `cancelled` when it never will. An expired
