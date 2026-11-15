@@ -388,14 +388,10 @@ export type DraftItemSettlement = {
   itemDisposition?: "applied" | "discarded";
 };
 
-/**
- * `draft_changed`: the text draft moved on since the writer saw it (`draftSeenAt`); nothing ended.
- * `work_archived`: the Work is closed, so it stays as it was.
- */
+/** `draft_changed`: the text draft moved on since the writer saw it (`draftSeenAt`); nothing ended. */
 export type DraftDiscardRefusalStatus =
   | "stale"
   | "gone"
-  | "work_archived"
   | "whole_item"
   | "incomplete_class"
   | "draft_changed";
@@ -453,7 +449,7 @@ export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
  */
 export type BranchDiscardResponse =
   | { status: "discarded"; branchId: BranchId; closed?: string[] }
-  | { status: "gone" | "stale" | "draft_changed" | "work_archived"; branchId: BranchId };
+  | { status: "gone" | "stale" | "draft_changed"; branchId: BranchId };
 
 /** A Discard's terminal body, exactly what its 200 carries. */
 export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;

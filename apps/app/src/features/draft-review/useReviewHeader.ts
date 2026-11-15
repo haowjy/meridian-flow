@@ -141,7 +141,7 @@ export function useReviewHeader({
       }),
     );
   }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.ownerKey, queryClient]);
-  const locked = view.status !== "ready";
+  const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
   const showLive = () => (onCloseDraftOnly ?? showDocumentLive)();

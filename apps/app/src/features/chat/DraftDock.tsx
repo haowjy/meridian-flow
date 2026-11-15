@@ -15,7 +15,6 @@ import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import {
   DeletedFromManuscriptTag,
   DraftCommandStatus,
-  useClosedBounceChip,
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
@@ -43,11 +42,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
 
-  // The press that bounced was the strip's, whichever file it named: one chip in the first line.
-  const bounceChip = useClosedBounceChip("strip", [
-    dock.ownerKey,
-    ...dock.files.map((file) => file.row.draft.itemKey),
-  ]);
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
 
@@ -95,18 +89,15 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       onClick={(event) => event.stopPropagation()}
     >
       {askingApply ? null : dock.showCommands ? (
-        <>
-          {bounceChip}
-          <ReviewActions
-            scope={multi ? "all" : "change"}
-            labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
-            density="full"
-            disabled={!dock.canCommand}
-            discardAsks={dock.discardAsks}
-            onDiscard={dock.discard}
-            onApply={dock.canApply ? startApply : undefined}
-          />
-        </>
+        <ReviewActions
+          scope={multi ? "all" : "change"}
+          labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
+          density="full"
+          disabled={!dock.canCommand}
+          discardAsks={dock.discardAsks}
+          onDiscard={dock.discard}
+          onApply={dock.canApply ? startApply : undefined}
+        />
       ) : null}
     </div>
   );
@@ -128,11 +119,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           setExpanded((value) => !value);
         }}
         inline
-        // The Work chip joins the line, which gives up the name's room instead of wrapping.
-        className={cn(
-          "coarse:min-h-11",
-          bounceChip ? "min-w-[4ch] flex-1 basis-0" : "min-w-[12ch] flex-auto",
-        )}
+        className="min-w-[12ch] flex-auto coarse:min-h-11"
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">

@@ -208,7 +208,7 @@ export function useDraftDock({
           (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
             ?.groups.length ?? 0) > 0,
       ),
-    canCommand: actionableFiles.length > 0 && !generating,
+    canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
     ownerKey,
     fileFailures,

@@ -1,15 +1,5 @@
-import type { NoticeSurface } from "./draft-notices";
 /** Work addresses and item-level command feedback shared by review surfaces. */
-export type DraftRef = {
-  projectId: string;
-  ownerKey: string;
-  documentId: string;
-  itemKey: string;
-  /** The surface that sent the command: a closed-Work bounce shows there only. */
-  surface?: NoticeSurface["kind"];
-  /** Set when the Work is closed: its draft rooms are read, so a local Discard bounces. */
-  closed?: "work_archived" | "work_deleted";
-};
+export type DraftRef = { projectId: string; ownerKey: string; documentId: string; itemKey: string };
 export type ServerRefusal = {
   serverCode?: string;
   serverReason?: string;

@@ -61,9 +61,8 @@ export function useWorkBranchCommands({
 }) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  // No scope, no command. A closed Work is not locked here: its commands are sent, and the
-  // server's answer shows the one closed-Work bounce (`DraftCommandOwner.closedBounceAt`).
-  const locked = !ownerKey || !work;
+  // An archived or deleted Work's drafts show, and take no command until it is back.
+  const locked = !ownerKey || !work || workLifecycleState(work) !== "active";
   // The server's word: a lineage with every chat in Trash. Its draft rooms drop the writer's
   // text, so a whole Discard goes to the server, which allows it, and nothing else is sent.
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
@@ -72,18 +71,7 @@ export function useWorkBranchCommands({
   const treeLists = useOptionalTreeLists();
   const draftOnly = useOptionalDraftOnlyPresentations();
   return useMemo(() => {
-    const closed = work?.deletedAt
-      ? ("work_deleted" as const)
-      : work?.archivedAt
-        ? ("work_archived" as const)
-        : undefined;
-    const ref = (draft: DraftReviewSelection) => ({
-      projectId,
-      ownerKey,
-      surface,
-      ...(closed ? { closed } : {}),
-      ...draft,
-    });
+    const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
     const row = (draft: DraftReviewSelection) =>
       cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
         (item) => item.itemKey === draft.itemKey,
@@ -434,10 +422,7 @@ export function useWorkBranchCommands({
     ): CommandStart => {
       const started = mode === "apply" ? applyOne(draft, target) : discardOne(draft, target);
       void started.outcome.then((outcome) => {
-        if (
-          outcome.kind === "change-refused" &&
-          (outcome.code === "work_archived" || outcome.code === "work_deleted")
-        )
+        if (outcome.kind === "change-refused" && outcome.code === "work_archived")
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
       });
       return started;
@@ -633,7 +618,6 @@ export function useWorkBranchCommands({
                     ref: {
                       projectId,
                       ownerKey,
-                      surface,
                       documentId: node,
                       itemKey: folderKey(branchId, node),
                     },
@@ -698,13 +682,15 @@ export function useWorkBranchCommands({
        * other Discard's notice takes it back.
        */
       discardAsks: (_draft: DraftReviewSelection, _target?: ChangeTarget) => frozen,
+      dispositionLocked: locked,
       /** A frozen owner's draft takes no single-change command: only the whole draft's Discard. */
       changesLocked: locked || frozen,
       /** The owner's drafts are frozen (`ThreadDraftListResponse.frozen`): read-only, no Apply. */
       frozen,
       /**
        * Whether Apply is offered at all. A frozen owner (a lineage with every chat in Trash)
-       * takes no Apply, so every surface hides it; a closed Work still shows it, as an open one.
+       * takes no Apply, so every surface hides it; an archived Work still shows it, disabled by
+       * `dispositionLocked`.
        */
       canApply: !frozen,
       commandChange,

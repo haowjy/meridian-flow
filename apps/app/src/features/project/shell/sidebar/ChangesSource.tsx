@@ -25,7 +25,6 @@ import { draftCopyView } from "@/features/draft-review/copy-view";
 import {
   DeletedFromManuscriptTag,
   DraftCommandStatus,
-  useClosedBounceChip,
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
@@ -136,8 +135,8 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
  * place of the buttons that asked it. A Discard made here shows its notice in the row's place
  * (Discard all: the bar's); an Apply's facts sit below the rows.
  *
- * A closed Work's commands look and act like an open Work's: the server's refusal shows as one
- * bounce in the Work chip. A frozen lineage (every chat in Trash) offers no Apply, only Discard.
+ * An archived Work's commands show disabled, with the reason above the rows. A frozen lineage
+ * (every chat in Trash) offers no Apply, only Discard.
  */
 export function ChangesSource({
   projectId,
@@ -155,6 +154,8 @@ export function ChangesSource({
   onPicked?: () => void;
 }) {
   const { ownerKey } = scope;
+  // Locked with rows to show means archived or deleted: no owner key or Work lists nothing.
+  const archived = controller.dispositionLocked;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
@@ -287,6 +288,7 @@ export function ChangesSource({
           setAsking(null);
           applyAll(asking.targets, asking.folders, ids(asking.restoring), asking.name);
         },
+        disabled: controller.dispositionLocked,
       }
     : null;
   const owned = useDraftNotice(ownerKey);
@@ -310,8 +312,6 @@ export function ChangesSource({
     };
   }, [groups, folded]);
   const treeWords = useTreeNoticeWords(projectId, drawn);
-  // A press on a row shows its chip on that row; Discard all, over the whole list, shows it here.
-  const listBounce = useClosedBounceChip("changes", [ownerKey]);
   const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
   // One list of the rows as shown: a folder heads its documents, then the folders inside it.
   const itemsOf = (group: ChangeGroup<ReviewFileTarget>, depth: number): ChangeItem[] => [
@@ -380,7 +380,7 @@ export function ChangesSource({
     <div ref={list} className="contents">
       <SourcePane
         label={scope.heading}
-        notice={treeWords.header ?? listBounce}
+        notice={treeWords.header}
         bar={
           question ? (
             <div className="min-w-0 flex-1">
@@ -391,6 +391,7 @@ export function ChangesSource({
               scope="all"
               density="full"
               touch={touch}
+              disabled={archived}
               discardAsks={controller.frozen}
               onDiscard={
                 everyDraft.length > 0 || changedFolders.length > 0
@@ -422,10 +423,16 @@ export function ChangesSource({
           ) : null
         }
       >
-        {hasFiles && controller.frozen ? (
+        {hasFiles && (archived || controller.frozen) ? (
           <div className="px-2">
             <ListLine iconSlot>
-              <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
+              {archived && scope.work?.deletedAt ? (
+                <Trans>This Work is deleted. Restore it to apply or discard its changes.</Trans>
+              ) : archived ? (
+                <Trans>This Work is archived. Unarchive it to apply or discard its changes.</Trans>
+              ) : (
+                <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
+              )}
             </ListLine>
           </div>
         ) : null}
@@ -563,7 +570,7 @@ function ChangeRow({
   canApply,
   controller,
   touch,
-  notice: ownerNotice,
+  notice,
   onCommand,
   onPicked,
 }: {
@@ -587,9 +594,6 @@ function ChangeRow({
   onPicked?: () => void;
 }) {
   const { openReviewFile } = useAiDraftLauncher();
-  // The Work chip takes the notice's place on the row, so the row keeps its height.
-  const bounce = useClosedBounceChip("changes", [file.draft.itemKey]);
-  const notice = ownerNotice ?? bounce;
   const [previewing, setPreviewing] = useState(false);
   // A row's actions are too narrow for its question: it asks on the line under the name.
   const [asking, setAsking] = useState(false);
@@ -640,7 +644,7 @@ function ChangeRow({
             labels={{ apply: t`Apply draft of ${name}`, discard: t`Discard draft of ${name}` }}
             density="icon"
             touch={touch}
-            disabled={command.pending}
+            disabled={command.pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={() => (controller.discardAsks(draft) ? setAsking(true) : discard())}
             onApply={
@@ -655,7 +659,7 @@ function ChangeRow({
         }
         below={
           <div className="pl-1">
-            {asking ? (
+            {asking && !controller.dispositionLocked ? (
               <DiscardQuestion
                 scope="document"
                 onKeep={() => setAsking(false)}
@@ -741,7 +745,7 @@ function FolderGroupRow({
   canApply,
   onApply,
   onDiscard,
-  notice: ownerNotice,
+  notice,
 }: {
   /** What the owner's notice says on this row. */
   notice: ReactNode;
@@ -768,8 +772,6 @@ function FolderGroupRow({
     controller.owner.snapshot,
   );
   const pending = keys.some((key) => controller.owner.state(key).pending);
-  const bounce = useClosedBounceChip("changes", keys);
-  const notice = ownerNotice ?? bounce;
   const { name, change } = folder;
   return (
     <li data-change-folder={folder.id}>
@@ -795,7 +797,7 @@ function FolderGroupRow({
             }}
             density="icon"
             touch={touch}
-            disabled={pending}
+            disabled={pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={() => onDiscard(name)}
             onApply={canApply ? () => onApply(name) : undefined}

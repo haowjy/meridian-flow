@@ -149,13 +149,8 @@ independent duties:
   under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
   as `landed`, with `restored` unknown.
 
-A closed Work's Apply and Discard are enabled and sent like an open Work's. A
-`work_archived` or `work_deleted` refusal stores no failure: the owner remembers it for a few
-seconds under the Work and the item pressed, or the owner for a Discard all (`closedBounce`), and
-the Works query refetches. A closed Work's draft rooms are read, so a local text Discard
-(`DraftRef.closed`) bounces the same way instead of failing "read-only". The shared `WorkClosedChip` shows at the press, in the pressed thing's trailing slot so no line
-grows (`useClosedBounceChip`: a Changes row's notice slot, the Changes header for Discard all, the
-dock's first line, the review band), so a phone, whose sidebar is shut, still sees it. Other refusals still move prose in two cases, open in
+A `work_archived` refusal stores no failure: the Works query refetches and
+`EndedWorkNotice` explains. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
 leaves subscribe to command records; command callbacks and the project controller don't.

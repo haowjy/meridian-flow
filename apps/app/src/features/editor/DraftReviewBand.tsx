@@ -26,7 +26,6 @@ import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
-import { useClosedBounceChip } from "@/features/draft-review/DraftCommandStatus";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DiscardQuestion, ReviewActions } from "@/features/draft-review/ReviewActions";
 import {
@@ -82,7 +81,6 @@ export function DraftReviewBand({
     ...props,
     onEndedWithFocus: () => setRefocusFor(props.itemKey),
   });
-  const bounceChip = useClosedBounceChip("band", [props.itemKey]);
   const questionRef = useRef<HTMLSpanElement>(null);
   const focusInControls = () =>
     [controlsRef, questionRef].some((ref) => ref.current?.contains(document.activeElement));
@@ -188,7 +186,6 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
-      {bounceChip}
       {finished || header.asking ? null : (
         <ReviewActions
           scope="document"
