@@ -7,6 +7,8 @@ export type DraftRef = {
   itemKey: string;
   /** The surface that sent the command: a closed-Work bounce shows there only. */
   surface?: NoticeSurface["kind"];
+  /** Set when the Work is closed: its draft rooms are read, so a local Discard bounces. */
+  closed?: "work_archived" | "work_deleted";
 };
 export type ServerRefusal = {
   serverCode?: string;

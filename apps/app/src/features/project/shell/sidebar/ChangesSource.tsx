@@ -310,6 +310,8 @@ export function ChangesSource({
     };
   }, [groups, folded]);
   const treeWords = useTreeNoticeWords(projectId, drawn);
+  // A press on a row shows its chip on that row; Discard all, over the whole list, shows it here.
+  const listBounce = useClosedBounceChip("changes", [ownerKey]);
   const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
   // One list of the rows as shown: a folder heads its documents, then the folders inside it.
   const itemsOf = (group: ChangeGroup<ReviewFileTarget>, depth: number): ChangeItem[] => [
@@ -378,7 +380,7 @@ export function ChangesSource({
     <div ref={list} className="contents">
       <SourcePane
         label={scope.heading}
-        notice={treeWords.header}
+        notice={treeWords.header ?? listBounce}
         bar={
           question ? (
             <div className="min-w-0 flex-1">

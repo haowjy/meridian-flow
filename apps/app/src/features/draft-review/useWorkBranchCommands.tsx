@@ -72,7 +72,18 @@ export function useWorkBranchCommands({
   const treeLists = useOptionalTreeLists();
   const draftOnly = useOptionalDraftOnlyPresentations();
   return useMemo(() => {
-    const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, surface, ...draft });
+    const closed = work?.deletedAt
+      ? ("work_deleted" as const)
+      : work?.archivedAt
+        ? ("work_archived" as const)
+        : undefined;
+    const ref = (draft: DraftReviewSelection) => ({
+      projectId,
+      ownerKey,
+      surface,
+      ...(closed ? { closed } : {}),
+      ...draft,
+    });
     const row = (draft: DraftReviewSelection) =>
       cachedOwnerDrafts(queryClient, projectId, ownerKey)?.find(
         (item) => item.itemKey === draft.itemKey,
@@ -622,6 +633,7 @@ export function useWorkBranchCommands({
                     ref: {
                       projectId,
                       ownerKey,
+                      surface,
                       documentId: node,
                       itemKey: folderKey(branchId, node),
                     },

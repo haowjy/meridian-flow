@@ -44,7 +44,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   }, [troubledFileCount]);
 
   // The press that bounced was the strip's, whichever file it named: one chip in the first line.
-  const bounceChip = useClosedBounceChip("strip", [dock.ownerKey]);
+  const bounceChip = useClosedBounceChip("strip", [
+    dock.ownerKey,
+    ...dock.files.map((file) => file.row.draft.itemKey),
+  ]);
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
 

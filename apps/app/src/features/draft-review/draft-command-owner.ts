@@ -192,11 +192,17 @@ export class DraftCommandOwner {
    * press was (the item's status line or controls) and in the Work chip, instead of a failure:
    * the controls look as an open Work's do, and a failure line would only go stale on restore.
    */
-  private shown(ref: DraftRef, failure: BranchCommandFailure): BranchCommandFailure | null {
+  private shown(
+    ref: DraftRef,
+    failure: BranchCommandFailure,
+    wide = false,
+  ): BranchCommandFailure | null {
     const why = failure.serverCode;
     if (why !== "work_archived" && why !== "work_deleted") return failure;
     const at = (key: string) => (ref.surface ? `${ref.surface}:${key}` : key);
-    const keys = [at(ref.itemKey), at(ref.ownerKey), workIdOfDraftOwnerKey(ref.ownerKey)];
+    // A press over the whole branch shows one chip, at the owner's key; a press on one item, at
+    // the item's.
+    const keys = [at(wide ? ref.ownerKey : ref.itemKey), workIdOfDraftOwnerKey(ref.ownerKey)];
     for (const key of keys) {
       if (!key) continue;
       clearTimeout(this.closedBounces.get(key)?.timer);
@@ -889,6 +895,14 @@ export class DraftCommandOwner {
       active: () => this.active,
       state: () => this.state(ref.itemKey),
       setState: (state) => this.setState(ref.itemKey, state),
+      // A closed Work's room is read: its Discard bounces like the server's, not a failure.
+      refuseReadOnly: () => {
+        const serverCode = ref.closed ?? "read_only";
+        this.setState(ref.itemKey, {
+          failure: this.shown(ref, { code: "discard-refused", serverCode }),
+        });
+        return serverCode;
+      },
       textClicks: () => (entry ? this.textClicks(entry) : []),
       releaseIdle: () => {
         if (entry) this.releaseIdle(entry);
@@ -1038,18 +1052,23 @@ export class DraftCommandOwner {
     );
     if ("all" in selection)
       for (const entry of this.entries.values())
-        if (entry.ref.projectId === projectId && branchOf(entry.ref.itemKey) === branchId)
+        if (
+          entry.ref.projectId === projectId &&
+          branchOf(entry.ref.itemKey) === branchId &&
+          !scope.has(entry.ref.itemKey)
+        )
           scope.set(entry.ref.itemKey, entry.ref);
     if (scope.size === 0) return { kind: "blocked" };
     // A Discard all closes the branch: nothing else is sent on it until it answers.
     if ("all" in selection) this.closingBranches.add(branchId);
     for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: true, failure: null });
+    const wide = "all" in selection;
     const failed = (failure: BranchCommandFailure | null) => {
       if (this.active)
         for (const ref of scope.values())
           this.setState(ref.itemKey, {
             hidden: false,
-            failure: failure && this.shown(ref, failure),
+            failure: failure && this.shown(ref, failure, wide),
           });
     };
     try {

@@ -44,6 +44,8 @@ export function startDraftDiscardSession(input: {
   active(): boolean;
   state(): DraftCommandState;
   setState(state: Partial<DraftCommandState>): void;
+  /** A read room refused the Discard: records it and returns the code it answers with. */
+  refuseReadOnly(): string;
   textClicks(): readonly unknown[];
   releaseIdle(): void;
 }): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
@@ -97,8 +99,7 @@ export function startDraftDiscardSession(input: {
       return { kind: "blocked" };
     // A read room drops the writer's text: a revert written here would show, then never land.
     if (binding.session.getSnapshot().access === "read") {
-      input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
-      return { kind: "change-refused", code: "read_only" };
+      return { kind: "change-refused", code: input.refuseReadOnly() };
     }
     const current = binding.runtime.projectNow();
     if (
