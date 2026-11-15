@@ -3,16 +3,18 @@
  * rooms admitted at the old level reconnect at the new one (file-access §7).
  */
 import { draftOwnerKey } from "@meridian/contracts/branches";
-import { treeRoomName } from "@meridian/contracts/protocol";
+import { type AccessChangedWhy, treeRoomName } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 
 /**
  * Archive, unarchive, delete or restore of a Work: its own files (drafts, scratch). Or a
- * lineage gaining or losing its last live chat: its drafts freeze and thaw.
+ * lineage gaining or losing its last live chat: its drafts freeze and thaw. `closed` is set when
+ * the change closed the owner (archive, delete, last chat to Trash) and names why; an unarchive,
+ * a restore, or a thaw leaves it out.
  */
 export type FileAccessChange =
-  | { workId: WorkId }
-  | { rootThreadId: string }
+  | { workId: WorkId; closed?: AccessChangedWhy }
+  | { rootThreadId: string; closed?: AccessChangedWhy }
   /** A project deleted: its tree list's connections end (a tree list's key is its room name). */
   | { projectId: string };
 

@@ -36,7 +36,8 @@ export const WS_CLOSE = {
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
   /**
    * The room's file access changed (a Work archived, unarchived, deleted or
-   * restored). Not terminal: reconnect and take the new authenticated scope.
+   * restored). Not terminal: reconnect and take the new authenticated scope. A close
+   * because a Work or chat closed names it: `access-changed:<AccessChangedWhy>`.
    */
   ACCESS_CHANGED: { code: 4409, reason: "access-changed" },
 } as const;
@@ -52,5 +53,32 @@ export function listChangedId(event: { code: number; reason: string }): string |
   const { code, reason } = WS_CLOSE.LIST_CHANGED;
   return event.code === code && event.reason.startsWith(`${reason}:`)
     ? event.reason.slice(reason.length + 1)
+    : undefined;
+}
+
+/** Why a room closed because its owner closed: the Work was archived or deleted, or its chat is in Trash. */
+export type AccessChangedWhy = "work_archived" | "work_deleted" | "chat_frozen";
+
+/** The 4409 close; `why` names a closed owner, and is left out for any other change of access. */
+export function accessChangedClose(why?: AccessChangedWhy) {
+  const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
+  return { code, reason: why ? `${reason}:${why}` : reason };
+}
+
+/** Whether this close is a 4409, with or without a reason. */
+export function isAccessChangedClose(event: { code?: number; reason: string }): boolean {
+  const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
+  return event.code === code || event.reason === reason || event.reason.startsWith(`${reason}:`);
+}
+
+/** The closed owner a 4409 names, if it names one. */
+export function accessChangedWhy(event: {
+  code?: number;
+  reason: string;
+}): AccessChangedWhy | undefined {
+  if (!isAccessChangedClose(event)) return undefined;
+  const why = event.reason.slice(WS_CLOSE.ACCESS_CHANGED.reason.length + 1);
+  return why === "work_archived" || why === "work_deleted" || why === "chat_frozen"
+    ? why
     : undefined;
 }

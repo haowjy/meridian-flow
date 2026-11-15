@@ -93,8 +93,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     return rows.map((row) => row.id as DocumentId);
   }
 
-  async function lifecycleChanged(work: Pick<Work, "id" | "projectId">): Promise<void> {
-    await deps.fileAccessChanges.publish({ workId: work.id as WorkId });
+  async function lifecycleChanged(
+    work: Pick<Work, "id" | "projectId">,
+    closed?: "work_archived" | "work_deleted",
+  ): Promise<void> {
+    await deps.fileAccessChanges.publish({ workId: work.id as WorkId, closed });
     projectionMutation.lifecycleChanged({ id: work.id as WorkId, projectId: work.projectId });
   }
 
@@ -268,7 +271,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (existing.archivedAt !== null) return existing;
         await lockProjectTreeList(db, existing.projectId);
         const archived = await updateWork(id, { archivedAt: new Date() });
-        await lifecycleChanged(archived);
+        await lifecycleChanged(archived, "work_archived");
         return archived;
       });
     },
@@ -310,7 +313,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
-        await lifecycleChanged(before);
+        await lifecycleChanged(before, "work_deleted");
         const after = await findWorkById(id);
         await lineageScratch.reconcile(lockedTree.threadIds);
         return { before, after };

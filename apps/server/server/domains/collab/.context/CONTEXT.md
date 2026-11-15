@@ -374,7 +374,8 @@ never a second judgement. It first checks its room holds the committed replica,
 and a room that does not has missed a delivery: it is reconciled to the replica
 (`reconcileRoom`, logged as a `room_reconciled` warning) and the frame goes on.
 A closed draft refuses with terminal `4205` (`discarded`), or removal `4208`.
-An inactive Work refuses without ending the draft (`4409`).
+An inactive Work refuses without ending the draft (`4409 access-changed:<why>`, `why` being
+`work_archived`, `work_deleted` or `chat_frozen`, read from the owner as it is now).
 
 Room delivery has one owner: `install` in
 `domain/draft-runtime.ts`, the only place a replica becomes the draft's

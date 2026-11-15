@@ -49,7 +49,10 @@ reconnect: its edits stay in the IndexedDB copy and are delivered the next time 
 document opens. Writer text is never dropped for an access change, live room or draft. The
 server sends 4409 only when the scope it admitted no longer holds (an archive, an
 Unarchive, a lifecycle change under a draft write), so the reconnect's admission matches
-what the write path accepts.
+what the write path accepts. A close because a Work or chat closed carries the cause,
+`access-changed:work_archived`, `work_deleted` or `chat_frozen`: read it with `accessChangedWhy(event)`
+and recognize any 4409 with `isAccessChangedClose(event)` (both in `ws-close.ts`); the transport's
+`handleClose` is the one place the editor reads 4409.
 
 ## 4208: the document was removed
 

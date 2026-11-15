@@ -55,6 +55,7 @@ import {
 } from "@hocuspocus/provider";
 import {
   type ChangeEventWsMessage,
+  isAccessChangedClose,
   parseYjsStatelessMessage,
   WS_CLOSE,
   yjsWsPath,
@@ -384,10 +385,7 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (
-      event.reason === WS_CLOSE.ACCESS_CHANGED.reason ||
-      event.reason === WS_CLOSE.DOCUMENT_DELETED.reason
-    ) {
+    if (isAccessChangedClose(event) || event.reason === WS_CLOSE.DOCUMENT_DELETED.reason) {
       // Frozen until the reconnect's authenticated message names the new scope;
       // a removed document has no reconnect, so it stays read-only.
       publishAccess("read");
