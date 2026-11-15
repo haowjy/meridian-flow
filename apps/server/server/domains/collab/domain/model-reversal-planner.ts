@@ -90,24 +90,37 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       | "draft_archived"
       | "discarded";
   };
+  /**
+   * A part an Undo took (the writer's card, the writer's revert, or the model's own undo) is done
+   * with, whatever the kernel finds it could still restore: an Undo is never reversed, and a
+   * later inverse can leave the part's text restorable again.
+   */
+  const takenBy = (part: StoredInversePart, inspection: Inspection = inspect()) =>
+    inspection.actions.byPart.get(key(part));
+  const taken = (part: StoredInversePart, inspection?: Inspection) =>
+    takenBy(part, inspection) !== undefined;
   function refusal(part: StoredInversePart, inspection: Inspection): TextFailure | null {
     const destination = document.destinationOf(part.origin);
     if (destination.closed) return "draft_archived";
     if (destination.kind === "draft" && destination.state === "gone") return closedPartCause(part);
+    if (taken(part, inspection)) return "changed";
     const state = inspection.states([part])[0];
     if (state.state !== "active") {
       return settledCause(part.disposition) ?? "changed";
     }
     return null;
   }
-  // What the kernel found, as a cause: a part the kernel cannot reach reads from the first
-  // reason it gives, and one an Undo already took back reads as removed. The writer's apply or
-  // discard outranks this (`settledCause`).
-  const kernelCause = (part: StoredInversePart, kernel: PartClassification | null | undefined) =>
-    kernel?.reasons.includes("inaccessible ancestor")
-      ? ("paragraph_removed" as const)
-      : actions.actions.byPart.has(key(part))
-        ? ("already_removed" as const)
+  // Why a part is not reversible, as a cause: one an Undo took reads as removed, else the
+  // kernel's first reason. The writer's apply or discard outranks this (`settledCause`).
+  const kernelCause = (
+    part: StoredInversePart,
+    kernel: PartClassification | null | undefined,
+    inspection: Inspection = inspect(),
+  ) =>
+    taken(part, inspection)
+      ? ("already_removed" as const)
+      : kernel?.reasons.includes("inaccessible ancestor")
+        ? ("paragraph_removed" as const)
         : ("edited_since" as const);
   /** The per-turn skip cause, in the turn protocol's words, for a part found `kernel`. */
   function turnSkipCause(
@@ -127,7 +140,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       else if (refused === "changed")
         partial.push({
           ordinal: original.ordinal,
-          cause: kernelCause(original, inspection.states([original])[0]),
+          cause: kernelCause(original, inspection.states([original])[0], inspection),
         });
       else return { selection, partial, refusal: refused };
     }
@@ -217,11 +230,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         ? "draft_archived"
         : originDestination.kind === "draft" && originDestination.state === "gone"
           ? "discarded"
-          : state?.state === "active"
+          : state?.state === "active" && !taken(part, inspection)
             ? null
             : part.disposition === "discarded"
               ? "discarded"
-              : kernelCause(part, state);
+              : kernelCause(part, state, inspection);
       if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
       else selection.push(part);
     }
@@ -235,6 +248,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     textPlan,
     turnTextPlan,
     turnSkipCause,
+    takenBy,
     version,
     queryDestination,
     draftIdOf,

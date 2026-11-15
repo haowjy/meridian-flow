@@ -51,11 +51,17 @@ identity only; it never chooses the inverse branch. Undo lands in the
 Work that owns the selected edit, including after the chat is rebound. A user
 card uses the same admission boundary.
 
-An invertible active part offers Undo. The card's Undo and its chip choose from one selection
-(`prepare`): the turn's parts no Undo took out yet. A part the card's Undo took out is done, and
-one the model's own undo in the same chat took out is part of what the reply did, so neither is a
-step or a skip; nothing reverses an Undo, so its action stays the record of what it took. Without that filter the engine could restore
-an intermediate copy and take it out again on every press. Once nothing is left to undo, the chip
+An invertible active part offers Undo. One eligibility rule, in the captured planner
+(`model-reversal-planner.ts`, `taken`/`takenBy`), decides what every reversal may still take: a
+part an Undo took (the card's, a writer's revert, or the model's own undo in the same chat) is not
+available, whatever the kernel says it could restore. Nothing reverses an Undo, so its action is the
+permanent record of what it took. Without the rule, an older edit's Undo that removed the text a
+newer edit's Undo restored leaves that newer edit "restorable" again: a card would take it out on
+every press, and a model `revert` of it would bring back an intermediate word. The card's Undo and
+its chip choose from one selection (`prepare`): a taken part is neither a step nor a skip. The
+model's `undo` and `revert` list a taken part as `already removed`, and `read(format: "edits")`
+offers neither for it, because the listing asks the same planner. A model's forward revert is its
+own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
 (`getTurnReceiptChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
 the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
 card's undo receipts, whatever has happened to the nodes since), `partly` when parts stayed, else
@@ -65,7 +71,7 @@ actions: once a partial model Undo reverses any surviving part of an edit, the n
 continues to the preceding edit.
 
 The model owns one strict stack per thread/document. `write undo` accepts a count; `write revert`
-creates a new edit at the current (destination) view. All three use Yjs identity: a part edited since is skipped
+creates a new edit at the current (destination) view. Both use Yjs identity: a part edited since is skipped
 and listed by its 1-based immutable part ordinal and reason, without quoting old
 or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;

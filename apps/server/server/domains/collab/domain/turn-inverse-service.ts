@@ -24,7 +24,7 @@ import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
-import { effectiveActionIndex, partKey } from "./inverse-actions.js";
+import { partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
@@ -159,25 +159,11 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   part.turnId === query.turnId;
 
 /**
- * The turn's text parts an Undo already took out, by the card or by the model inside the reply,
- * and whether the card's (a person's) was among them. An Undo is never itself reversed, so its
- * action stands as the record of what it took.
- */
-function takenOut(documents: readonly InverseDocument[], query: TurnInverseQuery) {
-  const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
-  const keys = new Set(all.filter((part) => targetsTurn(part, query)).map(partKey));
-  const { actions } = effectiveActionIndex(all, keys);
-  return {
-    parts: new Set(actions.flatMap((action) => [...action.targets])),
-    byWriter: actions.some((action) => action.parts.every((part) => part.actor === "human")),
-  };
-}
-
-/**
  * Each document's ordered steps, for both command and chip; each step lands where its original
  * did, live or in its draft. Each of the turn's original edits is one step, newest first, judged
- * on what the steps before it leave. A part an Undo already took out is neither a step nor a
- * skip: the card's own Undo is done with it, and the model's undo is part of what the reply did.
+ * on what the steps before it leave. A part an Undo already took out (the planner's `takenBy`)
+ * is neither a step nor a skip: the card's own Undo is done with it, and the model's undo in the
+ * same chat is part of what the chat did. `undoneByWriter` says the card's Undo was among them.
  */
 function prepare(
   store: TurnInverseStore,
@@ -185,16 +171,21 @@ function prepare(
   query: TurnInverseQuery,
   actionId: string,
 ): { plans: PreparedDocumentInverse[]; undoneByWriter: boolean } {
-  const taken = takenOut(documents, query);
+  let undoneByWriter = false;
   const plans = documents.map((document) => {
-    const targets = document.history.filter(
-      (part) =>
-        targetsTurn(part, query) &&
-        !taken.parts.has(partKey(part)) &&
-        !(document.leavesLive && part.disposition === "applied"),
-    );
-    const skips: TurnInverseSkip[] = [];
     const entryPlanner = createCapturedReversalPlanner(document, query);
+    const targets = document.history.filter((part) => {
+      if (!targetsTurn(part, query)) return false;
+      const takenBy = entryPlanner.takenBy(part);
+      if (takenBy) {
+        undoneByWriter ||= takenBy.some((action) =>
+          action.parts.every((undo) => undo.actor === "human"),
+        );
+        return false;
+      }
+      return !(document.leavesLive && part.disposition === "applied");
+    });
+    const skips: TurnInverseSkip[] = [];
     const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) => {
       const { closed } = document.destinationOf(part.origin);
       skips.push({
@@ -294,7 +285,7 @@ function prepare(
     });
     return { document, steps, skips };
   });
-  return { plans, undoneByWriter: taken.byWriter };
+  return { plans, undoneByWriter };
 }
 
 /**

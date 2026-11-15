@@ -191,7 +191,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (!textPlan.selection.length)
           return {
             status: "nothing_to_revert",
-            message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}`,
+            message: `Nothing was reverted: none of ${entry.handle} remains to revert in ${document.uri}.\nnot reverted: ${skipped.join("\nnot reverted: ")}`,
           };
         if (!apply(entry, textPlan.selection, "revert", textPlan.destination))
           return {
