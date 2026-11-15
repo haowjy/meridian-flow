@@ -68,6 +68,8 @@ export interface AgentFileStatus {
   path: string;
   /** Why these files can't be used, in Mars's words; empty when they can. */
   unavailableReasons: string[];
+  /** The saved version has this file; without it, new chats do not see the item at all. */
+  saved: boolean;
   /**
    * With `unavailableReasons`: the last saved version of this item has no such problem and stays
    * in use, so only the latest edit is not.
@@ -78,9 +80,9 @@ export interface AgentFileStatus {
    * False for one only Agents use (a subagent, a skill the model loads).
    */
   pickable: boolean;
-  /** Levels below this one that have the same name, which this file hides. */
+  /** Levels below this one that have the same name, which the saved version of this file hides. */
   shadows: AgentLevel[];
-  /** The level above that has the same name and hides this file; null when this file is used. */
+  /** The level above that has the same name and hides the saved version of this file; null when it is used or not saved. */
   hiddenBy: AgentLevel | null;
   /** Against the saved version of its package; null when unchanged since the Save (a deleted file has no row). */
   change: "added" | "changed" | null;
@@ -98,6 +100,7 @@ export const agentFilesSchema = z.object({
       level: agentLevelSchema,
       path: z.string().min(1),
       unavailableReasons: z.array(z.string()),
+      saved: z.boolean(),
       savedVersionInUse: z.boolean(),
       pickable: z.boolean(),
       shadows: z.array(agentLevelSchema),

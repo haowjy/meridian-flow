@@ -23,7 +23,7 @@ import {
   resolveAgentConfiguration,
   skillReference,
 } from "./agent-configuration.js";
-import type { Combined } from "./combine-agents.js";
+import type { Combined, Layered } from "./combine-agents.js";
 import {
   type AgentSourceSnapshot,
   type CompiledAgent,
@@ -38,7 +38,6 @@ import {
   type AgentEntry,
   agentsOf,
   createPackageLevels,
-  folderOf,
   type PackageLevels,
   type SkillEntry,
   skillsOf,
@@ -249,23 +248,31 @@ export function createBoundAgentCatalog(input: {
         levels.readSaves(userId, projectId),
       ]);
       const packages = await statuses(all, saves);
-      // Items whose last saved version is usable: an Error in the files does not take them away.
-      const savedUsable = new Set(
-        (await levels.fromSaves(saves)).flatMap((level) =>
-          [
-            ...(level.root ? [{ folder: "", package: level.root }] : []),
-            ...level.imports.map((item) => ({
-              folder: folderOf(item.name),
-              package: item.package,
-            })),
-          ].flatMap(({ folder, package: pkg }) => [
-            ...pkg.agents
-              .filter((agent) => agent.definition)
-              .map((agent) => `${level.level}:${folder}${agentPath(agent.slug)}`),
-            ...pkg.skills
-              .filter((skill) => !skill.diagnostics.some(isError))
-              .map((skill) => `${level.level}:${folder}${skillPath(skill.slug)}`),
-          ]),
+      // What the saved versions do: a file's hiding and hidden follow the saved catalog, not the
+      // files, and a file with no saved version is not in use at all.
+      const savedLevels = await levels.fromSaves(saves);
+      const savedAgents = new Map<string, Layered<AgentEntry>>(
+        agentsOf(savedLevels).flatMap((entry) =>
+          entry.value
+            ? [
+                [
+                  `${entry.level}:${entry.value.folder}${agentPath(entry.value.agent.slug)}`,
+                  entry,
+                ] as const,
+              ]
+            : [],
+        ),
+      );
+      const savedSkills = new Map<string, Layered<SkillEntry>>(
+        skillsOf(savedLevels).flatMap((entry) =>
+          entry.value
+            ? [
+                [
+                  `${entry.level}:${entry.value.folder}${skillPath(entry.value.slug)}`,
+                  entry,
+                ] as const,
+              ]
+            : [],
         ),
       );
       const changed = new Map<string, string>(
@@ -284,6 +291,7 @@ export function createBoundAgentCatalog(input: {
         if (!entry.value) return [];
         const file = agentPath(entry.value.agent.slug);
         const path = `${entry.value.folder}${file}`;
+        const saved = savedAgents.get(`${entry.level}:${path}`);
         return [
           {
             kind: "agent" as const,
@@ -291,10 +299,11 @@ export function createBoundAgentCatalog(input: {
             level: entry.level,
             path,
             unavailableReasons: reasonsOf(entry.value.agent, file, false),
-            savedVersionInUse: savedUsable.has(`${entry.level}:${path}`),
+            saved: saved !== undefined,
+            savedVersionInUse: Boolean(saved?.value?.agent.definition),
             pickable: entry.value.agent.definition ? isPrimary(entry.value.agent.definition) : true,
-            shadows: entry.shadows,
-            hiddenBy: entry.hiddenBy,
+            shadows: saved?.shadows ?? [],
+            hiddenBy: saved?.hiddenBy ?? null,
             change: changeOf(entry.level, path),
           },
         ];
@@ -303,6 +312,7 @@ export function createBoundAgentCatalog(input: {
         if (!entry.value) return [];
         const file = skillPath(entry.value.slug);
         const path = `${entry.value.folder}${file}`;
+        const saved = savedSkills.get(`${entry.level}:${path}`);
         return [
           {
             kind: "skill" as const,
@@ -312,10 +322,11 @@ export function createBoundAgentCatalog(input: {
             unavailableReasons: entry.value.diagnostics
               .filter(isError)
               .map((item) => (item.file === file ? item.message : `${item.file}: ${item.message}`)),
-            savedVersionInUse: savedUsable.has(`${entry.level}:${path}`),
+            saved: saved !== undefined,
+            savedVersionInUse: saved?.value ? !saved.value.diagnostics.some(isError) : false,
             pickable: listingOf(entry)?.userInvocable ?? true,
-            shadows: entry.shadows,
-            hiddenBy: entry.hiddenBy,
+            shadows: saved?.shadows ?? [],
+            hiddenBy: saved?.hiddenBy ?? null,
             change: changeOf(entry.level, path),
           },
         ];

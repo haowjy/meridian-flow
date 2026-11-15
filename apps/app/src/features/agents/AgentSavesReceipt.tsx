@@ -3,7 +3,7 @@
  * out of use first, then what changed, renames, warnings, and Undo; or, for a package not saved,
  * its problems.
  */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AgentFileChange, AgentFinding, SaveOutcome } from "@meridian/contracts/agents";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,11 @@ function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: 
             <Trans>Saved {label}</Trans>
           ) : outcome.outcome === "failed" ? (
             <Trans>Not saved: {label}</Trans>
+          ) : held.length > 0 ? (
+            plural(held.length, {
+              one: `${label}: # edit not in use`,
+              other: `${label}: # edits not in use`,
+            })
           ) : (
             <Trans>{label} was already saved</Trans>
           )}

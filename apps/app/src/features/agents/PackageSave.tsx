@@ -164,32 +164,42 @@ function Word({
       const { saveId } = word.outcome;
       const undoState = saveId ? saves.undoOf(saveId) : undefined;
       const held = heldBack(word.outcome);
+      // Nothing new was saved: the edits kept out of use are all the Save has to say.
+      const nothingNew = word.outcome.outcome === "unchanged";
       return (
         <>
-          <RowWord tone="done" word={<Trans>Saved</Trans>} sentence={savedSentence(word)} />
+          {nothingNew ? null : (
+            <RowWord tone="done" word={<Trans>Saved</Trans>} sentence={savedSentence(word)} />
+          )}
           {held.length > 0 ? (
             <ProblemsButton
               projectId={projectId}
               pkg={pkg}
               findings={held}
               word={plural(held.length, { one: "# edit not in use", other: "# edits not in use" })}
-              heading={t`Saved ${label}, but these edits aren't in use`}
+              heading={
+                nothingNew
+                  ? t`${label} has nothing new to save, and these edits aren't in use`
+                  : t`Saved ${label}, but these edits aren't in use`
+              }
               held={word.outcome}
               note={t`Each Error stops its edit from being used. Where the item was saved before, that version stays in use; the rest is out until the Error is fixed and the package is saved again.`}
             />
           ) : null}
-          <RowWord
-            tone={undoState === "failed" ? "warning" : "action"}
-            word={<Trans>Undo</Trans>}
-            label={t`Undo save of ${label}`}
-            sentence={
-              undoState === "failed"
-                ? t`Couldn't reach the server. Undo tries again.`
-                : t`Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays.`
-            }
-            pending={!saveId || undoState === "pending"}
-            onAction={saveId ? () => void saves.undo(pkg, saveId) : undefined}
-          />
+          {nothingNew ? null : (
+            <RowWord
+              tone={undoState === "failed" ? "warning" : "action"}
+              word={<Trans>Undo</Trans>}
+              label={t`Undo save of ${label}`}
+              sentence={
+                undoState === "failed"
+                  ? t`Couldn't reach the server. Undo tries again.`
+                  : t`Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays.`
+              }
+              pending={!saveId || undoState === "pending"}
+              onAction={saveId ? () => void saves.undo(pkg, saveId) : undefined}
+            />
+          )}
         </>
       );
     }
@@ -330,7 +340,7 @@ export function FindingList({
             >
               {where}
             </span>
-            <span className="block text-muted-foreground">
+            <span className="block whitespace-pre-line break-words text-muted-foreground">
               {held?.kept.includes(finding.file)
                 ? t`Your latest edit isn't in use: ${message}`
                 : message}

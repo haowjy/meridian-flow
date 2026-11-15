@@ -187,7 +187,8 @@ async function save(
       const ref = { level: outcome.level, folder: outcome.folder };
       const key = keyOf(projectId, ref);
       const before = bases.get(key);
-      if (outcome.outcome === "unchanged") {
+      // A Save with nothing new still says which edits it kept out of use.
+      if (outcome.outcome === "unchanged" && outcome.kept.length === 0) {
         entries.delete(key);
         continue;
       }
@@ -196,9 +197,9 @@ async function save(
         basis: before?.basis ?? null,
         removed: before?.removed ?? false,
         word:
-          outcome.outcome === "saved"
-            ? { kind: "saved", outcome, settled: true }
-            : { kind: "failed", outcome, settled: true },
+          outcome.outcome === "failed"
+            ? { kind: "failed", outcome, settled: true }
+            : { kind: "saved", outcome, settled: true },
       });
       bases.delete(key);
     }

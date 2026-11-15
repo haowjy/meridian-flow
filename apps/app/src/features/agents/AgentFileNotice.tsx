@@ -124,13 +124,15 @@ export function AgentFileStatusNotice({
         : hides
           ? t`Unavailable, and it still hides ${hides}:`
           : t`Unavailable:`
-      : `${
-          file.pickable
-            ? t`Available.`
-            : agent
-              ? t`Available to other Agents; it isn't in the picker.`
-              : t`Available to Agents; it isn't in the / menu.`
-        }${hides ? ` ${t`It hides ${hides}.`}` : ""}`;
+      : !file.saved
+        ? t`Not in use until it is saved.`
+        : `${
+            file.pickable
+              ? t`Available.`
+              : agent
+                ? t`Available to other Agents; it isn't in the picker.`
+                : t`Available to Agents; it isn't in the / menu.`
+          }${hides ? ` ${t`It hides ${hides}.`}` : ""}`;
   return (
     <DocumentNotice
       className={className}
@@ -140,8 +142,10 @@ export function AgentFileStatusNotice({
           <EyeOff aria-hidden className="size-4" />
         ) : unavailable ? (
           <TriangleAlert aria-hidden className="size-4 text-destructive" />
-        ) : (
+        ) : file.saved ? (
           <CircleCheck aria-hidden className="size-4" />
+        ) : (
+          <FileCog aria-hidden className="size-4" />
         )
       }
     >
@@ -149,7 +153,7 @@ export function AgentFileStatusNotice({
       {unavailable ? (
         <span className="mt-1 block space-y-0.5 text-foreground">
           {file.unavailableReasons.map((reason) => (
-            <span key={reason} className="block">
+            <span key={reason} className="block whitespace-pre-line break-words">
               {reason}
             </span>
           ))}
