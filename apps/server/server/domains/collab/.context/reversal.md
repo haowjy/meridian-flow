@@ -180,7 +180,8 @@ a folder has no document, so the item carries the node id with `folder: true` an
 the receipt chip counts the tree steps. Every row's words come from the turn's write receipts:
 its line (moved, copied, deleted, a folder's too) from each node's `before_at` and `after_at`, a
 folder's name where the change left it (a clash's " (2)" included), the rows in the file tree's
-order (rank, then id, at each level of the view that shows the row: `placementsOf`), and the same
+order (by section, then rank and id at each level of the view that shows the row: `placesOf`; a
+folder row at its address there now), and the same
 words after the card's Undo (a change leaves the card only when the newest reversal in its chain
 is the model's own undo). A drafted change says each half: `drafts` the text, from the turn's
 parts, and `trees` the tree, from `draftedFates` in `@meridian/project-tree` over the receipt's
