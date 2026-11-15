@@ -165,7 +165,13 @@ export function AgentPickerPanel({
               if (event.key === "ArrowRight" && event.target instanceof HTMLElement) {
                 if (!event.target.closest("li[data-agent]")) return;
                 event.preventDefault();
-                detailRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+                // The first control on screen: the touch-only "Use" button is hidden under a mouse.
+                [
+                  ...(detailRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ??
+                    []),
+                ]
+                  .find((button) => button.checkVisibility())
+                  ?.focus();
                 return;
               }
               handleListKeys(event);
