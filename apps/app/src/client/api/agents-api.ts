@@ -1,16 +1,17 @@
 import type {
   AgentCatalogItem,
   AgentFiles,
+  AgentLevel,
   AgentsLevel,
   SaveAgentsRequest,
   SaveOutcome,
   ThreadAgent,
 } from "@meridian/contracts/agents";
 import {
-  agentBuiltinFileSchema,
   agentCatalogSchema,
   agentFilesSchema,
   saveAgentsResponseSchema,
+  savedAgentFileSchema,
   threadAgentSchema,
   undoSaveResponseSchema,
 } from "@meridian/contracts/agents";
@@ -55,10 +56,16 @@ export async function undoAgentSave(
   ).undone;
 }
 
-export async function readBuiltinAgentFile(signal: AbortSignal, path: string): Promise<string> {
-  const query = new URLSearchParams({ path });
-  return (await getJson(`/api/agents/builtin?${query}`, { signal, schema: agentBuiltinFileSchema }))
-    .text;
+/** A file's text as its package's latest Save holds it; a built-in's as shipped. */
+export async function readSavedAgentFile(
+  signal: AbortSignal,
+  file: { projectId?: string; level: AgentLevel; path: string },
+): Promise<string> {
+  const { projectId, level, path } = file;
+  const query = new URLSearchParams({ level, path, ...(projectId ? { projectId } : {}) });
+  return (
+    await getJson(`/api/agents/saved-file?${query}`, { signal, schema: savedAgentFileSchema })
+  ).text;
 }
 
 export function readThreadAgent(signal: AbortSignal, threadId: string): Promise<ThreadAgent> {

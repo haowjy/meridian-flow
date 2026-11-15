@@ -2,7 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
-import type { GenerateRequest, GenerateResult, StreamEvent } from "@meridian-flow/gateway";
+import type { GenerateRequest, GenerateResult, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { applyDevEnvToProcess } from "../../../tools/dev/lib/dev-env";
 import {
   CJK_CODE_POINT_TOKEN_RATES,
@@ -149,7 +149,7 @@ function buildRequest(corpus: CorpusDefinition, imageData: string): GenerateRequ
 }
 
 async function completeToolTranscript(
-  gateway: import("@meridian-flow/gateway").Gateway,
+  gateway: import("@meridian-flow/runtime/gateway").Gateway,
   corpus: CorpusDefinition,
   request: GenerateRequest,
   model: string,

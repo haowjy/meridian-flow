@@ -102,7 +102,7 @@ async function createAppServices(): Promise<AppServices> {
   return app;
 }
 
-export type { Gateway, GenerateRequest, StreamEvent } from "@meridian-flow/gateway";
+export type { Gateway, GenerateRequest, StreamEvent } from "@meridian-flow/runtime/gateway";
 export type { AppServices, ThreadRepositories } from "./compose.js";
 export {
   composeAppServices,

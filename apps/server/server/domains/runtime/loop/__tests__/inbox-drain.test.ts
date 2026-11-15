@@ -6,7 +6,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
-import type { Gateway, GenerateResult, Message } from "@meridian-flow/gateway";
+import type { Gateway, GenerateResult, Message } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it, vi } from "vitest";
 import {
   childCompletionMetadata,

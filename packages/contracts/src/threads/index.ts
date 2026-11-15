@@ -4,7 +4,7 @@
  * MULTIPLE PURPOSES: thread DTOs, JSON value primitives, journal event vocabulary, and submodule re-exports.
  */
 
-import type { JsonValue, ProviderErrorResponse } from "@meridian-flow/gateway/shapes";
+import type { JsonValue, ProviderErrorResponse } from "@meridian-flow/runtime/gateway/shapes";
 import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 
 import type { ControlBody } from "./control-body.js";

@@ -17,7 +17,7 @@ import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup/links";
-import type { GenerateResult } from "@meridian-flow/gateway";
+import type { GenerateResult } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ContextFS } from "../../domains/context/adapters/context-fs/context-fs.js";

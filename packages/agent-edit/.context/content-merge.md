@@ -258,7 +258,9 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
 - Late typing recovery (Work drafts), what stays lost or doubled:
   - Typing sent after the typist's own client already held the deletion: the client collected the
     text (a browser doc collects deleted content), so the update carries no characters, except what
-    its undo history retains. The browser's handback is the only rescue for the rest. What the undo
+    its undo history retains. The browser's handback is the only rescue for the rest; for a room
+    admitted read-only it reads the difference from the handshake, so no typing is lost to the
+    outbox's blind spots (a reload, another tab). What the undo
     history retains is recovered, and a word deleted and restored offline may then show twice.
   - A typist's backspace of text that arrived hidden, in a frame after the one that recovered it, is not
     applied, and neither is a peer's deletion of the typist's original that it saw before the

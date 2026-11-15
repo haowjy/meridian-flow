@@ -1,7 +1,7 @@
 /** Shared execution-support checks for immutable Agent selection and turn preparation. */
 
 import { OPT_IN_TOOLS, TOOL_CATALOG } from "@meridian/contracts/agents";
-import type { Gateway } from "@meridian-flow/gateway";
+import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { CompiledAgentDefinition } from "../packages/index.js";
 
 const supported = new Set([

@@ -444,6 +444,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
 
     let planned = prepared.plan;
     let entries: CopyCreatedEntry[] | null = null;
+    let folders: string[] = [];
     for (let replans = 0; !entries; replans++) {
       if (!planned.ok) return planned;
       const inserted = await dest.copy.copyInto({
@@ -455,6 +456,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
       if (inserted.value.kind === "copied") {
         entries = inserted.value.entries;
+        folders = inserted.value.folders;
         break;
       }
       // Under the lock nothing can take the names again, so a second plan must hold.
@@ -468,7 +470,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
           : [],
       ),
     );
-    return Ok({ status: "copied", entries: entries.map(toEntry) });
+    return Ok({ status: "copied", entries: entries.map(toEntry), folders });
   }
 
   /**

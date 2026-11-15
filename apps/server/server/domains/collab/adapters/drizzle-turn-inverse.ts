@@ -575,7 +575,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const done = await treeInverse.run(now, direction, {
             threadId: query.threadId,
             userId,
-            moveBackAcrossLists: query.moveBackAcrossLists,
           });
           treeReversed = done.reversed;
           skips.push(...done.skips);

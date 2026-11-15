@@ -876,7 +876,7 @@ export function createYjsGateway(services: YjsGatewayServices) {
     async drain(): Promise<void> {
       acceptingConnections = false;
       unsubscribe();
-      treeRooms.dispose();
+      const treeWork = treeRooms.dispose();
       hocuspocus.closeConnections();
       emitEvent(services.eventSink, {
         level: "info",
@@ -884,6 +884,7 @@ export function createYjsGateway(services: YjsGatewayServices) {
         name: "persistence_queue.drain",
         payload: services.documentSync.getPersistenceQueueMetrics(),
       });
+      await treeWork;
       await services.documentSync.drainHocuspocusPersistence();
     },
   };

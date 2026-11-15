@@ -31,7 +31,7 @@ import { createOrchestrator } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 
-function promptBytes(request: import("@meridian-flow/gateway").GenerateRequest) {
+function promptBytes(request: import("@meridian-flow/runtime/gateway").GenerateRequest) {
   return JSON.stringify({
     messages: request.messages,
     tools: request.tools,
@@ -40,8 +40,8 @@ function promptBytes(request: import("@meridian-flow/gateway").GenerateRequest) 
 }
 
 function expectStablePrefix(
-  previous: import("@meridian-flow/gateway").GenerateRequest,
-  next: import("@meridian-flow/gateway").GenerateRequest,
+  previous: import("@meridian-flow/runtime/gateway").GenerateRequest,
+  next: import("@meridian-flow/runtime/gateway").GenerateRequest,
 ) {
   expect(next.tools).toEqual(previous.tools);
   expect(next.promptCacheKey).toBe(previous.promptCacheKey);
@@ -175,7 +175,7 @@ else
       return { userTurn, savedImages, assets, resolutionCounts };
     }
 
-    function requestImageData(request: import("@meridian-flow/gateway").GenerateRequest) {
+    function requestImageData(request: import("@meridian-flow/runtime/gateway").GenerateRequest) {
       return request.messages
         .flatMap((message) => message.content)
         .filter((part) => part.type === "media")
@@ -773,7 +773,7 @@ else
       const gateway = scriptedGateway();
       let calls = 0;
       let summaries = 0;
-      const requests: import("@meridian-flow/gateway").GenerateRequest[] = [];
+      const requests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
       gateway.stream = async function* (request) {
         requests.push(request);
         const summary = request.messages.some((message) =>
@@ -1974,7 +1974,7 @@ else
       };
       rig.deps.gateway.listModels = () => [model];
       const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);
-      const requests: import("@meridian-flow/gateway").GenerateRequest[] = [];
+      const requests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
       let summaryCalls = 0;
       rig.deps.gateway.stream = async function* (request) {
         requests.push(request);

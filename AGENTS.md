@@ -64,11 +64,14 @@ adapters. Use package public exports. Architecture:
 [.context/CONTEXT.md](.context/CONTEXT.md).
 
 **Shared runtime.** Code that other products use as well lives in the `meridian-runtime` repo
-(`../meridian-runtime`). It is a set of packages published separately to npm as `@meridian-flow/*`:
-the model gateway first (moving there from `packages/gateway`), then the MCP client. Flow manages
-it from here. When Flow needs a change there, make it in that repo as its own PR, then move Flow
+(`../meridian-runtime`). It is one package published to npm as `@meridian-flow/runtime` (pinned in the pnpm catalog), with a
+subpath entry per part: the model gateway (`@meridian-flow/runtime/gateway`), then the MCP client. Flow
+manages it from here. When Flow needs a change there, make it in that repo as its own PR, then move Flow
 onto the new version. Nothing specific to Flow goes in it, such as the models Flow offers, their
-prices, or the `FLOW_` variables: that stays in `apps/server/server/lib/gateway/`.
+prices, or the `FLOW_` variables: that stays in `apps/server/server/lib/gateway/`
+([wiring](apps/server/server/lib/gateway/.context/CONTEXT.md)).
+
+To try a gateway change here before it is published, follow [the package's AGENTS.md](https://github.com/haowjy/meridian-runtime/blob/main/AGENTS.md#trying-a-change-in-flow-before-it-is-published).
 
 **Diagrams stay current.** The [architecture map](.context/system-architecture/README.md)
 draws the system, the code, the writer journeys and the broken dependency rules; each state

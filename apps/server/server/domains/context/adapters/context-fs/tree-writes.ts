@@ -9,23 +9,15 @@
  * namespace key (the list's key sorts before those).
  */
 import type { BranchId, DocumentId } from "@meridian/contracts";
-import {
-  type ContextSiblingPosition,
-  classifyFiletype,
-  type Filetype,
-  storedFilename,
-} from "@meridian/contracts/protocol";
+import type { ContextSiblingPosition, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import {
   type Actor,
   type BlobRef,
-  type CreateRecord,
   childrenOf,
   isSourceRoot,
   LIVE,
-  type MoveRecord,
-  moveBetweenLists,
   sourceRoot,
   type TreeNode,
   type TreeProjection,
@@ -102,12 +94,6 @@ function pathOf(projection: TreeProjection, id: string): string[] {
   return names;
 }
 
-function extensionOf(node: TreeNode): string {
-  if (node.kind === "folder") return "";
-  const dot = node.displayName.lastIndexOf(".");
-  return dot > 0 ? node.displayName.slice(dot + 1).toLowerCase() : "";
-}
-
 /**
  * Folders along `dir` from the source's top, made where missing, each pushed to `made`. A
  * document or file on the way refuses with the occupant's kind.
@@ -165,38 +151,6 @@ function indexAt(
   return position.kind === "before" ? at : at + 1;
 }
 
-/** A document's type as a tracked or stored file, for the type a rename may keep. */
-function typeConversion(
-  node: TreeNode,
-  filename: string,
-  filetype: Filetype | null,
-): AdapterFault | null {
-  if (filetype === null) return null;
-  if (node.kind === "file") {
-    if (classifyFiletype(filetype).kind !== "tracked") return null;
-    return {
-      code: "invalid_operation",
-      reason: "file_type_conversion",
-      message: `Cannot rename storage-backed file ${node.displayName} to ${filename} because tracked documents require a Yjs schema`,
-    };
-  }
-  const was = classifyFiletype((node.filetype ?? "markdown") as Filetype);
-  const now = classifyFiletype(filetype);
-  if (now.kind !== "tracked")
-    return {
-      code: "invalid_operation",
-      reason: "file_type_conversion",
-      message: `Cannot rename tracked document ${node.displayName} to ${filename} because binary and custom files use a different storage model`,
-    };
-  if (was.kind === "tracked" && now.schemaType !== was.schemaType)
-    return {
-      code: "invalid_operation",
-      reason: "document_type_conversion",
-      message: `Cannot rename ${node.displayName} to ${filename} because changing the Yjs schema from ${was.schemaType} to ${now.schemaType} requires an explicit conversion`,
-    };
-  return null;
-}
-
 /** `record` is the create record, which a receipt names for Undo. */
 /** A folder a create made on the way: part of that create's change, so its Undo takes it back. */
 export type MadeFolder = { record: string; node: string };
@@ -207,14 +161,6 @@ export type CreatedNode = {
   /** The folders made for it, outermost first. */
   folders: MadeFolder[];
   name: string;
-  path: string[];
-};
-
-/** A document or file that left one list for another: the pair of records, one in each list. */
-export type MovedAcrossLists = {
-  left: MoveRecord;
-  entered: CreateRecord;
-  /** The node's path in the list it entered. */
   path: string[];
 };
 
@@ -276,26 +222,6 @@ export interface SourceTree {
     filename: string,
     into?: string,
   ): Promise<{ id: string; kind: "document" | "file" | "folder" } | null>;
-  /**
-   * Moves a document or file from the list of `fromSourceId` into `dir` of this source, which
-   * is in another list (a project's and the account's `user://`): one transaction on both
-   * lists, the pair of records `moveBetweenLists` makes. The node is found by id; `leaf` is
-   * the name the writer typed, else it keeps its own. Live only; a folder does not cross.
-   */
-  moveAcrossLists(
-    target: TreeWriteTarget,
-    input: {
-      node: string;
-      /** The source the caller found it in: a node found elsewhere is `stale_source`. */
-      fromSourceId: string;
-      /** The folder it lands in, below this source's top. */
-      dir: readonly string[];
-      leaf?: string;
-      position?: ContextSiblingPosition;
-      /** Move only while the node stands at this source-relative path. */
-      onlyAt?: string;
-    },
-  ): Promise<Result<MovedAcrossLists, AdapterFault>>;
   /** Deletes the node and what is inside it, in live: one Trash entry. */
   delete(
     target: TreeWriteTarget,
@@ -313,7 +239,7 @@ export interface SourceTree {
       roots: readonly NewNode[];
       position?: ContextSiblingPosition;
     },
-  ): Promise<Result<{ kind: "inserted" } | { kind: "replan" }, AdapterFault>>;
+  ): Promise<Result<{ kind: "inserted"; folders: string[] } | { kind: "replan" }, AdapterFault>>;
   /**
    * One tree command on this source's list: `make` runs under the list's lock on the copy at the
    * journal's head, makes whatever records it decides on and returns its answer. A refused answer
@@ -433,76 +359,6 @@ export function createSourceTree(deps: {
       });
     },
 
-    async moveAcrossLists(target, input) {
-      const sourceId = await deps.sourceId();
-      const here = await list();
-      const from = await treeListOfSource(deps.db, input.fromSourceId);
-      if (JSON.stringify(from) === JSON.stringify(here))
-        return Err({
-          code: "invalid_operation",
-          message: "A move inside one list is a tree command, not a move between lists",
-        } as AdapterFault);
-      if (target.view.draft !== null)
-        return Err({
-          code: "invalid_operation",
-          message:
-            "A change in a Work's draft cannot move between a project's files and the account's files",
-        } as AdapterFault);
-      return write<MovedAcrossLists>([here, from], ([dest, origin = dest]) => {
-        const { writer } = dest;
-        const node = origin.writer.view(LIVE).nodes.get(input.node);
-        if (!node || node.trashed || node.purged) return Err({ code: "not_found" } as AdapterFault);
-        if (node.kind === "folder")
-          return Err({
-            code: "invalid_operation",
-            message:
-              "A folder cannot move between a project's files and the account's files; only documents and files do",
-          } as AdapterFault);
-        if (node.source !== input.fromSourceId)
-          return Err({ code: "stale_source" } as AdapterFault);
-        if (
-          input.onlyAt !== undefined &&
-          pathOf(origin.writer.view(LIVE), node.id).join("/") !== input.onlyAt
-        )
-          return Err({ code: "stale_target" } as AdapterFault);
-        const parent = ensureFolders(writer, target, sourceId, input.dir);
-        if (!parent.ok) return parent;
-        const projection = writer.view(LIVE);
-
-        // The name the node lands under: the writer's typed one through the name codec, else its own.
-        let filename = node.displayName;
-        let filetype: Filetype | null = null;
-        if (input.leaf !== undefined) {
-          const parsed = storedFilename(input.leaf, {
-            extension: extensionOf(node),
-            editable: node.kind === "document",
-            filetype: node.filetype,
-          });
-          if (!parsed.ok) return Err(parsed.error);
-          filename = parsed.name;
-          filetype = parsed.filename.filetype;
-          const refused = typeConversion(node, filename, filetype);
-          if (refused) return Err(refused);
-        }
-        const occupant = childNamed(projection, parent.value, filename);
-        if (occupant) return Err(conflict(occupantKindOf(occupant)));
-
-        const moved = moveBetweenLists(
-          origin,
-          {
-            ...dest,
-            parent: parent.value,
-            index: indexAt(projection, parent.value, input.position),
-            ...(filename !== node.displayName ? { name: filename } : {}),
-            ...(filetype && filetype !== node.filetype ? { filetype } : {}),
-          },
-          target.actor,
-          node.id,
-        );
-        return Ok({ ...moved, path: pathOf(writer.view(LIVE), node.id) });
-      });
-    },
-
     async delete(target, input) {
       return write<DeletedNode>([await list()], ([{ writer }]) => {
         const projection = writer.view(target.view);
@@ -526,10 +382,11 @@ export function createSourceTree(deps: {
 
     async insertTree(target, input) {
       const sourceId = await deps.sourceId();
-      const result = await write<{ kind: "inserted" } | { kind: "replan" }>(
+      const result = await write<{ kind: "inserted"; folders: string[] } | { kind: "replan" }>(
         [await list()],
         ([{ writer }]) => {
-          const parent = ensureFolders(writer, target, sourceId, input.dir);
+          const made: MadeFolder[] = [];
+          const parent = ensureFolders(writer, target, sourceId, input.dir, made);
           if (!parent.ok) return parent;
           const projection = writer.view(target.view);
           if (input.roots.some((root) => childNamed(projection, parent.value, root.filename)))
@@ -562,7 +419,7 @@ export function createSourceTree(deps: {
           };
           for (const [index, root] of input.roots.entries())
             put(root, parent.value, rootRanks[index] as string);
-          return Ok({ kind: "inserted" as const });
+          return Ok({ kind: "inserted" as const, folders: made.map((folder) => folder.node) });
         },
       );
       if (result.ok && result.value.kind === "inserted") await annotateTree(input.roots);
