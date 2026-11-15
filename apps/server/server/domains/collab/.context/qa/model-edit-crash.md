@@ -16,7 +16,7 @@ probe makes and drops its own `lfd_probe_*` database and runs in under a minute.
 |---|---|
 | `model-edit-kills` | A write to a live document at each step: before the response is stored, before and after the claim, before and after the commit, around the result block, between two calls, an old process held alive, a repeated key, a tool timeout before and after the claim. |
 | `model-edit-takeover` | A stale process storing a response or a result block after its run was taken over; the sweep; recovery waiting on a held key; two chats on one document; a chat card's Undo sent twice after a kill. |
-| `model-edit-drafts` | The same steps in draft mode, plus a writer typing during the edit, a Discard between two calls, a write after a Discard, a new draft after a Discard, two chats on one Work's draft. |
+| `model-edit-drafts` | The same steps in draft mode, plus a writer typing during the edit, a Discard between two calls, a write after a Discard (answered `returned`, stored once as a `done` row), a new draft after a Discard, two chats on one Work's draft. |
 | `model-edit-tree` | `move`, `delete`, `create`, `copy` and the model's `undo` killed after commit; a refused `create`; an aborted `create`; a duplicate call id; all four tree calls in a draft-mode chat. |
 | `model-edit-locks` | The lock order (`../CONTEXT.md`): a draft-mode chat's first write racing an Undo for its Work, a writer typing while an Undo captures, and a card Undo's Work receipt waiting on a Work whose holder then wants the document. The probe holds a lock on its own connection to line the racers up. |
 | `model-edit-evidence` | What the model was shown: an edit's frontier survives a kill after commit, a read's is lost between its block and `resultStored`. |

@@ -10,20 +10,21 @@ import {
   modelResult,
   type ObservationFrontier,
   parseDocumentAddress,
-  rejectedWriteResult,
+  returnedWriteResult,
   splitDocumentFile,
   type WriteCommand,
   type WriteContext,
   type WriteOutcome,
-  type WriteRefusalReason,
 } from "@meridian/agent-edit/integration";
 import type { DraftOwner, LinkView, ProjectId, ThreadId } from "@meridian/contracts";
+import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type { LiveAgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
+import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { Branches } from "./branches.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
@@ -59,8 +60,14 @@ export type ModelEditWriteDeps = {
   /** Every Work draft of the document, any status, and the live room's current name. */
   roomsOf(documentId: DocumentId): Promise<{
     liveRoom: string | null;
-    drafts: readonly { draftId: string; status: string }[];
+    drafts: readonly {
+      draftId: string;
+      status: string;
+      closedAs: "discarded" | "replaced" | "document_removed" | null;
+    }[];
   }>;
+  /** The document as this chat reads it now, which a returned edit shows: a read never opens a draft. */
+  read: ModelEdits["read"];
   /** What the model last saw, among the blocks the runtime names. */
   evidence: Pick<ModelEvidence, "latestRoom">;
   /** Runs once the command's transaction commits. */
@@ -68,19 +75,84 @@ export type ModelEditWriteDeps = {
 };
 
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
-  /** The model last saw a Work draft that has since closed: it has to read again. */
-  async function sawClosedDraft(
-    documentId: DocumentId,
+  /**
+   * Why the draft the model last saw closed, when it has: that edit was planned on text that is
+   * no longer a draft. A Discard closed it as discarded, a Restore's swap as replaced; the document's
+   * removal, an Apply of its delete or its purge as a removed document.
+   */
+  async function closedDraftSeen(
+    { liveRoom: live, drafts }: Awaited<ReturnType<ModelEditWriteDeps["roomsOf"]>>,
     creditedBlockIds: readonly string[] | undefined,
-  ): Promise<boolean> {
-    if (!creditedBlockIds) return false;
-    const { liveRoom: live, drafts } = await deps.roomsOf(documentId);
+  ): Promise<ReturnedWhy | null> {
+    if (!creditedBlockIds) return null;
     const latest = await deps.evidence.latestRoom(
       [...(live ? [live] : []), ...drafts.map((draft) => draftRoom(draft.draftId))],
       creditedBlockIds,
     );
     const seen = drafts.find((draft) => draftRoom(draft.draftId) === latest);
-    return seen?.status === "closed";
+    if (seen?.status !== "closed") return null;
+    if (seen.closedAs === "discarded") return "draft_discarded";
+    return seen.closedAs === "replaced" ? "draft_replaced" : "document_removed";
+  }
+
+  /**
+   * An edit that changed nothing, answered with the document as this chat reads it now. The text
+   * and its evidence are the read's, so the model's next write plans on it and lands. A removed
+   * document shows no text: it has none for this chat.
+   */
+  async function returnedEdit(
+    command: WriteCommand,
+    given: GivenContext,
+    grant: FileGrant<"edit">,
+    why: ReturnedWhy,
+  ): Promise<WriteOutcome> {
+    const path = splitDocumentFile(command.file).filePath;
+    const returned = returnedWriteResult(why);
+    const current =
+      why === "document_removed"
+        ? null
+        : await deps.read(
+            {
+              file: command.file,
+              ...(command.documentId ? { documentId: command.documentId } : {}),
+            },
+            // A plain read: the reply's own writes went to the draft that closed, which this
+            // text does not hold.
+            {
+              ...given,
+              grant,
+              ...(given.frontiers?.recording
+                ? { frontiers: { recording: given.frontiers.recording } }
+                : { frontiers: undefined }),
+            },
+          );
+    const shown = current && !current.isError ? current : null;
+    return {
+      status: "returned",
+      isError: false,
+      revision: shown?.revision ?? null,
+      command: command.command,
+      result: modelResult({
+        command: command.command,
+        status: "returned",
+        payload: {
+          path,
+          ...returned.model,
+          // The caller names the version the edit would have changed; the read's own would repeat it.
+          ...(shown?.result.read
+            ? {
+                read: {
+                  format: shown.result.read.format,
+                  documentBlocks: shown.result.read.documentBlocks,
+                },
+              }
+            : {}),
+          ...(shown?.result.blocks ? { blocks: shown.result.blocks } : {}),
+        },
+      }),
+      ...(shown?.showing ? { showing: shown.showing } : {}),
+      ...(shown?.frontier ? { frontier: shown.frontier } : {}),
+    };
   }
 
   function threadCoreFor(given: WriteContext): AgentEditCore {
@@ -92,11 +164,13 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     command: WriteCommand,
     given: GivenContext,
     documentId: DocumentId | null,
+    grant: FileGrant<"edit">,
   ): Promise<WriteOutcome> {
     if (documentId) {
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
-      if (await sawClosedDraft(documentId, given.creditedBlockIds)) return discardedWrite(command);
+      const closed = await closedDraftSeen(await deps.roomsOf(documentId), given.creditedBlockIds);
+      if (closed) return returnedEdit(command, given, grant, closed);
     }
     const outcome = await deps.liveCore.write(command, {
       ...given,
@@ -115,6 +189,10 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     owner: DraftOwner,
   ): Promise<WriteOutcome> {
     await deps.enterDraftSeam();
+    // Before anything opens: an edit that is going to be returned makes no branch and no draft.
+    const rooms = documentId ? await deps.roomsOf(documentId) : null;
+    const closed = rooms && (await closedDraftSeen(rooms, given.creditedBlockIds));
+    if (closed) return returnedEdit(command, given, grant, closed);
     approveBranchWriteJoin();
     const branch = await deps.branches.ensureActiveForWrite({
       owner,
@@ -124,12 +202,11 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     });
     const linkView: LinkView = { kind: "branch", branchId: branch.id };
     // An unaddressable file has no draft: the core answers it as the invalid write it is.
-    if (!documentId)
+    if (!documentId || !rooms)
       return threadCoreFor(given).write(command, { ...given, linkView, documentVersion: "draft" });
-    const { liveRoom } = await deps.roomsOf(documentId);
+    const { liveRoom } = rooms;
     const seen = liveRoom ? ((await given.frontiers?.planning?.(liveRoom)) ?? null) : null;
     const workDraft = await deps.ensureWorkDraft({ documentId, branchId: branch.id, seen });
-    if (await sawClosedDraft(documentId, given.creditedBlockIds)) return discardedWrite(command);
     await deps.lockDraft(workDraft.draftId);
     await testHook("command.afterLock");
     const outcome = await threadCoreFor(given).write(command, {
@@ -165,7 +242,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       }
       const confirmed = await runWithEditGrants(deps.fileAccess, [grant], () =>
         grant.destination.kind === "live"
-          ? live(command, given, documentId)
+          ? live(command, given, documentId, grant)
           : draft(command, given, documentId, grant, grant.destination.owner),
       );
       if (!confirmed.ok) throw confirmed.refusal;
@@ -174,26 +251,12 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   };
 }
 
-/** The refusal a write gets when the draft its model last saw has been discarded since. */
-export function discardedWrite(
-  command: WriteCommand,
-  reason: WriteRefusalReason = "discarded_edit",
-): WriteOutcome {
-  const path = splitDocumentFile(command.file).filePath;
-  return {
-    status: "invalid_write",
-    isError: true,
-    revision: null,
-    command: command.command,
-    result: modelResult({
-      command: command.command,
-      status: "invalid_write",
-      payload: { path, ...rejectedWriteResult(reason).model },
-    }),
-  };
-}
-
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {
   const address = parseDocumentAddress(command.file, command.documentId);
   return address.ok ? (address.documentId as DocumentId) : null;
+}
+
+/** A read inside a model edit's command: the locked section's rules, so it pulls nothing. */
+export function createModelEditRead(read: AgentEditRouter["read"]): ModelEdits["read"] {
+  return (command, context) => runInLockedWrite(() => read(command, context));
 }

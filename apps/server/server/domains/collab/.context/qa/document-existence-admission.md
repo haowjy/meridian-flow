@@ -52,9 +52,8 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
 8. **The receipt names who removed it.** Start the stack with
    `HOOK_PAUSE_AT=command.beforeClaim` (the edit must not hold the Work lock the
    delete needs). A draft-mode chat replaces a line; pause, `./mf doc rm` the document,
-   resume. PASS: the write's result reads "This file was deleted by <name> before this
-   edit ran, so this change wasn't made." (a name appears only when the user row
+   resume. PASS: the write's result reads "Not in the document: this file was deleted by <name> and is in the trash, so this edit was not kept anywhere." (a name appears only when the user row
    has one: the dev auth bypass user has none, so set `users.name` after the delete and before
    resuming), and the chat's card reads "<name> deleted <title> before this change could
-   be made." (or "<title> was deleted before this change could be made." without a name; the result carries `rejected: "removed"` and the record in `removal`).
+   be made." (or "<title> was deleted before this change could be made." without a name; the result is `returned` with `why: document_removed` and the record in `returned.removal`).
    Repeat in a No Work chat.
