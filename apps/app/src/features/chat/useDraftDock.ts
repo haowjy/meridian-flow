@@ -8,7 +8,7 @@ import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
 import { hasLine } from "@/features/draft-review/draft-notices";
-import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
+import { type BranchCommandFailure, isNote } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   listedItemChanges,
@@ -167,7 +167,7 @@ export function useDraftDock({
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
     const failure = controller.owner.state(file.row.draft.itemKey).failure;
-    return failure ? [failure] : [];
+    return failure && !isNote(failure) ? [failure] : [];
   };
 
   return {

@@ -17,6 +17,7 @@ import { ReviewActions } from "./ReviewActions";
 import { ChangeAuthor } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { BranchCommandFailure } from "./review-command-types";
+import { isNote } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeBarProps = {
@@ -57,6 +58,7 @@ export function ReviewChangeBar({
   const failure = draftFailure ? (
     <InlineErrorRow
       message={<ReviewMessageText failure={draftFailure} />}
+      note={isNote(draftFailure)}
       onRetry={
         draftFailure.code === "unapply-refused" && state.stalled
           ? () => owner.retry(itemKey)

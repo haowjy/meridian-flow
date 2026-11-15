@@ -20,6 +20,7 @@ import {
 import type {
   ApplyClick,
   ApplyClickAnswer,
+  ApplyItemResult,
   DiscardCommandResult,
   DraftMetadataResponse,
   ThreadDraftListItem,
@@ -53,11 +54,10 @@ import {
   itemOf,
   type RestoreReturned,
   returnedIn,
-  type SettledView,
   viewOf,
 } from "./draft-notices";
 import { GroupApply } from "./group-apply";
-import type { BranchCommandFailure, DraftRef } from "./review-command-types";
+import type { ApplyLine, BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
@@ -104,8 +104,8 @@ export type CommandOutcome =
       commandId?: string;
       /** Its tree half landed whole: nothing of its move, delete or creation is still pending. */
       treeWhole?: boolean;
-      /** Every line of both halves: what stayed out beside what landed, or came with it. */
-      notes?: SettledView[];
+      /** Each half's lines for what stayed out beside what landed. */
+      lines?: ApplyLine[];
       /** The document had been deleted from the manuscript and this Apply brought it back. */
       restored?: true;
       /** Per-item facts committed by this click. */
@@ -115,8 +115,8 @@ export type CommandOutcome =
         renamed?: string;
       }[];
     }
-  /** The server answered for this item and landed neither half: each half's line says why. */
-  | { kind: "settled"; notes: SettledView[] }
+  /** The server answered for this item and landed neither half: each half's lines say why. */
+  | { kind: "settled"; lines: ApplyLine[] }
   /** A closed owner answered and changed nothing: the surface says why, once. */
   | { kind: "returned"; why: RestoreReturned }
   | { kind: "change-refused"; code: string };
@@ -163,15 +163,19 @@ function notDiscarded(result: DiscardCommandResult): {
       };
 }
 /**
- * The line an item shows for what part of it didn't land: `overtaken_<state>` or
- * `left_out_<why>`. `already` and `restored` are painted quietly and give none.
+ * Every line an item shows for what of it didn't land, each with its half: `overtaken_<state>`
+ * or `left_out_<why>`. `already` and `restored` are painted quietly and give none.
  */
-function lineOf(notes: readonly SettledView[]): string | null {
-  for (const note of notes) {
-    if (note.kind === "overtaken") return `overtaken_${note.state}`;
-    if (note.kind === "left_out") return `left_out_${note.why}`;
-  }
-  return null;
+function linesOf(item: ApplyItemResult | undefined): ApplyLine[] {
+  return (["tree", "text"] as const).flatMap((half) =>
+    (item?.[half]?.settled ?? []).flatMap((one): ApplyLine[] => {
+      const view = viewOf(one);
+      if (view?.kind === "overtaken")
+        return [{ half, code: `overtaken_${view.state}`, by: view.by }];
+      if (view?.kind === "left_out") return [{ half, code: `left_out_${view.why}` }];
+      return [];
+    }),
+  );
 }
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
@@ -663,14 +667,13 @@ export class DraftCommandOwner {
   /** A click's answer, as its caller's outcome and a line on the generation it was made for. */
   private settled(ref: DraftRef, id: string, answer: ApplyClickOutcome): CommandOutcome {
     const outcome = this.outcomeOf(ref, answer);
-    const code =
-      outcome.kind === "settled" || outcome.kind === "done"
-        ? lineOf(outcome.notes ?? [])
+    const failure: BranchCommandFailure | null =
+      (outcome.kind === "settled" || outcome.kind === "done") && outcome.lines?.length
+        ? { code: "apply-left-out", landed: outcome.kind === "done", lines: outcome.lines }
         : outcome.kind === "change-refused"
-          ? outcome.code
+          ? { code: "apply-refused", serverCode: outcome.code }
           : null;
-    if (code)
-      this.setState(ref.itemKey, { failure: { code: "apply-refused", serverCode: code } }, id);
+    if (failure) this.setState(ref.itemKey, { failure }, id);
     return outcome;
   }
 
@@ -682,13 +685,13 @@ export class DraftCommandOwner {
   private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
     if (answer.status === "applied") {
       const item = itemOf(answer, ref.documentId);
-      const notes = [...(item?.tree?.settled ?? []), ...(item?.text?.settled ?? [])].flatMap(
-        (one) => viewOf(one) ?? [],
-      );
+      const lines = linesOf(item);
       const tree = item?.tree?.landed === true;
-      if (!tree && item?.text?.landed !== true) return { kind: "settled", notes };
+      if (!tree && item?.text?.landed !== true) return { kind: "settled", lines };
       const treeWhole = tree && !item?.tree?.settled?.some((one) => one.rule === "left_out");
-      const restored = notes.some((note) => note.kind === "restored");
+      const restored = [...(item?.tree?.settled ?? []), ...(item?.text?.settled ?? [])].some(
+        (one) => one.rule === "restored",
+      );
       if (restored) this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
       const branchId = parseDraftItemKey(ref.itemKey)?.branchId;
       let renamed = false;
@@ -702,7 +705,7 @@ export class DraftCommandOwner {
         kind: "done",
         commandId: answer.commandId,
         treeWhole,
-        notes,
+        lines,
         ...(restored ? { restored: true as const } : {}),
         applied: branchId
           ? answer.items.flatMap((one) =>
@@ -853,20 +856,7 @@ export class DraftCommandOwner {
           patchFor: (groupIds) =>
             applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
           intent: () => this.setState(entry.ref.itemKey, { failure: null }),
-          applyRefused: (answer) =>
-            this.setState(entry.ref.itemKey, {
-              failure: {
-                code: "apply-refused",
-                serverCode: (() => {
-                  if (answer.status !== "applied") return "unsynced";
-                  const text = itemOf(answer, entry.ref.documentId)?.text;
-                  return (
-                    lineOf((text?.settled ?? []).flatMap((one) => viewOf(one) ?? [])) ??
-                    "text_not_applied"
-                  );
-                })(),
-              },
-            }),
+          replayed: (answer) => void this.settled(entry.ref, entry.draftId, answer),
           unapplyRefused: (answer) =>
             this.setState(entry.ref.itemKey, {
               failure: { code: "unapply-refused", serverCode: answer.status },

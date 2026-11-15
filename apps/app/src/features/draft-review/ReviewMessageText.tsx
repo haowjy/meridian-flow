@@ -54,12 +54,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return (
-    serverCode === "stale" ||
-    serverCode === "unsynced" ||
-    (serverCode?.startsWith("overtaken_") ?? false) ||
-    (serverCode?.startsWith("left_out_") ?? false)
-  );
+  return serverCode === "stale" || serverCode === "unsynced";
 }
 
 /**
@@ -78,11 +73,17 @@ function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
   return <> {/[.!?]$/.test(reason) ? reason : `${reason}.`}</>;
 }
 
-export function ReviewMessageText({
-  failure: { code, serverCode, serverReason },
-}: {
-  failure: BranchCommandFailure;
-}) {
+export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }) {
+  if (failure.code === "apply-left-out") {
+    // One sentence per distinct reason, whichever half it explains: each says what to do.
+    const codes = [...new Set(failure.lines.map((line) => line.code))];
+    return codes.map((code) => (
+      <span key={code} className="block">
+        <RefusalReason serverCode={code} />
+      </span>
+    ));
+  }
+  const { code, serverCode, serverReason } = failure;
   switch (code) {
     case "unapply-refused":
       return <Trans>Couldn't undo this Apply. Try again.</Trans>;

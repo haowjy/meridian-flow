@@ -130,8 +130,10 @@ schedule-owned command handle. The handle owns command identity, reversal outcom
 replay selection; the mounted history owns only navigation. Undo moves the history cursor
 synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. The
 schedule retries the targeted Apply before the inverse when its delivery is unknown and
-withholds later commands behind any stalled intent. Redo queues a new Apply for only the
-text groups the server actually reversed, never the original tree cut.
+withholds later commands behind any stalled intent. The Un-Apply goes when either half of
+the Apply landed: a landed rename with settled text still has something to take back. Redo
+queues a new Apply for the text groups the server actually reversed, and the tree cut when
+the Un-Apply's `treeUndone` names the item.
 
 Existence of a deleted document is its own fact, never read from a name conflict.
 An Apply brings a deleted document back to land what the click carries for it: the click
@@ -144,9 +146,11 @@ An Apply never answers refused. The answer is `applied` with one entry per item 
 each half `landed` or settled with lines (`itemOf`). `outcomeOf` reads them: an item with a
 landed half is `done` (an Undo step and the applied facts) and carries every line of both
 halves beside it, so a landed delete with a left-out rename reads as applied, with the line;
-an item with neither half landed is `settled`. The first `overtaken` or `left_out` line becomes
-the item's `apply-refused` line (`overtaken_discarded`, `overtaken_removed`, `left_out_<why>`);
-`already` and `restored` are quiet. `viewOf` is the one place a settlement line becomes what
+an item with neither half landed is `settled`. Every `overtaken` or `left_out` line, with its
+half and the command that overtook it, becomes the item's `apply-left-out` state
+(`overtaken_discarded`, `overtaken_removed`, `left_out_<why>`), and the surfaces show one
+sentence per distinct reason: as a note (`InlineErrorRow`'s `note`) when the other half landed,
+as an error when neither did. `already` and `restored` are quiet. `viewOf` is the one place a settlement line becomes what
 is shown, a closed owner's `returned` included; `settledOf` gives every line of a flat answer
 (Discard, Restore, Un-Apply) that names an item. A click whose room cannot acknowledge it
 settles `unsent` on the client. The press sends `saw`, the cut the cached draft list came
