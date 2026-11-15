@@ -230,7 +230,7 @@ function BounceWord({ bounce, work }: { bounce: Bounce; work: string | null }) {
           <Trans>Not renamed</Trans>
         )
       }
-      sentence={record.type === "create" ? t`Work was closed.` : closed}
+      sentence={closed}
     />
   );
 }
