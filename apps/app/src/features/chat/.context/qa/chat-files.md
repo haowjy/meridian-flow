@@ -25,8 +25,8 @@ come in through the real intake.
    Uploads"); Undo or Restore brings the row back in Files.
 6. Rows offer no Open: a click inserts. Click the sent message's attachment chip, a tool row
    naming the upload, and a reply's `uploads://` link: each opens the upload viewer dialog, with
-   the chat in main or beside, and the side keeps what it showed. This also holds right after
-   sending a chat's first message with its first attachment.
+   the chat in main or beside, and the side keeps what it showed. This also holds for a New
+   chat's composer chip before the first send, and right after that send.
 7. Open a second chat in the same Work: Files shows the same shared Scratch and
    no uploads from the first chat. Fork the first chat: the fork's
    trigger reads "Files" and its menu says "No files attached in this chat yet."
