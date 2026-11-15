@@ -246,7 +246,10 @@ identity in anchors or holds.
   that UndoManager generates. It is never read from y-tiptap's copy, which a
   plugin's appended transaction makes wrong; Yjs alone would map the current
   selection, and a moved range has just been removed. Redo and a caret keep
-  y-tiptap's mapped selection. Destroying an editor only detaches it: the
+  y-tiptap's mapped selection. After typing over cells, Redo can keep the restored
+  cell rectangle when its saved caret no longer resolves; a subsequent Backspace
+  therefore clears those visibly selected cells. This is accepted, not a promise
+  that Redo always restores a typing caret. Destroying an editor only detaches it: the
   history lasts as long as the session, so a tab's undo survives its editor (the patched
   y-tiptap undo plugin neither destroys a manager it didn't create nor leaves its
   listeners on it). Only edits written through an editor are tracked, so Ctrl+Z reverts
