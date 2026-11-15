@@ -87,8 +87,8 @@ export type CreateEditorExtensionsOptions = {
   history: DocumentHistory;
   schemaType?: YjsTrackedSchemaType;
   /**
-   * A code document's filetype, which is its fence's language: the fence an empty file is
-   * filled with carries it, as the one the server writes for a created file does.
+   * A code document's filetype, which is its fence's language: it paints the fence, and the
+   * fence an empty file is filled with stores it, as the one the server writes does.
    */
   filetype?: Filetype;
   /**
@@ -131,6 +131,17 @@ export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
 };
 
 const lowlight = createLowlight(common);
+
+/**
+ * What a code file's fence is painted with: its filetype, whatever `language` the block stores,
+ * so a rename to another type repaints and a file stored with no or another language reads as
+ * its type. A filetype lowlight doesn't know is detected from the text.
+ */
+function lowlightAs(filetype: Filetype | undefined): typeof lowlight {
+  if (!filetype || !lowlight.registered(filetype)) return lowlight;
+  const paint = (value: string) => lowlight.highlight(filetype, value);
+  return { ...lowlight, highlight: (_language, value) => paint(value), highlightAuto: paint };
+}
 
 /**
  * Chrome extension registration list — the append-only seam every surface
@@ -378,7 +389,10 @@ export function createStandaloneEditorExtensions({
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
       BlockIdExtension,
-      MeridianCodeBlockLowlight.configure({ lowlight, defaultLanguage: filetype ?? null }),
+      MeridianCodeBlockLowlight.configure({
+        lowlight: lowlightAs(filetype),
+        defaultLanguage: filetype ?? null,
+      }),
       // A code file is one fence, so the fence's bracket/quote set is the
       // whole document's.
       AutoPairExtension,

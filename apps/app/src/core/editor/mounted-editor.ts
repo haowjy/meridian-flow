@@ -36,7 +36,7 @@ type EditorMountBase = {
   /** The Work the viewer is in; a draft-only picture is signed through it. */
   viewingOwner?: string;
   schemaType: YjsTrackedSchemaType;
-  /** A code document's filetype: the language its fence is filled with. */
+  /** A code document's filetype: the language its fence is painted in. */
   filetype?: Filetype;
   /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
   collaborationDecorations: boolean;
@@ -83,7 +83,9 @@ export function editorRoomKey(identity: EditorMountIdentity): string {
 
 /** React key that owns the editor's lifetime. Equal keys keep the instance. */
 export function editorMountKey(identity: EditorMountIdentity): string {
-  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingOwner ?? ""}|${identity.schemaType}|${identity.filetype ?? ""}|${identity.collaborationDecorations}`;
+  // Only a code file's editor is built from its filetype: a prose rename keeps the editor.
+  const filetype = identity.schemaType === "code" ? (identity.filetype ?? "") : "";
+  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingOwner ?? ""}|${identity.schemaType}|${filetype}|${identity.collaborationDecorations}`;
   return identity.surface === "review"
     ? `review|${identity.roomName}|${identity.itemKey}|${shared}`
     : `live|${shared}`;

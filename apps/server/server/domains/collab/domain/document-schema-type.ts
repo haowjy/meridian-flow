@@ -3,11 +3,10 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 
 /**
- * A code document's language, which is its filetype: the code node of every code file carries
- * it, whoever wrote the file. Null for a prose document. Throws for a filetype that has no Yjs
- * state: nothing derives or reads one as text.
+ * A code document's filetype, or null for a prose document. Throws for a filetype that has no
+ * Yjs state: nothing derives or reads one as text.
  */
-export async function codeLanguageOf(
+export async function codeFiletypeOf(
   resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
   documentId: DocumentId,
 ): Promise<string | null> {
@@ -24,5 +23,5 @@ export async function isCodeDocument(
   resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
   documentId: DocumentId,
 ): Promise<boolean> {
-  return (await codeLanguageOf(resolveFiletype, documentId)) !== null;
+  return (await codeFiletypeOf(resolveFiletype, documentId)) !== null;
 }
