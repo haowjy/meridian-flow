@@ -283,9 +283,10 @@ export function applyDraft(
   // has landed, shows the node's name numbered, the clash was visible to the one applying, so
   // the record that gave the name holds the numbered one (design, section 4) and a later change
   // to its sibling cannot flip it back.
-  const reads = replay([...live, ...pending.filter((record) => !leftIds.has(record.id))], {
-    draft,
-  });
+  const ends = (record: TreeRecord) =>
+    leftIds.has(record.id) ||
+    (wanted.has(record.id) && !taken.has(record.id) && !overridden.has(record.id));
+  const reads = replay([...live, ...pending.filter((record) => !ends(record))], { draft });
   const was = new Map<string, { name: string; parent: string; rank: string }>();
   const stands = (node: string) => was.get(node) ?? liveNow.nodes.get(node);
   const lastNamed = new Map<string, string>();
@@ -311,7 +312,15 @@ export function applyDraft(
       (copy.type === "create" || nameSet(copy) !== undefined)
     ) {
       const shown = reads.nodes.get(copy.node);
-      if (lastNamed.get(copy.node) === record.id && shown && shown.name === copy.name)
+      // A node keeping both its name and its folder arrives in no new place in the numbering, so
+      // baking a number onto it would move it behind the siblings that arrived since. A move
+      // into another folder does arrive in a new place there, so it is baked even with its name.
+      if (
+        lastNamed.get(copy.node) === record.id &&
+        shown &&
+        shown.name === copy.name &&
+        !(before?.name === copy.name && (copy.type !== "move" || before.parent === copy.parent))
+      )
         copy.name = shown.displayName;
     }
     if (copy.type === "create")
