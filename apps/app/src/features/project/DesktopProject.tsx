@@ -19,8 +19,7 @@ import { mainTabKey } from "@/client/project-shell/main-tabs";
 import type { OpenDocument } from "@/client/stores";
 import { ignoreFieldEscape } from "@/components/ui/field-escape";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
-import { focusMainEditor } from "@/features/editor/focus-on-open";
-import { holdFocus } from "@/lib/focus-follow";
+import { focusMain } from "@/features/editor/focus-on-open";
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
 import { ChatSurface } from "./chat/ChatSurface";
@@ -89,8 +88,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   useOnOpen(() => {
     if (!sidebarOver) return;
     foldSidebar();
-    if (mainTab) focusMainEditor();
-    else holdFocus(mainControl);
+    focusMain(main.document.requested ? undefined : mainControl);
   });
   // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();

@@ -1,6 +1,7 @@
 /**
  * focus-on-open — a document the writer just made opens with the caret in it, and so
- * does main's document after a page load or an open from a sidebar lying over main.
+ * does main's document after a page load or an open from a sidebar lying over main
+ * (`focusMain`).
  *
  * Creating a document (New file, a link's Create) is an invitation to type. The
  * committed open arms its document, and only the editor of that document claims
@@ -9,7 +10,6 @@
  * focuses a later one of the same document.
  */
 
-import type { Editor } from "@tiptap/core";
 import { focusIsFree, holdFocus } from "@/lib/focus-follow";
 
 let armed: string | null = null;
@@ -26,29 +26,51 @@ export function claimEditorFocus(documentId: string | undefined): boolean {
   return true;
 }
 
-/** Main's editors as they paint: a warm copy mounts hidden or inert beside the shown one. */
-const mainEditors = new Set<Editor>();
+/**
+ * What main shows, as it paints: a document's editor, or what stands in for one (a failure, a
+ * viewer; `MainSurface`). A warm copy mounts hidden or inert beside the shown one.
+ */
+const mainSurfaces = new Set<HTMLElement>();
 
-function shownMainEditor(): HTMLElement | null {
-  for (const editor of mainEditors) {
-    const dom = editor.isDestroyed ? null : editor.view.dom;
-    if (dom && dom.getClientRects().length > 0 && !dom.closest("[inert]")) return dom;
+const CONTROL =
+  'button:not(:disabled), [href], input:not(:disabled), textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Main's focus, one rule: the shown surface when it takes the focus itself (an editable editor),
+ * else the first control in it or around it in main (a failed load's Retry, a read-only
+ * document's chrome), else a surface held for it (`tabIndex={-1}`).
+ */
+function mainSurfaceTarget(): HTMLElement | null {
+  for (const surface of mainSurfaces) {
+    if (surface.getClientRects().length === 0 || surface.closest("[inert]")) continue;
+    if (surface.isContentEditable || surface.tabIndex >= 0) return surface;
+    return (
+      surface.querySelector<HTMLElement>(CONTROL) ??
+      surface.closest('[role="main"]')?.querySelector<HTMLElement>(CONTROL) ??
+      (surface.hasAttribute("tabindex") ? surface : null)
+    );
   }
   return null;
 }
 
+let mainTarget: () => HTMLElement | null = mainSurfaceTarget;
 let stopMainFocus: (() => void) | null = null;
 
 /**
- * Main's editor takes the caret where it keeps it, as soon as it shows and whenever the focus
- * falls free, until the writer takes the focus (a key, a press, focus placed anywhere else).
- * A later call replaces an earlier one.
+ * Main takes the focus (an editor its caret, where it keeps it) as soon as its surface shows and
+ * whenever the focus falls free, until the writer takes the focus (a key, a press, focus placed
+ * anywhere else). A screen with no document (a chat, a landing) passes `screen`, its own target,
+ * since no surface joins for it. A later call replaces an earlier one.
  */
-export function focusMainEditor(): void {
+export function focusMain(screen?: () => HTMLElement | null): void {
   stopMainFocus?.();
-  stopMainFocus = holdFocus(shownMainEditor, () => {
-    stopMainFocus = null;
-  });
+  mainTarget = screen ? () => mainSurfaceTarget() ?? screen() : mainSurfaceTarget;
+  stopMainFocus = holdFocus(
+    () => mainTarget(),
+    () => {
+      stopMainFocus = null;
+    },
+  );
 }
 
 /**
@@ -56,12 +78,14 @@ export function focusMainEditor(): void {
  * rather than in the side panel's chat; not on a touch screen, where focusing a text opens the
  * on-screen keyboard over it.
  */
-if (typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches)
-  focusMainEditor();
+if (typeof window !== "undefined" && !window.matchMedia?.("(pointer: coarse)").matches) focusMain();
 
-/** Joins `editor`, live and editable, to main's editors; returns its leave. */
-export function joinMainEditors(editor: Editor): () => void {
-  mainEditors.add(editor);
-  if (stopMainFocus && focusIsFree()) shownMainEditor()?.focus();
-  return () => mainEditors.delete(editor);
+/**
+ * Joins `surface` to what main shows; returns its leave. A surface that is not itself focusable
+ * carries `tabIndex={-1}`, so it can hold the focus when it has no control.
+ */
+export function joinMain(surface: HTMLElement): () => void {
+  mainSurfaces.add(surface);
+  if (stopMainFocus && focusIsFree()) mainTarget()?.focus();
+  return () => mainSurfaces.delete(surface);
 }

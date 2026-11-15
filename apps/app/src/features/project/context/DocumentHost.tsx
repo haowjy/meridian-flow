@@ -23,6 +23,7 @@ import {
   DocumentStatePortal,
   DocumentStateSlotProvider,
 } from "@/features/editor/document-state-slot";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { cn } from "@/lib/utils";
 import { DocumentReviewProvider } from "../DocumentReview";
@@ -243,7 +244,11 @@ function DesktopDocumentFrame({
             />
             {document.kind === "viewer" ? (
               <div className="flex min-h-0 flex-1 flex-col">
-                <ContextViewerHost projectId={projectId} document={document} />
+                <ContextViewerHost
+                  projectId={projectId}
+                  document={document}
+                  inMain={place === "main"}
+                />
               </div>
             ) : (
               <div className="relative min-h-0 flex-1">
@@ -485,10 +490,10 @@ export function MainDocumentStatus({ main }: { main: MainDocument }) {
           <Trans>Opening document…</Trans>
         </div>
       ) : failed ? (
-        <div className="flex items-center gap-2">
+        <MainSurface joined className="flex items-center gap-2">
           <AlertCircle className="size-4" aria-hidden />
           <Trans>Couldn't open this document.</Trans>
-        </div>
+        </MainSurface>
       ) : null}
     </div>
   );

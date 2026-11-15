@@ -28,6 +28,7 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
+import { MainSurface } from "@/features/editor/MainSurface";
 import { useHostDocumentPaint } from "../DocumentReview";
 import {
   useContextRemovalCoordinator,
@@ -52,7 +53,7 @@ export type ContextDocumentHostProps = {
   readOnly?: boolean;
   presentation?: DocumentPresentation;
   onCloseDraftOnly?: () => void;
-  /** Main's document: the caret main gives goes to it (`joinMainEditors`). */
+  /** Main's document: the focus main gives goes to its editor or its failure (`joinMain`). */
   inMain?: boolean;
 };
 
@@ -136,7 +137,7 @@ export function ContextDocumentHost({
         >
           {failed ? (
             <div className="grid h-full place-items-center">
-              <div className="space-y-3 text-center">
+              <MainSurface joined={inMain && active} className="space-y-3 text-center">
                 <InlineErrorRow
                   message={
                     failureReason === "not-visible" ? (
@@ -154,7 +155,7 @@ export function ContextDocumentHost({
                     <Trans>Retry</Trans>
                   </Button>
                 ) : null}
-              </div>
+              </MainSurface>
             </div>
           ) : null}
           {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}

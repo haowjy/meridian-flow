@@ -45,7 +45,7 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
-import { claimEditorFocus, joinMainEditors } from "./focus-on-open";
+import { claimEditorFocus, joinMain } from "./focus-on-open";
 import { InTrashStatus } from "./InTrashStatus";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
@@ -79,7 +79,7 @@ type SessionEditorProps = {
   onConstructed?: (editor: Editor | null) => void;
   /** The document this editor serves; it claims that document's focus-on-open intent. */
   focusKey?: string;
-  /** Main's document: the caret main gives (`joinMainEditors`) goes here, never to a side or a sheet. */
+  /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
   inMain?: boolean;
   /** Reopens the room after the server refused its updates (draft review only). */
   onReopen?: () => void;
@@ -367,20 +367,19 @@ function ActiveSessionEditorView({
     return () => dom.removeEventListener("focusout", onFocusOut);
   }, [afterPaintRelease, editor, inReview]);
 
-  // A document the writer just made takes the caret at its start, and main's editor joins
-  // main's editors (the page load's caret, an open from a sidebar over main), unless something
-  // else (a dialog that stays open, a field) already holds focus.
+  // A document the writer just made takes the caret at its start, and main's editor, editable
+  // or not, joins what main shows (the page load's caret, an open from a sidebar over main),
+  // unless something else (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
-    if (!editor || !active || !effectiveEditable) return;
-    const made = claimEditorFocus(focusKey);
+    if (!editor || !active) return;
+    const made = effectiveEditable && claimEditorFocus(focusKey);
     if (!made && !inMain) return;
     let release: (() => void) | null = null;
     let mounted = true;
     afterPaintRelease(() => {
-      if (!mounted) return;
-      if (made && !editor.isDestroyed && focusIsFree())
-        editor.commands.focus("start", { scrollIntoView: false });
-      if (inMain) release = joinMainEditors(editor);
+      if (!mounted || editor.isDestroyed) return;
+      if (made && focusIsFree()) editor.commands.focus("start", { scrollIntoView: false });
+      if (inMain) release = joinMain(editor.view.dom);
     });
     return () => {
       mounted = false;
