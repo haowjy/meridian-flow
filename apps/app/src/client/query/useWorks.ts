@@ -30,6 +30,9 @@ export function useWorksSnapshot(projectId: string, requested = true) {
     queryKey: projectQueryKeys.works(projectId),
     queryFn: () => acquireWorksSnapshot(client, projectId),
     staleTime: 30_000,
+    // A read that failed while offline leaves its error beside data that is still fresh, so
+    // reconnecting would not refetch on staleness alone.
+    refetchOnReconnect: "always",
     enabled: projectReadEnabled(requested),
   });
   return { list, enabled };

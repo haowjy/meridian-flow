@@ -1,8 +1,9 @@
 /**
  * The one app-wide "not sent yet" line: shown while something the writer did has gone
  * unanswered for a while, or the browser is offline with something waiting. It is a fixed line
- * on the top edge, so it shows on every layout (sidebar open or closed, phone) and adds no height
- * to anything; nothing else marks an unsent change.
+ * on the top edge, so it shows on every layout (sidebar open or closed, phone, above dialogs).
+ * While it shows, the app frame starts one line lower (`globals.css`), so it covers no control
+ * of the shell; nothing else marks an unsent change.
  */
 import { t } from "@lingui/core/macro";
 import { CloudOff } from "lucide-react";
@@ -14,6 +15,7 @@ export function NotSentYet() {
   return (
     <div
       role="status"
+      data-not-sent
       title={
         paused
           ? t`You’re signed out of this account. Sign in again and the changes will be sent.`

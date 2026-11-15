@@ -461,8 +461,8 @@ msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "{days, plural, one {# day left} other {# days left}}"
-msgstr ""
+#~ msgid "{days, plural, one {# day left} other {# days left}}"
+#~ msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
@@ -2721,7 +2721,11 @@ msgid "workReceipt.deleted"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgstr ""
+
+#: src/features/project/work/DeletedWorkList.tsx
+msgid "Deleted Work can be restored."
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
@@ -3652,8 +3656,8 @@ msgid "Left"
 msgstr ""
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Less than a day left"
-msgstr ""
+#~ msgid "Less than a day left"
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
@@ -5047,8 +5051,8 @@ msgstr ""
 
 #: src/features/project/work/WorkDetail.tsx
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Saving…"
-msgstr ""
+#~ msgid "Saving…"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "scene break"

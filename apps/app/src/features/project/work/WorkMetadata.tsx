@@ -1,9 +1,11 @@
 /**
  * Page-scoped Work goal editing lifecycle. The name is renamed in the band's
- * title tab; this owns the goal, which never saves on blur and so guards
- * navigation while a draft is dirty. An archived Work's goal is read-only:
- * archiving mid-edit drops the edit and any held navigation, so nothing asks
- * to save a goal that can no longer be saved.
+ * heading; this owns the goal, which never saves on blur and so guards
+ * navigation while a draft is dirty. Saving closes the editor at once and the
+ * command is the driver's; a save the server did not apply (a closed Work, a
+ * refusal) reopens the editor with the writer's text. An open editor never
+ * closes because the Work changed underneath: an archived Work only shows it
+ * when a save bounces.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -26,7 +28,6 @@ export function useWorkMetadataController(
 ) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
   const { failure, fail, end } = useFailure();
   const error = failure?.message ?? null;
   // A closed Work kept none of the goal: the field keeps the text and says so beside Save.
@@ -40,22 +41,6 @@ export function useWorkMetadataController(
     return intent;
   }, []);
   const readOnly = isWorkArchived(work);
-  const readOnlyRef = useRef(readOnly);
-  readOnlyRef.current = readOnly;
-  const [shownReadOnly, setShownReadOnly] = useState(readOnly);
-  if (shownReadOnly !== readOnly) {
-    setShownReadOnly(readOnly);
-    // A save in flight, or one a closed Work just bounced, keeps its field to say so.
-    if (readOnly && !saving && closed === null) {
-      setEditing(false);
-    }
-  }
-  useEffect(() => {
-    if (readOnly) {
-      takeHeld()?.cancel();
-      end("moot");
-    }
-  }, [readOnly, takeHeld, end]);
   useEffect(
     () => () => {
       heldRef.current?.cancel();
@@ -66,22 +51,21 @@ export function useWorkMetadataController(
   const [announcement, setAnnouncement] = useState("");
   const displayRef = useRef<HTMLElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
-  const dirty = editing && !readOnly && draft.trim() !== (work.goal ?? "").trim();
+  const dirty = editing && draft.trim() !== (work.goal ?? "").trim();
   const focusDisplay = useCallback(
     () => requestAnimationFrame(() => displayRef.current?.focus()),
     [],
   );
   const cancel = useCallback(() => {
-    if (!editing || saving) return;
+    if (!editing) return;
     setEditing(false);
     end("dismissed");
     takeHeld()?.cancel();
     setAnnouncement(t`Goal edit canceled`);
     focusDisplay();
-  }, [editing, focusDisplay, saving, takeHeld, end]);
+  }, [editing, focusDisplay, takeHeld, end]);
   const save = useCallback(async (): Promise<boolean> => {
     if (!editing) return true;
-    if (saving) return false;
     if (!dirty) {
       setEditing(false);
       end("dismissed");
@@ -89,30 +73,20 @@ export function useWorkMetadataController(
       return true;
     }
     const goal = draft.trim();
-    setSaving(true);
     setClosed(null);
     end("retried");
-    try {
-      await saveWork({ goal });
-      setEditing(false);
-      setAnnouncement(t`Goal saved`);
-      focusDisplay();
-      return true;
-    } catch (cause) {
-      if (cause instanceof WorkReturnedError) {
-        setClosed(workClosedSentence(cause.why));
-        return false;
-      }
-      fail(
-        cause,
-        workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`),
-        !readOnlyRef.current,
-      );
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [dirty, draft, editing, focusDisplay, saveWork, saving, end, fail]);
+    setEditing(false);
+    setAnnouncement(t`Goal saved`);
+    focusDisplay();
+    // The command is the driver's: what it settles to only matters if it was not applied.
+    saveWork({ goal }).catch((cause: unknown) => {
+      setDraft(goal);
+      setEditing(true);
+      if (cause instanceof WorkReturnedError) setClosed(workClosedSentence(cause.why));
+      else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
+    });
+    return true;
+  }, [dirty, draft, editing, focusDisplay, saveWork, end, fail]);
   const request = useCallback(
     (intent: HeldIntent) => {
       if (!dirty) {
@@ -138,11 +112,11 @@ export function useWorkMetadataController(
     if (intent && (await save()) && heldRef.current === intent) takeHeld()?.run();
   }, [save, takeHeld]);
   const discardAndResume = useCallback(() => {
-    if (!heldRef.current || saving) return;
+    if (!heldRef.current) return;
     setEditing(false);
     end("dismissed");
     takeHeld()?.run();
-  }, [saving, takeHeld, end]);
+  }, [takeHeld, end]);
   const keepEditing = useCallback(() => {
     takeHeld()?.cancel();
     requestAnimationFrame(() => editorRef.current?.focus());
@@ -153,7 +127,6 @@ export function useWorkMetadataController(
     draft,
     setDraft,
     dirty,
-    saving,
     error,
     closed,
     held: hasPendingIntent,
@@ -234,7 +207,7 @@ export function WorkGoal({
     c.displayRef.current = node;
   };
   // Nothing to show or edit: no empty box to space the header around.
-  if (readOnly && !work.goal) return null;
+  if (readOnly && !editing && !work.goal) return null;
   const hasActions = overflows || !readOnly;
   return (
     <div className="min-w-0 text-body text-foreground">
@@ -316,7 +289,6 @@ function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
       <InlineEditTextarea
         ref={c.editorRef}
         value={c.draft}
-        disabled={c.saving}
         aria-label={t`Goal`}
         aria-invalid={Boolean(c.error)}
         aria-describedby={c.error ? errorId : c.closed ? closedId : undefined}
@@ -336,17 +308,11 @@ function GoalEditor({ controller: c }: { controller: WorkMetadataController }) {
       />
       {c.error ? <InlineErrorRow id={errorId} message={c.error} className="mt-2 p-0" /> : null}
       <div className="mt-3 flex items-center gap-2">
-        <Button size="sm" variant="ghost" disabled={c.saving} onClick={c.cancel}>
+        <Button size="sm" variant="ghost" onClick={c.cancel}>
           <Trans>Cancel</Trans>
         </Button>
-        <Button size="sm" disabled={c.saving} onClick={() => void c.save()}>
-          {c.saving ? (
-            <Trans>Saving…</Trans>
-          ) : c.error ? (
-            <Trans>Retry save</Trans>
-          ) : (
-            <Trans>Save</Trans>
-          )}
+        <Button size="sm" onClick={() => void c.save()}>
+          {c.error ? <Trans>Retry save</Trans> : <Trans>Save</Trans>}
         </Button>
         {c.closed ? <WorkClosedChip id={closedId} sentence={c.closed} /> : null}
       </div>

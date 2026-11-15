@@ -3,12 +3,10 @@
  * state, and which refused command it carries. `WorkCollection` only maps
  * these entries to rows.
  */
-import { deletionPurgeAt } from "@meridian/contracts/retention";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { UncreatedWork, WorkCreation } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
-import { daysUntilPurge as daysUntilScheduledPurge } from "../deletion-retention";
 import type { WorkRowFailure } from "./WorkCommandFailureRow";
 
 /** The list tab a Work the server has sits in until it is deleted. */
@@ -42,14 +40,13 @@ export type WorkListProjection = {
 /**
  * Active: Works being created, then each just-deleted Work's Undo row (newest
  * delete first), then the tab's Works. Archived: its Undo rows, then its
- * Works. Deleted: every Work still inside its retention window, from the
+ * Works. Deleted: every deleted Work the server still holds, from the
  * moment it is deleted; a Work with an open Undo row shows in both.
  */
 export function workListEntries(
   projected: WorkListProjection,
   windows: readonly WorkDeleteWindow[],
   failures: ReadonlyMap<string, WorkRowFailure>,
-  now: number,
 ): Record<ArchiveTab, WorkListEntry[]> & { deleted: ListedWorkEntry[] } {
   const listed = (work: AddressableWork): ListedWorkEntry =>
     projected.restoring.has(work.id)
@@ -75,27 +72,11 @@ export function workListEntries(
   return {
     active: [...creating, ...tab("active")],
     archived: tab("archived"),
-    deleted: restorableWorks(projected.deleted, now).map((work) => ({
+    deleted: projected.deleted.map((work) => ({
       key: work.id,
       work,
       state: "idle",
       failure: failures.get(work.id),
     })),
   };
-}
-
-/** Deleted Works still inside their retention window. */
-function restorableWorks<W extends Work>(deleted: readonly W[], now: number): W[] {
-  return deleted.filter(
-    (work) => work.deletedAt !== null && deletionPurgeAt(work.deletedAt).getTime() > now,
-  );
-}
-
-/**
- * Whole days until a deleted Work is purged, counting a started day as a day
- * (1 means within a day). Clamped to the retention window, so a server clock
- * ahead of this one never shows more days than a Work is kept.
- */
-export function daysUntilPurge(deletedAt: string, now: number): number {
-  return daysUntilScheduledPurge(deletionPurgeAt(deletedAt), now);
 }

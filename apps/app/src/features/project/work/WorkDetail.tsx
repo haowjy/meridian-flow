@@ -122,7 +122,6 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
         <DialogFooter>
           <Button
             variant="ghost"
-            disabled={controller.saving}
             onClick={controller.keepEditing}
             className="[@media(pointer:coarse)]:min-h-11"
           >
@@ -130,18 +129,16 @@ function DirtyDecision({ controller }: { controller: WorkMetadataController }) {
           </Button>
           <Button
             variant="outline"
-            disabled={controller.saving}
             onClick={controller.discardAndResume}
             className="[@media(pointer:coarse)]:min-h-11"
           >
             <Trans>Discard changes</Trans>
           </Button>
           <Button
-            disabled={controller.saving}
             onClick={() => void controller.saveAndResume()}
             className="[@media(pointer:coarse)]:min-h-11"
           >
-            {controller.saving ? <Trans>Saving…</Trans> : <Trans>Save changes</Trans>}
+            <Trans>Save changes</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>

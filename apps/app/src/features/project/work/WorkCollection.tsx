@@ -69,9 +69,8 @@ export function WorkCollection({
         { works: works ?? [], deleted, creations, restoring },
         deletion.windows,
         failures,
-        now,
       ),
-    [works, deleted, creations, restoring, deletion.windows, failures, now],
+    [works, deleted, creations, restoring, deletion.windows, failures],
   );
   // Focus follows an Archive, or its retry, to the tab the Work moves to.
   const retry = ({ operation, workId, retry }: WorkRowFailure) =>
@@ -178,7 +177,6 @@ export function WorkCollection({
         ) : view === "deleted" ? (
           <DeletedWorkList
             entries={entries.deleted}
-            now={now}
             onRestore={(work) => void restore({ workId: work.id })}
           />
         ) : view === "archived" ? (

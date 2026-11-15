@@ -409,6 +409,12 @@
   @apply h-svh max-h-svh w-full min-h-0 overflow-hidden overscroll-none;
 }
 
+/* The Not sent line is fixed on the top edge; while it shows, the shell starts below it, so it
+   covers no control of the shell. */
+body:has([data-not-sent]) .app-frame {
+  padding-top: 0.875rem;
+}
+
 @utility app-scroll {
   @apply min-h-0 flex-1 overflow-y-auto overscroll-y-contain;
 }
