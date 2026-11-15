@@ -138,7 +138,15 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
         payload: {
           path,
           ...returned.model,
-          ...(shown?.result.read ? { read: shown.result.read } : {}),
+          // The caller names the version the edit would have changed; the read's own would repeat it.
+          ...(shown?.result.read
+            ? {
+                read: {
+                  format: shown.result.read.format,
+                  documentBlocks: shown.result.read.documentBlocks,
+                },
+              }
+            : {}),
           ...(shown?.result.blocks ? { blocks: shown.result.blocks } : {}),
         },
       }),

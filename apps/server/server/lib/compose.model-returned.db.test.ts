@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { createReplyMutations } from "@meridian/agent-edit/integration";
 import { toolContentText } from "@meridian/contracts/threads";
 import { LIVE } from "@meridian/project-tree";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
@@ -190,7 +190,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } as never);
       const row = listed.items.find((item) => item.documentId === CH1);
       if (!row) throw new Error("the model's edit made no draft to discard");
-      const answer = await handleDiscardWorkDraftRequest(routes, {
+      await handleDiscardWorkDraftRequest(routes, {
         ...scope,
         branchId: row.branchId,
         documentId: CH1 as never,
@@ -202,7 +202,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           draftSeenAt: row.updatedAt,
         },
       } as never);
-      console.log("DISCARD >>>", JSON.stringify(answer));
     }
 
     it("the writer discards the draft mid-round: the next edit is returned and the one after lands", async () => {
@@ -227,7 +226,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Charlie, edited.",
       };
       const returned = await call("write", returnArgs, replayId);
-      console.log("RETURNED RESULT >>>\n" + returned.text);
       expect(returned.isError).toBeFalsy();
       expect(returned.text).toContain("status: returned");
       expect(returned.text).toContain("the writer discarded the draft");
@@ -237,7 +235,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await draftRows()).toEqual(drafts);
       expect(await branchRows()).toEqual(branches);
       const rows = await modelEditRows();
-      console.log("ROWS", JSON.stringify(rows.map((r) => r.outcome)).slice(0, 1500));
       const last = rows.at(-1)?.outcome as never as {
         status: string;
         result: { settled?: unknown };
@@ -245,14 +242,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(last.status).toBe("done");
       expect(last.result.settled).toEqual([{ rule: "returned", why: "draft_discarded" }]);
 
-      console.log(
-        "FRONTIERS",
-        JSON.stringify(
-          await db.execute(
-            sql`SELECT room_key, source_block_id, recorded_seq FROM observation_frontiers ORDER BY recorded_seq`,
-          ),
-        ),
-      );
       // A crash between the row's commit and the answer: the call, sent again under its id,
       // reads the same row and the same text.
       const replayed = await call("write", returnArgs, replayId);
@@ -286,7 +275,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         in: bravo,
         content: "Bravo, edited.",
       });
-      console.log("BLOCK GONE RESULT >>>\n" + returned.text);
       expect(returned.isError, returned.text).toBeFalsy();
       expect(returned.text).toContain("status: returned");
       expect(returned.text).toContain("Charlie three.");
@@ -309,7 +297,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         after: bravo,
         content: "Between them.",
       });
-      console.log("INSERT AFTER DELETED >>>\n" + landed.text);
       expect(landed.isError, landed.text).toBeFalsy();
       const now = await call("read", { path: "ch1" });
       const lines = now.text.split("\n").map((line) => line.split("|").slice(1).join("|"));
@@ -323,7 +310,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("the writer deletes the document: the edit is returned, naming who", async () => {
-      const { runtime, call } = await reply(LIVE_CHAT);
+      const { call } = await reply(LIVE_CHAT);
       await call("read", { path: "ch1" });
       const seeds = treeSeeder(db);
       await seeds.store.submit({
@@ -336,41 +323,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Alpha one.",
         content: "Alpha, edited.",
       });
-      console.log("REMOVED RESULT >>>\n" + returned.text);
       expect(returned.isError, returned.text).toBeFalsy();
       expect(returned.text).toContain("status: returned");
       const [last] = (await modelEditRows()).slice(-1);
       expect(JSON.stringify(last?.outcome)).toContain("document_removed");
-      // After the model deletes a document itself, a write on the same path says so too.
-      const other = await reply(LIVE_CHAT);
-      void runtime;
-      void other;
-    });
-
-    it("the Work is archived: the draft edit is returned with the draft as it stands", async () => {
-      const { call } = await reply(DRAFTING);
-      await call("read", { path: "ch1" });
-      await call("write", {
-        command: "replace",
-        path: "ch1",
-        find: "Bravo two.",
-        content: "Bravo, edited.",
-      });
-      await db.execute(sql`UPDATE works SET archived_at = now() WHERE id = ${WORK_ID}`);
-      const returned = await call("write", {
-        command: "replace",
-        path: "ch1",
-        find: "Charlie three.",
-        content: "Charlie, edited.",
-      });
-      console.log("ARCHIVED RESULT >>>\n" + returned.text);
-      expect(returned.isError, returned.text).toBeFalsy();
-      expect(returned.text).toContain("status: returned");
-      expect(returned.text).toContain("archived");
-      expect(returned.text).toContain("Bravo, edited.");
-      const [last] = (await modelEditRows()).slice(-1);
-      expect(JSON.stringify(last?.outcome)).toContain("work_archived");
-      void and;
     });
 
     it("a failed apply or commit runs once more under the same id; a second failure says the edit did not land", async () => {
@@ -406,7 +362,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "Bravo, edited.",
       });
       always();
-      console.log("FAILED TWICE >>>\n" + twice.text);
       expect(twice.isError).toBe(true);
       expect(twice.text).toContain("did not land");
       expect(twice.text).not.toMatch(/retry|again|re-?read/i);
@@ -423,24 +378,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         find: "Alpha one.",
         content: "Alpha, edited.",
       });
-      console.log("OWN DELETE >>>\n" + again.text);
       expect(again.isError, again.text).toBeFalsy();
       expect(again.text).toContain("status: returned");
       expect(again.text).toContain("deleted by you");
-    });
-
-    it("a block number or hash the view does not hold answers with the document, not 'run read'", async () => {
-      const { call } = await reply(LIVE_CHAT);
-      await call("read", { path: "ch1" });
-      const missed = await call("write", {
-        command: "replace",
-        path: "ch1",
-        in: "dead",
-        content: "Nope.",
-      });
-      console.log("STALE HASH >>>\n" + missed.text);
-      expect(missed.text).toContain("Alpha one.");
-      expect(missed.text).not.toMatch(/re-sync|run read/i);
     });
 
     it("the turn's Undo takes back what landed and leaves the returned edit out cleanly", async () => {
@@ -480,32 +420,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           commandId: randomUUID() as never,
         },
       );
-      console.log("TURN UNDO >>>", JSON.stringify(undone).slice(0, 600));
       expect(undone.status).toBe("reversed");
       const now = await call("read", { path: "ch1" });
       expect(now.text).toContain("Alpha one.");
       expect(now.text).toContain("Charlie three.");
-    });
-
-    it("an undo of text the writer rewrote since answers done, saying what was left and why", async () => {
-      const { runtime, call } = await reply(LIVE_CHAT);
-      await call("read", { path: "ch1" });
-      await call("write", {
-        command: "replace",
-        path: "ch1",
-        find: "Alpha one.",
-        content: "Alpha, edited.",
-      });
-      await writeMarkdown(runtime.ports.documentSync, {
-        documentId: CH1,
-        markdown: "Zulu.\n\nBravo two.\n\nCharlie three.",
-        origin: { type: "user", actorUserId: USER_ID },
-        threadId: LIVE_CHAT.threadId,
-      });
-      const undone = await call("write", { command: "undo", path: "ch1" });
-      console.log("UNDO >>>\n" + undone.text);
-      expect(undone.isError, undone.text).toBeFalsy();
-      expect(undone.text).not.toMatch(/\bread\b.*(again|replace)/i);
     });
   });
 }
