@@ -176,6 +176,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       encodeSeed: runtime.markdownDocuments.encodeSeed,
       installSeeds: runtime.markdownDocuments.installSeeds,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      mergeCodeText: runtime.markdownDocuments.mergeCodeText,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
@@ -260,6 +261,7 @@ function createInMemoryDraftPeerStub(
     // Nothing is derived in memory.
     readStoredGrepTexts: async () => new Map(),
     readStoredWordCounts: async () => new Map(),
+    readOwnerMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveBlocks: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {

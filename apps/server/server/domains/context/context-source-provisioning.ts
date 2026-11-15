@@ -40,6 +40,7 @@ const CONTEXT_SOURCE_NAMES: Record<
   unfiled: "Unfiled",
   scratch: "Scratch",
   uploads: "Uploads",
+  agents: "Agents",
 };
 
 async function findUserContextProject(db: Database, userId: string): Promise<string | null> {
@@ -73,7 +74,7 @@ function storedInPersonalProject(scheme: ProjectContextFsScheme): boolean {
 
 type SourceHints = Pick<ProjectHintPort, "publishSourcesHint">;
 
-const PROJECT_SOURCE_SCHEMES = ["manuscript", "kb", "unfiled"] as const;
+const PROJECT_SOURCE_SCHEMES = ["manuscript", "kb", "unfiled", "agents"] as const;
 
 /**
  * Makes a new project's sources inside its creating transaction. The account's personal project

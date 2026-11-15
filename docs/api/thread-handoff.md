@@ -7,11 +7,15 @@
   "id": "client-minted-destination-uuid",
   "originTurnId": "selected-turn-uuid",
   "agentSelection": {
-    "catalogEntryId": "catalog-entry-uuid",
+    "slug": "critic",
     "definitionRevisionId": "agent-revision-uuid"
   }
 }
 ```
+
+`agentSelection` is the `selection` of an item of `GET /api/agents`: the name the picker shows and the
+revision it showed. The destination binds that revision, and keeps the source's bake when it is the
+revision the source runs.
 
 The body is strict: `summary`, missing/null cutoff and extra fields return 400.
 The selected turn is the cutoff. Every effective transcript turn through it must

@@ -46,6 +46,8 @@ export type ContextEnsureTrackedOptions = ContextWriteOptions & {
     documentId: import("@meridian/contracts").DocumentId;
     /** The create record, which the receipt names for Undo. */
     record: string;
+    /** The folders the create made on the way, outermost first; its Undo takes them back too. */
+    folders: readonly { record: string; node: string }[];
     /** The Work's branch it was drafted in; absent for a live create. */
     draftBranchId?: import("@meridian/contracts").BranchId;
   }) => Promise<void>;
@@ -61,6 +63,7 @@ export const CONTEXT_SCHEME_CAPABILITIES = {
   unfiled: { writable: true, searchable: true, creatable: true },
   scratch: { writable: true, searchable: true, creatable: true },
   uploads: { writable: true, searchable: true, creatable: false },
+  agents: { writable: true, searchable: true, creatable: true },
 } as const satisfies Readonly<Record<ContextScheme, SchemeCapabilities>>;
 
 export function schemeCapabilities(scheme: ContextScheme): SchemeCapabilities {

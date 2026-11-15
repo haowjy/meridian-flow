@@ -121,7 +121,11 @@ the replay uses them (package `AGENTS.md`).
 - **A repeated command is the caller's to answer.** The package throws when a command id was
   already used (`assertNewCommand`); the document command table answers a repeat first.
 - **Apply never blocks.** `applyDraft(writer, draft, by, command, only?, saw?)` lands what the
-  replay can place, widening a partial selection to the drafted prefix it stands on, and
+  replay can place. A partial selection takes only what it stands on (`prerequisites`): the
+  drafted creates of the nodes it needs and of the Work-created folders above where each record
+  acts, each such folder's last drafted delete or restore before the record, and earlier records
+  on the same fact; every other pending change stays pending. When landing that would change what
+  the Work's tree showed, it widens to the drafted prefix it stands on, and
   returns `{ command, copies, left, superseded, lifted }`: `left` is each record it did not
   land with `would_loop` or `purged`, `lifted` the copies that lifted a delete (rule 9).
   `covers(doc, saw)` says whether a copy holds the state the writer saw.

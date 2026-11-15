@@ -8,8 +8,8 @@ export default defineEventHandler(async (event): Promise<ThreadAvailableSkillsRe
   return handleGetThreadAvailableSkills(
     {
       repos: app.threadRepos,
+      agentCatalog: app.agentCatalog,
       agentRevisions: app.agentRevisions,
-      accountSkillInstalls: app.accountSkillInstalls,
     },
     { threadId: getRouterParam(event, "threadId") ?? "", userId: user.userId },
   );

@@ -18,10 +18,10 @@ import { parseLinkRef } from "@meridian/contracts";
 
 import { uploads } from "@/core/uploads/upload-store";
 
-import { linkChip, linkChipAttributes, linkChipDetail } from "./link-chip";
+import { chipLinkTarget, linkChip, linkChipAttributes, linkChipDetail } from "./link-chip";
 import { goneLinkDocumentId, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import type { MountedLinks } from "./link-storage";
-import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
+import { linkTargetHref } from "./link-target";
 
 /**
  * Keeps a link element's chip and accessible state in step with its answer,
@@ -33,8 +33,8 @@ export function drawLinkAnswer(
   links: MountedLinks | null,
 ): () => void {
   const stored = linkKeyOfMark(link);
-  const target = classifyLinkTarget(stored.href);
-  if (!links || !target || !isInternalLinkTarget(target)) return () => {};
+  const target = chipLinkTarget(stored.href);
+  if (!links || !target) return () => {};
   const { resolution, requester } = links;
   const key: LinkKey = { ref: stored.ref, href: linkTargetHref(target) };
   const ref = parseLinkRef(stored.ref);

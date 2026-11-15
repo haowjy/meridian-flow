@@ -1,20 +1,50 @@
-/** Account/system selection, immutable revision eligibility, and truthful runtime availability. */
+/**
+ * The catalog the writer sees, computed from the levels' saved versions, and the binding of a
+ * chat to one Agent of it. A package is used only once it is saved (`save-packages.ts`); `files`
+ * reads the files besides, to say what each package's state is and what a Save would publish.
+ */
 import type {
-  AgentCatalogPage,
+  AgentCatalog,
+  AgentCatalogItem,
+  AgentFiles,
+  AgentLevel,
   AgentSelection,
-  AgentCatalogItem as BoundAgentCatalogItem,
   ResolvedAgentConfiguration,
+  RetainedSkillReference,
 } from "@meridian/contracts/agents";
+import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type {
-  AgentCatalogEntry,
   AgentRevision,
   AgentRevisionStore,
   CatalogRevision,
 } from "../ports/agent-revision-store.js";
-import { AgentConfigurationError, resolveAgentConfiguration } from "./agent-configuration.js";
-import type { AgentSourceSnapshot, CompiledAgentDefinition } from "./compile-package.js";
-import { agentPath, MANIFEST_PATH } from "./mars.js";
-import { AgentPublicationConflictError, publishAgentSource } from "./source-publication.js";
+import {
+  AgentConfigurationError,
+  resolveAgentConfiguration,
+  skillReference,
+} from "./agent-configuration.js";
+import type { Combined, Layered } from "./combine-agents.js";
+import {
+  type AgentSourceSnapshot,
+  type CompiledAgent,
+  type CompiledAgentDefinition,
+  type CompiledPackage,
+  isError,
+} from "./compile-package.js";
+import { agentRevisionId } from "./helpers.js";
+import { PACKAGES_DIR } from "./level-packages.js";
+import { agentPath, GRAMMAR_VERSION, skillPath } from "./mars.js";
+import {
+  type AgentEntry,
+  agentsOf,
+  createPackageLevels,
+  type PackageLevels,
+  type SkillEntry,
+  skillsOf,
+  winners,
+} from "./package-levels.js";
+import { createPackageSaver, type PackageSaver } from "./save-packages.js";
+import { type SkillListing, skillListingFromMarkdown } from "./skill-listing.js";
 
 export type {
   AgentCatalogItem as BoundAgentCatalogItem,
@@ -27,20 +57,19 @@ export class AgentSelectionError extends Error {
   }
 }
 
-export { AgentPublicationConflictError } from "./source-publication.js";
+/** A skill the `/` menu offers or a writer invoked. */
+export interface CatalogSkill extends SkillListing {
+  level: AgentLevel;
+}
 
-export interface BoundAgentCatalog {
-  /** Import or revise one personal standalone Agent without a mutable intermediate record. */
-  save(
-    userId: string,
-    input: { slug: string; content: string; expectedRevisionId?: string },
-  ): Promise<BoundAgentCatalogItem>;
-  installSystemSource(source: AgentSourceSnapshot): Promise<void>;
-  list(
-    userId: string,
-    input: { limit: number; projectId?: string; after?: { nameSortKey: string; id: string } },
-  ): Promise<AgentCatalogPage>;
-  removeFromProject(userId: string, projectId: string, selection: AgentSelection): Promise<boolean>;
+export interface BoundAgentCatalog extends PackageSaver {
+  /** The saved Agents of the built-in, user and (with `projectId`) project levels. */
+  list(userId: string, input: { projectId?: string }): Promise<AgentCatalog>;
+  /**
+   * Binds the newest saved Agent of the selection's name; the selection's revision id is used
+   * only when that name is no longer saved, and only if a Save of this account or project (which
+   * the caller has authorized) holds it, or it is a built-in.
+   */
   resolvePrimary(
     userId: string,
     selection: AgentSelection,
@@ -49,182 +78,306 @@ export interface BoundAgentCatalog {
     | { ok: true; revision: AgentRevision; configuration: ResolvedAgentConfiguration }
     | { ok: false; reason: "not-found" | "unavailable"; details: string[] }
   >;
+  /**
+   * Every level's Agent and skill files as the files are now, with Mars's verdict and what each
+   * hides, and every package's Save state.
+   */
+  files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
+  /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
+  builtinFile(path: string): string | undefined;
+  /** The saved skills a writer can invoke with `/`: built-in, user and project, combined by name. */
+  userSkills(userId: string, input: { projectId?: string }): Promise<CatalogSkill[]>;
+  /**
+   * A saved skill by name for a writer's `/skill`, with the reference that pins the exact files it
+   * was read from. Undefined when no level offers it.
+   */
+  resolveSkill(
+    userId: string,
+    input: { projectId?: string; slug: string },
+  ): Promise<{ skill: CatalogSkill; reference: RetainedSkillReference } | undefined>;
 }
 
 export function createBoundAgentCatalog(input: {
   store: AgentRevisionStore;
+  levelFiles: AgentLevelFiles;
+  /** The built-in packages, read once at boot. */
+  builtins: AgentSourceSnapshot[];
   defaultModel(): string | undefined;
   /** Host-owned routing/support checks, independent of source syntax compilation. */
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
 }): BoundAgentCatalog {
   const { store } = input;
-  const reasons = (definition: CompiledAgentDefinition, model: string): string[] => {
-    const result = input.unavailableReasons(definition, model);
-    if (
-      definition.metadata.mode === "subagent" ||
-      definition.metadata["user-invocable"] === false
-    ) {
-      return ["This Agent is unavailable for primary conversations", ...result];
-    }
-    return result;
-  };
-  const prepare = async (revision: CatalogRevision) => {
-    const { definition } = revision;
+  const levels: PackageLevels = createPackageLevels(input);
+  const { builtinPackages, install } = levels;
+  const builtinShown = new Map(
+    builtinPackages.flatMap(({ package: pkg }) =>
+      pkg.agents.map((agent) => [
+        agentRevisionId(pkg, agent.slug, GRAMMAR_VERSION),
+        { package: pkg, slug: agent.slug },
+      ]),
+    ),
+  );
+  /** The stored row of `slug` in `pkg`, retaining the package's files the first time. */
+  const rowOf = async (pkg: CompiledPackage, slug: string) =>
+    (await install(pkg)).definitions.find((definition) => definition.slug === slug);
+
+  /** Why an Agent cannot run: its errors, then what the host adds. */
+  const reasonsOf = (
+    agent: Pick<CompiledAgent, "definition" | "diagnostics">,
+    /** The file the reasons are read on: its own findings need no file name. */
+    ownFile?: string,
+    /** Whether only an Agent a writer can start a conversation with counts as available. */
+    asPrimary = true,
+  ): string[] => {
+    const { definition } = agent;
     if (!definition) {
-      return {
-        configuration: undefined,
-        unavailable: revision.diagnostics
-          .filter((item) => item.severity === "error" || !item.code.startsWith("flow."))
-          .map((item) => `${item.file}: ${item.message}`),
-        available: undefined,
-      };
+      return agent.diagnostics
+        .filter(isError)
+        .map((item) => (item.file === ownFile ? item.message : `${item.file}: ${item.message}`));
     }
-    const available: AgentRevision = {
-      id: revision.id,
-      packageRevisionId: revision.packageRevisionId,
-      slug: revision.slug,
-      grammarVersion: revision.grammarVersion,
-      definition,
-    };
-    try {
-      const configuration = await resolveAgentConfiguration({
-        revision: available,
-        store,
-        defaultModel: input.defaultModel(),
-      });
-      return { configuration, unavailable: reasons(definition, configuration.model), available };
-    } catch (error) {
-      if (!(error instanceof AgentConfigurationError)) throw error;
-      return { configuration: undefined, unavailable: [error.message], available };
+    if (asPrimary && !isPrimary(definition)) {
+      return ["This Agent is unavailable for primary conversations"];
     }
+    const model = definition.metadata.model ?? input.defaultModel();
+    if (!model) return ["No configured default model is available."];
+    return input.unavailableReasons(definition, model);
   };
-  const summarize = async (entry: AgentCatalogEntry): Promise<BoundAgentCatalogItem> => {
-    const revision = await store.readCatalogRevision(entry.selectedRevisionId);
-    if (!revision) throw new Error("Agent catalog references a missing revision");
+
+  /** The item a writer sees; its revision id names the content shown. */
+  const itemOf = (entry: Combined<AgentEntry>): AgentCatalogItem => {
+    const found = entry.value?.agent;
+    const id =
+      entry.value && found
+        ? agentRevisionId(entry.value.package, found.slug, GRAMMAR_VERSION)
+        : undefined;
     return {
-      selection: { catalogEntryId: entry.id, definitionRevisionId: revision.id },
-      slug: revision.slug,
-      name: revision.name,
-      description: revision.description,
-      model: revision.definition
-        ? (revision.definition.metadata.model ?? input.defaultModel() ?? null)
+      selection: id ? { slug: entry.slug, definitionRevisionId: id } : null,
+      slug: entry.slug,
+      name: found?.name ?? entry.slug,
+      description: found?.description ?? "",
+      model: found?.definition
+        ? (found.definition.metadata.model ?? input.defaultModel() ?? null)
         : null,
-      ownership: entry.ownerUserId === null ? "system" : "personal",
-      unavailableReasons: (await prepare(revision)).unavailable,
+      level: entry.level,
+      shadows: entry.shadows,
+      unavailableReasons: found ? reasonsOf(found) : [entry.clash ?? "Unavailable"],
     };
   };
+
+  const listingOf = (entry: Combined<SkillEntry>): CatalogSkill | null =>
+    entry.value && !entry.value.diagnostics.some(isError)
+      ? {
+          ...skillListingFromMarkdown(
+            entry.value.package.files[skillPath(entry.value.slug)],
+            entry.value.slug,
+          ),
+          slug: entry.slug,
+          level: entry.level,
+        }
+      : null;
+
+  const { statuses, ...saver } = createPackageSaver({
+    store,
+    levels,
+    levelFiles: input.levelFiles,
+  });
+
   return {
-    async save(userId, source) {
-      return store.withCatalogTransaction(userId, async () => {
-        const existing = await store.readCatalogEntry(userId, source.slug);
-        const coordinate = `personal/${source.slug}`;
-        if (existing) {
-          const previous = await store.readCatalogRevision(existing.selectedRevisionId);
-          const retained = previous && (await store.readSource(previous.packageRevisionId));
-          if (retained?.coordinate !== coordinate || existing.removed) {
-            throw new AgentPublicationConflictError(
-              `Agent "${source.slug}" belongs to another source or was removed.`,
-            );
-          }
-        }
-        if (
-          existing &&
-          source.expectedRevisionId !== undefined &&
-          source.expectedRevisionId !== existing.selectedRevisionId
-        ) {
-          throw new AgentPublicationConflictError(
-            "Agent changed since it was read; reload before saving.",
-          );
-        }
-        const head = (await store.listInstallations(userId)).find(
-          (item) => item.coordinate === coordinate,
-        );
-        const candidate = {
-          coordinate,
-          files: {
-            [MANIFEST_PATH]: `[package]\nname = "personal-${source.slug}"\nversion = "0.0.0"\nschema = 1\n`,
-            [agentPath(source.slug)]: source.content,
-          },
-        };
-        const installed = await store.installSource(candidate);
-        if (
-          existing &&
-          source.expectedRevisionId === undefined &&
-          existing.selectedRevisionId !== installed.definitions[0].id
-        ) {
-          throw new AgentPublicationConflictError(
-            "Agent changed since it was read; reload before saving.",
-          );
-        }
-        await publishAgentSource({
-          store,
-          ownerUserId: userId,
-          source: candidate,
-          expectedRevisionId: head?.currentRevisionId,
-        });
-        const selected = await store.readCatalogEntry(userId, source.slug);
-        if (!selected) throw new Error("Published Agent missing from catalog");
-        return summarize(selected);
-      });
-    },
-    async installSystemSource(source) {
-      return installSystemAgentSource(store, source);
-    },
-    async list(userId, page) {
-      const entries = await store.listCatalog({ userId, ...page });
-      const last = entries.at(-1);
+    ...saver,
+
+    async list(userId, { projectId }) {
+      const items = winners(agentsOf(await levels.saved(userId, projectId))).map(itemOf);
+      const key = (item: AgentCatalogItem) => item.name.normalize("NFC").toLowerCase();
       return {
-        agents: await Promise.all(entries.map(summarize)),
-        nextCursor:
-          entries.length === page.limit && last
-            ? { nameSortKey: last.nameSortKey, id: last.id }
-            : null,
+        agents: items.sort((a, b) =>
+          key(a) < key(b)
+            ? -1
+            : key(a) > key(b)
+              ? 1
+              : a.slug < b.slug
+                ? -1
+                : a.slug > b.slug
+                  ? 1
+                  : 0,
+        ),
       };
     },
-    async removeFromProject(userId, projectId, selection) {
-      const resolved = await store.readSelection(
-        userId,
-        selection.catalogEntryId,
-        selection.definitionRevisionId,
-      );
-      if (
-        !resolved ||
-        (resolved.entry.ownerUserId === null && resolved.entry.logicalKey === "general")
-      )
-        return false;
-      await store.removeFromProject(projectId, resolved.entry.id);
-      return true;
-    },
+
     async resolvePrimary(userId, selection, projectId) {
-      const resolved = await store.readSelection(
-        userId,
-        selection.catalogEntryId,
-        selection.definitionRevisionId,
-        projectId,
+      const current = winners(agentsOf(await levels.saved(userId, projectId))).find(
+        (entry) => entry.slug === selection.slug,
+      )?.value;
+      const newest = current ? await rowOf(current.package, current.agent.slug) : undefined;
+      // The name is no longer saved (removed or renamed) or its newest version cannot run: the
+      // version the picker showed still can, so a chat is not refused over a later Save.
+      const builtin = builtinShown.get(selection.definitionRevisionId);
+      const shown = async () =>
+        builtin
+          ? rowOf(builtin.package, builtin.slug)
+          : store.readSavedRevision(userId, projectId, selection.definitionRevisionId);
+      const runs = (candidate: CatalogRevision | undefined) =>
+        Boolean(candidate?.definition) && reasonsOf(candidate as CatalogRevision).length === 0;
+      let row = newest;
+      if (!runs(row)) {
+        const fallback = await shown();
+        row = runs(fallback) ? fallback : (row ?? fallback);
+      }
+      if (!row) return { ok: false, reason: "not-found", details: [] };
+      const reasons = reasonsOf(row);
+      if (!row.definition || reasons.length) {
+        return { ok: false, reason: "unavailable", details: reasons };
+      }
+      const revision = availableRevision(row);
+      if (!revision) return { ok: false, reason: "not-found", details: [] };
+      try {
+        const configuration = await resolveAgentConfiguration({
+          revision,
+          store,
+          defaultModel: input.defaultModel(),
+        });
+        return { ok: true, revision, configuration };
+      } catch (error) {
+        if (!(error instanceof AgentConfigurationError)) throw error;
+        return { ok: false, reason: "unavailable", details: [error.message] };
+      }
+    },
+
+    async files(userId, { projectId }) {
+      const [all, saves] = await Promise.all([
+        levels.fromFiles(userId, projectId),
+        levels.readSaves(userId, projectId),
+      ]);
+      const packages = await statuses(all, saves);
+      // What the saved versions do: a file's hiding and hidden follow the saved catalog, not the
+      // files, and a file with no saved version is not in use at all.
+      const savedLevels = await levels.fromSaves(saves);
+      const savedAgents = new Map<string, Layered<AgentEntry>>(
+        agentsOf(savedLevels).flatMap((entry) =>
+          entry.value
+            ? [
+                [
+                  `${entry.level}:${entry.value.folder}${agentPath(entry.value.agent.slug)}`,
+                  entry,
+                ] as const,
+              ]
+            : [],
+        ),
       );
-      if (!resolved) return { ok: false, reason: "not-found", details: [] };
-      const { configuration, unavailable, available } = await prepare(resolved.revision);
-      if (!configuration || !available || unavailable.length)
-        return { ok: false, reason: "unavailable", details: unavailable };
-      return { ok: true, revision: available, configuration };
+      const savedSkills = new Map<string, Layered<SkillEntry>>(
+        skillsOf(savedLevels).flatMap((entry) =>
+          entry.value
+            ? [
+                [
+                  `${entry.level}:${entry.value.folder}${skillPath(entry.value.slug)}`,
+                  entry,
+                ] as const,
+              ]
+            : [],
+        ),
+      );
+      const changed = new Map<string, string>(
+        packages.flatMap((item) =>
+          item.changes.map((change): [string, string] => [
+            `${item.level}:${change.path}`,
+            change.change,
+          ]),
+        ),
+      );
+      const changeOf = (level: AgentLevel, path: string): "added" | "changed" | null => {
+        const change = changed.get(`${level}:${path}`);
+        return change === "added" || change === "changed" ? change : null;
+      };
+      const agents = agentsOf(all).flatMap((entry) => {
+        if (!entry.value) return [];
+        const file = agentPath(entry.value.agent.slug);
+        const path = `${entry.value.folder}${file}`;
+        const saved = savedAgents.get(`${entry.level}:${path}`);
+        return [
+          {
+            kind: "agent" as const,
+            slug: entry.slug,
+            level: entry.level,
+            path,
+            unavailableReasons: reasonsOf(entry.value.agent, file, false),
+            saved: saved !== undefined,
+            savedVersionInUse: Boolean(saved?.value?.agent.definition),
+            pickable: entry.value.agent.definition ? isPrimary(entry.value.agent.definition) : true,
+            shadows: saved?.shadows ?? [],
+            hiddenBy: saved?.hiddenBy ?? null,
+            change: changeOf(entry.level, path),
+          },
+        ];
+      });
+      const skills = skillsOf(all).flatMap((entry) => {
+        if (!entry.value) return [];
+        const file = skillPath(entry.value.slug);
+        const path = `${entry.value.folder}${file}`;
+        const saved = savedSkills.get(`${entry.level}:${path}`);
+        return [
+          {
+            kind: "skill" as const,
+            slug: entry.slug,
+            level: entry.level,
+            path,
+            unavailableReasons: entry.value.diagnostics
+              .filter(isError)
+              .map((item) => (item.file === file ? item.message : `${item.file}: ${item.message}`)),
+            saved: saved !== undefined,
+            savedVersionInUse: saved?.value ? !saved.value.diagnostics.some(isError) : false,
+            pickable: listingOf(entry)?.userInvocable ?? true,
+            shadows: saved?.shadows ?? [],
+            hiddenBy: saved?.hiddenBy ?? null,
+            change: changeOf(entry.level, path),
+          },
+        ];
+      });
+      return { files: [...agents, ...skills], packages };
+    },
+
+    builtinFile(path) {
+      if (!path.startsWith(PACKAGES_DIR)) return undefined;
+      const inside = path.slice(PACKAGES_DIR.length);
+      const slash = inside.indexOf("/");
+      const pkg = builtinPackages.find((item) => item.name === inside.slice(0, slash));
+      const files = pkg?.package.files;
+      const file = inside.slice(slash + 1);
+      return files && Object.hasOwn(files, file) ? files[file] : undefined;
+    },
+
+    async userSkills(userId, { projectId }) {
+      return winners(skillsOf(await levels.saved(userId, projectId)))
+        .map(listingOf)
+        .filter((skill): skill is CatalogSkill => skill?.userInvocable === true);
+    },
+
+    async resolveSkill(userId, { projectId, slug }) {
+      const winner = winners(skillsOf(await levels.saved(userId, projectId))).find(
+        (entry) => entry.slug === slug,
+      );
+      const skill = winner && listingOf(winner);
+      if (!winner?.value || !skill?.userInvocable) return undefined;
+      const { packageRevisionId } = await install(winner.value.package);
+      return {
+        skill,
+        reference: skillReference(packageRevisionId, winner.value.package.files, winner.value.slug),
+      };
     },
   };
 }
 
-/** Atomically publish trusted system definitions into the shared catalog. */
-export async function installSystemAgentSource(
-  store: AgentRevisionStore,
-  source: AgentSourceSnapshot,
-): Promise<void> {
-  return store.withCatalogTransaction(null, async () => {
-    const existing = (await store.listInstallations(null)).find(
-      (item) => item.coordinate === source.coordinate,
-    );
-    await publishAgentSource({
-      store,
-      ownerUserId: null,
-      source,
-      expectedRevisionId: existing?.currentRevisionId,
-    });
-  });
+/** Whether a writer can start a conversation with the Agent, not only another Agent call it. */
+function isPrimary(definition: CompiledAgentDefinition): boolean {
+  return definition.metadata.mode !== "subagent" && definition.metadata["user-invocable"] !== false;
+}
+
+function availableRevision(row: CatalogRevision): AgentRevision | null {
+  return row.definition
+    ? {
+        id: row.id,
+        packageRevisionId: row.packageRevisionId,
+        slug: row.slug,
+        grammarVersion: row.grammarVersion,
+        definition: row.definition,
+      }
+    : null;
 }

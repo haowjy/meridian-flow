@@ -57,7 +57,7 @@ The sources query, the tree, copy, uploads, links and arrivals. `skills://` exis
 
 The question every route, tool, room and write asks before touching a document.
 
-Answers who may read or write a document, and why not. A route asks `requireFileGrant` before a read and wraps a write in `withEditGrants`.
+Answers who may read or write a document, and why not. A route asks `requireFileGrant` before a read and wraps a write in `withEditGrants`. A file of an Agents level is an ordinary place: its setting decides whether an AI's write lands live or as a draft.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/file-policy`

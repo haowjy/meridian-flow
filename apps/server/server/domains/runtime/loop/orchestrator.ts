@@ -45,6 +45,7 @@
  */
 
 import { createReplyMutations } from "@meridian/agent-edit/integration";
+import type { ToolPolicy } from "@meridian/contracts/agents";
 import {
   isMeridianError,
   type MeridianError,
@@ -71,7 +72,7 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
+import type { AgentRevisionStore, BoundAgentCatalog } from "../../packages/index.js";
 import { isCacheReset } from "../../threads/domain/cache-reset.js";
 import type {
   BlockRepository,
@@ -144,7 +145,7 @@ import {
   parsePartialToolActivityInput,
   showsPartialToolActivityBeforeTarget,
 } from "./partial-tool-activity.js";
-import { missingToolRefusal, type ToolPolicy } from "./permissions/index.js";
+import { missingToolRefusal } from "./permissions/index.js";
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Lease, RunClaim, ThreadPhase } from "./ports.js";
 import {
@@ -266,9 +267,9 @@ export interface OrchestratorDeps {
   reports: RunSessionReports;
   agentRevisions: Pick<
     AgentRevisionStore,
-    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision" | "recordInvokedSkill"
+    "readThreadBinding" | "readSource" | "readRevision" | "recordInvokedSkill"
   >;
-  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
+  agentCatalog: Pick<BoundAgentCatalog, "resolveSkill">;
   toolRegistry: ToolRegistry;
   workContext: WorkContextReader;
   billingUsage: BillingUsagePolicy;
@@ -1264,7 +1265,7 @@ function createSkillBodyPreparation(slugs: readonly string[]) {
             thread: input.thread,
             slug,
             agentRevisions: input.deps.agentRevisions,
-            accountSkillInstalls: input.deps.accountSkillInstalls,
+            agentCatalog: input.deps.agentCatalog,
           }),
         ),
       );
@@ -1721,7 +1722,7 @@ async function executeLoop({
           thread,
           slug,
           agentRevisions: deps.agentRevisions,
-          accountSkillInstalls: deps.accountSkillInstalls,
+          agentCatalog: deps.agentCatalog,
         }),
       ),
     );

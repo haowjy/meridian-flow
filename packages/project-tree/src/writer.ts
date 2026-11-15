@@ -138,7 +138,7 @@ export class TreeWriter {
         }
         const name = freeName(
           input.kind,
-          shownName(input.kind, input.name),
+          shownName(input.kind, input.name, input.kind === "document" ? input.filetype : undefined),
           new Set(kids.map((kid) => kid.name)),
         );
         const at = Math.max(0, Math.min(input.index ?? kids.length, kids.length));
@@ -248,7 +248,13 @@ export class TreeWriter {
       type: "rename",
       node,
       name: current
-        ? nameAmong(projection, current.parent, current.kind, shownName(current.kind, name), node)
+        ? nameAmong(
+            projection,
+            current.parent,
+            current.kind,
+            shownName(current.kind, name, filetype ?? current.filetype),
+            node,
+          )
         : name,
       fromName: current?.name ?? "",
       ...(filetype ? { filetype } : {}),

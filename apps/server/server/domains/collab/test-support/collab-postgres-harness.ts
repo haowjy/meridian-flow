@@ -75,6 +75,7 @@ export const {
   runOutsideDrizzleTransaction,
   runOutsideWrite,
 } = await import("../../../shared/drizzle-transaction.js");
+const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
 );
@@ -343,6 +344,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       },
     }),
     initialDocumentSeeds: persistence.seeds,
+    lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(db), documentId),
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
@@ -358,6 +360,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     draftJournal: durableDraftJournalReadStore,
     model: runtime.model,
     codec: runtime.codec,
+    codecFor: runtime.codecFor,
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     observability,
@@ -425,6 +428,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     coordinator: liveCoordinator,
     draftCoordinator,
     resolveDocumentUri,
+    resolveLastDocumentUri: resolveDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
     flushLivePull: draftPulls.flushLivePull,
     notices: createReversalNoticePort({
@@ -536,6 +540,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     reversalOwners: turnInverse.reversalOwners,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
+    mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...branches,
   };

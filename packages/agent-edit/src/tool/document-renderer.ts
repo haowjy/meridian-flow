@@ -41,7 +41,7 @@ export interface DocumentRenderer {
     codec: AgentEditCodec,
     format: "full" | "outline",
   ): RenderedRead;
-  parseForCommand(content: string): ParseForCommandResult;
+  parseForCommand(codec: AgentEditCodecFactory, content: string): ParseForCommandResult;
 }
 
 export interface RenderedRead {
@@ -57,11 +57,8 @@ export type ParseForCommandResult =
   | { ok: true; parsed: ParsedContent }
   | { ok: false; message: string };
 
-export function createDocumentRenderer(deps: {
-  model: AgentEditModel;
-  codec: AgentEditCodecFactory;
-}): DocumentRenderer {
-  const { model, codec } = deps;
+export function createDocumentRenderer(deps: { model: AgentEditModel }): DocumentRenderer {
+  const { model } = deps;
 
   return {
     selectReadBlocks,
@@ -145,7 +142,7 @@ export function createDocumentRenderer(deps: {
     };
   }
 
-  function parseForCommand(content: string): ParseForCommandResult {
+  function parseForCommand(codec: AgentEditCodecFactory, content: string): ParseForCommandResult {
     try {
       return { ok: true, parsed: codec.parse(content) };
     } catch (cause) {

@@ -14,7 +14,7 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { humanizeSkillSlug, skillFile } from "@meridian/thread-client";
-import { schemeLabel } from "@/features/project/context/context-schemes";
+import { areaOf, schemeLabel } from "@/features/project/context/context-schemes";
 
 /** A Scratch or Uploads owner an address names by handle: a Work, a chat's lineage, or a chat. */
 export type ContextOwner = Extract<ParsedContextAuthority, { kind: "work" | "lineage" | "chat" }>;
@@ -59,16 +59,21 @@ function ownerKey(owner: ContextOwner | null | undefined): string {
   }
 }
 
-/** The area a location is in: "Manuscript", or "Scratch for Ascension" when its owner is named. */
-function areaName(
+/**
+ * A path in its area, whole: "Manuscript/part2/note", "Scratch for Ascension/note" when its owner
+ * is named, "~/.agents/agents/critic.md".
+ */
+function inArea(
   scheme: ProjectContextTreeScheme,
   owner: ContextOwner | null | undefined,
   names: OwnerNames,
+  path: string,
 ) {
   const name = owner ? names(owner) : null;
-  if (name && scheme === "scratch") return t`Scratch for ${name}`;
-  if (name && scheme === "uploads") return t`Uploads for ${name}`;
-  return schemeLabel(scheme);
+  if (name && scheme === "scratch") return `${t`Scratch for ${name}`}/${path}`;
+  if (name && scheme === "uploads") return `${t`Uploads for ${name}`}/${path}`;
+  const { area, rest } = areaOf(scheme, path);
+  return `${area}/${rest}`;
 }
 
 const folderOf = (path: string) => {
@@ -133,7 +138,7 @@ export function describeMove(
   if (otherArea && destination.scheme)
     return {
       kind: "move",
-      place: `${areaName(destination.scheme, destination.owner, names)}/${path}`,
+      place: inArea(destination.scheme, destination.owner, names, path),
     };
   if (folderOf(source.path) !== folderOf(destination.path)) return { kind: "move", place: path };
   return source.path === destination.path
@@ -148,11 +153,14 @@ export function describeMove(
 export function documentLocationName(uriOrPath: string, names: OwnerNames = noOwnerNames): string {
   const location = parseContextLocation(uriOrPath);
   const path = `${folderOf(location.path)}${documentDisplayName(uriOrPath)}`;
-  return location.scheme ? `${areaName(location.scheme, location.owner, names)}/${path}` : path;
+  return location.scheme ? inArea(location.scheme, location.owner, names, path) : path;
 }
 
 export function folderDisplayName(uriOrPath: string): string {
   const { scheme, path } = parseContextLocation(uriOrPath);
+  // The writer's Agents level is named as the Agents tab names it, never `.agents` of Your files.
+  const place = scheme ? areaOf(scheme, path) : null;
+  if (place && place.area !== (scheme && schemeLabel(scheme)) && !place.rest) return place.area;
   const segments = path.split("/").filter(Boolean);
   return segments.at(-1) ?? (scheme ? schemeLabel(scheme) : t`Untitled document`);
 }

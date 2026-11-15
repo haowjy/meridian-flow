@@ -1,0 +1,301 @@
+/**
+ * What the writer's last Save or Undo of each Agent package did, said on every surface that shows
+ * the package. The package's state is never kept here: it is the files query's. A word holds only
+ * while the state it speaks of does (see `heldWord`).
+ */
+import {
+  type AgentFinding,
+  type AgentPackageStatus,
+  type AgentsLevel,
+  agentsFileOf,
+  type SaveOutcome,
+} from "@meridian/contracts/agents";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
+import { saveAgentPackages, undoAgentSave } from "@/client/api/agents-api";
+import { invalidateAgentReads, latestAgentFiles } from "@/client/query/useAgentFiles";
+import { useAccountId } from "@/features/project/context/account-feature-context";
+
+export type PackageRef = { level: AgentsLevel; folder: string };
+
+export type PackageWord =
+  /** `settled` false: shown at once, before the server answers. */
+  | { kind: "saved"; outcome: SaveOutcome; settled: boolean }
+  | { kind: "failed"; outcome: SaveOutcome; settled: boolean }
+  /**
+   * New chats are back on the version before and its files are back, an edit made since kept.
+   * `settled` false until the files have been read again. Shown only while the package reads
+   * Unsaved: when it reads Saved, the saved state says it all.
+   */
+  | { kind: "undone"; settled: boolean }
+  /** The request never got an answer: nothing changed. */
+  | { kind: "unreached" };
+
+type Entry = {
+  word: PackageWord;
+  /** The package as the writer saw it when they pressed: what the word speaks of. */
+  basis: string | null;
+  ref: PackageRef;
+  /** The package had no files when saved: its line stays while the word does. */
+  removed: boolean;
+};
+
+/** The package a level-relative path belongs to: an import's folder, or the level's own files. */
+export function packageFolderOf(path: string): string {
+  const [dir, name, ...rest] = path.split("/");
+  return dir === "packages" && name && rest.length > 0 ? `packages/${name}/` : "";
+}
+
+/** The level's own files read `.agents/` and `~/.agents/`; an import its folder's name. */
+export function packageLabel({ level, folder }: PackageRef): string {
+  const root = level === "project" ? ".agents/" : "~/.agents/";
+  return folder ? `${root}${folder}` : root;
+}
+
+export const importName = (folder: string) => folder.replace(/^packages\//, "").replace(/\/$/, "");
+
+export const errorsOf = (findings: readonly AgentFinding[]) =>
+  findings.filter((finding) => finding.severity === "error");
+
+/**
+ * The package-relative Agent and skill files with an Error, whose edit a Save does not use. Any
+ * other Error (a broken `mars.toml`) fails the whole Save.
+ */
+export function itemsWithErrors(findings: readonly AgentFinding[]): string[] {
+  return [
+    ...new Set(
+      errorsOf(findings)
+        .map((finding) => finding.file)
+        .filter((file) => agentsFileOf(file) !== null),
+    ),
+  ];
+}
+
+/** The Errors that leave nothing of the package readable (a broken `mars.toml`): its Save fails. */
+export const packageErrorsOf = (findings: readonly AgentFinding[]) =>
+  errorsOf(findings).filter((finding) => agentsFileOf(finding.file) === null);
+
+export const failsSave = (status: AgentPackageStatus) =>
+  status.state === "cant-save" || packageErrorsOf(status.findings).length > 0;
+
+export const statusOf = (
+  packages: readonly AgentPackageStatus[] | undefined,
+  { level, folder }: PackageRef,
+) => packages?.find((item) => item.level === level && item.folder === folder);
+
+const signature = (status: AgentPackageStatus | undefined) =>
+  status
+    ? JSON.stringify([status.state, status.saveId, status.changes, status.findings])
+    : "missing";
+
+const entries = new Map<string, Entry>();
+const listeners = new Set<() => void>();
+let revision = 0;
+
+function publish() {
+  revision++;
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+// The writer's own level is the same in every project; a project's only in its own.
+const keyOf = (projectId: string, { level, folder }: PackageRef) =>
+  `${level === "user" ? "" : projectId}|${level}|${folder}`;
+
+function set(projectId: string, entry: Entry) {
+  entries.set(keyOf(projectId, entry.ref), entry);
+}
+
+/**
+ * The word a package shows now. A Save's word stays until the package changes again (its
+ * `saveId` moves with the Save, so typing after it reads as a change); a failure until the files
+ * or their findings change; an Undo's until the package is saved again.
+ */
+function heldWord(entry: Entry, status: AgentPackageStatus | undefined): PackageWord | null {
+  const { word, basis } = entry;
+  if (!status) return word;
+  const unchanged = signature(status) === basis;
+  switch (word.kind) {
+    case "saved":
+      return !word.settled || status.state === "saved" || unchanged ? word : null;
+    case "failed":
+      return !word.settled || unchanged ? word : null;
+    case "undone":
+      return !word.settled || (unchanged && status.state !== "saved") ? word : null;
+    case "unreached":
+      return unchanged ? word : null;
+  }
+}
+
+/**
+ * What a Save of these files will answer, said before it does: a package-level Error fails it;
+ * an Agent or skill file with an Error is not used, its errors listed first. Whether that item
+ * keeps an earlier saved version is the server's to say, so the prediction holds none.
+ */
+function predicted(status: AgentPackageStatus): PackageWord {
+  const errors = errorsOf(status.findings);
+  const fails = failsSave(status);
+  const outcome: SaveOutcome = {
+    level: status.level,
+    folder: status.folder,
+    outcome: fails ? "failed" : "saved",
+    changes: status.changes,
+    findings: fails
+      ? errors
+      : [...errors, ...status.findings.filter((finding) => finding.severity === "warning")],
+    kept: [],
+    leftOut: fails ? [] : itemsWithErrors(status.findings),
+    renamed: [],
+  };
+  return fails
+    ? { kind: "failed", outcome, settled: false }
+    : { kind: "saved", outcome, settled: false };
+}
+
+async function save(
+  queryClient: QueryClient,
+  accountId: string,
+  projectId: string,
+  statuses: readonly AgentPackageStatus[],
+) {
+  if (statuses.length === 0) return;
+  const bases = new Map<string, Entry>();
+  for (const status of statuses) {
+    const ref = { level: status.level, folder: status.folder };
+    const entry: Entry = {
+      word: predicted(status),
+      basis: signature(status),
+      ref,
+      removed: status.state === "removed",
+    };
+    bases.set(keyOf(projectId, ref), entry);
+    set(projectId, entry);
+  }
+  publish();
+  try {
+    const outcomes = await saveAgentPackages(
+      projectId,
+      statuses.map(({ level, folder }) => ({ level, folder })),
+    );
+    for (const outcome of outcomes) {
+      const ref = { level: outcome.level, folder: outcome.folder };
+      const key = keyOf(projectId, ref);
+      const before = bases.get(key);
+      // A Save with nothing new still says which edits it kept out of use.
+      if (outcome.outcome === "unchanged" && outcome.kept.length === 0) {
+        entries.delete(key);
+        continue;
+      }
+      set(projectId, {
+        ref,
+        basis: before?.basis ?? null,
+        removed: before?.removed ?? false,
+        word:
+          outcome.outcome === "failed"
+            ? { kind: "failed", outcome, settled: true }
+            : { kind: "saved", outcome, settled: true },
+      });
+      bases.delete(key);
+    }
+    // A package the server had nothing to say of had nothing to save.
+    for (const key of bases.keys()) entries.delete(key);
+  } catch {
+    for (const entry of bases.values()) set(projectId, { ...entry, word: { kind: "unreached" } });
+  }
+  publish();
+  void invalidateAgentReads(queryClient, projectId, accountId);
+}
+
+/** `nothing`: a later Save of the package exists, so the Undo changed nothing. */
+export type UndoAnswer = "undone" | "nothing" | "failed";
+
+/** Each Save's Undo, by `saveId`: the one state the notice and the AI's card both show. */
+const undoStates = new Map<string, UndoAnswer | "pending">();
+
+async function undo(
+  queryClient: QueryClient,
+  accountId: string,
+  projectId: string,
+  ref: PackageRef,
+  saveId: string,
+): Promise<UndoAnswer> {
+  const key = keyOf(projectId, ref);
+  const held = entries.get(key);
+  const holds = held?.word.kind === "saved" && held.word.outcome.saveId === saveId ? held : null;
+  const mark = (state: UndoAnswer | "pending") => {
+    undoStates.set(saveId, state);
+    publish();
+  };
+  mark("pending");
+  try {
+    const undone = await undoAgentSave(projectId, ref.level, saveId);
+    const removed = holds?.removed ?? false;
+    if (undone) {
+      set(projectId, { ref, basis: null, removed, word: { kind: "undone", settled: false } });
+    } else if (holds) {
+      entries.delete(key);
+    }
+    mark(undone ? "undone" : "nothing");
+    await invalidateAgentReads(queryClient, projectId, accountId);
+    // The word speaks of the package as Undo left it: its files may read Saved or Unsaved now.
+    if (undone && entries.get(key)?.word.kind === "undone") {
+      const after = statusOf(latestAgentFiles(queryClient, projectId)?.packages, ref);
+      set(projectId, {
+        ref,
+        basis: signature(after),
+        removed,
+        word: { kind: "undone", settled: true },
+      });
+      publish();
+    }
+    return undone ? "undone" : "nothing";
+  } catch {
+    mark("failed");
+    return "failed";
+  }
+}
+
+/** Saves and Undoes, with what they said; every caller of one package shares the same word. */
+export function usePackageSaves(projectId: string) {
+  const queryClient = useQueryClient();
+  const accountId = useAccountId();
+  const seen = useSyncExternalStore(
+    subscribe,
+    () => revision,
+    () => revision,
+  );
+  return {
+    /** Changes with every Save and Undo: a memo of what these answer keys on it. */
+    revision: seen,
+    wordOf: (ref: PackageRef, status: AgentPackageStatus | undefined) => {
+      const entry = entries.get(keyOf(projectId, ref));
+      return entry ? heldWord(entry, status) : null;
+    },
+    /** Whether `PackageSave` has anything to say of the package. */
+    shows: (ref: PackageRef, status: AgentPackageStatus | undefined) => {
+      const entry = entries.get(keyOf(projectId, ref));
+      return Boolean((entry && heldWord(entry, status)) || (status && status.state !== "saved"));
+    },
+    /** Imports saved and removed while their word still shows, for the level's removed lines. */
+    removedWithWord: (level: AgentsLevel, packages: readonly AgentPackageStatus[] | undefined) =>
+      [...entries.entries()].flatMap(([key, entry]) =>
+        key.startsWith(`${level === "user" ? "" : projectId}|${level}|`) &&
+        entry.removed &&
+        !statusOf(packages, entry.ref) &&
+        heldWord(entry, undefined)
+          ? [entry.ref]
+          : [],
+      ),
+    save: (statuses: readonly AgentPackageStatus[]) =>
+      save(queryClient, accountId, projectId, statuses),
+    undo: (ref: PackageRef, saveId: string) => undo(queryClient, accountId, projectId, ref, saveId),
+    /** What the Save's Undo has done: nothing yet (`undefined`), pending, or its answer. */
+    undoOf: (saveId: string) => undoStates.get(saveId),
+  };
+}

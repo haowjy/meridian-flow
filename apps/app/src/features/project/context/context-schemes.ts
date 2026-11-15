@@ -4,6 +4,7 @@
  * and identity icons.
  */
 import { t } from "@lingui/core/macro";
+import { agentsLocationOf } from "@meridian/contracts/agents";
 import {
   CONTEXT_URI_SCHEMES,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
@@ -30,9 +31,25 @@ export function schemeAllowsCreation(scheme: ProjectContextTreeScheme): boolean 
   return scheme !== "uploads" && scheme !== "scratch";
 }
 
+/**
+ * The area a path is in, and the path inside it. The writer's Agents level is a folder of Your
+ * files, but every screen names it as the Agents tab does: `~/.agents`.
+ */
+export function areaOf(
+  scheme: ProjectContextTreeScheme,
+  path: string,
+): { area: string; rest: string } {
+  const trimmed = path.replace(/^\/+/, "");
+  const at = scheme === "user" ? agentsLocationOf(scheme, trimmed.replace(/\/$/, "")) : null;
+  if (at)
+    return { area: "~/.agents", rest: at.path ? trimmed.slice(trimmed.indexOf("/") + 1) : "" };
+  return { area: schemeLabel(scheme), rest: trimmed };
+}
+
 /** Where something lives, for a row's second line: the source, then the folders down to it. */
 export function schemeLocation(scheme: ProjectContextTreeScheme, folders: readonly string[]) {
-  return [schemeLabel(scheme), ...folders].join(" / ");
+  const { area, rest } = areaOf(scheme, folders.join("/"));
+  return [area, ...rest.split("/").filter(Boolean)].join(" / ");
 }
 
 /** Where the document at `path` lives (or lived, for one in Trash): its source and folders. */
@@ -54,6 +71,9 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
       return t`Scratch`;
     case "uploads":
       return t`Uploads`;
+    case "agents":
+      // The writer, the model and stored text spell the project's Agents folder this way.
+      return ".agents";
   }
 }
 
@@ -63,8 +83,8 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
  */
 export function documentLocation(scheme: ProjectContextTreeScheme, folderPath: string): string {
   if (scheme === "manuscript") return folderPath;
-  const area = schemeLabel(scheme);
-  return folderPath ? `${area}/${folderPath}` : area;
+  const { area, rest } = areaOf(scheme, folderPath);
+  return rest ? `${area}/${rest}` : area;
 }
 
 /**

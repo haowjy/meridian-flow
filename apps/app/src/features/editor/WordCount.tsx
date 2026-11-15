@@ -1,4 +1,3 @@
-/** The document's word count, and the selection's while one is held, floating over the editor. */
 import { plural } from "@lingui/core/macro";
 import { countWords } from "@meridian/agent-edit/diff";
 import type { Editor } from "@tiptap/core";
@@ -8,10 +7,8 @@ import { useEffect, useState } from "react";
 const COUNT_DELAY_MS = 300;
 
 /** Between blocks, or the last word of one and the first of the next would count as one. */
-const countRange = (editor: Editor, from: number, to: number) =>
-  countWords(editor.state.doc.textBetween(from, to, "\n"));
-
-const countAll = (editor: Editor) => countRange(editor, 0, editor.state.doc.content.size);
+const countAll = (editor: Editor) =>
+  countWords(editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n"));
 
 export function WordCount({ editor }: { editor: Editor }) {
   const [words, setWords] = useState(() => countAll(editor));
@@ -19,13 +16,14 @@ export function WordCount({ editor }: { editor: Editor }) {
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const onSelection = () => {
+      const { content } = editor.state.selection.content();
+      setSelected(countWords(content.textBetween(0, content.size, "\n")));
+    };
     const onUpdate = () => {
+      onSelection();
       clearTimeout(timer);
       timer = setTimeout(() => setWords(countAll(editor)), COUNT_DELAY_MS);
-    };
-    const onSelection = () => {
-      const { from, to, empty } = editor.state.selection;
-      setSelected(empty ? 0 : countRange(editor, from, to));
     };
     setWords(countAll(editor));
     onSelection();

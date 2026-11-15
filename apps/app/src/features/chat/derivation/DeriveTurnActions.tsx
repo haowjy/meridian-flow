@@ -26,6 +26,7 @@ import {
   type BoundAgent,
   boundAgentRow,
   type CreationAgent,
+  pickableAgents,
 } from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
@@ -109,10 +110,7 @@ function HandoffPicker({
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const agents =
-    catalog.status === "ready"
-      ? (catalog.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0)
-      : [];
+  const agents = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
   const selected = boundAgentRow(agents, derivation.sourceAgent);
   const label = t`Hand off from here`;
   const ready = catalog.status;

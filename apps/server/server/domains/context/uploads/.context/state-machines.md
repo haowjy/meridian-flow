@@ -3,19 +3,15 @@
 One uploaded file, a chat attachment or a file that becomes a document, from a reserved
 address to a file in Context (`upload_intakes.state`; `upload-intake.ts`,
 `drizzle-upload-intake.ts`). The database checks
-only that the value is one of the four; the order is enforced by the guards below.
+only that the value is one of the three; the order is enforced by the guards below.
 
 ```mermaid
 stateDiagram-v2
   [*] --> reserved: start reserves the address and idempotency key
   reserved --> object_stored: finish validates the uploaded object, under the row lock
   object_stored --> finalized: placed in Context, then the row is updated
-  reserved --> deleted: the writer removes the attachment
-  object_stored --> deleted: the writer removes the attachment
-  finalized --> deleted: the writer removes the attachment, and the Context file goes with it
   reserved --> [*]: abandoned for 24 hours, row dropped by the sweep
   object_stored --> [*]: abandoned for 24 hours, row dropped by the sweep
-  deleted --> [*]
 ```
 
 - **`object_stored` is a resting place, not an error.** When placing in Context fails, the row
@@ -23,11 +19,9 @@ stateDiagram-v2
   on a row already `object_stored` or `finalized` return what is there.
 - **Context first, state second.** `finalize` updates only a row that is `object_stored` or
   already `finalized`, after the Context write, with the intake row locked.
-- **A finalized upload keeps its identity through delete.** The row is marked `deleted`, never
-  reused, so a reference that settled to it answers "gone" instead of capturing a later upload
-  at the same address.
-- **Only a chat attachment is removed this way** (`deleteDraft`, the undo of attaching). A
-  file uploaded into the project is deleted as the document it became.
+- **A finalized upload is deleted as the document it became,** through the tree (Trash,
+  Restore, purge). The row stays `finalized`; the node's identity is what keeps a settled
+  reference from capturing a later upload at the same address.
 - The sweep for abandoned uploads deletes the row before it deletes the stored bytes, and only
   the sweep that deleted the row deletes them: a `finish` that touched the row in between
   keeps its bytes.

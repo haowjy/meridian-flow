@@ -14,6 +14,7 @@ import {
   resolveAnchorIn,
   resolveNodeHold,
 } from "../anchors";
+import { snapOutOfUnits } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
 
 import { objectSurfaceKind } from "../objects";
@@ -235,7 +236,8 @@ function insertPendingImageNode(
   const paragraphType = state.schema.nodes.paragraph;
   if (!imageType || !paragraphType) return null;
 
-  const target = Math.max(0, Math.min(at.pos, state.doc.content.size));
+  const clamped = Math.max(0, Math.min(at.pos, state.doc.content.size));
+  const target = at.kind === "inline" ? snapOutOfUnits(state.doc, clamped) : clamped;
   const image = imageType.create({
     src: PENDING_IMAGE_SRC,
     alt,

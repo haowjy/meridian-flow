@@ -53,6 +53,12 @@ export type TreeEnv = {
   activeDocumentId: string | null;
   /** On Live, what the Work's draft changes: each gets a jade dot. */
   changed?: ReadonlySet<string> | null;
+  /** A note on a file's row, after its name. */
+  meta?: (file: TreeFile) => ReactNode;
+  /** A file left out of use that still opens: its name is struck through. */
+  crossedOut?: (file: TreeFile) => boolean;
+  /** What a folder's row says at its end, beside its control: a state with its action. */
+  folderEnd?: (dir: TreeDirectory) => ReactNode;
   creation?: {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
@@ -263,7 +269,7 @@ function DirRow({
           frameProps={drop.dropProps}
           menu={interaction.menu}
           revealActions
-          notice={env.notices.word(dir.entryId)}
+          notice={env.notices.word(dir.entryId) ?? env.folderEnd?.(dir)}
           trailing={env.changed?.has(dir.entryId) ? <DraftChangeMark /> : null}
         />
       </EntryDestinationPicker>
@@ -347,6 +353,8 @@ function FileRow({
         depth={depth}
         icon={fileKindIcon(file)}
         title={file.name}
+        meta={env.meta?.(file)}
+        crossedOut={env.crossedOut?.(file)}
         onOpen={() => env.onSelectFile(env.scheme, file)}
         current={active && "page"}
         selected={row.selected}

@@ -1,14 +1,12 @@
 /**
- * Publishes the built-in launch-agent package to the immutable system catalog at startup.
- * Local development and bundled Nitro assets feed the same retained-source publisher.
+ * The built-in packages, read once at boot: the launch agents from disk (or the bundled Nitro
+ * assets) and the General agent. The catalog compiles them like any level's files.
  */
 
 import { access, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
-import { installSystemAgentSource } from "./bound-agent-catalog.js";
 import type { AgentSourceSnapshot } from "./compile-package.js";
 import { MANIFEST_PATH, readManifest, rewriteBlock } from "./mars.js";
 import type { SkillFiles } from "./types.js";
@@ -22,8 +20,11 @@ const SOURCE_LAUNCH_AGENT_PACKAGE_RELATIVE_PATH =
   "apps/server/server/domains/packages/builtin/launch-agents";
 let materializedLaunchAgentPackageDir: Promise<string> | null = null;
 
-export async function seedLaunchAgentPackage(store: AgentRevisionStore): Promise<void> {
-  await installSystemAgentSource(store, await readPackageDir(await resolveLaunchAgentPackageDir()));
+export async function readBuiltinPackages(defaultModel: string): Promise<AgentSourceSnapshot[]> {
+  return [
+    generalAgentSource(defaultModel),
+    await readPackageDir(await resolveLaunchAgentPackageDir()),
+  ];
 }
 
 async function readPackageDir(dir: string): Promise<AgentSourceSnapshot> {
@@ -98,18 +99,18 @@ async function materializeLaunchAgentPackageFromNitroAssets(): Promise<string> {
 }
 
 /** General adds no persona to the shared host prompt and pins the configured default model. */
-export async function seedGeneralAgent(store: AgentRevisionStore, model: string): Promise<void> {
+export function generalAgentSource(model: string): AgentSourceSnapshot {
   const frontmatter = rewriteBlock([
     ["name", "General"],
     ["description", "General-purpose assistant."],
     ["mode", "primary"],
     ["model", model],
   ]);
-  await installSystemAgentSource(store, {
+  return {
     coordinate: "meridian/general",
     files: {
       "mars.toml": '[package]\nname = "meridian-general"\nversion = "0.1.0"\nschema = 1\n',
       "agents/general.md": `---\n${frontmatter}---\n`,
     },
-  });
+  };
 }

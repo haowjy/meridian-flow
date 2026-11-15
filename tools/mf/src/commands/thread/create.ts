@@ -1,6 +1,6 @@
 /** `thread create`: create a thread with a resolved agent selection; `createThread` is reused by seed. */
 import { randomUUID } from "node:crypto";
-import { agentCatalogPageSchema } from "@meridian/contracts/agents";
+import { agentCatalogSchema } from "@meridian/contracts/agents";
 import { API_THREADS_PATH, type CreateThreadRequest } from "@meridian/contracts/protocol";
 import { type Thread, threadSchema } from "@meridian/contracts/threads";
 import { CliError } from "../../core/cli-error";
@@ -12,22 +12,22 @@ import { resolveProjectId, resolveWorkId } from "../project/resolve";
 const DEFAULT_AGENT_SLUG = "general";
 
 async function resolveAgentSelection(session: Session, projectId: string, slug: string) {
-  const page = await session.request(
+  const catalog = await session.request(
     "GET",
-    `/api/agents?projectId=${encodeURIComponent(projectId)}&limit=100`,
+    `/api/agents?projectId=${encodeURIComponent(projectId)}`,
     undefined,
-    { decode: jsonResponse(agentCatalogPageSchema) },
+    { decode: jsonResponse(agentCatalogSchema) },
   );
-  const agent = page.agents.find((entry) => entry.slug === slug);
+  const agent = catalog.agents.find((entry) => entry.slug === slug);
   if (!agent) {
     throw new CliError("not_found", `No agent with slug "${slug}"`, {
-      hint: `Available: ${page.agents.map((entry) => entry.slug).join(", ")}`,
+      hint: `Available: ${catalog.agents.map((entry) => entry.slug).join(", ")}`,
     });
   }
-  if (agent.unavailableReasons.length > 0) {
+  if (!agent.selection || agent.unavailableReasons.length > 0) {
     throw new CliError(
       "usage",
-      `Agent "${slug}" is unavailable: ${agent.unavailableReasons.join(", ")}`,
+      `Agent "${slug}" is unavailable: ${agent.unavailableReasons.join(", ") || "nothing to pick"}`,
     );
   }
   return agent.selection;
