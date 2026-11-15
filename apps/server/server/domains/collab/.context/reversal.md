@@ -84,11 +84,21 @@ Undo after a pull equals Undo of the same typing on the draft when the writer in
 the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
 Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
 item can still be removed or restored, `undone` when only Redo can, else `changed`.
-A card's Redo of a create restores the document first and then writes its text: nothing writes a
-document in Trash, so the restore leads and the text step is planned and admitted as the restore's
-(`restoredByRedo`, `admitInverse`). The document's text is a target for that Redo although the
-document is in Trash. A drafted create's Redo does not ask whether its branch still places the node
-(an Undo took it out); a Discard shows as a record that no longer reverses. A turn's edit targets include its create transition even when the document is empty. A create
+A card's reversal decides which tree steps can still act before it plans or admits any text
+(`plan` in `adapters/drizzle-turn-tree-inverse.ts`): a restore in live acts only through deletes that
+still hold its nodes in Trash (`deleteStands`; the writer's restore or later delete, or a purge,
+leaves one nothing to take back), and a drafted Undo only while its Work's branch places the node.
+A step that can't act is skipped with `superseded` and never run, so one purged document never
+refuses the rest of the reply. The text targets and the grants come from the steps that act. A
+card's Redo of a create restores the document first and then writes its text: nothing writes a
+document in Trash, so the restore leads, and the document's text (live or drafted) is a target and
+is admitted as that restore (`treeEffects`, `admitInverse`). A drafted create's Redo does not ask
+whether its branch still places the node (an Undo took it out); a Discard shows as a record that no
+longer reverses. An Undo that deletes a create in live takes the text an Apply wrote there with the
+document: Apply writes new items in live, so that text has no inverse of its own, and a revert in
+the Work's draft would leave the Work a change to a deleted document (`leavesLive`). Its Redo's
+restore brings the text back. The Work's draft stays as it is, with any other turn's change in it.
+A reversal's result names a document in Trash by where it last stood. A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
 the Work its draft row's branch belongs to, and the card's lineage and Undo
@@ -141,12 +151,11 @@ A tree change (create, move, rename, delete, restore, folders included) is its o
 with its records in the project's tree list, and a failed reply leaves what its tree calls did.
 A chat card's Undo or Redo of a turn takes the reply's tree receipts back too, in the same
 `reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
-steps, newest receipt first; a Redo takes the receipts the card's Undo reversed, oldest first: a
+steps on an Undo and before them on a Redo, newest receipt first; a Redo takes the receipts the card's Undo reversed, oldest first: a
 receipt the model's own `undo` reversed in the reply is part of what the reply did, and gives the
 card no Redo). The receipts one list holds go back in one update of that list, so a browser showing
 it redraws once for the whole Undo, not once a receipt. A create's receipt holds the folders the
-create made on the way (outermost first), so its Undo takes them back with it, and an applied
-create taken back in live also closes the Work's text draft on that document in the same command. It
+create made on the way (outermost first), so its Undo takes them back with it. It
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`

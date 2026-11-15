@@ -49,13 +49,13 @@ try {
     } as never,
     draftCoordinator: { async deliverCommitted() {} },
     resolveDocumentUri: async () => "project://probe.md",
+    resolveLastDocumentUri: async () => null,
     async refreshDocument() {},
     async flushLivePull() {},
     notices: { async record() {} },
     workProjection: h.projection,
     removals: createTestRemovalDeps(h.db).removals,
     treeLists: createTestRemovalDeps(h.db).treeLists,
-    close: createTestRemovalDeps(h.db).draftClose,
     onDraftCommitted: () => {},
   });
 

@@ -503,13 +503,13 @@ try {
       draftCoordinator: coordinator,
       onDraftCommitted: (id) => effect.markDirty(id),
       resolveDocumentUri: async () => "probe.md",
+      resolveLastDocumentUri: async () => null,
       refreshDocument: async () => {},
       flushLivePull: (id) => pulls.flushLivePull(id),
       notices: { record: async () => {} },
       workProjection: h.projection,
       removals: createTestRemovalDeps(h.db).removals,
       treeLists: createTestRemovalDeps(h.db).treeLists,
-      close: createTestRemovalDeps(h.db).draftClose,
     });
     const result = await runWithEditConfirmation(workGrant(h, s.workId), () =>
       inverse.modelInverse(
