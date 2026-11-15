@@ -379,19 +379,21 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         },
       });
       expect(out).toMatchObject({ branchClosed: true, settled: [] });
-      return commandId;
+      return { commandId, branchId };
     }
     const envelope = (kind: string, commandId: string) =>
       ({ commandId, accountId: USER, projectId: PROJECT, kind, digest: commandId }) as never;
-    async function restore(f: Fixture, discardCommandId: string) {
+    /** Restore as Trash sends it: the branch the Discard ran on, not the draft's current one. */
+    async function restore(discarded: Awaited<ReturnType<typeof discard>>) {
       const commandId = randomUUID();
       const out = (await undoDiscard({
-        branchId: f.branchId,
+        branchId: discarded.branchId,
         userId: USER,
         envelope: envelope("undo_discard", commandId),
-        request: { commandId: commandId as CommandId, discardCommandId },
-      } as never)) as { status: string };
-      expect(out.status).toBe("restored");
+        request: { commandId: commandId as CommandId, discardCommandId: discarded.commandId },
+      } as never)) as { status: string; restored: number };
+      expect(out).toMatchObject({ status: "restored" });
+      expect(out.restored).toBeGreaterThan(0);
     }
 
     it("A1, A2 inside A1's text, Discard, Un-Apply both, Restore: the draft is what it is without the Discard", async () => {
@@ -404,7 +406,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       const discarded = await discard(withDiscard.f);
       await withDiscard.f.unapply(withDiscard.a2);
       await withDiscard.f.unapply(withDiscard.a1);
-      await restore(withDiscard.f, discarded);
+      await restore(discarded);
       const got = await withDiscard.f.seen();
 
       expect(got).toEqual(wanted);
@@ -419,10 +421,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await f.apply(a1);
       const discarded = await discard(f);
       await f.unapply(a1);
-      await restore(f, discarded);
+      await restore(discarded);
       const first = await f.seen();
       const again = await discard(f);
-      await restore(f, again);
+      await restore(again);
       expect(await f.seen()).toEqual(first);
       expect(first.pending).toBe(1);
       expect(first.base).toEqual(["The cat sat."]);
@@ -437,7 +439,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await f.apply(f.click());
       const before = await f.seen();
       expect(before.base).toEqual(["The big cat sat."]);
-      await restore(f, await discard(f));
+      await restore(await discard(f));
       expect(await f.seen()).toEqual(before);
     });
 

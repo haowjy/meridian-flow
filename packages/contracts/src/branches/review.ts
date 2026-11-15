@@ -423,15 +423,16 @@ export type DraftDiscardRequest = {
  * of nodes, documents or folders (a folder group's ×, a folder changed alone), each ending as
  * `DraftDiscardRequest.ends` says; what stands on a node it discards goes with it (a document
  * moved into a folder the Work created). Its text halves close on the server, and Undo of a
- * Discard brings both halves back.
+ * Discard brings both halves back. Not strict at either level: a tab still on the old code sends
+ * `draftSeenAt` on each item, and it is dropped, not a 400.
  */
 export const BranchDiscardRequestSchema = z.union([
-  z.strictObject({ commandId: CommandIdSchema, all: z.literal(true) }),
-  z.strictObject({
+  z.object({ commandId: CommandIdSchema, all: z.literal(true) }),
+  z.object({
     commandId: CommandIdSchema,
     items: z
       .array(
-        z.strictObject({
+        z.object({
           node: z.string().min(1),
           ends: z.enum(["tree", "item"]),
         }),

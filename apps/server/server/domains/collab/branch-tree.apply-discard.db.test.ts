@@ -30,6 +30,7 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
+import { createTestDraftCoordinator } from "../../test-support/draft-coordinator.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
@@ -89,9 +90,15 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       },
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
     });
+    const branchStore = createDrizzleBranchStore(db);
     const workBranches = createBranches({
-      store: createDrizzleBranchStore(db),
+      store: branchStore,
       boundary: createDrizzleBranchWriteBoundary(db, workProjection),
+    });
+    const coordinator = createTestDraftCoordinator(db, {
+      close: draftClose,
+      workProjection,
+      branches: branchStore,
     });
     const tree = createTreeReader(db);
     const branchTree = createDrizzleBranchTreeState(db, tree);
@@ -99,7 +106,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const pending = createDrizzleWorkBranchPendingStore(db);
     // A tree-only click reads no text: no text base is read or replayed.
     const reopen = createReopenDrafts(db, {
-      coordinator: {} as never,
+      coordinator,
       close: draftClose,
       treeLists,
       workProjection,
@@ -108,7 +115,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const apply = createDrizzleApplyClick(db, {
       workProjection,
       branches: workBranches,
-      coordinator: {} as never,
+      coordinator,
       reopen,
       live: {} as never,
       liveCoordinator: {} as never,
@@ -123,7 +130,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     });
     const discard = createBranchDiscard({
       store: createDrizzleBranchDiscard(db, {
-        coordinator: {} as never,
+        coordinator,
         close: draftClose,
         branches: workBranches,
         workProjection,
