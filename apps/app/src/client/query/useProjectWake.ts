@@ -3,6 +3,7 @@
  * a read is stale, and the read comes again. The tree itself is not read this way (the project's
  * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and,
  * for a Work, its row in the Works list: its count and its lifecycle) and the project's sources.
+ * Hints sent while the socket was down are lost, so a reconnect makes every one of those stale.
  */
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,32 +47,51 @@ export function useProjectWake(projectId: string): void {
         }
       });
     };
+    // A draft owner's list is stale, or every owner's when `owner` is not named.
+    const refreshDrafts = (owner?: string) => {
+      void queryClient.invalidateQueries({
+        queryKey:
+          owner === undefined
+            ? projectQueryKeys.ownerDraftsOf(projectId)
+            : projectQueryKeys.ownerDrafts(projectId, owner),
+      });
+      // Which drafts are open is each draft's metadata too: a restore elsewhere reopens one
+      // this tab holds as ended, and its rows and rooms follow the fresh answer.
+      void queryClient.invalidateQueries({
+        queryKey:
+          owner === undefined
+            ? projectQueryKeys.draftMetadataOf(projectId)
+            : projectQueryKeys.ownerDraftMetadataOfOwner(projectId, owner),
+      });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
+      // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
+      if (owner === undefined || workIdOfDraftOwnerKey(owner))
+        void repairWorksSnapshot(queryClient, projectId);
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+      });
+      bumpLinkResolutionEpoch(projectId);
+    };
+    const refreshSources = () => {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.contextSources(projectId),
+      });
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.accountContextSources() });
+      bumpLinkResolutionEpoch(projectId);
+    };
     const unsubscribe = transport.subscribeCatalog(projectId, (hint) => {
       if (hint.type === "project-chats-hint") {
         refreshChats();
+        // Hints were lost (a reconnect) or a Work went: every read a hint covers is stale.
+        if (hint.recheckTabs) {
+          refreshDrafts();
+          refreshSources();
+        }
       } else if (hint.type === "draft-owner-hint") {
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.ownerDrafts(projectId, hint.owner),
-        });
-        // Which drafts are open is each draft's metadata too: a restore elsewhere reopens one
-        // this tab holds as ended, and its rows and rooms follow the fresh answer.
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.ownerDraftMetadataOfOwner(projectId, hint.owner),
-        });
-        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
-        // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
-        if (workIdOfDraftOwnerKey(hint.owner)) void repairWorksSnapshot(queryClient, projectId);
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
-        });
-        bumpLinkResolutionEpoch(projectId);
+        refreshDrafts(hint.owner);
       } else if ((hint.type as string) === "context-sources-hint") {
         // A chat or a lineage gained or lost a source (Scratch, uploads): which trees exist changed.
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextSources(projectId),
-        });
-        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.accountContextSources() });
-        bumpLinkResolutionEpoch(projectId);
+        refreshSources();
       }
     });
     return () => {
