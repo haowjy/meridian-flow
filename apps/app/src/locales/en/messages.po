@@ -6274,7 +6274,6 @@ msgstr "That change couldn't be made in {name}."
 msgid "That change couldn't be made."
 msgstr "That change couldn't be made."
 
-#: src/features/draft-review/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewToast.tsx
 msgid "That change is no longer in the draft."
 msgstr "That change is no longer in the draft."
@@ -6676,8 +6675,8 @@ msgid "This cell is not merged."
 msgstr "This cell is not merged."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This change belongs with others. Select all of them and try again."
-msgstr "This change belongs with others. Select all of them and try again."
+#~ msgid "This change belongs with others. Select all of them and try again."
+#~ msgstr "This change belongs with others. Select all of them and try again."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This change is no longer reversible."
@@ -6688,8 +6687,8 @@ msgid "This change no longer matches the document's text, so it can't be reverse
 msgstr "This change no longer matches the document's text, so it can't be reversed."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This change only applies together with the rest of the document. Apply the whole document instead."
-msgstr "This change only applies together with the rest of the document. Apply the whole document instead."
+#~ msgid "This change only applies together with the rest of the document. Apply the whole document instead."
+#~ msgstr "This change only applies together with the rest of the document. Apply the whole document instead."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
@@ -6872,8 +6871,8 @@ msgid "This document's Work is archived. Unarchive the Work to reverse this chan
 msgstr "This document's Work is archived. Unarchive the Work to reverse this change."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This draft changed since you looked. Check it, then discard again."
-msgstr "This draft changed since you looked. Check it, then discard again."
+#~ msgid "This draft changed since you looked. Check it, then discard again."
+#~ msgstr "This draft changed since you looked. Check it, then discard again."
 
 #: src/features/chat/turn-receipt-copy.ts
 #~ msgid "This draft is archived"
@@ -7050,6 +7049,10 @@ msgstr "This took too long, so it was stopped."
 #: src/features/editor/SchemaNotices.tsx
 msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This was applied before your Discard reached it."
+msgstr "This was applied before your Discard reached it."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This was discarded before Apply reached it. Restore it to apply it."
