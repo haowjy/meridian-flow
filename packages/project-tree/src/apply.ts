@@ -10,7 +10,7 @@ import {
 } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { undoChange } from "./undo.js";
+import { type NotUndone, undoChange } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import {
   LIVE,
@@ -374,13 +374,16 @@ export function appliedCreates(writer: TreeWriter, applied: string): string[] {
 }
 
 /** Why a fact an Apply landed is not taken back; the document or record stays as it stands. */
-export type UndoLeftWhy = "changed_since" | "purged" | "has_text";
+export type UndoLeftWhy = NotUndone | "has_text";
 
 export type UndoApplyResult = {
   /** The opposite records made, newest first. */
   undone: TreeRecord[];
-  /** The live copies not taken back, each with why. */
-  left: Array<{ record: TreeRecord; why: UndoLeftWhy }>;
+  /**
+   * The live copies not taken back, each with why. `fact` is set when the copy was a move that
+   * also set a name and only the other of the two went back.
+   */
+  left: Array<{ record: TreeRecord; why: UndoLeftWhy; fact?: "name" | "place" }>;
 };
 
 /**
@@ -388,8 +391,10 @@ export type UndoApplyResult = {
  * record `undoChange` makes, so what others did since (a rename of the same node, a node put in
  * a created folder) is kept, as it is for any other Undo. A fact something later changed stays
  * (`changed_since`), as does a document with text written since (`has_text`, from
- * `writtenSince`: text is not in the list) and a node that is gone (`purged`). The records whose
- * copies were taken back are pending again in the Work; the others stay applied. The live
+ * `writtenSince`: text is not in the list), a node that is gone (`purged`) and a change no longer
+ * in force (`already`); each is in `left`. A move that also set a name goes back fact by fact, and
+ * the fact that stays is in `left` too. The records whose copies were taken back are pending
+ * again in the Work; the others stay applied. The live
  * `restore` records an Apply made first (`restoredByApply`) are taken back with the copies.
  */
 export function undoApply(
@@ -408,6 +413,7 @@ export function undoApply(
   const made = [...listRecords(writer.doc).filter((record) => restores.has(record.id)), ...copies];
   const undone: TreeRecord[] = [];
   const left: UndoApplyResult["left"] = [];
+  // The roots (`carries ?? id`) of the copies taken back, at least in part.
   const reversed = new Set<string>();
   writer.transact(() => {
     for (const copy of made.reverse()) {
@@ -416,22 +422,39 @@ export function undoApply(
         continue;
       }
       const back = undoChange(writer, LIVE, by, copy.id);
-      if (typeof back !== "string") {
-        undone.push(back);
-        reversed.add(copy.carries ?? copy.id);
-      } else if (back === "changed_since" || back === "purged")
+      if (typeof back === "string") {
         left.push({ record: copy, why: back });
+        continue;
+      }
+      undone.push(back);
+      reversed.add(copy.carries ?? copy.id);
+      // A move that also set a name, of which only one fact still stood: the other stays.
+      if (copy.type === "move" && copy.name !== undefined && copy.undoes === undefined) {
+        const kept =
+          back.type === "rename"
+            ? "place"
+            : back.type === "move" && back.name === undefined
+              ? "name"
+              : undefined;
+        if (kept) left.push({ record: copy, why: "changed_since", fact: kept });
+      }
     }
-    // An original is pending again once its copy is taken back. One it lost a fact to (settled
-    // `superseded`) returns only if a record that overrode it did.
+    // A record this Apply settled is pending again once a copy of it is taken back: matched by
+    // root, since a restored Discard's record (a copy itself) and its live copy share the original
+    // they carry. One it lost a fact to (settled `superseded`) returns only if a record that
+    // overrode it did.
     const all = listRecords(writer.doc);
     const position = new Map(all.map((record, at) => [record.id, at]));
     const byId = new Map(all.map((record) => [record.id, record]));
+    const rootOf = (id: string) => byId.get(id)?.carries ?? id;
+    const reopened = settled.flatMap(([id, to]) =>
+      to === "applied" && reversed.has(rootOf(id)) ? [id] : [],
+    );
     const back = settled.flatMap(([id, to]) => {
-      if (to === "applied") return reversed.has(id) ? [id] : [];
+      if (to === "applied") return reopened.includes(id) ? [id] : [];
       const lost = byId.get(id);
       return lost &&
-        [...reversed].some((other) => {
+        reopened.some((other) => {
           const record = byId.get(other);
           return (
             record &&

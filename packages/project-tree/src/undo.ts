@@ -62,7 +62,8 @@ export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
  * back, restore what was deleted, delete what was created). A move or rename goes back to the
  * values its fact had just before the record, and is allowed only while the record is still
  * the one that last set it: by history, never by comparing today's value, which a later author
- * may have set to the same. The answer when it appends nothing: `changed_since` (something later
+ * may have set to the same. A move that also set a name takes back whichever of its two facts it
+ * still holds (a move without the name, or a rename). The answer when it appends nothing: `changed_since` (something later
  * changed the same fact), `purged` (the node, or the folder a move would return to, is gone from
  * the view, where the replay would skip the opposite record), `already` (the change is not in
  * force, or its opposite already stands), or `unknown` (no such record). A move back into a folder
@@ -112,17 +113,24 @@ export function undoChange(
           extra,
         );
       }
-      const last = lastSetBy(projection.setters.get(record.node)?.place, record);
-      if (!last) return "changed_since";
-      const { parent, rank } = last.before;
-      const back = projection.nodes.get(parent);
-      if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
-      // A move that carried a name took that fact too, and goes back only while it still holds it.
+      // A move that carried a name set two facts, and each goes back while the move still holds
+      // it: a later rename keeps its name and the place still goes back, and the other way round.
+      const placed = lastSetBy(projection.setters.get(record.node)?.place, record);
       const named =
         record.name === undefined
           ? undefined
           : lastSetBy(projection.setters.get(record.node)?.label, record);
-      if (record.name !== undefined && !named) return "changed_since";
+      if (!placed && !named) return "changed_since";
+      if (!placed && named)
+        return writer.author(
+          view,
+          actor,
+          { type: "rename", node: record.node, name: named.before.name, fromName: node.name },
+          extra,
+        );
+      const { parent, rank } = (placed as NonNullable<typeof placed>).before;
+      const back = projection.nodes.get(parent);
+      if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
       return writer.author(
         view,
         actor,

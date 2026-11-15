@@ -117,9 +117,14 @@ the replay uses them (package `AGENTS.md`).
   `covers(doc, saw)` says whether a copy holds the state the writer saw.
 - **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { writtenSince,
   restoredByApply })` writes each landed copy's opposite record through `undoChange` (a create's
-  opposite is a delete that keeps what others put inside standing), then puts the originals back
-  to pending. It answers `{ undone, left }`; a fact something changed since is `left` with
-  `changed_since`. `undoChange` answers `changed_since | purged | already | unknown`.
+  opposite is a delete that keeps what others put inside standing), then puts back to pending the
+  records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored
+  Discard's record is itself a copy, so its id is not its live copy's `carries`. It answers
+  `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
+  `purged`, `already`, `has_text`). A move that also set a name is two facts: `undoChange` takes
+  back whichever it still holds (a move without the name, or a rename whose undo puts no delete
+  back), and `left` names the one that stays (`fact`). `undoChange` answers
+  `changed_since | purged | already | unknown`.
 - **A Discard is final.** `restoreDiscard` appends fresh pending copies of what the command
   settled, on the branch the caller names (the Work's current one, which may differ from the one the
   Discard closed): new record ids, the same node ids, `carries` naming the

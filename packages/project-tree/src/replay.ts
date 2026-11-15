@@ -146,8 +146,12 @@ type Working = {
   place: Array<Setter<PlaceBefore>>;
 };
 
-/** The deletes a restore lifted, and the members it took out of the deletes of folders above it. */
-type Lifted = { entries: DeleteInForce[]; members: Array<[DeleteInForce, string]> };
+/** The deletes a restore lifted, and the members it took out of the deletes of folders above it; `by` is the kind of record that lifted them. */
+type Lifted = {
+  by: TreeRecord["type"];
+  entries: DeleteInForce[];
+  members: Array<[DeleteInForce, string]>;
+};
 
 type DeleteInForce = {
   id: string;
@@ -236,6 +240,7 @@ export function replay(
     // lifts again what that Undo put back.
     const again = record.undoes === undefined ? undefined : lifted.get(record.undoes);
     const took: Lifted = {
+      by: record.type,
       entries: deletes.filter(
         (entry) => may(entry) && (again ? again.entries.includes(entry) : lifts(record, entry)),
       ),
@@ -445,8 +450,9 @@ export function replay(
             continue;
           }
         }
+        // A rename that takes back only the name a move set leaves the deletes that move lifted lifted.
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-        if (back) putBack(record, back);
+        if (back?.by === "rename") putBack(record, back);
         else if (record.undoes === undefined)
           lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
