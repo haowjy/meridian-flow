@@ -9,6 +9,7 @@ import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-d
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
   DocumentSession,
+  type DocumentSessionAccess,
   type DocumentSessionSnapshot,
   type ResetDisposition,
 } from "./document-session";
@@ -90,6 +91,13 @@ export class DocumentSessionRegistry {
   >();
   private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
   private readonly handedBack = new WeakSet<DocumentSession>();
+  /** Each session's copy: the room's key and the incarnation it opened. */
+  private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
+  private readonly replacing = new WeakSet<DocumentSession>();
+  private readonly replacementObservers = new Map<
+    string,
+    Set<(session: DocumentSession) => void>
+  >();
 
   constructor(
     private readonly accountId: AccountId,
@@ -103,10 +111,11 @@ export class DocumentSessionRegistry {
   ) {
     this.copies = copies;
     this.draftRooms = new DraftRoomPool({
-      open: (roomKey, documentId) => {
+      open: (roomKey, documentId, replaced) => {
         const { session, hold } = this.openCopy(
           roomKey,
           draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
+          replaced,
         );
         this.attachSessionTransport(session);
         return { session, hold };
@@ -380,12 +389,20 @@ export class DocumentSessionRegistry {
   private openCopy(
     roomKey: string,
     copyKey: string,
+    replaced?: { access: DocumentSessionAccess | null },
   ): { session: DocumentSession; hold: Promise<CopyHold> } {
     const incarnation = this.copies.current(copyKey);
     const name = this.copies.nameOf(copyKey);
     const hold = this.copies.hold(name);
-    const session = this.createSession(roomKey, { kind: "indexeddb", key: name });
-    if (incarnation > 0) void this.handBackOlder(session, copyKey, incarnation).catch(reportError);
+    const session = this.createSession(
+      roomKey,
+      { kind: "indexeddb", key: name },
+      replaced?.access ?? null,
+    );
+    this.copyOf.set(session, { key: copyKey, incarnation });
+    // A replacing session's predecessor already handed its words back.
+    if (incarnation > 0 && !replaced)
+      void this.handBackOlder(session, copyKey, incarnation).catch(reportError);
     return { session, hold };
   }
 
@@ -411,8 +428,9 @@ export class DocumentSessionRegistry {
   private createSession(
     roomKey: string,
     persistence: DocumentSessionOptions["persistence"],
+    access: DocumentSessionAccess | null,
   ): DocumentSession {
-    const session = this.constructSession(roomKey, persistence);
+    const session = this.constructSession(roomKey, persistence, access);
     this.publishSession(roomKey, session);
     return session;
   }
@@ -420,22 +438,98 @@ export class DocumentSessionRegistry {
   private constructSession(
     roomKey: string,
     persistence: DocumentSessionOptions["persistence"],
+    access: DocumentSessionAccess | null,
   ): DocumentSession {
     let session!: DocumentSession;
     session = new DocumentSession({
       roomKey,
       persistence,
+      access,
       ownUserId: this.accountId,
       persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.documentId, fence),
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
+    session.subscribe((snapshot) => {
+      if (snapshot.holdsUndeliverableEdits) this.requestReplacement(session);
+    });
     if (session.room.kind === "live")
       session.subscribe(() => {
         this.retireDrainedRoom(session);
         this.settleRetainedTransport(session);
       });
     return session;
+  }
+
+  /** In a microtask, never inside the session's own `emit`. */
+  private requestReplacement(session: DocumentSession): void {
+    if (this.replacing.has(session)) return;
+    queueMicrotask(() => void this.replaceRoom(session).catch(reportError));
+  }
+
+  private isRoomSession(session: DocumentSession): boolean {
+    return session.room.kind === "live"
+      ? this.liveRooms.get(session.documentId as DocumentId)?.session === session
+      : this.draftRooms.peek(session.roomKey) === session;
+  }
+
+  /**
+   * A room the server admitted read-only holds none of the writer's edits the server lacks
+   * (`.context/CONTEXT.md`, "Undeliverable edits"). A room found holding some hands back the
+   * typing and is replaced by a session on the next incarnation of its copy, which loads from the
+   * server; the old one is inert until its editors have gone. Nothing is emptied and nothing is
+   * said to other tabs: each tab replaces its own session at its own read admission.
+   */
+  private async replaceRoom(old: DocumentSession): Promise<void> {
+    if (this.replacing.has(old) || !this.isRoomSession(old)) return;
+    this.replacing.add(old);
+    // Words another tab stored that this one never received count too, and the verdict can end here.
+    if (!(await old.decideAgain()) || !this.isRoomSession(old)) {
+      this.replacing.delete(old);
+      return;
+    }
+    const edits = old.undeliverableEdits();
+    // Edits of another session with no words may be a Discard, which has its own answer.
+    if (edits && (edits.typing !== null || edits.own)) this.handBack(edits.typing, "owner-closed");
+    void old.makeInert().catch(reportError);
+    const copy = this.copyOf.get(old);
+    if (!copy) throw new Error(`Session has no local copy to advance: ${old.roomKey}`);
+    await this.copies.advance(copy.key, copy.incarnation);
+    if (!this.isRoomSession(old)) return;
+    if (old.room.kind === "live") {
+      const state = this.liveRooms.get(old.documentId as DocumentId);
+      if (!state) return;
+      const { session, hold } = this.openCopy(old.roomKey, copy.key, {
+        access: old.getSnapshot().access,
+      });
+      const replacedHold = state.hold;
+      state.session = session;
+      state.hold = hold;
+      this.attachSessionTransport(session);
+      void this.teardownOwner
+        .retireReplaced("live", old)
+        .catch((error: unknown) => reportError(error))
+        .then(async () => (await replacedHold)?.release());
+      this.notifyReplacement(old.roomKey, session);
+    } else {
+      const session = this.draftRooms.replace(old.roomKey, old);
+      if (session) this.notifyReplacement(old.roomKey, session);
+    }
+  }
+
+  /** Calls `observer` with the session that replaces a room's, live (by document id) or draft. */
+  observeReplacement(roomKey: string, observer: (session: DocumentSession) => void): () => void {
+    const observers = this.replacementObservers.get(roomKey) ?? new Set();
+    observers.add(observer);
+    this.replacementObservers.set(roomKey, observers);
+    return () => {
+      observers.delete(observer);
+      if (observers.size === 0) this.replacementObservers.delete(roomKey);
+    };
+  }
+
+  private notifyReplacement(roomKey: string, session: DocumentSession): void {
+    for (const observer of [...(this.replacementObservers.get(roomKey) ?? [])]) observer(session);
   }
 
   private requireAccountRuntimeOpen(): void {

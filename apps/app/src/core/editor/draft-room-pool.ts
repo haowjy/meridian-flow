@@ -15,7 +15,12 @@
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import { type DocumentSession, draftClosed, updatesRefused } from "./document-session";
+import {
+  type DocumentSession,
+  type DocumentSessionAccess,
+  draftClosed,
+  updatesRefused,
+} from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import type { CopyHold } from "./local-document-copies";
 
@@ -40,6 +45,7 @@ export class DraftRoomPool {
       open(
         roomKey: string,
         documentId: string,
+        replaced?: { access: DocumentSessionAccess | null },
       ): { session: DocumentSession; hold: Promise<CopyHold> };
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
@@ -98,6 +104,11 @@ export class DraftRoomPool {
     const { session, hold } = this.deps.open(roomKey, documentId);
     this.holds.set(roomKey, hold);
     this.rooms.set(roomKey, session);
+    this.watch(roomKey, session);
+    return session;
+  }
+
+  private watch(roomKey: string, session: DocumentSession): void {
     session.subscribe(() => {
       if (this.rooms.get(roomKey) !== session) return;
       if (keptForOwner(session)) {
@@ -111,7 +122,28 @@ export class DraftRoomPool {
         this.retire(roomKey, session);
       }
     });
-    return session;
+  }
+
+  /**
+   * A session on the room's next incarnation takes the room, read-only like the one it replaces,
+   * which retires once its editors have gone. Null when `session` is not the room's any more.
+   */
+  replace(roomKey: string, session: DocumentSession): DocumentSession | null {
+    if (this.rooms.get(roomKey) !== session) return null;
+    const documentId = this.documents.get(roomKey);
+    if (!documentId) throw new Error(`Draft room was never retained: ${roomKey}`);
+    const { session: next, hold } = this.deps.open(roomKey, documentId, {
+      access: session.getSnapshot().access,
+    });
+    const replacedHold = this.holds.get(roomKey);
+    this.holds.set(roomKey, hold);
+    this.rooms.set(roomKey, next);
+    this.watch(roomKey, next);
+    void this.deps.teardownOwner
+      .retireReplaced("draft", session)
+      .catch((error: unknown) => reportError(error))
+      .then(async () => (await replacedHold)?.release());
+    return next;
   }
 
   /** An authoritative close can arrive by metadata before the socket's terminal frame. */

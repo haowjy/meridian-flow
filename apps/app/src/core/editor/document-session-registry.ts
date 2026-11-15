@@ -75,6 +75,12 @@ export interface LiveDocumentSessionRegistry {
    */
   abandonDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
+  /**
+   * Calls `observer` with the session that replaces a room's (a live document's by its id, or a
+   * draft room's): the room's holders bind it and their editors remount. Not called for a room
+   * retired the ordinary way.
+   */
+  observeReplacement(roomKey: string, observer: (session: DocumentSession) => void): () => void;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(
     roomKey: string,

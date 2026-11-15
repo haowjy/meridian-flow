@@ -56,13 +56,15 @@ export function useOpenTabSessions(
   const hold = (documentId: string) => {
     const abort = new AbortController();
     let binding: { release(): void } | null = null;
-    let stopWatching = () => {};
+    let stopHistory = () => {};
+    let stopSession = () => {};
     const tab: Held = {
       history: null,
       edited: 0,
       release: () => {
         abort.abort();
-        stopWatching();
+        stopSession();
+        stopHistory();
         binding?.release();
       },
     };
@@ -84,10 +86,18 @@ export function useOpenTabSessions(
       const candidate = await opened.admission.bind(`open-tab:${documentId}`);
       if (abort.signal.aborted) return candidate.release();
       binding = candidate;
-      const { history } = candidate.session;
-      tab.history = history;
-      stopWatching = history.subscribe(() => {
-        tab.edited = ++clock.current;
+      const watchHistory = (history: DocumentHistory) => {
+        stopHistory();
+        tab.history = history;
+        stopHistory = history.subscribe(() => {
+          tab.edited = ++clock.current;
+          reconcile.current();
+        });
+      };
+      watchHistory(candidate.session.history);
+      // A read-only room replaces its session, and with it the history.
+      stopSession = candidate.subscribeSession((session) => {
+        watchHistory(session.history);
         reconcile.current();
       });
       reconcile.current();

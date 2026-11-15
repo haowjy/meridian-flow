@@ -45,7 +45,10 @@ import { UploadViewerDialog } from "./UploadViewerDialog";
 export interface LiveDocumentBinding {
   readonly projectId: ProjectId;
   readonly documentId: DocumentId;
+  /** The room's session now: a read-only room replaces its session once (`observeReplacement`). */
   readonly session: DocumentSession;
+  /** Calls `listener` with the session that replaces this binding's. Ends with `release`. */
+  subscribeSession(listener: (session: DocumentSession) => void): () => void;
   readonly local?: true;
   release(): void;
 }
@@ -79,7 +82,7 @@ export class ProjectDocumentLiveOpener {
     private readonly dependencies: {
       registry: Pick<
         LiveDocumentSessionRegistry,
-        "admit" | "retain" | "get" | "release" | "restartUnavailableRoom"
+        "admit" | "retain" | "get" | "release" | "restartUnavailableRoom" | "observeReplacement"
       >;
       standings: Pick<ProjectStandings, "standing" | "whenReadable">;
       epochSignal: AbortSignal;
@@ -148,13 +151,26 @@ export class ProjectDocumentLiveOpener {
             session = registry.get(lease);
           }
           let released = false;
+          const listeners = new Set<(session: DocumentSession) => void>();
+          const stopObserving = registry.observeReplacement(lease.documentId, (replacement) => {
+            session = replacement;
+            for (const listener of [...listeners]) listener(replacement);
+          });
           return Object.freeze({
             projectId: lease.projectId,
             documentId: lease.documentId,
-            session,
+            get session() {
+              return session;
+            },
+            subscribeSession(listener: (session: DocumentSession) => void) {
+              listeners.add(listener);
+              return () => listeners.delete(listener);
+            },
             release() {
               if (released) return;
               released = true;
+              stopObserving();
+              listeners.clear();
               registry.release(ownerId);
             },
           });

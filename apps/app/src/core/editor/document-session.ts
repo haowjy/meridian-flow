@@ -239,6 +239,8 @@ export type DocumentSessionOptions = {
   /** Registry-owned persistence hook for the first fence transition. */
   persistSchemaFence?: (fence: SchemaFence) => void;
   ownUserId?: string | null;
+  /** The scope of a room this session replaces: the editor is read-only from its first frame. */
+  access?: DocumentSessionAccess | null;
 };
 
 const noop = () => {};
@@ -302,6 +304,13 @@ export class DocumentSession {
    */
   private holdsUndeliverable = false;
   private differenceAnswered = false;
+  private lastDifference: HandshakeDifference | null = null;
+  /** Called when a handshake answers, or the verdict is forgotten. */
+  private readonly verdictWaiters = new Set<() => void>();
+  /** Replaced by another session: nothing more goes to the server or to other tabs. */
+  private inert = false;
+  private boundEditors = 0;
+  private readonly unbound = new Set<() => void>();
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
   private schemaRepairWitness: SchemaRepairWitness | null = null;
@@ -333,10 +342,12 @@ export class DocumentSession {
     transportFactory,
     persistSchemaFence,
     ownUserId = null,
+    access = null,
   }: DocumentSessionOptions) {
     const room = parseYjsRoomName(roomKey);
     if (!room || room.kind === "tree") throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
+    this.access = access;
     this.room = room;
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
@@ -442,8 +453,10 @@ export class DocumentSession {
     this.unsubscribeDifference =
       this.transportProvider.subscribeDifference?.((difference) => {
         this.differenceAnswered = true;
+        this.lastDifference = difference;
         this.holdsUndeliverable = difference !== null && this.unsent.holdsUndeliverable(difference);
         this.recomputeStatus();
+        for (const waiter of [...this.verdictWaiters]) waiter();
       }) ?? null;
     this.unsubscribeChangeEvents =
       this.room.kind === "live"
@@ -564,6 +577,51 @@ export class DocumentSession {
     });
   }
 
+  /**
+   * Reads the local copy (words another tab stored that this tab never received) and takes one
+   * more handshake, so the verdict is the whole browser's. Resolves whether the room still holds
+   * edits the server will not take; false when the connection ended or turned editable meanwhile.
+   */
+  async decideAgain(): Promise<boolean> {
+    await this.localPeers?.catchUp().catch((error) => reportError(error));
+    const provider = this.transportProvider;
+    if (!provider || this.access !== "read") return false;
+    const answered = new Promise<boolean>((resolve) => {
+      const waiter = () => {
+        this.verdictWaiters.delete(waiter);
+        resolve(this.holdsUndeliverable);
+      };
+      this.verdictWaiters.add(waiter);
+    });
+    this.differenceAnswered = false;
+    provider.requestHandshake?.();
+    return answered;
+  }
+
+  /**
+   * What the last read-admitted handshake found that the server lacks, for the writer: the words
+   * typed here (null when there are none) and whether this session wrote any of it through an
+   * editor or its Undo. Null when the room holds none.
+   */
+  undeliverableEdits(): { typing: string | null; own: boolean } | null {
+    const difference = this.lastDifference;
+    if (!difference || !this.holdsUndeliverable) return null;
+    return {
+      typing: this.unsent.typing(difference.lacking),
+      own: this.unsent.holdsOwnEdits(difference),
+    };
+  }
+
+  /**
+   * Another session replaces this room: stop offering anything to the server and other tabs. The
+   * document stays readable until its editors have gone and it is destroyed.
+   */
+  makeInert(): Promise<void> {
+    this.inert = true;
+    this.localPeers?.stop();
+    return this.detachTransport();
+  }
+
   hasUnacknowledgedEdits(): boolean {
     return this.unacknowledgedUpdates() !== null;
   }
@@ -604,6 +662,8 @@ export class DocumentSession {
   private forgetDifference(): void {
     this.differenceAnswered = false;
     this.holdsUndeliverable = false;
+    this.lastDifference = null;
+    for (const waiter of [...this.verdictWaiters]) waiter();
   }
 
   /**
@@ -677,7 +737,19 @@ export class DocumentSession {
     const witness = this.schemaRepairWitness;
     try {
       const editor = construct();
-      return { editor, release: witness.enterLive(editor) };
+      const leave = witness.enterLive(editor);
+      this.boundEditors += 1;
+      let released = false;
+      return {
+        editor,
+        release: () => {
+          leave();
+          if (released) return;
+          released = true;
+          this.boundEditors -= 1;
+          if (this.boundEditors === 0) for (const done of [...this.unbound]) done();
+        },
+      };
     } catch (error) {
       if (firstBinding) {
         witness.destroy();
@@ -685,6 +757,18 @@ export class DocumentSession {
       }
       throw error;
     }
+  }
+
+  /** Resolves once no editor is bound to this session: the moment it can be destroyed. */
+  whenUnbound(): Promise<void> {
+    if (this.boundEditors === 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        this.unbound.delete(done);
+        resolve();
+      };
+      this.unbound.add(done);
+    });
   }
 
   /** Append one session-scoped repair verdict and notify every report surface. */
@@ -911,6 +995,7 @@ export class DocumentSession {
     if (
       this.localPersistenceSynced &&
       !this.destroyed &&
+      !this.inert &&
       !this.localPeers &&
       this.persistence &&
       !this.schemaFence &&
