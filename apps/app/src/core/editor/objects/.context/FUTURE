@@ -5,12 +5,14 @@
 
 ## Native selection and composition
 
-Follow-ups from PR #1573, owned by solo-dev c16970 in this order:
+Follow-ups from PR #1573, in this order:
 
-1. Full-table selection and a selected diagram before empty prose can restart
-   Chromium composition: provisional `ni` survives beside committed `你`. A
-   nonempty native range and moving to an empty destination are implicated; fix
-   the native selection projection rather than filtering provisional text.
+1. Full-table selection, a selected diagram before empty prose, and an inline
+   image at the end of its paragraph or alone in it can restart Chromium
+   composition: provisional `ni` survives beside committed `你`. Moving the caret
+   inside `compositionstart` causes the restart. The follow-up should replace
+   that relocation with a valid native caret projection before composition, not
+   filter provisional text or add per-object cases.
 2. A diagram-only or figure-only document can lose its native DOM range after
    mouseup while ProseMirror keeps a NodeSelection. Chromium then emits no input
    events. Fix the missing browser input target without per-object event patches.

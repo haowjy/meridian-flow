@@ -43,6 +43,10 @@ now occupies that position, the extension changes it to a text caret; otherwise
 typing would replace unrelated text. An adjacent object of the same type remains
 selected, with its ring visible.
 
+A press or drop beside a plain code fence takes its facing text edge when there
+is no prose on the other side. The [landing helpers](../../landing/AGENTS.md) own
+that choice; object selection must not turn this editable edge into a dead end.
+
 ## Typing
 
 `typeBesideObjectTransaction` prepares writable text after the selected object,

@@ -43,5 +43,5 @@ count local-only updates as unsent while detached.
 Delayed IME composition can create separate undo entries for provisional and
 committed text: `ni` → `你`, with more than 500ms between updates, undoes first to
 `ni`, then to the original text. This occurs in ordinary prose as well as beside
-objects. Follow up after the native-selection fixes from PR #1573 (owner c16970):
+objects. Follow up after the native-selection fixes from PR #1573:
 group the composition as one user action rather than depending on capture timing.
