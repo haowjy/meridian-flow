@@ -949,8 +949,8 @@ msgid "A document blocks its folder path"
 msgstr "A document blocks its folder path"
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "A document blocks part of this location. Move or rename it, then apply again."
-msgstr "A document blocks part of this location. Move or rename it, then apply again."
+#~ msgid "A document blocks part of this location. Move or rename it, then apply again."
+#~ msgstr "A document blocks part of this location. Move or rename it, then apply again."
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "A file can’t go there."
@@ -1257,6 +1257,10 @@ msgstr "Apply all"
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply changes in {name}"
 msgstr "Apply changes in {name}"
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Apply couldn't be sent. Try again."
+msgstr "Apply couldn't be sent. Try again."
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewActions.tsx
@@ -6373,6 +6377,10 @@ msgstr "This change no longer matches the document's text, so it can't be revers
 msgid "This change only applies together with the rest of the document. Apply the whole document instead."
 msgstr "This change only applies together with the rest of the document. Apply the whole document instead."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
+msgstr "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
+
 #: src/features/editor/EditorView.tsx
 #: src/features/editor/SessionEditor.tsx
 msgid "This chapter is temporarily unavailable"
@@ -6431,6 +6439,10 @@ msgstr "This compaction already started."
 #: src/features/chat/chat-card-copy.ts
 msgid "This conversation couldn't be compacted."
 msgstr "This conversation couldn't be compacted."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This depends on a change that wasn't applied, so it was left out."
+msgstr "This depends on a change that wasn't applied, so it was left out."
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
@@ -6497,13 +6509,17 @@ msgstr "This document is still opening."
 msgid "This document was deleted"
 msgstr "This document was deleted"
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was deleted before its changes could be applied."
+msgstr "This document was deleted before its changes could be applied."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This document was deleted before this change could be made."
 msgstr "This document was deleted before this change could be made."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document was deleted from the manuscript. Apply again to bring it back."
-msgstr "This document was deleted from the manuscript. Apply again to bring it back."
+#~ msgid "This document was deleted from the manuscript. Apply again to bring it back."
+#~ msgstr "This document was deleted from the manuscript. Apply again to bring it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #~ msgid "This document was deleted with the Work {name}."
@@ -6565,6 +6581,10 @@ msgstr "This draft is no longer here. It may have been applied or discarded alre
 msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
 msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This draft moved on since you pressed Apply, so it wasn't applied."
+msgstr "This draft moved on since you pressed Apply, so it wasn't applied."
+
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
 #~ msgstr "This draft was discarded, so the change wasn't kept. The AI will read it again."
@@ -6617,6 +6637,10 @@ msgstr "This image is no longer available."
 msgid "This image never finished uploading."
 msgstr "This image never finished uploading."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This is no longer in the draft, so it wasn't applied."
+msgstr "This is no longer in the draft, so it wasn't applied."
+
 #: src/features/import/reason-copy.ts
 msgid "This isn't the same selection as the one already started."
 msgstr "This isn't the same selection as the one already started."
@@ -6634,8 +6658,12 @@ msgid "This Meridian export can't be read. Import its folders one at a time."
 msgstr "This Meridian export can't be read. Import its folders one at a time."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This move or delete changed since you looked. Check it, then apply again."
-msgstr "This move or delete changed since you looked. Check it, then apply again."
+#~ msgid "This move or delete changed since you looked. Check it, then apply again."
+#~ msgstr "This move or delete changed since you looked. Check it, then apply again."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This move would put a folder inside itself, so it wasn't applied."
+msgstr "This move would put a folder inside itself, so it wasn't applied."
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "This name can't be used. Try a different one."
@@ -6700,6 +6728,10 @@ msgstr "This took too long, so it was stopped."
 #: src/features/editor/SchemaNotices.tsx
 msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This was discarded before Apply reached it. Restore it to apply it."
+msgstr "This was discarded before Apply reached it. Restore it to apply it."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "This Work is archived, so its drafts take no new text and the change wasn't kept."
