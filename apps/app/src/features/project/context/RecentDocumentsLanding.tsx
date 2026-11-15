@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
@@ -60,7 +61,7 @@ export function RecentDocumentsLanding({
   const project = useProject(projectId);
   const openDocument = useOpenProjectDocument(projectId);
   const now = useMinuteClock();
-  const deleteEntries = useDeleteContextEntries(projectId, "main");
+  const deleteEntries = useDeleteContextEntries(projectId, "main", LIVE_VERSION);
   // Its Undo must stay reachable, so it shows here on the phone too, ahead of the removal's.
   const discarded = useDocumentNotice(projectId, null);
   const discardNotice = discarded ? <DraftNoticeLine notice={discarded} className="px-0" /> : null;

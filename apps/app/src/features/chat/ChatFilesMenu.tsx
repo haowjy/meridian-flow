@@ -17,6 +17,7 @@ import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { PickerResults, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
 import { LIVE_VIEW } from "@/features/project/context/entry-drag/entry";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
@@ -75,7 +76,7 @@ function FilesDropdown({
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
-  const deleteEntries = useDeleteContextEntries(projectId, "main");
+  const deleteEntries = useDeleteContextEntries(projectId, "main", LIVE_VERSION);
   const contentRef = useRef<HTMLDivElement>(null);
   const focusHandoff = useRef(false);
 
