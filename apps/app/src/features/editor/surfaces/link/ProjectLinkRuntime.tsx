@@ -51,9 +51,10 @@ export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const openLive = useCallback(
-    (document: LinkDocumentRef) =>
+    (document: LinkDocumentRef, placeBeside?: () => boolean) =>
       openDocument({
         documentId: document.documentId,
+        placeBeside,
         ...(document.trashed ? { trashed: true as const } : {}),
         ...(document.focus ? { focus: true as const } : {}),
         workId: workId ?? undefined,
