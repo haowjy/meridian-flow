@@ -38,6 +38,7 @@ import {
 } from "@/core/editor/draft-room-read";
 import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
+import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import { GroupApply } from "./group-apply";
@@ -173,8 +174,10 @@ export class DraftCommandOwner {
   private readonly renamedDocuments = new Map<string, string>();
   private active = true;
   private revision = 0;
+  /** Each Discard's restore, whatever sent it: the one progress every view reads. */
+  readonly restores = new DiscardRestores();
   /** One notice per draft owner, outliving the surface that made it. */
-  readonly notices = new DraftNotices();
+  readonly notices = new DraftNotices(this.restores);
   constructor(
     private readonly registry: DraftRoomRegistry & {
       closeDraftRoom(roomKey: string): Promise<void>;

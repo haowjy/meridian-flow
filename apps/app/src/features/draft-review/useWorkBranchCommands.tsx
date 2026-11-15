@@ -361,7 +361,10 @@ export function useWorkBranchCommands({
       );
       return outcomes;
     };
-    /** The Undo of a Discard the server ran: its Undo command, which brings both halves back. */
+    /**
+     * The Undo of a Discard the server ran: its Undo command, which brings both halves back, sent
+     * through the one restore progress Trash and the editor read.
+     */
     const serverUndo = (
       branchId: string,
       discardCommandId: string,
@@ -369,12 +372,9 @@ export function useWorkBranchCommands({
     ): DiscardUndo => ({
       undo: async () => ({
         landed: Promise.resolve(),
-        ...(await restoreDiscard(queryClient, {
-          projectId,
-          branchId,
-          discardCommandId,
-          documentIds,
-        })),
+        ...(await owner.restores.restore(discardCommandId, () =>
+          restoreDiscard(queryClient, { projectId, branchId, discardCommandId, documentIds }),
+        )),
       }),
       end: () => {},
     });
@@ -494,6 +494,7 @@ export function useWorkBranchCommands({
           start: { sent: true, outcome },
           part: {
             ...share(serverUndo(item.branchId, commandId, [draft.documentId]), outcome, false),
+            restore: commandId,
             review: reviewOf(item),
             // A view following the Undo opens the draft once the server lists it again.
             undone: () => relistedOwnerDraft(queryClient, projectId, ownerKey, item.itemKey),
@@ -518,7 +519,7 @@ export function useWorkBranchCommands({
         );
         return {
           start: { sent: true, outcome },
-          part: share(handle, outcome, discarded.handle !== null),
+          part: { ...share(handle, outcome, discarded.handle !== null), restore: commandId },
         };
       }
       const discarded = owner.discard(ref(draft), target, history);
@@ -644,6 +645,7 @@ export function useWorkBranchCommands({
                   count,
                 }),
             handle,
+            restore: commandId,
           },
         ],
       });

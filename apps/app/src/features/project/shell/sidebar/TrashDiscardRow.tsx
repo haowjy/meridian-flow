@@ -6,8 +6,8 @@ import { ArchiveRestore } from "lucide-react";
 import { RowWord } from "@/components/app/RowWord";
 import { ListRow } from "@/components/ui/list-row";
 import { restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
+import type { DiscardRestoreState } from "@/features/draft-review/discard-restores";
 import { fileKindIcon } from "../../context/context-file-icon";
-import type { DiscardRestoreState } from "../../context/use-restore-discard";
 import { relativeTime } from "../../relative-time";
 
 export type DiscardEntry = ListDiscardEntriesResponse["entries"][number];

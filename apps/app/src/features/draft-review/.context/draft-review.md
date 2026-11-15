@@ -259,9 +259,12 @@ lists it and Restore brings it back: one document's draft as an item Discard
 `discardItem`. Only a Discard of some changes in a read frame is a local text Discard, whose
 Undo the room holds. Every Discard shows the owner's notice, and its Undo takes back each share:
 a room's text locally, a server Discard by Undo of a Discard (`restoreDiscard`, both halves onto
-the Work's current branch), the one command Trash's Restore and the editor's Restore send too;
-`leftOut` stays on the notice as what couldn't come back, and a restore answered with nothing
-done says why ("Work was closed.", "Its chat is in Trash.", "Gone from Trash."). No Discard asks first. A Discard row Trash shows restored has Undo, a new Discard of everything
+the Work's current branch), the one command Trash's Restore and the editor's Restore send too.
+Each Discard's restore has one progress, whatever sent it (`DiscardRestores` on the command
+owner): the notice, Trash's row and the editor's pill all read it, so a restore from Trash ends
+the notice, and a notice's refused Undo clears once a later restore lands. `leftOut` stays on the
+notice as what couldn't come back, and a restore answered with nothing done says why ("Work was
+closed.", "Its chat is in Trash.", "Gone from Trash."). No Discard asks first. A Discard row Trash shows restored has Undo, a new Discard of everything
 the entry took: its drafts' documents and every node its tree half settled (`tree.nodes`), so
 one that only moved, renamed or deleted goes back too. A Discard of a
 selection (a folder group's ×, a folder changed alone) is one server command over exactly those
