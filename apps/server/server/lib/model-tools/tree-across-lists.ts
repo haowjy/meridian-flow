@@ -182,6 +182,8 @@ export async function runMoveAcrossLists(
       const folder = reached.node.kind === "folder";
       const into =
         command.many ||
+        // The top of a source is a folder that exists.
+        to.rest === "" ||
         (await (async () => {
           const there = await call.context.port.readTree(to.area, {
             read: (scope) => reachPath(scope, to.area, shown, to.rest, { destination: true }),
