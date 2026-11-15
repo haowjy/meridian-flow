@@ -1,13 +1,11 @@
 /** Shared naming logic for inline context-entry create rows. */
 import { t } from "@lingui/core/macro";
-import {
-  type ContextEntryValidationError,
-  validateContextEntryName as validateSharedContextEntryName,
-} from "@meridian/contracts/context-entry-validation";
+import { normalEntryName } from "@meridian/contracts/context-entry-validation";
 import {
   firstFreeName,
   type NamedRow,
   parseDocumentFilename,
+  type StoredFilenameResult,
   splitRendered,
   storedFilename,
 } from "@meridian/contracts/protocol";
@@ -24,17 +22,19 @@ export function entryNameStemEnd(name: string, row?: NamedRow): number {
   return splitRendered(name, row?.extension ?? "").name.length;
 }
 
-function validationReason(error: ContextEntryValidationError): string {
-  switch (error.reason) {
-    case "name/empty":
-      return t`Name is required`;
-    case "path/empty-segment":
-      return t`Names cannot be empty`;
-    case "path/unknown-root":
-      return t`That location does not exist`;
-    case "path/trailing-separator":
-      return t`Names cannot end with '/'`;
-  }
+/**
+ * What a typed document name is stored as: the row's extension kept (`storedFilename`), and a
+ * name the codec can't hold turned into one by `normalEntryName` (no stem is "Untitled"), so no
+ * document name is refused. Only a stored file's own rule (a kept prose file keeps its suffix)
+ * still answers `ok: false`.
+ */
+export function storedDocumentName(typed: string, current?: NamedRow): StoredFilenameResult {
+  const stored = storedFilename(typed, current);
+  if (stored.ok || (current && !current.editable)) return stored;
+  const name = normalEntryName("document", typed);
+  const normal = storedFilename(name, current);
+  // A name that would read as another type (`data.json.md`) is kept whole, as the replay keeps it.
+  return normal.ok ? normal : { ok: true, name, filename: { name, extension: "", filetype: null } };
 }
 
 export function joinContextEntryPath(parent: string, leaf: string): string {
@@ -45,14 +45,6 @@ export function joinContextEntryPath(parent: string, leaf: string): string {
 export function parentContextEntryPath(path: string): string {
   const cut = path.lastIndexOf("/");
   return cut <= 0 ? "" : path.slice(0, cut);
-}
-
-/** Why a typed document name is refused, or null; `current` is the row being renamed. */
-export function invalidContextEntryNameReason(name: string, current?: NamedRow): string | null {
-  const result = validateSharedContextEntryName(name);
-  if (!result.ok) return validationReason(result);
-  const stored = storedFilename(result.value, current);
-  return stored.ok ? null : stored.message;
 }
 
 /** Live severity for the desktop tree's inline create/rename input, shown as a floating overlay (never inline, so rows don't shift). */
@@ -81,11 +73,9 @@ export function validateContextEntryName(
 ): ContextEntryNameSeverity | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  const validation = validateSharedContextEntryName(trimmed);
-  if (!validation.ok) return { level: "error", message: validationReason(validation) };
-  let candidate = trimmed;
+  let candidate = normalEntryName("folder", trimmed);
   if (kind === "file") {
-    const stored = storedFilename(trimmed, current);
+    const stored = storedDocumentName(trimmed, current);
     if (!stored.ok) return { level: "error", message: stored.message };
     candidate = stored.name;
   }
@@ -118,10 +108,10 @@ export function allocateContextEntryArrivalName(
   kind: ContextCreateKind,
   current?: NamedRow,
 ): string {
-  const stored = kind === "folder" ? null : storedFilename(typed, current);
+  const stored = kind === "folder" ? null : storedDocumentName(typed, current);
   if (stored && !stored.ok) return typed.trim();
   const desired = stored
     ? { name: stored.filename.name, extension: stored.filename.extension }
-    : { name: typed.trim() };
+    : { name: normalEntryName("folder", typed) };
   return firstFreeName(desired, occupied).filename;
 }

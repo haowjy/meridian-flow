@@ -5,6 +5,7 @@
  * that was renamed, moved or deleted since still reaches the node the model meant, whatever the
  * name means now.
  */
+import { normalEntryName } from "@meridian/contracts/context-entry-validation";
 import { canonicalLeaf } from "@meridian/contracts/protocol";
 import {
   childrenOf,
@@ -116,15 +117,13 @@ export type Resolution =
     }
   | { kind: "not_a_folder"; node: TreeNode; at: number };
 
-/** What a name's own `/` is stored as (`normalEntryName`). */
-const SLASH_LOOKALIKE = "\u2215";
-
 /**
  * Resolves `path` from `root` (a source's top) one name at a time against the map and the tree
  * now (tree-tools.md, "Which tree a stale path is resolved against"). A name the model was shown
  * is followed to the node it meant, wherever that is now; a node in Trash is returned like any
  * other, and the folders of Trash along the way are listed in `trashed`. Where a segment names
- * nothing, it is tried joined to the next with `∕`, the look-alike a name's own `/` is stored as.
+ * nothing, it is tried joined to the next with `∕`, the look-alike a name's own `/` is stored as,
+ * then to the one after, so a name typed `1/2/3` reaches the `1∕2∕3` it is stored as.
  */
 export function resolveShown(
   projection: TreeProjection,
@@ -142,12 +141,17 @@ export function resolveShown(
     node = undefined;
     let width = 1;
     let name = segments[at] as string;
-    for (; width <= 2 && at + width <= segments.length && !node; width += 1) {
-      const written = segments.slice(at, at + width).join(SLASH_LOOKALIKE);
+    const kids = childrenOf(projection, folder);
+    for (; at + width <= segments.length && !node; width += 1) {
+      // Segments joined are one name typed with its `/`, stored as `normalEntryName` stores it.
+      const written =
+        width === 1
+          ? (segments[at] as string)
+          : normalEntryName("folder", segments.slice(at, at + width).join("/"));
       const last = at + width === segments.length;
       for (name of candidates(written, last, path.folder)) {
         // The name's holder now: a standing node before one in Trash that kept the same name.
-        const named = childrenOf(projection, folder).filter((child) => child.displayName === name);
+        const named = kids.filter((child) => child.displayName === name);
         const now = named.find((child) => !child.trashed) ?? named[0];
         const was = shownAt(shown, folder, name);
         const meant = was ? projection.nodes.get(was) : undefined;

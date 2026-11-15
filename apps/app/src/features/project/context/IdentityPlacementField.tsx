@@ -22,7 +22,6 @@ import {
   allocateContextEntryArrivalName,
   documentRow,
   entryNameStemEnd,
-  invalidContextEntryNameReason,
 } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
@@ -92,7 +91,6 @@ export function IdentityPlacementField({
     () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
   );
   const [ghost, setGhost] = useState("");
-  const [noteValue, setNoteValue] = useState(value);
   const [requestError, setRequestError] = useState<string | null>(() =>
     failure
       ? failure.created
@@ -102,11 +100,6 @@ export function IdentityPlacementField({
   );
   const [commitReason, setCommitReason] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setNoteValue(value), 300);
-    return () => window.clearTimeout(timer);
-  }, [value]);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -180,11 +173,8 @@ export function IdentityPlacementField({
     ? `${[schemeLabel(destination.scheme), ...treeSegments(destination.folderPath)].join("/")}/`
     : "";
 
-  const liveReason = noteValue.trim()
-    ? invalidContextEntryNameReason(noteValue.trim(), documentRow(location.leaf))
-    : null;
   const identityNote = deriveIdentityNote({
-    validationReason: commitReason ?? liveReason,
+    validationReason: commitReason,
     requestError,
   });
   const note =
@@ -198,12 +188,6 @@ export function IdentityPlacementField({
     const name = value.trim() || ghost || location.leaf;
     if (!name) {
       setCommitReason(t`Name is required`);
-      return;
-    }
-    const reason = invalidContextEntryNameReason(name, documentRow(location.leaf));
-    if (reason) {
-      setCommitReason(reason);
-      setNoteValue(value);
       return;
     }
     await runCommit({

@@ -8,14 +8,18 @@
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { classifyFiletype, storedFilename } from "@meridian/contracts/protocol";
+import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import type { ContextCreateKind } from "./context-create-kind";
 import type { ContextEntrySibling } from "./context-entry-name";
-import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
+import {
+  joinContextEntryPath,
+  storedDocumentName,
+  validateContextEntryName,
+} from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { useEntryActions } from "./entry-drag/entry-actions";
 
@@ -60,7 +64,7 @@ export function useCreateEntryForm({
   // server comes back on its row.
   const handleSubmit = useCallback(
     (typed: string) => {
-      const stored = kind === "file" ? storedFilename(typed) : null;
+      const stored = kind === "file" ? storedDocumentName(typed) : null;
       if (stored && !stored.ok) throw new Error(stored.message);
       const filetype = stored?.filename.filetype ?? "markdown";
       if (stored && classifyFiletype(filetype).kind !== "tracked")
@@ -96,6 +100,6 @@ export function useCreateEntryForm({
 
 /** The icon previews the name the file will be stored under; an empty field is prose. */
 function iconName(draft: string): string {
-  const stored = storedFilename(draft);
+  const stored = storedDocumentName(draft);
   return stored.ok ? stored.name : draft;
 }
