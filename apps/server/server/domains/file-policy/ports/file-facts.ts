@@ -7,8 +7,8 @@ import type { FileFacts, FileTarget } from "../domain/types.js";
 export interface FileFactsRequest {
   target: FileTarget;
   /**
-   * The owner whose branch this access may go through: an agent's draft-mode
-   * owner. A `draft` target names its own; facts then include `branchOwner`.
+   * The owner whose branch this access goes through, asked only for a draft destination.
+   * A `draft` target names its own; facts then include `branchOwner`.
    */
   branchOwner?: DraftOwner;
 }

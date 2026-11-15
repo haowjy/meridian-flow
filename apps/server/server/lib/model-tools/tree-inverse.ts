@@ -203,7 +203,9 @@ async function reverseReceipt(
   const drafted = receipt.draftBranchId !== null;
   const port = drafted
     ? call.context.port
-    : contextPortForThread(deps.contextPorts, call.context.resolution, { liveWrites: true });
+    : contextPortForThread(deps.contextPorts, call.context.resolution, {
+        destination: { kind: "live" },
+      });
   let handle: string | undefined;
   const kind = input.command === "redo" ? "redo" : "undo";
   const places = { area: parts.area, roots: new Map<string, string>(), locate: () => null };

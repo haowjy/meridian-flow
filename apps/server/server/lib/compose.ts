@@ -1171,11 +1171,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,
-      availability: ports.projectContextAvailability,
       documents: ports.documentSync,
-      branches: ports.documentSync.branches,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,
+      fileAccess: ports.fileAccess,
+      readAgentChain: ports.readAgentChain,
     }),
     toolExecutor,
     repos: ports.threadRepos,

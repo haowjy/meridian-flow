@@ -5,7 +5,7 @@ import {
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
-import type { FileAccess, FileTarget } from "../domains/file-policy/index.js";
+import type { FileAccess, FileDestination, FileTarget } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../domains/projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../domains/threads/index.js";
 import { contextErrorToHttp } from "./context-error-http.js";
@@ -26,7 +26,7 @@ export async function resolveThreadContextPort(
   deps: ThreadContextRouteDeps,
   threadId: ThreadId,
   userId: UserId,
-  options: { liveWrites?: boolean } = {},
+  options: { destination?: FileDestination } = {},
 ) {
   const resolution = await resolveThreadContext(
     {
@@ -94,7 +94,7 @@ export async function writeThreadContextDocument(
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   // People write live: a writer's whole-document write never lands in a draft.
   const context = await resolveThreadContextPort(deps, threadId, input.userId, {
-    liveWrites: true,
+    destination: { kind: "live" },
   });
   const grant = await requireFileGrant(
     deps.fileAccess,

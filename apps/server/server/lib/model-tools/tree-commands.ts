@@ -147,7 +147,9 @@ export async function runTreeToolCommand(
   };
   const port = drafted
     ? call.context.port
-    : contextPortForThread(deps.contextPorts, call.context.resolution, { liveWrites: true });
+    : contextPortForThread(deps.contextPorts, call.context.resolution, {
+        destination: { kind: "live" },
+      });
   let handle: string | undefined;
 
   return settle(async () => {
