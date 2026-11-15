@@ -42,12 +42,17 @@ export type TurnReceiptState =
 
 export type TurnReceiptControl = "undo" | "redo" | "view_change";
 
-/** What became of a document's draft text from a turn: still waiting, applied, or discarded. */
+/** What became of one half of a turn's drafted change to a node: still waiting, applied, or discarded. */
 export type TurnDraftState = "pending" | "applied" | "discarded";
 
 export interface TurnReceiptChip {
-  /** Each drafted document's current state, by document id; absent for documents the turn wrote live. */
+  /** Each drafted document's text, by document id; absent for documents the turn wrote live. */
   drafts?: Record<string, TurnDraftState>;
+  /**
+   * Each node's drafted tree change (a move, rename, delete or create, a folder's included), by
+   * node id: still waiting, applied, or discarded. Beside `drafts`, which says the text half.
+   */
+  trees?: Record<string, TurnDraftState>;
   skips?: import("./write-reversal.js").TurnInverseSkip[];
   state: TurnReceiptState;
   control: TurnReceiptControl;

@@ -37,11 +37,12 @@ export type TurnEditedDocument = TurnEditedDocumentId & {
 };
 
 /**
- * One of a turn's own moves, deletes or restores of a document, in `seq` order: live, or in the
- * branch of the owner `ownerKey` names (a drafted entry).
+ * One of a turn's own creates, moves, deletes or restores of a node (a document, or a `folder`),
+ * in `seq` order: live, or in the branch of the owner `ownerKey` names (a drafted entry).
  */
 export type TurnTreeEntry = {
   documentId: DocumentId;
+  folder: boolean;
   ownerKey: DraftOwnerKey | null;
   op: "create" | "move" | "delete" | "restore";
   shownAt: string | null;
@@ -52,21 +53,29 @@ export type TurnTreeEntry = {
    * every other entry: a copy moved later in the same turn keeps this on its create.
    */
   copiedFrom: string | null;
-  /** The turn's own Undo took this change back: it names an address but is no longer a change. */
+  /**
+   * The model's own undo took this change back: it names an address but is no longer one of the
+   * reply's changes. A card's Undo doesn't count: the card still says what the reply did.
+   */
   undone: boolean;
 };
 
 export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
 
 /**
- * A folder a turn changed: it has no document, so its receipt names it by the path the model
- * gave, in the destination (live, or an owner's branch) the change went to.
+ * A folder a turn changed, in the destination (live, or an owner's branch) the change went to:
+ * it has no document, so it is named where the change left it (`at`: a clash's " (2)" included),
+ * with its tree line.
  */
 export type TurnTreeFolder = {
   nodeId: string;
   ownerKey: DraftOwnerKey | null;
-  shownAt: string;
+  at: string;
+  tree?: TurnTreeLine;
 };
+
+/** A folder the turn changed, by the path the model gave. */
+export type TurnFolderTarget = { nodeId: string; ownerKey: DraftOwnerKey | null; shownAt: string };
 
 /** The file-policy destination a turn's edit is read and reversed at. */
 export function turnEditDestination(target: TurnEditedDocumentId): FileDestination {
@@ -78,7 +87,7 @@ export function turnEditDestination(target: TurnEditedDocumentId): FileDestinati
 export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
-  listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
+  listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnFolderTarget[]>;
   /** The turn's tree entries, live and drafted, ordered by `seq`. */
   listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
 };
@@ -126,7 +135,20 @@ export function createTurnLiveLineageReadModel(deps: {
       });
     },
 
-    listFoldersForTurn: (threadId, turnId) => deps.store.listFolderTargetsForTurn(threadId, turnId),
+    async listFoldersForTurn(threadId, turnId) {
+      const [folders, entries] = await Promise.all([
+        deps.store.listFolderTargetsForTurn(threadId, turnId),
+        deps.store.listTreeEntriesForTurn(threadId, turnId),
+      ]);
+      const lines = treeLines(entries);
+      const made = createAddresses(entries);
+      return folders.map(({ shownAt, ...folder }) => {
+        const key = treeLineKey({ documentId: folder.nodeId, ownerKey: folder.ownerKey });
+        const tree = lines.get(key);
+        const at = tree ? (tree.op === "delete" ? tree.from : tree.to) : (made.get(key) ?? shownAt);
+        return tree ? { ...folder, at, tree } : { ...folder, at };
+      });
+    },
 
     async getTurnReceiptChip(threadId, turnId) {
       return deps.receiptStore?.getTurnReceiptChip(threadId, turnId) ?? null;
@@ -171,7 +193,9 @@ function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string,
 }
 
 /** A document's tree line is per destination: live, or one owner's branch. */
-function treeLineKey(target: TurnEditedDocumentId | TurnTreeEntry): string {
+function treeLineKey(
+  target: TurnEditedDocumentId | { documentId: string; ownerKey: DraftOwnerKey | null },
+): string {
   const ownerKey =
     "ownerKey" in target
       ? target.ownerKey

@@ -22,7 +22,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { branchOwnerSql, ownerKeyOfColumns, ownerOfColumns } from "../../../shared/draft-owner.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
-import type { TurnEditedDocumentId, TurnTreeFolder } from "../domain/turn-live-lineage.js";
+import type { TurnEditedDocumentId, TurnFolderTarget } from "../domain/turn-live-lineage.js";
 
 export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
@@ -112,7 +112,7 @@ export async function readTurnFolderTargets(
     threadId: TurnInverseQuery["threadId"];
     turnId: NonNullable<TurnInverseQuery["turnId"]>;
   },
-): Promise<TurnTreeFolder[]> {
+): Promise<TurnFolderTarget[]> {
   const owner = branchOwnerSql(branches);
   const rows = await db
     .selectDistinct({
@@ -134,7 +134,7 @@ export async function readTurnFolderTargets(
       ),
     )
     .orderBy(treeEditReceiptNodes.nodeId);
-  const folders = new Map<string, TurnTreeFolder>();
+  const folders = new Map<string, TurnFolderTarget>();
   for (const row of rows)
     if (row.shownAt)
       folders.set(`${row.nodeId}:${row.workId}:${row.rootThreadId}`, {

@@ -505,6 +505,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
       return owners;
     },
+    treeDraftStates: (query) =>
+      query.model || !query.turnId
+        ? Promise.resolve({})
+        : treeInverse.draftStates(query.threadId, query.turnId),
     async treeSteps(query, direction) {
       const tree = await treePlanOf(query, direction);
       return { acting: tree.steps.length, gone: tree.gone.length };

@@ -71,11 +71,11 @@ export async function handleTurnLiveLineageRequest(
       ? ({ state: "work-reversed", control: "redo" } as const)
       : null;
   return {
-    documents: [
+    documents: inTreeOrder([
       ...visibleDocuments.map(serializeLiveLineageDocument),
       // The thread's owner has proven the turn is theirs; a folder has no file grant of its own.
       ...folders.map(serializeLiveLineageFolder),
-    ],
+    ]),
     receipt: receipt ?? workReceipt,
   };
 }
@@ -121,7 +121,7 @@ async function filterAccessibleLiveLineageDocuments(
 }
 
 function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocumentItem {
-  const parsed = parseContextUri(folder.shownAt);
+  const parsed = parseContextUri(folder.at);
   if (!parsed.ok) {
     throw createError({ statusCode: 500, message: "Live-lineage folder URI is invalid" });
   }
@@ -133,6 +133,7 @@ function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocu
     ...(folder.ownerKey
       ? { scope: "draft" as const, owner: folder.ownerKey }
       : { scope: "live" as const }),
+    ...(folder.tree ? { tree: folder.tree } : {}),
   };
 }
 
@@ -150,4 +151,23 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
       : { scope: "live" as const }),
     ...(document.tree ? { tree: document.tree } : {}),
   };
+}
+
+/**
+ * The rows as the tree lists them, by where each row says the node is now (a move's
+ * destination, a delete's old place): a folder before what it holds, siblings by name.
+ */
+function inTreeOrder(rows: TurnLiveLineageDocumentItem[]): TurnLiveLineageDocumentItem[] {
+  const place = (row: TurnLiveLineageDocumentItem) =>
+    (row.tree ? (row.tree.op === "delete" ? row.tree.from : row.tree.to) : row.uri).split("/");
+  const places = new Map(rows.map((row) => [row, place(row)]));
+  return [...rows].sort((a, b) => {
+    const left = places.get(a) ?? [];
+    const right = places.get(b) ?? [];
+    for (let at = 0; at < Math.min(left.length, right.length); at++) {
+      const order = (left[at] ?? "").localeCompare(right[at] ?? "", undefined, { numeric: true });
+      if (order) return order;
+    }
+    return left.length - right.length;
+  });
 }
