@@ -2,8 +2,10 @@
  * Row-anchored folder placement using the same project tree as document paths. One picker for
  * Move… and Copy to…. Move… offers the places in the row's own list (the project's files, or the
  * account's Your files) and the row's position among the folder's siblings; Copy to… offers every
- * place and always adds. A list is the unit of history, so between two the action is Copy. Given a selection, Move… moves all of it, each row inside a moved folder going
- * with its folder, and offers no positions.
+ * place and always adds. A list is the unit of history, so between two the action is Copy: a
+ * selection in both lists is offered Copy to…, never Move… (`ContextEntryActions`). Given a
+ * selection, Move… moves all of it, each row inside a moved folder going with its folder, and
+ * offers no positions.
  */
 
 import { t } from "@lingui/core/macro";

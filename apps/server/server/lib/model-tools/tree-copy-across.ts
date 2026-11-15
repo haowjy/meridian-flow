@@ -14,7 +14,7 @@ import { descendantsOf, listRecords } from "@meridian/project-tree";
 import type { TreeScope } from "../../domains/context/ports/context-adapter.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
-import { reachPath } from "../../domains/context/tree/tree-commands.js";
+import { movesInto, reachPath } from "../../domains/context/tree/tree-commands.js";
 import { type FileGrant, runWithEditGrants } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
@@ -47,8 +47,9 @@ export type CopiedAcross = {
 };
 
 /**
- * Copies `from` into the folder `path` names, or, for one source and a path not ending in `/`,
- * into the folder that path is in, to be renamed to its last name by `recordCopies`. One source
+ * Copies `from` into the folder `path` names, or, for one source that an in-list move would land
+ * at `path` (`movesInto`), into the folder that path is in, to be renamed to its last name by
+ * `recordCopies`. One source
  * that can't be copied refuses the call; of several, it is listed among those not copied.
  */
 export async function copyAcross(
@@ -85,8 +86,19 @@ export async function copyAcross(
   }
   if (sources.length === 0) return { area: to.area, roots: [], folders: [], notCopied };
 
-  const intoFolder = command.many || command.path.endsWith("/");
-  const into = intoFolder ? to.rest : folderPart(to.rest);
+  const intoFolder =
+    command.many ||
+    (await (async () => {
+      // `path` is read as an in-list move reads it; the folder it names is in the other list.
+      const named = await call.context.port.readTree(to.area, {
+        read: (scope) => reachPath(scope, to.area, shown, to.rest, { destination: true }),
+      });
+      const isFolder =
+        named.ok && named.value.kind === "node" && named.value.node.kind === "folder";
+      return movesInto(command.path, sources[0]?.kind === "folder", () => isFolder);
+    })());
+  const at = to.rest.replace(/\/+$/, "");
+  const into = intoFolder ? to.rest : folderPart(at);
   const copy = await runWithEditGrants(deps.fileAccess, grants, () =>
     call.context.port.copy({
       operationId: operationIdOf(ctx),
@@ -106,7 +118,7 @@ export async function copyAcross(
     const entry = done.value.entries.find((each) => each.copiedFrom === source.nodeId);
     return entry ? [{ source, entry }] : [];
   });
-  const name = intoFolder ? "" : to.rest.slice(into.length);
+  const name = intoFolder ? "" : at.slice(into.length);
   return {
     area: to.area,
     roots,

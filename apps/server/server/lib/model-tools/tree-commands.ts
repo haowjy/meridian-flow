@@ -261,6 +261,8 @@ export async function runTreeToolCommand(
     const moved = kept?.payload.tree?.moved?.made ?? (kept ? 1 : 0);
     if (moved + copied.copied === 0)
       return writeToolError("move", `Nothing moved or copied: ${notMoved.join("; ")}`);
+    // One handle for a call with two receipts: a mixed call's is the copy's, so `revert` of it
+    // takes back only the copy. `undo` and the card's Undo take back the whole call.
     const handle = copied.handle ?? kept?.payload.write?.id;
     return answerOf(
       "move",

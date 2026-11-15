@@ -214,6 +214,19 @@ function unresolved(
 
 const isFolderPath = (path: string) => path.endsWith("/");
 
+/**
+ * Whether one node's `move` goes into the folder `path` names, under its own name, or lands at
+ * `path` itself, its name included: into for a document, and for a folder only when `path` names
+ * another folder that exists. A copy between lists reads `path` by the same rule.
+ */
+export function movesInto(
+  path: string,
+  movingFolder: boolean,
+  namesAnotherFolder: () => boolean,
+): boolean {
+  return isFolderPath(path) && (!movingFolder || namesAnotherFolder());
+}
+
 type Located = { segments: string[]; folder: boolean; area: string; root: string };
 
 /** A path the model wrote, in the area and tree it names. */
@@ -777,22 +790,16 @@ export function runTreeCommand(
       if (!command.many) {
         const from = command.from[0] as string;
         const fromPath = pathFrom(cx, from);
-        // A `path` that names a folder (a trailing `/`) is the folder the node goes into, under
-        // its own name: always for a document, and for a folder when that folder exists. Else
-        // `path` is where the node itself ends up, its name included.
-        const into =
-          isFolderPath(command.path) &&
-          (!fromPath.folder ||
-            (() => {
-              const there = resolveShown(projection, shown, to.root, to);
-              const self = resolveShown(projection, shown, fromPath.root, fromPath);
-              // The folder named is another folder: the same path with a position is a reorder.
-              return (
-                there.kind === "node" &&
-                there.node.kind === "folder" &&
-                !(self.kind === "node" && self.node.id === there.node.id)
-              );
-            })());
+        const into = movesInto(command.path, fromPath.folder, () => {
+          const there = resolveShown(projection, shown, to.root, to);
+          const self = resolveShown(projection, shown, fromPath.root, fromPath);
+          // The folder named is another folder: the same path with a position is a reorder.
+          return (
+            there.kind === "node" &&
+            there.node.kind === "folder" &&
+            !(self.kind === "node" && self.node.id === there.node.id)
+          );
+        });
         const leaf = fromPath.segments.at(-1) ?? "";
         const target: Located = into
           ? { ...to, segments: [...to.segments, leaf], folder: fromPath.folder }
