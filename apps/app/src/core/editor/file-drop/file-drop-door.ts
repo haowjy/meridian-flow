@@ -13,6 +13,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import { ASSETS_FOLDER, classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -85,12 +86,20 @@ export const fileDropDoor: DropDoor = {
   },
 };
 
-function chipFor(editor: Editor, name: string, documentId: string, scheme: string): PMNode | null {
-  return documentReferenceNode(editor.state.schema, {
-    label: name,
-    documentId,
-    uri: `${scheme}://${ASSETS_FOLDER}/${name}`,
-  });
+function chipFor(
+  editor: Editor,
+  name: string,
+  documentId: string,
+  scheme: ContextUriScheme,
+): PMNode | null {
+  // A dropped file's name is the writer's: `@notes.png` is no address segment.
+  let uri: string;
+  try {
+    uri = canonicalContextUri(scheme, `${ASSETS_FOLDER}/${name}`);
+  } catch {
+    return null;
+  }
+  return documentReferenceNode(editor.state.schema, { label: name, documentId, uri });
 }
 
 type Reserved = { ok: true; name: string } | { ok: false; reason: unknown };

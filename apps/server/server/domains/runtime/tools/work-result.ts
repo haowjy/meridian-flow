@@ -6,6 +6,7 @@
  */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -108,7 +109,10 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
         "Drafts:",
         ...result.drafts.map((draft) => {
           const name = draft.contextLocation
-            ? `${draft.contextLocation.scheme}://${draft.contextLocation.path.replace(/^\/+/, "")}`
+            ? canonicalContextUri(
+                draft.contextLocation.scheme,
+                draft.contextLocation.path.replace(/^\/+/, ""),
+              )
             : (draft.documentName ?? "Untitled");
           return `  ${name}${draft.createdDocument ? " (new document)" : ""}`;
         }),

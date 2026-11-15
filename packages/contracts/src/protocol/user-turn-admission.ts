@@ -221,7 +221,6 @@ export function referenceOccurrenceContent(block: {
   const parsedUri = parseContextUri(content.uri);
   if (
     !parsedUri.ok ||
-    !content.uri.includes("://") ||
     parsedUri.value.path.length === 0 ||
     parsedUri.value.normalized !== content.uri
   ) {
