@@ -341,6 +341,7 @@ export function createDrizzleDocumentTrash(deps: {
             if (standing || unsettledOn(writer.doc, nodes)) throw new TreeRefusal("held");
             return {
               entry: { id: entry.id, node: entry.node },
+              nodes: [...nodes],
               documentIds: [...nodes].filter(
                 (id) => view.nodes.get(id)?.kind !== "folder",
               ) as DocumentId[],
@@ -352,7 +353,9 @@ export function createDrizzleDocumentTrash(deps: {
         await deps.tree.submit({
           lists: [list],
           make: ([{ writer }]) => {
-            writer.purge("system", taken.entry);
+            // The records admitted since the first submission may have put a node inside:
+            // the purge names exactly what this one found, and the replay rescues the rest.
+            writer.purge("system", taken.entry, taken.nodes);
           },
         });
         return release(taken.documentIds);
@@ -443,10 +446,14 @@ export function createDrizzleDocumentTrash(deps: {
                 (record) => record.type === "create" && record.node === documentId,
               );
               if (create)
-                writer.purge("system", {
-                  id: lastSettlements(writer.doc).get(create.id)?.command ?? create.id,
-                  node: documentId,
-                });
+                writer.purge(
+                  "system",
+                  {
+                    id: lastSettlements(writer.doc).get(create.id)?.command ?? create.id,
+                    node: documentId,
+                  },
+                  [documentId],
+                );
             }
           },
         });

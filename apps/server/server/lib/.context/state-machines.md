@@ -57,30 +57,32 @@ One connection to a project's (or an account's) tree list room (`yjs-tree-room.t
 
 ```mermaid
 stateDiagram-v2
-  [*] --> open: the account owns the list (edit or read)
-  [*] --> closed: not the list's account (4403)
+  [*] --> open: the account owns the list
+  [*] --> closed: not the list's account (4403), a stored copy of another list (4213)
   open --> open: SyncStep1 catches the room up to the journal, an update is admitted
-  open --> closed: a whole refusal (4210), access lost (4409), the project deleted (4409), rate wait over ten seconds (1013), any server error (1013)
+  open --> closed: a copy the guard turns away (4212), the project deleted (4409), rate wait over ten seconds (1013), any server error (1013)
   closed --> [*]
 ```
 
 - **A client's update never reaches the room's document.** It goes to `TreeListStore.admit`;
-  the room's document gains what the store committed (the client's items with the verdicts the
-  server appended), delivered from `onCommitted`, so every connection hears the verdicts.
+  the room's document gains what the store committed (the client's items with the `dropped`
+  stamps the server appended), delivered from `onCommitted`, so every connection hears them.
 - **Every close is a close of the socket, with its code**, through the gateway's one close path
   (`withTreeRefusal`, as `withRemovalRefusal` is for documents): Hocuspocus's own close message
   reaches a provider as 1000 and leaves the socket open, so a refusal that relied on it would
-  leave the client offline for good. A whole refusal is `4210 list-rebuild` and applies nothing, and
-  its reason is `list-rebuild:<record id>` when a record earned it; the client rebuilds from the server's
-  copy and gives that record up. An account that lost write access since it
-  connected gets `4409`, and a server error `1013`: the client reconnects on both. A refused
+  leave the client offline for good. A copy the guard turns away is `4212 copy-broken`
+  and applies nothing: the client does not reconnect (the same bytes would go again), keeps the
+  broken copy and loads a fresh one. A stored copy of another list (a reset database, a
+  recreated account list) is `4213 list-changed:<list id>`, sent at connect from the `?list=` the
+  client's socket URL carries: the client loads from nothing. A copy with no stored id learns the
+  room's from a stateless message after it connects. A server error is `1013`, which the client
+  reconnects on. One connection's messages are admitted in order. A refused
   connection is marked, and the messages Hocuspocus has queued behind the refusal are refused
   without reaching the store.
 - **Access has a lifecycle.** The connection registers under the room's name with the gateway's
   access index; a project's deletion publishes a file-access change that closes it with `4409`,
   and the reconnect is refused (`4403`). A change between the first check and the registration
   is caught by asking again.
-- **A read-only connection's updates are dropped before the check** (`level: "read"`).
 - **Admissions are rate limited per connection** (a burst of 60, 30 a second). Each admission
   spends one token at once and the balance may go below zero; the debt is the wait, and the
   connection is closed only when it would pass ten seconds.

@@ -27,7 +27,7 @@ export function createDrizzleProjectChatFeedRepository(
           ON tus.thread_id = t.id AND tus.user_id = ${input.userId}::uuid
         WHERE t.project_id = ${input.projectId}::uuid
           AND t.kind = 'primary'
-          AND t.deleted_at IS NULL AND t.status <> 'archived'
+          AND t.deleted_at IS NULL
           AND (NOT ${input.favorite} OR COALESCE(tus.is_favorite, false))
           AND (${input.workId}::uuid IS NULL OR EXISTS (
             SELECT 1 FROM thread_works matched_tw

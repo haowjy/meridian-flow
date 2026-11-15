@@ -39,7 +39,6 @@ import type {
   Thread,
   ThreadKind,
   ThreadLeaseState,
-  ThreadLifecycleStatus,
   ThreadListItem,
   ThreadStatus,
   Turn,
@@ -328,7 +327,6 @@ export interface ThreadRepository {
     workId: WorkId,
     limit: number,
   ): Promise<WorkThreadSummary[]>;
-  updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
   /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
@@ -341,13 +339,6 @@ export interface ThreadRepository {
   /** Recomputes total cost from all model responses belonging to this thread's turns. */
   recomputeCostFromModelResponses(id: ThreadId): Promise<void>;
   updateCost(id: ThreadId, deltaCostUsd: string, turnCountIncrement?: number): Promise<void>;
-  // TODO(archive-delete): make archive + delete "both real" (product decision).
-  // `softDelete`/`restore` below are the trash (deletedAt). Archive is a separate,
-  // reversible intent that needs wiring here:
-  //   - archive(id)/unarchive(id) — set/clear status:"archived" (or fold into
-  //     updateStatus) so a chat can be filed away and brought back.
-  //   - add a listing path for the "Archived" view; listByProject and the chat
-  //     feed already omit archived chats by default.
   /** Applies a changed trash state; lifecycle commands must first hold the thread row lock. */
   setTrashState(id: ThreadId, target: "deleted" | "visible"): Promise<Thread>;
 }
@@ -355,7 +346,6 @@ export interface ThreadRepository {
 export interface WorkThreadSummary {
   title: string | null;
   updatedAt: string;
-  status: ThreadLifecycleStatus;
 }
 
 /** One direct child row, as the activity read needs it. */

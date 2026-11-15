@@ -20,13 +20,18 @@ export const WS_CLOSE = {
   /** Terminal: the document was removed. Never reconnect. */
   DOCUMENT_DELETED: { code: 4208, reason: "document-deleted" },
   /**
-   * A tree list's room refused an update whole, or a client's copy cannot be the server's.
-   * Not terminal and not a plain reconnect: the client throws its copy away, rebuilds from the
-   * server's under a new Yjs client id and appends again what the rebuilt copy lacks. When one
-   * record earned the refusal the reason is `list-rebuild:<record id>` (`listRebuildReason`): the
-   * client gives that record up. A reason is at most 123 bytes; a record id is at most 64.
+   * Terminal: a tree list's room found this client's copy does something an honest client's
+   * never does (a deletion, a struct that can't be placed, a server-only kind). Never reconnect:
+   * the same bytes would be sent again. The client keeps the broken copy and loads a fresh one.
    */
-  LIST_REBUILD: { code: 4210, reason: "list-rebuild" },
+  COPY_BROKEN: { code: 4212, reason: "copy-broken" },
+  /**
+   * The stored copy is of another list than the one the room serves (a reset database, a
+   * recreated account list): the reason is `list-changed:<list id>`. The client loads from
+   * nothing and connects again; it carries nothing, for its records name nodes of a list that is
+   * gone.
+   */
+  LIST_CHANGED: { code: 4213, reason: "list-changed" },
   CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
   /**
@@ -36,18 +41,16 @@ export const WS_CLOSE = {
   ACCESS_CHANGED: { code: 4409, reason: "access-changed" },
 } as const;
 
-const REBUILD_RECORD = /^list-rebuild:([0-9a-zA-Z_-]{1,64})$/;
-
-/** The close of a list's whole refusal, naming the record that earned it when there is one. */
-export function listRebuildClose(record: string | undefined) {
-  const { code, reason } = WS_CLOSE.LIST_REBUILD;
-  return {
-    code,
-    reason: record && REBUILD_RECORD.test(`${reason}:${record}`) ? `${reason}:${record}` : reason,
-  };
+/** The close that sends a client of another list's copy to load the real list from nothing. */
+export function listChangedClose(listId: string) {
+  const { code, reason } = WS_CLOSE.LIST_CHANGED;
+  return { code, reason: `${reason}:${listId}` };
 }
 
-/** The record a list-rebuild close names, if it names one. */
-export function listRebuildRecord(reason: string): string | undefined {
-  return REBUILD_RECORD.exec(reason)?.[1];
+/** The list id a list-changed close names, if it is one. */
+export function listChangedId(event: { code: number; reason: string }): string | undefined {
+  const { code, reason } = WS_CLOSE.LIST_CHANGED;
+  return event.code === code && event.reason.startsWith(`${reason}:`)
+    ? event.reason.slice(reason.length + 1)
+    : undefined;
 }

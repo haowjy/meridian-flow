@@ -9,12 +9,9 @@ import type {
   ProjectContextTreeScheme,
   TreeListRef,
 } from "@meridian/contracts/protocol";
-import type { View } from "@meridian/project-tree";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { dismissedFailures, useDismissalRevision } from "@/core/project-tree/failure-dismissals";
-import { treeFailures } from "@/core/project-tree/tree-failures";
 import { LIVE_VERSION, type TreeVersion } from "@/core/project-tree/tree-version";
-import { buildTreeView, type TreeFailure, type TreeView } from "@/core/project-tree/tree-view";
+import { buildTreeView, type TreeView } from "@/core/project-tree/tree-view";
 import type { TreeListHandle } from "@/core/tree-list/tree-list-registry";
 import type {
   TreeListSession,
@@ -92,7 +89,7 @@ export function sourceFor(
   return sources.find((source) => source.scheme === scheme && owns(source)) ?? null;
 }
 
-const READY = new Set<TreeListStatus>(["synced", "read-only", "offline", "unauthenticated"]);
+const READY = new Set<TreeListStatus>(["synced", "offline", "broken", "unauthenticated"]);
 
 /** The copy has synced or can stand in for the list: an address that finds no node is "not there". */
 export const listIsComplete = (status: TreeListStatus): boolean => READY.has(status);
@@ -104,57 +101,6 @@ export type TreeViewResult = {
   /** This account has no access to the list. */
   isError: boolean;
 };
-
-const seenFailures = new WeakMap<TreeListSession, Map<string, number | null>>();
-
-/** First sight of a refusal while the copy is still loading is not fresh (undefined); one that lands after is. */
-function failureSeenAt(session: TreeListSession, status: TreeListStatus) {
-  let seen = seenFailures.get(session);
-  if (!seen) {
-    seen = new Map();
-    seenFailures.set(session, seen);
-  }
-  const map = seen;
-  return (record: string) => {
-    let at = map.get(record);
-    if (at === undefined) {
-      at = status === "waiting" ? null : Date.now();
-      map.set(record, at);
-    }
-    return at ?? undefined;
-  };
-}
-
-const failuresOfSnapshot = new WeakMap<
-  TreeListSnapshot,
-  Map<string | null, { dismissals: number; failures: ReadonlyMap<string, TreeFailure> }>
->();
-
-/** The writer's refusals in a view as the list stands, read once per version for every view that shows them. */
-function failuresOf(
-  session: TreeListSession,
-  snapshot: TreeListSnapshot,
-  accountId: string,
-  dismissals: number,
-  view: View,
-): ReadonlyMap<string, TreeFailure> {
-  let byView = failuresOfSnapshot.get(snapshot);
-  if (!byView) {
-    byView = new Map();
-    failuresOfSnapshot.set(snapshot, byView);
-  }
-  const held = byView.get(view.draft);
-  if (held?.dismissals === dismissals) return held.failures;
-  const failures = treeFailures(
-    snapshot.doc,
-    `user:${accountId}`,
-    dismissedFailures(accountId),
-    failureSeenAt(session, snapshot.status),
-    view,
-  );
-  byView.set(view.draft, { dismissals, failures });
-  return failures;
-}
 
 /**
  * The trees of the schemes' sources, built from the lists' replays: live, unless the caller names
@@ -177,7 +123,6 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
   );
   const projectSources = useProjectContextSources(enabled && wantsProject ? projectId : "");
   const accountSources = useAccountContextSources(enabled && wantsAccount);
-  const dismissals = useDismissalRevision();
 
   const owner = useMemo(() => ({ workId, rootThreadId, chatId }), [workId, rootThreadId, chatId]);
 
@@ -197,7 +142,6 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
                 scheme,
                 source,
                 authority: source.authority,
-                failures: failuresOf(list.session, snapshot, accountId, dismissals, view),
               })
             : null,
         isComplete: ready,
@@ -215,8 +159,6 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
     accountSources,
     projectSources,
     owner,
-    accountId,
-    dismissals,
     view,
     pendingText,
   ]);

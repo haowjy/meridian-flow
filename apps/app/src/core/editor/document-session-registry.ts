@@ -33,6 +33,8 @@ export interface LiveDocumentSessionRegistry {
   clearLocalCopy(documentId: DocumentId): Promise<void>;
   /** True once no open session has unsent edits the server could still acknowledge; false if some remain at the deadline. */
   settleUnsentEdits(timeoutMs: number): Promise<boolean>;
+  /** The words this browser holds of the document in its local copies, open or not; null with none. */
+  localText(documentId: DocumentId): Promise<string | null>;
   /** Calls `observer` with the documents this browser holds a copy of for the account, open or not, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
@@ -59,6 +61,11 @@ export interface LiveDocumentSessionRegistry {
    */
   observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
+  /**
+   * The room ends for good and its typing is not handed back: its document was never made, and
+   * the tab and the tree row offer those words from the local copy, which stays.
+   */
+  abandonDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(

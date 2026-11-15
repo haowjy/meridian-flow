@@ -62,7 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Empty thread",
         kind: "primary",
-        status: "idle",
       });
     });
 

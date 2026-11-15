@@ -205,14 +205,17 @@ const verifyKey = (projectId: string, ownerKey: string, itemKey: string) =>
 /**
  * A pin whose item a cached owner list lacks. The list may only be stale (the draft was made a
  * moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
- * draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing.
- * Concurrent calls for one item share one read; the first one's `successor` decides.
+ * draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing, and
+ * neither does a read that lacks a draft this browser's create makes (`created`): the server may
+ * not have heard of the create. Concurrent calls for one item share one read; the first one's
+ * `successor` decides.
  */
 export function verifyPin(
   queryClient: QueryClient,
   accountId: string,
   projectId: string,
   pin: DraftPin,
+  created: (itemKey: string) => boolean,
   successor?: (documentId: string) => DraftPin | null,
 ): void {
   const key = verifyKey(projectId, pin.ownerKey, pin.itemKey);
@@ -222,6 +225,7 @@ export function verifyPin(
     // A failed refetch keeps the old rows and sets status "error": it proves nothing.
     if (queryClient.getQueryState(queryKey)?.status !== "success") return;
     if (
+      created(pin.itemKey) ||
       cachedOwnerDrafts(queryClient, projectId, pin.ownerKey)?.some(
         (row) => row.itemKey === pin.itemKey,
       )

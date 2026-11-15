@@ -57,7 +57,7 @@ export type UploadIntakeError =
   | { code: "size_mismatch" }
   /** Finish found nothing at the upload URL: the PUT hasn't happened, or the URL expired. */
   | { code: "not_uploaded" }
-  | { code: "invalid_filename"; reason: ContextEntryValidationReason; character?: string };
+  | { code: "invalid_filename"; reason: ContextEntryValidationReason };
 
 /** An upload's document id is its node's id in the list: the one name the browser has for it. */
 export interface DeleteDraftUploadInput {

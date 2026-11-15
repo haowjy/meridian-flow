@@ -30,7 +30,7 @@ have it:
 | User-turn admission | One writer submission, admitted exactly once | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
 | Media inclusion | Whether one picture or tool-result media part is in the model request | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
 | Spawn status | What became of one subagent, as its parent sees it | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
-| Thread archive, thread trash | Whether a chat is archived, and whether it is in the Trash | [threads](../../apps/server/server/domains/threads/.context/state-machines.md) |
+| Thread trash | Whether a chat is in the Trash | [threads](../../apps/server/server/domains/threads/.context/state-machines.md) |
 | Work archive, Work delete | Whether a Work is available | [projects](../../apps/server/server/domains/projects/.context/state-machines.md) |
 | Import, import entry | An import job and each file in it | [import](../../apps/server/server/domains/import/.context/state-machines.md) |
 | Upload intake | One uploaded file, from a reserved address to a file in the project | [context/uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md) |

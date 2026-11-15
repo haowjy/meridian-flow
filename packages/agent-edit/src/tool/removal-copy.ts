@@ -14,12 +14,12 @@ export function removalPhrase(
   if (!removal) return "deleted";
   const { actor } = removal;
   const verb = removal.reason === "deleted" ? "deleted" : "discarded from the draft";
-  const name = actor?.kind === "agent" && actor.chatId === thisChat ? "you" : actorName(actor);
+  const name = actor?.kind === "agent" && actor.chatId === thisChat ? "you" : removerName(actor);
   return name ? `${verb} by ${name}` : verb;
 }
 
 /** Who removed it, as the model reads it: a person or the AI in a chat. */
-function actorName(actor: DocumentRemovalRecord["actor"]): string | null {
+export function removerName(actor: DocumentRemovalRecord["actor"]): string | null {
   switch (actor?.kind) {
     case "user":
       return actor.displayName;
@@ -35,7 +35,7 @@ function actorName(actor: DocumentRemovalRecord["actor"]): string | null {
  * and writable, and only the writer's Apply brings the document back to the manuscript.
  */
 export function survivingDraftNotice(removal: DocumentRemovalRecord | null | undefined): string {
-  const name = actorName(removal?.actor ?? null);
+  const name = removerName(removal?.actor ?? null);
   return `Deleted from the manuscript${name ? ` by ${name}` : ""}. Your draft still has it; Apply brings it back.`;
 }
 

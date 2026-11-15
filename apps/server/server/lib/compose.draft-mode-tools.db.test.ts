@@ -83,7 +83,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Draft-mode tools",
         kind: "primary",
-        status: "idle",
         aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
@@ -342,7 +341,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           title: "Sibling",
           kind: "primary",
-          status: "idle",
           aiWriteMode: "draft",
         });
         await db.insert(schema.turns).values({

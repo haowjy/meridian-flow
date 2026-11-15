@@ -88,7 +88,7 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
 }
 
 /** The deepest folder of the address that exists holds the missing ones, then the document. */
-function createAt(tree: TreeView, actions: TreeActions, target: LinkCreationTarget): string | null {
+function createAt(tree: TreeView, actions: TreeActions, target: LinkCreationTarget): string {
   const folders = target.folderPath.split("/").filter(Boolean);
   const missing: string[] = [];
   let parentId = tree.root.entryId;
@@ -101,10 +101,7 @@ function createAt(tree: TreeView, actions: TreeActions, target: LinkCreationTarg
     missing.unshift(folders.pop() as string);
   }
   for (const name of missing) {
-    const made = actions.create({ parentId, name, kind: "folder" });
-    if (!made.ok) return null;
-    parentId = made.node;
+    parentId = actions.create({ parentId, name, kind: "folder" }).node;
   }
-  const made = actions.create({ parentId, name: target.name, kind: "document" });
-  return made.ok ? made.node : null;
+  return actions.create({ parentId, name: target.name, kind: "document" }).node;
 }

@@ -1,7 +1,5 @@
 /** One project-lifetime owner for Trash restore progress and outcomes, by node id. */
-import { t } from "@lingui/core/macro";
 import type { TrashEntry } from "@meridian/contracts/protocol";
-import { lastSettlements } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -10,7 +8,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -26,7 +23,7 @@ import { leaveSelections } from "./entry-drag/selection";
 /** What a restore needs of a Trash entry: the record names the node, the notices its name. */
 export type Restorable = { ref: EntryRef; name: string };
 
-export type TrashRestoreState = { kind: "restored" } | { kind: "failed"; message: string };
+export type TrashRestoreState = { kind: "restored" };
 
 /** `restored`: the node is back in the tree, so a view of it in Trash follows it there. */
 type RestoreContextValue = {
@@ -40,8 +37,7 @@ type RestoreContextValue = {
   restore: (entries: readonly Restorable[]) => void;
   /**
    * Restores entries into a destination (a drag out of Trash). They leave the Trash list and
-   * appear in the destination at once; one the server refuses goes back to Trash with its reason
-   * in `states`. Either way the rows it touched offer its Undo (`tree-undo.ts`).
+   * appear in the destination at once, and the rows it touched offer its Undo (`tree-undo.ts`).
    */
   restoreInto: (entries: readonly Restorable[], destination: TreeDestination) => void;
 };
@@ -64,8 +60,6 @@ export function DocumentTrashRestoreProvider({
   const queryClient = useQueryClient();
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
   const [restored, setRestored] = useState<readonly GoneRow<TrashEntry>[]>([]);
-  // A restore the list has taken and the server has not answered, by its record's id.
-  const awaiting = useRef(new Map<string, Restorable>());
 
   const setState = useCallback((node: string, state: TrashRestoreState | null) => {
     setStates((current) => {
@@ -96,18 +90,6 @@ export function DocumentTrashRestoreProvider({
     [setState],
   );
 
-  const fail = useCallback(
-    (entry: Restorable, reason?: string) => {
-      setState(entry.ref.id, {
-        kind: "failed",
-        message: reason
-          ? t`Couldn't restore ${entry.name}. ${reason}`
-          : t`Couldn't restore ${entry.name}. Try again.`,
-      });
-    },
-    [setState],
-  );
-
   // Leaving the project is leaving every place its lists' notices speak in.
   useEffect(() => {
     const sessions = [projectList.session, accountList.session];
@@ -116,50 +98,17 @@ export function DocumentTrashRestoreProvider({
     };
   }, [projectList.session, accountList.session]);
 
-  // A refusal comes back as a settlement on the `restore` record; until then the entry is restored.
-  useEffect(() => {
-    const check = () => {
-      for (const session of [projectList.session, accountList.session]) {
-        if (!session) continue;
-        const settled = lastSettlements(session.getSnapshot().doc);
-        for (const [record, entry] of awaiting.current) {
-          const settlement = settled.get(record);
-          if (!settlement) continue;
-          awaiting.current.delete(record);
-          if (settlement.to === "refused") fail(entry, settlement.reason);
-        }
-      }
-    };
-    const stops = [projectList.session, accountList.session].map((session) =>
-      session?.subscribe(check),
-    );
-    return () => {
-      for (const stop of stops) stop?.();
-    };
-  }, [projectList.session, accountList.session, fail]);
-
-  /**
-   * Appends the entries' `restore` records, one update per list, and on a drag their moves into
-   * the destination; returns whether the lists took them.
-   */
+  /** Appends the entries' `restore` records, one update per list, and on a drag their moves into the destination. */
   const append = useCallback(
     (entries: readonly Restorable[], destination?: TreeDestination) => {
       const held = entries.map((entry) => ({ entry, ...actions.holding(entry.ref.id) }));
       for (const list of new Set(held.map((item) => item.list))) {
         const mine = held.filter((item) => item.list === list);
-        const result = list.restore(
+        list.restore(
           mine.map(({ entry }) => entry.ref.id),
           destination,
         );
-        if (!result.ok) return false;
-        for (const { entry } of mine) {
-          const made = result.records.find(
-            (record) => record.type === "restore" && record.node === entry.ref.id,
-          );
-          if (made) awaiting.current.set(made.id, entry);
-        }
       }
-      return true;
     },
     [actions],
   );
@@ -189,13 +138,10 @@ export function DocumentTrashRestoreProvider({
             : [],
         ),
       );
-      if (!append(entries, destination)) {
-        for (const entry of entries) fail(entry);
-        return;
-      }
+      append(entries, destination);
       markRestored(entries.map(({ ref }) => ref.id));
     },
-    [append, fail, markRestored, queryClient, projectId],
+    [append, markRestored, queryClient, projectId],
   );
 
   const value = useMemo(

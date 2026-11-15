@@ -88,7 +88,6 @@ function thread(ref: string | null = "c12"): Thread {
     effectiveAiWriteMode: "direct",
     userId: "user-1",
     kind: "primary",
-    status: "idle",
     title: null,
     ref,
     initialPromptBakeId: null,

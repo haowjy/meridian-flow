@@ -92,7 +92,7 @@ type Descriptions = {
 
 /** A document's node in the lists: shown, left the view, or not known while a list has not synced. */
 type NodeState = "shown" | "gone" | "waiting";
-const SYNCED = new Set<string>(["synced", "read-only", "offline"]);
+const SYNCED = new Set<string>(["synced", "offline", "broken"]);
 
 /** Descriptors of documents that may sit beside, resolved once each, for the rule and the picker. */
 function useDescriptions(projectId: string): Descriptions {

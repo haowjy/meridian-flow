@@ -201,8 +201,8 @@ export async function seedWorkWithChats(
   for (let i = 0; i < chats; i++) {
     const id = randomUUID();
     await h.raw`
-      insert into threads(id,root_thread_id,project_id,created_by_user_id,title,kind,status,ai_write_mode)
-      values (${id},${id},${h.ids.project},${h.ids.user},${`${label}-${i}`},'primary','idle',${mode})`;
+      insert into threads(id,root_thread_id,project_id,created_by_user_id,title,kind,ai_write_mode)
+      values (${id},${id},${h.ids.project},${h.ids.user},${`${label}-${i}`},'primary',${mode})`;
     await h.raw`insert into thread_works(thread_id,work_id,project_id,is_primary) values (${id},${seeded.workId},${h.ids.project},true)`;
     threadIds.push(id);
   }
