@@ -32,6 +32,8 @@ stateDiagram-v2
   once its id is among them. An answer whose entry for this item (`itemOf`, by the queue's node)
   says its text was settled, or carried no text, settles at once, whatever a sibling of the same
   command landed. An Undo settles when the rows it reversed are gone.
+- **An Undo waits for the Apply it takes back** and is sent when either half of that Apply
+  landed; when neither did, the Undo ends `cancelled` without a request.
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
   queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.

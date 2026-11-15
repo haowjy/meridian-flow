@@ -49,7 +49,7 @@ export type UnapplyCommand = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   patchFor(groupIds: readonly string[]): readonly PMNode[];
-  selectionChanged(groupIds: readonly string[]): void;
+  selectionChanged(groupIds: readonly string[], tree: boolean): void;
   ready: Promise<boolean>;
   groupIds: Set<string>;
   sent: boolean;
@@ -69,6 +69,8 @@ type ScheduledApplyHandle = ApplyCommandHandle & {
   current: ApplyCommand;
   reversal: Promise<UnapplyClickOutcome>;
   replaySelection: string[];
+  /** The Un-Apply took this item's tree change back, so a Redo carries the tree cut again. */
+  replayTree: boolean;
   pendingReplay: ApplyCommand | null;
 };
 
@@ -121,25 +123,31 @@ export class ApplyClickQueue {
     return result;
   }
 
-  /** Own one Apply's command identity, reversal result, and text-only replay selection. */
+  /** Own one Apply's command identity, reversal result, and replay selection. */
   enqueueHistory(input: {
     frozen: FrozenApply;
     patchFor(groupIds: readonly string[]): readonly PMNode[];
     intent(): void;
-    applyRefused(answer: ApplyClickOutcome): void;
+    /** A Redo's answer, landed or not: its item shows what of it stayed out. */
+    replayed(answer: ApplyClickOutcome): void;
     unapplyRefused(answer: UnapplyClickOutcome): void;
   }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
     const initial = this.queueApply(input.frozen);
     this.startFeedback();
     this.port.changed();
-    const landedText = (answer: ApplyClickOutcome) =>
-      answer.status === "landed" ||
-      (answer.status === "applied" && itemOf(answer, this.port.node)?.text?.landed === true);
+    // Either half landing gives the Apply something to take back; a Redo replays text alone.
+    const landed = (answer: ApplyClickOutcome) => {
+      if (answer.status === "landed") return true;
+      if (answer.status !== "applied") return false;
+      const item = itemOf(answer, this.port.node);
+      return item?.tree?.landed === true || item?.text?.landed === true;
+    };
     let handle!: ScheduledApplyHandle;
     handle = {
       current: initial,
       reversal: Promise.resolve({ status: "cancelled" }),
       replaySelection: [...initial.body.groupIds],
+      replayTree: initial.body.tree === true,
       pendingReplay: null,
       undo: () => {
         input.intent();
@@ -149,6 +157,7 @@ export class ApplyClickQueue {
           return;
         }
         handle.replaySelection = [...handle.current.body.groupIds];
+        handle.replayTree = handle.current.body.tree === true;
         const inverse = this.queueUnapply({
           body: {
             commandId: crypto.randomUUID(),
@@ -159,12 +168,20 @@ export class ApplyClickQueue {
           patched: handle.current.patched,
           groupIds: handle.current.body.groupIds,
           patchFor: input.patchFor,
-          ready: handle.current.outcome.then(landedText),
-          selectionChanged: (groupIds) => {
+          ready: handle.current.outcome.then((answer) => {
+            // Text that never landed has nothing to fold back while the Un-Apply is out.
+            if (answer.status === "applied" && !itemOf(answer, this.port.node)?.text?.landed) {
+              inverse.groupIds.clear();
+              inverse.patched = inverse.optimistic;
+            }
+            return landed(answer);
+          }),
+          selectionChanged: (groupIds, tree) => {
             handle.replaySelection = [...groupIds];
+            handle.replayTree = tree;
             const replay = handle.pendingReplay;
             if (replay && !replay.sent) {
-              replay.body = { ...replay.body, groupIds: [...groupIds] };
+              replay.body = { ...replay.body, groupIds: [...groupIds], tree: tree || undefined };
               replay.patched = input.patchFor(groupIds);
             }
           },
@@ -186,7 +203,7 @@ export class ApplyClickQueue {
             ...handle.current.body,
             commandId: crypto.randomUUID(),
             groupIds: [...handle.replaySelection],
-            tree: undefined,
+            tree: handle.replayTree || undefined,
           },
           optimistic: handle.current.optimistic,
           patched: input.patchFor(handle.replaySelection),
@@ -196,7 +213,7 @@ export class ApplyClickQueue {
         this.startFeedback();
         this.port.changed();
         void handle.current.outcome.then((answer) => {
-          if (!landedText(answer) && answer.status !== "cancelled") input.applyRefused(answer);
+          if (answer.status !== "cancelled") input.replayed(answer);
         });
       },
     };
@@ -263,7 +280,7 @@ export class ApplyClickQueue {
     patched: readonly PMNode[];
     groupIds: readonly string[];
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    selectionChanged(groupIds: readonly string[]): void;
+    selectionChanged(groupIds: readonly string[], tree: boolean): void;
     ready: Promise<boolean>;
   }): UnapplyCommand {
     let finish!: (result: UnapplyClickOutcome) => void;
@@ -471,7 +488,7 @@ export class ApplyClickQueue {
       command.answer = answer;
       command.groupIds = new Set(answer.reversedGroupIds);
       command.patched = command.patchFor(answer.reversedGroupIds);
-      command.selectionChanged(answer.reversedGroupIds);
+      command.selectionChanged(answer.reversedGroupIds, answer.treeUndone.includes(this.port.node));
       this.port.changed();
       this.reconcileUnapply(command);
       return;
