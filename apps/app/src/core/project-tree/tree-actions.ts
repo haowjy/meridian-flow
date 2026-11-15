@@ -3,8 +3,9 @@
  * the change shows at once from the replay and Yjs carries it to the server. A name is numbered
  * when the clash is visible in the copy (`TreeWriter`). No action is refused: a node or parent the
  * copy lacks is made as asked and the replay places it or skips it, and a dropped create comes
- * back as a `dropped` settlement on the record (`tree-failures.ts`). An action on a Work that has
- * ended (`TreeVersion.ended`) throws: the shell offers no control for it.
+ * back as a `dropped` settlement on the record (`tree-failures.ts`). A Work that has ended
+ * (`TreeVersion.ended`) gets no tree control from the shell; a gesture already under way when it
+ * ended lands like any other, and the server drops its creates ("Work was closed").
  * Copy and a move between two lists stay server routes. Each acts in the version the writer is
  * looking at: live, or on Draft the Work's tree, whose records carry the Work's `draft`. Each
  * gesture's records go on the list's sidebar Undo stack (`tree-undo.ts`).
@@ -40,8 +41,7 @@ export class TreeActions {
     const session = this.session();
     if (!session) throw new Error("There is no tree list to change here.");
     const { doc } = session.getSnapshot();
-    const { view, pendingText, ended } = this.version();
-    if (ended) throw new Error(`This Work is ${ended}.`);
+    const { view, pendingText } = this.version();
     const replay = () => session.replay(view, pendingText);
     // The session's replay is the one every view reads: the writer numbers and ranks against it.
     return {

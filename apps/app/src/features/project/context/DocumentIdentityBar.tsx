@@ -11,6 +11,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useProjectTreeView, useTreeList } from "@/client/query/useProjectTree";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
+import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -58,13 +59,16 @@ export function DocumentIdentityBar({
   projectId,
   editorWorkId,
   document,
-  readOnly = false,
+  readOnly: readOnlyDocument = false,
   onCommitted,
   onOpenExisting,
   onCloseDraftOnly,
   focusReview,
   onFocusReview,
 }: DocumentIdentityBarProps) {
+  // On Draft of an ended Work the placement field is not offered: its tree takes no change.
+  const ended = useTreeVersion().ended !== undefined;
+  const readOnly = readOnlyDocument || ended;
   const location = tabLocation(document);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);

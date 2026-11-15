@@ -97,7 +97,7 @@ type WriteSources = {
   /** After a pick that opens something elsewhere (the phone drawer closes). */
   onPicked?: () => void;
   catalogs: Record<TreeKey, TreeViewResult>;
-  /** Whether each tree shown takes changes: an ended Work's Scratch takes none. */
+  /** Whether each tree shown takes changes: an ended Work's Scratch takes none, and on Draft no tree of an ended Work does. */
   writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
@@ -368,12 +368,14 @@ export function SourcesBody({
     },
     [drafting, shell, onSelectFile, openReviewFile, onPicked],
   );
+  // An ended Work's tree, on Draft, takes no change: no tree offers a control for it.
+  const ended = version.ended !== undefined;
   const writable = useMemo(
     () =>
       Object.fromEntries(
-        TREE_SCHEMES.map((scheme) => [scheme, scheme !== "scratch" || scratchWritable]),
+        TREE_SCHEMES.map((scheme) => [scheme, !ended && (scheme !== "scratch" || scratchWritable)]),
       ) as Record<TreeKey, boolean>,
-    [scratchWritable],
+    [scratchWritable, ended],
   );
   const areas = useMemo<MoveArea[]>(
     () =>

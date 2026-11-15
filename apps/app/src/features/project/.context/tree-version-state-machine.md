@@ -58,9 +58,12 @@ stateDiagram-v2
   have keeps its draft and does not move the toggle.
 - **An archived or deleted Work stays picked** (`use-work-scope.ts`): only the writer's pick
   changes the scope, here or on another device. The chip says Archived or Deleted with Unarchive
-  or Restore in its menu; Changes and the Draft view show its draft read-only (`TreeVersion.ended`
-  refuses every tree action there with its reason). Its Scratch on Live reads and offers no
-  change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
+  or Restore in its menu; Changes and the Draft view show its draft read-only: on Draft no tree
+  offers a create, rename, move, delete or import, New document is not offered and the identity
+  bar's placement field doesn't open, all from `TreeVersion.ended`. A form already open when the
+  Work ends closes with its tree's controls; a gesture already under way lands like any other, and
+  the server drops its creates ("Work was closed"). Nothing refuses. Its Scratch on Live reads and
+  offers no change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
   server wakes the Works list with the Work's `draft-owner-hint`.
 - The sidebar's **Ctrl+Z** takes back the latest step of the source on screen made in the view
   showing (`core/project-tree/tree-undo.ts`). It hears the press anywhere in the sidebar, which
