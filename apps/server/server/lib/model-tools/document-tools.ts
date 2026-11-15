@@ -17,10 +17,14 @@ import {
   documentNotFoundMessage,
   formatDocumentFile,
   isDocumentNotFoundError,
+  modelResult,
+  returnedWriteResult,
   splitDocumentFile,
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
+import type { ReturnedWhy } from "@meridian/contracts/commands";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/gateway";
 import {
@@ -30,9 +34,11 @@ import {
 } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
+  type FileAccessDenied,
   type FileDestination,
   FileEditRefusedError,
   type FileGrant,
+  isFileAccessDenied,
   type Principal,
 } from "../../domains/file-policy/index.js";
 import {
@@ -63,6 +69,7 @@ import {
   inContainer,
   keptDraft,
   removalBehind,
+  returnedWhy,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
@@ -227,6 +234,83 @@ function withDestination(
   };
 }
 
+const isTextEdit = (command: string) =>
+  command === "insert" || command === "replace" || command === "remove";
+
+/**
+ * A write the file policy refused: a text edit whose Work is closed or whose document was
+ * removed is returned with the document as it stands, and every other refusal is the tool's
+ * error.
+ */
+async function deniedWrite(
+  deps: ToolWiringDeps,
+  principal: Principal,
+  parsed: EngineWriteInput,
+  address: ResolvedDocumentAddress,
+  ctx: ToolHandlerContext,
+  denial: FileAccessDenied,
+) {
+  const removal = await removalBehind(deps, principal, denial);
+  const why = isTextEdit(parsed.command) ? returnedWhy(denial, removal) : null;
+  if (!why) return fileAccessDeniedError(parsed.command, denial, address.filePath, removal);
+  return returnedEdit(deps, principal, parsed, address, ctx, why, {
+    ...(removal ? { removal } : {}),
+    ...(denial.archivedWork?.handle ? { work: denial.archivedWork.handle } : {}),
+  });
+}
+
+/**
+ * A text edit that changed nothing because what it edits is closed or gone, answered with the
+ * document as this chat reads it now. The text is a read: its evidence is recorded with the
+ * result, so the model's next write plans on it. A removed document has no text to show.
+ */
+export async function returnedEdit(
+  deps: ToolWiringDeps,
+  principal: Principal,
+  parsed: Pick<EngineWriteInput, "command">,
+  address: Pick<ResolvedDocumentAddress, "documentId" | "filePath" | "uri">,
+  ctx: ToolHandlerContext,
+  why: ReturnedWhy,
+  detail: { removal?: DocumentRemovalRecord; work?: string },
+): Promise<WriteOutcome & { isError: false; evidence: ResultEvidence }> {
+  const returned = returnedWriteResult(why, { ...detail, thisChat: ctx.threadId });
+  const grant =
+    why === "document_removed"
+      ? null
+      : await documentGrant(deps, principal, "read", address, "read");
+  const read =
+    grant && !isToolError(grant)
+      ? await readDocument(
+          deps,
+          grant,
+          address,
+          {
+            inCommand: true,
+            ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
+          },
+          ctx,
+        )
+      : null;
+  const shown = read && !read.isError ? read : null;
+  return {
+    status: "returned",
+    isError: false,
+    revision: shown?.revision ?? null,
+    command: parsed.command,
+    result: modelResult({
+      command: parsed.command,
+      status: "returned",
+      payload: {
+        path: address.filePath,
+        ...returned.model,
+        ...(shown?.result.read ? { read: shown.result.read } : {}),
+        ...(shown?.result.blocks ? { blocks: shown.result.blocks } : {}),
+      },
+    }),
+    evidence: shown ? evidenceOf(address.documentId, shown) : { shown: [] },
+  };
+}
+
 /**
  * The write itself: the edit grant on the document, then the pool call that
  * carries it. A seam that refuses the grant under its locks reports the same
@@ -245,8 +329,17 @@ async function writeUnderGrant(
   | (WriteOutcome & { isError: false; evidence: ResultEvidence })
   | (WriteToolErrorOutput & { evidence?: ResultEvidence })
 > {
-  const grant = given ?? (await documentGrant(deps, principal, parsed.command, address, "edit"));
-  if (isToolError(grant)) return grant;
+  let grant = given;
+  if (!grant) {
+    const authorized = await deps.fileAccess.authorize(
+      principal,
+      { kind: "document", documentId: address.documentId as never },
+      "edit",
+    );
+    if (isFileAccessDenied(authorized))
+      return deniedWrite(deps, principal, parsed, address, ctx, authorized);
+    grant = authorized;
+  }
   let written: WriteOutcome;
   try {
     // The write runs under its own lock, inside the command's transaction.
@@ -268,19 +361,28 @@ async function writeUnderGrant(
       });
   } catch (cause) {
     // A removal that won the document's lock after the grant (a pull, a staged or immediate
-    // commit): the model's interim answer is `document_not_found`, with the record's sentence.
-    if (isDocumentNotFoundError(cause))
+    // commit): a text edit is returned with who removed it; any other call's interim answer is
+    // `document_not_found`, with the record's sentence.
+    if (isDocumentNotFoundError(cause)) {
+      if (cause.removal && isTextEdit(parsed.command))
+        return returnedEdit(deps, principal, parsed, address, ctx, "document_removed", {
+          removal: cause.removal,
+        });
       return cause.removal
         ? removedFileResult(parsed.command, cause.removal, address.filePath)
         : documentNotFoundError(parsed.command, address.filePath);
+    }
     if (!(cause instanceof FileEditRefusedError)) throw cause;
-    const refusal = firstRefusal(cause);
-    return fileAccessDeniedError(
-      parsed.command,
-      refusal,
-      address.filePath,
-      await removalBehind(deps, principal, refusal),
+    return deniedWrite(deps, principal, parsed, address, ctx, firstRefusal(cause));
+  }
+  // A drafted edit returned because its document was removed names who removed it.
+  if (written.result.status === "returned" && written.result.returned?.why === "document_removed") {
+    const removal = (await deps.documentRemovals.lookup([address.documentId])).get(
+      address.documentId,
     );
+    return returnedEdit(deps, principal, parsed, address, ctx, "document_removed", {
+      ...(removal ? { removal } : {}),
+    });
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
   // was a partial failure's echo. Whatever frontier a result carries records,
@@ -451,7 +553,28 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     let parsed = written;
     if (!isInverse) {
       const first = await reach(written.path);
-      if (isToolError(first)) return first;
+      if (isToolError(first)) {
+        // A path whose document was deleted since the model was shown it: a text edit is
+        // returned with who deleted it, as one on a document found removed under the lock is.
+        const gone = "gone" in first ? first.gone : undefined;
+        if (!gone || !isTextEdit(written.command)) return first;
+        const documentId = gone;
+        return settle(async () => {
+          const removal = (await deps.documentRemovals.lookup([documentId as DocumentId])).get(
+            documentId as DocumentId,
+          );
+          const outcome = await returnedEdit(
+            deps,
+            principal,
+            written,
+            { documentId, filePath: written.path, uri: written.path },
+            ctx,
+            "document_removed",
+            { ...(removal ? { removal } : {}) },
+          );
+          return { output: outcome.result, evidence: outcome.evidence };
+        });
+      }
       reached = first;
       parsed = { ...written, path: first.path } as typeof written;
     }
@@ -647,7 +770,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           },
         };
 
-      if (outcome.result.unchanged !== true) refresh = address.documentId as DocumentId;
+      if (outcome.result.unchanged !== true && outcome.result.status !== "returned")
+        refresh = address.documentId as DocumentId;
       const notice = await deps.contextPorts.chatFiles.notice(
         context.resolution.thread.projectId,
         engine.path,
@@ -676,30 +800,60 @@ export function createWriteHandler(deps: ToolWiringDeps) {
   };
 }
 
+/** A failed edit the server runs again once, under the same command id. */
+class TransientEditFailure extends Error {}
+
 /**
  * Runs a call's effect as the command the executor keyed it by, which stores its result with
  * its outcome. An error result is the command's refusal: whatever the effect changed rolls
- * back with it.
+ * back with it. A returned edit is a done command: nothing changed, and its row says why.
+ *
+ * A server failure (an apply or a commit that failed, or an effect that threw) is the server's
+ * to get past: the effect runs once more under the same id, and only a second failure is the
+ * model's answer, worded as a failure that did not land.
  */
 function effectSettler(
   deps: ToolWiringDeps,
   ctx: ToolHandlerContext,
   edit: NonNullable<ToolHandlerContext["modelEdit"]>,
 ): (effect: () => Promise<unknown>) => Promise<unknown> {
-  return async (effect): Promise<ModelEditHandlerResult> => {
-    const { outcome, evidence } = await deps.documentSync.modelEdits().run({
+  const run = (effect: () => Promise<unknown>, retried: boolean) =>
+    deps.documentSync.modelEdits().run({
       key: edit.key,
       owner: { threadId: ctx.threadId, turnId: ctx.turnId },
       signal: ctx.signal,
       async effect() {
         const raw = await effect();
+        if (!retried && isServerFailure(raw)) throw new TransientEditFailure();
         const rendered = edit.render(raw);
         if (isErrorOutput(raw)) throw new ModelEditRefusal(rendered.toolResult, rendered.evidence);
-        return rendered;
+        const returned = returnedOf(raw);
+        return returned
+          ? { ...rendered, settled: [{ rule: "returned", why: returned }] }
+          : rendered;
       },
+    });
+  return async (effect): Promise<ModelEditHandlerResult> => {
+    const { outcome, evidence } = await run(effect, false).catch((cause) => {
+      if (ctx.signal.aborted) throw cause;
+      return run(effect, true);
     });
     return { modelEdit: outcome, ...(evidence ? { evidence } : {}) };
   };
+}
+
+/** The tool's own failure result: an apply or commit that did not land. */
+function isServerFailure(value: unknown): boolean {
+  if (!isErrorOutput(value)) return false;
+  const status = (value as { output?: { status?: unknown } }).output?.status;
+  return status === "internal_error" || status === "partial_failure";
+}
+
+/** What a returned edit's result says closed it, when the effect returned one. */
+function returnedOf(value: unknown): ReturnedWhy | null {
+  const output = (value as { output?: { status?: unknown; returned?: { why?: ReturnedWhy } } })
+    ?.output;
+  return output?.status === "returned" ? (output.returned?.why ?? null) : null;
 }
 
 function isErrorOutput(value: unknown): boolean {

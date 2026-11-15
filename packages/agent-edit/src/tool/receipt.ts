@@ -1,14 +1,13 @@
 // Receipts project accepted evidence. Reporting failure never changes acceptance.
 
+import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { isEmptyDocument } from "@meridian/prosemirror-schema";
 import { type BlockSnapshot, computeEcho, truncateSerializedBlock } from "../apply/echo.js";
 import type { BlockItemId } from "../model/block-hash.js";
-import type { WriteRefusalReason } from "../ports/document-coordinator.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import type { WriteRejection } from "./model-result.js";
-import { removalPhrase, removedWriteMessage } from "./removal-copy.js";
+import { removalPhrase } from "./removal-copy.js";
 import { type ApplySuccessResponseInput, formatApplySuccess } from "./response-format.js";
 import type { DocumentCommandName } from "./types.js";
 
@@ -55,57 +54,35 @@ export function renderReceipt(
   });
 }
 
-/** A write the host refused, as the model reads it. A removal names who removed the file and asks for no retry. */
-export function rejectedWriteResult(reason?: WriteRefusalReason): InternalWriteResult {
-  if (typeof reason === "object")
-    return { status: "invalid_write", model: removedWriteRefusal(reason.removed) };
+/**
+ * An edit that did not land because what it named changed, as the model reads it: nothing was
+ * kept anywhere, and the text it was planned against is no longer what stands. The host adds
+ * the document as it now stands after the message; none of this asks for a retry.
+ */
+export function returnedWriteResult(
+  why: ReturnedWhy,
+  detail: { removal?: DocumentRemovalRecord | null; work?: string; thisChat?: string } = {},
+): InternalWriteResult {
+  const work = detail.work ? `Work ${detail.work}` : "The Work";
+  const message = (() => {
+    switch (why) {
+      case "draft_discarded":
+        return "Not in the document: the writer discarded the draft this edit was made on, so it was not kept anywhere.";
+      case "document_removed":
+        return `Not in the document: this file was ${removalPhrase(detail.removal, detail.thisChat)} and is in the trash, so this edit was not kept anywhere. It can be restored.`;
+      case "work_archived":
+        return `Not in the document: ${work} is archived, so its drafts take no new text and this edit was not kept anywhere.`;
+      case "work_deleted":
+        return `Not in the document: ${work} is deleted, so its drafts take no new text and this edit was not kept anywhere.`;
+      case "block_gone":
+        return "Not in the document: the block this edit named is gone (the writer deleted, merged or moved it), so it was not kept anywhere.";
+    }
+  })();
   return {
-    status: "invalid_write",
+    status: "returned",
     model: {
-      message: `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`,
-      rejected: writeRejection(reason),
+      message,
+      returned: { why, ...(detail.removal ? { removal: detail.removal } : {}) },
     },
   };
-}
-
-/**
- * A write the document's removal stopped. Null: no record (the file went with its source or
- * Work, or stands again).
- */
-export function removedWriteRefusal(removal: DocumentRemovalRecord | null): {
-  message: string;
-  rejected: "removed";
-  removal?: DocumentRemovalRecord;
-} {
-  return {
-    message: removedWriteMessage(removal),
-    rejected: "removed",
-    ...(removal ? { removal } : {}),
-  };
-}
-
-/** A refusal explains host evidence, not a guess from item visibility. */
-function writeRejection(reason?: Exclude<WriteRefusalReason, object>): WriteRejection {
-  switch (reason) {
-    case "discarded_draft":
-    case "discarded_document":
-    case "discarded_edit":
-      return reason;
-    default:
-      return "integration";
-  }
-}
-
-export function rejectedWriteExplanation(reason?: WriteRefusalReason): string {
-  if (typeof reason === "object") return `this file was ${removalPhrase(reason.removed)}`;
-  switch (reason) {
-    case "discarded_draft":
-      return "the user discarded this draft";
-    case "discarded_document":
-      return "the user discarded this new document";
-    case "discarded_edit":
-      return "the user discarded the text it edited";
-    default:
-      return "the write could not integrate with the current draft";
-  }
 }

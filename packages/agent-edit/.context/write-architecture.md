@@ -142,8 +142,8 @@ a paragraph alone never joins independent writes. A live write merges one update
   retry on text it was just shown (find-all deletion legitimately leaves double spaces).
 - A write's result names, by block hash and author, the blocks others changed after the model
   last read them, and marks those its echo already shows (the merged text, where a mangled merge
-  would be visible). Past `CONCURRENT_REREAD_BLOCKS` it drops the echo and the list and tells the
-  model to read the file again; the write itself landed. Authors come from Yjs identities joined
+  would be visible). The list never tells the model to read again: the write landed, and the
+  next write plans on what the result showed. Authors come from Yjs identities joined
   to the host's provenance, never a text diff. Every person prints as `the user`.
 - Provider tool IDs are response-local: the host keys a write by response and tool call, so
   a later response reusing an ID is a new attempt. The package keeps no idempotency of its own.

@@ -86,7 +86,7 @@ export async function reachShown(
   command: Parameters<typeof modelResult>[0]["command"] | "ls",
   path: string,
   options: { version?: "draft" | "live"; folderOf?: boolean } = {},
-): Promise<Reached | (WriteToolErrorOutput & { evidence?: ResultEvidence })> {
+): Promise<Reached | (WriteToolErrorOutput & { evidence?: ResultEvidence; gone?: string })> {
   const { filePath, fragment } = splitDocumentFile(path);
   const parts = areaOfPath(filePath);
   if (!parts) return { path };
@@ -117,6 +117,7 @@ export async function reachShown(
       ...(value.refused.status === "path_changed"
         ? { evidence: { shown: [], ...namesEvidence(value.refused.delta) } }
         : {}),
+      ...(value.refused.gone ? { gone: value.refused.gone } : {}),
     };
   return {
     path: `${value.uri}${leaf}${fragment === undefined ? "" : `#${fragment}`}`,

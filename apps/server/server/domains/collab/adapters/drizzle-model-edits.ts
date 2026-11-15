@@ -16,7 +16,7 @@ import { runDocumentCommand } from "./drizzle-document-commands.js";
 
 export function createDrizzleModelEdits(
   db: Database,
-  seams: Pick<ModelEdits, "write" | "catchUp">,
+  seams: Pick<ModelEdits, "write" | "read" | "catchUp">,
   evidence: Pick<ModelEvidence, "resultStored">,
 ): ModelEdits {
   async function stored(key: ModelEditKey): Promise<ModelEditOutcome> {
@@ -60,7 +60,11 @@ export function createDrizzleModelEdits(
                 shown: done.evidence.shown,
                 frontiers: evidenceFrontiers(ids.blockId, done.evidence),
               });
-            return { status: "edited" as const, toolResult: done.toolResult };
+            return {
+              status: "edited" as const,
+              toolResult: done.toolResult,
+              ...(done.settled ? { settled: done.settled } : {}),
+            };
           },
           (cause) => {
             if (!(cause instanceof ModelEditRefusal)) return undefined;
