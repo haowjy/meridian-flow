@@ -20,9 +20,11 @@
  * deleted on a final fact; an incarnation that is no longer current is deleted when no tab holds
  * it (`openOlder`).
  *
- * A copy records what a session handed back from it (`recordHandedBack`): another tab can still
- * hold the copy and write into it after that session moved on, so the copy outlives the hand-back,
- * and every later read of it, in any tab or after a reload, offers only what came after.
+ * A copy records each hand-back from it the writer is done with (`recordHandedBack`, on Copy or
+ * Dismiss): another tab can still hold the copy and write into it, so the copy can outlive the
+ * hand-back, and every later read of it, in any tab or after a reload, offers only what came
+ * after. A hand-back the writer has not acted on is not recorded, and the tab showing it keeps the
+ * copy: a reload or a crash offers its words again, so the toast is never the only place they are.
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -68,27 +70,26 @@ const POINTER_PREFIX = "meridian:copy-incarnation:";
 const HANDED_BACK_PREFIX = "meridian:handed-back:";
 
 /**
- * Records in a session's copy that everything the read-admitted handshake `difference` covered is
- * the server's or was handed back: the server's state, and every struct of what it lacked. Written
- * when the hand-back is shown, so a crash before the write offers the words again, never loses them.
- * Keyed by the session's client id: each session that hands back from the copy adds its own.
+ * What a read-admitted handshake `difference` covers, as a state vector: the server's state, and
+ * every struct of what it lacked.
  */
-export function recordHandedBack(
-  database: IDBDatabase,
-  writer: number,
-  difference: HandshakeDifference,
-): void {
+export function coveredBy(difference: HandshakeDifference): Map<number, number> {
   const covered = Y.decodeSnapshot(difference.server).sv;
   for (const struct of Y.decodeUpdate(difference.lacking).structs) {
     if (struct instanceof Y.Skip) continue;
     const end = struct.id.clock + struct.length;
     if (end > (covered.get(struct.id.client) ?? 0)) covered.set(struct.id.client, end);
   }
-  const transaction = database.transaction("custom", "readwrite");
-  transaction.onabort = () => reportError(transaction.error);
-  transaction
-    .objectStore("custom")
-    .put(Y.encodeStateVector(covered), `${HANDED_BACK_PREFIX}${writer}`);
+  return covered;
+}
+
+/** Per client, the furthest clock any of `vectors` reaches. */
+export function furthest(...vectors: readonly Map<number, number>[]): Map<number, number> {
+  const covered = new Map<number, number>();
+  for (const vector of vectors)
+    for (const [client, clock] of vector)
+      if (clock > (covered.get(client) ?? 0)) covered.set(client, clock);
+  return covered;
 }
 
 /** Everything the copy's sessions handed back, as one state vector: per client, the furthest any covered. */
@@ -98,13 +99,10 @@ function readHandedBack(database: IDBDatabase): Promise<Map<number, number>> {
     const request = transaction
       .objectStore("custom")
       .getAll(IDBKeyRange.bound(HANDED_BACK_PREFIX, `${HANDED_BACK_PREFIX}\uffff`));
-    transaction.oncomplete = () => {
-      const covered = new Map<number, number>();
-      for (const record of request.result as Uint8Array[])
-        for (const [client, clock] of Y.decodeStateVector(record))
-          if (clock > (covered.get(client) ?? 0)) covered.set(client, clock);
-      resolve(covered);
-    };
+    transaction.oncomplete = () =>
+      resolve(
+        furthest(...(request.result as Uint8Array[]).map((record) => Y.decodeStateVector(record))),
+      );
     transaction.onabort = () =>
       reject(transaction.error ?? new Error("Handed-back record read aborted"));
   });
@@ -126,6 +124,8 @@ function documentOf(name: string, accountId: AccountId): DocumentId | null {
 
 /** What an older incarnation held when no tab did; it stays locked until `finish`. */
 export type OlderCopy = {
+  /** Its database name. */
+  name: string;
   /** Everything the copy holds. */
   update: Uint8Array;
   /** What its sessions already handed back (`recordHandedBack`), as a state vector. */
@@ -208,6 +208,7 @@ export class LocalDocumentCopies {
         try {
           await persistence.whenSynced;
           ready.resolve({
+            name,
             update: Y.encodeStateAsUpdate(document),
             handedBack: persistence.db ? await readHandedBack(persistence.db) : new Map(),
             finish: async (keep) => {
@@ -222,6 +223,44 @@ export class LocalDocumentCopies {
       })
       .catch(ready.reject);
     return ready.promise;
+  }
+
+  /**
+   * Records in the copy `name` that the writer is done with a hand-back from it covering
+   * `covered`, so no later read, in any tab or after a reload, offers it again. Taken under the
+   * copy's shared lock, so a tab reading it to delete sees the record or has deleted it; a copy
+   * already deleted is not created again.
+   */
+  async recordHandedBack(name: string, id: string, covered: Map<number, number>): Promise<void> {
+    const idb = this.idb;
+    if (!idb) return;
+    const write = () =>
+      new Promise<void>((resolve, reject) => {
+        const request = idb.open(name);
+        // No database: it was deleted, and with it everything the record would cover.
+        request.onupgradeneeded = () => request.transaction?.abort();
+        request.onerror = () => {
+          if (request.error?.name === "AbortError") resolve();
+          else reject(request.error ?? new Error("IndexedDB open failed"));
+        };
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("custom", "readwrite");
+          transaction
+            .objectStore("custom")
+            .put(Y.encodeStateVector(covered), `${HANDED_BACK_PREFIX}${id}`);
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onabort = () => {
+            database.close();
+            reject(transaction.error ?? new Error("Handed-back record write aborted"));
+          };
+        };
+      });
+    if (!this.locks) return write();
+    await this.locks.request(this.lockName(name), { mode: "shared" }, write);
   }
 
   private publish() {

@@ -56,7 +56,7 @@ import {
   commitContentInitialization,
   readContentInitialization,
 } from "./local-content-initialization";
-import { recordHandedBack } from "./local-document-copies";
+import { coveredBy } from "./local-document-copies";
 import { LocalDocumentPeers } from "./local-document-peers";
 import {
   createLocalPresence,
@@ -599,27 +599,22 @@ export class DocumentSession {
 
   /**
    * What the last read-admitted handshake found that the server lacks, for the writer: the words
-   * typed here (null when there are none) and whether this session wrote any of it through an
-   * editor or its Undo. Null when the room holds none.
+   * typed here (null when there are none), whether this session wrote any of it through an
+   * editor or its Undo, and what that handshake covered (`coveredBy`), for the record a hand-back
+   * leaves in the copy. Null when the room holds none.
    */
-  undeliverableEdits(): { typing: string | null; own: boolean } | null {
+  undeliverableEdits(): {
+    typing: string | null;
+    own: boolean;
+    covered: Map<number, number>;
+  } | null {
     const difference = this.lastDifference;
     if (!difference || !this.holdsUndeliverable) return null;
     return {
       typing: this.unsent.typing(difference.lacking),
       own: this.unsent.holdsOwnEdits(difference),
+      covered: coveredBy(difference),
     };
-  }
-
-  /**
-   * Records in this session's copy that what the last read-admitted handshake found was handed
-   * back, so no later read of the copy offers it again. What is written after that handshake is
-   * not covered: a later read offers it.
-   */
-  recordHandedBack(): void {
-    const database = this.persistence?.db;
-    if (this.lastDifference && database)
-      recordHandedBack(database, this.document.clientID, this.lastDifference);
   }
 
   /**

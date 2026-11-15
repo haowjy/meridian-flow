@@ -49,12 +49,15 @@ export function RescuedText({
   passages,
   note,
   onDismiss,
+  onCopied,
 }: {
   /** Each passage's words; null for one that couldn't be recovered. */
   passages: readonly (string | null)[];
   /** Beside Dismiss: what happened, or why. None when there are no words to say it about. */
   note: ReactNode;
   onDismiss: () => void;
+  /** A passage reached the clipboard. */
+  onCopied?: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -62,7 +65,7 @@ export function RescuedText({
         <ol className="flex flex-col gap-2">
           {passages.map((text, index) => (
             // Passages have no identity beyond their order; a rescue's never reorder.
-            <RescuedPassage key={index} text={text} />
+            <RescuedPassage key={index} text={text} onCopied={onCopied} />
           ))}
         </ol>
       ) : null}
@@ -82,7 +85,7 @@ export function RescuedText({
   );
 }
 
-function RescuedPassage({ text }: { text: string | null }) {
+function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: () => void }) {
   const [copy, setCopy] = useState<"idle" | "copied" | "blocked">("idle");
   const resetRef = useRef<number | null>(null);
   useEffect(
@@ -129,6 +132,7 @@ function RescuedPassage({ text }: { text: string | null }) {
                 return;
               }
               setCopy("copied");
+              onCopied?.();
               resetRef.current = window.setTimeout(() => setCopy("idle"), COPIED_RESET_MS);
             });
           }}
@@ -149,11 +153,21 @@ function RescuedPassage({ text }: { text: string | null }) {
 
 /**
  * Typing a room ended with, handed back in the app's toaster: the room is gone or reopened on the
- * server's text, so there is no place on screen to show it. It stays until dismissed.
+ * server's text, so there is no place on screen to show it. It stays until dismissed, never timing
+ * out: the writer is done with it once they copy its words or dismiss it (`typing.done`), and until
+ * then a reload offers the words again.
  */
 export function notifyUnsentTyping(typing: UnsentTyping) {
   toast.custom(
-    (id) => <UnsentTypingToast typing={typing} onDismiss={() => toast.dismiss(id)} />,
+    (id) => (
+      <UnsentTypingToast
+        typing={typing}
+        onDismiss={() => {
+          typing.done();
+          toast.dismiss(id);
+        }}
+      />
+    ),
     // Swiping it away would clear words the writer never read.
     { id: `unsent:${typing.id}`, duration: Number.POSITIVE_INFINITY, dismissible: false },
   );
@@ -181,6 +195,7 @@ function UnsentTypingToast({ typing, onDismiss }: { typing: UnsentTyping; onDism
         passages={typing.text === null ? [] : [typing.text]}
         note={typing.text === null ? null : <Trans>It isn't in the document.</Trans>}
         onDismiss={onDismiss}
+        onCopied={typing.done}
       />
     </div>
   );

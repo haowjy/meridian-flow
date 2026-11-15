@@ -24,9 +24,15 @@ export type UnsentTypingCause = "closed" | "removed" | "owner-closed";
 
 /**
  * Typing a room ended with before the server acknowledged it, handed back once. `text` is null for
- * an `owner-closed` change that has no words (a deletion, a format change).
+ * an `owner-closed` change that has no words (a deletion, a format change). `done` says the writer
+ * is done with it (copied it, or dismissed it): until then a reload offers its words again.
  */
-export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text: string | null }>;
+export type UnsentTyping = Readonly<{
+  id: string;
+  cause: UnsentTypingCause;
+  text: string | null;
+  done: () => void;
+}>;
 
 export interface LiveDocumentSessionRegistry {
   admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;

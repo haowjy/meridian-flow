@@ -577,19 +577,23 @@ from the wire alone, with nothing stored between handshakes.
   tabs advancing at once end on the same number. The old session is destroyed when its editors
   have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
   older-copy path below, like any older incarnation: read whole against the new session's first
-  handshake, so words another tab wrote into the same copy meanwhile come back (once). What a
-  session handed back is recorded in the copy itself (`recordHandedBack`, in its `custom` store:
-  the state the deciding handshake covered, the server's plus what it lacked), and every read of an
-  older copy offers only what lies beyond the server and those records. So a copy another tab
-  still holds, or one read before the server's state arrives, stays for the next open, in any tab
-  or after a reload, without its handed-back words. A copy can't drop them instead: it is shared
-  with tabs still writing into it, and Yjs can't remove an operation. Holders follow through
+  handshake, so words another tab wrote into the same copy meanwhile come back (once). A
+  hand-back from a copy is recorded in that copy when the writer is done with its toast (Copy
+  pressed or Dismiss; the toast never times out): `UnsentTyping.done` writes, into the copy's
+  `custom` store, what the hand-back covered (the deciding handshake's: the server's state plus
+  what it lacked). Every read of an older copy offers only what lies beyond the server, those
+  records, and this tab's hand-backs not yet done with; a tab keeps a copy while one of its
+  hand-backs from it is not done with. So a reload or crash with the toast still showing offers
+  its words again (the toast is never the only place they are), and once the writer has acted, in
+  any tab, no read offers them again. Two live tabs whose read admissions overlap each offer the
+  words; one acting is enough. A copy can't drop handed-back words instead: it is shared with
+  tabs still writing into it, and Yjs can't remove an operation. Holders follow through
   `observeReplacement` (live bindings and open tabs, draft room reads); a review mount carries its
   reading position across it (`use-reading-position.ts`).
 - A session that opens a room's current incarnation reads the older ones no tab holds against
-  its first handshake, hands back the words the server lacks and no session handed back yet
-  (never a wordless toast, which only the current session's own edit earns), and deletes them. A
-  reload does not offer words from a toast it lost again: the toast is the only place they are.
+  its first handshake, hands back the words the server lacks that no acted-on hand-back covers
+  (never a wordless toast, which only the current session's own edit earns), and deletes them,
+  unless one of its hand-backs from them is still showing: then the next open deletes them.
 - Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
   (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
 

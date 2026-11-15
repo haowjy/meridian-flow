@@ -25,6 +25,7 @@ import {
   type CopyHold,
   documentSessionPersistenceKey,
   draftRoomPersistenceKey,
+  furthest,
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
@@ -92,6 +93,12 @@ export class DocumentSessionRegistry {
   >();
   private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
   private readonly handedBack = new WeakSet<DocumentSession>();
+  /**
+   * Hand-backs shown here that the writer is not done with yet, by the copy they came from, as
+   * what each covers. Reads here offer none of it again, and the copy is kept: until `done`
+   * records it in the copy, the toast must not be the only place its words are.
+   */
+  private readonly pendingHandBacks = new Map<string, Set<Map<number, number>>>();
   /** Each session's copy: the room's key and the incarnation it opened. */
   private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
   private readonly replacing = new WeakSet<DocumentSession>();
@@ -431,15 +438,19 @@ export class DocumentSessionRegistry {
     const server = Y.decodeStateVector(Y.encodeStateVector(session.document));
     try {
       if (settled)
-        for (const { update, handedBack } of older) {
-          const known = new Map(server);
-          for (const [client, clock] of handedBack)
-            if (clock > (known.get(client) ?? 0)) known.set(client, clock);
+        for (const { name, update, handedBack } of older) {
+          const known = furthest(server, handedBack, ...(this.pendingHandBacks.get(name) ?? []));
           const text = missingText(update, Y.encodeStateVector(known));
-          if (text) this.handBack(text, "owner-closed");
+          if (text)
+            this.handBack(text, "owner-closed", {
+              name,
+              covered: furthest(known, Y.decodeStateVector(Y.encodeStateVectorFromUpdate(update))),
+            });
         }
     } finally {
-      await Promise.all(older.map((copy) => copy.finish(!settled)));
+      await Promise.all(
+        older.map((copy) => copy.finish(!settled || this.pendingHandBacks.has(copy.name))),
+      );
     }
   }
 
@@ -508,11 +519,14 @@ export class DocumentSessionRegistry {
     }
     const edits = old.undeliverableEdits();
     // Wordless edits made by another tab or an earlier page are not told to this one.
-    if (edits && (edits.typing !== null || edits.own)) this.handBack(edits.typing, "owner-closed");
-    old.recordHandedBack();
-    void old.makeInert().catch(reportError);
     const copy = this.copyOf.get(old);
     if (!copy) throw new Error(`Session has no local copy to advance: ${old.roomKey}`);
+    if (edits && (edits.typing !== null || edits.own))
+      this.handBack(edits.typing, "owner-closed", {
+        name: incarnationName(copy.key, copy.incarnation),
+        covered: edits.covered,
+      });
+    void old.makeInert().catch(reportError);
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
     if (old.room.kind === "live") {
@@ -573,10 +587,38 @@ export class DocumentSessionRegistry {
     this.handBack(text, cause);
   }
 
-  /** `text` is null for a change that has no words (a deletion, a format change). */
-  private handBack(text: string | null, cause: UnsentTypingCause): void {
+  /**
+   * `text` is null for a change that has no words (a deletion, a format change). A hand-back
+   * `from` a copy is pending until the writer is done with it, then recorded in the copy.
+   */
+  private handBack(
+    text: string | null,
+    cause: UnsentTypingCause,
+    from?: { name: string; covered: Map<number, number> },
+  ): void {
     if (text === null && cause !== "owner-closed") return;
-    const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
+    const id = crypto.randomUUID();
+    let done = () => {};
+    if (from) {
+      const pending = this.pendingHandBacks.get(from.name) ?? new Set();
+      pending.add(from.covered);
+      this.pendingHandBacks.set(from.name, pending);
+      let recorded = false;
+      done = () => {
+        if (recorded) return;
+        recorded = true;
+        // Pending until written: a read here in between must not offer the words again.
+        void this.copies
+          .recordHandedBack(from.name, id, from.covered)
+          .then(() => {
+            pending.delete(from.covered);
+            if (pending.size === 0 && this.pendingHandBacks.get(from.name) === pending)
+              this.pendingHandBacks.delete(from.name);
+          })
+          .catch(reportError);
+      };
+    }
+    const typing = Object.freeze({ id, cause, text, done });
     for (const observer of this.unsentTypingObservers) observer(typing);
   }
 
