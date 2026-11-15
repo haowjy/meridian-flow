@@ -51,7 +51,7 @@ function ownedBy(source: ContextSource, target: ResolvedUri): boolean {
   if (target.rootThreadId)
     return owner.kind === "lineage" && owner.rootThreadId === target.rootThreadId;
   if (target.workId) return owner.kind === "work" && owner.workId === target.workId;
-  return owner.kind === "project";
+  return owner.kind === "project" || owner.kind === "account";
 }
 
 export type OpenedTree = { list: TreeList; source: ContextSource; actor: string };
