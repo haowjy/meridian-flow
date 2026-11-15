@@ -7,7 +7,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { OpenDocument } from "@/client/stores";
 import type { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
@@ -102,10 +101,6 @@ function AccountFeatureProviders({
   lifetime: AccountFeatureLifetime;
   children: React.ReactNode;
 }) {
-  useInsertionEffect(() => {
-    scopeCreationRegistry(lifetime.accountId);
-  }, [lifetime.accountId]);
-
   useInsertionEffect(() => {
     lifetime.resumeFeatureLease();
     return () => lifetime.suspendFeatureLease();
@@ -220,6 +215,11 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
   const owner = useContext(DraftCommandsContext);
   if (!owner) throw new Error("AccountFeatureComposition is required");
   return owner;
+}
+
+/** The draft command owner; null outside the authenticated shell. */
+export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] | null {
+  return useContext(DraftCommandsContext);
 }
 
 /** The draft-only documents mounted hosts present; null outside the authenticated shell. */

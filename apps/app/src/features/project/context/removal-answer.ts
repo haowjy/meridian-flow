@@ -2,9 +2,12 @@
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentStanding } from "@/core/tree-list/standing";
 
-/** `removed`: in Trash, purged or not in the list. `record` names who deleted it, when the list says. */
+/**
+ * `removed`: in Trash (`inTrash`), purged or not in the list. `record` names who deleted it, when
+ * the list says.
+ */
 export type RemovalAnswer =
-  | { kind: "removed"; record: DocumentRemovalRecord | null }
+  | { kind: "removed"; record: DocumentRemovalRecord | null; inTrash: boolean }
   | { kind: "available" };
 
 /**
@@ -45,11 +48,15 @@ function answerOf(standing: DocumentStanding): RemovalAnswer {
     case "in-tree":
       return AVAILABLE;
     case "in-trash":
-      return { kind: "removed", record: removalRecordOf(standing.deletedBy) };
+      return { kind: "removed", record: removalRecordOf(standing.deletedBy), inTrash: true };
     case "purged":
     case "not-in-list":
       if (standing.discardedBy !== undefined)
-        return { kind: "removed", record: removalRecordOf(standing.discardedBy, "discarded") };
-      return { kind: "removed", record: null };
+        return {
+          kind: "removed",
+          record: removalRecordOf(standing.discardedBy, "discarded"),
+          inTrash: false,
+        };
+      return { kind: "removed", record: null, inTrash: false };
   }
 }

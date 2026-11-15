@@ -6,13 +6,14 @@ import { getAccountSettings, nextAccountSettingsGeneration } from "@/client/api/
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
-import { CommandDriverProvider } from "@/client/commands/driver-context";
+import { CommandDriverProvider, combineDomains } from "@/client/commands/driver-context";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
 import { FailureLogProvider } from "@/client/failures/failure-log";
 import { readLastShownChat } from "@/client/project-shell/store";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { projectDomain } from "@/client/query/project-commands";
 import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
 import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
@@ -139,7 +140,9 @@ function AuthenticatedAccountProviderTree({
 }) {
   return (
     <AccountFeatureComposition accountId={user.userId}>
-      <CommandDriverProvider domains={workDomain}>
+      <CommandDriverProvider
+        domains={(client) => combineDomains(workDomain(client), projectDomain(client))}
+      >
         <AccountSettingsProvider
           serverValue={user.accountSettings}
           serverReadGeneration={user.accountSettingsReadGeneration}

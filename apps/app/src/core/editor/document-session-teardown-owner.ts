@@ -23,12 +23,17 @@ export class DocumentSessionTeardownOwner {
   private readonly settled = new WeakSet<DocumentSession>();
   private drainAttempt: Promise<void> | null = null;
 
-  constructor(private readonly unavailable: (key: DocumentSessionRetirementKey) => Error) {}
+  constructor(
+    private readonly unavailable: (key: DocumentSessionRetirementKey) => Error,
+    /** Each session once, as its retirement begins: the last moment its text can be read. */
+    private readonly retiring: (session: DocumentSession) => void = () => {},
+  ) {}
 
   retire(key: DocumentSessionRetirementKey, session: DocumentSession): Promise<void> {
     if (this.settled.has(session)) return Promise.resolve();
     let entry = this.entries.get(session);
     if (!entry) {
+      this.retiring(session);
       const room = qualifiedKey(key);
       entry = { key: room, retirement: key, session, attempt: null };
       this.entries.set(session, entry);

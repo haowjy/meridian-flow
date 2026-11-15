@@ -5,13 +5,7 @@
  */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type {
-  PromptBake,
-  SpawnStatus,
-  Thread,
-  ThreadKind,
-  ThreadLifecycleStatus,
-} from "@meridian/contracts/threads";
+import type { PromptBake, SpawnStatus, Thread, ThreadKind } from "@meridian/contracts/threads";
 import { formatThreadRef } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import * as schema from "@meridian/database/schema";
@@ -192,7 +186,6 @@ export function createDrizzleThreadRepository(
         rootThreadId: threadId,
         spawnStatus: normalized.spawnStatus,
         spawnDepth: normalized.spawnDepth,
-        status: "idle",
       });
       if (!row) throw new Error("Failed to create thread");
       return mapThread({ ...row, workId: input.workId ?? null });
@@ -213,7 +206,6 @@ export function createDrizzleThreadRepository(
         originType: "spawn",
         spawnStatus: thread.spawnStatus,
         spawnDepth: thread.spawnDepth,
-        status: thread.status,
       });
       if (!row) throw new Error("Failed to create subagent thread");
       return mapThread({ ...row, workId: thread.workId });
@@ -235,7 +227,6 @@ export function createDrizzleThreadRepository(
           originTurnId: thread.originTurnId,
           originType: thread.originType,
           spawnDepth: thread.spawnDepth,
-          status: thread.status,
         },
         { ignoreIdConflict: true },
       );
@@ -518,7 +509,7 @@ export function createDrizzleThreadRepository(
           afterThreadId: null,
           limit: boundedLimit,
         })})
-        SELECT t.title, t.status,
+        SELECT t.title,
           to_char(t.updated_at AT TIME ZONE 'UTC',
             'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_exact
         FROM candidates JOIN threads t ON t.id = candidates.thread_id
@@ -527,31 +518,12 @@ export function createDrizzleThreadRepository(
       return Array.from(
         rows as unknown as Iterable<{
           title: string | null;
-          status: ThreadLifecycleStatus;
           updated_at_exact: string;
         }>,
       ).map((row) => ({
         title: row.title,
-        status: row.status,
         updatedAt: row.updated_at_exact,
       }));
-    },
-    async updateStatus(id, status) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({
-          status,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.threads.id, id))
-        .returning(threadColumns);
-      if (!row) throw new Error(`Thread not found: ${id}`);
-      const primary = await currentDrizzleDb(db)
-        .select({ workId: schema.threadWorks.workId })
-        .from(schema.threadWorks)
-        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-        .limit(1);
-      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
     async updateTitle(id, title) {
       const [row] = await currentDrizzleDb(db)

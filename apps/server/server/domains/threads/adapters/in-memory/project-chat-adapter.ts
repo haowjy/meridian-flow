@@ -111,7 +111,6 @@ export function createInMemoryProjectChatAdapter(
           thread.kind === "primary" &&
           thread.projectId === input.projectId &&
           !thread.deletedAt &&
-          thread.status !== "archived" &&
           (await source.isProjectVisible(thread))
         )
           eligible.push(await projectChatItem(thread, input.userId));

@@ -11,6 +11,7 @@ import {
   subscribeAccountRecents,
 } from "@/client/recents";
 import { accountQueryKeys } from "./account-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 import { useProjectTrees } from "./useProjectTrees";
 
 /** A recent item with whether the editor can open it: the tree says, or the server list until it loads. */
@@ -46,7 +47,7 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
   const query = useQuery({
     queryKey: accountQueryKeys.recentDocuments(accountId ?? "", projectId),
     queryFn: ({ signal }) => fetchRecentList(accountId ?? "", projectId, signal),
-    enabled: accountId !== null,
+    enabled: projectReadEnabled(accountId !== null),
     staleTime: 0,
   });
   useEffect(() => {

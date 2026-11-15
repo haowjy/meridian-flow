@@ -8,9 +8,9 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { getContextLineage } from "@/client/api/projects-api";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { displayThreadTitle } from "@/lib/thread-title";
+import { projectReadEnabled } from "./project-read-gate";
 
 export type LineageKey = { rootThreadId: string } | { rootThreadRef: string };
 

@@ -4,7 +4,6 @@ import { draftRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { closeDraftRooms } from "../hocuspocus-rooms.js";
 
 const DRAFT_AGENT_BROADCAST_ORIGIN = {
   source: "local",
@@ -28,9 +27,6 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
     require(): Hocuspocus {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
-    },
-    closeDraft(draftId: string): void {
-      closeDraftRooms(instance, draftId);
     },
     applyToRoom,
     deliverDraftUpdate({ draftId, update }: { draftId: string; update: Uint8Array }): void {

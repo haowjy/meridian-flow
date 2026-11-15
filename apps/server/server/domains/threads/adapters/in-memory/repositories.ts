@@ -123,7 +123,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: normalized.kind,
-    status: "idle",
     title: normalized.title === "" ? null : normalized.title,
     ref: null,
     initialPromptBakeId: null,
@@ -468,14 +467,7 @@ export function createInMemoryRepositories(
       return visible
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
         .slice(0, boundedLimit)
-        .map(({ title, updatedAt, status }) => ({ title, updatedAt, status }));
-    },
-    async updateStatus(id, status) {
-      const thread = threads.get(id);
-      if (!thread) throw new Error(`Thread not found: ${id}`);
-      const updated = { ...thread, status, updatedAt: toIsoString(new Date()) };
-      threads.set(id, updated);
-      return projectThread(updated);
+        .map(({ title, updatedAt }) => ({ title, updatedAt }));
     },
     async updateTitle(id, title) {
       const thread = threads.get(id);

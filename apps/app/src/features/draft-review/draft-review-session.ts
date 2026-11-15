@@ -6,7 +6,7 @@ export type InlineDraftReview = DraftReviewSelection & {
   focus?: ReviewFocus | null;
   shown?: boolean;
 };
-export type ReviewToastCode = "change-gone" | "draft-closed";
+export type ReviewToastCode = "change-gone";
 export type ReviewToast = {
   id: number;
   code: ReviewToastCode;

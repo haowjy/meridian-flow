@@ -48,7 +48,7 @@ export function CreationDialog({
   details?: { label: string; placeholder: string };
   submitLabel: string;
   onClose: () => void;
-  onCreate: (values: CreationValues) => void;
+  onCreate: (values: CreationValues) => unknown;
 }) {
   const [name, setName] = useState("");
   const [detailsText, setDetailsText] = useState("");

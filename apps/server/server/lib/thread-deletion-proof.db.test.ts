@@ -68,7 +68,6 @@ beforeEach(async () => {
     createdByUserId: OWNER,
     title: "Arc notes",
     kind: "primary",
-    status: "idle",
   });
 });
 
