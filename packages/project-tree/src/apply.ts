@@ -68,7 +68,9 @@ const sharesFact = (a: TreeRecord, b: TreeRecord) => {
 };
 
 /**
- * The chosen records plus the drafted creates they stand on, and the earlier drafted records on
+ * The chosen records plus the drafted creates they stand on, each with the drafted deletes and
+ * restores of its node up to the last chosen record (it lands standing or not as the Work showed
+ * it, so an Undo of one of those records finds it in live), and the earlier drafted records on
  * the same fact (applying a second rename brings the first, or the draft would read the first
  * after it).
  */
@@ -80,6 +82,7 @@ export function prerequisites(
   for (const record of pending) if (record.type === "create") created.set(record.node, record.id);
   const byId = new Map(pending.map((record) => [record.id, record]));
   const position = new Map(pending.map((record, index) => [record.id, index]));
+  const last = Math.max(-1, ...only.map((id) => position.get(id) ?? -1));
   const out = new Set<string>();
   const stack = [...only];
   while (stack.length > 0) {
@@ -89,7 +92,11 @@ export function prerequisites(
     out.add(id);
     for (const node of needs(record)) {
       const creator = created.get(node);
-      if (creator && creator !== id) stack.push(creator);
+      if (!creator || creator === id) continue;
+      stack.push(creator);
+      for (const presence of pending.slice(0, last))
+        if ((presence.type === "delete" || presence.type === "restore") && presence.node === node)
+          stack.push(presence.id);
     }
     for (const earlier of pending.slice(0, position.get(id) ?? 0))
       if (sharesFact(earlier, record)) stack.push(earlier.id);
