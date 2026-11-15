@@ -5,7 +5,12 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type { Settlement } from "@meridian/contracts/commands";
+import {
+  CLOSED_OWNER_WHYS,
+  type ClosedOwnerWhy,
+  type ReturnedWhy,
+  type Settlement,
+} from "@meridian/contracts/commands";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DiscardRestores } from "./discard-restores";
 
@@ -14,6 +19,8 @@ export type NoticeSurface =
   | { kind: "strip"; threadId: string | null }
   /** A document's review band: the notice shows in that document's identity row. */
   | { kind: "band"; documentId: string }
+  /** One change's card in a document: a Discard pressed there answers on the card, not the band. */
+  | { kind: "card"; documentId: string }
   /** Where a delete made on main's Recently opened shows; the sidebar's rows carry their own. */
   | { kind: "landing" };
 
@@ -45,8 +52,15 @@ export function returnedOf(answer: {
 }
 
 /** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
-export function returnedWhy(why: string): RestoreReturned {
+export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
   return why === "chat_frozen" ? "chat-in-trash" : "work-closed";
+}
+
+/** A `returned` reason's word; null for a reason that does not name a closed owner. */
+export function returnedWhy(why: ReturnedWhy): RestoreReturned | null {
+  return (CLOSED_OWNER_WHYS as readonly string[]).includes(why)
+    ? closedOwnerWord(why as ClosedOwnerWhy)
+    : null;
 }
 
 export type DiscardUndoAnswer = {
@@ -202,6 +216,19 @@ export class DraftNotices {
         (notice.surface.kind === "band"
           ? (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
           : notice.surface.kind === "landing" && documentId === null)
+      )
+        return notice;
+    return null;
+  }
+
+  /** The Discard notice on one change card of `documentId` (`NoticeSurface` `card`). */
+  forCard(projectId: string, documentId: string): DraftNotice | null {
+    for (const notice of this.notices.values())
+      if (
+        notice.kind === "discarded" &&
+        notice.projectId === projectId &&
+        notice.surface.kind === "card" &&
+        notice.surface.documentId === documentId
       )
         return notice;
     return null;

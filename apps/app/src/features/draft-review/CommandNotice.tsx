@@ -59,6 +59,16 @@ export function useDocumentNotice(
   );
 }
 
+/** The notice on one change card of a document (`DraftNotices.forCard`). */
+export function useCardNotice(projectId: string, documentId: string | null): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => (documentId ? notices.forCard(projectId, documentId) : null),
+    () => null,
+  );
+}
+
 /** The Discard notice that can bring `documentId` back (`DraftNotices.discarding`). */
 export function useDiscardingNotice(documentId: string | null): DraftNotice | null {
   const { notices } = useDraftCommandOwner();

@@ -39,8 +39,9 @@
  * after the acknowledgements arrive, so subscribers can show "back online and
  * saved" after an outage.
  */
+
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
-  type AccessChangedWhy,
   type ChangeEventWsMessage,
   parseYjsRoomName,
   WS_CLOSE,
@@ -108,7 +109,9 @@ export type DocumentSessionSnapshot = {
    */
   access: DocumentSessionAccess | null;
   /** Why a read-only room is read-only, when its owner is closed (a Work archived or deleted, a chat in Trash). */
-  closedWhy: AccessChangedWhy | null;
+  closedWhy: ClosedOwnerWhy | null;
+  /** A read admission whose reason has not arrived yet: `closedWhy` may still change. */
+  reasonPending: boolean;
   localPersistenceSynced: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
@@ -202,7 +205,11 @@ export type DocumentSessionTransportProvider = {
    * last named. Nothing until it names one: a transport never invents a scope.
    */
   subscribeAccess?: (
-    listener: (access: DocumentSessionAccess, closedWhy: AccessChangedWhy | null) => void,
+    listener: (
+      access: DocumentSessionAccess,
+      closedWhy: ClosedOwnerWhy | null,
+      reasonPending: boolean,
+    ) => void,
   ) => () => void;
   subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
@@ -278,7 +285,8 @@ export class DocumentSession {
    */
   private transportState: DocumentSessionConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
-  private closedWhy: AccessChangedWhy | null = null;
+  private closedWhy: ClosedOwnerWhy | null = null;
+  private reasonPending = false;
   private schemaFence: SchemaFence | null = null;
   private schemaRepairs: SchemaRepairEvent[] = [];
   private schemaRepairWitness: SchemaRepairWitness | null = null;
@@ -403,10 +411,16 @@ export class DocumentSession {
         this.recomputeStatus();
       }) ?? null;
     this.unsubscribeTransportAccess =
-      this.transportProvider.subscribeAccess?.((access, closedWhy) => {
-        if (access === this.access && closedWhy === this.closedWhy) return;
+      this.transportProvider.subscribeAccess?.((access, closedWhy, reasonPending) => {
+        if (
+          access === this.access &&
+          closedWhy === this.closedWhy &&
+          reasonPending === this.reasonPending
+        )
+          return;
         this.access = access;
         this.closedWhy = closedWhy;
+        this.reasonPending = reasonPending;
         this.emit();
       }) ?? null;
     this.unsubscribeChangeEvents =
@@ -580,6 +594,7 @@ export class DocumentSession {
       connectionState: this.transportState,
       access: this.access,
       closedWhy: this.closedWhy,
+      reasonPending: this.reasonPending,
       localPersistenceSynced: this.localPersistenceSynced,
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,

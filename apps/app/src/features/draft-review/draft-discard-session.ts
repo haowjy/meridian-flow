@@ -13,7 +13,7 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
-import { type DiscardUndo, returnedWhy } from "./draft-notices";
+import { closedOwnerWord, type DiscardUndo } from "./draft-notices";
 import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
 
@@ -85,7 +85,7 @@ export function startDraftDiscardSession(input: {
     // A read room drops the writer's text: a revert written here would show, then never land.
     if (binding.session.getSnapshot().access === "read") {
       const { closedWhy } = binding.session.getSnapshot();
-      if (closedWhy) return { kind: "returned", why: returnedWhy(closedWhy) };
+      if (closedWhy) return { kind: "returned", why: closedOwnerWord(closedWhy) };
       input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
       return { kind: "change-refused", code: "read_only" };
     }

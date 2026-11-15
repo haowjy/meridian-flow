@@ -959,8 +959,9 @@ export class DraftCommandOwner {
   }
   /**
    * Discards a whole item on the server, every Discard of a whole draft: Trash lists it and its
-   * Undo is the server's, by `commandId`. A created document leaves at once; any other stays in review,
-   * discarding, until the server answers, so a refusal shows on it. A Discard decided on the
+   * Undo is the server's, by `commandId`. A created document is hidden at once and closes once the server
+   * says `done`; any other stays in review, discarding, until the server answers. Either way a
+   * refusal or a return shows on it. A Discard decided on the
    * frozen reading names the draft the writer saw, so the server refuses it if the chat came
    * back and the draft moved on. Server-only lifecycle commands share this account owner, never
    * the Apply route.
@@ -978,7 +979,6 @@ export class DraftCommandOwner {
       ref.itemKey,
       item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
     );
-    if (item.isNew) this.lifecycle.closeCreated?.(ref);
     try {
       const result = await discardDraftItem(ref, {
         branchId: item.branchId,
@@ -997,6 +997,7 @@ export class DraftCommandOwner {
           ref.itemKey,
           hides ? { hidden: true, discarding: null } : { discarding: null },
         );
+        if (item.isNew) this.lifecycle.closeCreated?.(ref);
         return { kind: "done" };
       }
       this.discardedHere.delete(own);

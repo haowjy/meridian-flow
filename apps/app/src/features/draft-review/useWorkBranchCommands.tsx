@@ -456,9 +456,12 @@ export function useWorkBranchCommands({
       const leaves =
         target.kind === "draft" && (draftOnly?.isDraftOnly(projectId, draft.documentId) ?? false);
       const { start, part } = dispatchDiscard(draft, target);
-      void start.outcome.then((outcome) =>
-        bounced([outcome], noticeSurface(draft), [draft.documentId]),
-      );
+      // A change card's chip stays on the card pressed; a whole draft's is the band's.
+      const bounceSurface: NoticeSurface =
+        surface === "band" && target.kind === "groups"
+          ? { kind: "card", documentId: draft.documentId }
+          : noticeSurface(draft);
+      void start.outcome.then((outcome) => bounced([outcome], bounceSurface, [draft.documentId]));
       const shown = part
         ? notices.showDiscard({
             projectId,
