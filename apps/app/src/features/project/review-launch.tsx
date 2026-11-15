@@ -250,7 +250,7 @@ export type LinkPlacement = (
  * - A page only a draft holds (`document.review`) opens on that draft.
  * - A page `ownerKey` drafted opens on that draft, as the draft strip does.
  * - Any other page opens live, placed beside in the link's Work, or through `live` in main. A page
- *   in the trash opens in main.
+ *   in the trash opens in main, and a chat's upload through `live`, which shows it in its viewer.
  */
 export function useLinkPlacement(projectId: string | null, ownerKey: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
@@ -264,7 +264,7 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
           ...document.review,
           draftOnly: true,
         });
-      if (document.trashed) return live(document);
+      if (document.trashed || document.upload) return live(document);
       const drafted = ownerKey ? fileForDocument(document.documentId) : null;
       if (ownerKey && drafted?.contextLocation)
         return openDraft({
@@ -289,7 +289,7 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
 
 /**
  * Opens a document by id where `useLinkPlacement` puts it: a chip or a mention in a chat's
- * message or composer. An upload (`uri` is `uploads://`) skips placement for the upload viewer.
+ * message or composer.
  */
 export function useOpenPlacedDocument(
   projectId: string | undefined,
@@ -298,9 +298,10 @@ export function useOpenPlacedDocument(
   const place = useLinkPlacement(projectId ?? null, null);
   return useCallback(
     ({ documentId, uri }) =>
-      uri && isUploadsUri(uri)
-        ? openDocument({ documentId })
-        : place({ documentId }, (found) => openDocument({ documentId: found.documentId })),
+      place(
+        { documentId, ...(uri && isUploadsUri(uri) ? { upload: true as const } : {}) },
+        (found) => openDocument({ documentId: found.documentId }),
+      ),
     [place, openDocument],
   );
 }

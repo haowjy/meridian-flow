@@ -34,7 +34,8 @@ export type OpenDocumentOwner =
       rootThreadId?: undefined;
       rootThreadRef?: undefined;
       chatId: string;
-      chatRef: string;
+      /** Unset until the chat exists: a New chat's uploads spell no handle yet. */
+      chatRef?: string;
     };
 
 /** A patch's owner, with the absent arm spelled out so a spread replaces the old owner. */

@@ -34,6 +34,8 @@ export type LinkDocumentRef = {
   documentId: string;
   /** The resolver already knows this identity is in the trash; skip the live-document race. */
   trashed?: true;
+  /** A chat's upload (its address is `uploads://`): it opens in the upload viewer, in no pane. */
+  upload?: true;
   /** A document the writer just created: its editor takes the caret. */
   focus?: true;
   review?: {
@@ -169,6 +171,7 @@ export async function followProjectLink({
 
 function documentRef(found: DocumentEntry): LinkDocumentRef {
   const { document, branch } = found;
+  if (document.scheme === "uploads") return { documentId: document.documentId, upload: true };
   if (!branch) return { documentId: document.documentId };
   return {
     documentId: document.documentId,

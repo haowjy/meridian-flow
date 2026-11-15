@@ -420,7 +420,7 @@ export type PlacedItem =
  * The one placement command: where `item` opens (`placeIn`). It returns the pane. For the side it
  * has already written the slot (and the draft the document shows) and had the side seen; for main
  * the caller opens the item, since only it knows how (a live page, a draft, a chat). A chat's
- * upload never comes here: its `uploads://` address sends it to the upload viewer.
+ * upload never comes here: `useLinkPlacement` opens it in the upload viewer.
  */
 export type Place = (
   item: PlacedItem,

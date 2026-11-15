@@ -38,9 +38,9 @@ code disagree, one of them is a bug.
 `openSide(X)`: X is the other kind from main; it fills its kind's slot, which the side shows. The side's picker offers only the
 other kind.
 
-A chat's upload sits in neither pane: its `uploads://` address skips `place`, so it never waits on
-the project's list to decide, and the open shows it in the upload viewer dialog over both panes,
-which stay as they were.
+A chat's upload sits in neither pane: its `uploads://` address marks it an upload, so
+`useLinkPlacement` opens it without asking `place`, whether or not the project's list has synced,
+and the open shows it in the upload viewer dialog over both panes, which stay as they were.
 
 ```mermaid
 flowchart TD
