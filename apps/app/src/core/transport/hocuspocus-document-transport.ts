@@ -399,7 +399,8 @@ export function createHocuspocusDocumentTransport({
       }
     }
     // What the server sent: it holds those items and, per client, every one before them.
-    if (origin === provider) serverHas(Y.encodeStateVectorFromUpdate(update), false);
+    // (`encodeStateVectorFromUpdate` counts only runs from clock 0, so it reads a later update as nothing.)
+    if (origin === provider) serverHas(Y.encodeStateVector(Y.parseUpdateMeta(update).to), false);
     else {
       const wasEmpty = outbox === null;
       outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();

@@ -534,28 +534,36 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Unsent typing handed back
 
-- Before a room's local copy goes with typing the server never acknowledged, the registry
-  reads it (`DocumentSession.unsentEdits`: the items the transport's unacknowledged updates
-  inserted, and the document encoded so it can be read once the session is destroyed) and
-  hands them back once per session, like every other notice (see "One notice store per
-  account"). It reads them as the session's retirement begins,
-  when it ended on a closing or removing reset (`DocumentSessionTeardownOwner`'s `retiring`),
-  and in `clearLocalCopy` (cause `removed`). Not at the reset: a session kept on screen still
-  shows that text, and a restore that restarts it delivers it, so the words would come back
-  twice. A session retires once, so each session's typing is handed back at most once. A 4409
-  access change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`unsentTypingToasts`,
-  `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
-  the words back. A closed draft's copy also stays for an Undo of its Discard, which delivers it.
-- What it cannot reach: a room with no session in this tab (the copy lives only in
-  IndexedDB, for a document no tab has open: its next open decides, handing it back while the
-  Work is closed and delivering it after an Unarchive), and, for a closed draft or removed
-  document, typing from before this tab's transport existed (an offline reload replays it from
-  IndexedDB, outside the transport's unacknowledged updates). A read admission has no such loss:
-  see the next section. The same cause loses a reload's unsent typing in a document purged before
-  the room reconnects: `clearLocalCopy` with no session has no measure of what the server lacks
-  and deletes the copy unmeasured. The fix is a mark in the copy of what the server is known to
-  have (#1606). Both are known losses on
-  [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
+- **What the server has.** Each copy holds a mark in its `custom` store (`server-mark.ts`): a Yjs
+  state vector of what the server is known to hold. The transport reports the server's SyncStep1
+  at each handshake, the items of each update the server sends, and the whole document each time
+  the server has acknowledged everything (`subscribeServerHas`); the session merges each into the
+  mark by per-client maximum in one transaction, skipping a vector it already wrote. Per client the
+  server holds every item below the mark, so the items the copy holds beyond it are all the server
+  can lack. A mark too low offers words the server has; one too high would lose words, so nothing
+  writes a vector the server has not shown.
+- **A replaced room.** The server can replace a room's document with one that lacks items a mark
+  counts: a restore from a checkpoint (`CollabDomain.restore`, no caller yet) installs an older
+  state as a new generation, and a document with no authority head is reseeded empty. A handshake
+  whose vector does not cover the mark replaces it instead of merging. The client sees a
+  replacement only at its next handshake, whatever it is keyed on, so this is the same check a
+  generation id would give. Items the replaced room lost and a copy still holds stay within the mark
+  until then: the server had them, and the replacement dropped them.
+- **Who hands back from the mark.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s
+  `retiring`) reads its copy beyond its mark (`LocalDocumentCopies.beyondMark`) and claims that; the
+  copy has every write of the session's by then. Not at the reset: a session kept on screen still
+  shows that text, and a restore that restarts it delivers it. A session retires once. A 4409 access
+  change is no reset: the room reconnects and keeps its typing. `LocalDocumentCopies.clear`, the
+  only deletion on a final fact, claims each copy beyond its mark before deleting it and keeps a
+  copy whose claim the store can't take, so the next start claims it again. So typing from before an
+  offline reload, in a document purged before its room reconnects, comes back, and a room with no
+  session in this tab is measured too. A copy with no mark (last written before marks, not
+  connected since) is deleted unread; an empty copy gets an empty mark at its first open. The
+  account lifetime shows the words in a toast (`unsentTypingToasts`,
+  `features/editor/RescuedText.tsx`). A closed draft's copy also stays for an Undo of its Discard,
+  which delivers it.
+- What it cannot reach: a read admission has no such loss (see the next section). A document no
+  tab has open keeps its typing in its copy until its next open or its purge.
 
 ### Undeliverable edits (a room admitted read-only)
 
@@ -609,14 +617,13 @@ from the wire alone, with nothing stored between handshakes.
     not the account's history.
 - **Who claims.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
   it reads that and a snapshot, makes the old session inert, then claims), the older-copy read
-  below (everything an older incarnation holds beyond the new session's first handshake), and a
-  closing or removing retirement (the session's unacknowledged typing, read synchronously; a
-  removal's `clearLocalCopy` claims through it). **A copy is deleted only after a claim of what it
-  holds has resolved, and a claim that rejects still shows its words**, unstored, in this tab
-  (`done` resolves at once). The replacement goes on and its old copy stays for the older-copy read; an
-  older copy stays for the next open; a removal keeps the copy for this page. A terminal
-  retirement has only the snapshot, so a rejected claim there is the one place words can be shown
-  once and then lost. Offering twice is accepted; losing is not. A change with no words (a
+  below (everything an older incarnation holds beyond the new session's first handshake), a
+  closing or removing retirement and `LocalDocumentCopies.clear` (each, the copy beyond its mark).
+  **A copy is deleted only after a claim of what it holds has resolved, and a claim that rejects
+  still shows its words**, unstored, in this tab (`done` resolves at once). The replacement goes on
+  and its old copy stays for the older-copy read; an older copy stays for the next open; a copy
+  `clear` could not claim stays for the next start, which claims it again from the copy. Offering
+  twice is accepted; losing is not. A change with no words (a
   deletion, a format change) is shown unstored by the session's tab, and only when the session's
   own ledger is among the undeliverable edits: it holds nothing a reload could lose.
 - **What a tab shows is the store's unacted notices.** When the registry's first observer
@@ -625,13 +632,12 @@ from the wire alone, with nothing stored between handshakes.
   the toasts of notices another tab acted on. It keeps the ids it has shown for the life of the
   page: a read while an `act` is on its way still finds the notice unacted. So every open tab of the account shows a notice, wherever its document is; a reload
   offers it again until the writer acts in one tab, and then never again in any. The start needs
-  no copy, lock, server or open document. A copy's measure of what the server lacks can't be the
-  store: what the server lacks is known only to a connected session, and an empty measure would
-  offer a purged document's whole text.
+  no copy, lock, server or open document. What the server lacks is measured by the copy's own
+  mark, never by the store: the store says only what was offered.
 - **Nothing is deleted from the store.** An acted notice's items stop any later claim from its
   copy offering the same words again, and a claim can still be on its way after its copy
-  database is gone: a terminal retirement claims from its snapshot without anyone waiting for it,
-  in any tab. No tab can know when the last such claim has run, so collecting acted notices by
+  database is gone: a closing retirement claims from what it read of its copy without anyone
+  waiting for it, in any tab. No tab can know when the last such claim has run, so collecting acted notices by
   their copy's absence brought words back. Sign-out (`clearAll`) deletes the whole
   notice database after the copies, and only when no copy was left behind.
 - **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy shows
