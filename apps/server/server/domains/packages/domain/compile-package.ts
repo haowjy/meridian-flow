@@ -82,6 +82,8 @@ export interface CompiledPackage {
   grammarVersion: string;
   contentDigest: string;
   files: SkillFiles;
+  /** The source's unreadable paths; part of what the digest identifies. */
+  problems: Record<string, string>;
   agents: CompiledAgent[];
   /** Skills the package holds; one with a diagnostic of any severity is not offered. */
   skills: Array<{ slug: string; diagnostics: PackageDiagnostic[] }>;
@@ -115,6 +117,7 @@ export function compilePackage(
     grammarVersion,
     contentDigest: sourceDigest(input),
     files,
+    problems,
     skills: [...skills].map(([slug, diagnostics]) => ({ slug, diagnostics })),
     agents: [...drafts.values()].map((draft) => ({
       slug: draft.slug,

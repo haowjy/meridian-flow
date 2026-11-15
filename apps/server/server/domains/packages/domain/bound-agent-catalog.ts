@@ -34,6 +34,7 @@ import {
   sourceDigest,
 } from "./compile-package.js";
 import { PACKAGES_DIR, splitLevel } from "./level-packages.js";
+import { agentRevisionId } from "./helpers.js";
 import { agentPath, GRAMMAR_VERSION, MANIFEST_PATH, readManifest, skillPath } from "./mars.js";
 import { type SkillListing, skillListingFromMarkdown } from "./skill-listing.js";
 
@@ -106,6 +107,8 @@ export interface BoundAgentCatalog {
 
 /** Compiled packages kept between reads, by content digest; a level is a few packages. */
 const CACHED_PACKAGES = 200;
+/** Picker rows remembered across all accounts, each a reference to a cached package. */
+const SHOWN_REVISIONS = 5000;
 
 export function createBoundAgentCatalog(input: {
   store: AgentRevisionStore;
@@ -119,16 +122,23 @@ export function createBoundAgentCatalog(input: {
   const { store } = input;
   const compiled = new Map<string, CompiledPackage>();
   const installed = new Map<string, Awaited<ReturnType<AgentRevisionStore["installSource"]>>>();
-  const remember = <V>(cache: Map<string, V>, key: string, value: V): V => {
+  const remember = <V>(cache: Map<string, V>, key: string, value: V, limit = CACHED_PACKAGES): V => {
     cache.delete(key);
     cache.set(key, value);
-    if (cache.size > CACHED_PACKAGES) cache.delete(cache.keys().next().value as string);
+    if (cache.size > limit) cache.delete(cache.keys().next().value as string);
     return value;
   };
   const compile = (source: AgentSourceSnapshot): CompiledPackage => {
     const digest = sourceDigest(source);
     return compiled.get(digest) ?? remember(compiled, digest, compilePackage(source));
   };
+  /**
+   * What each account's picker showed, by revision id: a bind takes the revision the picker
+   * showed, and only one this account's levels or the built-ins produced. Nothing is retained
+   * until a chat binds.
+   */
+  const shown = new Map<string, { package: CompiledPackage; slug: string }>();
+  const shownKey = (userId: string, id: string) => `${userId}:${id}`;
   /** Retains a package the first time this process binds from it; later binds find it in `installed`. */
   const install = async (pkg: CompiledPackage) =>
     installed.get(pkg.contentDigest) ??
@@ -138,6 +148,14 @@ export function createBoundAgentCatalog(input: {
     name: readManifest(source.files[MANIFEST_PATH]).fields?.name ?? source.coordinate,
     package: compile(source),
   }));
+  const builtinShown = new Map(
+    builtinPackages.flatMap(({ package: pkg }) =>
+      pkg.agents.map((agent) => [
+        agentRevisionId(pkg, agent.slug, GRAMMAR_VERSION),
+        { package: pkg, slug: agent.slug },
+      ]),
+    ),
+  );
 
   /** The three levels' packages, lowest first, compiled from the files as they are now. */
   async function levels(userId: string, projectId: string | undefined, branch?: AgentsBranch) {
@@ -213,17 +231,23 @@ export function createBoundAgentCatalog(input: {
     return input.unavailableReasons(definition, model);
   };
 
-  /** The item a writer sees; retaining the package is what gives the Agent a revision to pick. */
-  const itemOf = async (entry: Combined<AgentEntry>): Promise<AgentCatalogItem> => {
+  /** The item a writer sees; its revision id names the content shown, retained when a chat binds. */
+  const itemOf = (userId: string, entry: Combined<AgentEntry>): AgentCatalogItem => {
     const found = entry.value?.agent;
-    const row =
+    const id =
       entry.value && found
-        ? (await install(entry.value.package)).definitions.find(
-            (definition) => definition.slug === found.slug,
-          )
+        ? agentRevisionId(entry.value.package, found.slug, GRAMMAR_VERSION)
         : undefined;
+    if (id && entry.value && found) {
+      remember(
+        shown,
+        shownKey(userId, id),
+        { package: entry.value.package, slug: found.slug },
+        SHOWN_REVISIONS,
+      );
+    }
     return {
-      selection: row ? { slug: entry.slug, definitionRevisionId: row.id } : null,
+      selection: id ? { slug: entry.slug, definitionRevisionId: id } : null,
       slug: entry.slug,
       name: found?.name ?? entry.slug,
       description: found?.description ?? "",
@@ -250,8 +274,8 @@ export function createBoundAgentCatalog(input: {
 
   return {
     async list(userId, { projectId }) {
-      const items = await Promise.all(
-        winners(agentsOf(await levels(userId, projectId))).map(itemOf),
+      const items = winners(agentsOf(await levels(userId, projectId))).map((entry) =>
+        itemOf(userId, entry),
       );
       const key = (item: AgentCatalogItem) => item.name.normalize("NFC").toLowerCase();
       return {
@@ -284,21 +308,32 @@ export function createBoundAgentCatalog(input: {
       );
     },
 
-    async resolvePrimary(_userId, selection) {
-      // The picker showed this revision, so this is the one that binds, whatever the files say now.
-      let row = await store.readCatalogRevision(selection.definitionRevisionId);
-      if (!row) return { ok: false, reason: "not-found", details: [] };
-      if (row.grammarVersion !== GRAMMAR_VERSION) {
-        // Read by an older reader: read the same files again with this one.
-        const source = await store.readSource(row.packageRevisionId);
-        const again = source && (await store.installSource(source)).definitions;
-        row = again?.find((definition) => definition.slug === row?.slug) ?? row;
-      }
-      const reasons = reasonsOf(row);
-      const revision = availableRevision(row);
-      if (!revision || reasons.length) {
+    async resolvePrimary(userId, selection, projectId) {
+      // The picker showed this revision, so this is the one that binds, whatever the files say
+      // now. An id this account's picker did not show (the server restarted since, or it is
+      // another account's) binds the Agent's current files by name instead.
+      const picked =
+        shown.get(shownKey(userId, selection.definitionRevisionId)) ??
+        builtinShown.get(selection.definitionRevisionId);
+      const current = picked
+        ? undefined
+        : winners(agentsOf(await levels(userId, projectId))).find(
+            (entry) => entry.slug === selection.slug,
+          )?.value;
+      const source = picked ?? (current && { package: current.package, slug: current.agent.slug });
+      if (!source) return { ok: false, reason: "not-found", details: [] };
+      const agent = source.package.agents.find((each) => each.slug === source.slug);
+      if (!agent) return { ok: false, reason: "not-found", details: [] };
+      const reasons = reasonsOf(agent);
+      if (!agent.definition || reasons.length) {
         return { ok: false, reason: "unavailable", details: reasons };
       }
+      // The chat binds, so the files are retained now.
+      const row = (await install(source.package)).definitions.find(
+        (definition) => definition.slug === source.slug,
+      );
+      const revision = row && availableRevision(row);
+      if (!revision) return { ok: false, reason: "not-found", details: [] };
       try {
         const configuration = await resolveAgentConfiguration({
           revision,

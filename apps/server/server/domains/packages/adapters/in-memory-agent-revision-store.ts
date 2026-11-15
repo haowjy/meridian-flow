@@ -10,6 +10,7 @@ import {
 } from "@meridian/contracts/agents";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import { type AgentSourceSnapshot, compilePackage } from "../domain/compile-package.js";
+import { agentRevisionId } from "../domain/helpers.js";
 import { GRAMMAR_VERSION } from "../domain/mars.js";
 import type {
   AgentRevision,
@@ -92,7 +93,7 @@ export function createInMemoryAgentRevisionStore(input: {
         );
         for (const agent of compiled.agents) {
           if (rows.some((row) => row.slug === agent.slug)) continue;
-          const id = randomUUID();
+          const id = agentRevisionId(compiled, agent.slug, grammarVersion);
           state().revisions.set(id, { id, packageRevisionId, grammarVersion, ...agent });
         }
         return {

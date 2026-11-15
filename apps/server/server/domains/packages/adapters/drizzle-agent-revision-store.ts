@@ -13,6 +13,7 @@ import {
   compilePackage,
   type PackageDiagnostic,
 } from "../domain/compile-package.js";
+import { agentRevisionId } from "../domain/helpers.js";
 import { GRAMMAR_VERSION } from "../domain/mars.js";
 import type { SkillFiles } from "../domain/types.js";
 import type {
@@ -72,6 +73,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
             .insert(agentDefinitionRevisions)
             .values(
               compiled.agents.map((agent) => ({
+                id: agentRevisionId(compiled, agent.slug, grammarVersion),
                 packageRevisionId: source.id,
                 slug: agent.slug,
                 grammarVersion,

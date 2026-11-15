@@ -161,7 +161,9 @@ export function createAgentLevelFiles(deps: {
           if (!read.ok) throw new Error(`Cannot read ${document.name}: ${read.error.code}`);
           text = read.value.content;
         } else text = await liveText(document, versions.get(document.id));
-        if (text.includes("\0")) problems[path] = `${path} is not plain text`;
+        // What the documents hold is untrusted: Mars reads only well-formed UTF-8 text.
+        if (text.includes("\0") || Buffer.from(text).toString("utf8") !== text)
+          problems[path] = `${path} is not valid UTF-8 text`;
         else files[path] = text;
       }
       return { files, problems };
