@@ -4,6 +4,7 @@ import type { WorkHandle } from "@meridian/contracts";
 import { matchDocumentPath } from "@meridian/contracts";
 import {
   type ContextUriScheme,
+  hasUriScheme,
   ownerSegment,
   type ParsedContextUri,
   parseContextUri,
@@ -165,9 +166,10 @@ export function createReferenceBrowserController(
   let unsubscribe: (() => void) | null = null;
   let containerScheme: ContextUriScheme | null = null;
   let hasSearch = false;
+  const typedQuery = () => (query.startsWith("@") ? query.slice(1) : query);
   const explicitUri = () => {
-    if (!query.includes("://")) return null;
-    const parsed = parseContextUri(query.startsWith("@") ? query.slice(1) : query);
+    if (!hasUriScheme(typedQuery())) return null;
+    const parsed = parseContextUri(typedQuery());
     return parsed.ok ? parsed.value : null;
   };
   let referenceKinds: readonly ReferenceKind[] | undefined;
@@ -211,16 +213,15 @@ export function createReferenceBrowserController(
     const works = rootLocation?.works ?? [];
     if (location.kind === "drilled" && !sourceIds.includes(location.activeSource))
       sourceIds.push(location.activeSource);
-    const allRows = query.includes("://")
+    const allRows = hasUriScheme(typedQuery())
       ? rootRows(sourceIds, works, options.catalog, referenceKinds, true)
       : [];
-    const typedQuery = query.startsWith("@") ? query.slice(1) : query;
     queriedContainer =
       allRows
         .filter(
           (row): row is Extract<ReferenceRow, { kind: "source" | "folder" }> =>
             (row.kind === "source" || row.kind === "folder") &&
-            typedQuery.startsWith(row.action.prefix),
+            typedQuery().startsWith(row.action.prefix),
         )
         .sort((a, b) => b.action.prefix.length - a.action.prefix.length)[0] ?? null;
     const parsed = explicitUri();
@@ -256,7 +257,7 @@ export function createReferenceBrowserController(
           ? rootRows(location.warmSources, location.works, options.catalog, referenceKinds)
           : drilledRows(location, options.catalog, referenceKinds);
     const search = queriedContainer
-      ? typedQuery.slice(queriedContainer.action.prefix.length)
+      ? typedQuery().slice(queriedContainer.action.prefix.length)
       : query;
     hasSearch = search.length > 0 && !(parsed && parsed.path === "");
     const ranked = rankReferenceRows(candidates, search, {

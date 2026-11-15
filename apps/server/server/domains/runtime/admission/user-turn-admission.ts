@@ -1,7 +1,7 @@
 /** Authoritative parsing, identity, replay, and settlement for writer turns. */
 import { createHash } from "node:crypto";
 import { type LinkAddressKind, spellDocumentHref } from "@meridian/contracts";
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { hasUriScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   AcceptedAdmission,
   AdmissionFingerprint,
@@ -110,7 +110,7 @@ function exactObject(value: unknown, keys: readonly string[]): value is Record<s
 function canonicalUri(value: unknown, location: string): string {
   if (typeof value !== "string") throw new InvalidAdmissionError(`${location} must be a URI`);
   const parsed = parseContextUri(value);
-  if (!parsed.ok || !value.includes("://") || parsed.value.path.length === 0) {
+  if (!parsed.ok || !hasUriScheme(value) || parsed.value.path.length === 0) {
     throw new InvalidAdmissionError(`${location} must be a canonical context URI`);
   }
   if (parsed.value.normalized !== value) {

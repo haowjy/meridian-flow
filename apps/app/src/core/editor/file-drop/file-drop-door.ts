@@ -13,6 +13,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { type ContextUriScheme, contextualUri } from "@meridian/contracts/context-uri";
 import { ASSETS_FOLDER, classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -85,11 +86,16 @@ export const fileDropDoor: DropDoor = {
   },
 };
 
-function chipFor(editor: Editor, name: string, documentId: string, scheme: string): PMNode | null {
+function chipFor(
+  editor: Editor,
+  name: string,
+  documentId: string,
+  scheme: ContextUriScheme,
+): PMNode | null {
   return documentReferenceNode(editor.state.schema, {
     label: name,
     documentId,
-    uri: `${scheme}://${ASSETS_FOLDER}/${name}`,
+    uri: contextualUri(scheme, `${ASSETS_FOLDER}/${name}`),
   });
 }
 

@@ -2,6 +2,8 @@
 
 import {
   formatParsedContextUri,
+  hasUriScheme,
+  lowercaseUriScheme,
   type ParsedContextUri,
   parseContextUri,
   splitDocumentHrefSuffix,
@@ -27,9 +29,8 @@ export function resolveDocumentHref(
   // A full URI is only one that starts with `scheme://`; the scheme is
   // case-insensitive, as in any URI. Anything else is a path relative to the
   // base, wherever a `://` might appear inside it.
-  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(path)?.[1];
-  if (scheme) {
-    const full = parseContextUri(scheme.toLowerCase() + path.slice(scheme.length));
+  if (hasUriScheme(path)) {
+    const full = parseContextUri(lowercaseUriScheme(path));
     return full.ok && full.value.path ? { kind, uri: full.value.normalized, suffix } : null;
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return null;

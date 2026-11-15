@@ -6,6 +6,7 @@
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
  * the other project sources, or `user://` for the writer's personal source.
  */
+
 import { randomUUID } from "node:crypto";
 import {
   type BranchId,
@@ -15,6 +16,7 @@ import {
   type WorkId,
 } from "@meridian/contracts";
 import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
+import { contextualUri, withDefaultScheme } from "@meridian/contracts/context-uri";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
@@ -178,7 +180,7 @@ export function typeLink(href: string, aheadId: string) {
 }
 
 function uri(path: string): string {
-  return /^[a-z]+:\/\//.test(path) ? path : `manuscript://${path}`;
+  return withDefaultScheme(path);
 }
 
 /** Command verbs over `world`; `composed()` supplies the runtime (it throws when absent). */
@@ -292,7 +294,7 @@ export function branchTreeCommands(
             authority.workHandle ? new Map([[authority.workHandle, authority]]) : new Map(),
           )
         : await livePort();
-      const target = createOptions.inScratchOf ? `scratch://${path}` : uri(path);
+      const target = createOptions.inScratchOf ? contextualUri("scratch", path) : uri(path);
       const created = await port.createTrackedDocument(target, createOptions.content ?? "", {
         origin: human(),
       });

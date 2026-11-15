@@ -16,7 +16,7 @@ import {
   resolveDocumentHref,
 } from "@meridian/contracts";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import { documentTitleFromUri, uriPath } from "@meridian/contracts/context-uri";
 import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
 
 /**
@@ -54,11 +54,9 @@ export function linkedDocumentName(name: string): string | null {
   const parsed = parseDocumentFilename(name);
   if (!parsed.ok) return null;
   const classification = classifyFiletype(parsed.value.filetype);
-  return classification.kind === "tracked" && classification.schemaType === "document"
-    ? (aheadAddress(canonicalContextUri("manuscript", name), "link")?.slice(
-        "manuscript://".length,
-      ) ?? null)
-    : null;
+  if (classification.kind !== "tracked" || classification.schemaType !== "document") return null;
+  const ahead = aheadAddress(canonicalContextUri("manuscript", name), "link");
+  return ahead === null ? null : uriPath(ahead);
 }
 
 /**

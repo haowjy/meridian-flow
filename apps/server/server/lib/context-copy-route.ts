@@ -5,7 +5,7 @@
  */
 
 import { type DraftOwnerKey, draftOwnerFromKey, parseDraftOwnerKey } from "@meridian/contracts";
-import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import { formatParsedContextUri, isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import { parseHandle } from "@meridian/contracts/handles";
 import type {
   ContextDestinationParent,
@@ -459,7 +459,7 @@ async function resolveDestinationUri(
 
 function uploadsUri(chatRef: string, path: string): string {
   const clean = path.replace(/^\/+/, "").replace(/\/+$/, "");
-  return clean ? `uploads://@${chatRef}/${clean}` : `uploads://@${chatRef}/`;
+  return formatParsedContextUri("uploads", clean, { kind: "chat", chatRef });
 }
 
 function joinPath(base: string, segments: readonly string[]): string {

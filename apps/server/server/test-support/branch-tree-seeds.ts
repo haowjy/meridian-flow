@@ -18,6 +18,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import { contextUriScheme, uriPath } from "@meridian/contracts/context-uri";
 import { formatWorkHandle, type WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -88,8 +89,7 @@ const SOURCES = ["manuscript", "kb", "unfiled"] as const;
 
 /** A source-qualified scenario path's scheme and source-relative path. */
 export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } {
-  const match = /^(kb|unfiled|manuscript|user):\/\/(.*)$/.exec(path);
-  return { scheme: (match?.[1] ?? "manuscript") as ScenarioSource, rel: match?.[2] ?? path };
+  return { scheme: (contextUriScheme(path) ?? "manuscript") as ScenarioSource, rel: uriPath(path) };
 }
 
 /** The account's personal project and its `user://` source, made once per account. */

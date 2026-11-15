@@ -6,7 +6,7 @@
  * ref names the document itself; an ahead ref is minted for an address where
  * no document is yet and settles on the first one to arrive there.
  */
-import { parseContextUri } from "./context-uri.js";
+import { hasUriScheme, parseContextUri } from "./context-uri.js";
 import type { FolderId } from "./ids.js";
 import {
   canonicalLeaf,
@@ -87,7 +87,7 @@ export function isAheadFilename(filename: string): boolean {
  */
 export function aheadAddress(uri: string, kind: "link" | "source"): string | null {
   const parsed = parseContextUri(uri);
-  if (!parsed.ok || !parsed.value.path || !/^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) return null;
+  if (!parsed.ok || !parsed.value.path || !hasUriScheme(uri)) return null;
   const slash = parsed.value.normalized.lastIndexOf("/");
   const filename = parsed.value.normalized.slice(slash + 1);
   if (kind === "source" && !/^[^/]*[^/.][^/]*\.[^/.]+$/.test(filename)) return null;

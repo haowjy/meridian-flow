@@ -1,6 +1,8 @@
 /** Where an import lands: an area root or a folder inside Manuscript, Knowledge or Unfiled. */
+
 import { t } from "@lingui/core/macro";
 import { IMPORT_SCHEMES, type ImportScheme } from "@meridian/contracts";
+import { contextualUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
 export function isImportScheme(scheme: ProjectContextTreeScheme): scheme is ImportScheme {
@@ -31,5 +33,5 @@ export function destinationOf(
   if (!isImportScheme(scheme)) return null;
   return folder
     ? { scheme, path: folder.path, uri: folder.uri, name: folder.name, folderId: folder.entryId }
-    : { scheme, path: "/", uri: `${scheme}://`, name: areaLabel(scheme), folderId: null };
+    : { scheme, path: "/", uri: contextualUri(scheme), name: areaLabel(scheme), folderId: null };
 }

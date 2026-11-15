@@ -261,6 +261,39 @@ export function parseUnifiedContextUri(raw: string): ContextUriParseResult {
 
 export const UNIFIED_CONTEXT_SCHEMES = CONTEXT_URI_SCHEMES;
 
+const URI_SCHEME_PREFIX = /^([a-z][a-z0-9+.-]*):\/{2}/i;
+
+/** Whether `raw` is written with a `scheme://` prefix, rather than as a bare path. */
+export function hasUriScheme(raw: string): boolean {
+  return URI_SCHEME_PREFIX.test(raw.trim());
+}
+
+/** The context scheme `raw` is written in (any letter case), or null for a bare path or another scheme. */
+export function contextUriScheme(raw: string): ContextUriScheme | null {
+  const scheme = URI_SCHEME_PREFIX.exec(raw.trim())?.[1]?.toLowerCase();
+  return isContextUriScheme(scheme) ? scheme : null;
+}
+
+/** `raw` with its `scheme://` prefix lower-cased; schemes are case-insensitive, the parser is not. */
+export function lowercaseUriScheme(raw: string): string {
+  return raw.trim().replace(URI_SCHEME_PREFIX, (prefix) => prefix.toLowerCase());
+}
+
+/** What follows `scheme://`, or `raw` itself when it is a bare path. */
+export function uriPath(raw: string): string {
+  return raw.replace(URI_SCHEME_PREFIX, "");
+}
+
+/** The address of `path` under a scheme's contextual root, as written: no normalizing, no owner. */
+export function contextualUri(scheme: ContextUriScheme, path = ""): string {
+  return formatParsedContextUri(scheme, path, { kind: "contextual" });
+}
+
+/** `raw` as an address: a bare path gets `scheme://` (the manuscript by default); a written address stays. */
+export function withDefaultScheme(raw: string, scheme: ContextUriScheme = "manuscript"): string {
+  return hasUriScheme(raw) ? raw : contextualUri(scheme, raw);
+}
+
 export function isContextUriScheme(value: unknown): value is ContextUriScheme {
   return typeof value === "string" && (CONTEXT_URI_SCHEMES as readonly string[]).includes(value);
 }
@@ -523,9 +556,7 @@ export function splitDocumentHrefSuffix(value: string): { path: string; suffix: 
  */
 export function documentTitleFromUri(uri: string | null | undefined): string | null {
   if (!uri) return null;
-  const schemeSeparator = uri.indexOf("://");
-  const path = schemeSeparator >= 0 ? uri.slice(schemeSeparator + 3) : uri;
-  const segment = path.split("/").filter(Boolean).at(-1);
+  const segment = uriPath(uri).split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   return canonicalLeaf(segment);
 }

@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import { type ArtifactRef, artifactRefSchema } from "../artifacts/index.js";
-import { parseContextUri } from "../context-uri.js";
+import { hasUriScheme, parseContextUri } from "../context-uri.js";
 import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
@@ -27,7 +27,7 @@ const artifactUriSchema = z
   .string()
   .superRefine((uri, context) => {
     const parsed = parseContextUri(uri);
-    if (!uri.includes("://") || !parsed.ok || !parsed.value.path) {
+    if (!hasUriScheme(uri) || !parsed.ok || !parsed.value.path) {
       context.addIssue({
         code: "custom",
         message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,

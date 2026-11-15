@@ -31,6 +31,7 @@
 
 import { t } from "@lingui/core/macro";
 import { resolveDocumentHref } from "@meridian/contracts";
+import { contextUriScheme, uriPath } from "@meridian/contracts/context-uri";
 import {
   type Dispatch,
   type SetStateAction,
@@ -155,7 +156,7 @@ function useLinkGeneration(resolution: LinkAnswerCache | null): unknown {
 /** A manuscript picture's address as the writer wrote it: its path from the root. */
 function displayedAddress(href: string): string {
   const uri = resolveDocumentHref(href, null)?.uri ?? href;
-  return uri.startsWith("manuscript://") ? uri.slice("manuscript://".length) : uri;
+  return contextUriScheme(uri) === "manuscript" ? uriPath(uri) : uri;
 }
 
 function pictureTargetIdentity(target: PictureTarget): string {

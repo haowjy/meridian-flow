@@ -1,5 +1,5 @@
 /** ContextFS-backed upload content adapter. */
-import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import { canonicalContextUri, contextualUri } from "@meridian/contracts/context-uri";
 import { ASSETS_FOLDER, classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
 import { keptFileName } from "../../file-intake/index.js";
@@ -50,7 +50,7 @@ export function createContextUploadContentPort(
     async names({ reservation, actorUserId, source }) {
       const folder = source
         ? projectBrowseContextUri(source.scheme, ASSETS_FOLDER, source.authority)
-        : "uploads://";
+        : contextualUri("uploads");
       const listing = await portFor(reservation, actorUserId, source).list(folder);
       if (!listing.ok) return new Set();
       return new Set(listing.value.entries.map((entry) => entry.uri.split("/").pop() ?? ""));
