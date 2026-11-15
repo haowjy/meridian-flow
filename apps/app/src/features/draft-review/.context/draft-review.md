@@ -166,7 +166,9 @@ says of the items sent (`took`: the ones it didn't take, and of those the ones a
 first), and the notice lists only what it took (`DraftNotices.answered`): its struck rows and its
 Undo are the answer's, never the press's. An item an Apply took first says "Applied first" where
 the writer pressed: on its row while the list draws it, else as the chip a bounce shows (the
-Changes bar, the strip, the band) when the Discard took nothing else. The command is `done`,
+Changes bar, the strip, the band, or the change card pressed, where a closed owner's bounce
+goes) when the Discard took nothing else. A move's Discard that also writes its own text is two
+shares of the notice, the room's and the server's, and only the server's answer narrows. The command is `done`,
 with its Undo, when it took any item, and `settled` when it took none. An Apply's Undo step
 holds the nodes its answer says landed, not the ones pressed.
 
