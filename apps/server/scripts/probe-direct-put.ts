@@ -4,7 +4,7 @@
  * and checks what the intake relies on. Recipe: server/domains/storage/.context/qa/direct-put.md
  *
  *   S3_ENDPOINT=http://127.0.0.1:9000 S3_BUCKET=probe S3_ACCESS_KEY=... S3_SECRET_KEY=... \
- *     bun apps/server/scripts/probe-direct-put.ts [--serve [port]]
+ *     pnpm --filter @meridian/server exec tsx scripts/probe-direct-put.ts [--serve [port]]
  *
  * `--serve` also hosts a page on that port; open it in a browser and it PUTs cross-origin
  * through a signed URL, which is the CORS check no Node call can make.

@@ -4,7 +4,7 @@
  * its result block, a second process recovers, and the tree must show the command once with
  * its result the model's. Stored rows only.
  *
- *   bun tools/qa/probes/model-edit-tree/run.mts
+ *   pnpm exec tsx tools/qa/probes/model-edit-tree/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a tree command is one model-edit command under its call's key, like a text edit

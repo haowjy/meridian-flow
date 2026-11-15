@@ -45,7 +45,7 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    which now says "Deleted from the manuscript": the click carries `restore`,
    the answer is `applied` with `restored: true`, A is living with the draft's
    text. The same race runs unattended as rows of
-   `bun tools/qa/probes/atomic-apply/run.mts`.
+   `pnpm exec tsx tools/qa/probes/atomic-apply/run.mts`.
 7. **A taken path.** Delete A live, then create a document at A's path. PASS:
    Apply with `restore` is `applied`; A is restored at the next free name and
    the result carries a `renamed` note with the requested and landed paths.

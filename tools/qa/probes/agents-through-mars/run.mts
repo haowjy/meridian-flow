@@ -4,7 +4,7 @@
  * never runs with more access than its file says. Also the built-in package, fixing a broken
  * Agent, and a reader bump.
  *
- *   bun tools/qa/probes/agents-through-mars/run.mts
+ *   pnpm exec tsx tools/qa/probes/agents-through-mars/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a file with any Mars diagnostic, of any severity, defines nothing

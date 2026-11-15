@@ -81,7 +81,8 @@ type Tab = {
 /** The client bundle: the production transport, its `@/` alias and `import.meta.env` resolved. */
 async function loadClient(): Promise<{ openTab(roomName: string): Tab }> {
   const repo = new URL("../../../../", import.meta.url).pathname;
-  const esbuild = createRequire(import.meta.url)("esbuild") as {
+  const tsxRequire = createRequire(createRequire(import.meta.url).resolve("tsx/package.json"));
+  const esbuild = tsxRequire("esbuild") as {
     build(options: Record<string, unknown>): Promise<unknown>;
   };
   const directory = mkdtempSync(join(tmpdir(), "lfd-probe-client-"));

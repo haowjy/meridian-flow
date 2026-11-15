@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const serverDirectory = fileURLToPath(new URL("../../", import.meta.url));
+// Resolve the loader from this installed worktree, independent of the child's cwd.
+const loader = import.meta.resolve("tsx/esm");
 
 async function withChild(
   fixture: "signal" | "deadline",
@@ -27,7 +29,7 @@ async function withChild(
   const fixturePath = fileURLToPath(
     new URL(`./__tests__/observability-${fixture}-child.ts`, import.meta.url),
   );
-  const child = spawn("bun", [fixturePath, tracePath], {
+  const child = spawn(process.execPath, ["--import", loader, fixturePath, tracePath], {
     cwd: serverDirectory,
     env:
       deadlineMs === null

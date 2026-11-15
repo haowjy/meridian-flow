@@ -23,7 +23,7 @@ room-record order; a sleep alone does not prove that no request is pending.
 Run the production content-rebase probe:
 
 ```sh
-bun tools/qa/probes/draft-review-r/run.mts
+pnpm exec tsx tools/qa/probes/draft-review-r/run.mts
 ```
 
 The runner creates and drops a scratch PostgreSQL database and drives draft

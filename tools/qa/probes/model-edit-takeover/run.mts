@@ -4,7 +4,7 @@
  * real recovery lanes, stored rows only. The old process's session claim is dropped from the
  * database side (a lost connection), the one way a live process loses its chat.
  *
- *   bun tools/qa/probes/model-edit-takeover/run.mts
+ *   pnpm exec tsx tools/qa/probes/model-edit-takeover/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a run's stores check its lease row under the thread lock; the takeover ends the row

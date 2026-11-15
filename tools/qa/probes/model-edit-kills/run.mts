@@ -4,7 +4,7 @@
  * a named step or holds it there, and a second process takes the chat over and recovers. Asserts
  * on stored rows only: the document, the edit receipts, the result blocks, the command rows.
  *
- *   bun tools/qa/probes/model-edit-kills/run.mts
+ *   pnpm exec tsx tools/qa/probes/model-edit-kills/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - a dead run's turn ends in `error`, and recovery answers each open `write` call from its key:

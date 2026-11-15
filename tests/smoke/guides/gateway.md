@@ -18,7 +18,7 @@ End-to-end checks for the gateway (`packages/gateway`, built from env in `apps/s
 **Start the server** (from repo root):
 
 ```bash
-bun tests/smoke/server.ts
+pnpm exec tsx tests/smoke/server.ts
 ```
 
 Note the printed URL, e.g. `http://127.0.0.1:38421`. For curls below:
@@ -328,7 +328,7 @@ a write splits `cacheWriteTokens` / `cacheWriteLongTokens`.
 Automated quick check (health + one generate):
 
 ```bash
-bun tests/smoke/run.ts
+pnpm exec tsx tests/smoke/run.ts
 ```
 
 Expect `smoke self-test passed` on stdout and exit code 0.

@@ -95,7 +95,7 @@ and keeps them; each serves one request at a time and compiles the pattern it is
 terminated thread loses only the request that ran there. With all four busy, further requests queue, each
 for no longer than its own signal. The built server emits the worker as `workers/match-worker.mjs`
 (`bundleWorkerEntries` in `apps/server/nitro.config.ts` rewrites `new URL("./x.ts", import.meta.url)`);
-vitest and `bun` run the `.ts` file directly. The pool is shared by the process, so four concurrent
+vitest and `tsx` run the `.ts` file directly. The pool is shared by the process, so four concurrent
 slow greps (one user's four chats, say) hold every thread for up to 20 s; anyone else's grep queues,
 spends its own budget waiting, and returns stopped and empty. No per-user cap exists yet.
 Matching is per line of the document's grep text: markdown as `read` shows it, link destinations spelled empty, decoded to

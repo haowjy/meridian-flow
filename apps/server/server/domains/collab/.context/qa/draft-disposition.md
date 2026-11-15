@@ -10,7 +10,7 @@ verification.
 Start local PostgreSQL with `pnpm dev:infra` if needed, then run:
 
 ```bash
-bun tools/qa/probes/draft-disposition/run.mts
+pnpm exec tsx tools/qa/probes/draft-disposition/run.mts
 ```
 
 The runner creates and drops its own `lfd_probe_*` database, prints one

@@ -1,7 +1,7 @@
 /**
  * Runs the lock-free drafts seam probes against one scratch database:
  *
- *   bun tools/qa/probes/drafts-lock-free/run.mts [probe ...] [--db <url>] [--keep]
+ *   pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts [probe ...] [--db <url>] [--keep]
  *
  * Without `--db` it creates `lfd_probe_*` on the local dev Postgres, runs the committed migration
  * chain, and drops it afterwards (`--keep` leaves it for inspection). Each probe prints its

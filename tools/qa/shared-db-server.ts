@@ -14,15 +14,14 @@
  * line before it boots; both processes must print the same line.
  *
  * It runs two Portless children: the server on `<prefix>.server.meridian`, and an app on
- * `<prefix>.app.meridian` whose `MERIDIAN_API_ORIGIN` is that server. A tab needs its own app:
+ * `<prefix>.app.meridian` (both run on Node by `shared-db-serve.mjs`: they host Nitro and Vite, which
+ * production runs on Node and which fail on Bun) whose `MERIDIAN_API_ORIGIN` is that server. A tab needs its own app:
  * the app's Vite proxy sends every `/ws/yjs` upgrade to its one `MERIDIAN_API_ORIGIN` whatever the
  * tab's host. Nitro and Vite build into directories of their own, so both share a checkout with a
  * running dev stack. Ctrl-C, SIGINT or SIGTERM stops both.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 import { isLocalDevPostgres } from "../dev/lib/dev-db";
 import { fillDevEnv, resolveCurrentRepoRoot, resolveDevLogDir } from "../dev/lib/dev-env";
@@ -34,8 +33,7 @@ import {
 } from "../dev/portless-routes";
 
 const SERVER_SUFFIX = ".server.meridian";
-const SERVE_SERVER = "--serve-server";
-const SERVE_APP = "--serve-app";
+const SERVE_CHILD = resolve(import.meta.dirname, "shared-db-serve.mjs");
 const USAGE = "usage: bun tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian";
 
 const repoRoot = resolveCurrentRepoRoot(import.meta.dirname);
@@ -107,13 +105,13 @@ async function launch(): Promise<void> {
       }
     }
   };
-  for (const [name, flag] of [
-    [serverName, SERVE_SERVER],
-    [appName, SERVE_APP],
+  for (const [name, mode] of [
+    [serverName, "server"],
+    [appName, "app"],
   ] as const) {
     const child = spawn(
       "pnpm",
-      ["exec", "portless", "--name", name, "--force", "bun", import.meta.filename, flag],
+      ["exec", "portless", "--name", name, "--force", "node", SERVE_CHILD, mode],
       { cwd: repoRoot, env, stdio: "inherit", detached: true },
     );
     child.on("exit", (code) => {
@@ -130,60 +128,6 @@ async function launch(): Promise<void> {
   console.log(`shared-db-server: tab    ${appOrigin}`);
 }
 
-function moduleFrom<T>(packageDir: string, specifier: string): Promise<T> {
-  const require = createRequire(resolve(packageDir, "package.json"));
-  return import(pathToFileURL(require.resolve(specifier)).href) as Promise<T>;
-}
-
-function childEnv(): { port: number; prefix: string } {
-  const { DATABASE_URL, SHARED_DB_SERVER_URL, SHARED_DB_SERVER_PREFIX, PORT } = process.env;
-  if (!SHARED_DB_SERVER_URL || DATABASE_URL !== SHARED_DB_SERVER_URL || !SHARED_DB_SERVER_PREFIX) {
-    fail("DATABASE_URL changed between the launcher and its child");
-  }
-  if (!PORT) fail("a child runs under Portless, which assigns PORT");
-  return { port: Number(PORT), prefix: SHARED_DB_SERVER_PREFIX };
-}
-
-/** The server child: `nitro dev` without the CLI, so its build directory is its own. */
-async function serveServer(): Promise<void> {
-  const { port, prefix } = childEnv();
-  const serverDir = resolve(repoRoot, "apps/server");
-  const nitro = await moduleFrom<{
-    createNitro(config: Record<string, unknown>): Promise<unknown>;
-    createDevServer(nitro: unknown): {
-      listen(options: { port: number; hostname: string }): Promise<unknown>;
-    };
-    prepare(nitro: unknown): Promise<void>;
-    build(nitro: unknown): Promise<void>;
-  }>(serverDir, "nitro/builder");
-  const app = await nitro.createNitro({
-    rootDir: serverDir,
-    dev: true,
-    buildDir: `node_modules/.nitro-${prefix}`,
-  });
-  await nitro.createDevServer(app).listen({ port, hostname: "127.0.0.1" });
-  await nitro.prepare(app);
-  await nitro.build(app);
-}
-
-/** The app child: the app's own Vite config, with caches and Nitro build of its own. */
-async function serveApp(): Promise<void> {
-  const { prefix } = childEnv();
-  const appDir = resolve(repoRoot, "apps/app");
-  process.chdir(appDir);
-  const vite = await moduleFrom<{
-    createServer(config: Record<string, unknown>): Promise<{ listen(): Promise<unknown> }>;
-  }>(appDir, "vite");
-  const server = await vite.createServer({
-    root: appDir,
-    configFile: resolve(appDir, "vite.config.ts"),
-    cacheDir: `node_modules/.vite-${prefix}`,
-    nitro: { buildDir: `node_modules/.nitro-${prefix}` },
-  });
-  await server.listen();
-}
-
-const mode = process.argv[2];
-(mode === SERVE_SERVER ? serveServer() : mode === SERVE_APP ? serveApp() : launch()).catch(
-  (cause: unknown) => fail(cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)),
+launch().catch((cause: unknown) =>
+  fail(cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)),
 );

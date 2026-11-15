@@ -8,7 +8,7 @@ durable state with `tools/qa/draft-readback.ts`.
 
 ## Tools
 
-- `bun tools/qa/draft-readback.ts <draftId> [--db <url>]` prints a
+- `pnpm exec tsx tools/qa/draft-readback.ts <draftId> [--db <url>]` prints a
   draft's `revision`, `checkpointRevision`, `checkpointSeq`, generation, tail
   rows with their client ids, materialized `text` and `stateSha256`. Without
   `--db` it reads this checkout's database.

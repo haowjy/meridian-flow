@@ -43,6 +43,12 @@ this directory never imports application packages. The `./mf` CLI lives in
 - Scripts run under `bun` (`#!/usr/bin/env bun`, `bun tools/dev/x.ts` in `package.json`), not
   tsx. Bun is pinned in `.tool-versions`. Vite, Nitro and Vitest stay on Node: don't use
   `bunx --bun` for them.
+- **Bun runs our own tooling; anything that runs server or app code stays on Node**
+  (Nitro, Vite, or `apps/server/server/...` imported in-process), because production is Node
+  and those runs are its evidence. So the probes, `apps/server/scripts`, `check:models`,
+  `smoke:project-domain`, `tests/smoke` and the tests that start server code use `tsx` (a root
+  dev dependency) or plain `node`; `tools/qa/shared-db-server.ts` is a Bun launcher whose Nitro
+  and Vite children (`shared-db-serve.mjs`) run on Node. Nitro fails on Bun (crossws).
 - `tools/mf` and `apps/app/e2e` import the Portless helpers
   ([the list](../mf/AGENTS.md)). Keep those free of import-time side effects, with
   Node built-ins as their only runtime dependencies.

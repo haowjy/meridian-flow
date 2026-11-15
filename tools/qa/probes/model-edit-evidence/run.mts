@@ -4,7 +4,7 @@
  * killed at the steps between and a second one recovers; the frontier rows must agree with the
  * blocks the model was shown. Stored rows only.
  *
- *   bun tools/qa/probes/model-edit-evidence/run.mts
+ *   pnpm exec tsx tools/qa/probes/model-edit-evidence/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - an edit's evidence commits with the command, under the result block's id; a refused edit

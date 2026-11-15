@@ -2,7 +2,7 @@
  * Probe: pins the Yjs behaviour the store's gc-off contract depends on. A snapshot (a frontier)
  * survives a compaction fold of a `gc: false` doc, and fails or restores wrong text otherwise.
  * It builds its own `Y.Doc`s and imports nothing from the repo, so it cannot notice a server
- * fold that starts encoding a gc-on doc. Pure Yjs, no database: `bun tools/qa/probes/frontier-survives-compaction/run.mts`.
+ * fold that starts encoding a gc-on doc. Pure Yjs, no database: `pnpm exec tsx tools/qa/probes/frontier-survives-compaction/run.mts`.
  * Prints each observation and exits with the number of failed checks.
  */
 import * as Y from "yjs";

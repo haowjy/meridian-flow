@@ -7,10 +7,10 @@ the full authenticated app stack.
 
 ```bash
 # Self-test: start server, hit /health + /generate, exit
-bun tests/smoke/run.ts
+pnpm exec tsx tests/smoke/run.ts
 
 # Keep the server running for manual curls or agent-driven scenarios
-bun tests/smoke/server.ts
+pnpm exec tsx tests/smoke/server.ts
 ```
 
 The server prints its base URL and registered providers on startup. Use that URL

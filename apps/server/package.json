@@ -10,8 +10,8 @@
     "preview": "nitro preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests --config vitest.config.ts",
-    "perf:writer-admission": "bun scripts/before-sync-admission-benchmark.ts",
-    "smoke:thread-runtime": "bun scripts/thread-runtime-smoke.ts"
+    "perf:writer-admission": "tsx scripts/before-sync-admission-benchmark.ts",
+    "smoke:thread-runtime": "tsx scripts/thread-runtime-smoke.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
@@ -71,6 +71,7 @@
     "@types/semver": "^7.7.1",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
+    "tsx": "^4.22.4",
     "typescript": "catalog:",
     "vitest": "catalog:",
     "ws": "^8.21.0"
