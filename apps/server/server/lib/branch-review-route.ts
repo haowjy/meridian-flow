@@ -53,10 +53,7 @@ import {
   isFileAccessDenied,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
-import {
-  type Widened,
-  widenedLabel,
-} from "../domains/packages/domain/agent-widening.js";
+import { type Widened, widenedLabel } from "../domains/packages/domain/agent-widening.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/command-record.js";
 import { type BranchOwnerLifecycle, ownerKeyOfColumns } from "../shared/draft-owner.js";
@@ -481,7 +478,9 @@ export async function handleOwnerDraftListRequest(
     );
     return [...new Set(labels.flat())];
   };
-  const labelled = await Promise.all(visible.map(async (item) => ({ item, labels: await labelsOf(item) })));
+  const labelled = await Promise.all(
+    visible.map(async (item) => ({ item, labels: await labelsOf(item) })),
+  );
   return {
     items: labelled.map(({ item, labels }) => ({
       ...toWireItem(item, listed.threadTitles),

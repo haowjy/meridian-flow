@@ -5,8 +5,8 @@
  * `historySummary` reads the typed value.
  */
 
-import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 

@@ -466,8 +466,8 @@ msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr "{days, plural, one {# day ago} other {# days ago}}"
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "{days, plural, one {# day left} other {# days left}}"
-msgstr "{days, plural, one {# day left} other {# days left}}"
+#~ msgid "{days, plural, one {# day left} other {# days left}}"
+#~ msgstr "{days, plural, one {# day left} other {# days left}}"
 
 #: src/features/project/context/TrashedDocument.tsx
 msgid "{days, plural, one {Gone for good in # day.} other {Gone for good in # days.}}"
@@ -638,6 +638,10 @@ msgstr "{name} discarded {title} from the draft."
 msgid "{name} discarded this document from the draft."
 msgstr "{name} discarded this document from the draft."
 
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "{name} is gone from Trash."
+msgstr "{name} is gone from Trash."
+
 #: src/lib/upload-limit.ts
 msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
 msgstr "{name} is over {LIMIT_MB} MB, so it can't be added."
@@ -651,8 +655,8 @@ msgid "{name} was deleted before this change could be made."
 msgstr "{name} was deleted before this change could be made."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
-msgstr "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgid "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgstr "{name} was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "{name} was deleted with the Work {work} before this change could be made."
@@ -951,6 +955,10 @@ msgstr "A folder named {name} already exists in this location."
 #: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "A skill named {name} is already here."
@@ -1663,6 +1671,10 @@ msgstr "Changed the position of {source}"
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Changes"
 msgstr "Changes"
+
+#: src/components/app/NotSentYet.tsx
+msgid "Changes are waiting to be sent. They go out on their own."
+msgstr "Changes are waiting to be sent. They go out on their own."
 
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
@@ -2475,9 +2487,17 @@ msgstr "Couldn't retry. Another reply started first."
 msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
 
+#: src/client/commands/submit.ts
+msgid "Couldn’t save that change on this device, so it wasn’t sent."
+msgstr "Couldn’t save that change on this device, so it wasn’t sent."
+
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Couldn’t save the goal. Try again."
 msgstr "Couldn’t save the goal. Try again."
+
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Couldn’t save this change to the Work"
+msgstr "Couldn’t save this change to the Work"
 
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
@@ -2816,8 +2836,12 @@ msgid "workReceipt.deleted"
 msgstr "Deleted Work {name}"
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
-msgstr "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgid "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+#~ msgstr "Deleted Work can be restored for {WORK_DELETE_RETENTION_DAYS} days."
+
+#: src/features/project/work/DeletedWorkList.tsx
+msgid "Deleted Work can be restored."
+msgstr "Deleted Work can be restored."
 
 #: src/features/project/context/TrashedDocument.tsx
 #~ msgid "Deleted."
@@ -3386,6 +3410,10 @@ msgstr "Goal: {0}. "
 msgid "Gone for good: this document was emptied from Trash."
 msgstr "Gone for good: this document was emptied from Trash."
 
+#: src/features/project/work/WorkCommandFailureRow.tsx
+msgid "Gone from Trash."
+msgstr "Gone from Trash."
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
 msgstr "grid"
@@ -3763,8 +3791,8 @@ msgid "Left"
 msgstr "Left"
 
 #: src/features/project/work/DeletedWorkList.tsx
-msgid "Less than a day left"
-msgstr "Less than a day left"
+#~ msgid "Less than a day left"
+#~ msgstr "Less than a day left"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Let's work on it"
@@ -4411,6 +4439,10 @@ msgstr "None"
 msgid "None of your own yet. Yours show in every project."
 msgstr "None of your own yet. Yours show in every project."
 
+#: src/features/chat/command-descriptor.ts
+msgid "Not applied to"
+msgstr "Not applied to"
+
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
@@ -4453,6 +4485,14 @@ msgstr "Not restored"
 #: src/features/chat/ToolRow.tsx
 msgid "Not run before compaction"
 msgstr "Not run before compaction"
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent"
+msgstr "Not sent"
+
+#: src/components/app/NotSentYet.tsx
+msgid "Not sent, signed out"
+msgstr "Not sent, signed out"
 
 #. placeholder {0}: answer.text
 #: src/features/chat/ask/AskReceipt.tsx
@@ -5033,8 +5073,8 @@ msgstr "Rename Work"
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkTitles.tsx
-msgid "Rename Work: {0}"
-msgstr "Rename Work: {0}"
+#~ msgid "Rename Work: {0}"
+#~ msgstr "Rename Work: {0}"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Renamed"
@@ -5280,8 +5320,8 @@ msgstr "Saved locally (offline)"
 
 #: src/features/project/work/WorkDetail.tsx
 #: src/features/project/work/WorkMetadata.tsx
-msgid "Saving…"
-msgstr "Saving…"
+#~ msgid "Saving…"
+#~ msgstr "Saving…"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "scene break"
@@ -5896,6 +5936,14 @@ msgid "That change is no longer in the draft."
 msgstr "That change is no longer in the draft."
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change wasn't kept in {name}."
+msgstr "That change wasn't kept in {name}."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change wasn't kept."
+msgstr "That change wasn't kept."
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change wasn't reverted because its text changed or is already gone."
 msgstr "That change wasn't reverted because its text changed or is already gone."
 
@@ -5939,6 +5987,10 @@ msgstr "That link could not be checked"
 #: src/features/project/context/context-entry-name.ts
 msgid "That location does not exist"
 msgstr "That location does not exist"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr "That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands."
 
 #: src/features/editor/PassageNotice.tsx
 msgid "That passage changed after this search."
@@ -6079,8 +6131,8 @@ msgid "The change could not be confirmed. Try again."
 msgstr "The change could not be confirmed. Try again."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The change didn't fit the current draft. The AI will read it again."
-msgstr "The change didn't fit the current draft. The AI will read it again."
+#~ msgid "The change didn't fit the current draft. The AI will read it again."
+#~ msgstr "The change didn't fit the current draft. The AI will read it again."
 
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "The destination is no longer there."
@@ -6156,12 +6208,12 @@ msgid "the source chat"
 msgstr "the source chat"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
-msgstr "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
-msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+#~ msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+#~ msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "The upload didn’t start."
@@ -6464,8 +6516,8 @@ msgid "This draft just became read-only, so nothing was discarded. Check it, the
 msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
-msgstr "This draft was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr "This draft was discarded, so the change wasn't kept. The AI will read it again."
 
 #: src/features/draft-review/ReviewToast.tsx
 msgid "This draft was discarded."
@@ -6540,8 +6592,8 @@ msgid "This name can't be used. Try a different one."
 msgstr "This name can't be used. Try a different one."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
-msgstr "This new document was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
+#~ msgstr "This new document was discarded, so the change wasn't kept. The AI will read it again."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This note is empty. Open it in the Editor to write."
@@ -6607,6 +6659,10 @@ msgstr "This took too long, so it was stopped."
 msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This Work is archived, so its drafts take no new text and the change wasn't kept."
+msgstr "This Work is archived, so its drafts take no new text and the change wasn't kept."
+
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is archived."
 msgstr "This Work is archived."
@@ -6622,6 +6678,10 @@ msgstr "This Work is archived. Unarchive it to change its tree."
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."
 msgstr "This Work is archived. Unarchive it to edit."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This Work is deleted, so its drafts take no new text and the change wasn't kept."
+msgstr "This Work is deleted, so its drafts take no new text and the change wasn't kept."
 
 #: src/features/project/work/EndedWorkNotice.tsx
 msgid "This Work is deleted."
@@ -6645,8 +6705,8 @@ msgid "This Work no longer exists."
 msgstr "This Work no longer exists."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
-msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
-msgstr "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+#~ msgstr "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work was deleted. Restore it to edit."
@@ -7138,6 +7198,10 @@ msgstr "Work couldn’t be unarchived"
 msgid "Work couldn’t load"
 msgstr "Work couldn’t load"
 
+#: src/components/app/WorkClosedChip.tsx
+msgid "Work was closed"
+msgstr "Work was closed"
+
 #: src/features/chat/SpawnReportCard.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Working"
@@ -7212,6 +7276,10 @@ msgstr "You can't copy there."
 msgid "You can't open these files."
 msgstr "You can't open these files."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+msgstr "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+
 #: src/features/project/context/tree-action-message.ts
 msgid "You don't have access to change this."
 msgstr "You don't have access to change this."
@@ -7223,6 +7291,10 @@ msgstr "You left checkout. No purchase was confirmed."
 #: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr "You're out of usage. Your messages will send when you add more."
+
+#: src/components/app/NotSentYet.tsx
+msgid "You’re signed out of this account. Sign in again and the changes will be sent."
+msgstr "You’re signed out of this account. Sign in again and the changes will be sent."
 
 #: src/features/agents/AgentFileNotice.tsx
 msgid "your {slug}"

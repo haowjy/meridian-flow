@@ -270,13 +270,13 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { createAgentsLevelLocks } from "../shared/agents-level-lock.js";
-import { getLevelLockClient } from "./db.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { type AgentsWidening, createAgentsWidening } from "./agents-widening.js";
+import { getLevelLockClient } from "./db.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";

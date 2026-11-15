@@ -266,7 +266,12 @@ function NewLevelFileRow({
       const made = makeLevelFile(list, view, tree.rootPath, newFilePath(kind, name));
       if (!made.ok) throw new Error(treeActionMessage(made.reason, "file"));
       const file = newFilePath(kind, name);
-      void writeFirstAgentText(registry, projectId, made.node, [...file.folders, file.leaf].join("/"));
+      void writeFirstAgentText(
+        registry,
+        projectId,
+        made.node,
+        [...file.folders, file.leaf].join("/"),
+      );
       tree.openWhenListed(made.path);
       onDone();
     },

@@ -196,7 +196,9 @@ export function contextToolError(error: ContextError): ToolErrorOutput {
 
 // skills:// is model-only, so the shared context parser doesn't name it.
 const MODEL_ROOTS = [
-  ...CONTEXT_URI_SCHEMES.map((scheme) => formatParsedContextUri(scheme, "", { kind: "contextual" })),
+  ...CONTEXT_URI_SCHEMES.map((scheme) =>
+    formatParsedContextUri(scheme, "", { kind: "contextual" }),
+  ),
   SKILLS_URI_ROOT,
 ];
 

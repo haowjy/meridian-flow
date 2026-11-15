@@ -457,7 +457,10 @@ export type DraftReviewApi = {
     projectId: ProjectId;
     commandId: CommandId;
     select(
-      item: Pick<import("./domain/branch-review-items.js").DraftReviewItem, "documentId" | "path" | "tree">,
+      item: Pick<
+        import("./domain/branch-review-items.js").DraftReviewItem,
+        "documentId" | "path" | "tree"
+      >,
     ): boolean;
   }): Promise<import("./domain/branch-auto-apply.js").FrozenApply | null>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */

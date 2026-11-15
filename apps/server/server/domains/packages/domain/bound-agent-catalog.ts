@@ -33,8 +33,8 @@ import {
   type PackageDiagnostic,
   sourceDigest,
 } from "./compile-package.js";
-import { PACKAGES_DIR, splitLevel } from "./level-packages.js";
 import { agentRevisionId } from "./helpers.js";
+import { PACKAGES_DIR, splitLevel } from "./level-packages.js";
 import { agentPath, GRAMMAR_VERSION, MANIFEST_PATH, readManifest, skillPath } from "./mars.js";
 import { type SkillListing, skillListingFromMarkdown } from "./skill-listing.js";
 
@@ -122,7 +122,12 @@ export function createBoundAgentCatalog(input: {
   const { store } = input;
   const compiled = new Map<string, CompiledPackage>();
   const installed = new Map<string, Awaited<ReturnType<AgentRevisionStore["installSource"]>>>();
-  const remember = <V>(cache: Map<string, V>, key: string, value: V, limit = CACHED_PACKAGES): V => {
+  const remember = <V>(
+    cache: Map<string, V>,
+    key: string,
+    value: V,
+    limit = CACHED_PACKAGES,
+  ): V => {
     cache.delete(key);
     cache.set(key, value);
     if (cache.size > limit) cache.delete(cache.keys().next().value as string);

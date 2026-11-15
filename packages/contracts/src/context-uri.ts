@@ -501,7 +501,11 @@ export function formatParsedContextUri(
 ): string {
   const qualifier = ownerQualifier(authority);
   if (qualifier === null && scheme === "agents") return path ? `.agents/${path}` : ".agents/";
-  if (qualifier === null && scheme === "user" && (path === ".agents" || path.startsWith(".agents/")))
+  if (
+    qualifier === null &&
+    scheme === "user" &&
+    (path === ".agents" || path.startsWith(".agents/"))
+  )
     return `~/${path}${path === ".agents" ? "/" : ""}`;
   if (qualifier === null) return path ? `${scheme}://${path}` : `${scheme}://`;
   if (authority.kind === "owners") return `${scheme}://${qualifier}`;

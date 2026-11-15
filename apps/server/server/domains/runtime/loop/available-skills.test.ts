@@ -91,7 +91,11 @@ You are Writer.
     });
     await agentRevisions.bindThread(thread.id, writer.id, configuration, null);
 
-    const userCatalog = await resolveThreadUserInvocableSkills({ thread, agentCatalog, agentRevisions });
+    const userCatalog = await resolveThreadUserInvocableSkills({
+      thread,
+      agentCatalog,
+      agentRevisions,
+    });
     expect(userCatalog.map((skill) => skill.slug)).toEqual([
       "creative-writing-modes",
       "hidden-from-model",

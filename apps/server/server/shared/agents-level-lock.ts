@@ -53,7 +53,11 @@ export function createAgentsLevelLocks(
       clearTimeout(timer);
       if (!connection) {
         // The connection arrives later; it goes straight back.
-        void pending.then((late) => late.release()).catch(() => undefined);
+        void pending.then(
+          (late) => late.release(),
+          (error: unknown) =>
+            console.warn("Agents level lock connection failed after its wait ended", error),
+        );
         return { held: false };
       }
       try {
