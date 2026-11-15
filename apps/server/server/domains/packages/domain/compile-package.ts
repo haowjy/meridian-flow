@@ -234,9 +234,14 @@ const flow = (
   path: (string | number)[] = [],
 ): PackageDiagnostic => ({ file, code: `flow.${code}`, severity, path, message });
 
-/** Mars's findings on one file of the package, in Mars's order. */
+/**
+ * Mars's errors and warnings on one file of the package, in Mars's order. Info says nothing the
+ * author wrote is lost, and nothing here shows it.
+ */
 const foundIn = (verdict: Check, file: string): PackageDiagnostic[] =>
-  (verdict.diagnostics[file] ?? []).map((item) => fromMars(file, item));
+  (verdict.diagnostics[file] ?? [])
+    .filter((item) => item.severity !== "info")
+    .map((item) => fromMars(file, item));
 
 /**
  * Findings on `mars.toml`; its errors make every Agent of the package unavailable. `prepare`

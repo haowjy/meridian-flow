@@ -23,18 +23,17 @@ export interface PackageCheck {
 
 /** A warning that an Agent may run wider than its file reads: the writer sees these first. */
 const isLostRestriction = (item: PackageDiagnostic) =>
-  /^field\.(restriction-lost|execution-ignored|set-aside)$/.test(item.code);
+  /^field\.(restriction-lost|execution-ignored|retired)$/.test(item.code);
 
 export function checkPackage(pkg: CompiledPackage): PackageCheck {
-  const shown = pkg.findings.filter((item) => item.severity !== "info");
-  const warnings = shown.filter((item) => !isError(item));
+  const warnings = pkg.findings.filter((item) => !isError(item));
   return {
     findings: [
-      ...shown.filter(isError),
+      ...pkg.findings.filter(isError),
       ...warnings.filter(isLostRestriction),
       ...warnings.filter((item) => !isLostRestriction(item)),
     ],
-    blocking: shown.filter((item) => isError(item) && item.file === MANIFEST_PATH),
+    blocking: pkg.findings.filter((item) => isError(item) && item.file === MANIFEST_PATH),
     leftOut: [
       ...pkg.agents.filter((agent) => !agent.definition).map((agent) => agentPath(agent.slug)),
       ...pkg.skills

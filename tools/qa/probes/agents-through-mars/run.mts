@@ -206,8 +206,11 @@ try {
     { name: "unparseable YAML", files: alone(() => "---\nname: [x\n---\n") },
     { name: "duplicate key", files: alone(() => "---\nname: A\nname: A\n---\n") },
     { name: "anchor", files: fm("description: &a A\n") },
-    { name: "removed key permission", files: fm("permission: read\n") },
-    { name: "removed key disallowed-tools", files: fm("disallowed-tools: [write]\n") },
+    { name: "retired key permission (Mars warning)", files: fm("permission: read\n") },
+    {
+      name: "retired key disallowed-tools (Mars warning)",
+      files: fm("disallowed-tools: [write]\n"),
+    },
     { name: "removed value effort adaptive", files: fm("effort: adaptive\n") },
     { name: "wrong type effort 7", files: fm("effort: 7\n") },
     { name: "tools as a list", files: fm("tools: [read]\n") },
@@ -273,7 +276,7 @@ try {
       files: (slug) => ({
         "mars.toml": MANIFEST,
         [`agents/${slug}.md`]: agent("A", `subagents: [${slug}-child]\n`),
-        [`agents/${slug}-child.md`]: agent("Child", "permission: read\n"),
+        [`agents/${slug}-child.md`]: agent("Child", "effort: 7\n"),
       }),
     },
     {
@@ -293,6 +296,8 @@ try {
   const saves = new Map([
     ["misspelled harness-override (Mars info)", false],
     ["modelInvocable (Mars info)", false],
+    ["retired key permission (Mars warning)", true],
+    ["retired key disallowed-tools (Mars warning)", true],
     ["Flow namespace misspelled (Mars warning)", true],
     ["manifest with a misspelled table (Mars info)", false],
     ["skill with a diagnostic (Mars info)", false],
@@ -463,7 +468,7 @@ try {
       const name = publish({
         "mars.toml": MANIFEST,
         "agents/good1.md": agent("Good"),
-        "agents/bad1.md": agent("Bad", "permission: read\n"),
+        "agents/bad1.md": agent("Bad", "effort: 7\n"),
       });
       const outcome = await savePackage(`packages/${name}/`);
       assert.equal(outcome.outcome, "saved");
@@ -487,15 +492,11 @@ try {
   });
 
   await check("fixing a broken Agent: edit the file, Save, and the name is available", async () => {
-    levels.write("user", "agents/fix1.md", agent("Fix", "permission: read\n"));
+    levels.write("user", "agents/fix1.md", agent("Fix", "effort: 7\n"));
     const broken = await savePackage("");
     assert.deepEqual(broken.leftOut, ["agents/fix1.md"]);
     assert.ok((await listed("fix1")).unavailableReasons.length > 0);
-    levels.write(
-      "user",
-      "agents/fix1.md",
-      agent("Fix", "harness-overrides: {meridian-flow: {permission: read}}\n"),
-    );
+    levels.write("user", "agents/fix1.md", agent("Fix", "effort: high\n"));
     const fixedOutcome = await savePackage("");
     assert.equal(fixedOutcome.outcome, "saved");
     assert.deepEqual(fixedOutcome.leftOut, []);
@@ -586,7 +587,7 @@ try {
   );
 
   await check("a stray line above the frontmatter leaves the Agent out", async () => {
-    levels.write("user", "agents/stray.md", `stray\n${agent("Stray", "permission: read\n")}`);
+    levels.write("user", "agents/stray.md", `stray\n${agent("Stray", "effort: 7\n")}`);
     const outcome = await savePackage("");
     assert.deepEqual(outcome.leftOut, ["agents/stray.md"]);
     assert.match(
