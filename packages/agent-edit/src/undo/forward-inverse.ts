@@ -38,9 +38,8 @@ export type EditFrontier = Record<string, number>;
 export interface EditTarget {
   editId: string;
   ordinal: number;
-  direction: "invert" | "reapply";
 }
-export type EditKind = "write" | "undo" | "redo" | "revert";
+export type EditKind = "write" | "undo" | "revert";
 export interface InversePart {
   id: number;
   editId: string;
@@ -53,7 +52,7 @@ export interface InversePart {
   aliases: EditAlias[];
   targets: EditTarget[];
 }
-export type PartState = "active" | "undone" | "changed" | "excluded";
+export type PartState = "active" | "changed" | "excluded";
 export interface PartClassification {
   part: InversePart;
   state: PartState;
@@ -64,10 +63,6 @@ export interface CapturedPart {
   effect: EditEffect;
   frontier: EditFrontier;
   aliases: EditAlias[];
-}
-export interface InverseSelection {
-  part: InversePart;
-  direction: "invert" | "reapply";
 }
 export interface ComputedInverseEdit {
   /** Host policy may give an edit its own stack action within an atomic command. */
@@ -184,7 +179,6 @@ class Lineage {
   readonly forward = new Map<Key, Key[]>();
   readonly backward = new Map<Key, Key>();
   readonly owners = new Map<Key, InversePart>();
-  readonly inverseRestorations = new Set<Key>();
   readonly ordered: InversePart[];
   private readonly roots = new Map<Key, Key>();
   private readonly families = new Map<Key, Key[]>();
@@ -216,7 +210,6 @@ class Lineage {
       this.forward = base.forward;
       this.backward = base.backward;
       this.owners = base.owners;
-      this.inverseRestorations = base.inverseRestorations;
       this.roots = base.roots;
       this.families = base.families;
       this.effectRoots = base.effectRoots;
@@ -227,7 +220,6 @@ class Lineage {
       this.forward = new Map(base.forward);
       this.backward = new Map(base.backward);
       this.owners = new Map(base.owners);
-      this.inverseRestorations = new Set(base.inverseRestorations);
       this.roots = new Map(base.roots);
     }
     for (const p of added ? [added] : this.ordered) {
@@ -238,7 +230,6 @@ class Lineage {
             target = key({ client: alias.target.client, clock: alias.target.clock + n });
           if (this.backward.has(target) && this.backward.get(target) !== source)
             throw new Error("Conflicting restoration aliases");
-          if (p.kind !== "write") this.inverseRestorations.add(source);
           this.backward.set(target, source);
           const links = this.forward.get(source) ?? [];
           if (base) {
@@ -302,9 +293,6 @@ class Lineage {
     this.identities.set(root, effective);
     return effective;
   }
-  restored(k: Key): boolean {
-    return this.descendants(this.root(k)).some((source) => this.inverseRestorations.has(source));
-  }
   hydrate(): void {
     const summaries = new Map<Key, { shown?: Key; last?: Key }>();
     const visiting = new Set<Key>();
@@ -343,13 +331,12 @@ class Lineage {
 }
 
 /**
- * What Undo (`invert`) or Redo (`reapply`) of one part does now, item by item: remove the items
- * it would take away, restore the ones it would bring back, leave everything else, including
- * every other peer's typing. An item that is already gone, or whose parent or newer map value
+ * What Undo of one part does now, item by item: remove the items its edit inserted, restore the
+ * ones it deleted, leave everything else, including every other peer's typing. An item that is already gone, or whose parent or newer map value
  * belongs to someone else, is skipped rather than refusing the part.
  */
 interface InversePlan {
-  /** Every item the direction would remove, still visible or not: the stack item's insertions. */
+  /** Every item the Undo would remove, still visible or not: the stack item's insertions. */
   removing: Key[];
   /** Only the items that can come back now: Yjs copies an item it is told to restore. */
   restoring: Key[];
@@ -357,16 +344,11 @@ interface InversePlan {
   /** A restore skipped because its parent is gone. */
   blocked: boolean;
 }
-function planInverse(
-  index: Lineage,
-  part: InversePart,
-  direction: "invert" | "reapply",
-): InversePlan {
-  const forward = direction === "invert";
+function planInverse(index: Lineage, part: InversePart): InversePlan {
   const pairs = (list: readonly EditRange[]) =>
     clocks(list).map((original) => ({ original, effective: index.effective(original) }));
-  const removing = pairs(forward ? part.effect.inserted : part.effect.deleted);
-  const returning = pairs(forward ? part.effect.deleted : part.effect.inserted);
+  const removing = pairs(part.effect.inserted);
+  const returning = pairs(part.effect.deleted);
   const removingKeys = removing.map((pair) => pair.effective);
   const removingSet = new Set(removingKeys);
   const insertions = deleteSet(removingKeys);
@@ -395,7 +377,7 @@ function planInverse(
       let near = item[step];
       for (; near?.deleted; near = near[step]) paired ||= removingItems.has(near);
       if (!near) continue;
-      // The character touching the gap, followed back to its original: an Undo- or Redo-restored
+      // The character touching the gap, followed back to its original: an Undo-restored
       // copy has a client the part's frontier never saw, but it is not newer writing.
       const edge = key({
         client: near.id.client,
@@ -440,14 +422,9 @@ function planInverse(
   const verdicts = [...candidates].map((k) => ({ k, verdict: verdict(k) }));
   const restoring = verdicts.filter((v) => v.verdict === "ok").map((v) => v.k);
   const stackItem = { insertions, meta: new Map() };
-  const removable = removing.some(({ original, effective }) => {
+  const removable = removing.some(({ effective }) => {
     const item = find(index.doc, effective);
-    return (
-      !!item &&
-      index.isVisible(effective) &&
-      (forward || index.restored(original)) &&
-      shouldDeleteUndoItem(item, stackItem)
-    );
+    return !!item && index.isVisible(effective) && shouldDeleteUndoItem(item, stackItem);
   });
   return {
     removing: removingKeys,
@@ -472,9 +449,8 @@ function classify(index: Lineage, part: InversePart): PartClassification {
   if (!part.effect.inserted.length && !part.effect.deleted.length)
     return { part, state: "excluded", reasons: [] };
   try {
-    const undo = planInverse(index, part, "invert");
+    const undo = planInverse(index, part);
     if (undo.acts) return { part, state: "active", reasons: [] };
-    if (planInverse(index, part, "reapply").acts) return { part, state: "undone", reasons: [] };
     return changed(undo.blocked ? "inaccessible ancestor" : "nothing left to undo");
   } catch (error) {
     return changed(error instanceof Error ? error.message : String(error));
@@ -526,7 +502,7 @@ function laterWords(units: readonly Unit[], later: (k: Key) => boolean): Map<Key
 /**
  * Whether the inverse that took `before` to `after` changed a word holding later writing: a
  * visible character written after `part` (a clock at or past its frontier, read on the original
- * of an Undo- or Redo-restored copy) that is not the part's own.
+ * of an Undo-restored copy) that is not the part's own.
  */
 function changesLaterWord(
   index: Lineage,
@@ -669,7 +645,7 @@ export interface InverseAction {
 export function computeInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
-  selection: readonly InverseSelection[],
+  selection: readonly InversePart[],
   action: InverseAction,
 ): ComputedInverse {
   return computePreparedInverse(doc, history, selection, action);
@@ -678,7 +654,7 @@ export function computeInverse(
 function computePreparedInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
-  selection: readonly InverseSelection[],
+  selection: readonly InversePart[],
   action: InverseAction,
   prepared?: Lineage,
 ): ComputedInverse {
@@ -689,15 +665,8 @@ function computePreparedInverse(
   const local = [...history],
     result: ComputedInverse = { actionId: action.actionId, edits: [], skipped: [] };
   const groups = new Map<string, ComputedInverseEdit>();
-  const directions = new Map<string, string>();
   try {
-    for (const chosen of selection) {
-      const prior = directions.get(chosen.part.editId);
-      if (prior && prior !== chosen.direction)
-        throw new Error("One target edit cannot transition both ways");
-      directions.set(chosen.part.editId, chosen.direction);
-    }
-    for (const { part, direction } of selection) {
+    for (const part of selection) {
       const index = new Lineage(
           scratch,
           local,
@@ -706,12 +675,12 @@ function computePreparedInverse(
           true,
         ),
         state = classify(index, part);
-      if (state.state !== (direction === "invert" ? "active" : "undone")) {
+      if (state.state !== "active") {
         result.skipped.push(state);
         continue;
       }
       index.hydrate();
-      const plan = planInverse(index, part, direction);
+      const plan = planInverse(index, part);
       const stack = {
         insertions: deleteSet(plan.removing),
         deletions: deleteSet(plan.restoring),
@@ -743,7 +712,7 @@ function computePreparedInverse(
           continue;
         }
         admitPreparedInverseReceipt(before, local, [part], receipt, index);
-        const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal, direction }];
+        const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal }];
         let edit = groups.get(part.editId);
         if (!edit) {
           edit = { targetEditId: part.editId, parts: [] };
@@ -757,7 +726,7 @@ function computePreparedInverse(
           id: Math.max(0, ...local.map((p) => p.id)) + 1,
           editId: `computed:${result.edits.indexOf(edit)}`,
           ordinal: edit.parts.length - 1,
-          kind: direction === "invert" ? "undo" : "redo",
+          kind: "undo",
           actionId: action.actionId,
         });
       } finally {
@@ -781,7 +750,7 @@ export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): P
 export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
   classify(parts: readonly InversePart[]): PartClassification[];
-  compute(selection: readonly InverseSelection[], action: InverseAction): ComputedInverse;
+  compute(selection: readonly InversePart[], action: InverseAction): ComputedInverse;
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
 }

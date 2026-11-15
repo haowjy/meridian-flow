@@ -59,7 +59,7 @@ export async function readTurnEditTargets(
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
         query.responseIdentity
-          ? inArray(documentEdits.kind, ["write", "revert", "undo", "redo"])
+          ? inArray(documentEdits.kind, ["write", "revert", "undo"])
           : inArray(documentEdits.kind, ["write", "revert"]),
         query.responseIdentity
           ? eq(documentEdits.responseId, query.responseIdentity.modelResponseId)

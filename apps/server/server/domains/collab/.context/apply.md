@@ -29,7 +29,7 @@ a paragraph break, the next adds one nearby) would undo each other. Un-Apply inv
 group first, because a group's update builds on the earlier groups' items; an earlier group stays
 when a later one was edited in live.
 
-Every Apply, Un-Apply, Discard and chat-card Undo or Redo (`reverse_turn`, `reversal.md`) is one `commands` row (`shared/commands/`, which every kind of request shares; `adapters/drizzle-document-commands.ts` is the document side).
+Every Apply, Un-Apply, Discard and chat-card Undo (`reverse_turn`, `reversal.md`) is one `commands` row (`shared/commands/`, which every kind of request shares; `adapters/drizzle-document-commands.ts` is the document side).
 `runCommand` inserts it first and runs the effect in a savepoint under the claim, and the effect
 enters the Work boundary after it (`CONTEXT.md`, the lock order). An Apply or Un-Apply stores no refusal: each item comes back with each half landed or settled (below), and the row is `done`. A draft that closed under the append door can't happen mid-command: the Work's and the document's keys are held. A miss
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,

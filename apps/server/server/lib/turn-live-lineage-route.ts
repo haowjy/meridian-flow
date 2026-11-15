@@ -71,9 +71,9 @@ export async function handleTurnLiveLineageRequest(
     ),
   ]);
   const workReceipt = workAvailability.undo
-    ? ({ state: "work-active", control: "undo" } as const)
+    ? ({ state: "live-active", control: "undo" } as const)
     : workAvailability.redo
-      ? ({ state: "work-reversed", control: "redo" } as const)
+      ? ({ state: "undone", control: "view_change" } as const)
       : null;
   return {
     documents: inTreeOrder<TurnEditedDocument | TurnTreeFolder>([

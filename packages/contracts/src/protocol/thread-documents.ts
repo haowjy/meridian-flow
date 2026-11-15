@@ -33,14 +33,13 @@ export type TurnLiveLineageDocumentItem = {
   | { scope: "draft"; owner: DraftOwnerKey }
 );
 
-export type TurnReceiptState =
-  | "live-active"
-  | "live-reversed"
-  | "work-active"
-  | "work-reversed"
-  | "expired";
+/**
+ * `live-active` offers Undo. The rest offer none: `undone` and `partly` say the card's Undo ran
+ * (`partly` when some parts stayed), `expired` that nothing is left for it to act on.
+ */
+export type TurnReceiptState = "live-active" | "undone" | "partly" | "expired";
 
-export type TurnReceiptControl = "undo" | "redo" | "view_change";
+export type TurnReceiptControl = "undo" | "view_change";
 
 /** What became of one half of a turn's drafted change to a node: still waiting, applied, or discarded. */
 export type TurnDraftState = "pending" | "applied" | "discarded";

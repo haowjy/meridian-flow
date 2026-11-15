@@ -193,8 +193,7 @@ export function createDrizzleTreeHistory(
         )
         .orderBy(desc(treeEditReceiptNodes.wId));
       const ids = mine.map((row) => row.receiptId);
-      const stack =
-        isDocument && ids.length > 0 ? await textStack(threadId, nodeId) : { undo: [], redo: null };
+      const stack = isDocument && ids.length > 0 ? await textStack(threadId, nodeId) : { undo: [] };
       const text = { ...stack, commands: await textCommands(threadId, nodeId, stack.undo) };
       if (ids.length === 0) return { undo: [], redo: [], all: [], text };
       const rows = await tx()

@@ -60,9 +60,8 @@ export const documentEdits = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     wId: integer("w_id"),
-    kind: text("kind").$type<"write" | "undo" | "redo" | "revert">().notNull(),
+    kind: text("kind").$type<"write" | "undo" | "revert">().notNull(),
     actionId: uuid("action_id"),
-    consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     createdAt: createdAt(),
   },
   (t) => [
@@ -71,7 +70,7 @@ export const documentEdits = pgTable(
     index("document_edits_action_idx").on(t.actionId),
     index("document_edits_command_idx").on(t.commandId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
-    check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','redo','revert')`),
+    check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','revert')`),
   ],
 );
 export const documentEditParts = pgTable(
@@ -85,7 +84,7 @@ export const documentEditParts = pgTable(
     update: byteaColumn("update").notNull(),
     effect: jsonb("effect").$type<{ inserted: Range[]; deleted: Range[] }>().notNull(),
     targets: jsonb("targets")
-      .$type<{ editId: string; ordinal: number; direction: "invert" | "reapply" }[]>()
+      .$type<{ editId: string; ordinal: number }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
     frontier: jsonb("frontier").$type<Record<string, number>>().notNull(),

@@ -491,15 +491,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     describe("undo by the receipt", () => {
-      it("takes back a live move, and redo does it again", async () => {
+      it("takes back a live move", async () => {
         const script = await start();
         const { call } = await script.begin();
         await call("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
         const undone = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(undone), text(undone)).toContain("status: reversed; path: manuscript://ch1");
         expect(await placement(CH1)).toMatchObject({ name: "ch1" });
-        const redone = await call("write", { command: "redo", path: "ch1" });
-        expect(text(redone)).toContain("status: reversed; path: manuscript://part1/ch1");
       });
 
       it("still takes back a drafted move after its Apply landed it", async () => {
@@ -568,7 +566,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             OTHER.threadId as never,
             OTHER.turnId as never,
           ),
-        ).toMatchObject({ control: "redo" });
+        ).toMatchObject({ state: "partly", control: "view_change" });
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
@@ -618,26 +616,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(second.isError, text(second)).toBeFalsy();
         expect(text(second)).toContain("status: reversed; path: manuscript://ch2");
         expect(await ls(call, "manuscript://")).toContain("\n  ch1");
-        // Redo of the move brings both back.
-        expect(text(await call("write", { command: "redo", path: "ch1" }))).toContain(
-          "status: reversed",
-        );
-        expect(await ls(call, "manuscript://part1/")).toContain("ch2");
         // count 2 takes a text edit and the move before it, in one call.
+        await call("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
         await call("write", { command: "replace", path: "part1/ch1", find: "one", content: "1" });
         ({ call } = await script.begin());
         const both = await call("write", { command: "undo", path: "part1/ch1", count: 2 });
         expect(both.isError, text(both)).toBeFalsy();
         expect(await ls(call, "manuscript://")).toContain("\n  ch1");
-        // A create with content is one command: one undo takes the node and its text, one redo both.
+        // A create with content is one command: one undo takes the node and its text.
         call = await live(await start());
         await call("write", { command: "create", path: "born", content: "Fresh." });
         const gone = await call("write", { command: "undo", path: "born" });
         expect(gone.isError, text(gone)).toBeFalsy();
         expect(await ls(call, "manuscript://")).not.toContain("born");
-        const back = await call("write", { command: "redo", path: "born" });
-        expect(back.isError, text(back)).toBeFalsy();
-        expect(text(await call("read", { path: "born" }))).toContain("Fresh.");
       });
 
       it("undoing a folder create leaves what the writer put in it, and the folder standing", async () => {
@@ -786,7 +777,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placement(CH1))?.deletedAt).toBeNull();
       });
 
-      it("a reply that only moved and created has a card, and its Undo and Redo take it back, across lists too", async () => {
+      it("a reply that only moved and created has a card, and its Undo takes it back, across lists too", async () => {
         const script = await start();
         const { call } = await script.begin();
         await call("write", { command: "move", from: { path: "ch1" }, path: "user://mine" });
@@ -805,7 +796,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           THREAD.turnId as never,
         );
         expect(chip).toMatchObject({ control: "undo" });
-        const card = (direction: "undo" | "redo", commandId = randomUUID()) =>
+        const card = (commandId = randomUUID()) =>
           reverseTurnCard(
             {
               ...composed.ports,
@@ -816,33 +807,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadId: THREAD.threadId as never,
               turnId: THREAD.turnId as never,
               userId: USER_ID as never,
-              direction,
+              direction: "undo",
               commandId: commandId as never,
             },
           );
         const clicked = randomUUID();
-        const undone = await card("undo", clicked);
+        const undone = await card(clicked);
         expect(undone.status, JSON.stringify(undone)).toBe("reversed");
         const receipts = async () => (await db.select().from(schema.treeEditReceipts)).length;
         const stored = await receipts();
         // The same click again answers its stored outcome and appends nothing.
-        expect(await card("undo", clicked)).toEqual(undone);
+        expect(await card(clicked)).toEqual(undone);
         expect(await receipts()).toBe(stored);
         const { call: after } = await script.begin();
         expect(await ls(after, "manuscript://")).toContain("ch1");
         expect(await ls(after, "manuscript://")).toContain("ch2");
         expect(await ls(after, "manuscript://")).not.toContain("fresh");
         expect(await ls(after, "user://")).not.toContain("mine");
-        const redoChip = await sync.getTurnReceiptChip(
-          THREAD.threadId as never,
-          THREAD.turnId as never,
-        );
-        expect(redoChip).toMatchObject({ control: "redo" });
-        const redone = await card("redo");
-        expect(redone.status, JSON.stringify(redone)).toBe("reversed");
-        expect(await ls(after, "user://")).toContain("mine");
-        expect(await ls(after, "manuscript://part1/")).toContain("ch2");
-        expect(await ls(after, "manuscript://")).toContain("fresh");
+        expect(
+          await sync.getTurnReceiptChip(THREAD.threadId as never, THREAD.turnId as never),
+        ).toMatchObject({ state: "undone", control: "view_change" });
       });
 
       it("a Copy's operation id: a resend answers the stored result, another request or another account's is command_conflict", async () => {
@@ -901,9 +885,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const undone = await call("write", { command: "undo", path: "user://mine" });
         expect(undone.isError, text(undone)).toBeFalsy();
         expect(await ls(call, "manuscript://")).toContain("ch1");
-        const redone = await call("write", { command: "redo", path: "ch1" });
-        expect(redone.isError, text(redone)).toBeFalsy();
-        expect(await ls(call, "user://")).toContain("mine");
       });
     });
 
@@ -962,7 +943,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       const card = (
         script: Awaited<ReturnType<typeof start>>,
-        direction: "undo" | "redo",
+        direction: "undo",
         commandId = randomUUID(),
         thread = THREAD,
       ) =>
@@ -1007,12 +988,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // The same click again: the stored answer, nothing done twice.
         expect(await card(script, "undo", id)).toEqual(undone);
         expect(await claims()).toBe(1);
-        const redone = await card(script, "redo");
-        expect(redone.workReceipts).toEqual([
-          expect.objectContaining({ workId: NEW_WORK_ID, status: "redone" }),
-        ]);
-        expect(await workDeleted()).toBe(false);
-        expect(await ch1(script)).toContain("ONE");
       });
 
       it("a crash after the documents and before the commit leaves neither half", async () => {

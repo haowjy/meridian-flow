@@ -5,7 +5,7 @@ import type { StoredInversePart } from "./turn-inverse-service.js";
 export const partKey = (part: { editId: string; ordinal: number }) =>
   `${part.editId}:${part.ordinal}`;
 
-/** Consumption is per accepted part. */
+/** The undo and writer-revert actions that took each of `keys`' parts back. */
 export function effectiveActionIndex(
   history: readonly StoredInversePart[],
   keys: ReadonlySet<string>,
@@ -22,22 +22,10 @@ export function effectiveActionIndex(
     parts.push(part);
     grouped.set(part.actionId, parts);
   }
-  const consumption = new Map<string, Set<string>>();
-  for (const part of history) {
-    if (part.kind !== "redo") continue;
-    for (const id of part.consumes) {
-      const targets = consumption.get(id) ?? new Set<string>();
-      for (const target of part.targets) targets.add(partKey(target));
-      consumption.set(id, targets);
-    }
-  }
   const actions = [...grouped]
     .map(([id, parts]) => {
-      const consumed = consumption.get(id);
       const targets = new Set(
-        parts
-          .flatMap((part) => part.targets.map(partKey))
-          .filter((key) => keys.has(key) && !consumed?.has(key)),
+        parts.flatMap((part) => part.targets.map(partKey)).filter((key) => keys.has(key)),
       );
       return { id, parts, targets, newest: Math.max(...parts.map((part) => part.id)) };
     })

@@ -254,10 +254,9 @@ export type NodeHistory = {
   redo: TreeReceipt[];
   /** Every receipt of the node by its handle on that node. */
   all: TreeReceipt[];
-  /** The ordinals of the text edits Undo would take, newest first, and of the one Redo would. */
+  /** The ordinals of the text edits Undo would take, newest first. */
   text: {
     undo: number[];
-    redo: number | null;
     /** The command of each text edit by ordinal, where it has one: what makes a step of a tree receipt's command. */
     commands: Record<number, string>;
   };
@@ -289,7 +288,6 @@ export type AgentTreeHistory = {
 export type ReverseThreadContextInput = {
   threadId: ThreadId;
   userId: UserId;
-  direction: "undo" | "redo";
   turnId: TurnId;
   /** Minted by the browser for each click; a resend under it answers the stored outcome. */
   commandId: CommandId;
@@ -312,7 +310,6 @@ export type TurnReversalAccess = {
   reverseTurn(input: {
     threadId: ThreadId;
     turnId: TurnId;
-    direction: "undo" | "redo";
     actor: { type: "user"; userId: string } | { type: "agent" };
     documentIds?: DocumentId[];
     moveBackAcrossLists?: MoveBackAcrossLists;

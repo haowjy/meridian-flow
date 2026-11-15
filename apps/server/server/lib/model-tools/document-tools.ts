@@ -228,7 +228,7 @@ function withDestination(
   if (outcome.isError) return outcome;
   // Inverses can follow an edit away from the chat's current destination. Their owner reports
   // the version actually changed, or deliberately leaves it unnamed when one command spans views.
-  if (command === "undo" || command === "redo" || command === "revert") return outcome;
+  if (command === "undo" || command === "revert") return outcome;
   return {
     ...outcome,
     result: {
@@ -241,9 +241,8 @@ function withDestination(
 
 const isTextEdit = (command: string) =>
   command === "insert" || command === "replace" || command === "remove";
-const isInverseCommand = (command: string) =>
-  command === "undo" || command === "redo" || command === "revert";
-/** What a call to a removed document is answered for: a text edit, or an undo, redo or revert. */
+const isInverseCommand = (command: string) => command === "undo" || command === "revert";
+/** What a call to a removed document is answered for: a text edit, or an undo or revert. */
 const settlesOnRemoval = (command: string) => isTextEdit(command) || isInverseCommand(command);
 
 /**

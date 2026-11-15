@@ -47,7 +47,6 @@ export interface TurnInverseNoticePort {
     threadId: string;
     turnId: string;
     docId: string;
-    direction: "undo" | "redo";
     sweptContent: boolean;
     beforeContentRef: number | null;
   }): Promise<void>;
@@ -78,7 +77,6 @@ export function createReversalNoticePort(deps: {
           turnId: input.turnId,
           documentId: input.docId,
           uri,
-          direction: input.direction,
           sweptContent: input.sweptContent,
           beforeContentRef: input.beforeContentRef,
         },

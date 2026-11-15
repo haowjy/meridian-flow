@@ -445,7 +445,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(now.text).toContain("[Self](renamed)");
     });
 
-    it("undo, redo and revert on a document the writer deleted are returned, naming who", async () => {
+    it("undo and revert on a document the writer deleted are returned, naming who", async () => {
       const { call } = await reply(LIVE_CHAT);
       await call("read", { path: "ch1" });
       const landed = await call("write", {
@@ -461,7 +461,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       for (const args of [
         { command: "undo", path: "ch1" },
-        { command: "redo", path: "ch1" },
         { command: "revert", path: "ch1", edit: "e1" },
       ]) {
         const answer = await call("write", args);

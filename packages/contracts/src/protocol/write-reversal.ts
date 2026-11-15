@@ -1,4 +1,4 @@
-// Shared write reversal response contracts for context undo/redo APIs.
+// Shared write reversal response contracts for context undo APIs.
 
 import type { ClosedOwnerWhy } from "../commands/index.js";
 import type { FileAccessDenial } from "./file-access.js";
@@ -16,30 +16,24 @@ export type WriteErrorStatus =
   | "internal_error";
 
 /**
- * What an undo, redo or revert came to: it changed what it could and says what it left and why
+ * What an undo or revert came to: it changed what it could and says what it left and why
  * (the writer applied it, discarded it, or changed the text since). None of these is an error:
  * the call settled.
  */
-export type UndoRedoOutcome =
+export type UndoOutcome =
   | "reversed"
   | "reconciled"
   | "partial"
   | "nothing_to_undo"
-  | "nothing_to_redo"
   | "expired"
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
-  | "cant_redo_applied"
-  | "cant_redo_discarded"
-  | "cant_redo_changed"
-  | "cant_redo_users_undo"
   | "insufficient_undo"
-  | "insufficient_redo"
   | "nothing_to_revert";
 
 // Keep in sync with @meridian/agent-edit WriteStatus; do not couple the extractable package to wire contracts.
-export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoOutcome;
 
 export interface DocumentReversalResult {
   documentId: string;
@@ -84,7 +78,6 @@ export type TurnInverseSkipCause =
   | "applied"
   | "discarded"
   | "already_undone"
-  | "already_redone"
   /** A move or delete whose document was deleted, moved or changed since. */
   | "deleted_since"
   | "moved_since"

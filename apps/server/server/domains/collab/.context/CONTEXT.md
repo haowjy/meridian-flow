@@ -225,7 +225,7 @@ A call whose caller passes `frontiers` (the read and write tools, and
 reference reads, which pass `recording` only) records an observation frontier
 in the room its result rendered from. A write plans on the `planning` lookup
 when usable, otherwise on the current room; neither path refuses concurrent text.
-An undo, redo or revert records in the room its inverse committed into
+An undo or revert records in the room its inverse committed into
 (`DocumentEditResult.room`). `format: "edits"` reads record none.
 A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
@@ -462,7 +462,7 @@ append under its row hold, like a frame's, never missing on a revision. Its conf
 runs once, and its Work rows and branch-row and live advisory locks are taken first
 (`enterDraftSeam`, `approveBranchWriteJoin`).
 
-An inverse (Undo, Redo, revert, and the model's `undo`/`redo`)
+An inverse (the card's Undo, revert, and the model's `undo`)
 captures without any lock: each document's live state, each committed draft at
 its revision without merging live identity, the history and each draft's
 lifecycle. Those reads need not agree with each other. It plans on that capture,
@@ -731,7 +731,7 @@ mutations still journal cumulative sync bytes
 
 Forward inverses append ordinary immutable journal parts with restoration
 aliases. They do not rewrite target rows, mark them reversed, or use a reserved
-undo client. Card actions and model undo/redo share immutable edit origins and captured
+undo client. Card actions and model undo share immutable edit origins and captured
 text-derived disposition, but retain their own authorization and stack policy.
 Draft-origin Revert never targets live. Applied parts revert in an active draft
 as pending changes; closed drafts supply disposition but never write admission.

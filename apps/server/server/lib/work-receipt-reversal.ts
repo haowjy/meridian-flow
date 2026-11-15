@@ -91,7 +91,6 @@ export async function reverseTurnCard(
       outcome.status === "reversed" ||
       outcome.status === "reconciled" ||
       outcome.status === "nothing_to_undo" ||
-      outcome.status === "nothing_to_redo" ||
       outcome.status === "partial" ||
       outcome.status === "partial_failure";
     if (!canReverseWorkReceipts) return outcome;
@@ -173,7 +172,7 @@ export function combineWorkReversalOutcome(
     ...outcome,
     status: failed
       ? "partial_failure"
-      : succeeded && (outcome.status === "nothing_to_undo" || outcome.status === "nothing_to_redo")
+      : succeeded && outcome.status === "nothing_to_undo"
         ? direction === "undo"
           ? "reversed"
           : "reconciled"

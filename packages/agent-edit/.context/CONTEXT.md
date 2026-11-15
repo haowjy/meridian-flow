@@ -83,8 +83,8 @@ leaves a writer's later attribute value.
 
 A replacement is a deleted run with the part's insertion beside it. The deleted run stays gone
 only when the part's inserted side is no longer visible beside it *and* an item written after
-the part (a clock at or past the part's `frontier`, read on the original of an Undo- or
-Redo-restored copy) bounds the gap: the writer or a pull replaced the text, and restoring would
+the part (a clock at or past the part's `frontier`, read on the original of an
+Undo-restored copy) bounds the gap: the writer or a pull replaced the text, and restoring would
 double it. A plain deletion of the insertion leaves nothing there, so the original comes back.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the

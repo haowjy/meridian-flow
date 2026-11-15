@@ -114,21 +114,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     createDrizzleDraftDispositionStore(input.db),
   );
   /**
-   * What the tree half does to the documents' text: a Redo's restores run first, so their text is
-   * planned as standing; an Undo that deletes an applied create in live takes its applied text
-   * with it. A query with no direction (the card's state) reads what an Undo would do.
+   * What the tree half does to the documents' text: an Undo that deletes an applied create in
+   * live takes its applied text with it.
    */
   async function treeEffects(query: TurnInverseQuery) {
-    const direction = query.direction ?? "undo";
-    const tree = await treePlanOf(query, direction);
-    return {
-      restoring: new Set(
-        direction === "redo"
-          ? tree.documents.flatMap((d) => (d.restore && !d.branchId ? [d.documentId] : []))
-          : [],
-      ),
-      leavingLive: new Set(tree.leavingLive),
-    };
+    const tree = await treePlanOf(query, "undo");
+    return { restoring: new Set<string>(), leavingLive: new Set(tree.leavingLive) };
   }
   async function selectedDocuments(
     query: TurnInverseQuery,
@@ -173,7 +164,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       turnId: edit.turnId,
       responseId: edit.responseId,
       toolCallId: edit.toolCallId,
-      consumes: edit.consumes,
       actor: edit.actor,
       wId: edit.wId,
     }));
@@ -550,9 +540,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
       const skips: TurnInverseSkip[] = [];
-      const direction = kind === "redo" ? "redo" : "undo";
       // Off every lock: the tree receipts the reply left, which lists and Works they write.
-      const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query, direction);
+      const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query, "undo");
       const grants = await admitInverse(sequence, query, userId, tree.documents);
       const works = { drafts: attempt.draftIds, branches: tree.branches };
       if (query.declared) {
@@ -584,11 +573,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         };
         const runTree = async () => {
           if (!tree.steps.length && !tree.gone.length) return;
-          const now = await treePlanOf(query, direction);
+          const now = await treePlanOf(query, "undo");
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
             throw new InverseAttemptMiss();
-          const done = await treeInverse.run(now, direction, {
+          const done = await treeInverse.run(now, "undo", {
             threadId: query.threadId,
             userId,
             moveBackAcrossLists: query.moveBackAcrossLists,
@@ -596,15 +585,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           treeReversed = done.reversed;
           skips.push(...done.skips);
         };
-        // A node a reply made is taken back once the text written into it is, and comes back
-        // before its text does: nothing writes a document in Trash.
-        if (direction === "redo") {
-          await runTree();
-          await runText();
-        } else {
-          await runText();
-          await runTree();
-        }
+        // A node a reply made is taken back once the text written into it is.
+        await runText();
+        await runTree();
         for (const entry of documents) await settleDocument(entry, kind, query, deliveries);
       };
       const admitted = await runEditAdmission({
@@ -761,7 +744,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       actorUserId: userId,
       kind: step.actionKind,
       actionId: step.actionId,
-      consumes: entry.plan.consumes,
       receipts,
     });
     count(entry, committed.branchId, receipts.length);
@@ -883,7 +865,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   /** After every step: the document's delivery. */
   async function settleDocument(
     entry: PlannedInverse,
-    kind: "undo" | "redo" | "revert",
+    kind: "undo" | "revert",
     query: TurnInverseQuery,
     deliveries: (() => Promise<void>)[],
   ): Promise<void> {
@@ -906,7 +888,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         await input.notices.record({
           docId: document.documentId,
           threadId: query.threadId,
-          direction: kind,
           turnId: query.turnId,
           sweptContent: false,
           beforeContentRef: null,

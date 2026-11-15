@@ -519,9 +519,7 @@ export function createDrizzleApplyClick(
                   history,
                   // Latest group first: a group's live update builds on the earlier groups' items, so the
                   // earlier group is intact only once the later one is out.
-                  [...targeted]
-                    .reverse()
-                    .map(({ part }) => ({ part, direction: "invert" as const })),
+                  [...targeted].reverse().map(({ part }) => part),
                   // A group whose inverse would cut or join a word holding later writing stays applied.
                   {
                     actionId: commandId,

@@ -241,20 +241,20 @@ export async function reverseAcrossLists(
   call: ToolCall,
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
-  command: "undo" | "redo" | "revert",
+  command: "undo" | "revert",
   receipt: AcrossReceipt,
 ) {
   const { backArea, ...move } = moveBackOf(receipt);
   const result = await moveOne(deps, call, ctx, grants, {
     ...move,
-    reverses: { kind: command === "redo" ? "redo" : "undo", receipt: receipt.id },
+    reverses: { kind: "undo", receipt: receipt.id },
   });
   if (result.refused)
     return {
       isError: true as const,
       output: modelResult({
         command,
-        status: command === "redo" ? "cant_redo_changed" : "cant_undo_changed",
+        status: "cant_undo_changed",
         payload: {
           path: receipt.across.to,
           message: `Can't ${command}: something changed it after that change, or it is gone.`,

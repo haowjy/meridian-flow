@@ -98,7 +98,6 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     const query = {
       threadId: command.threadId,
       turnId: command.turnId,
-      direction: command.direction,
       actor: { type: "user" as const, userId: command.userId },
       ...(command.moveBackAcrossLists ? { moveBackAcrossLists: command.moveBackAcrossLists } : {}),
       // A reply of tree changes alone has no target: its receipts are reversed all the same.
@@ -173,7 +172,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
             projectId,
             kind: "reverse_turn",
             selectors: { threadId: command.threadId, turnId: command.turnId },
-            body: { direction: command.direction },
+            body: {},
           }),
         },
         (learned) => reverse(command, projectId, learned),

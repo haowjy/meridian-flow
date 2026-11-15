@@ -13,7 +13,6 @@ export type ToolCommand =
   | "delete"
   | "edit"
   | "undo"
-  | "redo"
   | "grep"
   | "list"
   | "skill"
@@ -110,8 +109,6 @@ function writeCommand(input: Record<string, JsonValue>): ToolCommand {
       return "edit";
     case "undo":
       return "undo";
-    case "redo":
-      return "redo";
     default:
       return command ? "unknown" : "create";
   }
