@@ -154,6 +154,28 @@ export function ancestorItems(item: Y.Item): Y.Item[] {
   return ancestors;
 }
 
+/**
+ * The marks in force at each item of `text`, in reading order (`at`), as a string equal for equal
+ * marks. A format item `ignore` accepts is treated as absent.
+ */
+export function marksAlong(
+  text: Y.XmlText,
+  ignore: (mark: Y.Item) => boolean = () => false,
+): Map<Y.Item, { at: number; marks: string }> {
+  const out = new Map<Y.Item, { at: number; marks: string }>(),
+    current = new Map<string, unknown>();
+  let marks = "[]";
+  for (let item = text._start; item; item = item.right) {
+    out.set(item, { at: out.size, marks });
+    if (!item.deleted && item.content instanceof Y.ContentFormat && !ignore(item)) {
+      if (item.content.value === null) current.delete(item.content.key);
+      else current.set(item.content.key, item.content.value);
+      marks = JSON.stringify([...current].sort(([a], [b]) => (a < b ? -1 : 1)));
+    }
+  }
+  return out;
+}
+
 export function itemIsVisible(doc: Y.Doc, id: Y.ID): boolean {
   const item = findItem(doc, id);
   return !!item && !item.deleted && ancestorItems(item).every((ancestor) => !ancestor.deleted);

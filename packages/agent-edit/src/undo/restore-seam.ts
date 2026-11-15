@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { findItem, type RestorePlacement } from "../yjs-mutation.js";
+import { findItem, marksAlong, type RestorePlacement } from "../yjs-mutation.js";
 import { find, type Key, key, parse, ranges } from "./item-keys.js";
 
 /** What a seam reads from the lineage: a copy an earlier Undo or Redo made stands for its original. */
@@ -62,37 +62,44 @@ export function readSeams(lineage: SeamLineage, inverse: SeamInverse) {
   };
   const originOf = (id: Y.ID, item: Y.Item): Y.ID | null =>
     id.clock > item.id.clock ? Y.createID(id.client, id.clock - 1) : item.origin;
+  const leavingRoots = new Set([...leaving].map((k) => lineage.root(k)));
   /**
-   * Whether leaving text was inserted at returning text: its original's origins (each character's
-   * left neighbour when it was inserted, which never changes) lead back to returning text through
-   * nothing but marks and the part's own items. Being beside it now proves nothing: the writer's
-   * later deletions make unrelated text adjacent.
+   * Whether the character `id` was inserted at text in `targets`: its original's origins (each
+   * character's left neighbour when it was inserted, which never changes) lead back to it through
+   * nothing but marks and the part's own items.
    */
-  const insertedAtReturning = (found: Y.Item): boolean => {
-    const id = parse(lineage.root(charKey(found, firstLeaving(found)))),
-      first = findItem(doc, id);
-    let at = first && originOf(id, first);
+  const insertedAt = (id: Y.ID, targets: ReadonlySet<Key>): boolean => {
+    const original = parse(lineage.root(key(id))),
+      first = findItem(doc, original);
+    let at = first && originOf(original, first);
     while (at) {
       const item = findItem(doc, at);
       if (!item) return false;
       const root = lineage.root(key(at));
-      if (item.countable && returningRoots.has(root)) return true;
+      if (item.countable && targets.has(root)) return true;
       if (!(item.content instanceof Y.ContentFormat) && !own.has(root)) return false;
       at = originOf(at, item);
     }
     return false;
   };
+  /**
+   * Whether the part put `found`, leaving text at the end of `item`'s seam, in place of `item`:
+   * it inserted one where it deleted the other. In an Undo the leaving text is the insertion; in a
+   * Redo, `item` is. Being beside it now proves nothing: the writer's later deletions make
+   * unrelated text adjacent.
+   */
+  const replaced = (item: Y.Item, found: Y.Item): boolean =>
+    insertedAt(parse(charKey(found, firstLeaving(found))), returningRoots) ||
+    insertedAt(item.id, leavingRoots);
   return {
     /**
-     * Leaving text still stands at the end of the seam beside `item`: the part's insertion is
-     * there past the writer's typing, so the writer did not replace it. Unlike a move, this does
-     * not ask for the origins: keeping a run home is never worse than Yjs's place, and the origins
-     * break at a tombstone older than the part (a backspaced letter after the word).
+     * The text that replaced `item` still stands at the end of its seam, past the writer's
+     * typing, so the writer did not replace it.
      */
     leavingStands(item: Y.Item): boolean {
       return (["left", "right"] as const).some((step) => {
         const { found } = walk(item, step);
-        return !!found && !found.deleted;
+        return !!found && !found.deleted && replaced(item, found);
       });
     },
     /**
@@ -125,6 +132,15 @@ export function readSeams(lineage: SeamLineage, inverse: SeamInverse) {
         }
         return { found, run, inside, outside };
       };
+      // One fold per paragraph, however many runs in it come back.
+      const folds = new Map<Y.XmlText, ReturnType<typeof marksAlong>>();
+      const marksIn = (text: Y.XmlText) => {
+        const known = folds.get(text);
+        if (known) return known;
+        const fold = marksAlong(text, (mark) => firstLeaving(mark) >= 0);
+        folds.set(text, fold);
+        return fold;
+      };
       const out: RestorePlacement[] = [];
       const seen = new Set<Y.Item>();
       for (const item of pieces.keys()) {
@@ -140,45 +156,20 @@ export function readSeams(lineage: SeamLineage, inverse: SeamInverse) {
         if (!right.found || !right.outside || left.found) continue;
         // Marks alone have no place to fix; moving them would only change what they cover.
         if (!run.some((piece) => piece.countable)) continue;
-        if (!insertedAtReturning(right.found)) continue;
-        const ordered = sameMarks(run, right.found, (mark) => firstLeaving(mark) >= 0);
-        if (!ordered) continue;
+        if (!replaced(item, right.found)) continue;
+        // The marks in force at each tombstone, leaving out the ones this inverse removes, must be
+        // the ones at the new place, so the copy keeps its marks: an edge of someone's bold between
+        // the two places keeps the run home.
+        const marks = marksIn(right.found.parent as Y.XmlText),
+          here = marks.get(right.found)?.marks;
+        if (run.some((piece) => marks.get(piece)?.marks !== here)) continue;
+        run.sort((a, b) => (marks.get(a)?.at ?? 0) - (marks.get(b)?.at ?? 0));
         out.push({
-          ranges: ordered.flatMap((piece) => ranges(pieces.get(piece) ?? [])),
+          ranges: run.flatMap((piece) => ranges(pieces.get(piece) ?? [])),
           before: parse(charKey(right.found, firstLeaving(right.found))),
         });
       }
       return out;
     },
   };
-}
-
-/**
- * The run in reading order, when the marks in force at each of its tombstones are the ones at
- * `anchor`, so a copy there keeps its marks; otherwise `null`. Marks the same inverse removes are
- * left out, and nothing else: an edge of someone's bold between the two places keeps the run home.
- */
-function sameMarks(
-  run: readonly Y.Item[],
-  anchor: Y.Item,
-  leaving: (mark: Y.Item) => boolean,
-): Y.Item[] | null {
-  const wanted = new Set([...run, anchor]),
-    order = new Map<Y.Item, number>(),
-    marks = new Map<Y.Item, string>(),
-    current = new Map<string, unknown>();
-  const snapshot = () => JSON.stringify([...current].sort(([a], [b]) => (a < b ? -1 : 1)));
-  for (let item = (anchor.parent as Y.XmlText)._start; item; item = item.right) {
-    if (wanted.has(item)) {
-      order.set(item, order.size);
-      marks.set(item, snapshot());
-    }
-    if (!item.deleted && item.content instanceof Y.ContentFormat && !leaving(item)) {
-      if (item.content.value === null) current.delete(item.content.key);
-      else current.set(item.content.key, item.content.value);
-    }
-  }
-  const here = marks.get(anchor);
-  if (run.some((piece) => marks.get(piece) !== here)) return null;
-  return [...run].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
 }

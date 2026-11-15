@@ -98,19 +98,23 @@ lies between the old word's tombstone and the AI's insertion. The planner (`read
 run, whole, to directly left of the text the inverse removes when all hold: that text ends the
 run's seam on the right with visible writing between; no removed text ends it on the left; no
 visible writing sits between the run's own pieces (writing inside a word stays inside it); the
-run holds text, not only marks; the removed text was inserted at the run (its original's
+run holds text, not only marks; the part put the removed text in the run's place (`replaced`: the removed text's original
 `origin` chain, character by character, reaches the run through nothing but marks and the part's
-own items: adjacency alone pairs a deletion with an unrelated insertion once the writer rewrites
-what lay between); and the marks in force, leaving out the removed side's own, are the same at
+own items, or in a Redo the run's chain reaches the removed text; adjacency alone pairs a deletion
+with an unrelated insertion once the writer rewrites what lay between); and the marks in force, leaving out the removed side's own, are the same at
 each piece's tombstone and at the new place. Everything else stays at its tombstone. A run only
 ever moves right, so Redo, whose returning text lies right of what it replaces, is unchanged. The
 planner reads the host's document from `classify` and never writes: pieces are per character,
 places are computed only for an inverse being executed (`InversePlan.place`), and the executor
 (`restoreBefore` in `yjs-mutation.ts`, Yjs's `redoItem` with the neighbours given) splits items
-and copies each run where it is told. The stranded condition deliberately does not ask for the
-origin chain: keeping a run is never worse than Yjs's place, and the chain stops at a tombstone
-older than the part (a typo backspaced at the end of the word), where asking would lose the word.
-Yjs does not record when a deletion happened, so such a tombstone also keeps a run home.
+and copies each run where it is told. The stranded rule's added condition (`leavingStands`) asks the
+same `replaced`: a run is not stranded while removed text the part put in its place still stands at
+the end of its seam. Not stranded means restored, so any other standing text of the part would bring
+back a word the writer replaced, glued to the writer's word ("Two smallhuge cat."). The origin chain
+stops at a tombstone older than the part (a typo backspaced at the end of the word): there the run
+is stranded, and lost, as on `main`. Yjs does not record when a deletion happened, so such a
+tombstone also keeps a run home. The marks are folded once per paragraph (`marksAlong` in
+`yjs-mutation.ts`), however many runs in it come back.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
@@ -126,6 +130,8 @@ holds a later character reads differently afterwards, the part is left standing 
 (`changesLaterWord`) and the scratch is swapped back, so the next part is computed as if this one
 was never tried. A later character is a visible one that is not the part's own, whose original
 (`Lineage.root`, so restored text counts as its original) is at or past the part's `frontier`.
-Marks are not characters. The chat card's Undo leaves it off (an owner question: the recorded rule
+It compares the marks on each later character too (`laterWords` reads them with `marksAlong`),
+so a reversal that drops a mark from the writer's typing (the AI's bold "big" taken out from under
+the writer's bold "very ") leaves the part standing. The chat card's Undo leaves it off (an owner question: the recorded rule
 is that Undo never refuses over a writer's typing). Not covered: a later deletion that glues words
 ("One small" + restored "cat." gives "One smallcat"), because no later character is visible.

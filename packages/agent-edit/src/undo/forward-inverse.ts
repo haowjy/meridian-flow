@@ -14,6 +14,7 @@ import {
   itemIsInFragment,
   itemIsVisible,
   itemsInRange,
+  marksAlong,
   type RestorePlacement,
   snapshotRedone,
 } from "../yjs-mutation.js";
@@ -472,8 +473,8 @@ function classify(index: Lineage, part: InversePart): PartClassification {
     return changed(error instanceof Error ? error.message : String(error));
   }
 }
-type Unit = { k: Key; ch: string } | null;
-/** A text block's visible characters in reading order; `null` is an inline atom. */
+type Unit = { k: Key; ch: string; marks: string } | null;
+/** A text block's visible characters in reading order, with the marks on each; `null` is an inline atom. */
 function blockUnits(block: Y.AbstractType<unknown>): Unit[] {
   const out: Unit[] = [];
   for (let child = block._start; child; child = child.right) {
@@ -483,27 +484,31 @@ function blockUnits(block: Y.AbstractType<unknown>): Unit[] {
       out.push(null);
       continue;
     }
-    for (let item = text._start; item; item = item.right) {
+    for (const [item, { marks }] of marksAlong(text)) {
       if (item.deleted) continue;
       if (item.content instanceof Y.ContentString)
         for (let n = 0; n < item.length; n++)
           out.push({
             k: key({ client: item.id.client, clock: item.id.clock + n }),
             ch: item.content.str[n],
+            marks,
           });
       else if (!(item.content instanceof Y.ContentFormat)) out.push(null);
     }
   }
   return out;
 }
-/** Each word (a run with no whitespace and no atom) that holds a character `later` accepts, by that character. */
+/**
+ * Each word (a run with no whitespace and no atom) that holds a character `later` accepts, by that
+ * character: the word's text and the marks on its accepted characters.
+ */
 function laterWords(units: readonly Unit[], later: (k: Key) => boolean): Map<Key, string> {
   const out = new Map<Key, string>();
-  let word: { k: Key; ch: string }[] = [];
+  let word: { k: Key; ch: string; marks: string }[] = [];
   const close = () => {
     const held = word.filter((unit) => later(unit.k));
     if (held.length) {
-      const str = word.map((unit) => unit.ch).join("");
+      const str = JSON.stringify([word.map((unit) => unit.ch).join(""), held.map((u) => u.marks)]);
       for (const unit of held) out.set(unit.k, str);
     }
     word = [];
@@ -516,7 +521,8 @@ function laterWords(units: readonly Unit[], later: (k: Key) => boolean): Map<Key
   return out;
 }
 /**
- * Whether the inverse that took `before` to `after` changed a word holding later writing: a
+ * Whether the inverse that took `before` to `after` changed a word holding later writing, or the
+ * marks on that writing: a
  * visible character written after `part` (a clock at or past its frontier, read on the original
  * of an Undo- or Redo-restored copy) that is not the part's own.
  */
