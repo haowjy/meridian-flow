@@ -55,7 +55,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
       // A restore reopened a draft this tab saw end: its room joins again under the same id.
       else if (
         data?.status === "active" &&
-        owner.metadataActive(drafts[index], data.draftId, result.dataUpdatedAt)
+        owner.metadataActive(drafts[index], data.draftId, data.readAt)
       )
         reads.current.get(data.reviewRoomName)?.retry();
     }

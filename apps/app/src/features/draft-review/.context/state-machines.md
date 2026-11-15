@@ -55,6 +55,7 @@ stateDiagram-v2
   checking --> in_trash: a Discard in Trash names the draft
   checking --> document: its document is in Trash
   checking --> other: anything else (a purge, a Work's branch closed)
+  checking --> checking: the read failed, or the document's place isn't read yet: ask again
   in_trash --> open: fresh metadata shows it active (a restore, here or anywhere)
   document --> open: fresh metadata shows it active
   here --> open: fresh metadata shows it active
@@ -65,7 +66,12 @@ stateDiagram-v2
 - **`checking` asks the server, never the order things arrived in** (`resolveEnd`, answered by
   `AccountFeatureLifetime`): fresh draft metadata first, then Trash's Discard list, then where
   the document stands. A restore whose answer beat the old close restarts the kept session in
-  place (`reopenDraftRoom`) instead of ending it. A failed read counts as `other`.
+  place (`reopenDraftRoom`) instead of ending it. A failed read, or a document whose place
+  isn't read yet, decides nothing: the page keeps the draft and asks again, backing off from 1s
+  to 30s while a surface shows it, and on its next `gone` metadata answer.
+- **An answer speaks for when its read started** (`DraftMetadataAnswer.readAt`): the cache
+  takes a direct read only if it started after the stored answer, and `metadataActive` compares
+  `readAt` with `endedAt`, so a read in flight across a Discard can't reopen the draft.
 - **`in_trash` and `document` stay on screen** (`staysOnScreen`): the draft's text, read-only,
   with the status pill's Restore (the Discard's, or the document's). `here` and `other` leave
   for Live; `here` has its notice's Undo.
