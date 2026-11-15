@@ -25,6 +25,7 @@ import { draftCopyView } from "@/features/draft-review/copy-view";
 import {
   DeletedFromManuscriptTag,
   DraftCommandStatus,
+  useClosedBounceChip,
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
@@ -560,7 +561,7 @@ function ChangeRow({
   canApply,
   controller,
   touch,
-  notice,
+  notice: ownerNotice,
   onCommand,
   onPicked,
 }: {
@@ -584,6 +585,9 @@ function ChangeRow({
   onPicked?: () => void;
 }) {
   const { openReviewFile } = useAiDraftLauncher();
+  // The Work chip takes the notice's place on the row, so the row keeps its height.
+  const bounce = useClosedBounceChip("changes", [file.draft.itemKey]);
+  const notice = ownerNotice ?? bounce;
   const [previewing, setPreviewing] = useState(false);
   // A row's actions are too narrow for its question: it asks on the line under the name.
   const [asking, setAsking] = useState(false);
@@ -662,7 +666,7 @@ function ChangeRow({
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
-            <DraftCommandStatus surface="changes" itemKey={file.draft.itemKey} />
+            <DraftCommandStatus itemKey={file.draft.itemKey} />
           </div>
         }
       />
@@ -735,7 +739,7 @@ function FolderGroupRow({
   canApply,
   onApply,
   onDiscard,
-  notice,
+  notice: ownerNotice,
 }: {
   /** What the owner's notice says on this row. */
   notice: ReactNode;
@@ -762,6 +766,8 @@ function FolderGroupRow({
     controller.owner.snapshot,
   );
   const pending = keys.some((key) => controller.owner.state(key).pending);
+  const bounce = useClosedBounceChip("changes", keys);
+  const notice = ownerNotice ?? bounce;
   const { name, change } = folder;
   return (
     <li data-change-folder={folder.id}>
@@ -802,7 +808,7 @@ function FolderGroupRow({
               />
             ) : null}
             {keys.map((key) => (
-              <DraftCommandStatus key={key} surface="changes" itemKey={key} />
+              <DraftCommandStatus key={key} itemKey={key} />
             ))}
           </div>
         }

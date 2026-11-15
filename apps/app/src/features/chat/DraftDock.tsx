@@ -13,10 +13,9 @@ import {
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import {
-  ClosedBounceChip,
   DeletedFromManuscriptTag,
   DraftCommandStatus,
-  useClosedBounce,
+  useClosedBounceChip,
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
@@ -44,9 +43,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
 
-  // A file's own status line says it (`DraftCommandStatus`): the summary does for several shut files.
-  const summaryBounce =
-    useClosedBounce("strip", dock.ownerKey) !== undefined && dock.files.length > 1 && !expanded;
+  // The press that bounced was the strip's, whichever file it named: one chip in the first line.
+  const bounceChip = useClosedBounceChip("strip", [dock.ownerKey]);
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
 
@@ -95,7 +93,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     >
       {askingApply ? null : dock.showCommands ? (
         <>
-          {summaryBounce ? <ClosedBounceChip surface="strip" pressed={dock.ownerKey} /> : null}
+          {bounceChip}
           <ReviewActions
             scope={multi ? "all" : "change"}
             labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
@@ -130,17 +128,17 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         // The Work chip joins the line, which gives up the name's room instead of wrapping.
         className={cn(
           "coarse:min-h-11",
-          summaryBounce ? "min-w-[4ch] flex-1 basis-0" : "min-w-[12ch] flex-auto",
+          bounceChip ? "min-w-[4ch] flex-1 basis-0" : "min-w-[12ch] flex-auto",
         )}
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">
-          {multi ? <Trans>{dock.files.length} documents</Trans> : only ? fileLabel(only) : null}
+          {multi ? <ChangeCount count={dock.reviewCount} /> : only ? fileLabel(only) : null}
         </span>
         {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
       </FoldToggle>
       {trouble}
-      {trouble || dock.changeCount === null ? null : (
+      {trouble || multi || dock.changeCount === null ? null : (
         <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
           <ChangeCount count={dock.changeCount} />
         </span>
@@ -231,7 +229,7 @@ function DockFileLine({
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
-  const status = <DraftCommandStatus surface="strip" itemKey={file.row.draft.itemKey} />;
+  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
   if (!summary && !expanded) return null;
   return (
     <div

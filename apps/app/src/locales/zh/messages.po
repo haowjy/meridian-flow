@@ -245,8 +245,8 @@ msgstr ""
 
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
-msgid "{0} documents"
-msgstr ""
+#~ msgid "{0} documents"
+#~ msgstr ""
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx

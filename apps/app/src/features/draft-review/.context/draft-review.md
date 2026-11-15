@@ -152,9 +152,9 @@ independent duties:
 A closed Work's Apply and Discard are enabled and sent like an open Work's. A
 `work_archived` or `work_deleted` refusal stores no failure: the owner remembers it for a few
 seconds under the Work, the owner and the item pressed (`closedBounce`), and the Works query
-refetches. The Work chip says "Work was closed", and so does the shared `WorkClosedChip` at the
-press (`ClosedBounceChip`: the item's status line, the review band, a shut multi-file dock's
-summary), so a phone, whose sidebar is shut, still sees it. Other refusals still move prose in two cases, open in
+refetches. The shared `WorkClosedChip` shows at the press, in the pressed thing's trailing slot so no line
+grows (`useClosedBounceChip`: a Changes row's notice slot, the dock's first line, the review
+band), so a phone, whose sidebar is shut, still sees it. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
 leaves subscribe to command records; command callbacks and the project controller don't.

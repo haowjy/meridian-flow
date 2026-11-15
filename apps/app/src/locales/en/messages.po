@@ -245,8 +245,8 @@ msgstr "{0} additional balance"
 
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
-msgid "{0} documents"
-msgstr "{0} documents"
+#~ msgid "{0} documents"
+#~ msgstr "{0} documents"
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx

@@ -6,7 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { useSyncExternalStore } from "react";
+import { type ReactNode, useSyncExternalStore } from "react";
 import { workClosedSentence } from "@/client/query/work-update-failure";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { WorkClosedChip } from "@/components/app/WorkClosedChip";
@@ -36,20 +36,17 @@ export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem |
 
 /**
  * The Work chip where a command was pressed in a closed Work, for the few seconds the owner
- * remembers it; the sidebar's chip is out of sight on a phone. Nothing otherwise.
+ * remembers it; the sidebar's chip is out of sight on a phone. `undefined` otherwise. It sits in
+ * the pressed thing's trailing slot, so it adds no line.
  */
-export function useClosedBounce(surface: Surface, pressed: string) {
+export function useClosedBounceChip(surface: Surface, pressed: readonly string[]): ReactNode {
   const owner = useDraftCommandOwner();
   useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
-  return owner.closedBounceAt(surface, pressed);
+  const why = pressed.map((key) => owner.closedBounceAt(surface, key)).find(Boolean);
+  return why ? <WorkClosedChip sentence={workClosedSentence(why)} /> : undefined;
 }
 
-export function ClosedBounceChip({ surface, pressed }: { surface: Surface; pressed: string }) {
-  const why = useClosedBounce(surface, pressed);
-  return why ? <WorkClosedChip sentence={workClosedSentence(why)} /> : null;
-}
-
-export function DraftCommandStatus({ surface, itemKey }: { surface: Surface; itemKey: string }) {
+export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
   const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
   const content = state.stalled ? (
@@ -81,8 +78,7 @@ export function DraftCommandStatus({ surface, itemKey }: { surface: Surface; ite
       />
     )
   ) : null;
-  const bounced = <ClosedBounceChip surface={surface} pressed={itemKey} />;
-  if (!content) return bounced;
+  if (!content) return null;
   return (
     <div
       role="status"
