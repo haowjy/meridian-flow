@@ -247,7 +247,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     },
     async snapshotIdentity(projectId: ProjectId) {
       // Every Work change raises that Work's revision and none lowers it, so the sum orders
-      // snapshots of the project. Read in the snapshot's own transaction, beside the Works.
+      // snapshots of the project. A purge deletes a row, so it raises the No Work row (`drizzle-work-purge.ts`):
+      // a purge raises the No Work row so this sum never falls. Read in the snapshot's own transaction, beside the Works.
       const [project] = await currentDrizzleDb(db)
         .select({ revision: sql<string>`coalesce(sum(${works.entityRevision}), 0)::text` })
         .from(works)
