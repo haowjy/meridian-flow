@@ -196,6 +196,8 @@ class World {
         close() {},
       },
       online: () => this.online,
+      held: () => false,
+      unreadable: () => {},
       routes: {
         lookup: (id) => `/api/commands/${id}`,
         resolve: (id) => `/api/commands/${id}/resolve`,

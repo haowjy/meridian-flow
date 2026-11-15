@@ -88,11 +88,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/core/editor/schema-fence.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/core/transport/tapped-websocket.ts",
         "line": "} catch {",
         "count": 4

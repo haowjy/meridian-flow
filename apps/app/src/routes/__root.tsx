@@ -11,6 +11,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts, useMatches } from "@tans
 import { AuthKitProvider, getAuthAction } from "@workos/authkit-tanstack-react-start/client";
 import type { ReactNode } from "react";
 import { useEffect, useSyncExternalStore } from "react";
+import { installReleaseWatch } from "@/client/release/release";
 import { AnnouncementRegion } from "@/components/app/AnnouncementRegion";
 import { LINK_CHIP_ICON_CSS } from "@/components/app/link-chip/family-icons";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -82,6 +83,7 @@ function RootComponent() {
     const resolved = resolveLocale();
     activateLocale(resolved);
     trackInputModality(document);
+    installReleaseWatch();
   }, []);
 
   return (

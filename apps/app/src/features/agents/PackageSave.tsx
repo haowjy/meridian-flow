@@ -12,7 +12,12 @@ import type {
   AgentsLevel,
   SaveOutcome,
 } from "@meridian/contracts/agents";
-import { agentsFileOf, agentsLocationOf, agentsRootOf } from "@meridian/contracts/agents";
+import {
+  agentsFileOf,
+  agentsLocationOf,
+  agentsRootOf,
+  shownFindings,
+} from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
@@ -24,13 +29,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
 import { FindingsChip, SentenceList } from "./FindingsChip";
-import {
-  findingSentence,
-  findingsOfFile,
-  type OutOfUse,
-  outOfUseAfterSave,
-  outOfUseWord,
-} from "./findings";
+import { findingSentence, type OutOfUse, outOfUseAfterSave, outOfUseWord } from "./findings";
 import {
   failsSave,
   importName,
@@ -517,7 +516,8 @@ export function FindingList({
   held?: Pick<SaveOutcome, "kept" | "leftOut">;
   className?: string;
 }) {
-  const files = [...new Set(findings.map((finding) => finding.file))];
+  const shown = shownFindings(findings);
+  const files = [...new Set(shown.map((finding) => finding.file))];
   return (
     <ul className={cn("flex flex-col", className)}>
       {files.map((file) => {
@@ -554,7 +554,7 @@ export function FindingList({
               </span>
             ) : null}
             <SentenceList
-              items={findingsOfFile(findings, file).map(findingSentence)}
+              items={shown.filter((finding) => finding.file === file).map(findingSentence)}
               className="px-0 pr-0 pl-4"
             />
           </li>
@@ -573,8 +573,8 @@ export function savedNotes(word: PackageWord | null): string[] | null {
   const { renamed, findings } = word.outcome;
   const lines = [
     ...renamed,
-    ...findings
-      .filter((finding) => finding.severity === "warning")
+    ...shownFindings(findings)
+      .filter((finding) => finding.severity !== "error")
       .map((finding) => `${finding.file}: ${findingSentence(finding)}`),
   ];
   return lines.length ? lines : null;
