@@ -108,8 +108,6 @@ export class UnsentEdits {
 
   constructor(
     private readonly document: Y.Doc,
-    /** The document's undo manager: its transactions are the writer's. */
-    private readonly manager: Y.UndoManager,
     /** The session's local copy, once it is open. Display records live in its `custom` store. */
     private readonly copy: () => IDBDatabase | null,
   ) {
@@ -133,8 +131,9 @@ export class UnsentEdits {
     const client = this.document.clientID;
     this.ownClients.add(client);
     const display = this.isDisplayWrite(transaction);
-    const writer =
-      (transaction.origin === ySyncPluginKey && !display) || transaction.origin === this.manager;
+    // Every local write that is not the binding's own: typing, Undo and Redo, a Discard. What the
+    // transport, the copy and peer tabs apply is not local; an origin-less one is a repair.
+    const writer = !display && transaction.local && transaction.origin !== null;
     if (!display && !writer) return;
     const inserted = display ? this.displayInserted : this.ledgerInserted;
     const deleted = display ? this.displayDeleted : this.ledgerDeleted;

@@ -352,11 +352,7 @@ export class DocumentSession {
     this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
     this.history = DocumentHistory.forDocument(this.document);
-    this.unsent = new UnsentEdits(
-      this.document,
-      this.history.manager,
-      () => this.persistence?.db ?? null,
-    );
+    this.unsent = new UnsentEdits(this.document, () => this.persistence?.db ?? null);
     this.document.on("update", this.onDocumentUpdate);
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
@@ -388,6 +384,8 @@ export class DocumentSession {
   attachTransport(transportFactory: DocumentSessionTransportFactory): void {
     if (this.destroyed)
       throw new Error(`Cannot attach transport to destroyed room: ${this.roomKey}`);
+    // A replaced session never reaches the server again: the words it handed back stay out of it.
+    if (this.inert) return;
     if (this.transportProvider || this.transportAttachmentPending) {
       throw new Error(`Transport already attached to room: ${this.roomKey}`);
     }
@@ -401,7 +399,7 @@ export class DocumentSession {
           ? this.waitForLocalPersistenceTransportGate()
           : null,
       ]).then(() => {
-        if (!this.destroyed) this.connectTransport(transportFactory);
+        if (!this.destroyed && !this.inert) this.connectTransport(transportFactory);
       });
       return;
     }
@@ -622,7 +620,9 @@ export class DocumentSession {
 
   makeInert(): Promise<void> {
     this.inert = true;
+    this.transportAttachmentPending = false;
     this.localPeers?.stop();
+    this.recomputeStatus();
     return this.detachTransport();
   }
 

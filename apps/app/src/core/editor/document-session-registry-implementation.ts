@@ -418,8 +418,10 @@ export class DocumentSessionRegistry {
     const settled = session.getSnapshot().status !== "destroyed";
     try {
       if (settled)
-        for (const { update } of older)
-          this.handBack(missingText(update, session.document), "owner-closed");
+        for (const { update } of older) {
+          const text = missingText(update, session.document);
+          if (text) this.handBack(text, "owner-closed");
+        }
     } finally {
       await Promise.all(older.map((copy) => copy.finish(!settled)));
     }
@@ -489,7 +491,7 @@ export class DocumentSessionRegistry {
       return;
     }
     const edits = old.undeliverableEdits();
-    // Edits of another session with no words may be a Discard, which has its own answer.
+    // Wordless edits made by another tab or an earlier page are not told to this one.
     if (edits && (edits.typing !== null || edits.own)) this.handBack(edits.typing, "owner-closed");
     void old.makeInert().catch(reportError);
     const copy = this.copyOf.get(old);
@@ -509,7 +511,7 @@ export class DocumentSessionRegistry {
       void this.teardownOwner
         .retireReplaced("live", old)
         .catch((error: unknown) => reportError(error))
-        .then(async () => (await replacedHold)?.release());
+        .then(async () => (await replacedHold)?.drop());
       this.notifyReplacement(old.roomKey, session);
     } else {
       const session = this.draftRooms.replace(old.roomKey, old);

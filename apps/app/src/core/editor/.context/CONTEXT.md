@@ -560,25 +560,29 @@ from the wire alone, with nothing stored between handshakes.
   (the receiver adds its delete set before anything is decided) and the session records its
   display writes in the copy's `custom` store, keyed by client id and schema tag, in the task of
   the update. A reader takes the copy's updates first and its records after.
-- **Typing** is what the session wrote through an editor or the document's Undo and Redo (its
-  ledger, by client id), plus every item of any other client id the server lacks.
+- **Typing** is what the session wrote through any local transaction that is not a display write
+  and has an origin (an editor, Undo and Redo, a Discard; its ledger, by client id), plus every item of any other client id the server lacks.
 - A read-admitted connection sends no Update frame; a change that is not a display write asks for
   one `forceSync`, and `serverHasLocalChanges` there is the handshake's verdict (Apply's
   acknowledgement barrier waits on it, not on a `SyncStatus` the server always answers `false`).
 - **The replacement** (`DocumentSessionRegistry.replaceRoom`): the old session reads its copy and
   takes one more handshake (it can end the replacement), the typing is handed back
   (`owner-closed`, "…before this document became read-only"; a change with no words shows the
-  sentence alone), the old session goes inert, and a session on the room's *next incarnation* of
+  sentence alone, and only for a change this session made itself), the old session goes inert for
+  good (`attachTransport` does nothing on it, so no retain, restart or pending attachment can
+  reconnect it and upload the handed-back words; its document stays readable), and a session on the room's *next incarnation* of
   its copy opens read-only, loading from the server. Nothing is emptied and nothing is sent to
   other tabs: the copy's database name has a trailing incarnation number (none means 0),
   `LocalDocumentCopies.current/advance` keep the pointer in `localStorage` under a Web Lock, and two
   tabs advancing at once end on the same number. The old session is destroyed when its editors
-  have unmounted (`retireReplaced`, quarantined by persistence name). Holders follow through
+  have unmounted (`retireReplaced`, quarantined by persistence name), and its copy is deleted if no
+  tab holds it (`CopyHold.drop`), so those words are not offered again. Holders follow through
   `observeReplacement` (live bindings and open tabs, draft room reads); a review mount carries its
   reading position across it (`use-reading-position.ts`).
 - A session that opens a room's current incarnation reads the older ones no tab holds against
   its first handshake, hands back the words the server lacks (so a reload gets a second look at
-  words from a toast it lost), and deletes them.
+  words from a toast it lost; never a wordless toast, which only the current session's own edit
+  earns), and deletes them.
 - Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
   (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
 

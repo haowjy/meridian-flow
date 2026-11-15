@@ -142,7 +142,7 @@ export class DraftRoomPool {
     void this.deps.teardownOwner
       .retireReplaced("draft", session)
       .catch((error: unknown) => reportError(error))
-      .then(async () => (await replacedHold)?.release());
+      .then(async () => (await replacedHold)?.drop());
     return next;
   }
 

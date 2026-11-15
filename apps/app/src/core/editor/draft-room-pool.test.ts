@@ -35,7 +35,10 @@ describe("DraftRoomPool.release", () => {
           },
           destroy: first ? () => draining : vi.fn(async () => {}),
         } as never;
-        return { session, hold: Promise.resolve({ release: () => undefined }) };
+        return {
+          session,
+          hold: Promise.resolve({ release: () => undefined, drop: async () => undefined }),
+        };
       },
     });
     pool.retain("editor", [{ roomKey: room, documentId: "doc" }]);
