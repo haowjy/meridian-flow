@@ -605,17 +605,49 @@ function documentCountLabel(
     if (applied === states.size) return t`Applied ${what}`;
     if (discarded === states.size) return t`Discarded ${what}`;
     if (waiting === states.size) return t`Drafted ${what}`;
-    const parts = [
-      applied ? t`${applied} applied` : null,
-      replaced ? t`${replaced} replaced by a later change` : null,
-      discarded ? t`${discarded} discarded` : null,
-      waiting ? t`${waiting} still a draft` : null,
-    ].filter((part) => part !== null);
-    return t`Drafted ${what}: ${parts.join(", ")}`;
+    return draftedMix(what, { applied, replaced, discarded, waiting });
   }
   if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
     return t`Changed ${what}`;
   return t`Edited ${what}`;
+}
+
+/**
+ * A reply's drafted rows that ended in more than one way, each mix one whole message for
+ * translators.
+ */
+function draftedMix(
+  what: string,
+  n: { applied: number; replaced: number; discarded: number; waiting: number },
+): string {
+  const { applied, replaced, discarded, waiting } = n;
+  const mix = `${applied ? "a" : ""}${replaced ? "r" : ""}${discarded ? "d" : ""}${waiting ? "w" : ""}`;
+  switch (mix) {
+    case "r":
+      return t`Drafted ${what}: ${replaced} replaced by a later change`;
+    case "ar":
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change`;
+    case "ad":
+      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded`;
+    case "aw":
+      return t`Drafted ${what}: ${applied} applied, ${waiting} still a draft`;
+    case "rd":
+      return t`Drafted ${what}: ${replaced} replaced by a later change, ${discarded} discarded`;
+    case "rw":
+      return t`Drafted ${what}: ${replaced} replaced by a later change, ${waiting} still a draft`;
+    case "dw":
+      return t`Drafted ${what}: ${discarded} discarded, ${waiting} still a draft`;
+    case "ard":
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change, ${discarded} discarded`;
+    case "arw":
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change, ${waiting} still a draft`;
+    case "adw":
+      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded, ${waiting} still a draft`;
+    case "rdw":
+      return t`Drafted ${what}: ${replaced} replaced by a later change, ${discarded} discarded, ${waiting} still a draft`;
+    default:
+      return t`Drafted ${what}: ${applied} applied, ${replaced} replaced by a later change, ${discarded} discarded, ${waiting} still a draft`;
+  }
 }
 
 /**

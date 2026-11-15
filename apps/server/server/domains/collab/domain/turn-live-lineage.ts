@@ -85,11 +85,15 @@ export type TurnFolderTarget = {
 };
 
 /**
- * Where a row's node sits in the tree that shows it (live, or a Work's branch): the rank and id
- * of each node on its path, from the top of its source down. Compared in order, it is the file
- * tree's own order. Absent for a node that view doesn't place.
+ * Where a row's node sits in the tree that shows it (live, or a Work's branch): its source, then
+ * the rank and id of each node on its path from the top of the source down. Compared in order
+ * after the source's section, it is the file tree's own order. Absent for a node that view
+ * doesn't place.
  */
 export type TreePlacement = readonly string[];
+
+/** A node's placement in a view, and a folder's address there. */
+export type TreePlace = { placement: TreePlacement; uri?: string };
 
 /** The file-policy destination a turn's edit is read and reversed at. */
 export function turnEditDestination(target: TurnEditedDocumentId): FileDestination {
@@ -102,10 +106,10 @@ export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
   listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnFolderTarget[]>;
-  /** Each node's placement in the view `branchId` names (null: live), keyed `node:branch`. */
-  placementsOf(
+  /** Each node's place in the view `branchId` names (null: live), keyed `node:branch`. */
+  placesOf(
     nodes: readonly { nodeId: string; branchId: string | null }[],
-  ): Promise<Map<string, TreePlacement>>;
+  ): Promise<Map<string, TreePlace>>;
   /** The turn's tree entries, live and drafted, ordered by `seq`. */
   listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
 };
@@ -149,7 +153,7 @@ export function createTurnLiveLineageReadModel(deps: {
       const documents = await resolveDocuments(targets, lines, createAddresses(entries));
       const branchOf = (document: TurnEditedDocument) =>
         document.scope === "draft" ? (document.branchIds.at(-1) ?? null) : null;
-      const placements = await deps.store.placementsOf(
+      const places = await deps.store.placesOf(
         documents.map((document) => ({
           nodeId: document.documentId,
           branchId: branchOf(document),
@@ -157,7 +161,7 @@ export function createTurnLiveLineageReadModel(deps: {
       );
       return documents.map((document) => {
         const tree = lines.get(treeLineKey(document));
-        const placement = placements.get(`${document.documentId}:${branchOf(document)}`);
+        const placement = places.get(`${document.documentId}:${branchOf(document)}`)?.placement;
         return {
           ...document,
           ...(tree ? { tree } : {}),
@@ -173,13 +177,21 @@ export function createTurnLiveLineageReadModel(deps: {
       ]);
       const lines = treeLines(entries);
       const made = createAddresses(entries);
-      const placements = await deps.store.placementsOf(folders);
+      const places = await deps.store.placesOf(folders);
       return folders.map(({ shownAt, branchId, ...folder }) => {
         const key = treeLineKey({ documentId: folder.nodeId, ownerKey: folder.ownerKey });
         const tree = lines.get(key);
-        const at = tree ? (tree.op === "delete" ? tree.from : tree.to) : (made.get(key) ?? shownAt);
-        const placement = placements.get(`${folder.nodeId}:${branchId}`);
-        return { ...folder, at, ...(tree ? { tree } : {}), ...(placement ? { placement } : {}) };
+        const place = places.get(`${folder.nodeId}:${branchId}`);
+        // Where the folder is now; the turn's own words only for one its view no longer places.
+        const at =
+          place?.uri ??
+          (tree ? (tree.op === "delete" ? tree.from : tree.to) : (made.get(key) ?? shownAt));
+        return {
+          ...folder,
+          at,
+          ...(tree ? { tree } : {}),
+          ...(place ? { placement: place.placement } : {}),
+        };
       });
     },
 

@@ -1,6 +1,10 @@
 /** Route core for authenticated live-lineage document reads for one thread turn. */
 
-import { draftOwnerKey } from "@meridian/contracts";
+import {
+  type ContextUriScheme,
+  draftOwnerKey,
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+} from "@meridian/contracts";
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
@@ -157,16 +161,26 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
 }
 
 /**
- * The rows as the tree lists them, by where each row says the node is now (a move's
- * destination, a delete's old place): a folder before what it holds, siblings by name.
+ * The file tree's order: its sections in their order, then within a source rank, then id, at
+ * each level (`placement`). A row its view no longer places goes last, in the order it came.
  */
-/**
- * The file tree's order (rank, then id, at each level, from `placement`); a row its view no
- * longer places goes last, in the order it came.
- */
-function inTreeOrder<Row extends { placement?: TreePlacement }>(rows: Row[]): Row[] {
+/** The file tree's sections, in the sidebar's order. */
+const SECTIONS: readonly ContextUriScheme[] = [
+  ...PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+  "scratch",
+  "uploads",
+];
+
+function inTreeOrder<Row extends { placement?: TreePlacement; uri?: string; at?: string }>(
+  rows: Row[],
+): Row[] {
+  const section = (row: Row) => {
+    const parsed = parseContextUri(row.uri ?? row.at ?? "");
+    return parsed.ok ? SECTIONS.indexOf(parsed.value.scheme) : SECTIONS.length;
+  };
   return [...rows].sort((a, b) => {
     if (!a.placement || !b.placement) return a.placement ? -1 : b.placement ? 1 : 0;
+    if (section(a) !== section(b)) return section(a) - section(b);
     const depth = Math.min(a.placement.length, b.placement.length);
     for (let at = 0; at < depth; at++) {
       const left = a.placement[at] ?? "";

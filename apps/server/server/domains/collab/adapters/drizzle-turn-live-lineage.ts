@@ -10,9 +10,9 @@ import { branches } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { placedNodesSql } from "../../context/tree/tree-addresses.js";
+import { loadFolderAddresses, placedNodesSql } from "../../context/tree/tree-addresses.js";
 import { LIVE_TREE, type TreeView } from "../../context/tree/tree-relations.js";
-import type { TreePlacement, TurnLiveLineageDocumentStore } from "../domain/turn-live-lineage.js";
+import type { TreePlace, TurnLiveLineageDocumentStore } from "../domain/turn-live-lineage.js";
 import {
   readTurnEditTargets,
   readTurnFolderTargets,
@@ -33,8 +33,8 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         await readTurnEditTargets(tx, { threadId, turnId }),
       );
     },
-    async placementsOf(nodes) {
-      const out = new Map<string, TreePlacement>();
+    async placesOf(nodes) {
+      const out = new Map<string, TreePlace>();
       const byView = new Map<string | null, string[]>();
       for (const { nodeId, branchId } of nodes)
         byView.set(branchId, [...(byView.get(branchId) ?? []), nodeId]);
@@ -42,21 +42,33 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         const view: TreeView = branchId
           ? { kind: "branch", branchId: branchId as BranchId }
           : LIVE_TREE;
-        const rows = await currentDrizzleDb(db).execute<{ start: string; path: string[] }>(sql`
-          WITH RECURSIVE placed AS ${placedNodesSql(view)},
-          chain AS (
-            SELECT p.id AS start, p.id, p.parent_id, p.rank, 0 AS depth FROM placed p
-              WHERE p.id IN (${sql.join(
-                ids.map((id) => sql`${id}::uuid`),
-                sql`, `,
-              )})
-            UNION ALL
-            SELECT chain.start, p.id, p.parent_id, p.rank, chain.depth + 1 FROM placed p
-              JOIN chain ON p.id = chain.parent_id
-          )
-          SELECT start::text AS start, array_agg(rank || ' ' || id::text ORDER BY depth DESC) AS path
-          FROM chain GROUP BY start`);
-        for (const row of rows) out.set(`${row.start}:${branchId}`, row.path);
+        const [rows, folders] = await Promise.all([
+          currentDrizzleDb(db).execute<{ start: string; source: string; path: string[] }>(sql`
+            WITH RECURSIVE placed AS ${placedNodesSql(view)},
+            chain AS (
+              SELECT p.id AS start, p.id, p.parent_id, p.rank, p.context_source_id, 0 AS depth
+                FROM placed p
+                WHERE p.id IN (${sql.join(
+                  ids.map((id) => sql`${id}::uuid`),
+                  sql`, `,
+                )})
+              UNION ALL
+              SELECT chain.start, p.id, p.parent_id, p.rank, p.context_source_id, chain.depth + 1
+                FROM placed p JOIN chain ON p.id = chain.parent_id
+            )
+            SELECT start::text AS start, min(context_source_id::text) AS source,
+              array_agg(rank || ' ' || id::text ORDER BY depth DESC) AS path
+            FROM chain GROUP BY start`),
+          loadFolderAddresses(db, ids, view),
+        ]);
+        const uris = new Map(folders.map((folder) => [folder.folderId as string, folder.uri]));
+        for (const row of rows) {
+          const uri = uris.get(row.start);
+          out.set(`${row.start}:${branchId}`, {
+            placement: [row.source, ...row.path],
+            ...(uri ? { uri } : {}),
+          });
+        }
       }
       return out;
     },

@@ -9,12 +9,11 @@ import type { Database } from "@meridian/database";
 import { applyCommandEffects, commands, documentDrafts } from "@meridian/database/schema";
 import {
   type ListEnd,
-  lastSettlements,
   listRecords,
   pendingRecords,
   recordsAdmittedAfter,
   recordsOfItem,
-  settleLogOf,
+  settledRecords,
   type TreeRecord,
 } from "@meridian/project-tree";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
@@ -121,24 +120,15 @@ function treeHalf(end: ListEnd, branchId: BranchId, saw: Uint8Array | undefined)
   const { writer } = end;
   const draft = writer.view({ draft: branchId });
   const pending = pendingRecords(writer.doc, branchId);
-  const last = lastSettlements(writer.doc);
-  const order = new Map(
-    settleLogOf(writer.doc)
-      .toArray()
-      .map((settle, at) => [settle.id, at]),
-  );
+  const last = settledRecords(writer.doc);
   const unseen = saw ? recordsAdmittedAfter(writer.doc, saw) : new Set<string>();
   const settled = listRecords(writer.doc).flatMap((record) => {
     if (record.draft !== branchId || unseen.has(record.id)) return [];
     const settle = last.get(record.id);
-    const kind =
-      settle?.to === "discarded"
-        ? ("discarded" as const)
-        : settle?.to === "applied" || settle?.to === "superseded"
-          ? ("applied" as const)
-          : null;
-    if (!settle?.command || !kind) return [];
-    return [{ record, kind, by: settle.command as CommandId, at: order.get(settle.id) ?? -1 }];
+    if (!settle?.command || settle.fate === "dropped") return [];
+    // A record replaced by a later one an Apply landed: that Apply took the node's item.
+    const kind = settle.fate === "discarded" ? ("discarded" as const) : ("applied" as const);
+    return [{ record, kind, by: settle.command as CommandId, at: settle.at }];
   });
   const above = (folder: string, node: string) => {
     for (let at = draft.nodes.get(node); at; at = draft.nodes.get(at.parent))
