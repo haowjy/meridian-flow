@@ -89,7 +89,7 @@ export function WorkCollection({
     if (entry.state === "gone")
       return (
         <WorkRow
-          work={{ name: entry.work.name, goal: null, lastActivityAt: new Date(now).toISOString() }}
+          work={{ name: entry.work.name, goal: null }}
           now={now}
           onOpen={() => undefined}
           gone
