@@ -2,9 +2,9 @@
  * Sidebar Undo: the writer's tree changes made in this browser, newest last, one stack per list
  * copy, read a source at a time. A step is the record ids one gesture appended and the view it
  * was made in, or an Apply, which the server takes back whole by its command id; nothing else is
- * stored. Whether a step can still be taken is read from the list at the press (`undoChange`: by
- * history), or asked of the server for an Apply, and a step that no longer fits is skipped for
- * the one before it. A notice's Undo (`undoStep`) takes back the same step a press would. There is
+ * stored. Whether a tree step can still be taken is read from the list at the press (`undoChange`:
+ * by history), and one that no longer fits is skipped for the one before it. An Apply is asked of
+ * the server, and its press is spent once the server answers, whatever it took back. A notice's Undo (`undoStep`) takes back the same step a press would. There is
  * no Redo: an Undo's own records go on no stack.
  *
  * Each list also holds the notice its rows show (`treeNotice`): the writer's latest gesture with
@@ -13,6 +13,7 @@
  * (`treeBounces`: their Work was closed), each said on the row it was made on; they end at the
  * writer's next gesture, press or action elsewhere in the list, as the notice does.
  */
+import type { LeftOutWhy } from "@meridian/contracts/commands";
 import {
   appliedNodes,
   type DroppedRecord,
@@ -61,18 +62,30 @@ export type TreeStep = {
 };
 
 /**
- * What an Un-Apply took back of its Apply: `all` of what stood, `partly` (what stayed was edited
- * or changed since), `nothing` (all that stood was), or `already` (an earlier Un-Apply, here or in
- * another tab, took it all). `textLeft` counts the text changes that stayed, `treeLeft` the nodes.
+ * What an Un-Apply took back of its Apply: `all` of what stood, `partly`, `nothing`, or `already`
+ * (an earlier Un-Apply, here or in another tab, took it all). `textLeft` counts the text changes
+ * that stayed (edited since; the answer doesn't say whose document); `treeLeft` names each node
+ * whose tree change stayed, with why.
  */
 export type Unapplied =
   | { taken: "all" | "already" }
-  | { taken: "partly" | "nothing"; textLeft: number; treeLeft: number };
+  | {
+      taken: "partly" | "nothing";
+      textLeft: number;
+      treeLeft: readonly { node: string; why: LeftOutWhy }[];
+    };
+
+/** What an Apply's tree half did to a node, for what an Un-Apply that left it says. */
+export type TreeFact = {
+  did: "moved" | "renamed" | "restored" | "deleted" | "created" | null;
+  folder: boolean;
+};
 
 /** What an Un-Apply left standing, said on the rows of the Apply it took back. */
 export type Left = Extract<Unapplied, { taken: "partly" | "nothing" }> & {
   name: string;
   nodes: readonly string[];
+  facts: ReadonlyMap<string, TreeFact>;
 };
 
 /**
@@ -96,6 +109,8 @@ export type ApplyStep = {
   name: string;
   /** The nodes it took, whose rows say what an Undo of it couldn't do. */
   nodes: readonly string[];
+  /** What its tree half did to each node it landed on. */
+  facts: ReadonlyMap<string, TreeFact>;
   unapply(): Promise<Unapplied | { taken: "failed" }>;
 };
 
@@ -255,8 +270,9 @@ const holds = (step: UndoStep, source: string | null, view: View) =>
 
 /**
  * Takes back the latest step of `source` (null: any) made in `view`, by opposite records, or an
- * Apply by the server's Un-Apply. A step that can't be taken back any more is dropped, named in
- * `skipped`, and the press goes on to the one before it. A record whose change was since
+ * Apply by the server's Un-Apply. A tree step that can't be taken back any more is dropped, named
+ * in `skipped`, and the press goes on to the one before it; an Apply's press is spent once the
+ * server answers. A record whose change was since
  * applied is in force live, so its opposite record is written live. The caller runs one press
  * at a time: while an Un-Apply is asked, steps only join the top of the stack.
  */
@@ -364,7 +380,7 @@ function unappliedOutcome(
 ): UndoOutcome {
   const left: Left | undefined =
     answer.taken === "partly" || answer.taken === "nothing"
-      ? { ...answer, name: step.name, nodes: step.nodes }
+      ? { ...answer, name: step.name, nodes: step.nodes, facts: step.facts }
       : undefined;
   return answer.taken === "nothing"
     ? { kind: "nothing", skipped, left }

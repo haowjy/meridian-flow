@@ -363,8 +363,10 @@ the text never comes back without its move or delete.
 
 An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack as one step
 (`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
-command's id; changes it could not take back come back as `left_out` and, with nothing
-reversed, are a skipped step with its notice. A band's Apply has its editor's Undo instead.
+command's id, and the press is spent once the server answers, whatever it took back. What it
+couldn't take back (text edited since, a tree change named by a `left_out` line) is said on the
+rows it stayed on (`unappliedOf`); only a tree step is skipped for the one before it. A band's
+Apply has its editor's Undo instead.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

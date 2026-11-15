@@ -705,7 +705,7 @@ function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) 
     <span className="flex min-w-0 flex-wrap gap-x-2">
       {tree ? <span className="min-w-0 truncate">{tree}</span> : null}
       {count !== null ? (
-        // A row word beside it can leave less than the count's width: the count wraps, whole.
+        // A row word and the ✕ ✓ can leave less than the count's width: it breaks between words.
         <span className="whitespace-normal">
           <Plural value={count} one="# text change" other="# text changes" />
         </span>

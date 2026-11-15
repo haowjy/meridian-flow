@@ -230,7 +230,7 @@ export function useWorkBranchCommands({
       branchId: string,
       nodes: readonly string[],
       name: string,
-      halves: ApplyHalves = { text: true, tree: true, restores: [] },
+      halves: ApplyHalves = { text: true, tree: true, restores: [], did: {} },
     ): AppliedUndo | null => {
       if (surface === "band" || !treeLists) return null;
       const handle = treeLists.acquire({ kind: "project", projectId });
@@ -271,6 +271,12 @@ export function useWorkBranchCommands({
         sources: [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
         name,
         nodes,
+        facts: new Map(
+          nodes.map((node) => [
+            node,
+            { did: halves.did[node] ?? null, folder: shown.nodes.get(node)?.kind === "folder" },
+          ]),
+        ),
         text: halves.text,
         tree: halves.tree ? { command: commandId, restores: halves.restores } : null,
         ended: () => {

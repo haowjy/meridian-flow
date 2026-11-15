@@ -13,10 +13,11 @@ import type {
 import {
   CLOSED_OWNER_WHYS,
   type ClosedOwnerWhy,
+  type LeftOutWhy,
   type Settlement,
 } from "@meridian/contracts/commands";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { Unapplied } from "@/core/project-tree/tree-undo";
+import type { TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
 import type { DiscardRestores } from "./discard-restores";
 
 export type NoticeSurface =
@@ -112,11 +113,22 @@ export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult 
   return answer.items.find((item) => item.node === node);
 }
 
-/** What of an Apply landed, command-wide: its Undo step's two halves. */
-export type ApplyHalves = { text: boolean; tree: boolean; restores: string[] };
+/**
+ * What of an Apply landed, command-wide: its Undo step's two halves, and what the tree half did
+ * to each node it landed on, from where live had it before and after (`did`).
+ */
+export type ApplyHalves = {
+  text: boolean;
+  tree: boolean;
+  restores: string[];
+  did: Record<string, TreeFact["did"]>;
+};
 
 export function halvesOf(answer: ApplyClickResult): ApplyHalves {
   return {
+    did: Object.fromEntries(
+      answer.items.flatMap((item) => (item.tree?.landed ? [[item.node, didOf(item)]] : [])),
+    ),
     text: answer.items.some((item) => item.text?.landed),
     tree: answer.items.some((item) => item.tree?.landed),
     restores: answer.items.flatMap((item) =>
@@ -128,16 +140,34 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
 /**
  * What an Un-Apply took back, the one reading every surface says: something taken back with
  * nothing left is `all`; with text skipped or a tree fact left out, `partly`; nothing taken back
- * but something left, `nothing`; neither, `already` (the server's `already unapplied`).
+ * but something left, `nothing`; neither, `already` (the server's `already unapplied`). Each node
+ * a `left_out` line names keeps that line's reason, so its row can say why it stayed; the lines
+ * are read here, not through `settledOf`, whose views drop the nodes they name.
  */
 export function unappliedOf(answer: UnapplyClickResult): Unapplied {
   const took = answer.reversedGroupIds.length > 0 || answer.treeUndone.length > 0;
   const textLeft = answer.skippedGroupIds.length;
-  const treeLeft = new Set(
-    (answer.settled ?? []).flatMap((one) => (one.rule === "left_out" ? one.items : [])),
-  ).size;
-  if (textLeft === 0 && treeLeft === 0) return { taken: took ? "all" : "already" };
-  return { taken: took ? "partly" : "nothing", textLeft, treeLeft };
+  const treeLeft = new Map<string, LeftOutWhy>();
+  for (const one of answer.settled ?? [])
+    if (one.rule === "left_out")
+      for (const node of one.items) if (!treeLeft.has(node)) treeLeft.set(node, one.why);
+  if (textLeft === 0 && treeLeft.size === 0) return { taken: took ? "all" : "already" };
+  return {
+    taken: took ? "partly" : "nothing",
+    textLeft,
+    treeLeft: [...treeLeft].map(([node, why]) => ({ node, why })),
+  };
+}
+
+function didOf(item: ApplyItemResult): TreeFact["did"] {
+  const tree = item.tree;
+  if (tree?.restore || tree?.settled?.some((one) => one.rule === "restored")) return "restored";
+  const { from, to } = tree?.transition ?? { from: undefined, to: undefined };
+  if (from === undefined) return null;
+  if (from === null) return "created";
+  if (to === null || to === undefined) return "deleted";
+  const parent = (uri: string) => uri.replace(/\/?[^/]*\/?$/, "");
+  return parent(from) === parent(to) && from !== to ? "renamed" : "moved";
 }
 
 /** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
