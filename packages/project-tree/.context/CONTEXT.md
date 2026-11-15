@@ -13,9 +13,9 @@ page says where each part lives and what the code decided where the design left 
 | `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`), `freeName`: numbering, from the contracts filename codec |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
-| `replay.ts` | `replay`: rules 1 to 13, then one pass over the nodes for Trash, kept folders and names |
+| `replay.ts` | `replay`: rules 1 to 14, then one pass over the nodes for Trash, kept folders and names |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
-| `writer.ts` | `TreeWriter`: makes records in one copy of the list; `moveBetweenLists` |
+| `writer.ts` | `TreeWriter`: makes records in one copy of the list; `moveBetweenLists` and its Undo, `moveBackBetweenLists` |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
 | `admission.ts` | `guard` (the faults that close a copy), `clientMayWrite`, `admit`: guard, integrate, stamp `dropped` |
 | `rows.ts` | `projectedRows`, `branchRows`, `changedRows`: what to write to SQL after a replay, with each node's type and extension |
@@ -45,6 +45,12 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 12. A rename to a type of another Yjs schema is skipped (`type-across-schemas`).
 13. A name is `normalEntryName(kind, typed)` for the node's kind, in every create, rename and
     move; nothing is refused for its name.
+14. A move to another list (`list:<id>`) takes the node out of this one: its deletes here end,
+    kept under that move for the create an Undo of it brings back (`undoes`), which puts them back.
+    What stands under a node that left and is not back at the end of the replay (a chapter in
+    Trash the crossing left, a purged one, a create Yjs placed before the leave) goes to the top
+    of its source, arriving there at that leave, as rule 10 does for a purged one; it rejoins the
+    node if the node comes back.
 
 Rules 11 to 13 read `classifyFiletype`, `schemaType` and `normalEntryName`, which are frozen as
 the replay uses them (package `AGENTS.md`).
@@ -176,7 +182,11 @@ the replay uses them (package `AGENTS.md`).
   lock; it changes that copy in place, so reload the copy from the journal if anything throws
   (`CopyFault` included). Write the records and the `dropped` stamps to the journal and the rows.
 - Fill `Connection` with the open drafts and the closed Works' sources: the package knows no Work.
-- Move a document between two lists with `moveBetweenLists`, writing both updates in one
-  transaction. In the list it left the node is in no view and in no Trash entry.
+- Move a node between two lists with `moveBetweenLists`, writing both updates in one
+  transaction: the node and what stands below it cross, each with its own id and a pair of
+  records, so a folder arrives with its order and its empty folders. What a delete of a node below
+  it holds in Trash stays in that list's Trash (rule 14). Take one back with
+  `moveBackBetweenLists`, given the crossing's records: the same move the other way, by id, to
+  where the root left from, each node below settling as in any crossing.
 - Replay live and the views a record can change, then `changedRows` against the last rows.
 - Give the writer `pendingText` for views it replays: this package cannot see text.

@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { type ProjectContextTreeScheme, storedFilename } from "@meridian/contracts/protocol";
-import { moveDocumentAcrossLists } from "@/client/api/projects-api";
+import { moveAcrossLists } from "@/client/api/projects-api";
 import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import { type OpenDocument, type OpenDocumentOwner, replaceOwner } from "@/client/stores";
@@ -132,7 +132,8 @@ export function useIdentityCommit({
           (folder ? into.findPath(`/${folder}`)?.entryId : into.root.entryId);
         const to = parent && (parent === into.root.entryId ? into.root : into.entry(parent));
         if (!to) throw new Error("Destination folder is unavailable");
-        const answer = await moveDocumentAcrossLists(projectId, {
+        const answer = await moveAcrossLists(projectId, {
+          kind: "file",
           nodeId: file.entryId,
           from: from.root.uri,
           to: to.uri,

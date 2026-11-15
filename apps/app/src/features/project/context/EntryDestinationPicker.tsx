@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
-import { moveDocumentAcrossLists } from "@/client/api/projects-api";
+import { moveAcrossLists } from "@/client/api/projects-api";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
@@ -122,17 +122,6 @@ function OpenPicker({
     }
     // Copy adds beside what is there, so only a folder inside itself refuses.
     if (action === "copy") return null;
-    // Two lists (the project's, the account's files) are moved between by a server route, which
-    // takes documents only.
-    if (
-      placed.some(
-        ({ row, at }) =>
-          at &&
-          row.ref.kind === "folder" &&
-          (at.scheme === "user") !== (destination.scheme === "user"),
-      )
-    )
-      return "other-list";
     return placed.every(({ at }) => at?.entry.parentId === destination.entryId)
       ? "already-there"
       : null;
@@ -225,7 +214,8 @@ function OpenPicker({
     setPending(true);
     void Promise.all(
       crossing.map(({ row, at: here }) =>
-        moveDocumentAcrossLists(projectId, {
+        moveAcrossLists(projectId, {
+          kind: row.ref.kind === "folder" ? "folder" : "file",
           nodeId: row.ref.id,
           from: (here as NonNullable<typeof here>).tree.root.uri,
           to: into.uri,
@@ -356,7 +346,7 @@ function OpenPicker({
             key: "move",
             icon: FolderInput,
             label: already ? t`Already in ${folder.name}` : t`Move here`,
-            disabled: already || blocked === "other-list" || pending,
+            disabled: already || pending,
             onSelect: () => move(trail),
           },
         ];

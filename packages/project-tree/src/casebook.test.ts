@@ -13,6 +13,7 @@ import {
   discardedBy,
   fingerprint,
   LIVE,
+  moveBackBetweenLists,
   moveBetweenLists,
   pendingRecords,
   recordsOf,
@@ -778,40 +779,38 @@ describe("part 5: what a document is, and a move between two lists", () => {
     expect(t.at(ch)).toMatchObject({ filetype: "text", provisional: false });
   });
 
-  it("30. a document moved to another list is in no view and no Trash there, and a record arriving for it after is skipped", () => {
+  it("30. a folder moved to another list crosses as itself: every node with its id, in order, empty folders too; in the list it left it is in no view and no Trash, and a record arriving for it after is skipped", () => {
     const here = start();
     const there = start();
     const ch = here.chapter("Chapter 1");
-    const folder = here.folder("Arc");
+    const part = here.folder("Part");
+    const a = here.chapter("A", part);
+    const sub = here.folder("Sub", part);
+    const b = here.chapter("B", sub);
+    const c = here.chapter("C", part);
+    const empty = here.folder("Empty", part);
     here.w.rename(LIVE, WRITER, ch, "Chapter One", "text");
-    const { left, entered } = moveBetweenLists(
-      { writer: here.w, list: "project" },
-      { writer: there.w, list: "account", parent: MINE },
-      WRITER,
-      ch,
-    );
-    expect(left).toMatchObject({ type: "move", parent: "list:account" });
-    expect(entered).toMatchObject({
-      type: "create",
-      node: ch,
-      name: "Chapter One",
-      filetype: "text",
-    });
-    expect(here.names(ROOT)).toEqual(["Arc"]);
-    expect(here.at(ch)).toBeUndefined();
+    const out = { writer: here.w, list: "project" };
+    const into = { writer: there.w, list: "account", parent: MINE };
+    const doc = moveBetweenLists(out, into, WRITER, ch);
+    expect(doc.left).toEqual([expect.objectContaining({ type: "move", parent: "list:account" })]);
+    expect(doc.entered).toEqual([
+      expect.objectContaining({ type: "create", node: ch, name: "Chapter One", filetype: "text" }),
+    ]);
+    const folder = moveBetweenLists(out, into, WRITER, part);
+    expect(folder.entered.map((record) => record.node)).toEqual([part, a, sub, b, c, empty]);
+    expect(there.names(MINE)).toEqual(["Chapter One", "Part"]);
+    expect(there.names(part)).toEqual(["A", "Sub", "C", "Empty"]);
+    expect(there.names(sub)).toEqual(["B"]);
     expect(there.at(ch)).toMatchObject({ name: "Chapter One", source: "user-files", parent: MINE });
+    expect(here.w.view(LIVE).nodes.size).toBe(0);
+    expect(here.w.view(LIVE).trash).toEqual([]);
     // A client that had not seen the move renames it in the list it left.
     const late = here.w.rename(LIVE, WRITER, ch, "Late");
     expect(here.w.view(LIVE).skipped).toContainEqual({ record: late.id, reason: "missing-node" });
     expect(there.at(ch)?.name).toBe("Chapter One");
-    expect(() =>
-      moveBetweenLists(
-        { writer: here.w, list: "project" },
-        { writer: there.w, list: "account", parent: MINE },
-        WRITER,
-        folder,
-      ),
-    ).toThrow();
+    here.valid();
+    there.valid();
   });
 
   it("31. a document moved out and back stands in the list it returned to, with its type, and was never in Trash", () => {
@@ -948,7 +947,7 @@ describe("part 5: what a document is, and a move between two lists", () => {
   });
 });
 
-describe("replay rules 9 to 13", () => {
+describe("replay rules 9 to 14", () => {
   it("9. a move or rename of a node in Trash restores it; an Undo of it puts the delete back", () => {
     const t = start();
     const arc = t.folder("Arc");
@@ -1049,6 +1048,130 @@ describe("replay rules 9 to 13", () => {
     t.w.author(LIVE, CHAT, { type: "rename", node: ch, name: "notes.md", fromName: "Chapter" });
     expect(t.at(folder)?.displayName).toBe("1∕2");
     expect(t.at(ch)?.displayName).toBe("notes");
+  });
+
+  it("14. a node that leaves a list ends its deletes there: one that crossed out of Trash and comes back is live", () => {
+    const here = start();
+    const there = start();
+    const ch = here.chapter("Chapter");
+    here.w.delete(LIVE, WRITER, ch);
+    const out = { writer: here.w, list: "project" };
+    const away = { writer: there.w, list: "account" };
+    moveBetweenLists(out, { ...away, parent: sourceRoot("user-files") }, WRITER, ch);
+    expect(there.at(ch)?.trashed).toBe(false);
+    moveBetweenLists(away, { ...out, parent: ROOT }, WRITER, ch);
+    expect(here.at(ch)).toMatchObject({ trashed: false, parent: ROOT });
+    expect(here.w.view(LIVE).trash).toEqual([]);
+  });
+
+  it("14. what stays under a folder that left goes to the top of its source: a chapter in Trash, a purged one, one placed before the leave that the crossing never saw", () => {
+    const here = start();
+    const there = start();
+    const part = here.folder("Part");
+    const kept = here.chapter("Kept", part);
+    const trashed = here.chapter("Trashed", part);
+    const purged = here.chapter("Purged", part);
+    const removal = here.w.delete(LIVE, WRITER, trashed);
+    purge(here.w, here.w.delete(LIVE, WRITER, purged));
+    const crossing = moveBetweenLists(
+      { writer: here.w, list: "project" },
+      { writer: there.w, list: "account", parent: sourceRoot("user-files") },
+      WRITER,
+      part,
+    );
+    expect(crossing.entered.map((record) => record.node)).toEqual([part, kept]);
+    // Merged by Yjs before the leave, admitted after it: a create the crossing did not name.
+    const unseen = here.w.prepare(LIVE, WRITER, {
+      type: "create",
+      node: crypto.randomUUID(),
+      kind: "document",
+      filetype: "markdown",
+      name: "Unseen",
+      parent: part,
+      source: "manuscript",
+      rank: "a5",
+    });
+    const records = recordsOf(here.doc);
+    const leave = records.toArray().findIndex((record) => record.id === crossing.left[0]?.id);
+    here.doc.transact(() => records.insert(leave, [unseen]));
+    expect(here.at(trashed)).toMatchObject({ parent: ROOT, trashed: true });
+    expect(here.at(purged)).toMatchObject({ parent: ROOT, purged: true });
+    expect(here.at(unseen.node)).toMatchObject({ parent: ROOT, trashed: false });
+    expect(here.w.view(LIVE).trash.map((entry) => entry.id)).toEqual([removal.id]);
+    here.valid();
+  });
+
+  it("14. the Undo of a crossing is the crossing back by id: to its place, a node deleted since stays in that Trash, one renamed keeps its name, one added comes along, Trash left behind rejoins it", () => {
+    const here = start();
+    const there = start();
+    const MINE = sourceRoot("user-files");
+    here.chapter("First");
+    const part = here.folder("Part");
+    here.chapter("Last");
+    const a = here.chapter("A", part);
+    const sub = here.folder("Sub", part);
+    const b = here.chapter("B", sub);
+    const old = here.chapter("Old", part);
+    here.w.delete(LIVE, WRITER, old);
+    there.folder("Part", MINE);
+    const out = { writer: here.w, list: "project" };
+    const away = { writer: there.w, list: "account" };
+    const crossing = moveBetweenLists(out, { ...away, parent: MINE }, WRITER, part);
+    expect(there.names(MINE)).toEqual(["Part", "Part (2)"]);
+    const ids = (made: { left: TreeRecord[]; entered: TreeRecord[] }) =>
+      [...made.left, ...made.entered].map((record) => record.id);
+    there.w.delete(LIVE, WRITER, a);
+    there.w.rename(LIVE, WRITER, b, "B2");
+    const added = there.chapter("New", part);
+    const undo = moveBackBetweenLists(
+      away,
+      { ...out, parent: ROOT, name: "Part" },
+      WRITER,
+      part,
+      ids(crossing),
+    );
+    if (typeof undo === "string") throw new Error(undo);
+    expect(here.names(ROOT)).toEqual(["First", "Part", "Last"]);
+    expect(here.names(part)).toEqual(["Sub", "New"]);
+    expect(here.names(sub)).toEqual(["B2"]);
+    expect(here.at(old)).toMatchObject({ parent: part, trashed: true });
+    expect(here.at(added)).toBeDefined();
+    expect(there.at(a)).toMatchObject({ parent: MINE, trashed: true });
+    expect(there.names(MINE)).toEqual(["Part"]);
+    // Redo is the Undo of the Undo, and it numbers the root again where its name is taken.
+    const redo = moveBackBetweenLists(out, { ...away, parent: MINE }, WRITER, part, ids(undo));
+    expect(redo).not.toBeTypeOf("string");
+    expect(there.names(MINE)).toEqual(["Part", "Part (2)"]);
+    here.valid();
+    there.valid();
+  });
+
+  it("14. a node that crossed out of Trash goes back into it on Undo; a root moved since is not taken back", () => {
+    const here = start();
+    const there = start();
+    const MINE = sourceRoot("user-files");
+    const arc = here.folder("Arc");
+    const ch = here.chapter("Chapter", arc);
+    here.w.delete(LIVE, WRITER, arc);
+    const out = { writer: here.w, list: "project" };
+    const away = { writer: there.w, list: "account" };
+    const crossing = moveBetweenLists(out, { ...away, parent: MINE }, WRITER, ch);
+    expect(there.at(ch)?.trashed).toBe(false);
+    const records = [...crossing.left, ...crossing.entered].map((record) => record.id);
+    moveBackBetweenLists(away, { ...out, parent: ROOT }, WRITER, ch, records);
+    expect(here.at(ch)).toMatchObject({ parent: arc, trashed: true });
+    expect(here.w.view(LIVE).trash.map((entry) => entry.node)).toEqual([arc]);
+    const again = moveBetweenLists(out, { ...away, parent: MINE }, WRITER, ch);
+    there.w.move(LIVE, WRITER, ch, there.folder("Elsewhere", MINE));
+    expect(
+      moveBackBetweenLists(
+        away,
+        { ...out, parent: ROOT },
+        WRITER,
+        ch,
+        [...again.left, ...again.entered].map((record) => record.id),
+      ),
+    ).toBe("changed_since");
   });
 
   it("a create the server stamped dropped is in no view and is listed", () => {

@@ -7,9 +7,9 @@ it may write, whether a node id is in use) comes in as plain inputs.
 
 - A record is one act by one actor. The list never deletes, and nothing here edits a record:
   a record's state is its last settlement in the `settle` array, never a field on it.
-- Replay is a pure function of the records. It never changes what Yjs merged; the thirteen rules
+- Replay is a pure function of the records. It never changes what Yjs merged; the fourteen rules
   in [.context/CONTEXT.md](.context/CONTEXT.md) are the only place the product decides
-  anything, each beside the Yjs default it replaces. A fourteenth rule goes there, in `replay.ts`,
+  anything, each beside the Yjs default it replaces. A fifteenth rule goes there, in `replay.ts`,
   and in a casebook test that fails without it.
 - A client may write five record kinds with its own account as the actor. Everything else
   (copies, which carry `carries`; files, `purge`, settlements) is the server's, and `guard`
@@ -36,7 +36,8 @@ it may write, whether a node id is in use) comes in as plain inputs.
 - Who a delete covers is `deleteCovering` (rows, Trash, the tools), and a document's item in a
   view is `recordsOfItem` (Apply, Discard, review attribution). A delete's recorded `cascade` is
   what its author saw: nothing reads it as what the delete covers now.
-- A move between two lists is `moveBetweenLists`: a `move` to `list:<id>` in one list and a
-  `create` in the other. Only the server writes it.
+- A move between two lists is `moveBetweenLists`: for the node and each node standing below it,
+  a `move` to `list:<id>` in one list and a `create` with the same id in the other. Its Undo is
+  `moveBackBetweenLists`, the same move back. Only the server writes them.
 
 Design and the evidence behind each rule: [.context/CONTEXT.md](.context/CONTEXT.md).

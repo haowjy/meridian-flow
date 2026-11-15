@@ -200,12 +200,16 @@ document keys; a caller holds no document or namespace key when it submits. `con
 - **Move and rename.** Within a list a move, rename or reorder is a record of a tree command
   (`port.treeCommand`; the model's `move`, the browser's own records). A move writes no document
   bytes. A move between a project and the account (`user://`) crosses two lists:
-  `port.moveAcrossLists` (`SourceTree.moveAcrossLists`) makes `moveBetweenLists`' pair in one
-  `submit` on both lists, live only, documents and files only (a folder or a Work's draft answers
-  `invalid_operation`), and the browser reaches it at `POST /api/projects/:id/context/move`.
-  `undoMoveBetweenLists` takes the pair back across both lists. A destination name taken by
-  another node is numbered, as in a list. The model's `move` sends a folder across as its
-  documents under the same folders and then deletes it (`lib/model-tools/tree-across-lists.ts`).
+  `port.moveAcrossLists` (`SourceTree.moveAcrossLists`) makes `moveBetweenLists`' records in one
+  `submit` on both lists, live only (a Work's draft answers `invalid_operation`): the node and
+  what stands below it cross, each with its own id, so a folder arrives with its order and empty
+  folders, and what is in Trash below it stays in its list's Trash. The browser reaches it at
+  `POST /api/projects/:id/context/move`, the model's `move` through
+  `lib/model-tools/tree-across-lists.ts`. A destination name taken by another node is numbered,
+  as in a list. Its Undo is the same call with `reverses` (the crossing's records):
+  `moveBackBetweenLists` moves the root back by id to where it left from, and takes back the
+  folders the crossing made on the way. A document that left a list keeps its old path there as a
+  previous location (`tree-list-rows.ts`), so an old link follows it.
 - **Delete.** `port.delete` is the live one-record delete the upload remove uses (`SourceTree.delete`): the node and its subtree go to Trash together; the result
   lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
   that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.
@@ -331,9 +335,9 @@ A delete or a move across lists is addressed by entry id: the router takes the n
 (`{kind, nodeId}`) and an area; the area only decides which adapter to ask. The adapter finds the
 node in the list's replay inside `make` (`SourceTree.delete`, `moveAcrossLists`), so a rename or
 move by another writer in the gap is neither undone nor refused; the only facts it checks are about
-the target (the occupant, `onlyAt`, the source the caller found the node in). A node that left the
-source answers `stale_target`. A move with no `name` keeps the node's name. A move to an occupied
-name answers `conflict`.
+the target (`onlyAt` for a delete, the source the caller found the node in). A node that left the
+source answers `stale_source`. A move with no `name` keeps the node's name; a taken name is
+numbered.
 
 ## Document content and filetype rules
 

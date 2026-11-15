@@ -262,20 +262,20 @@ export async function createProjectThread(
 }
 
 /**
- * Moves one document between the project's files and the account's (`user://`), the one move the
- * browser cannot write as records because it spans two lists. `from` is the root URI of the source
- * the document stands in, `to` the URI of the folder it goes into; `name` is set when the writer
- * typed one. The answer is where it stands now.
+ * Moves one document or folder, with what is in it, between the project's files and the account's
+ * (`user://`), the one move the browser cannot write as records because it spans two lists.
+ * `from` is the root URI of the source it stands in, `to` the URI of the folder it goes into;
+ * `name` is set when the writer typed one. The answer is where it stands now.
  */
-export async function moveDocumentAcrossLists(
+export async function moveAcrossLists(
   projectId: string,
-  body: { nodeId: string; from: string; to: string; name?: string },
+  body: { kind: "file" | "folder"; nodeId: string; from: string; to: string; name?: string },
   init?: RequestInitOptions,
 ): Promise<{ uri: string }> {
-  const { nodeId, ...rest } = body;
+  const { kind, nodeId, ...rest } = body;
   return postJson(
     urlFor(apiProjectContextMovePath(projectId), init),
-    { expected: { kind: "file", nodeId }, ...rest },
+    { expected: { kind, nodeId }, ...rest },
     { headers: init?.headers, signal: init?.signal },
   );
 }

@@ -300,16 +300,7 @@ export function createTurnTreeInverse(deps: {
         continue;
       }
       reversed++;
-      await record(receipt, {
-        nodes: [
-          { nodeId: receipt.subject, beforeAt: receipt.across.to, afterAt: receipt.across.from },
-        ],
-        records: [
-          { record: answer.records.left, node: receipt.subject },
-          { record: answer.records.entered, node: receipt.subject },
-        ],
-        acrossLists: true,
-      });
+      await record(receipt, { nodes: answer.nodes, records: answer.records, acrossLists: true });
     }
     await flush();
     return { reversed, skips };

@@ -5,6 +5,7 @@ import {
   type BlobRef,
   type CreateRecord,
   type DeleteRecord,
+  isListRoot,
   isSourceRoot,
   listRoot,
   type MoveRecord,
@@ -19,10 +20,10 @@ import {
   type TreeRecord,
   type TreeRecordInput,
 } from "./record.js";
-import type { TreeProjection } from "./replay.js";
+import { placeIn, type TreeNode, type TreeProjection } from "./replay.js";
 import { childrenOf, descendantsOf, nameAmong, rankAmong, rankAt } from "./shape.js";
 import { writable } from "./validate.js";
-import { inForce, LIVE, replayView, type View } from "./view.js";
+import { inForce, LIVE, listRecords, replayView, type View } from "./view.js";
 
 /**
  * Makes records in one copy of the list, against what that copy's own view shows. The browser
@@ -339,51 +340,184 @@ export type CreateInput = {
 /** One side of a move between two lists: the writer on that list's copy, and the list's id. */
 export type ListEnd = { writer: TreeWriter; list: string };
 
+/** The records of one move between lists, root first and parents before what they hold. */
+export type Crossing = { left: MoveRecord[]; entered: CreateRecord[] };
+
 /**
- * A move between two lists (a project's and the account's `user://`), as the pair the server
- * appends in one transaction: a `move` in the list the node leaves, whose parent names the
- * other list, and a `create` for the same node id in the list it enters, under `parent` there.
- * `name` and `filetype` are what it is called and typed as where it enters, when that differs.
- * Moving back is the same pair the other way. A folder stays: what is inside it has no pair.
- * A node in Trash crosses as live: leaving drops its Trash entries and the create is live (rule 9).
+ * A move between two lists (a project's and the account's `user://`) of `node` and what stands
+ * below it, as the records the server appends in one transaction: for each node, top-down, a
+ * `move` in the list it leaves whose parent names the other list, and a `create` with the same id
+ * in the list it enters. The root goes under `into.parent` (at `into.rank`, else `into.index`)
+ * under `into.name` or its own, numbered among what is shown there; each node below keeps its
+ * parent, rank and shown name, so order and empty folders come with it. A root in Trash crosses
+ * live (rule 9); what is in Trash below it by a delete of its own stays in that list's Trash
+ * (rule 14). `reverses` names the records of a crossing this one takes back (its Undo, or the
+ * Undo's Redo): each node's pair is marked `undoes` the pair it takes back there.
  */
 export function moveBetweenLists(
   out: ListEnd,
-  into: ListEnd & { parent: string; index?: number; name?: string; filetype?: string },
+  into: ListEnd & {
+    parent: string;
+    index?: number;
+    rank?: string;
+    name?: string;
+    filetype?: string;
+  },
   actor: Actor,
   node: string,
-): { left: MoveRecord; entered: CreateRecord } {
-  const was = out.writer.view(LIVE).nodes.get(node);
-  if (!was || was.purged || was.kind === "folder")
-    throw new Error(`${node} is not a document that can leave its list`);
+  reverses: readonly string[] = [],
+): Crossing {
+  const leaving = out.writer.view(LIVE);
+  const was = leaving.nodes.get(node);
+  if (!was || was.purged) throw new Error(`${node} is not a node that can leave its list`);
   const arrives = into.writer.view(LIVE);
   const source = isSourceRoot(into.parent)
     ? sourceIdOf(into.parent)
     : arrives.nodes.get(into.parent)?.source;
   if (source === undefined) throw new Error(`move into unknown parent ${into.parent}`);
-  const left = out.writer.prepare(LIVE, actor, {
-    type: "move",
+
+  const nodes = [was, ...standingBelow(leaving, node)];
+  const ids = new Set(reverses);
+  const marks = (writer: TreeWriter) =>
+    new Map(
+      ids.size === 0
+        ? []
+        : listRecords(writer.doc).flatMap((record) =>
+            ids.has(record.id) ? [[record.node, record.carries ?? record.id] as const] : [],
+          ),
+    );
+  // The pair taken back: its create in the list the node is in now, its move in the one it returns to.
+  const created = marks(out.writer);
+  const moved = marks(into.writer);
+  const crossing: Crossing = { left: [], entered: [] };
+  for (const each of nodes) {
+    const root = each.id === node;
+    const undoes = (by: ReadonlyMap<string, string>) => {
+      const id = by.get(each.id);
+      return id === undefined ? {} : { undoes: id };
+    };
+    crossing.left.push(
+      out.writer.prepare(
+        LIVE,
+        actor,
+        {
+          type: "move",
+          node: each.id,
+          parent: listRoot(into.list),
+          rank: each.rank,
+          from: { parent: each.parent, rank: each.rank },
+        },
+        undoes(created),
+      ) as MoveRecord,
+    );
+    const filetype = root ? (into.filetype ?? each.filetype) : each.filetype;
+    crossing.entered.push(
+      into.writer.prepare(
+        LIVE,
+        actor,
+        {
+          type: "create",
+          node: each.id,
+          kind: each.kind,
+          name: root
+            ? nameAmong(arrives, into.parent, each.kind, into.name ?? each.name)
+            : each.displayName,
+          parent: root ? into.parent : each.parent,
+          source,
+          rank: root
+            ? (into.rank ?? rankAt(arrives, into.parent, into.index ?? Number.MAX_SAFE_INTEGER))
+            : each.rank,
+          ...(filetype ? { filetype } : {}),
+          ...(each.provisional ? { provisional: true as const } : {}),
+          ...(each.aliases ? { aliases: each.aliases } : {}),
+          ...(each.hasProperties ? { hasProperties: true as const } : {}),
+          ...(each.blob ? { blob: each.blob } : {}),
+        },
+        undoes(moved),
+      ) as CreateRecord,
+    );
+  }
+  // All are built before any is stored, so a move is never left half made.
+  out.writer.transact(() => recordsOf(out.writer.doc).push(crossing.left));
+  into.writer.transact(() => recordsOf(into.writer.doc).push(crossing.entered));
+  return crossing;
+}
+
+/**
+ * The nodes below `node` that cross with it, parents first in display order: everything except
+ * what a delete of a node below it holds in Trash (a delete of `node` or above it is lifted by the
+ * move, rule 9), and nothing purged. A deleted folder something crossing keeps standing crosses.
+ */
+function standingBelow(projection: TreeProjection, node: string): TreeNode[] {
+  const below = new Set(descendantsOf(projection, node));
+  const held = new Set<string>();
+  for (const entry of projection.trash)
+    if (below.has(entry.node)) for (const id of [entry.node, ...entry.cascade]) held.add(id);
+  const stands = new Map<string, boolean>();
+  const standing = (id: string): boolean => {
+    let known = stands.get(id);
+    if (known === undefined) {
+      const kids = projection.children.get(id) ?? [];
+      known =
+        kids.some((kid) => standing(kid.id)) ||
+        (!held.has(id) && projection.nodes.get(id)?.purged !== true);
+      stands.set(id, known);
+    }
+    return known;
+  };
+  const out: TreeNode[] = [];
+  const walk = (parent: string) => {
+    for (const kid of projection.children.get(parent) ?? [])
+      if (standing(kid.id)) {
+        out.push(kid);
+        walk(kid.id);
+      }
+  };
+  walk(node);
+  return out;
+}
+
+/**
+ * The Undo of a move between lists, or the Redo of that Undo: the same move the other way, of the
+ * root it moved, by id, back to the parent and rank its leave came from (`into.parent` when that
+ * folder is no longer there) under the name it left with, unless renamed since. What is below it
+ * now goes with it as in any crossing, so a node renamed since keeps its name, one added since
+ * comes along, one moved out since stays out and one deleted since stays in that Trash; a node
+ * that crossed out of Trash goes back into it (rule 14). `records` are the crossing's own. The
+ * root deleted or moved since answers `changed_since`, as an Undo in one list does.
+ */
+export function moveBackBetweenLists(
+  out: ListEnd,
+  into: ListEnd & { parent: string; name?: string },
+  actor: Actor,
+  node: string,
+  records: readonly string[],
+): Crossing | "changed_since" | "unknown" {
+  const ids = new Set(records);
+  const leave = listRecords(into.writer.doc).find(
+    (record): record is MoveRecord =>
+      ids.has(record.id) &&
+      record.type === "move" &&
+      record.node === node &&
+      isListRoot(record.parent),
+  );
+  const here = out.writer.view(LIVE);
+  const now = placeIn(here.nodes, node);
+  if (!leave || !now) return "unknown";
+  if (now.trashed || here.setters.get(node)?.place) return "changed_since";
+  const there = into.writer.view(LIVE);
+  const back =
+    isSourceRoot(leave.from.parent) || placeIn(there.nodes, leave.from.parent)?.kind === "folder";
+  return moveBetweenLists(
+    out,
+    {
+      ...into,
+      parent: back ? leave.from.parent : into.parent,
+      ...(back ? { rank: leave.from.rank } : {}),
+      ...(into.name !== undefined && !here.setters.get(node)?.label ? { name: into.name } : {}),
+    },
+    actor,
     node,
-    parent: listRoot(into.list),
-    rank: was.rank,
-    from: { parent: was.parent, rank: was.rank },
-  }) as MoveRecord;
-  const entered = into.writer.prepare(LIVE, actor, {
-    type: "create",
-    node,
-    kind: was.kind,
-    name: nameAmong(arrives, into.parent, was.kind, into.name ?? was.name),
-    parent: into.parent,
-    source,
-    rank: rankAt(arrives, into.parent, into.index ?? Number.MAX_SAFE_INTEGER),
-    ...((into.filetype ?? was.filetype) ? { filetype: into.filetype ?? was.filetype } : {}),
-    ...(was.provisional ? { provisional: true as const } : {}),
-    ...(was.aliases ? { aliases: was.aliases } : {}),
-    ...(was.hasProperties ? { hasProperties: true as const } : {}),
-    ...(was.blob ? { blob: was.blob } : {}),
-  }) as CreateRecord;
-  // Both are built before either is stored, so a move is never left half made.
-  out.writer.append(left);
-  into.writer.append(entered);
-  return { left, entered };
+    records,
+  );
 }

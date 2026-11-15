@@ -445,6 +445,14 @@ async function writeLive(
         documentId: id,
       });
   }
+  // One that left for another list leaves its old path here too: a link written to it follows.
+  for (const [id, row] of prev)
+    if (row.kind === "document" && !row.deleted && !next.has(id))
+      vacated.push({
+        contextSourceId: row.sourceId,
+        path: (was.get(id) as { path: string }).path,
+        documentId: id,
+      });
   if (vacated.length > 0 || claimed.length > 0)
     await recordLocationHistory(tx as unknown as Database, { vacated, claimed });
   return [...changed.keys(), ...gone];

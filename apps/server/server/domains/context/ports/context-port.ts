@@ -337,8 +337,15 @@ export type ContextMovedAcrossLists = {
   destinationUri: string;
   /** The node moved. */
   node: string;
-  /** The ids of the move in the list it left and the create in the list it entered. */
-  records: { left: string; entered: string };
+  /** Every record the move made, in both lists, with the node each acts on. */
+  records: Array<{ record: string; node: string }>;
+  /** Each node that crossed, root first, with its address before and after. */
+  nodes: Array<{
+    node: string;
+    kind: "folder" | "document" | "file";
+    before: string;
+    after: string;
+  }>;
 };
 
 export interface ContextMoveAcrossListsChange {
@@ -347,8 +354,12 @@ export interface ContextMoveAcrossListsChange {
   /** The name the writer typed, when they did; omitted keeps the node's own name. */
   name?: string;
   position?: ContextSiblingPosition;
-  /** Move only while the node stands at this path of its area; else `stale_target`. */
-  onlyAt?: string;
+  /**
+   * The records of a crossing this takes back (its Undo, or that Undo's Redo): the node goes back
+   * where that crossing took it from, into `folderUri` when that folder is gone, under `name`
+   * unless renamed since. A node deleted or moved since there answers `stale_target`.
+   */
+  reverses?: readonly string[];
   origin?: WriteProvenance;
   /**
    * Runs inside the move's own transaction once its records are made, so a caller's receipt
@@ -467,7 +478,7 @@ export interface ContextPort {
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
   /**
-   * Move the document or file `node` names from the list of `area` (the root URI of the scheme
+   * Move the node `node` names, and what stands below it, from the list of `area` (the root URI of the scheme
    * and owner it was last seen in; it names no entry) into a folder of another list: a project's
    * and the account's `user://` are two. One transaction on both lists, found by id under the
    * locks. Within one list a move is a tree command.

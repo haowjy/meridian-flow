@@ -80,7 +80,11 @@ type MoveAnswer = {
 function joinMoves(stayed: unknown, crossed: unknown, of: number) {
   const parts = [stayed, crossed] as MoveAnswer[];
   const done = parts.filter((part) => !part.isError);
-  if (done.length === 0) return parts[0];
+  if (done.length === 0)
+    return writeToolError(
+      "move",
+      parts.map((part) => part.output.message ?? "Nothing moved.").join(" "),
+    );
   const tree = (part: MoveAnswer) =>
     (part.output.tree ?? {}) as NonNullable<typeof part.output.tree>;
   const notMoved = parts.flatMap((part) =>
@@ -180,15 +184,7 @@ export async function runTreeToolCommand(
     const staying = command.from.filter((from) => !leaving.includes(from));
     const now = (effect: () => Promise<unknown>) => effect();
     const across = (run: typeof settle) =>
-      runMoveAcrossLists(
-        deps,
-        call,
-        ctx,
-        grants,
-        { ...command, from: leaving },
-        (folder) => runTreeToolCommand(deps, call, { command: "delete", path: folder }, ctx, now),
-        run,
-      );
+      runMoveAcrossLists(deps, call, ctx, grants, { ...command, from: leaving }, run);
     if (staying.length === 0) return across(settle);
     return settle(async () =>
       joinMoves(

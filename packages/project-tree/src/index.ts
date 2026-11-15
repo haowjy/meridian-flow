@@ -88,4 +88,11 @@ export {
   viewRecords,
   viewValues,
 } from "./view.js";
-export { type CreateInput, type ListEnd, moveBetweenLists, TreeWriter } from "./writer.js";
+export {
+  type CreateInput,
+  type Crossing,
+  type ListEnd,
+  moveBackBetweenLists,
+  moveBetweenLists,
+  TreeWriter,
+} from "./writer.js";

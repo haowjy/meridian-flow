@@ -185,6 +185,8 @@ export function replay(
   const purgedDeletes = new Set<string>();
   // Each purged node, by the position of the purge that took it.
   const purgedAt = new Map<string, number>();
+  // Each node that left for another list, by the position of its leave and the source it left.
+  const leftAt = new Map<string, { at: number; source: string }>();
   for (const value of values) {
     const read = readStored(value);
     if (read.ok && read.record.type === "purge") purgedDeletes.add(read.record.delete);
@@ -363,6 +365,9 @@ export function replay(
         label: [],
         place: [],
       });
+      // Rule 14: a node coming back by the Undo of its leave is in the Trash it left.
+      const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+      if (back) putBack(record, back);
       continue;
     }
     // A node is acted on only while it stands in this view (`placeIn`): the same test Undo and
@@ -380,8 +385,12 @@ export function replay(
     }
     switch (record.type) {
       case "move": {
-        // Out to another list: the node is in no view of this one, and its Trash entries go.
+        // Rule 14: out to another list. Its deletes here end, kept under this record for the
+        // create that brings it back by Undo; what stays under it here is rescued at the end.
         if (isListRoot(record.parent)) {
+          const { undoes: _, ...leave } = record;
+          lift(leave, node, { ownOnly: record.draft !== null });
+          leftAt.set(record.node, { at: index, source: sourceOf(nodes, leftAt, record.node) });
           nodes.delete(record.node);
           break;
         }
@@ -509,29 +518,46 @@ export function replay(
     }
   }
 
-  if (purgedAt.size > 0) rescueFromPurged(nodes, purgedAt);
+  if (purgedAt.size > 0 || leftAt.size > 0) rescueOrphans(nodes, purgedAt, leftAt);
   return {
     ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
     dropped: [],
   };
 }
 
+/** The source a node stands in: the top of its parent chain, or the source the node above it left. */
+function sourceOf(
+  nodes: ReadonlyMap<string, Working>,
+  leftAt: ReadonlyMap<string, { source: string }>,
+  id: string,
+): string {
+  let at = id;
+  for (let guard = 0; guard <= nodes.size; guard += 1) {
+    if (isSourceRoot(at)) return sourceIdOf(at);
+    const node = nodes.get(at);
+    if (!node) break;
+    at = node.parent;
+  }
+  return leftAt.get(at)?.source ?? (nodes.get(id) as Working).source;
+}
+
 /**
- * Every node standing directly under a purged one goes to the top of the source its place was in,
- * arriving there at that purge. Once purged a node takes nothing (`placeIn`), so what is under one
- * at the end was under it at its purge.
+ * Rules 10 and 14: every node standing directly under one that is purged, or under one that left
+ * for another list and is not back, goes to the top of the source its place was in, arriving there
+ * at that purge or leave. Once purged a node takes nothing (`placeIn`), and nothing is placed under
+ * a node that has left, so what is under one at the end was under it then.
  */
-function rescueFromPurged(nodes: Map<string, Working>, purgedAt: ReadonlyMap<string, number>) {
-  const sourceAbove = (id: string) => {
-    let parent = id;
-    for (let guard = 0; !isSourceRoot(parent) && guard <= nodes.size; guard += 1)
-      parent = nodes.get(parent)?.parent ?? parent;
-    return parent;
-  };
+function rescueOrphans(
+  nodes: Map<string, Working>,
+  purgedAt: ReadonlyMap<string, number>,
+  leftAt: ReadonlyMap<string, { at: number; source: string }>,
+) {
   for (const node of nodes.values()) {
-    const at = node.purged ? undefined : purgedAt.get(node.parent);
+    if (isSourceRoot(node.parent)) continue;
+    const left = nodes.has(node.parent) ? undefined : leftAt.get(node.parent);
+    const at = left?.at ?? (node.purged ? undefined : purgedAt.get(node.parent));
     if (at === undefined) continue;
-    node.parent = sourceAbove(node.parent);
+    node.parent = sourceRoot(sourceOf(nodes, leftAt, node.parent));
     node.arrivedAt = at;
   }
 }

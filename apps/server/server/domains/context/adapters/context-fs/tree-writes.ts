@@ -20,17 +20,21 @@ import { documents } from "@meridian/database/schema";
 import {
   type Actor,
   type BlobRef,
-  type CreateRecord,
+  type Crossing,
   childrenOf,
+  isListRoot,
   isSourceRoot,
   LIVE,
-  type MoveRecord,
+  listRecords,
+  moveBackBetweenLists,
   moveBetweenLists,
+  type NodeKind,
   sourceRoot,
   type TreeNode,
   type TreeProjection,
   type TreeRecordInput,
   type TreeWriter,
+  undoChange,
   type View,
 } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
@@ -210,12 +214,18 @@ export type CreatedNode = {
   path: string[];
 };
 
-/** A document or file that left one list for another: the pair of records, one in each list. */
+/** A node that left one list for another, with what stood below it. */
 export type MovedAcrossLists = {
-  left: MoveRecord;
-  entered: CreateRecord;
+  crossing: Crossing;
+  /**
+   * Every other record of the move: the folders made on the way in, or for an Undo, what it took
+   * back of those (each by `undoChange`).
+   */
+  also: MadeFolder[];
   /** The node's path in the list it entered. */
   path: string[];
+  /** Each node that crossed, root first, with its path in the list it left and the one it entered. */
+  nodes: Array<{ node: string; kind: NodeKind; before: string[]; after: string[] }>;
 };
 
 export type DeletedNode = {
@@ -277,11 +287,13 @@ export interface SourceTree {
     into?: string,
   ): Promise<{ id: string; kind: "document" | "file" | "folder" } | null>;
   /**
-   * Moves a document or file from the list of `fromSourceId` into `dir` of this source, which
-   * is in another list (a project's and the account's `user://`): one transaction on both
-   * lists, the pair of records `moveBetweenLists` makes. The node is found by id; `leaf` is
-   * the name the writer typed, else it keeps its own; a taken name is numbered. Live only; a folder does not
-   * cross here (the model's move sends its documents).
+   * Moves a node and what stands below it from the list of `fromSourceId` into `dir` of this
+   * source, which is in another list (a project's and the account's `user://`): one transaction on
+   * both lists, the records `moveBetweenLists` makes. The node is found by id; `leaf` is the name
+   * the writer typed, else it keeps its own; a taken name is numbered. Live only. With `reverses`,
+   * the records of a crossing this takes back (its Undo, or that Undo's Redo): the node goes back
+   * where that crossing took it from (`moveBackBetweenLists`), into `dir` when that folder is gone,
+   * under `leaf` unless renamed since, and the folders that crossing made on the way go with it.
    */
   moveAcrossLists(
     target: TreeWriteTarget,
@@ -293,8 +305,7 @@ export interface SourceTree {
       dir: readonly string[];
       leaf?: string;
       position?: ContextSiblingPosition;
-      /** Move only while the node stands at this source-relative path. */
-      onlyAt?: string;
+      reverses?: readonly string[];
     },
   ): Promise<Result<MovedAcrossLists, AdapterFault>>;
   /** Deletes the node and what is inside it, in live: one Trash entry. */
@@ -451,29 +462,17 @@ export function createSourceTree(deps: {
         } as AdapterFault);
       return write<MovedAcrossLists>([here, from], ([dest, origin = dest]) => {
         const { writer } = dest;
-        const node = origin.writer.view(LIVE).nodes.get(input.node);
+        const leaving = origin.writer.view(LIVE);
+        const node = leaving.nodes.get(input.node);
         if (!node || node.purged) return Err({ code: "not_found" } as AdapterFault);
-        if (node.kind === "folder")
-          return Err({
-            code: "invalid_operation",
-            message:
-              "A folder cannot move between a project's files and the account's files; only documents and files do",
-          } as AdapterFault);
         if (node.source !== input.fromSourceId)
           return Err({ code: "stale_source" } as AdapterFault);
-        if (
-          input.onlyAt !== undefined &&
-          pathOf(origin.writer.view(LIVE), node.id).join("/") !== input.onlyAt
-        )
-          return Err({ code: "stale_target" } as AdapterFault);
-        const parent = ensureFolders(writer, target, sourceId, input.dir);
-        if (!parent.ok) return parent;
-        const projection = writer.view(LIVE);
 
         // The name the node lands under: the writer's typed one through the name codec, else its own.
-        let filename = node.displayName;
+        let filename: string | undefined;
         let filetype: Filetype | null = null;
-        if (input.leaf !== undefined) {
+        if (input.leaf !== undefined && node.kind === "folder") filename = input.leaf;
+        else if (input.leaf !== undefined) {
           const parsed = storedFilename(input.leaf, {
             extension: extensionOf(node),
             editable: node.kind === "document",
@@ -485,20 +484,81 @@ export function createSourceTree(deps: {
           const refused = typeConversion(node, filename, filetype);
           if (refused) return Err(refused);
         }
-        // A name taken in the folder is numbered where it lands: both stay.
-        const moved = moveBetweenLists(
-          origin,
-          {
-            ...dest,
-            parent: parent.value,
-            index: indexAt(projection, parent.value, input.position),
-            ...(filename !== node.displayName ? { name: filename } : {}),
-            ...(filetype && filetype !== node.filetype ? { filetype } : {}),
-          },
-          target.actor,
-          node.id,
-        );
-        return Ok({ ...moved, path: pathOf(writer.view(LIVE), node.id) });
+
+        const also: MadeFolder[] = [];
+        let crossing: Crossing | "changed_since" | "unknown";
+        if (input.reverses) {
+          // What the crossing did besides moving nodes (folders made on the way in) is taken back
+          // in the list it was done in: before the node enters it again, after the node leaves it.
+          const ids = new Set(input.reverses);
+          const ends = [dest, origin];
+          const crossed = new Set(
+            ends.flatMap((end) =>
+              listRecords(end.writer.doc).flatMap((record) =>
+                ids.has(record.id) && record.type === "move" && isListRoot(record.parent)
+                  ? [record.node]
+                  : [],
+              ),
+            ),
+          );
+          const takeBack = (end: ListWriter) => {
+            const others = listRecords(end.writer.doc).filter(
+              (record) => ids.has(record.id) && !crossed.has(record.node),
+            );
+            for (const record of others.reverse()) {
+              const back = undoChange(end.writer, LIVE, target.actor, record.id);
+              if (typeof back !== "string") also.push({ record: back.id, node: back.node });
+            }
+          };
+          takeBack(dest);
+          crossing = moveBackBetweenLists(
+            origin,
+            {
+              ...dest,
+              parent: findFolder(writer.view(LIVE), sourceId, input.dir) ?? sourceRoot(sourceId),
+              ...(filename !== undefined ? { name: filename } : {}),
+            },
+            target.actor,
+            node.id,
+            input.reverses,
+          );
+          if (typeof crossing === "string")
+            return Err({
+              code: crossing === "unknown" ? "not_found" : "stale_target",
+            } as AdapterFault);
+          takeBack(origin);
+        } else {
+          const parent = ensureFolders(writer, target, sourceId, input.dir, also);
+          if (!parent.ok) return parent;
+          const projection = writer.view(LIVE);
+          // A name taken in the folder is numbered where it lands: both stay.
+          crossing = moveBetweenLists(
+            origin,
+            {
+              ...dest,
+              parent: parent.value,
+              index: indexAt(projection, parent.value, input.position),
+              ...(filename !== undefined && filename !== node.displayName
+                ? { name: filename }
+                : {}),
+              ...(filetype && filetype !== node.filetype ? { filetype } : {}),
+            },
+            target.actor,
+            node.id,
+          );
+        }
+        const arrived = writer.view(LIVE);
+        return Ok({
+          crossing,
+          also,
+          path: pathOf(arrived, node.id),
+          nodes: crossing.entered.map((record) => ({
+            node: record.node,
+            kind: record.kind,
+            before: pathOf(leaving, record.node),
+            after: pathOf(arrived, record.node),
+          })),
+        });
       });
     },
 

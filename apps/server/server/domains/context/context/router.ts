@@ -23,7 +23,11 @@ import type { BoundWrite } from "../../collab/index.js";
 import type { ContextCopyCommandDeps } from "../copy/copy-command.js";
 import { createContextCopyPort } from "../copy/copy-port.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
-import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
+import type {
+  AdapterFault,
+  AdapterMovedAcrossLists,
+  ContextSchemeAdapter,
+} from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import type {
   ContextBinaryWriteResult,
@@ -482,6 +486,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     const tree = adapter.tree;
     const sourceTree = source.adapter.tree;
     if (!sourceTree) return Err({ code: "permission_denied", uri: source.canonical });
+    const addressed = (written: AdapterMovedAcrossLists): ContextMovedAcrossLists => ({
+      destinationUri: uriFor(destination.scheme, written.path, destination.authority),
+      node: written.node,
+      records: written.records,
+      nodes: written.nodes.map((each) => {
+        const slash = each.kind === "folder" ? "/" : "";
+        return {
+          node: each.node,
+          kind: each.kind,
+          before: `${uriFor(source.scheme, each.before, source.authority)}${slash}`,
+          after: `${uriFor(destination.scheme, each.after, destination.authority)}${slash}`,
+        };
+      }),
+    });
     const moved = await callAdapter(destination.canonical, async () =>
       tree.moveAcrossLists({
         node,
@@ -489,22 +507,12 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         dir: destination.path.split("/").filter(Boolean),
         ...(leaf !== undefined ? { leaf } : {}),
         ...(change.position ? { position: change.position } : {}),
-        ...(change.onlyAt !== undefined ? { onlyAt: change.onlyAt } : {}),
+        ...(change.reverses ? { reverses: change.reverses } : {}),
         ...(change.origin ? { origin: change.origin } : {}),
-        afterWrite: (written) =>
-          change.inTransaction?.({
-            destinationUri: uriFor(destination.scheme, written.path, destination.authority),
-            node: written.node,
-            records: written.records,
-          }) ?? Promise.resolve(),
+        afterWrite: (written) => change.inTransaction?.(addressed(written)) ?? Promise.resolve(),
       }),
     );
-    if (!moved.ok) return moved;
-    return Ok({
-      destinationUri: uriFor(destination.scheme, moved.value.path, destination.authority),
-      node: moved.value.node,
-      records: moved.value.records,
-    });
+    return moved.ok ? Ok(addressed(moved.value)) : moved;
   }
 
   return {

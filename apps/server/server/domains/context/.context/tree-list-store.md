@@ -92,8 +92,8 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
 - **A node id belongs to the list that claimed it, for good** (`tree_node_ids`). A row's
   `(id, list_id)` references the claim, and the upsert never writes `list_id`, so no write
   moves a node between lists. A server move between a project's list and the account's is one
-  `submit` over both: the list the node leaves writes first, then the other takes its claim (and
-  the document's project) with the create.
+  `submit` over both: the list the nodes leave writes first, then the other takes their claims (and
+  the documents' project) with the creates.
 - **The delete in force is part of a row.** The comparison includes the trash record; a new
   delete in force gets a new `trashed_at`. A node's location version bumps on any change to
   its address, its source included, and so do its descendants'.

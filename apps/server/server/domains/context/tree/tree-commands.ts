@@ -212,6 +212,15 @@ function unresolved(
 
 const isFolderPath = (path: string) => path.endsWith("/");
 
+/**
+ * Whether one node's move to `path` goes into the folder `path` names, under its own name: a path
+ * naming a folder (a trailing `/`), always for a document, and for a folder when `path` is another
+ * folder that exists (`otherFolder`). Else `path` is where the node itself ends up, its name
+ * included. The same reading in one list and between two.
+ */
+export const movesInto = (path: string, fromFolder: boolean, otherFolder: () => boolean) =>
+  isFolderPath(path) && (!fromFolder || otherFolder());
+
 type Located = { segments: string[]; folder: boolean; area: string; root: string };
 
 /** A path the model wrote, in the area and tree it names. */
@@ -637,29 +646,6 @@ export function reachPath(
 }
 
 /**
- * The documents and files in a folder and the folders below it, in tree order, each with the
- * folders between it and `folder`: what a folder crossing to another list carries, to be remade
- * under the same folders there. A folder in Trash carries what is in it (a move restores); in a
- * live folder, what is already in Trash stays.
- */
-export function documentsBelow(
-  scope: Pick<TreeScope, "writer" | "view">,
-  area: string,
-  folder: string,
-): Array<{ id: string; uri: string; dir: string[] }> {
-  const projection = scope.writer.view(scope.view);
-  const inTrash = projection.nodes.get(folder)?.trashed ?? false;
-  const base = pathNames(projection, folder).length;
-  const walk = (parent: string): Array<{ id: string; uri: string; dir: string[] }> =>
-    childrenOf(projection, parent, inTrash).flatMap((node) => {
-      if (node.kind === "folder") return walk(node.id);
-      const names = pathNames(projection, node.id);
-      return [{ id: node.id, uri: `${area}${names.join("/")}`, dir: names.slice(base, -1) }];
-    });
-  return walk(folder);
-}
-
-/**
  * What stayed standing in a folder after a delete or an Undo took only what the model saw or
  * made: the folder with what is in it, and who put that there (the last record to set its place).
  */
@@ -785,22 +771,16 @@ export function runTreeCommand(
       if (!command.many) {
         const from = command.from[0] as string;
         const fromPath = pathFrom(cx, from);
-        // A `path` that names a folder (a trailing `/`) is the folder the node goes into, under
-        // its own name: always for a document, and for a folder when that folder exists. Else
-        // `path` is where the node itself ends up, its name included.
-        const into =
-          isFolderPath(command.path) &&
-          (!fromPath.folder ||
-            (() => {
-              const there = resolveShown(projection, shown, to.root, to);
-              const self = resolveShown(projection, shown, fromPath.root, fromPath);
-              // The folder named is another folder: the same path with a position is a reorder.
-              return (
-                there.kind === "node" &&
-                there.node.kind === "folder" &&
-                !(self.kind === "node" && self.node.id === there.node.id)
-              );
-            })());
+        const into = movesInto(command.path, fromPath.folder, () => {
+          const there = resolveShown(projection, shown, to.root, to);
+          const self = resolveShown(projection, shown, fromPath.root, fromPath);
+          // The folder named is another folder: the same path with a position is a reorder.
+          return (
+            there.kind === "node" &&
+            there.node.kind === "folder" &&
+            !(self.kind === "node" && self.node.id === there.node.id)
+          );
+        });
         const leaf = fromPath.segments.at(-1) ?? "";
         const target: Located = into
           ? { ...to, segments: [...to.segments, leaf], folder: fromPath.folder }

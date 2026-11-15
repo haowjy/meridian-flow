@@ -16,7 +16,8 @@ stay chat resources, not documents main opens.
   and drops alike, with the one refusal `moveRefusal` in `move-plan.ts`. Order sends an index
   among the destination's children, never a rank. Don't place entries anywhere else. Two
   server routes remain: Copy (`execute-copy.ts`) and the picker's move across lists
-  (`moveDocumentAcrossLists`), which writes both lists' records in one transaction.
+  (`moveAcrossLists`, a document or a folder with what is in it), which writes both lists'
+  records in one transaction.
 - Drags that name a document or folder start through `entry-drag/reference-source.ts` and
   nothing else. What a drag may do is judged in `resolveDrop`.
 - `tree-drop/` is the one drop scope that row moves and desktop import share: add a route,

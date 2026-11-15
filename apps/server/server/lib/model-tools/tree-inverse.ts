@@ -125,11 +125,14 @@ export async function runTreeInverse(
   let node: { id: string; kind: string } | undefined;
   if (reached.ok && reached.value.kind === "node") node = reached.value.node;
   else {
-    // A node gone since (deleted, or a create that was undone), named by the path the model
-    // wrote for it, is found by that receipt.
+    // A node gone since (deleted, a create that was undone, or moved to the other list), named by
+    // the path the model wrote for it, is found by that receipt.
     const written = await treeHistory.receiptsAt(threadId, `${parts.area}${parts.rest}`);
     const gone = written.find(
-      (receipt) => receipt.op === "delete" || (receipt.op === "create" && receipt.kind === "undo"),
+      (receipt) =>
+        receipt.op === "delete" ||
+        (receipt.op === "create" && receipt.kind === "undo") ||
+        receipt.across !== undefined,
     );
     if (gone) node = { id: gone.subject, kind: parts.rest.endsWith("/") ? "folder" : "document" };
   }
@@ -148,31 +151,9 @@ export async function runTreeInverse(
 
   const done: Array<Awaited<ReturnType<typeof reverseReceipt>>> = [];
   for (const receipt of chosen.receipts) {
-    // A folder that crossed lists is its documents' moves and then its own delete, one command:
-    // Undo takes the delete back and then the moves, oldest first; Redo does the moves again,
-    // oldest first, and then the delete.
-    const crossed =
-      receipt.op === "delete" && receipt.commandId
-        ? await treeHistory.crossedInCommand(threadId, receipt.commandId, receipt.kind)
-        : [];
-    const steps = input.command === "redo" ? [...crossed, receipt] : [receipt, ...crossed];
-    let failed = false;
-    for (const step of steps) {
-      const answer = await reverseReceipt(
-        deps,
-        call,
-        { ...input, path: step === receipt ? input.path : (step.across?.to ?? input.path) },
-        ctx,
-        step,
-        step === receipt ? node.id : step.subject,
-      );
-      done.push(answer);
-      if ("isError" in answer && answer.isError) {
-        failed = true;
-        break;
-      }
-    }
-    if (failed) break;
+    const answer = await reverseReceipt(deps, call, input, ctx, receipt, node.id);
+    done.push(answer);
+    if ("isError" in answer && answer.isError) break;
   }
   const last = done.at(-1) as (typeof done)[number];
   if (chosen.text === 0 || ("isError" in last && last.isError))

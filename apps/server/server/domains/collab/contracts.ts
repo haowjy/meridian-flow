@@ -201,7 +201,7 @@ export type TreeReceiptInput = {
   draftBranchId?: import("@meridian/contracts").BranchId;
   /** The path the model gave. */
   shownAt: string;
-  /** The change moved a document between two lists (a project's and the account's). */
+  /** The change moved a node, and what stood in it, between two lists (a project's and the account's). */
   acrossLists?: true;
   /** An undo or redo names the receipt it reverses. */
   reverses?: { kind: "undo" | "redo"; receipt: string };
@@ -209,13 +209,14 @@ export type TreeReceiptInput = {
 
 /**
  * The server's move back for a receipt of a move between a project's files and the account's:
- * the context port's own `moveAcrossLists`, which the caller builds from the thread's context.
+ * the context port's own `moveAcrossLists` with the receipt's records, which the caller builds
+ * from the thread's context. It answers every record it made and every node it moved.
  * `superseded`: the node was moved or changed since, or is gone; else the move was refused.
  */
 export type MoveBackAcrossLists = (
   receipt: TreeReceipt,
 ) => Promise<
-  | { ok: true; records: { left: string; entered: string } }
+  | { ok: true; records: TreeReceiptInput["records"]; nodes: TreeReceiptInput["nodes"] }
   | { ok: false; cause: "superseded" | "refused" }
 >;
 
@@ -278,16 +279,6 @@ export type AgentTreeHistory = {
    * the model's `undo` chooses from.
    */
   turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
-  /**
-   * The receipts of one command that moved a node between lists, oldest first, of one kind, that
-   * nothing reversed: a folder that crossed is its documents' moves and then its own delete, so
-   * taking the delete back or doing it again takes these with it.
-   */
-  crossedInCommand(
-    threadId: ThreadId,
-    commandId: string,
-    kind: TreeReceipt["kind"],
-  ): Promise<TreeReceipt[]>;
   /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
   receiptsAt(threadId: ThreadId, shownAt: string): Promise<TreeReceipt[]>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */

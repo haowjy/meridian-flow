@@ -735,17 +735,29 @@ export class ContextFS implements ContextSchemeAdapter {
         dir: input.dir,
         ...(input.leaf !== undefined ? { leaf: input.leaf } : {}),
         ...(input.position ? { position: input.position } : {}),
-        ...(input.onlyAt !== undefined ? { onlyAt: input.onlyAt } : {}),
+        ...(input.reverses ? { reverses: input.reverses } : {}),
       });
       if (!moved.ok) return moved;
+      const { crossing, also, path, nodes } = moved.value;
       const result: AdapterMovedAcrossLists = {
         node: input.node.nodeId,
-        path: moved.value.path.join("/"),
-        records: { left: moved.value.left.id, entered: moved.value.entered.id },
+        path: path.join("/"),
+        records: [...crossing.left, ...crossing.entered, ...also].map((made) => ({
+          record: "record" in made ? made.record : made.id,
+          node: made.node,
+        })),
+        nodes: nodes.map((each) => ({
+          node: each.node,
+          kind: each.kind,
+          before: each.before.join("/"),
+          after: each.after.join("/"),
+        })),
       };
       await input.afterWrite?.(result);
       // Arriving at a live address: once per move, against the tree it entered (contract §9.3).
-      await this.liveCreate.arrive([input.node.nodeId as DocumentId]);
+      await this.liveCreate.arrive(
+        nodes.flatMap((each) => (each.kind === "folder" ? [] : [each.node as DocumentId])),
+      );
       return Ok(result);
     });
   }

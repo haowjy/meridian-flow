@@ -170,7 +170,7 @@ receipt, so the two histories are one. A receipt something changed since answers
 goes back by the model's own move the other way (`moveBackAcrossLists`, the context port's
 `moveAcrossLists`, which the reverse route builds from the thread's context and hands down as
 `moveBackAcrossLists`; locking both lists), and is `superseded` once a later change moved or
-renamed the node. A reply that only changed the tree has a card: its documents are listed from the
+deleted the node it crossed (its root). A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
 a folder has no document, so the item carries the node id with `folder: true` and no door), and
 the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
@@ -191,10 +191,12 @@ the handle names. Tree records go back through the package's `undoChange`, which
 copy of an applied or restored change by `carries`, and takes back only what the receipt did:
 what others put in a folder it made stands and keeps it standing. The records an Undo makes name
 what they take back (`undoes`), a Redo's included. A move between a project and `user://` is two
-lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
-way. A folder that crossed is its documents' moves and then its own delete, one command: the model's
-`undo` takes the delete and then the moves back, and `redo` does the moves and then the delete
-(`crossedInCommand` finds the command's cross receipts of the same kind that nothing reversed). A model `undo` that takes tree and text steps together is one command (the tree receipts
+lists' records; its receipt is marked `across_lists`, names every node that crossed (a folder
+with what stood in it), so an `undo` at any of their paths, old or new, finds it, and is taken
+back by the same move the other way with the receipt's records (`reverses`): each node below the
+root settles on its own, so one renamed or deleted since never refuses the rest. A call that
+moves two folders across has a receipt for each, and Undo of one takes only that one. A model
+`undo` that takes tree and text steps together is one command (the tree receipts
 first, then the text engine's), so a refusal of the text half takes the tree half back with it.
 The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do,
 and Undo counts by it: the steps of one command (a create with content is a node and its text)

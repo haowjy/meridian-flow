@@ -145,10 +145,17 @@ export type TreeReadInput<T> = {
 export type AdapterMovedAcrossLists = {
   /** Source-relative path it stands at in the list it entered. */
   path: string;
-  /** The ids of the move in the list it left and the create in the list it entered. */
-  records: { left: string; entered: string };
-  /** The node moved: a document or file. */
+  /** Every record the move made, in both lists, with the node each acts on. */
+  records: Array<{ record: string; node: string }>;
+  /** The node moved. */
   node: string;
+  /** Each node that crossed, root first, with its source-relative path before and after. */
+  nodes: Array<{
+    node: string;
+    kind: "folder" | "document" | "file";
+    before: string;
+    after: string;
+  }>;
 };
 
 export type AdapterDeleted = {
@@ -176,8 +183,9 @@ export interface ContextTreeAdapter {
   /** The tree this adapter's source shows the reader: the Work's draft, else live (or live when asked). */
   read<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>>;
   /**
-   * A document or file from another list (a project's and the account's `user://`) into `dir` of
-   * this source, live: one transaction on both lists. Fails `invalid_operation` for a folder, a
+   * A node and what stands below it from another list (a project's and the account's `user://`)
+   * into `dir` of this source, live: one transaction on both lists. With `reverses`, the records of
+   * a crossing it takes back (`SourceTree.moveAcrossLists`). Fails `invalid_operation` for a
    * Work's draft or a node in this source's own list.
    */
   moveAcrossLists(input: {
@@ -188,8 +196,7 @@ export interface ContextTreeAdapter {
     /** The name the writer typed; omitted keeps the node's own. */
     leaf?: string;
     position?: ContextSiblingPosition;
-    /** Only while the node stands at this source-relative path. */
-    onlyAt?: string;
+    reverses?: readonly string[];
     origin?: WriteProvenance;
     afterWrite?: (moved: AdapterMovedAcrossLists) => Promise<void>;
   }): Promise<Result<AdapterMovedAcrossLists, AdapterFault>>;
