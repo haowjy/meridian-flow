@@ -17,7 +17,6 @@ import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
 import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
 import { FailureToaster } from "@/components/app/failure-toast";
-import { NotSentYet } from "@/components/app/NotSentYet";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
@@ -185,7 +184,6 @@ function AuthenticatedProviderTree({
                   </div>
                   <SettingsDialog />
                   <FailureToaster />
-                  <NotSentYet />
                   {DebugOverlay ? (
                     <Suspense fallback={null}>
                       <DebugOverlay />
