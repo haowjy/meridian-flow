@@ -35,6 +35,8 @@ export interface AgentCatalogItem {
   name: string;
   description: string;
   model: string | null;
+  /** False for an Agent only other Agents call: it starts no chat, so the picker leaves it out. */
+  primary: boolean;
   level: AgentLevel;
   /** Levels below this one that have an Agent of the same name, now hidden. */
   shadows: AgentLevel[];
@@ -56,6 +58,7 @@ export const agentCatalogSchema = z.object({
       name: z.string(),
       description: z.string(),
       model: z.string().nullable(),
+      primary: z.boolean(),
       level: agentLevelSchema,
       shadows: z.array(agentLevelSchema),
       unavailableReasons: z.array(z.string()),

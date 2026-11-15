@@ -192,6 +192,7 @@ export function createBoundAgentCatalog(input: {
       model: found?.definition
         ? (found.definition.metadata.model ?? input.defaultModel() ?? null)
         : null,
+      primary: found?.definition ? isPrimary(found.definition) : true,
       level: entry.level,
       shadows: entry.shadows,
       unavailableReasons: found ? reasonsOf(found) : [entry.clash ?? "Unavailable"],

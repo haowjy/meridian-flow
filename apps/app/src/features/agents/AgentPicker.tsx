@@ -3,7 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { agentsRootOf } from "@meridian/contracts/agents";
 import { Check, Settings2 } from "lucide-react";
-import { type RefObject, useState } from "react";
+import { type CSSProperties, type RefObject, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
@@ -23,10 +23,14 @@ export type AgentChoice = { agent: CreationAgent; model: string | null };
 
 const ROW_PX = 32;
 const VISIBLE_ROWS = 8;
+const MIN_ROWS = 7;
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
-  /** Every catalog row, the ones that can't be used included: they keep their place. */
+  /**
+   * The catalog. Agents that can't be used keep their place; ones only other Agents call are left
+   * out.
+   */
   agents: AgentCatalogItem[];
   /** The chosen Agent's slug and model override (for a started chat, the bound ones). */
   current: { slug: string | null; model: string | null };
@@ -52,7 +56,7 @@ type AgentPickerPanelProps = {
  */
 export function AgentPickerPanel({
   status,
-  agents,
+  agents: catalog,
   current,
   started,
   models,
@@ -63,6 +67,7 @@ export function AgentPickerPanel({
 }: AgentPickerPanelProps) {
   const [pointed, setPointed] = useState<string | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
+  const agents = catalog.filter((agent) => agent.primary);
   if (status.status !== "ready" || agents.length === 0)
     return (
       <Picker>
@@ -92,7 +97,8 @@ export function AgentPickerPanel({
     agents.map((agent) => agent.name).filter((name, index, names) => names.indexOf(name) !== index),
   );
   const firstPickable = listed.find(pickable)?.slug;
-  const rows = Math.min(listed.length + (own ? 2 : 0), VISIBLE_ROWS);
+  // A short list still leaves the detail room for its model choices.
+  const rows = Math.min(Math.max(listed.length + (own ? 2 : 0), MIN_ROWS), VISIBLE_ROWS);
   // Header and footer lines plus the rows: the one height, whatever is pointed at.
   const height = (rows + 1) * ROW_PX + 24;
 
@@ -130,9 +136,10 @@ export function AgentPickerPanel({
     <Picker>
       <div
         className="@container/agents flex min-h-0 shrink flex-col"
-        style={{ height: `${height}px` }}
+        style={{ "--agents-height": `${height}px` } as CSSProperties}
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-1 @[28rem]/agents:flex-row">
+        {/* Stacked on a phone, the list and the detail each need their own rows: twice the height. */}
+        <div className="flex h-[calc(var(--agents-height)*2)] max-h-full min-h-0 flex-col gap-1 @[28rem]/agents:h-(--agents-height) @[28rem]/agents:flex-row">
           <div className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-52 @[28rem]/agents:flex-none @[28rem]/agents:border-r @[28rem]/agents:border-border-subtle @[28rem]/agents:pr-1">
             {own ? (
               <section aria-label={t`This chat`} className="shrink-0">
@@ -251,10 +258,20 @@ function AgentDetail({
               {thisChat ? <Trans>This chat runs on</Trans> : <Trans>Runs on</Trans>}
             </span>
             <span className={cn("min-w-0 truncate", model && "text-jade-text")}>
-              {runsOn ?? t`the default model`}
+              {runsOn ? modelName(models, runsOn) : t`the default model`}
             </span>
             <DisclosureMark open={open} className="ml-auto" />
           </button>
+          {runsOn && models?.some((option) => option.id === runsOn && !option.available) ? (
+            <p className="px-1 pb-1 text-xs text-muted-foreground">
+              {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
+            </p>
+          ) : null}
+          {open && thisChat ? (
+            <p className="px-1 pb-1 text-xs text-muted-foreground">
+              <Trans>Changing the model rebuilds this chat's cache on the next reply.</Trans>
+            </p>
+          ) : null}
           {open ? (
             <ModelChoices
               own={agent.model}
@@ -262,11 +279,6 @@ function AgentDetail({
               models={models}
               onChoose={(id) => onChoose(id === agent.model ? null : id)}
             />
-          ) : null}
-          {open && thisChat ? (
-            <p className="px-1 pt-1 text-xs text-muted-foreground">
-              <Trans>Changing the model rebuilds this chat's cache on the next reply.</Trans>
-            </p>
           ) : null}
         </div>
       )}
@@ -293,7 +305,10 @@ function ModelChoices({
     );
   return (
     <ul className="flex flex-col">
-      {models.map((option) => (
+      {[
+        ...models.filter((option) => option.id === own),
+        ...models.filter((option) => option.id !== own),
+      ].map((option) => (
         <li key={option.id}>
           <ListRow
             density="menu"
@@ -313,6 +328,10 @@ function ModelChoices({
       ))}
     </ul>
   );
+}
+
+export function modelName(models: readonly ModelOption[] | null, id: string): string {
+  return models?.find((option) => option.id === id)?.name ?? id;
 }
 
 function pickable(agent: AgentCatalogItem): boolean {

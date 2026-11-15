@@ -391,6 +391,7 @@ function staticRoute(route: string, path: string): [number, unknown, boolean?] {
             name: "General",
             description: "",
             model: null,
+            primary: true,
             level: "builtin",
             shadows: [],
             unavailableReasons: [],

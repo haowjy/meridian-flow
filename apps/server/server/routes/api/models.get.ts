@@ -16,7 +16,9 @@ export default defineEventHandler(async (event) => {
   );
   const models = [...new Set([...usable.keys(), ...known.keys()])].map((id) => ({
     id,
-    name: usable.get(id) ?? known.get(id) ?? id,
+    // The registry's own name first: under LIVE_TEST_MODEL the gateway reports every id under
+    // the redirect target's name.
+    name: known.get(id) ?? usable.get(id) ?? id,
     available: usable.has(id),
   }));
   return serializeTransport({ models });

@@ -12,7 +12,7 @@ import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
-import { type AgentChoice, AgentPickerPanel } from "./AgentPicker";
+import { type AgentChoice, AgentPickerPanel, modelName } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
 import {
   type BoundAgent,
@@ -74,7 +74,8 @@ export function useComposerAgentToolbarControl(
       : props.mode === "handoff"
         ? props.modelOverride
         : null;
-  const value = model ? t`${name} on ${model}` : name;
+  const modelLabel = model ? modelName(models, model) : null;
+  const value = modelLabel ? t`${name} on ${modelLabel}` : name;
   const item = { ariaLabel: t`Agent: ${value}`, label: t`Agent`, value };
   if (props.mode === "readonly")
     return {
@@ -120,7 +121,9 @@ export function useComposerAgentToolbarControl(
         className="max-w-[16rem]"
       >
         {name}
-        {model ? <span className="ml-1.5 font-normal text-jade-text">{model}</span> : null}
+        {modelLabel ? (
+          <span className="ml-1.5 font-normal text-jade-text">{modelLabel}</span>
+        ) : null}
       </ComposerCurrentValueTrigger>
     ),
     panel: {
