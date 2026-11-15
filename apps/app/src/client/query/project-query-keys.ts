@@ -43,7 +43,7 @@ export const projectQueryKeys = {
   threadRename: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-rename", threadId] as const,
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
-  /** Client-only: this project's Work command records (`work-command-store`). */
+  /** Client-only: this project's Work Undo windows (`work-mutations`). */
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
   /** One owner's draft list; `owner` is `work:<id>` or `lineage:<root>`. */
   ownerDrafts: (projectId: string, owner: string) =>

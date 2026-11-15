@@ -1,4 +1,6 @@
 /** Sole acquisition and QueryCache installation owner for canonical Works snapshots. */
+
+import type { CommandDriver, CommandRecord } from "@meridian/command-driver";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 import { listProjectWorks } from "@/client/api/projects-api";
@@ -14,6 +16,28 @@ export function workFromSnapshot(
   return snapshot.works.find((work) => work.id === workId && work.deletedAt === null) ?? null;
 }
 
+/**
+ * What this tab's Works include, per project: a successful read started at `startedAt` has every
+ * Work command settled by then. Each successful read tells the driver, so a failed refresh
+ * followed by a later good one covers both records, and no other tab's read counts here.
+ */
+const readObservers = new WeakMap<QueryClient, (projectId: string, startedAt: number) => void>();
+
+export function observeWorksReads(client: QueryClient, driver: CommandDriver): () => void {
+  const observer = (projectId: string, startedAt: number) =>
+    void driver.observe(
+      (record: CommandRecord) =>
+        record.kind.startsWith("work_") &&
+        (record.body as { projectId?: string }).projectId === projectId &&
+        record.settledAt !== undefined &&
+        record.settledAt <= startedAt,
+    );
+  readObservers.set(client, observer);
+  return () => {
+    if (readObservers.get(client) === observer) readObservers.delete(client);
+  };
+}
+
 type RequestWorksSnapshot = () => Promise<WorksSnapshot>;
 type ProjectState = {
   installedStart: number;
@@ -23,11 +47,14 @@ type ProjectState = {
 const states = new WeakMap<QueryClient, Map<string, ProjectState>>();
 const nextStartedByProject = new Map<string, number>();
 
+/** When a read began: its order among this project's reads, and the clock time. */
+export type WorksRequestStart = { order: number; at: number };
+
 /** Registers request start before any loader or live network work begins. */
-export function beginWorksSnapshotRequest(projectId: string): number {
-  const started = (nextStartedByProject.get(projectId) ?? 0) + 1;
-  nextStartedByProject.set(projectId, started);
-  return started;
+export function beginWorksSnapshotRequest(projectId: string): WorksRequestStart {
+  const order = (nextStartedByProject.get(projectId) ?? 0) + 1;
+  nextStartedByProject.set(projectId, order);
+  return { order, at: Date.now() };
 }
 
 function stateFor(client: QueryClient, projectId: string): ProjectState {
@@ -54,11 +81,16 @@ function currentSnapshot(client: QueryClient, projectId: string): WorksSnapshot 
   return client.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
 }
 
-function installResponse(
+/**
+ * The one way a Works snapshot enters the cache, for a read and for route data alike: it keeps
+ * the newest by revision and, when the read began later, installs it and tells the driver which
+ * Work outcomes this tab's data now includes.
+ */
+function installSnapshot(
   client: QueryClient,
   projectId: string,
   response: WorksSnapshot,
-  started: number,
+  start: WorksRequestStart,
 ): WorksSnapshot {
   if (response.projectId !== projectId) {
     throw new Error(`Works snapshot project mismatch: expected ${projectId}`);
@@ -68,9 +100,10 @@ function installResponse(
   const ordering = current
     ? compareRevision(response.authorityRevision, current.authorityRevision)
     : 1;
-  if (ordering > 0 || (ordering === 0 && started >= state.installedStart)) {
+  if (ordering > 0 || (ordering === 0 && start.order >= state.installedStart)) {
     client.setQueryData(projectQueryKeys.works(projectId), response);
-    state.installedStart = started;
+    state.installedStart = start.order;
+    readObservers.get(client)?.(projectId, start.at);
     return response;
   }
   return current ?? response;
@@ -84,9 +117,9 @@ function startAcquisition(
 ): Promise<WorksSnapshot> {
   const state = stateFor(client, projectId);
   if (!supersede && state.inFlight) return state.inFlight;
-  const started = beginWorksSnapshotRequest(projectId);
+  const start = beginWorksSnapshotRequest(projectId);
   const acquisition = request().then((response) =>
-    installResponse(client, projectId, response, started),
+    installSnapshot(client, projectId, response, start),
   );
   state.inFlight = acquisition;
   void acquisition
@@ -136,59 +169,19 @@ export async function repairWorksSnapshot(
 export function seedWorksSnapshot(
   client: QueryClient,
   snapshot: WorksSnapshot,
-  started?: number,
+  started?: WorksRequestStart,
 ): WorksSnapshot {
   const current = currentSnapshot(client, snapshot.projectId);
-  const state = stateFor(client, snapshot.projectId);
   if (
     current &&
     started === undefined &&
     compareRevision(snapshot.authorityRevision, current.authorityRevision) <= 0
   )
     return current;
-  const requestStarted = started ?? beginWorksSnapshotRequest(snapshot.projectId);
+  const start = started ?? beginWorksSnapshotRequest(snapshot.projectId);
   nextStartedByProject.set(
     snapshot.projectId,
-    Math.max(nextStartedByProject.get(snapshot.projectId) ?? 0, requestStarted),
+    Math.max(nextStartedByProject.get(snapshot.projectId) ?? 0, start.order),
   );
-  if (current && compareRevision(snapshot.authorityRevision, current.authorityRevision) < 0) {
-    return current;
-  }
-  if (
-    current &&
-    compareRevision(snapshot.authorityRevision, current.authorityRevision) === 0 &&
-    requestStarted < state.installedStart
-  )
-    return current;
-  client.setQueryData(projectQueryKeys.works(snapshot.projectId), snapshot);
-  state.installedStart = requestStarted;
-  return snapshot;
-}
-
-/**
- * Fallback when the read after a committed Work command fails: install the
- * Work as that command left it (only the fields it owns change; a created
- * Work goes first), without claiming a newer revision, so the next successful
- * read still replaces it and no newer field from another command is reverted.
- */
-export function installCommittedWork(
-  client: QueryClient,
-  projectId: string,
-  workId: string,
-  apply: (work: Work | undefined) => Work | undefined,
-): void {
-  const current = currentSnapshot(client, projectId);
-  if (!current) return;
-  if (current.noWork.id === workId) {
-    const noWork = apply(current.noWork) as WorksSnapshot["noWork"] | undefined;
-    if (noWork) client.setQueryData(projectQueryKeys.works(projectId), { ...current, noWork });
-    return;
-  }
-  const existing = current.works.find((work) => work.id === workId);
-  const next = apply(existing) as WorksSnapshot["works"][number] | undefined;
-  if (!next || next === existing) return;
-  const works = existing
-    ? current.works.map((work) => (work.id === workId ? next : work))
-    : [next, ...current.works];
-  client.setQueryData(projectQueryKeys.works(projectId), { ...current, works });
+  return installSnapshot(client, snapshot.projectId, snapshot, start);
 }

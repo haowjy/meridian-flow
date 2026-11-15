@@ -19,6 +19,7 @@ import { t } from "@lingui/core/macro";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { NotSentYet } from "@/components/app/NotSentYet";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +82,7 @@ export function MobileTopBar({
           </div>
         </div>
         <div className="flex min-w-11 shrink-0 items-center justify-end">
+          <NotSentYet />
           {chatAction}
           {actions}
         </div>
