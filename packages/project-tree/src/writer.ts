@@ -518,18 +518,19 @@ export function moveBackBetweenLists(
   const here = out.writer.view(LIVE);
   const now = placeIn(here.nodes, node);
   if (!leave || !now) return "unknown";
-  if (deletedSince(out.writer, here, node, ids) || here.setters.get(node)?.place)
-    return "changed_since";
+  const since = here.sinceEntry.get(node);
+  if (deletedSince(out.writer, here, node, ids) || since?.place) return "changed_since";
   const there = into.writer.view(LIVE);
   const back =
     isSourceRoot(leave.from.parent) || placeIn(there.nodes, leave.from.parent)?.kind === "folder";
+  const { name, ...end } = into;
   return cross(
     out,
     {
-      ...into,
+      ...end,
       parent: back ? leave.from.parent : into.parent,
       ...(back ? { rank: leave.from.rank } : {}),
-      ...(into.name !== undefined && !here.setters.get(node)?.label ? { name: into.name } : {}),
+      ...(name !== undefined && !since?.label ? { name } : {}),
     },
     actor,
     node,

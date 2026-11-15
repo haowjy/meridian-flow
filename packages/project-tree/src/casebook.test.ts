@@ -1174,6 +1174,118 @@ describe("replay rules 9 to 14", () => {
     ).toBe("changed_since");
   });
 
+  it("14. a node that comes back takes up its history: an Undo from before the crossing goes, one asked while it is away or of a fact changed while away says changed_since", () => {
+    const MINE = sourceRoot("user-files");
+    const ids = (made: { left: TreeRecord[]; entered: TreeRecord[] }) =>
+      [...made.left, ...made.entered].map((record) => record.id);
+    const two = () => {
+      const here = start();
+      const there = start();
+      return {
+        here,
+        there,
+        out: { writer: here.w, list: "project" },
+        away: { writer: there.w, list: "account" },
+      };
+    };
+    const ok = <T>(made: T | string): T => {
+      if (typeof made === "string") throw new Error(made);
+      return made;
+    };
+    const said = (made: TreeRecord | string) => (typeof made === "string" ? made : made.type);
+
+    // Renamed, crossed, crossed back by Undo: the rename's Undo takes it back. While away it can't.
+    {
+      const { here, out, away } = two();
+      const f = here.folder("Before");
+      const r = here.w.rename(LIVE, CHAT, f, "Renamed");
+      const c = moveBetweenLists(out, { ...away, parent: MINE }, CHAT, f);
+      expect(said(undoChange(here.w, LIVE, CHAT, r.id))).toBe("changed_since");
+      ok(moveBackBetweenLists(away, { ...out, parent: ROOT, name: "Renamed" }, CHAT, f, ids(c)));
+      expect(said(undoChange(here.w, LIVE, CHAT, r.id))).toBe("rename");
+      expect(here.at(f)?.displayName).toBe("Before");
+      here.valid();
+    }
+    // Renamed while away: Undo of the crossing keeps the new name, and the older rename says changed.
+    {
+      const { here, there, out, away } = two();
+      const f = here.folder("Before");
+      const r = here.w.rename(LIVE, CHAT, f, "Renamed");
+      const c = moveBetweenLists(out, { ...away, parent: MINE }, CHAT, f);
+      there.w.rename(LIVE, WRITER, f, "Theirs");
+      const u = ok(
+        moveBackBetweenLists(away, { ...out, parent: ROOT, name: "Renamed" }, CHAT, f, ids(c)),
+      );
+      expect(here.at(f)?.displayName).toBe("Theirs");
+      expect(said(undoChange(here.w, LIVE, CHAT, r.id))).toBe("changed_since");
+      ok(moveBackBetweenLists(out, { ...away, parent: MINE }, CHAT, f, ids(u)));
+      expect(there.at(f)?.displayName).toBe("Theirs");
+    }
+    // Moved, crossed, Undo, Redo, Undo: the move from before is not "moved since", and still undoes.
+    {
+      const { here, out, away } = two();
+      const g = here.folder("G");
+      const a = here.chapter("A");
+      const m = here.w.move(LIVE, CHAT, a, g);
+      const c = moveBetweenLists(out, { ...away, parent: MINE }, CHAT, a);
+      const u = ok(moveBackBetweenLists(away, { ...out, parent: ROOT }, CHAT, a, ids(c)));
+      const redo = ok(moveBackBetweenLists(out, { ...away, parent: MINE }, CHAT, a, ids(u)));
+      ok(moveBackBetweenLists(away, { ...out, parent: ROOT }, CHAT, a, ids(redo)));
+      expect(said(undoChange(here.w, LIVE, CHAT, m.id))).toBe("move");
+      expect(here.at(a)?.parent).toBe(ROOT);
+      here.valid();
+    }
+    // A move and a rename in the other list that were undone there are not "changed since".
+    {
+      const { here, there, out, away } = two();
+      const f = here.folder("F");
+      const c = moveBetweenLists(out, { ...away, parent: MINE, name: "Moved" }, WRITER, f);
+      const m = there.w.move(LIVE, WRITER, f, there.folder("Elsewhere", MINE));
+      expect(said(undoChange(there.w, LIVE, WRITER, m.id))).toBe("move");
+      const r = there.w.rename(LIVE, WRITER, f, "Other");
+      expect(said(undoChange(there.w, LIVE, WRITER, r.id))).toBe("rename");
+      ok(moveBackBetweenLists(away, { ...out, parent: ROOT, name: "F" }, WRITER, f, ids(c)));
+      expect(here.at(f)?.displayName).toBe("F");
+    }
+    // Back by a new move to another place: the earlier move says changed, the earlier rename goes.
+    {
+      const { here, out, away } = two();
+      const g = here.folder("G");
+      const a = here.chapter("A");
+      const m = here.w.move(LIVE, CHAT, a, g);
+      const r = here.w.rename(LIVE, CHAT, a, "A2");
+      moveBetweenLists(out, { ...away, parent: MINE }, WRITER, a);
+      moveBetweenLists(away, { ...out, parent: ROOT }, WRITER, a);
+      expect(said(undoChange(here.w, LIVE, CHAT, m.id))).toBe("changed_since");
+      expect(said(undoChange(here.w, LIVE, CHAT, r.id))).toBe("rename");
+      expect(here.at(a)).toMatchObject({ displayName: "A", parent: ROOT });
+      here.valid();
+    }
+    // A Work's pending changes on a node that crossed wait (moved_away), and stand again on return.
+    {
+      const { here, out, away } = two();
+      const f = here.folder("Part");
+      const a = here.chapter("A", f);
+      const rf = here.w.rename(D, CHAT, f, "PendingPart");
+      const ra = here.w.rename(D, CHAT, a, "PendingA");
+      const c = moveBetweenLists(out, { ...away, parent: MINE }, WRITER, f);
+      const res = applyDraft(here.w, "work-1", WRITER, cmd());
+      expect(res.copies).toEqual([]);
+      expect(res.left.map((left) => [left.record.id, left.why])).toEqual([
+        [rf.id, "moved_away"],
+        [ra.id, "moved_away"],
+      ]);
+      ok(moveBackBetweenLists(away, { ...out, parent: ROOT }, WRITER, f, ids(c)));
+      expect([here.at(f, D)?.displayName, here.at(a, D)?.displayName]).toEqual([
+        "PendingPart",
+        "PendingA",
+      ]);
+      expect(applyDraft(here.w, "work-1", WRITER, cmd()).left).toEqual([]);
+      expect(here.names(f)).toEqual(["PendingA"]);
+      here.valid();
+    }
+  });
+
   it("a create the server stamped dropped is in no view and is listed", () => {
     const t = start();
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });

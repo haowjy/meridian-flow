@@ -83,7 +83,8 @@ export function undoChange(
   const view = record.draft === null ? LIVE : asked;
   const projection = writer.view(view);
   const node = placeIn(projection.nodes, record.node);
-  if (!node) return "purged";
+  // Rule 14: the node is in another list now, a later change than this record.
+  if (!node) return projection.away.has(record.node) ? "changed_since" : "purged";
   const extra = { undoes: record.carries ?? record.id };
   switch (record.type) {
     case "create":

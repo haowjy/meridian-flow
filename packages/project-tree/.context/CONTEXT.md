@@ -50,8 +50,19 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
     What stands under a node that left and is not back at the end of the replay (a chapter in
     Trash the crossing left, a purged one, a create Yjs placed before the leave) goes to the top
     of its source, arriving there at that leave, as rule 10 does for a purged one; it rejoins the
-    node if the node comes back. A record on the node while it is away is skipped (`left-list`);
-    Apply leaves a drafted one pending as `moved_away`.
+    node if the node comes back. A record on the node while it is away, or a move into a folder
+    that is away, is skipped (`left-list`); Apply leaves a drafted one pending as `moved_away`,
+    and Undo of a record on it answers `changed_since`.
+    What was done to a node stays in the list it was done in: the leave holds the node's state
+    (`TreeProjection.away` lists the nodes held), and the create that brings it back, by Undo or
+    a new move, takes its name and place history up again. A fact it comes back with unchanged
+    is still held by the record that set it, so an Undo of that record works; one changed while
+    away is held by the returning create, so it answers `changed_since`. The comparison is by
+    value: a node renamed X → Y → X while away counts as unchanged.
+    A Work's pending records on a node that crossed stay in the list they were drafted in, so
+    for now they drop out of that Work's tree, review and Apply (`moved_away`) until the node
+    comes back, and stand again then. Carrying them with the node is the next change
+    ([design](https://github.com/haowjy/meridian-flow-docs/blob/main/work/project-tree-design/cross-list-history-design.md), part 2).
 
 Rules 11 to 13 read `classifyFiletype`, `schemaType` and `normalEntryName`, which are frozen as
 the replay uses them (package `AGENTS.md`).
@@ -188,8 +199,10 @@ the replay uses them (package `AGENTS.md`).
   records, so a folder arrives with its order and its empty folders. What a delete of a node below
   it holds in Trash stays in that list's Trash (rule 14). Take one back with
   `moveBackBetweenLists`, given the crossing's records: the same move the other way, by id, to
-  where the root left from, each node below settling as in any crossing. It answers
-  `changed_since` for a root moved since, or held in Trash by a delete made after the crossing
-  entered the list: the deletes an Undo put back (rule 14) go with its Redo.
+  where the root left from, each node below settling as in any crossing. The root goes under the
+  name it is given unless renamed since it entered this list (`sinceEntry`, read from the replay:
+  a change an Undo took back does not count). It answers `changed_since` for a root moved since,
+  or held in Trash by a delete made after the crossing entered the list: the deletes an Undo put
+  back (rule 14) go with its Redo.
 - Replay live and the views a record can change, then `changedRows` against the last rows.
 - Give the writer `pendingText` for views it replays: this package cannot see text.

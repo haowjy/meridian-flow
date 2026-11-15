@@ -110,6 +110,13 @@ export type TreeProjection = {
    * those stands.
    */
   standingDeletes: ReadonlySet<string>;
+  /**
+   * Per node, whether its name and its place were set since it last entered this list (its
+   * create, or the create that brought it back): a change an Undo took back does not count.
+   */
+  sinceEntry: ReadonlyMap<string, { label: boolean; place: boolean }>;
+  /** Rule 14: the nodes that are in another list now. */
+  away: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
   gone: ReadonlySet<string>;
   /** Records the server dropped at admission (from the settle log; `replayView` fills it, `replay` has no log). */
@@ -142,6 +149,8 @@ type Working = {
   root: string;
   label: Array<Setter<LabelBefore>>;
   place: Array<Setter<PlaceBefore>>;
+  /** The records holding its name and place just after it last entered this list. */
+  entered: { label?: string; place?: string };
 };
 
 /** The deletes a restore lifted, and the members it took out of the deletes of folders above it; `by` is the kind of record that lifted them. */
@@ -187,8 +196,10 @@ export function replay(
   const purgedDeletes = new Set<string>();
   // Each purged node, by the position of the purge that took it.
   const purgedAt = new Map<string, number>();
-  // Each node that left for another list, by the position of its leave and the source it left.
-  const leftAt = new Map<string, { at: number; source: string }>();
+  // Each node that left for another list, by the position of its leave and the source it left,
+  // with what it was here: the create that brings it back takes that up again.
+  const leftAt = new Map<string, Left>();
+  const isAway = (id: string) => leftAt.has(id) && !nodes.has(id);
   for (const value of values) {
     const read = readStored(value);
     if (read.ok && read.record.type === "purge") purgedDeletes.add(read.record.delete);
@@ -366,7 +377,10 @@ export function replay(
         root: record.carries ?? record.id,
         label: [],
         place: [],
+        entered: {},
       });
+      const left = leftAt.get(record.node);
+      if (left) takeUp(nodes.get(record.node) as Working, left.was, record.id);
       // Rule 14: a node coming back by the Undo of its leave is in the Trash it left.
       const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
       if (back) putBack(record, back);
@@ -382,9 +396,7 @@ export function replay(
       continue;
     }
     if (!node) {
-      skip(
-        nodes.has(record.node) ? "purged" : leftAt.has(record.node) ? "left-list" : "missing-node",
-      );
+      skip(nodes.has(record.node) ? "purged" : isAway(record.node) ? "left-list" : "missing-node");
       continue;
     }
     switch (record.type) {
@@ -394,14 +406,18 @@ export function replay(
         if (isListRoot(record.parent)) {
           const { undoes: _, ...leave } = record;
           lift(leave, node, { ownOnly: false });
-          leftAt.set(record.node, { at: index, source: sourceOf(nodes, leftAt, record.node) });
+          leftAt.set(record.node, {
+            at: index,
+            source: sourceOf(nodes, leftAt, record.node),
+            was: node,
+          });
           nodes.delete(record.node);
           break;
         }
         if (!isSourceRoot(record.parent)) {
           const parent = placeable(record.parent);
           if (!parent) {
-            skip("missing-parent");
+            skip(isAway(record.parent) ? "left-list" : "missing-parent");
             continue;
           }
           if (parent.kind !== "folder") {
@@ -525,6 +541,7 @@ export function replay(
   if (purgedAt.size > 0 || leftAt.size > 0) rescueOrphans(nodes, purgedAt, leftAt);
   return {
     ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
+    away: new Set([...leftAt.keys()].filter(isAway)),
     dropped: [],
   };
 }
@@ -587,6 +604,32 @@ export function placeIn<Node extends { purged: boolean }>(
   return node && !node.purged ? node : undefined;
 }
 
+type Left = { at: number; source: string; was: Working };
+
+/**
+ * Rule 14: a node that comes back to a list takes up the history it had there. A fact it comes
+ * back with unchanged is still held by the record that set it; one that changed while it was away
+ * is held by the create that brought it back, so an Undo of the earlier record answers
+ * `changed_since`.
+ */
+function takeUp(node: Working, was: Working, create: string) {
+  node.label = was.label;
+  node.place = was.place;
+  if (node.name !== was.name || node.filetype !== was.filetype)
+    node.label.push({
+      id: create,
+      before: { name: was.name, ...(was.filetype ? { filetype: was.filetype } : {}) },
+      arrivedBefore: was.arrivedAt,
+    });
+  if (node.parent !== was.parent || node.rank !== was.rank)
+    node.place.push({
+      id: create,
+      before: { parent: was.parent, rank: was.rank },
+      arrivedBefore: was.arrivedAt,
+    });
+  node.entered = { label: node.label.at(-1)?.id, place: node.place.at(-1)?.id };
+}
+
 type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean; source: string };
 
 /**
@@ -602,7 +645,7 @@ function derive(
   skipped: TreeProjection["skipped"],
   rescued: string[],
   gone: ReadonlySet<string>,
-): Omit<TreeProjection, "dropped"> {
+): Omit<TreeProjection, "dropped" | "away"> {
   const children = new Map<string, Working[]>();
   for (const node of nodes.values()) {
     const siblings = children.get(node.parent);
@@ -693,9 +736,14 @@ function derive(
 
   const out = new Map<string, TreeNode>();
   const setters = new Map<string, NodeSetters>();
+  const sinceEntry = new Map<string, { label: boolean; place: boolean }>();
   for (const node of nodes.values()) {
     const label = node.label[node.label.length - 1];
     const place = node.place[node.place.length - 1];
+    sinceEntry.set(node.id, {
+      label: label?.id !== node.entered.label,
+      place: place?.id !== node.entered.place,
+    });
     if (label || place)
       setters.set(node.id, { ...(label ? { label } : {}), ...(place ? { place } : {}) });
     const state = standing.get(node.id) as Standing;
@@ -738,6 +786,7 @@ function derive(
   return {
     nodes: out,
     setters,
+    sinceEntry,
     children: ordered,
     skipped,
     rescued,
