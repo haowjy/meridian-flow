@@ -323,12 +323,13 @@ describe("part 2: two authors inside one Work's draft", () => {
     expect(t.at(ch, D)?.name).toBe("Second");
   });
 
-  it("16. both create a chapter with one name in one folder: both stay, the later numbered", () => {
+  it("16. both create a chapter with one name in one folder: both are named Notes, the later's segment carries ~id", () => {
     const t = start();
     const f = t.folder("F");
     const first = t.chapter("Notes", f, D, CHAT);
     const second = t.chapter("Notes", f, D, CHAT2);
-    expect([t.at(first, D)?.name, t.at(second, D)?.name]).toEqual(["Notes", "Notes (2)"]);
+    expect([t.at(first, D)?.name, t.at(second, D)?.name]).toEqual(["Notes", "Notes"]);
+    expect(t.names(f, D)).toEqual(["Notes", `Notes~${idHex(second).slice(0, 4)}`]);
   });
 });
 
@@ -795,27 +796,6 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
     expect(inLive(t, command)).toEqual([]);
   });
 
-  it("the same for a move that also set a name", () => {
-    const t = start();
-    const folder = t.folder("Arc");
-    t.chapter("Hall", folder);
-    const n = t.chapter("Hall");
-    const drafted = t.w.move(D, CHAT, n, folder);
-    expect(drafted.name).toBeDefined();
-    const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
-    const moved = { name: drafted.name, parent: folder };
-    expect(t.at(n)).toMatchObject(moved);
-    const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
-    expect(t.at(n)).toMatchObject({ name: "Hall", parent: ROOT });
-    expect(inLive(t, command)).toEqual([]);
-    expect(undoApply(t.w, command, WRITER, cmd()).undone).toEqual([]);
-    undoChange(t.w, LIVE, CHAT, undid.id);
-    expect(t.at(n)).toMatchObject(moved);
-    expect(inLive(t, command)).toEqual([n]);
-    expect(undoApply(t.w, command, WRITER, cmd()).left).toEqual([]);
-    expect(t.at(n)).toMatchObject({ name: "Hall", parent: ROOT });
-  });
-
   it("an Apply that only restores lists the node until Un-Apply or a card's Undo takes the restore back", () => {
     for (const how of ["unapply", "undo"] as const) {
       const t = start();
@@ -832,23 +812,6 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       expect(t.at(n)?.trashed).toBe(true);
       expect(appliedNodes(t.doc, command, mine)).toEqual([]);
     }
-  });
-
-  it("a move's name undone as a rename and redone is still taken back by Undo of the move", () => {
-    const t = start();
-    const folder = t.folder("Arc");
-    const other = t.folder("Elsewhere");
-    t.chapter("Hall", folder);
-    const n = t.chapter("Hall");
-    const moved = t.w.move(LIVE, WRITER, n, folder);
-    t.w.move(LIVE, WRITER, n, other);
-    const undid = undoChange(t.w, LIVE, CHAT, moved.id) as TreeRecord;
-    expect(undid.type).toBe("rename");
-    expect(t.at(n)).toMatchObject({ name: "Hall", parent: other });
-    undoChange(t.w, LIVE, CHAT, undid.id);
-    expect(t.at(n)?.name).toBe(moved.name);
-    expect(undoChange(t.w, LIVE, WRITER, moved.id)).toMatchObject({ type: "rename" });
-    expect(t.at(n)).toMatchObject({ name: "Hall", parent: other });
   });
 });
 
@@ -1147,32 +1110,6 @@ describe("replay rules 9 to 13", () => {
     expect(t.at(ch)?.name).toBe("notes");
   });
 
-  it("a clashing name that ends in a number continues it: Notes, Notes (2), Notes (3)", () => {
-    const t = start();
-    const f = t.folder("F");
-    t.chapter("Notes", f);
-    t.chapter("Notes", f);
-    t.chapter("Notes (2)", f);
-    t.chapter("Notes (2)", f);
-    expect(t.names(f)).toEqual(["Notes", "Notes (2)", "Notes (3)", "Notes (4)"]);
-    t.valid();
-  });
-
-  it("only the numbers the numbering writes continue: a huge or zero-led one is part of the name", () => {
-    const t = start();
-    const f = t.folder("F");
-    t.chapter("Notes (9007199254740992)", f);
-    t.chapter("Notes (9007199254740992)", f);
-    t.chapter("Notes (02)", f);
-    t.chapter("Notes (02)", f);
-    expect(t.names(f)).toEqual([
-      "Notes (9007199254740992)",
-      "Notes (9007199254740992) (2)",
-      "Notes (02)",
-      "Notes (02) (2)",
-    ]);
-  });
-
   it("a create the server stamped dropped is in no view and is listed", () => {
     const t = start();
     const made = t.w.create(LIVE, WRITER, { kind: "folder", name: "Raced", parent: ROOT });
@@ -1187,7 +1124,7 @@ const idStarting = (start: string, n: number) =>
   `${start}${n.toString(16).padStart(8 - start.length, "0")}-0000-4000-8000-000000000000`;
 
 describe("rule 14: twins keep the name, and the later carries a suffix", () => {
-  /** A create that took no sibling into account, as a client that had not seen it makes one. */
+  /** A create with an id the case chooses, where a suffix's length is the point. */
   const unseen = (
     t: ReturnType<typeof start>,
     name: string,
@@ -1308,7 +1245,7 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     t.valid();
   });
 
-  it("a segment reaches its node: plain is the first twin, ~id the one its id begins with", () => {
+  it("a segment reaches its node: plain is the first twin, ~id the one its id begins with, a ~id that reaches none is its name", () => {
     const t = start();
     const first = unseen(t, "Kael", ROOT, idStarting("b21c0", 1));
     const later = unseen(t, "Kael", ROOT, idStarting("b21c9", 1));
@@ -1318,7 +1255,18 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     expect(childAtSegment(kids, "anything~B21C9")?.id).toBe(later);
     // Shortened by hand to fit both: the lowest id answers.
     expect(childAtSegment(kids, "Kael~b21c")?.id).toBe(first);
-    expect(childAtSegment(kids, "Kael~ffff")).toBeUndefined();
+    expect(childAtSegment(kids, "Kael~ffff")?.id).toBe(first);
+    expect(childAtSegment(kids, "Ghost~ffff")).toBeUndefined();
+  });
+
+  it("a folder level of a path reaches the folder of the name when the plain twin is a document", () => {
+    const t = start();
+    const doc = unseen(t, "Arc");
+    const folder = unseen(t, "Arc", ROOT, crypto.randomUUID(), "folder");
+    const kids = childrenOf(t.w.view(LIVE), ROOT);
+    expect(childAtSegment(kids, "Arc")?.id).toBe(doc);
+    expect(childAtSegment(kids, "Arc", "folder")?.id).toBe(folder);
+    expect(childAtSegment(kids, "Arc~ffff", "folder")?.id).toBe(folder);
   });
 
   it("a Work that renames the plain twin changes one folder, not its twin", () => {

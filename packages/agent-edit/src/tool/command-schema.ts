@@ -93,7 +93,7 @@ export const DocumentVersionSchema = z
 export type DocumentVersion = z.output<typeof DocumentVersionSchema>;
 
 export const DOCUMENT_NAMES_DESCRIPTION =
-  "Documents are named without an extension (`Chapter 13`); code and data files keep theirs (`outline.json`).";
+  "Documents are named without an extension (`Chapter 13`); code and data files keep theirs (`outline.json`). Two things in one folder can have the same name: a listing shows the later one with `~` and a short id (`Kael` and `Kael~b21c`). Use a path as it was shown to you; never make up a `~id`.";
 
 const SOURCE_PATH = z.string().min(1).describe(DOCUMENT_NAMES_DESCRIPTION);
 
@@ -114,12 +114,15 @@ const BLOCK_COPY_SOURCE = CopySourceSchema.describe(
   "Copy these blocks instead of `content`. Give exactly one of `content` or `from`.",
 ).optional();
 
-const OVERWRITE = z.boolean().optional().describe("Replace an existing document's entire content.");
+const OVERWRITE = z
+  .boolean()
+  .optional()
+  .describe("Replace the entire content of the document at `path` instead of making another.");
 
 const MUTATION_BRANCHES = {
   create: {
     description:
-      "Create a document, or a folder when `path` ends in `/`. A folder takes no `content`.",
+      "Create a document, or a folder when `path` ends in `/`. A folder takes no `content`. Where `path` names a document with text, this makes another document with that name; the result prints its path.",
     fields: {
       content: z.string().optional(),
       overwrite: OVERWRITE,

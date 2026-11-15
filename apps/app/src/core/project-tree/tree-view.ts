@@ -242,13 +242,17 @@ export function buildTreeView(input: {
         const kids = childrenOfParent(parentId);
         const last = at === segments.length - 1;
         // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
-        const alias = last ? childAtSegment(kids, canonicalLeaf(segment)) : undefined;
+        // A folder level reads folders only (`childAtSegment`'s folder level, as the server does).
+        if (!last) {
+          const folder = childAtSegment(kids, segment, "folder");
+          if (!folder) return null;
+          parentId = folder.id;
+          continue;
+        }
+        const alias = childAtSegment(kids, canonicalLeaf(segment));
         const found =
           childAtSegment(kids, segment) ?? (alias?.kind === "folder" ? undefined : alias);
-        if (!found) return null;
-        if (last) return entryOf(found) as TreeFile | TreeDirectory;
-        if (found.kind !== "folder") return null;
-        parentId = found.id;
+        return found ? (entryOf(found) as TreeFile | TreeDirectory) : null;
       }
       return null;
     },

@@ -62,7 +62,7 @@ function uriMap(tree: OrganizedTree): Map<string, string> {
     const base = parent
       ? uri(parent.id)
       : (destinations.get(node.area)?.uri ?? contextRootUri(node.area));
-    const value = `${joinContextUri(base, node.filename)}${node.kind === "folder" ? "/" : ""}`;
+    const value = `${joinContextUri(base, node.segment ?? node.filename)}${node.kind === "folder" ? "/" : ""}`;
     memo.set(id, value);
     return value;
   };

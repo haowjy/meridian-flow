@@ -10,7 +10,7 @@ page says where each part lives and what the code decided where the design left 
 |---|---|
 | `record.ts` | Record and settlement types, `source:<id>` roots, the two arrays (`ops`, `settle`) |
 | `validate.ts` | `readStored` (every read of the list) builds the record a value stands for from its own allowed fields, or says why there is none; `writable`, which every record the package writes goes through; which fields are the server's |
-| `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`), `freeName`: the writer's numbering, from the contracts filename codec |
+| `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`) |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
 | `replay.ts` | `replay`: rules 1 to 13, then one pass over the nodes for Trash, kept folders and names |
@@ -43,8 +43,8 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 11. A document create or rename to a type that is not a tracked document is skipped
     (`type-not-editable`).
 12. A rename to a type of another Yjs schema is skipped (`type-across-schemas`).
-13. A name is `normalEntryName(kind, typed)` for the node's kind, in every create, rename and
-    move; nothing is refused for its name.
+13. A name is `normalEntryName(kind, typed)` for the node's kind, in every create and rename;
+    nothing is refused for its name.
 14. Of shown siblings with one name, every one but the first to arrive (`arrivedAt`, then
     creation: list order, no clock) carries a `suffix`: the shortest start, four hex digits or
     more, of its id's hex digits (the uuid without dashes) that no other shown sibling's begins
@@ -106,9 +106,8 @@ the replay uses them (package `AGENTS.md`).
 - **Parts of one client's offline history** arrive in causal order and are admitted in order
   (the room queues a connection's messages); an honest client's parts are never a fault.
 - **Undo is by history.** The replay keeps, per node, the record that last set its name and
-  type and the record that last set its place, with the values just before it. A move that
-  arrives under a numbered name (`name`) is the last setter of both facts, and its Undo needs both:
-  the opposite move carries the place and the name before it. Undo of a rename or move is allowed
+  type and the record that last set its place, with the values just before it. A move sets only
+  the place: it carries no name. Undo of a rename or move is allowed
   only while that record is still the last, and the opposite record carries those values. Apply's copies take their `from` against the copies before them.
   Undo of a delete is allowed while that delete is a Trash entry in force. The opposite record of a
   restore puts back the deletes that restore lifted, under their own ids, with what each took (the
@@ -137,12 +136,10 @@ the replay uses them (package `AGENTS.md`).
   tab can tell the Apply's tree half has ended (a card's Undo of the drafted change took the copy
   back). A Redo (an undo of the undo) puts it back in force, and an Undo of it then undoes the
   Redo (`redoneAs`) when the Undos in the chain put back exactly what they undid, else it answers
-  `changed_since`. A Redo puts back what the move did, its numbered name included, even if the
-  clash that numbered it has gone since. `appliedBy` keeps copies not in force, so `undoApply` reports them `already`;
+  `changed_since`. `appliedBy` keeps copies not in force, so `undoApply` reports them `already`;
   a copy of the Apply's own Undo record may bring one back in force on the way.
-- **Whoever makes a record numbers a clash it can see** (`nameAmong`); the replay numbers
-  nothing, and a clash nobody saw stands as twins (rule 14). A move that numbers its arrival
-  carries the name itself, not a paired `rename`. Apply copies the drafted name as it is: the
+- **Nothing numbers a name.** A writer stores the typed name (`shownName`) whatever its siblings
+  are called, and a clash stands as twins (rule 14). Apply copies the drafted name as it is: the
   twin the Work shows suffixed arrives last in live too.
 - **A repeated command is the caller's to answer.** The package throws when a command id was
   already used (`assertNewCommand`); the document command table answers a repeat first.
@@ -161,9 +158,7 @@ the replay uses them (package `AGENTS.md`).
   records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored
   Discard's record is itself a copy, so its id is not its live copy's `carries`. It answers
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
-  `purged`, `already`, `has_text`). A move that also set a name is two facts: `undoChange` takes
-  back whichever it still holds (a move without the name, or a rename whose undo puts no delete
-  back), and `left` names the one that stays (`fact`). `undoChange` answers
+  `purged`, `already`, `has_text`). `undoChange` answers
   `changed_since | purged | already | unknown`.
 - **A Discard is final.** `restoreDiscard` appends fresh pending copies of what the command
   settled, on the branch the caller names (the Work's current one, which may differ from the one the
@@ -190,8 +185,7 @@ the replay uses them (package `AGENTS.md`).
   restore copies, kept creates, both halves of `moveBetweenLists`) is built through `writable`,
   which runs `readStored` on it and throws, saying why, when the reader would drop it. A name
   with a `/` or over 255 characters is thrown at the caller, not stored and then lost from every
-  view. `freeName` takes the room for a number and the extension from the end of the base, so a
-  numbered name stays within the limit.
+  view.
 - **A document's `create` states its `filetype`**, from a client and from the server; a file's
   type is in its blob. The replay never has to guess a document's type.
 - **The server's settlement actor is `system`.** A `dropped` is not any account's act.

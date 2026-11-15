@@ -1,6 +1,6 @@
 /** ContextFS-backed upload content adapter. */
-import { canonicalContextUri, contextRootUri } from "@meridian/contracts/context-uri";
-import { ASSETS_FOLDER, classifyFiletype } from "@meridian/contracts/protocol";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { BoundWrite } from "../../collab/index.js";
 import { keptFileName } from "../../file-intake/index.js";
 import { projectBrowseContextUri } from "../browse-layer-scheme.js";
@@ -46,22 +46,11 @@ export function createContextUploadContentPort(
     classifyFiletype(reservation.fileType).kind === "tracked";
 
   return {
-    async names({ reservation, actorUserId, source }) {
-      const folder = source
-        ? projectBrowseContextUri(source.scheme, ASSETS_FOLDER, source.authority)
-        : contextRootUri("uploads");
-      const listing = await portFor(reservation, actorUserId, source).list(folder);
-      if (!listing.ok) return new Set();
-      return new Set(listing.value.entries.map((entry) => entry.uri.split("/").pop() ?? ""));
-    },
-
     async bind({ reservation, actorUserId, text, source }) {
       if (!isTracked(reservation) || text.length === 0) return { ok: true, bound: null };
       const port = portFor(reservation, actorUserId, source);
       const bound = await port.bindTrackedDocument(writeUri(reservation, source), text);
-      return bound.ok
-        ? { ok: true, bound: bound.value }
-        : { ok: false, conflict: bound.error.code === "conflict" };
+      return bound.ok ? { ok: true, bound: bound.value } : { ok: false };
     },
 
     async persist(input) {
@@ -94,11 +83,12 @@ export function createContextUploadContentPort(
                 : {}),
               origin,
             });
-      if (result.ok)
-        return result.value.uri === uri && result.value.documentId === input.reservation.documentId
-          ? { ok: true }
-          : { ok: false, conflict: false };
-      return { ok: false, conflict: result.error.code === "conflict" };
+      if (!result.ok || result.value.documentId !== input.reservation.documentId)
+        return { ok: false };
+      // The leaf it landed at, in the folder it was written to.
+      const { finalPath } = input.reservation;
+      const leaf = result.value.uri.slice(result.value.uri.lastIndexOf("/") + 1);
+      return { ok: true, finalPath: finalPath.slice(0, finalPath.lastIndexOf("/") + 1) + leaf };
     },
   };
 }

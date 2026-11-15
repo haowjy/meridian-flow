@@ -498,7 +498,7 @@ function NewLevelFileRow({
     validate: (draft) => {
       const name = draft.trim();
       if (!name) return null;
-      const named = validateContextEntryName(name, [], "folder");
+      const named = validateContextEntryName(name, "folder");
       if (named?.level === "error") return named;
       const { folders, leaf } = newFilePath(kind, name);
       return view.findPath([tree.rootPath, ...folders, leaf].join("/"))

@@ -1,7 +1,6 @@
 import { entrySegment, idHex, readSegment } from "@meridian/contracts/protocol";
 import { generateKeyBetween } from "fractional-indexing";
-import { freeName } from "./names.js";
-import { isSourceRoot, type NodeKind } from "./record.js";
+import { isSourceRoot } from "./record.js";
 import type { TreeNode, TreeProjection } from "./replay.js";
 
 /** Children in display order (rank, then id). Trashed ones only when asked. */
@@ -33,43 +32,34 @@ export function segmentOf(node: Pick<TreeNode, "name" | "suffix">): string {
 }
 
 /**
- * The shown child a path segment reaches: with a `~` suffix, the one whose id's hex digits begin
- * with it (the lowest id, should a suffix shortened by hand fit two), and the name in front is not
- * checked; without one, the child of that name that carries no suffix.
+ * The shown child a path segment reaches. With a `~` suffix, the one whose id's hex digits begin
+ * with it (the lowest id, should a suffix shortened by hand fit two), whatever name is in front;
+ * a suffix that reaches none reads as the name in front, so a writer and a reader take a stale or
+ * made-up `~id` the same way. By name, the child of that name that carries no suffix.
+ *
+ * `folder` reads a folder level of a path: only folders answer, and when the plain twin of the
+ * name is a document, the folder of that name with the lowest id does (`Arc/x` reaches the folder
+ * `Arc~922e` beside a document `Arc`). The SQL walk (`nodesAt`) reads the same.
  */
 export function childAtSegment(
   children: readonly TreeNode[],
   segment: string,
+  level?: "folder",
 ): TreeNode | undefined {
-  const { suffix } = readSegment(segment);
-  let found: TreeNode | undefined;
+  const { name, suffix } = readSegment(segment);
+  let byId: TreeNode | undefined;
+  let plain: TreeNode | undefined;
+  let named: TreeNode | undefined;
   for (const child of children) {
-    if (child.trashed) continue;
-    if (suffix === undefined) {
-      if (child.suffix === undefined && child.name === segment) return child;
-    } else if (idHex(child.id).startsWith(suffix) && (!found || child.id < found.id)) found = child;
+    if (child.trashed || (level === "folder" && child.kind !== "folder")) continue;
+    if (suffix !== undefined && idHex(child.id).startsWith(suffix)) {
+      if (!byId || child.id < byId.id) byId = child;
+    } else if (child.name === name) {
+      if (child.suffix === undefined) plain = child;
+      else if (level === "folder" && (!named || child.id < named.id)) named = child;
+    }
   }
-  return found;
-}
-
-/**
- * The name a record should carry for a node going under `parent`: `name`, or its numbered copy
- * when a shown sibling already has it, as the author's own copy shows it (design, section 4).
- * The replay numbers only the clashes nobody could see.
- */
-export function nameAmong(
-  projection: TreeProjection,
-  parent: string,
-  kind: NodeKind,
-  name: string,
-  moving?: string,
-): string {
-  const taken = new Set(
-    childrenOf(projection, parent)
-      .filter((node) => node.id !== moving)
-      .map((node) => node.name),
-  );
-  return freeName(kind, name, taken);
+  return byId ?? plain ?? named;
 }
 
 /** A rank that sorts at `index` among sibling `ranks` (in display order). */

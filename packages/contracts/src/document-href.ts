@@ -115,7 +115,7 @@ export function omittedExtensionPath(path: string): string | null {
 }
 
 /** The candidate a tree lookup finds at a path: its exact spelling, else its alias (`ch1.md` is `ch1`). */
-export function matchDocumentAddress<T>(
+function matchDocumentAddress<T>(
   candidates: readonly T[],
   path: string,
   pathOf: (candidate: T) => string,

@@ -26,7 +26,7 @@ Move… that stopped working because Copy joined them. This recipe drives the br
 2. **Copy.** Choose Copy. The copy is listed in `Templates` and the source stays.
    No toast.
 3. **A folder tree.** Row menu on `Book` › Copy to… › Manuscript › Copy here:
-   `Book (2)` appears with the whole tree under it. `Book` is disabled in that picker's
+   a second `Book` appears with the whole tree under it (its path `Book~…`). `Book` is disabled in that picker's
    list, as Move… disables it.
 4. **A refusal.** Copy `Prologue` to `Templates` with a one-shot `window.fetch` rewrite that posts `{}`
    to `/context/copy`: the server refuses it, the rows never appear, and a toast at the top right

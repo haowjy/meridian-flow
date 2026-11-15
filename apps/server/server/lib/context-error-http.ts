@@ -24,10 +24,7 @@ export function contextErrorToHttp(error: ContextError): never {
       );
     case "conflict":
       return throwHttpInterrupt(
-        {
-          ...meridianErrorFromSystem("conflict", "Context path conflict", false),
-          details: error.occupantKind ? { occupantKind: error.occupantKind } : {},
-        },
+        meridianErrorFromSystem("conflict", "Context path conflict", false),
         409,
       );
     case "stale_source":

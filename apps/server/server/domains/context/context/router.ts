@@ -25,7 +25,7 @@ import type { BoundWrite } from "../../collab/index.js";
 import type { ContextCopyCommandDeps } from "../copy/copy-command.js";
 import { createContextCopyPort } from "../copy/copy-port.js";
 import { type ContextualOwner, type ProjectOwners, unknownWorkMessage } from "../owner-lookup.js";
-import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
+import type { AdapterFault, ContextSchemeAdapter, Landed } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import type {
   ContextBinaryWriteResult,
@@ -446,6 +446,15 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return Ok(withFilename(dispatch, filenameForBinary(parts, binary.fileType, binary.mimeType)));
   }
 
+  /** A create's answer at the URI of the path it landed at (a twin's leaf carries its `~id`). */
+  function landedAt<T extends { path: string }>(
+    dispatch: Dispatch,
+    landed: T,
+  ): Omit<T, "path"> & { uri: string } {
+    const { path, ...rest } = landed;
+    return { ...rest, uri: uriFor(dispatch.scheme, path, dispatch.authority) };
+  }
+
   /** Claim a new tracked URI through its adapter: the checks both create entries share. */
   async function createDocument(
     uri: string,
@@ -453,7 +462,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     create: (
       adapter: ContextSchemeAdapter,
       path: string,
-    ) => Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>,
+    ) => Promise<Result<Landed<ContextCreateTrackedDocumentResult>, AdapterFault>>,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
     const resolved = await resolveMutation(uri, options?.origin);
     if (!resolved.ok) return resolved;
@@ -463,7 +472,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     if (!permission.ok) return permission;
     const { adapter, path, canonical } = r.value;
     const created = await callAdapter(canonical, () => create(adapter, path));
-    return created.ok ? Ok({ ...created.value, uri: canonical }) : created;
+    return created.ok ? Ok(landedAt(r.value, created.value)) : created;
   }
 
   /**
@@ -576,7 +585,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
     async ensureTrackedDocument(
       uri: string,
-      options?: import("../ports/context-adapter.js").ContextEnsureTrackedOptions,
+      options?: import("../ports/context-adapter.js").ContextEnsureTrackedPortOptions,
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
       const resolved = await resolveMutation(uri, options?.origin);
       if (!resolved.ok) return resolved;
@@ -585,10 +594,17 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const { adapter, path, canonical } = r.value;
       const creation = r.value.requireCreation("entry");
       if (!creation.ok) return creation;
+      const { recordCreate, ...rest } = options ?? {};
       const ensured = await callAdapter(canonical, () =>
-        adapter.ensureTrackedDocument(path, { ...options, parsedFilename: r.value.filename }),
+        adapter.ensureTrackedDocument(path, {
+          ...rest,
+          parsedFilename: r.value.filename,
+          ...(recordCreate
+            ? { recordCreate: (created) => recordCreate(landedAt(r.value, created)) }
+            : {}),
+        }),
       );
-      return ensured.ok ? Ok({ ...ensured.value, uri: canonical }) : ensured;
+      return ensured.ok ? Ok(landedAt(r.value, ensured.value)) : ensured;
     },
 
     async bindTrackedDocument(
@@ -645,7 +661,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const result = await callAdapter(canonical, () =>
         adapter.writeBinary(path, { ...options, filename: r.value.filename }),
       );
-      return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
+      return result.ok ? Ok(landedAt(r.value, result.value)) : result;
     },
 
     async moveAcrossLists(node, area, change) {

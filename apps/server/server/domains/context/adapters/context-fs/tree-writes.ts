@@ -1,9 +1,9 @@
 /**
  * ContextFS's tree writes in one source: each is one `treeListStore.submit` on the source's list,
  * made in the caller's transaction at the call. The path is resolved against the list's own copy
- * inside `make`, under the list's lock, so a name another writer took a moment ago is seen and
- * nothing is checked twice. A write answers with what the replay shows afterwards (final names
- * and paths); a refusal makes no record.
+ * inside `make`, under the list's lock. A write answers with what the replay shows afterwards
+ * (final names, and paths whose segments carry a twin's `~id`); a refusal makes no record. No
+ * write is refused for a name a sibling has: it makes a twin (rule 14).
  *
  * Callers hold the Work and branch locks their command transaction took and no document or
  * namespace key (the list's key sorts before those).
@@ -13,6 +13,7 @@ import {
   type ContextSiblingPosition,
   classifyFiletype,
   type Filetype,
+  readSegment,
   storedFilename,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -74,22 +75,14 @@ export function viewOfBranch(branchId: BranchId | null): View {
 
 export type TreeWriteTarget = { view: View; actor: Actor };
 
-type Occupant = "file" | "folder";
-
-const conflict = (occupantKind?: Occupant): AdapterFault => ({
-  code: "conflict",
-  ...(occupantKind ? { occupantKind } : {}),
-});
-
-const occupantKindOf = (node: TreeNode): Occupant => (node.kind === "folder" ? "folder" : "file");
-
-/** The shown child of `parent` at this path segment (a twin's `~id` reaches it), if any. */
+/** The shown child of `parent` at this path segment, read as `childAtSegment` reads it. */
 function childNamed(
   projection: TreeProjection,
   parent: string,
   segment: string,
+  level?: "folder",
 ): TreeNode | undefined {
-  return childAtSegment(childrenOf(projection, parent), segment);
+  return childAtSegment(childrenOf(projection, parent), segment, level);
 }
 
 /** `id`'s address in its source: the folders' segments from the source's top, its own last. */
@@ -111,8 +104,9 @@ function extensionOf(node: TreeNode): string {
 }
 
 /**
- * Folders along `dir` from the source's top, made where missing, each pushed to `made`. A
- * document or file on the way refuses with the occupant's kind.
+ * Folders along `dir` from the source's top, each the folder its segment reaches, else made
+ * under the segment's name (beside a document of that name, as its twin); each made is pushed
+ * to `made`.
  */
 function ensureFolders(
   writer: TreeWriter,
@@ -120,20 +114,23 @@ function ensureFolders(
   sourceId: string,
   dir: readonly string[],
   made: MadeFolder[] = [],
-): Result<string, AdapterFault> {
+): string {
   let parent = sourceRoot(sourceId);
-  for (const name of dir) {
-    const existing = childNamed(writer.view(target.view), parent, name);
+  for (const segment of dir) {
+    const existing = childNamed(writer.view(target.view), parent, segment, "folder");
     if (existing) {
-      if (existing.kind !== "folder") return Err(conflict("file"));
       parent = existing.id;
       continue;
     }
-    const created = writer.create(target.view, target.actor, { kind: "folder", name, parent });
+    const created = writer.create(target.view, target.actor, {
+      kind: "folder",
+      name: readSegment(segment).name,
+      parent,
+    });
     made.push({ record: created.id, node: created.node });
     parent = created.node;
   }
-  return Ok(parent);
+  return parent;
 }
 
 /** An existing folder along `dir`; none is made. */
@@ -143,9 +140,9 @@ function findFolder(
   dir: readonly string[],
 ): string | null {
   let parent = sourceRoot(sourceId);
-  for (const name of dir) {
-    const existing = childNamed(projection, parent, name);
-    if (existing?.kind !== "folder") return null;
+  for (const segment of dir) {
+    const existing = childNamed(projection, parent, segment, "folder");
+    if (!existing) return null;
     parent = existing.id;
   }
   return parent;
@@ -209,6 +206,7 @@ export type CreatedNode = {
   /** The folders made for it, outermost first. */
   folders: MadeFolder[];
   name: string;
+  /** The segments it landed at, a twin's `~id` included. */
   path: string[];
 };
 
@@ -248,7 +246,10 @@ export type NewNode =
 export interface SourceTree {
   /** This source's id, provisioned. */
   sourceId(): Promise<string>;
-  /** A document or stored file at `dir`/`filename`, its folders made as needed. */
+  /**
+   * A document or stored file at `dir`/`filename`, its folders made as needed. `filename` is a
+   * name, not a segment: one a sibling has makes a twin.
+   */
   create(
     target: TreeWriteTarget,
     input: {
@@ -269,15 +270,15 @@ export interface SourceTree {
     },
   ): Promise<Result<CreatedNode, AdapterFault>>;
   /**
-   * The node at `dir`/`filename` in the view, whichever kind, or null: what an ensure reads
-   * before it creates.
+   * The node the path `dir`/`leaf` reaches in the view, whichever kind, and the path it stands
+   * at, or null: what an ensure reads before it creates.
    */
   find(
     target: TreeWriteTarget,
     dir: readonly string[],
-    filename: string,
+    leaf: string,
     into?: string,
-  ): Promise<{ id: string; kind: "document" | "file" | "folder" } | null>;
+  ): Promise<{ id: string; kind: "document" | "file" | "folder"; path: string } | null>;
   /**
    * Moves a document or file from the list of `fromSourceId` into `dir` of this source, which
    * is in another list (a project's and the account's `user://`): one transaction on both
@@ -305,8 +306,8 @@ export interface SourceTree {
   ): Promise<Result<DeletedNode, AdapterFault>>;
   /**
    * A tree of new nodes under `dir`, made as one change (a Copy's result, minted before it is
-   * written): folders before what they hold, children in the order given. Each root must find
-   * its name free in the folder, else the answer is `replan` and nothing is made.
+   * written): folders before what they hold, children in the order given. Answers the
+   * source-relative path each node landed at, by id.
    */
   insertTree(
     target: TreeWriteTarget,
@@ -315,7 +316,7 @@ export interface SourceTree {
       roots: readonly NewNode[];
       position?: ContextSiblingPosition;
     },
-  ): Promise<Result<{ kind: "inserted" } | { kind: "replan" }, AdapterFault>>;
+  ): Promise<Result<ReadonlyMap<string, string>, AdapterFault>>;
   /**
    * One tree command on this source's list: `make` runs under the list's lock on the copy at the
    * journal's head, makes whatever records it decides on and returns its answer. A refused answer
@@ -386,15 +387,12 @@ export function createSourceTree(deps: {
         const parent =
           input.into === undefined
             ? ensureFolders(writer, target, sourceId, input.dir, folders)
-            : Ok(input.into);
-        if (!parent.ok) return parent;
-        const occupant = childNamed(writer.view(target.view), parent.value, input.filename);
-        if (occupant) return Err(conflict(occupantKindOf(occupant)));
-        const index = indexAt(writer.view(target.view), parent.value, input.position);
+            : input.into;
+        const index = indexAt(writer.view(target.view), parent, input.position);
         const created = writer.create(target.view, target.actor, {
           kind: input.kind,
           name: input.filename,
-          parent: parent.value,
+          parent,
           index,
           ...(input.id ? { node: input.id } : {}),
           ...(input.provisional ? { provisional: true as const } : {}),
@@ -422,15 +420,17 @@ export function createSourceTree(deps: {
       return result;
     },
 
-    async find(target, dir, filename, into) {
+    async find(target, dir, leaf, into) {
       const sourceId = await deps.sourceId();
       return deps.store.read({
         lists: [await list()],
         view: ([{ writer }]) => {
           const projection = writer.view(target.view);
           const parent = into ?? findFolder(projection, sourceId, dir);
-          const found = parent === null ? undefined : childNamed(projection, parent, filename);
-          return found ? { id: found.id, kind: found.kind } : null;
+          const found = parent === null ? undefined : childNamed(projection, parent, leaf);
+          return found
+            ? { id: found.id, kind: found.kind, path: pathOf(projection, found.id).join("/") }
+            : null;
         },
       });
     },
@@ -468,7 +468,6 @@ export function createSourceTree(deps: {
         )
           return Err({ code: "stale_target" } as AdapterFault);
         const parent = ensureFolders(writer, target, sourceId, input.dir);
-        if (!parent.ok) return parent;
         const projection = writer.view(LIVE);
 
         // The name the node lands under: the writer's typed one through the name codec, else its own.
@@ -486,15 +485,12 @@ export function createSourceTree(deps: {
           const refused = typeConversion(node, filename, filetype);
           if (refused) return Err(refused);
         }
-        const occupant = childNamed(projection, parent.value, filename);
-        if (occupant) return Err(conflict(occupantKindOf(occupant)));
-
         const moved = moveBetweenLists(
           origin,
           {
             ...dest,
-            parent: parent.value,
-            index: indexAt(projection, parent.value, input.position),
+            parent,
+            index: indexAt(projection, parent, input.position),
             ...(filename !== node.name ? { name: filename } : {}),
             ...(filetype && filetype !== node.filetype ? { filetype } : {}),
           },
@@ -528,46 +524,43 @@ export function createSourceTree(deps: {
 
     async insertTree(target, input) {
       const sourceId = await deps.sourceId();
-      const result = await write<{ kind: "inserted" } | { kind: "replan" }>(
-        [await list()],
-        ([{ writer }]) => {
-          const parent = ensureFolders(writer, target, sourceId, input.dir);
-          if (!parent.ok) return parent;
-          const projection = writer.view(target.view);
-          if (input.roots.some((root) => childNamed(projection, parent.value, root.filename)))
-            return Ok({ kind: "replan" as const });
-          // Ranks are minted once per level: a create's own replay per node would cost a
-          // replay of the whole list each.
-          const at = indexAt(projection, parent.value, input.position);
-          const siblings = childrenOf(projection, parent.value);
-          const rootRanks = generateNKeysBetween(
-            siblings[at - 1]?.rank ?? null,
-            siblings[at]?.rank ?? null,
-            input.roots.length,
-          );
-          const put = (node: NewNode, parentId: string, rank: string) => {
-            writer.author(target.view, target.actor, {
-              type: "create",
-              kind: node.kind,
-              node: node.id,
-              name: node.filename,
-              parent: parentId,
-              source: sourceId,
-              rank,
-              ...(node.kind === "document" ? { filetype: node.filetype } : {}),
-              ...(node.kind === "file" ? { blob: node.blob } : {}),
-            } as TreeRecordInput);
-            if (node.kind !== "folder") return;
-            const ranks = generateNKeysBetween(null, null, node.children.length);
-            for (const [index, child] of node.children.entries())
-              put(child, node.id, ranks[index] as string);
-          };
-          for (const [index, root] of input.roots.entries())
-            put(root, parent.value, rootRanks[index] as string);
-          return Ok({ kind: "inserted" as const });
-        },
-      );
-      if (result.ok && result.value.kind === "inserted") await annotateTree(input.roots);
+      const result = await write<ReadonlyMap<string, string>>([await list()], ([{ writer }]) => {
+        const parent = ensureFolders(writer, target, sourceId, input.dir);
+        const projection = writer.view(target.view);
+        // Ranks are minted once per level: a create's own replay per node would cost a
+        // replay of the whole list each.
+        const at = indexAt(projection, parent, input.position);
+        const siblings = childrenOf(projection, parent);
+        const rootRanks = generateNKeysBetween(
+          siblings[at - 1]?.rank ?? null,
+          siblings[at]?.rank ?? null,
+          input.roots.length,
+        );
+        const ids: string[] = [];
+        const put = (node: NewNode, parentId: string, rank: string) => {
+          ids.push(node.id);
+          writer.author(target.view, target.actor, {
+            type: "create",
+            kind: node.kind,
+            node: node.id,
+            name: node.filename,
+            parent: parentId,
+            source: sourceId,
+            rank,
+            ...(node.kind === "document" ? { filetype: node.filetype } : {}),
+            ...(node.kind === "file" ? { blob: node.blob } : {}),
+          } as TreeRecordInput);
+          if (node.kind !== "folder") return;
+          const ranks = generateNKeysBetween(null, null, node.children.length);
+          for (const [index, child] of node.children.entries())
+            put(child, node.id, ranks[index] as string);
+        };
+        for (const [index, root] of input.roots.entries())
+          put(root, parent, rootRanks[index] as string);
+        const landed = writer.view(target.view);
+        return Ok(new Map(ids.map((id) => [id, pathOf(landed, id).join("/")])));
+      });
+      if (result.ok) await annotateTree(input.roots);
       return result;
     },
 

@@ -412,8 +412,6 @@ export function replay(
         else if (record.undoes === undefined)
           lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
-        // One arrival sets both facts, so both answer to the arrival before it.
-        const arrivedBefore = node.arrivedAt;
         setFact(
           node.place,
           node,
@@ -422,19 +420,6 @@ export function replay(
           { parent: node.parent, rank: node.rank },
           node.parent !== record.parent,
         );
-        if (record.name !== undefined) {
-          setFact(
-            node.label,
-            node,
-            record,
-            index,
-            { name: node.name, ...(node.filetype ? { filetype: node.filetype } : {}) },
-            node.name !== shownName(node.kind, record.name, node.filetype),
-            arrivedBefore,
-          );
-          node.name = shownName(node.kind, record.name, node.filetype);
-          if (record.actor.startsWith("user:")) node.provisional = false;
-        }
         node.parent = record.parent;
         node.rank = record.rank;
         node.lastChangedBy = record.actor;
@@ -732,25 +717,35 @@ function derive(
  * other shown sibling's begins with. A folder with no twins pays only the name check.
  */
 function twinSuffixes(shown: readonly Working[]): Map<string, string> {
+  return suffixesInArrival(
+    [...shown].sort((a, b) => a.arrivedAt - b.arrivedAt || a.createdAt - b.createdAt),
+  );
+}
+
+/**
+ * Rule 14 over one folder's shown children listed in arrival order: the suffix of each that
+ * carries one. The replay's own reading, for a planner that knows the ids and the order its
+ * creates will arrive in (an import spelling its links before the tree has them).
+ */
+export function suffixesInArrival(
+  children: readonly { id: string; name: string }[],
+): Map<string, string> {
   const out = new Map<string, string>();
   const plain = new Set<string>();
-  const twins: Working[] = [];
-  const byArrival = [...shown].sort(
-    (a, b) => a.arrivedAt - b.arrivedAt || a.createdAt - b.createdAt,
-  );
-  for (const kid of byArrival) {
-    if (plain.has(kid.name)) twins.push(kid);
+  const twins: string[] = [];
+  for (const kid of children) {
+    if (plain.has(kid.name)) twins.push(kid.id);
     else plain.add(kid.name);
   }
   if (twins.length === 0) return out;
   // Sorted, so the longest start an id shares with any other is the one it shares with a neighbour.
-  const hexes = shown.map((kid) => idHex(kid.id)).sort();
+  const hexes = children.map((kid) => idHex(kid.id)).sort();
   const index = new Map(hexes.map((hex, at) => [hex, at]));
   for (const twin of twins) {
-    const hex = idHex(twin.id);
+    const hex = idHex(twin);
     const at = index.get(hex) as number;
     const shared = Math.max(common(hex, hexes[at - 1]), common(hex, hexes[at + 1]));
-    out.set(twin.id, hex.slice(0, Math.max(4, shared + 1)));
+    out.set(twin, hex.slice(0, Math.max(4, shared + 1)));
   }
   return out;
 }

@@ -183,22 +183,29 @@ type NodeSlot = {
   segment: string;
 };
 
+/** One node a slot reaches, and how: `0` by its `~id`, `1` the plain child of the name, `2` a folder of the name. */
+type SlotHit = { key: number; id: string; how: number };
+
 /**
- * The id of the node of one kind that the view shows at each slot (source, parent, segment):
- * a plain segment matches a node's segment, one with a `~` suffix the child whose id begins with
- * it, the lowest id if two do (`childAtSegment` in `@meridian/project-tree` reads the same).
- * One statement for any number of slots: each is a `LATERAL` probe of the relation, which keeps
- * a Work's union planned as index probes (see the store page).
+ * The node of one kind that the view shows at each slot (source, parent, segment), read as
+ * `childAtSegment` in `@meridian/project-tree` reads it: a `~` suffix reaches the child whose id
+ * begins with it, the lowest id if two do, and one that reaches none reads as its name; a name
+ * reaches the child of that name with no suffix. At a `folder` level of a path, a folder of the
+ * name answers when the plain twin is a document (the lowest id). One statement for any number of
+ * slots: each is a `LATERAL` probe of the relation, which keeps a Work's union planned as index
+ * probes (see the store page); only a segment with a suffix scans its parent's children.
  */
 async function nodesAt(
   db: DrizzleDb,
   view: TreeView,
   kind: "document" | "folder",
   slots: readonly NodeSlot[],
-): Promise<{ key: number; id: string }[]> {
+  level?: "folder",
+): Promise<SlotHit[]> {
   if (slots.length === 0) return [];
   const relation = kind === "document" ? visibleDocumentsSql(view) : visibleFoldersSql(view);
   const parentColumn = sql.raw(kind === "document" ? "r.folder_id" : "r.parent_id");
+  const byName = level === "folder" ? sql`r.name = s.name` : sql`r.segment = s.name`;
   const probe = (rooted: boolean, byId: boolean): SQL | null => {
     const mine = slots.filter(
       (slot) =>
@@ -208,21 +215,25 @@ async function nodesAt(
     if (mine.length === 0) return null;
     const values = sql.join(
       mine.map((slot) => {
-        const match = byId ? (readSegment(slot.segment).suffix as string) : slot.segment;
+        const { name, suffix } = readSegment(slot.segment);
         return rooted
-          ? sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${match}::text)`
-          : sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${match}::text, ${slot.parentId}::uuid)`;
+          ? sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${name}::text, ${suffix ?? ""}::text)`
+          : sql`(${slot.key}::int, ${slot.sourceId}::uuid, ${name}::text, ${suffix ?? ""}::text, ${slot.parentId}::uuid)`;
       }),
       sql`, `,
     );
-    return sql`SELECT s.key, n.id::text AS id
-      FROM (VALUES ${values}) AS s(${sql.raw(rooted ? "key, source_id, match" : "key, source_id, match, parent_id")})
+    const idMatch = sql`replace(r.id::text, '-', '') LIKE s.prefix || '%'`;
+    const how = byId
+      ? sql`CASE WHEN ${idMatch} THEN 0 WHEN r.segment = r.name THEN 1 ELSE 2 END`
+      : sql`CASE WHEN r.segment = r.name THEN 1 ELSE 2 END`;
+    return sql`SELECT s.key, n.id::text AS id, n.how
+      FROM (VALUES ${values}) AS s(${sql.raw(rooted ? "key, source_id, name, prefix" : "key, source_id, name, prefix, parent_id")})
       CROSS JOIN LATERAL (
-        SELECT r.id FROM ${relation} r
+        SELECT r.id, ${how} AS how FROM ${relation} r
         WHERE r.context_source_id = s.source_id
-          AND ${byId ? sql`replace(r.id::text, '-', '') LIKE s.match || '%'` : sql`r.segment = s.match`}
+          AND ${byId ? sql`(${idMatch} OR ${byName})` : byName}
           AND ${rooted ? sql`${parentColumn} IS NULL` : sql`${parentColumn} = s.parent_id`}
-        ORDER BY r.id LIMIT 1
+        ORDER BY how, r.id LIMIT 1
       ) n`;
   };
   const statements = [
@@ -231,15 +242,22 @@ async function nodesAt(
     probe(true, true),
     probe(false, true),
   ].filter((each): each is SQL => each !== null);
-  return [
-    ...(await db.execute<{ key: number; id: string }>(sql.join(statements, sql` UNION ALL `))),
-  ];
+  return [...(await db.execute<SlotHit>(sql.join(statements, sql` UNION ALL `)))];
+}
+
+/** Of a slot's document and folder hits, the ones it reaches best: an `~id` match over a name. */
+function best(...kinds: SlotHit[][]): SlotHit[][] {
+  const top = new Map<number, number>();
+  for (const hit of kinds.flat()) top.set(hit.key, Math.min(top.get(hit.key) ?? hit.how, hit.how));
+  return kinds.map((hits) => hits.filter((hit) => hit.how === top.get(hit.key)));
 }
 
 type PathOccupancy = {
   path: string;
   documents: DocumentId[];
   folders: FolderId[];
+  /** A segment reached its node by a fallback (a `~id` that reached none, a folder of the name): `path` is not how the tree spells it. */
+  respelled: boolean;
 };
 
 export function createTreeReader(db: Database): TreeReader {
@@ -307,8 +325,12 @@ export function createTreeReader(db: Database): TreeReader {
           filename !== undefined && isUuid(query.contextSourceId)
             ? [null]
             : ([] as (FolderId | null)[]),
+        respelled: false,
       };
     });
+    // A hit is as asked when a `~id` reached its node by id, or a name its plain child.
+    const respelled = (segment: string, hits: readonly SlotHit[]) =>
+      hits.some((hit) => hit.how !== (readSegment(segment).suffix === undefined ? 1 : 0));
     const depth = Math.max(0, ...walks.map((walk) => walk.dirs.length));
     for (let level = 0; level < depth; level += 1) {
       const asked = positions(
@@ -323,9 +345,12 @@ export function createTreeReader(db: Database): TreeReader {
             : [],
         ),
       );
-      const hits = await nodesAt(tx(), view, "folder", asked.slots);
+      const hits = await nodesAt(tx(), view, "folder", asked.slots, "folder");
       walks.forEach((walk, owner) => {
-        if (level < walk.dirs.length) walk.parents = asked.idsFor(owner, hits) as FolderId[];
+        if (level >= walk.dirs.length) return;
+        const mine = asked.hitsFor(owner, hits);
+        walk.parents = [...new Set(mine.map((hit) => hit.id))] as FolderId[];
+        if (respelled(walk.dirs[level] as string, mine)) walk.respelled = true;
       });
     }
     const leaves = positions(
@@ -338,14 +363,22 @@ export function createTreeReader(db: Database): TreeReader {
         })),
       ),
     );
-    const [documentHits, folderHits] = await Promise.all([
-      nodesAt(tx(), view, "document", leaves.slots),
-      nodesAt(tx(), view, "folder", leaves.slots),
-    ]);
+    const [documentHits, folderHits] = best(
+      ...(await Promise.all([
+        nodesAt(tx(), view, "document", leaves.slots),
+        nodesAt(tx(), view, "folder", leaves.slots),
+      ])),
+    ) as [SlotHit[], SlotHit[]];
     return walks.map((walk, owner) => ({
       path: walk.path,
       documents: leaves.idsFor(owner, documentHits) as DocumentId[],
       folders: leaves.idsFor(owner, folderHits) as FolderId[],
+      respelled:
+        walk.respelled ||
+        respelled(walk.filename, [
+          ...leaves.hitsFor(owner, documentHits),
+          ...leaves.hitsFor(owner, folderHits),
+        ]),
     }));
   }
 
@@ -355,14 +388,23 @@ export function createTreeReader(db: Database): TreeReader {
     if (!found || !ref) return { kind: "not_found" };
     if (ref.kind === "document") {
       const [row] = await documentRows(view, (vd) => inArray(vd.id, [ref.id]));
-      return row
-        ? { kind: "found", node: { kind: "document", document: toDocument(row, found.path) } }
-        : { kind: "not_found" };
+      if (!row) return { kind: "not_found" };
+      // Reached by a fallback: the path is the one the tree spells, not the one asked.
+      const path = found.respelled
+        ? chainPrefix(
+            row.folderId === null
+              ? []
+              : ((await loadFolderChains(tx(), [row.folderId], view)).get(row.folderId) ?? []),
+          ) + row.segment
+        : found.path;
+      return { kind: "found", node: { kind: "document", document: toDocument(row, path) } };
     }
     const [row] = await folderRows(view, (vf) => inArray(vf.id, [ref.id]));
-    return row
-      ? { kind: "found", node: { kind: "folder", folder: { ...row, path: found.path } } }
-      : { kind: "not_found" };
+    if (!row) return { kind: "not_found" };
+    const path = found.respelled
+      ? chainPrefix((await loadFolderChains(tx(), [row.id], view)).get(row.id) ?? []).slice(0, -1)
+      : found.path;
+    return { kind: "found", node: { kind: "folder", folder: { ...row, path } } };
   }
 
   async function childAt(
@@ -376,10 +418,12 @@ export function createTreeReader(db: Database): TreeReader {
     const slot = [
       { key: 0, sourceId: at.contextSourceId, parentId: at.parentId, segment: at.filename },
     ];
-    const [documentHits, folderHits] = await Promise.all([
-      nodesAt(tx(), view, "document", slot),
-      nodesAt(tx(), view, "folder", slot),
-    ]);
+    const [documentHits, folderHits] = best(
+      ...(await Promise.all([
+        nodesAt(tx(), view, "document", slot),
+        nodesAt(tx(), view, "folder", slot),
+      ])),
+    ) as [SlotHit[], SlotHit[]];
     const ref = lowest(
       documentHits.map((hit) => hit.id as DocumentId),
       folderHits.map((hit) => hit.id as FolderId),
@@ -595,9 +639,12 @@ function positions(asks: readonly (Omit<NodeSlot, "key"> & { owner: number })[])
   }
   return {
     slots,
-    idsFor(owner: number, hits: readonly { key: number; id: string }[]): string[] {
+    hitsFor<Hit extends { key: number }>(owner: number, hits: readonly Hit[]): Hit[] {
       const asked = new Set(owners.get(owner) ?? []);
-      return [...new Set(hits.filter((hit) => asked.has(hit.key)).map((hit) => hit.id))];
+      return hits.filter((hit) => asked.has(hit.key));
+    },
+    idsFor(owner: number, hits: readonly { key: number; id: string }[]): string[] {
+      return [...new Set(this.hitsFor(owner, hits).map((hit) => hit.id))];
     },
   };
 }

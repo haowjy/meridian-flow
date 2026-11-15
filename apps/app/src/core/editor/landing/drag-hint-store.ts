@@ -5,12 +5,11 @@
  * pointer and goes away when the drag leaves every target or ends.
  */
 
-export type DragHintVerdict = { kind: "accept" | "refuse"; label: string; warning?: string | null };
+export type DragHintVerdict = { kind: "accept" | "refuse"; label: string };
 
 export type DragHintState = {
   owner: string;
   label: string;
-  warning: string | null;
   refused: boolean;
   x: number;
   y: number;
@@ -30,17 +29,15 @@ export function showDragHint(
   event: { clientX: number; clientY: number },
 ) {
   const refused = verdict.kind === "refuse";
-  const warning = verdict.kind === "accept" ? (verdict.warning ?? null) : null;
   if (
     hint?.owner === owner &&
     hint.label === verdict.label &&
-    hint.warning === warning &&
     hint.refused === refused &&
     hint.x === event.clientX &&
     hint.y === event.clientY
   )
     return;
-  set({ owner, label: verdict.label, warning, refused, x: event.clientX, y: event.clientY });
+  set({ owner, label: verdict.label, refused, x: event.clientX, y: event.clientY });
 }
 
 /** Only the target that set the hint clears it, so the next target's hint survives. */

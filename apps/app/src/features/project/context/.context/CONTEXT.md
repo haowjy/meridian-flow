@@ -47,9 +47,9 @@ The queries own only what the list cannot say: which sources exist (every source
 transaction that makes its project, account or Work, so a tree without one is a bug and renders
 nothing), each Work's authority, Trash times and retention, and a chat's uploads.
 
-Whoever makes a record names it as its own copy shows it: a create, a rename, and a move into a
-name that is taken record the numbered name (a move that numbers its arrival carries the name
-itself; no paired `rename`). The replay numbers only a clash nobody could see.
+A record carries the name the writer typed, whatever the siblings are called: a create or rename
+beside a sibling of that name, and a move into a folder that shows it, make a twin (the replay's
+rule 14; the later's path carries `~id`). A move carries no name.
 
 The only verdict the server writes is `dropped` on a change to a Work that was closed (a create,
 rename, move or delete in its draft or its Scratch): it comes back as a settlement on the record,
@@ -83,7 +83,7 @@ ContextTreePanel / AgentsSource (desktop sidebar and the phone's drawer)
                      │
       useInlineEdit (components/ui, shared core)
                      │
-          validateContextEntryName (pure)
+          validateContextEntryName (pure: the codec, no sibling check)
 ```
 
 Trash is a server snapshot of the lists' entries, separate from the replay: one entry per delete

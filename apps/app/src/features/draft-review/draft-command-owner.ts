@@ -11,7 +11,7 @@ import {
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
-import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import { type BranchId, draftItemKey } from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
@@ -93,7 +93,6 @@ export type CommandOutcome =
       applied?: {
         itemKey: string;
         transition?: { from: string | null; to: string | null };
-        renamed?: string;
       }[];
     }
   /**
@@ -173,8 +172,6 @@ export class DraftCommandOwner {
   private readonly endedAt = new Map<string, number>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
-  /** Final paths allocated by Apply, until dismissed or another document shows. */
-  private readonly renamedDocuments = new Map<string, string>();
   private active = true;
   private revision = 0;
   /** Each Discard's restore, whatever sent it: the one progress every view reads. */
@@ -428,15 +425,8 @@ export class DraftCommandOwner {
     return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
   }
 
-  renamedPath(projectId: string, documentId: string): string | null {
-    return this.renamedDocuments.get(JSON.stringify([projectId, documentId])) ?? null;
-  }
-
   forgetApplyFacts(projectId: string, documentId: string): void {
-    const key = JSON.stringify([projectId, documentId]);
-    const restored = this.restoredDocuments.delete(key);
-    const renamed = this.renamedDocuments.delete(key);
-    if (restored || renamed) this.publish();
+    if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
   }
 
   /** The writer moved on to `documentId`: every other document's Apply fact ends. */
@@ -445,8 +435,6 @@ export class DraftCommandOwner {
     let changed = false;
     for (const key of this.restoredDocuments)
       if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
-    for (const key of this.renamedDocuments.keys())
-      if (key !== kept) changed = this.renamedDocuments.delete(key) || changed;
     if (changed) this.publish();
   }
 
@@ -659,14 +647,8 @@ export class DraftCommandOwner {
       const restored = answer.restored && restore;
       if (restored) {
         this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
+        this.publish();
       }
-      for (const item of answer.applied) {
-        if (!item.renamed) continue;
-        const documentId = parseDraftItemKey(item.itemKey)?.documentId;
-        if (documentId)
-          this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
-      }
-      if (restored || answer.applied.some((item) => item.renamed)) this.publish();
       return {
         kind: "done",
         commandId: answer.commandId,
@@ -674,7 +656,6 @@ export class DraftCommandOwner {
         applied: answer.applied.map((item) => ({
           itemKey: item.itemKey,
           ...(item.transition ? { transition: item.transition } : {}),
-          ...(item.renamed ? { renamed: item.renamed.path } : {}),
         })),
       };
     }

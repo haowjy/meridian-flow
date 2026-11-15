@@ -24,7 +24,7 @@ export interface SaveInput {
    * A create without overwrite lands only in a document still empty when its append reads it
    * under the document's lock; otherwise this is the answer.
    */
-  refuseUnlessEmpty?: InternalWriteResult;
+  ifOccupied?: InternalWriteResult;
 }
 
 /** A write saved: its report, and the room as the save left it. */
@@ -54,12 +54,12 @@ export function createDocumentSave(deps: {
 
   return {
     async save(input) {
-      const { refuseUnlessEmpty } = input;
+      const { ifOccupied } = input;
       const saved = await coordinator.prepareSave({
         docId: input.docId,
         entries: [input.entry],
         ...(input.workDraftId ? { access: { workDraftId: input.workDraftId } } : {}),
-        ...(refuseUnlessEmpty ? { precondition: holdsNoBlocks } : {}),
+        ...(ifOccupied ? { precondition: holdsNoBlocks } : {}),
       });
       const { write } = saved;
       let persisted = false;
@@ -70,8 +70,7 @@ export function createDocumentSave(deps: {
         try {
           cut = await write.persist();
         } catch (cause) {
-          if (refuseUnlessEmpty && cause instanceof SavePreconditionRefused)
-            return refuseUnlessEmpty;
+          if (ifOccupied && cause instanceof SavePreconditionRefused) return ifOccupied;
           throw cause;
         }
         persisted = true;
