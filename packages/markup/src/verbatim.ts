@@ -1,17 +1,21 @@
 import type { Schema } from "prosemirror-model";
 import type { MarkupCodec, PMNode } from "./types.js";
 
+/** A code file's content: one code block holding its text byte for byte, in its filetype. */
+export function codeFileBlock(schema: Schema, filetype: string, text: string): PMNode {
+  return schema.nodes.code_block.create(
+    { language: filetype },
+    text.length > 0 ? schema.text(text) : undefined,
+  );
+}
+
 /**
- * The codec of a code document (filetype `source`): its text is one code block, byte for byte.
+ * The codec of a code document: its text is its {@link codeFileBlock}.
  * Nothing in it is Markdown, so parsing never splits a `---` into a rule and serializing
  * never fences the text. Everything that is not a text-to-block conversion is `base`'s.
  */
-export function verbatimCodec(base: MarkupCodec, schema: Schema, language: string): MarkupCodec {
-  const parse = (content: string) => ({
-    blocks: [
-      schema.nodes.code_block.create({ language }, content ? schema.text(content) : undefined),
-    ],
-  });
+export function verbatimCodec(base: MarkupCodec, schema: Schema, filetype: string): MarkupCodec {
+  const parse = (content: string) => ({ blocks: [codeFileBlock(schema, filetype, content)] });
   const text = (blocks: readonly PMNode[]) => blocks.map((block) => block.textContent).join("\n");
   return {
     ...base,
