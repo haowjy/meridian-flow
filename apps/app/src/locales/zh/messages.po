@@ -2167,6 +2167,10 @@ msgstr ""
 msgid "Couldn't create a Work"
 msgstr ""
 
+#: src/features/home/NewProjectView.tsx
+msgid "Couldn’t create the project."
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 #~ msgid "Couldn't create this document. Try another place."
 #~ msgstr ""
@@ -2948,7 +2952,12 @@ msgstr ""
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/RescuedText.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
+#: src/features/project/work/GoneWord.tsx
 msgid "Dismiss"
+msgstr ""
+
+#: src/features/project/work/GoneWord.tsx
+msgid "Dismiss {name}"
 msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
@@ -3386,6 +3395,7 @@ msgstr ""
 msgid "Gone for good: this document was emptied from Trash."
 msgstr ""
 
+#: src/features/project/work/GoneWord.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Gone from Trash."
 msgstr ""
@@ -5073,8 +5083,8 @@ msgstr "回复完成"
 msgid "Restore"
 msgstr ""
 
+#. placeholder {0}: entry.work.name
 #. placeholder {0}: scoped.name
-#. placeholder {0}: work.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
@@ -6788,6 +6798,10 @@ msgstr ""
 msgid "Undo"
 msgstr "撤销"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo applying {name}"
+msgstr ""
+
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo delete of {name}"
@@ -6843,6 +6857,14 @@ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Undo switch to draft mode"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the whole Apply, all {count} changes."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes them back out."
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx

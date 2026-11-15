@@ -1,10 +1,10 @@
 /** React Query ownership for a project's Trash entries. */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
-import { projectReadEnabled } from "@/client/creation/project-read-gate";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { getTrash, getTrashedDocument } from "../api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
+import { projectReadEnabled } from "./project-read-gate";
 import { listIsComplete, useTreeList } from "./useProjectTree";
 
 /**

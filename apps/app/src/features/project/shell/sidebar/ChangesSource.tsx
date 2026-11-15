@@ -305,12 +305,16 @@ export function ChangesSource({
       for (const inner of group.inner) walk(inner, here);
     };
     for (const group of groups) walk(group, null);
+    // A row the Apply took stays drawn while a word speaks for it, so what undoing the Apply
+    // skipped or left (an edit made since) has a row to show on.
+    for (const { key } of taken.get(ownerKey) ?? [])
+      if (!folderOf.has(key)) folderOf.set(key, null);
     return {
       holds: (node) => folderOf.has(node),
       parent: (node) => folderOf.get(node) ?? null,
       open: (folder) => !folded.has(folder),
     };
-  }, [groups, folded]);
+  }, [groups, folded, ownerKey]);
   const treeWords = useTreeNoticeWords(projectId, drawn);
   const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
   // One list of the rows as shown: a folder heads its documents, then the folders inside it.
@@ -357,7 +361,7 @@ export function ChangesSource({
   const shown = withGone(
     items,
     changeKey,
-    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key)),
+    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
   const goneRows = shown.some((item) => item.gone);
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
@@ -446,7 +450,7 @@ export function ChangesSource({
                   <li key={item.key} data-change-row={item.key} data-command-notice="row">
                     <ListRow
                       depth={item.depth}
-                      gone={notice?.kind !== "applied"}
+                      gone={notice?.kind === "discarded"}
                       disabled={item.kind !== "file"}
                       onOpen={() => void openDocument({ documentId: item.key })}
                       icon={

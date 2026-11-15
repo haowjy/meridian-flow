@@ -263,9 +263,19 @@ export function createDrizzleWorkPurger(deps: {
       const deleted = await activeDb
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
-        .returning({ id: works.id });
-      if (deleted.length > 0)
+        .returning({ id: works.id, entityRevision: works.entityRevision });
+      if (deleted[0]) {
+        // A snapshot's revision is the sum of the project's Work revisions, and clients keep the
+        // highest they have seen. Deleting a row would lower the sum, so a client would keep
+        // showing the purged Work: its revision, and one more, move to the project's No Work.
+        await activeDb
+          .update(works)
+          .set({
+            entityRevision: sql`${works.entityRevision} + ${String(deleted[0].entityRevision)}::bigint + 1`,
+          })
+          .where(and(eq(works.projectId, work.projectId), eq(works.isNoWork, true)));
         deps.works.lifecycleChanged({ id: workId, projectId: work.projectId });
+      }
       return { purged: deleted.length > 0, objectKeys, threadIds: lockedTree.threadIds };
     });
   }

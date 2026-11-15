@@ -18,11 +18,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/client/creation/creation-registry.ts",
-        "line": "} catch {",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/client/query/works-projection-acquisition.ts",
         "line": "void acquisition",
         "count": 1
