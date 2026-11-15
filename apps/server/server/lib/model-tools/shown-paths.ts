@@ -6,7 +6,7 @@
  */
 
 import { removerName, splitDocumentFile } from "@meridian/agent-edit/integration";
-import { formatParsedContextUri } from "@meridian/contracts/context-uri";
+import { formatParsedContextUri, joinContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseActor } from "../../domains/context/adapters/context-fs/tree-writes.js";
 import { parseUnifiedContextUri } from "../../domains/context/index.js";
@@ -151,7 +151,7 @@ export async function reachShown(
   }
   const value = reached.value;
   return {
-    path: `${value.uri}${leaf}${fragment === undefined ? "" : `#${fragment}`}`,
+    path: `${joinContextUri(value.uri, leaf)}${fragment === undefined ? "" : `#${fragment}`}`,
     delta: value.delta,
     node: value.node,
     ...(value.kept ? { kept: value.kept } : {}),

@@ -13,7 +13,7 @@ export type ImportDestination = {
   scheme: ImportScheme;
   /** The folder's path ("/Lore/Sects"); "/" at the area root. */
   path: string;
-  /** The folder's canonical URI, as the manifest names it ("kb://Lore/Sects/"). */
+  /** The folder's canonical URI, as the manifest names it ("kb://Lore/Sects", no trailing slash). */
   uri: string;
   /** The folder's name, or the area's name at the root. */
   name: string;

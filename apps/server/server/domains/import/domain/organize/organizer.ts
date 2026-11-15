@@ -1,5 +1,5 @@
 /** Durable prepare → plan → batches of first texts → one reveal orchestration. */
-import { contextRootUri, parseContextUri } from "@meridian/contracts/context-uri";
+import { contextRootUri, joinContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type {
   DocumentProjectionRefresher,
@@ -60,9 +60,9 @@ function uriMap(tree: OrganizedTree): Map<string, string> {
     if (!node?.area) throw new Error(`Import node has no area: ${id}`);
     const parent = node.parentId ? nodes.get(node.parentId) : null;
     const base = parent
-      ? uri(parent.id).replace(/[^/]*$/, "")
+      ? uri(parent.id)
       : (destinations.get(node.area)?.uri ?? contextRootUri(node.area));
-    const value = `${base}${node.filename}${node.kind === "folder" ? "/" : ""}`;
+    const value = `${joinContextUri(base, node.filename)}${node.kind === "folder" ? "/" : ""}`;
     memo.set(id, value);
     return value;
   };

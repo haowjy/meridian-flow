@@ -8,7 +8,7 @@
 
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts";
-import { addressScheme } from "@meridian/contracts/context-uri";
+import { addressScheme, joinContextUri } from "@meridian/contracts/context-uri";
 import { canonicalLeaf } from "@meridian/contracts/protocol";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
@@ -52,7 +52,7 @@ function moveBackOf(receipt: AcrossReceipt) {
     node: receipt.subject,
     fromUri: receipt.across.to,
     fromArea: here.area,
-    folderUri: `${back.area}${folderPart(back.rest)}`,
+    folderUri: joinContextUri(back.area, folderPart(back.rest)),
     name: lastSegment(back.rest),
     shownAt: receipt.across.to,
     backArea: back.area,
@@ -187,7 +187,7 @@ export async function runMoveAcrossLists(
       const leaf = lastSegment(to.rest);
       const renamed =
         !intoFolder && canonicalLeaf(leaf) !== canonicalLeaf(lastSegment(source.rest));
-      const folderUri = `${to.area}${intoFolder ? to.rest : folderPart(to.rest)}`;
+      const folderUri = joinContextUri(to.area, intoFolder ? to.rest : folderPart(to.rest));
       const result = await moveOne(deps, call, ctx, grants, {
         node: reached.node.id,
         fromUri: reached.uri,
@@ -204,7 +204,7 @@ export async function runMoveAcrossLists(
       moved.push(result.moved);
       handle = result.handle;
       const expected = intoFolder
-        ? `${folderUri}${canonicalLeaf(lastSegment(source.rest))}`
+        ? joinContextUri(folderUri, canonicalLeaf(lastSegment(source.rest)))
         : `${to.area}${to.rest}`;
       if (canonicalLeaf(result.moved.uri) !== canonicalLeaf(expected)) landed = result.moved.uri;
     }

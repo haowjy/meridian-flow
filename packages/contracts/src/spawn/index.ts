@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import { type ArtifactRef, artifactRefSchema } from "../artifacts/index.js";
-import { parseContextUri, writtenForm } from "../context-uri.js";
+import { parseContextUri } from "../context-uri.js";
 import { type MeridianError, meridianErrorSchema } from "../errors/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
@@ -23,18 +23,15 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   ]),
 );
 
-const artifactUriSchema = z
-  .string()
-  .superRefine((uri, context) => {
-    const parsed = parseContextUri(uri);
-    if (writtenForm(uri) !== "address" || !parsed.ok || !parsed.value.path) {
-      context.addIssue({
-        code: "custom",
-        message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
-      });
-    }
-  })
-  .transform((uri): ArtifactRef => ({ type: "object", uri }));
+const artifactUriSchema = z.string().transform((uri, context): ArtifactRef => {
+  const parsed = parseContextUri(uri);
+  if (parsed.ok && parsed.value.path) return { type: "object", uri: parsed.value.normalized };
+  context.addIssue({
+    code: "custom",
+    message: `Expected a Meridian document URI, received ${JSON.stringify(uri)}.`,
+  });
+  return z.NEVER;
+});
 
 /** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
