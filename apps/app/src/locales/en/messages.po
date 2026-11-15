@@ -2952,8 +2952,13 @@ msgstr "Discarding"
 #: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/RescuedText.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
+#: src/features/project/work/GoneWord.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
+
+#: src/features/project/work/GoneWord.tsx
+msgid "Dismiss {name}"
+msgstr "Dismiss {name}"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #~ msgid "Dismiss the error"
@@ -3390,6 +3395,7 @@ msgstr "Goal: {0}. "
 msgid "Gone for good: this document was emptied from Trash."
 msgstr "Gone for good: this document was emptied from Trash."
 
+#: src/features/project/work/GoneWord.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Gone from Trash."
 msgstr "Gone from Trash."
@@ -5077,8 +5083,8 @@ msgstr "Response complete"
 msgid "Restore"
 msgstr "Restore"
 
+#. placeholder {0}: entry.work.name
 #. placeholder {0}: scoped.name
-#. placeholder {0}: work.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
@@ -6792,6 +6798,10 @@ msgstr "Undid change to Work {0}."
 msgid "Undo"
 msgstr "Undo"
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo applying {name}"
+msgstr "Undo applying {name}"
+
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo delete of {name}"
@@ -6848,6 +6858,14 @@ msgstr "Undo switch to auto-apply"
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Undo switch to draft mode"
 msgstr "Undo switch to draft mode"
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the whole Apply, all {count} changes."
+msgstr "Undo takes back the whole Apply, all {count} changes."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes them back out."
+msgstr "Undo takes them back out."
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undoing Apply"

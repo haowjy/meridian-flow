@@ -181,7 +181,6 @@ export function ChatsBody({
     if (target) moveFocus(target, { ring: lastInputWasKeyboard() });
   });
 
-  const scopeEmpty = groups.scoped.length === 0 && groups.pinned.length === 0;
   const withHelpers = (thread: ThreadListItem) => (
     <div key={thread.id}>
       {row(thread)}
@@ -234,12 +233,8 @@ export function ChatsBody({
                 render={withHelpers}
                 deleted={deleted}
                 list={`${projectId}:scoped`}
+                empty={<Trans>No chats here yet.</Trans>}
               />
-              {scopeEmpty ? (
-                <ListLine>
-                  <Trans>No chats here yet.</Trans>
-                </ListLine>
-              ) : null}
             </div>
             {othersCount > 0 ? (
               <ListSection
@@ -303,6 +298,7 @@ function PagedChats({
   openId,
   render,
   deleted,
+  empty,
 }: {
   pinned: readonly ThreadListItem[];
   chats: readonly ThreadListItem[];
@@ -311,6 +307,8 @@ function PagedChats({
   deleted: DeletedChat;
   /** Which list (this Work's or Other chats), so a deleted chat keeps its place there. */
   list: string;
+  /** Said when the list draws no row, a deleted chat it still holds included. */
+  empty?: ReactNode;
 }) {
   const [shown, setShown] = useState(PAGE);
   const list = useRef<HTMLDivElement>(null);
@@ -345,6 +343,9 @@ function PagedChats({
         {pageRows}
         {openPastPage ? render(open) : null}
       </div>
+      {empty && pinnedRows.length === 0 && pageRows.length === 0 && !openPastPage ? (
+        <ListLine>{empty}</ListLine>
+      ) : null}
       {chats.length > shown ? (
         <ListRow
           onOpen={() => {

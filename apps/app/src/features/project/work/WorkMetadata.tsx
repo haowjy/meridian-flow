@@ -14,6 +14,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { useFailure } from "@/client/failures/useFailure";
 import { WorkReturnedError } from "@/client/query/work-mutations";
 import { workClosedSentence, workUpdateFailure } from "@/client/query/work-update-failure";
+import { announce } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { Button } from "@/components/ui/button";
@@ -48,7 +49,6 @@ export function useWorkMetadataController(
     },
     [],
   );
-  const [announcement, setAnnouncement] = useState("");
   const displayRef = useRef<HTMLElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const dirty = editing && draft.trim() !== (work.goal ?? "").trim();
@@ -61,7 +61,7 @@ export function useWorkMetadataController(
     setEditing(false);
     end("dismissed");
     takeHeld()?.cancel();
-    setAnnouncement(t`Goal edit canceled`);
+    announce(t`Goal edit canceled`);
     focusDisplay();
   }, [editing, focusDisplay, takeHeld, end]);
   const save = useCallback(async (): Promise<boolean> => {
@@ -76,15 +76,20 @@ export function useWorkMetadataController(
     setClosed(null);
     end("retried");
     setEditing(false);
-    setAnnouncement(t`Goal saved`);
     focusDisplay();
-    // The command is the driver's: what it settles to only matters if it was not applied.
-    saveWork({ goal }).catch((cause: unknown) => {
-      setDraft(goal);
-      setEditing(true);
-      if (cause instanceof WorkReturnedError) setClosed(workClosedSentence(cause.why));
-      else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
-    });
+    // The command is the driver's: the announcement waits for what it settles to.
+    saveWork({ goal }).then(
+      () => announce(t`Goal saved`),
+      (cause: unknown) => {
+        setDraft(goal);
+        setEditing(true);
+        if (cause instanceof WorkReturnedError) {
+          const sentence = workClosedSentence(cause.why);
+          setClosed(sentence);
+          announce(sentence);
+        } else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
+      },
+    );
     return true;
   }, [dirty, draft, editing, focusDisplay, saveWork, end, fail]);
   const request = useCallback(
@@ -130,7 +135,6 @@ export function useWorkMetadataController(
     error,
     closed,
     held: hasPendingIntent,
-    announcement,
     editorRef,
     displayRef,
     activate,
@@ -211,9 +215,6 @@ export function WorkGoal({
   const hasActions = overflows || !readOnly;
   return (
     <div className="min-w-0 text-body text-foreground">
-      <p className="sr-only" aria-live="polite">
-        {c.announcement}
-      </p>
       {editing ? (
         <GoalEditor controller={c} />
       ) : !work.goal ? (

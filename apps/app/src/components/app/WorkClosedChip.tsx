@@ -43,7 +43,8 @@ export function WorkClosedChip({ sentence, id }: { sentence: string; id?: string
           <Trans>Work was closed</Trans>
         </Chip>
       </TooltipTrigger>
-      <TooltipContent>{sentence}</TooltipContent>
+      {/* Beside the chip: above or below it the sentence covers the field it belongs to. */}
+      <TooltipContent side="right">{sentence}</TooltipContent>
     </Tooltip>
   );
 }
