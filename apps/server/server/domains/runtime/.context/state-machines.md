@@ -171,9 +171,13 @@ stateDiagram-v2
   media (a PDF) when that read is made (`createReferenceReader`). Every later request reads that
   copy through the same resolver with no placement or grant check, so deleting or purging the
   file changes nothing the model sees and the bytes stay where they were in the prefix. The copy
-  goes with the thread (the Work purge lists the prefix and deletes it after commit). A copy that
-  fails throws `MediaResolutionError`: the send or the turn fails, and nothing reads the file in
-  the copy's place. A store fault on read (anything but a missing object) fails the turn; it is
+  goes with the thread (the Work purge lists the prefix and deletes it after commit). There is one
+  copy per chat and stored object (its key is the source key's hash), so a resend or a second
+  mention writes the same key. Admission makes the copies before it reserves the submission. A
+  source whose bytes are gone leaves the part without a copy, and the request finds it unavailable
+  and tells the model; any other copy fault throws `MediaResolutionError`, which fails the send
+  with nothing stored, or the turn, and both are sent again. Nothing reads the file in the copy's
+  place. A store fault on read (anything but a missing object) fails the turn; it is
   never saved as the file being excluded. Tool-result media have no copy: the model's own `read`
   of a file reads it as it is now.
 - **Access is checked on every request** for those other kinds, by the host's resolver, on the

@@ -489,6 +489,13 @@ export function createUserTurnAdmission(deps: {
         });
       }
 
+      // The chat's copies first: a store fault fails the send before anything is reserved, so
+      // the resend runs whole.
+      const media = new Map<string, Awaited<ReturnType<ChatMediaPort["admit"]>>>();
+      for (const block of blocks)
+        if (block.type === "image" && !media.has(block.documentId))
+          media.set(block.documentId, await deps.chatMedia.admit(input.threadId, block.documentId));
+
       const now = deps.now?.() ?? new Date();
       const reservation = await deps.records.reserve({
         threadId: input.threadId,
@@ -599,9 +606,9 @@ export function createUserTurnAdmission(deps: {
           storedBlocks.push(block);
           continue;
         }
-        const media = await deps.chatMedia.admit(input.threadId, block.documentId);
-        if (!media) throw attachmentFailed();
-        storedBlocks.push({ ...block, ...media });
+        const sent = media.get(block.documentId);
+        if (!sent) throw attachmentFailed();
+        storedBlocks.push({ ...block, ...sent });
       }
       const admittedText = admittedBlocks
         .filter((block) => block.type !== "image")
