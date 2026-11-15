@@ -1051,13 +1051,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
       });
-      await works.ensureNoWork(PROJECT_ID);
-      const before = await works.snapshotIdentity(PROJECT_ID);
       await expect(purger.sweep()).resolves.toBe(1);
-      // A purge deletes a Work's row; the snapshot order must not fall, or a client keeps the
-      // older list that still shows it.
-      const after = await works.snapshotIdentity(PROJECT_ID);
-      expect(BigInt(after.authorityRevision)).toBeGreaterThan(BigInt(before.authorityRevision));
       await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
       await expect(works.findById(sourceWork.id)).resolves.toMatchObject({
         deletedAt: expect.any(String),

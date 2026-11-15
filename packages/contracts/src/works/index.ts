@@ -55,7 +55,7 @@ export type WorksSnapshot = {
   /**
    * The total order for complete snapshots: the sum of the project's Works' `entityRevision`s,
    * which every Work change raises and no change lowers. A purge deletes a Work, so it raises
-   * the No Work row by that Work's revision to keep the sum from falling.
+   * the No Work row by that Work's revision plus one, so the sum rises by one.
    */
   authorityRevision: string;
   /** Correlates one acquisition response; it is not ordering authority. */
