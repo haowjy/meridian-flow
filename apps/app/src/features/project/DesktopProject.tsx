@@ -31,7 +31,6 @@ import { TrashedDocument } from "./context/TrashedDocument";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDocumentStanding } from "./context/use-document-standing";
 import { useNewDocument } from "./context/use-new-document";
-import { useOpenTabSessions } from "./context/use-open-tab-sessions";
 import {
   NO_HELD_PANELS,
   type PanelSlotId,
@@ -134,7 +133,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // between main and the side passes through here while main's address loads, so it never
   // remounts. A tab the strip leaves out (its document is gone) keeps no host.
   const { tabs } = useLiveTabs().lanes.document;
-  useOpenTabSessions(projectId, tabs, shown);
   const keptTab =
     shown.find(
       (tab) =>

@@ -44,6 +44,8 @@ const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
 /** Closed-draft copies the start sweep loads at once. */
 const SWEEP_LOADS = 4;
+/** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
+const KEPT_FOR_UNDO_CAP = 8;
 
 /**
  * The resets that end a room for good: its unsent typing is handed back when the session retires,
@@ -101,6 +103,9 @@ export class DocumentSessionRegistry {
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
   private readonly holdCapStops = new Map<string, () => void>();
+  /** Sessions no host holds, kept while their history has something to undo or redo. */
+  private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
+  private undoClock = 0;
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
     string,
@@ -420,6 +425,8 @@ export class DocumentSessionRegistry {
     this.pendingTeardownTimers.clear();
     for (const stop of this.holdCapStops.values()) stop();
     this.holdCapStops.clear();
+    for (const kept of this.keptForUndo.values()) kept.stop();
+    this.keptForUndo.clear();
     const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session, hold }]) =>
       session ? [{ documentId, session, hold }] : [],
     );
@@ -563,7 +570,7 @@ export class DocumentSessionRegistry {
     });
     if (session.room.kind === "live")
       session.subscribe(() => {
-        this.retireDrainedRoom(session);
+        this.settleDrainedRoom(session);
         this.settleRetainedTransport(session);
       });
     return session;
@@ -846,23 +853,52 @@ export class DocumentSessionRegistry {
   }
 
   private scheduleTeardown(roomKey: string): void {
-    if (this.pendingTeardownTimers.has(roomKey) || this.holdCapStops.has(roomKey)) return;
+    if (
+      this.pendingTeardownTimers.has(roomKey) ||
+      this.holdCapStops.has(roomKey) ||
+      this.keptForUndo.has(roomKey)
+    )
+      return;
     const timer = setTimeout(() => {
       this.pendingTeardownTimers.delete(roomKey);
       const state = this.liveRooms.get(roomKey);
       if (!state?.session || this.isRetained(roomKey)) return;
-      // Like draft rooms, a session with unsent edits stays until they are acknowledged.
-      // `retireDrainedRoom` ends the hold when the room can no longer take them; a room that
-      // stays connected without acknowledging ends it at the cap. Offline time never counts.
-      // The other exits (removed document, revoked access, account close) go
-      // through `clearLocalCopy` and `invalidateAll`.
-      if (this.mustKeepForUnsentEdits(state.session)) {
-        this.holdUntilAcknowledged(roomKey, state, state.session);
-        return;
-      }
-      this.retireLiveSession(roomKey, state);
+      this.releaseUnheld(roomKey, state, state.session);
     }, this.teardownGraceMs);
     this.pendingTeardownTimers.set(roomKey, timer);
+  }
+
+  /**
+   * A session no host holds. Like draft rooms, one with unsent edits stays until they are
+   * acknowledged: `settleDrainedRoom` ends the hold when the room can no longer take them, and a
+   * room that stays connected without acknowledging ends it at the cap; offline time never counts.
+   * Then one whose room still takes writes and whose history has entries is kept for its undo,
+   * wherever it was shown; a room that can't take them (ended, read-only) retires. The other exits
+   * (removed document, revoked access, account close) go through `clearLocalCopy` and `invalidateAll`.
+   */
+  private releaseUnheld(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
+    if (this.mustKeepForUnsentEdits(session)) this.holdUntilAcknowledged(roomKey, state, session);
+    else if (session.canDeliverUnsentEdits() && session.history.hasEntries())
+      this.keepForUndo(roomKey, state, session);
+    else this.retireLiveSession(roomKey, state);
+  }
+
+  /** Off the socket; a host that takes it back reattaches it, and an emptied history ends it. */
+  private keepForUndo(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
+    const history = session.history;
+    const kept = { changed: ++this.undoClock, stop: () => {} };
+    kept.stop = history.subscribe(() => {
+      if (history.hasEntries()) kept.changed = ++this.undoClock;
+      else this.retireLiveSession(roomKey, state);
+    });
+    this.keptForUndo.set(roomKey, kept);
+    this.detachUnwantedTransport(session);
+    if (this.keptForUndo.size <= KEPT_FOR_UNDO_CAP) return;
+    const [oldest] = [...this.keptForUndo].reduce((least, entry) =>
+      entry[1].changed < least[1].changed ? entry : least,
+    );
+    const oldestState = this.liveRooms.get(oldest);
+    if (oldestState) this.retireLiveSession(oldest, oldestState);
   }
 
   private holdUntilAcknowledged(
@@ -904,13 +940,14 @@ export class DocumentSessionRegistry {
       .catch(() => undefined);
   }
 
-  private retireDrainedRoom(session: DocumentSession): void {
+  private settleDrainedRoom(session: DocumentSession): void {
     const roomKey = session.documentId;
     if (!this.holdCapStops.has(roomKey)) return;
     const state = this.liveRooms.get(roomKey);
     if (state?.session !== session) return;
     if (this.mustKeepForUnsentEdits(session)) return;
-    this.retireLiveSession(roomKey, state);
+    this.cancelPendingTeardown(roomKey);
+    this.releaseUnheld(roomKey, state, session);
   }
 
   // A restart cancels the pending teardown; a room no host retains still needs one.
@@ -921,6 +958,8 @@ export class DocumentSessionRegistry {
   private cancelPendingTeardown(roomKey: string): void {
     this.holdCapStops.get(roomKey)?.();
     this.holdCapStops.delete(roomKey);
+    this.keptForUndo.get(roomKey)?.stop();
+    this.keptForUndo.delete(roomKey);
     const timer = this.pendingTeardownTimers.get(roomKey);
     if (!timer) return;
     clearTimeout(timer);
