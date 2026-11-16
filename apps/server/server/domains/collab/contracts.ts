@@ -199,7 +199,7 @@ export type TreeReceiptInput = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   /** The Work's branch the record was drafted in; absent when it is live. */
-  draftBranchId?: import("@meridian/contracts").BranchId;
+  draftBranchId?: BranchId;
   /** The path the model gave. */
   shownAt: string;
   /** An undo or redo names the receipt it reverses. */
@@ -573,6 +573,8 @@ export type WorkDraftMissing = { code: "draft_not_found"; documentId: string };
 export type EffectiveBlocksRead = VersionedDocumentRead<
   readonly import("@meridian/markup").PMNode[]
 > & {
+  /** The content version used by this view. */
+  version: "live" | "draft";
   /** Canonical address the cut's links spell from; null for a chat with no holder. */
   holderUri: string | null;
   stateVector: Uint8Array;
@@ -623,12 +625,12 @@ export type DraftPeerShadowAccess = {
    * One document's frozen cut for a copy: the blocks a whole-document write would see,
    * the revision a `read` of that version reports, the holder those links spell from, and
    * the Yjs state vector of the cut (what a client's own vector is compared against). A draft
-   * read is of the named Work's draft, whatever chat reads it; a Work that holds no draft of
-   * the document is `draft_not_found`, never the live document.
+   * view reads the named Work's draft if present, otherwise live content. Links still spell
+   * in the named Work's tree view.
    */
   readEffectiveBlocks(
     input: { documentId: DocumentId } & EffectiveReadVersion,
-  ): Promise<Result<EffectiveBlocksRead, SyncError | WorkDraftMissing>>;
+  ): Promise<Result<EffectiveBlocksRead, SyncError>>;
   /**
    * One hashline per block, and per block the ref-bearing links it spells
    * (`spelledLinks`), computed with the same scope in the same synchronous block.
@@ -639,6 +641,9 @@ export type DraftPeerShadowAccess = {
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
+  writeCreatedDraftContent(
+    created: readonly { documentId: DocumentId; branchId: BranchId; content: BoundWrite }[],
+  ): Promise<void>;
   /**
    * Each text document a branch's admitted create just made gets its Yjs authority and its
    * Work text draft (empty: a draft create never seeds live Yjs), in the admitting

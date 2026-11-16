@@ -1,4 +1,5 @@
 import { t } from "@lingui/core/macro";
+import type { DraftOwnerKey } from "@meridian/contracts";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Ellipsis, ListChecks, type LucideIcon, MessageSquare, Trash2 } from "lucide-react";
@@ -415,10 +416,25 @@ export function SourcesBody({
       TREE_SCHEMES.flatMap((scheme) => {
         const tree = catalogs[scheme].tree;
         return tree
-          ? [{ scheme, owner: { workId: editorWorkId }, tree, writable: writable[scheme] }]
+          ? [
+              {
+                scheme,
+                owner: { workId: editorWorkId },
+                tree,
+                writable: writable[scheme],
+                ...(drafting && shell
+                  ? {
+                      view: {
+                        kind: "draft" as const,
+                        owner: shell.ownerKey as DraftOwnerKey,
+                      },
+                    }
+                  : {}),
+              },
+            ]
           : [];
       }),
-    [catalogs, editorWorkId, writable],
+    [catalogs, editorWorkId, writable, drafting, shell],
   );
   const list = useEntryList({ projectId, areas });
   const dropImport = useOptionalImports()?.drop;

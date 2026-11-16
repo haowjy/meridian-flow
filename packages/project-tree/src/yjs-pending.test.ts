@@ -1,5 +1,5 @@
 /**
- * Proof-of-concept finding, not a tree rule: Yjs 13.6.31 (and 13.6.33, the latest 13.x) can
+ * Proof-of-concept finding, not a tree rule: Yjs 13.6.31 and 13.6.33 can
  * leave updates pending forever when single-struct updates arrive out of causal order, even
  * once every update has arrived. Found by the tree property test; this is its minimised
  * sequence (17 updates from four clients). A state-vector exchange, which y-protocols runs on

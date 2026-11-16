@@ -32,6 +32,7 @@ import { FileCard } from "@/components/app/FileCard";
 import { Button } from "@/components/ui/button";
 
 import { useAssetImageRenderState } from "./asset-image-render-state";
+import { RemoteImagePlaceholder } from "./images/RemoteImagePlaceholder";
 import { mountedLinks } from "./links";
 
 type MeridianFigureExtensionOptions = {
@@ -88,6 +89,10 @@ export function FigureNodeView(props: NodeViewProps) {
             onError={renderActions.imageLoadFailed}
             draggable={false}
           />
+        ) : renderState.kind === "remote" ? (
+          <div className="m-3">
+            <RemoteImagePlaceholder address={renderState.address} alt={alt ?? ""} />
+          </div>
         ) : (
           <div className="meridian-figure-node__placeholder" aria-hidden>
             {renderState.kind === "loading" ? (

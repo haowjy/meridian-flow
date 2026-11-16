@@ -9,7 +9,7 @@ import { closeHistory } from "@tiptap/pm/history";
 import { Fragment, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
+import { endUndoStep } from "../../editor-history";
 
 import type { DropDoor, DropPlan } from "../../landing/drop-plan";
 import { snapOutOfChip, snapOutOfCode, snapToWordEdge } from "../../landing/inline-snap";
@@ -113,7 +113,7 @@ function insert(
   content: Fragment | PMNode,
   caretFrom: (end: number) => number,
 ): void {
-  yUndoPluginKey.getState(view.state)?.undoManager.stopCapturing();
+  endUndoStep(view.state);
   const transaction = closeHistory(view.state.tr).insert(pos, content);
   const end = transaction.mapping.map(pos, 1);
   transaction.setSelection(TextSelection.create(transaction.doc, caretFrom(end)));
@@ -121,7 +121,7 @@ function insert(
   // paste rules a `uiEvent: "drop"` would wake may turn it into a website.
   transaction.setMeta("preventAutolink", true);
   view.dispatch(transaction.scrollIntoView());
-  yUndoPluginKey.getState(view.state)?.undoManager.stopCapturing();
+  endUndoStep(view.state);
   view.dispatch(closeHistory(view.state.tr));
   view.focus();
 }

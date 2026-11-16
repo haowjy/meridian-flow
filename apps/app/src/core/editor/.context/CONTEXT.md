@@ -71,7 +71,7 @@ and remain quarantined until their retryable destroy ledger succeeds.
   is not a child the editor compares: without that, the next local edit in the
   block rewrites everything after the empty text and duplicates words. The browser
   editor, the server and `packages/agent-edit` all bind through the one patched
-  `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
+  `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.3.0.patch`; `y-prosemirror`
   is not a dependency); `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
   rule by addressing units across a block's texts. Stock y-tiptap and y-prosemirror fold the run into
   its first text, delete the rest, and fold again on read (a read that writes).
@@ -121,12 +121,33 @@ and remain quarantined until their retryable destroy ledger succeeds.
   the document. Cells and headers carry ids too, so their paragraphs and nested containers
   pair by id. Children inside a container rewritten in place as another block still pair
   by position. Stock y-tiptap pairs by position and
-  child equality: Enter at the end of a paragraph followed by an empty one moved
+  child equality (3.3.0 adds a first pass that pairs by the node a Yjs type was last mapped to,
+  `reconcileMappedChildren`; the patch bypasses it and keeps the id pairing): Enter at the end of a paragraph followed by an empty one moved
   the empty one's element to the new paragraph. Yjs has no move, so typing a
   peer puts into a block while it is dragged is lost, and two peers dragging one
   block at once leave two copies with one `id`. The fold fuzz
   (`qa/fold-fuzz.md`) checks this rule and the text rule above; run it by hand
   when the patch changes.
+- Redoing the y-tiptap patch on a new version: `pnpm patch @tiptap/y-tiptap@<version>`, edit
+  `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
+  the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
+  `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
+  text-run grouping, the id pairing with `movedIds`, the empty-fragment guard, the forced-render
+  selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
+  capture and restore (`resolveRelativeCellSelection`), and `recoverSelectionEndpoint` trusting a
+  position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`; upstream
+  [tiptap#8594](https://github.com/ueberdosis/tiptap/issues/8594), open: drop this change once a release fixes it).
+- Undo step boundaries: y-tiptap 3.x closes the capture window only for a document-changing
+  transaction with `addToHistory: false`; a meta-only one does not. A site that needs its edit to
+  be a separate step calls `endUndoStep(state)` (`editor-history.ts`) before the edit: image
+  upload, link actions, `@` references, reference drops, a Discard, a block drop. Meta-only
+  messages (block hold and lift, review projection, upload progress, reading position) are not
+  boundaries.
+- Debugging the patched y-tiptap: the `.map` files and `src/` in the package are pristine 3.3.0, so
+  devtools shows code that does not run. Set breakpoints in `dist/index.js` itself (delete its
+  `//# sourceMappingURL` line locally to stop devtools following the map) and read the patched
+  logic from `patches/@tiptap__y-tiptap@3.3.0.patch`. `refreshProseMirrorDoc` there is the headless
+  copy of the mapping refresh in `ProsemirrorBinding._typeChanged`; change both together.
 - Known limits, left as they are until writers hit them: deleting a run beside
   an inline atom deletes a peer's concurrent typing into it (a text is emptied
   only when the whole block empties), and a concurrent split moves the bylines
