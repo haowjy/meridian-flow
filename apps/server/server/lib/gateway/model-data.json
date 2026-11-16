@@ -10,13 +10,14 @@
           "tokenizer": {
             "value": "anthropic",
             "source": "https://platform.claude.com/docs/en/build-with-claude/token-counting",
-            "checked": "2026-11-16"
+            "checked": "2026-11-16",
+            "note": "\"The token counting endpoint counts under the tokenizer of the `model` you pass.\""
           },
           "projectToolSchema": {
             "value": true,
-            "source": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+            "source": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
             "checked": "2026-11-16",
-            "note": "Anthropic-format hosts that need the tool-schema projection; the first-party API is the only one today."
+            "note": "A tool schema \"follows JSON Schema, with some limitations\"; an unsupported feature is a 400. Anthropic-format hosts that need the projection: the first-party API is the only one today."
           },
           "promptCache": {
             "value": {
@@ -46,9 +47,9 @@
         "*": {
           "tokenizer": {
             "value": "o200k",
-            "source": "https://github.com/openai/tiktoken",
+            "source": "https://raw.githubusercontent.com/openai/tiktoken/main/tiktoken/model.py",
             "checked": "2026-11-16",
-            "note": "OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate."
+            "note": "tiktoken maps the `gpt-5` prefix to o200k_base and has no gpt-5.6 or gpt-6 entry; OpenAI has not published their tokenizer, so o200k is an estimate."
           },
           "promptCache": {
             "value": {
@@ -80,13 +81,14 @@
           "tokenizer": {
             "value": "deepseek",
             "source": "https://api-docs.deepseek.com/quick_start/token_usage",
-            "checked": "2026-11-16"
+            "checked": "2026-11-16",
+            "note": "DeepSeek publishes an offline tokenizer package but does not name it, and counts by the usage the API returns."
           },
           "thinksByDefault": {
             "value": true,
             "source": "https://api-docs.deepseek.com/guides/thinking_mode",
             "checked": "2026-11-16",
-            "note": "The model thinks unless told not to; models.dev does not say."
+            "note": "\"Thinking mode is enabled by default, with the default effort being `high`.\" models.dev does not say."
           },
           "promptCache": {
             "value": {
@@ -123,13 +125,14 @@
           "tokenizer": {
             "value": "gemini",
             "source": "https://ai.google.dev/gemini-api/docs/tokens",
-            "checked": "2026-11-16"
+            "checked": "2026-11-16",
+            "note": "Google publishes no tokenizer, only \"a token is equivalent to about 4 characters\" and count_tokens."
           },
           "maxLinkBytes": {
             "value": 15000000,
             "source": "https://ai.google.dev/gemini-api/docs/file-input-methods",
             "checked": "2026-11-16",
-            "note": "Gemini fetches a link up to 15 MB."
+            "note": "\"Each file can be up to 15 MB\", for public HTTPS or pre-signed URLs."
           },
           "promptCache": {
             "value": {
@@ -145,7 +148,7 @@
             "value": true,
             "source": "https://ai.google.dev/gemini-api/docs/function-calling",
             "checked": "2026-11-16",
-            "note": "Gemini 3 and later put an id on each function call and let a function response hold media; the runtime used to read this from a gemini-N id. Carried over for gemini-4-argon without re-reading the source."
+            "note": "The API pairs function responses with calls \"by `id`\", and \"for Gemini 3 series models, you can include multimodal content in the function response parts\". A replayed call without a signature may send `skip_thought_signature_validator` (https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking/thought-signatures)."
           }
         },
         "gemini-4-argon": {
