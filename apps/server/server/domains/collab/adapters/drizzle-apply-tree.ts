@@ -30,6 +30,7 @@ import { and, eq, inArray, max } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import type { SourceFate, TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { type IdentityStatus, LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
@@ -66,6 +67,8 @@ export type TreeItemFacts = {
   deletedHere: boolean;
   /** It stands in live (not in Trash, not only in the draft). */
   standsInLive: boolean;
+  /** Its document stands in notes that take no change (closed, or purged): its text takes no write. */
+  textClosed: SourceFate | null;
   /** Where live had it before and after, for a document. */
   before?: IdentityStatus;
   after?: IdentityStatus;
@@ -116,6 +119,8 @@ export function createApplyTreeOperations(input: {
     commandId: CommandId;
     saw: TreeCut | undefined;
     items: readonly TreeApplyItem[];
+    /** Under the owners' locks: what each source takes. */
+    judge: TreeJudge;
   }): Promise<Map<string, TreeItemFacts>> {
     const { branchId, items } = click;
     const lists: TreeList[] = [];
@@ -131,6 +136,7 @@ export function createApplyTreeOperations(input: {
       restore: null,
       deletedHere: false,
       standsInLive: false,
+      textClosed: null,
     });
     for (const it of items) facts.set(it.node, blank());
     if (lists.length === 0) return facts;
@@ -171,6 +177,15 @@ export function createApplyTreeOperations(input: {
               (record) => record.type === "delete",
             );
           const trashed = (node: string) => writer.view(LIVE).nodes.get(node)?.trashed === true;
+          // A document in a closed owner's notes takes no text, so nothing brings it back for one.
+          const placedIn = (node: string) => writer.view(LIVE).nodes.get(node)?.source;
+          for (const it of mine) {
+            const source = placedIn(it.node);
+            (facts.get(it.node) as TreeItemFacts).textClosed =
+              source === undefined ? null : click.judge.fate(source);
+          }
+          const textOpen = (it: TreeApplyItem) =>
+            it.textOpen && !(facts.get(it.node) as TreeItemFacts).textClosed;
           // The restores this command makes are its own: Un-Apply takes them back with the copies.
           const restored: string[] = [];
           const restore = (it: TreeApplyItem) => {
@@ -182,7 +197,7 @@ export function createApplyTreeOperations(input: {
           // checked against then has them standing.
           const isDocument = (it: TreeApplyItem) => (facts.get(it.node) as TreeItemFacts).document;
           for (const it of mine)
-            if (isDocument(it) && it.textOpen && !holdsDelete(it) && trashed(it.node)) restore(it);
+            if (isDocument(it) && textOpen(it) && !holdsDelete(it) && trashed(it.node)) restore(it);
           const chosen = mine.flatMap((it) => (facts.get(it.node) as TreeItemFacts).records);
           const applied = chosen.length
             ? applyDraft(
@@ -192,6 +207,7 @@ export function createApplyTreeOperations(input: {
                 click.commandId,
                 [...new Set(chosen.map((record) => record.id))],
                 saw,
+                click.judge.closed,
               )
             : null;
           for (const record of applied?.restored ?? []) restored.push(record.id);
@@ -215,7 +231,7 @@ export function createApplyTreeOperations(input: {
             const one = facts.get(it.node) as TreeItemFacts;
             if (
               isDocument(it) &&
-              it.textOpen &&
+              textOpen(it) &&
               holdsDelete(it) &&
               !one.deletedHere &&
               trashed(it.node)
@@ -246,6 +262,8 @@ export function createApplyTreeOperations(input: {
             ],
           });
         }
+        // Every judgement above was a guess for a source whose owner was not locked.
+        click.judge.assertLocked();
         return rows;
       },
     });

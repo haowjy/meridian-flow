@@ -34,11 +34,14 @@ threads of the receipt Works (marked ones included) and the chat's own, parents 
 runtime's thread lock does, so the Work step's `stopThreads` re-enters locks it already holds; then
 all the Works by id, the lineages and, when receipts exist, the project's tree lists and the
 namespace keys a restore takes (`works.lockRestoreNamespaces`). The documents' Works are locked as
-rows only. The commit scope compares the Works it would lock with that set
-before taking any lock; a Work outside it throws `ReversalOwnersMoved`, which rolls back past the
-claim and reruns the command with the larger set (four attempts). A miss the server retries (a
-moved capture, a deadlock) rolls back past the claim; four misses of the owners answer 503 with
-`Retry-After` and store nothing; exhausting the inverse's attempts is
+rows only. The set includes the owners of the sources the tree steps would change (`plan`'s
+`owners`: the estimate, read from the steps' `undoReports`). The commit scope compares the Works it
+would lock with that set before taking any lock; a Work outside it throws `TreeOwnersMoved`
+(`shared/tree-owners.ts`), which rolls back past the claim and reruns the command with the larger
+set and every source the attempt met unlocked (`untilOwnersHold`, the same restart Apply and
+Un-Apply use; a restart that names nothing new escapes as 503 with `Retry-After`, and one that names
+nothing at all (only a fresh read) escapes after four,
+storing nothing). Exhausting the inverse's attempts is
 `ReversalConflictError` and stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
@@ -97,7 +100,7 @@ be removed or restored, else `changed`; a part an Undo already took out is `chan
 `kernelCause` words it `already_undone` from the action index. Un-Apply inverts a group the same
 way as the card.
 A card's reversal decides which tree steps can still act before it plans or admits any text
-(`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from `undoChange`'s answers as the lists
+(`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists
 stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's branch
 places the node. A step that can't act is a skip and never runs, so one purged document never
 refuses the rest of the reply. The text targets and the grants come from the steps that act. A
@@ -165,10 +168,10 @@ what the reply did, and the card leaves it). The receipts one list holds go back
 it redraws once for the whole Undo, not once a receipt. A create's receipt holds the folders the
 create made on the way (outermost first), so its Undo takes them back with it. It
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
-each back by `undoChange` in the list that holds the node, and records the reversal as a
+each list's receipts back in one walk (`takeBackAll`) in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. The model's `undo` reads the same fate (`runTreeUndo`):
 `taken` answers `reversed` and records the empty reversal, a receipt that stayed answers
-`cant_undo_changed`, the card's skip. A reply that touched both a project's
+`cant_undo_changed`, the card's skip, or `purged` when what it touched is gone (the card's `purged` too). A reply that touched both a project's
 files and `user://` locks both lists; nothing moves between them, so each receipt goes back in
 its own list. A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
@@ -197,7 +200,7 @@ with what was undone left out (`TreeHistory.historyOf`: the receipts that took a
 not reversed, and the ordinals the text engine's
 own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,
 and `revert` the receipt
-the handle names. Tree records go back through the package's `undoChange`, which finds the live
+the handle names. Tree records go back through the package's `takeBackAll`, which finds the live
 copy of an applied or restored change by `carries`, and takes back only what the receipt did:
 what others put in a folder it made stands and keeps it standing. The records an Undo makes name
 what they take back (`undoes`), including Undo receipts. A model `move` between a project and `user://`
@@ -271,12 +274,16 @@ semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. Every skipped part carries a typed `cause`
 (`TurnInverseSkipCause`) and the app words it; a tree skip names the path its entry was shown
-at, its `op`, and `changed_since` or `purged`.
+at, its `op`, and `changed_since`, `purged` or `returned`.
 
-Each tree receipt's fate is decided once, from `undoChange`'s own answers for its records
+Each tree receipt's fate is decided once, from the walk's own answers for its records
 (`changeUndone` in `@meridian/project-tree`), and the planner, the reversal's status, the chip
 and the model's `undo` all read it. The card's planner (`drizzle-turn-tree-inverse.ts` `plan`)
-asks with `undoAnswer`, which writes nothing, inside its one read of each list:
+asks with `undoReports`, which writes nothing, inside its one read of each list (one walk over
+the list's receipts in press order, each record in its receipt's view: the estimate equals its press
+only on the same steps in the same order), then judges the sources they name (`answerOf`). When an
+owner is closed it reads the lists again with `judge.closed`, so a held record is out of the tree
+its successors are read from, and it judges the sources that read names, until they hold:
 - `acts`: some record would be taken back. Only these are steps the chip offers Undo for.
 - `taken`: every record's opposite already stands (the writer restored what the model
   deleted, or deleted what it created). It counts as taken back: the Undo records an empty
@@ -285,6 +292,13 @@ asks with `undoAnswer`, which writes nothing, inside its one read of each list:
   from a stale tab, answers `reversed` too; text an earlier card Undo took out does the same.
 - `changed_since` or `purged`: the receipt stays, a skip with that cause, in the chip's skips
   and the Undo's alike. A reply whose only parts stayed answers `not_undone`.
+- `closed`: an opposite record would change a closed owner's notes (an archived or deleted Work, a
+  chat in Trash): the record stays, as in Un-Apply, and the skip is `returned` with `why` and the
+  owner's name. A source with no `context_sources` row reads `purged`. The card's Undo and the
+  model's `undo` ask the same `TreeJudge` as Apply and Un-Apply, so a note the model moved out of
+  an archived Work's notes does not go back into them. The model's `undo` locks the owners with
+  its grants (`runWithEditGrants`' `alsoLock`), judges inside `treeCommand`, and restarts through
+  `withTreeOwners`; its answer is `returned` with the owner.
 
 The Work half (`lib/work-receipt-reversal.ts`) has fates of its own, one per Work, from where
 the turn started and ended it: `taken` when the Work stands as the turn found it (the writer

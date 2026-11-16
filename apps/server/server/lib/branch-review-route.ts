@@ -675,8 +675,9 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ParsedA
 /**
  * The one Apply: any selection of nodes, a per-document click being the one-item case. It
  * takes the grants every item needs, whatever the route it came by: the draft's grant and the
- * live grant on each document, and a restore grant on one live has deleted (it authorizes at
- * its source through the draft's destination, F9). A folder has no file of its own: the writer
+ * `command` grant on each live document (a closed owner's file passes: the core bounces it),
+ * and a restore grant on one live has deleted (it authorizes at its source through the draft's
+ * destination, F9). A folder has no file of its own: the writer
  * owns the project, which the branch's identity proved.
  */
 async function applyItems(
@@ -684,8 +685,6 @@ async function applyItems(
   input: CommandScope,
   request: ParsedApply,
   envelope: CommandEnvelope,
-  /** Set on the one re-run after a live delete overtook this click's admission. */
-  overtaken = false,
 ): Promise<ApplyClickAnswer | CommandRunning> {
   const access = await requireBranchIdentity(deps, input);
   const { commandId } = envelope;
@@ -710,24 +709,17 @@ async function applyItems(
       }),
     })),
   );
-  const deletedLive = resolved.some(({ found }) => found?.item.deletedLive);
-  // A live delete that committed after the items resolved, at authorization or at the grants'
-  // confirmation: nothing was claimed, so the click runs once more, resolves the item as
-  // deleted and authorizes its restore. A document whose room was removed gets no grant and the
-  // command settles it (`left_out purged`). Every other denial is about who is acting: a 404.
-  const denied = async (
-    denial: FileAccessDenied | undefined,
-    node: DocumentId,
-  ): Promise<ApplyClickAnswer | CommandRunning | null> => {
-    if (denial?.facts?.deleted && !deletedLive && !overtaken)
-      return applyItems(deps, input, request, envelope, true);
+  // The `command` grant ignores lifecycle, a live delete included. A document whose room was
+  // removed gets no grant and the command settles it (`left_out purged`). Every other denial is
+  // about who is acting: a 404.
+  const denied = async (denial: FileAccessDenied | undefined, node: DocumentId): Promise<void> => {
     if (
       denial?.facts?.deleted &&
       denial.facts.ownerAccountId === input.userId &&
       ownedByRequest(denial.facts.owner, { projectId: input.projectId, accountId: input.userId }) &&
       (await deps.documentSync.roomRemoval({ documentId: node }))
     )
-      return null;
+      return;
     throw createError({ statusCode: 404, message: "Not found" });
   };
   const grants: FileGrant<"edit" | "command">[] = [];
@@ -744,8 +736,7 @@ async function applyItems(
         "command",
       );
       if (isFileAccessDenied(grant)) {
-        const answer = await denied(grant, node);
-        if (answer) return answer;
+        await denied(grant, node);
         continue;
       }
       grants.push(grant);
@@ -754,11 +745,10 @@ async function applyItems(
       const live = await deps.fileAccess.authorize(
         { accountId: input.userId },
         documentTarget(node),
-        "edit",
+        "command",
       );
       if (isFileAccessDenied(live)) {
-        const answer = await denied(live, node);
-        if (answer) return answer;
+        await denied(live, node);
         continue;
       }
       grants.push(live);
@@ -777,11 +767,8 @@ async function applyItems(
     ),
   );
   if (result.ok) return result.value;
-  const answer = await denied(
-    result.refusal.refused[0],
-    (resolved[0]?.node ?? input.branchId) as DocumentId,
-  );
-  if (answer) return answer;
+  // The grants were refused at the seam: a document moved to another Work after they were minted.
+  // The command settled nothing, so a removed room has nothing to settle here either.
   throw createError({ statusCode: 404, message: "Not found" });
 }
 
@@ -866,8 +853,8 @@ export function handleApplyItemsRequest(
  * every document the command's own record names (`commandDocuments`). With a draft `owner` (Undo
  * of a Discard), the document is written in that owner's draft: through the draft itself, else
  * through the restore seam at the draft's destination, where a creation only the Work shows has
- * its identity once its draft closed. Else, and as the last resort, its live grant, or the
- * restore grant when live has deleted it.
+ * its identity once its draft closed. Else its live grant: `command` passes a document live has
+ * deleted.
  */
 async function documentGrant(
   deps: BranchRouteServices,
@@ -891,9 +878,7 @@ async function documentGrant(
     );
     if (!isFileAccessDenied(restored)) return restored;
   }
-  const live = await deps.fileAccess.authorize(principal, documentTarget(documentId), "edit");
-  if (!isFileAccessDenied(live) || !live.facts?.deleted) return live;
-  return deps.fileAccess.authorize(principal, { kind: "restore", documentId }, "edit");
+  return deps.fileAccess.authorize(principal, documentTarget(documentId), "command");
 }
 
 /**

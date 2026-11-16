@@ -29,6 +29,7 @@ export type UndoOutcome =
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
+  | "purged"
   | "insufficient_undo"
   | "nothing_to_revert";
 
@@ -87,7 +88,9 @@ export type TurnInverseSkipCause =
 
 /**
  * A text part, by its excerpts; a tree change, by the path it was shown at and what it did. A
- * tree change stayed because a later change holds it (`changed_since`), or its node is purged.
+ * tree change stayed because a later change holds it (`changed_since`), its node is purged, or
+ * taking it back would change a closed owner's notes (`returned`: `why` says which owner state,
+ * `owner` names it).
  */
 export type TurnInverseSkip = { documentId: string; uri: string } & (
   | {
@@ -102,7 +105,11 @@ export type TurnInverseSkip = { documentId: string; uri: string } & (
       kind: "tree";
       at: string | null;
       op: "create" | "move" | "delete" | "restore";
-      cause: "changed_since" | "purged";
+      cause: "changed_since" | "purged" | "returned";
+      /** Set when `cause` is `returned`. */
+      why?: ClosedOwnerWhy;
+      /** Set when `cause` is `returned`: the Work or chat whose notes the change is in, by name. */
+      owner?: string;
     }
 );
 

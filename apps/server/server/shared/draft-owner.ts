@@ -151,15 +151,24 @@ export async function lockLineageOwners(
   rootThreadIds: readonly string[],
 ): Promise<ReadonlyMap<string, "active" | "frozen">> {
   const roots = [...new Set(rootThreadIds)].sort();
-  const states = new Map<string, "active" | "frozen">();
-  if (roots.length === 0) return states;
   const tx = currentDrizzleDb(db);
   for (const root of roots) {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${lineageLockKey(root)}, 0))`,
     );
   }
-  const live = await tx.execute<{ root: string; live: boolean }>(
+  return readLineageOwners(db, roots);
+}
+
+/** Each lineage's liveness as it stands, with no lock: a lineage with no live member is frozen. */
+export async function readLineageOwners(
+  db: DrizzleDb,
+  rootThreadIds: readonly string[],
+): Promise<ReadonlyMap<string, "active" | "frozen">> {
+  const roots = [...new Set(rootThreadIds)].sort();
+  const states = new Map<string, "active" | "frozen">();
+  if (roots.length === 0) return states;
+  const live = await currentDrizzleDb(db).execute<{ root: string; live: boolean }>(
     sql`SELECT r.id::text AS root, ${lineageHasLiveMember(sql`r.id`)} AS live
         FROM unnest(${sql`ARRAY[${sql.join(
           roots.map((root) => sql`${root}::uuid`),
@@ -220,4 +229,34 @@ export async function branchDraftRefs(
     .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
     .where(inArray(documentDrafts.id, [...new Set(draftIds)]));
   return rows;
+}
+
+/**
+ * The name an owner goes by in a line about its notes: a Work's name, or a conversation's title
+ * else its ref. By owner id (`workId`, or `rootThreadId`); an owner with no row has none.
+ */
+export async function ownerNames(
+  db: DrizzleDb,
+  owners: { workIds: readonly string[]; rootThreadIds: readonly string[] },
+): Promise<ReadonlyMap<string, string>> {
+  const tx = currentDrizzleDb(db);
+  const ids = (list: readonly string[]) =>
+    sql.join(
+      [...new Set(list)].map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+  const rows = [
+    ...(owners.workIds.length
+      ? await tx.execute<{ id: string; name: string }>(
+          sql`SELECT id::text AS id, name FROM works WHERE id IN (${ids(owners.workIds)})`,
+        )
+      : []),
+    ...(owners.rootThreadIds.length
+      ? await tx.execute<{ id: string; name: string }>(
+          sql`SELECT id::text AS id, coalesce(nullif(trim(title), ''), ref) AS name
+              FROM threads WHERE id IN (${ids(owners.rootThreadIds)})`,
+        )
+      : []),
+  ];
+  return new Map(rows.map((row) => [row.id, row.name]));
 }

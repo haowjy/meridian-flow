@@ -1,6 +1,6 @@
 /**
  * The tree half of a card's Undo of a reply: the reply's tree receipts (the model's moves,
- * renames, deletes and creates), taken back by the package's `undoChange` in the list that
+ * renames, deletes and creates), taken back by the package's `takeBackAll` in the list that
  * holds each node, as one step of the card's command. The receipts are the history the
  * model's own `undo` chooses from (`tree_edit_receipts` and their `reverses` links), and each
  * reversal is recorded as a receipt in turn, so the model's `undo` and the card's see one order.
@@ -15,32 +15,54 @@ import {
   type DraftedFate,
   draftedFates,
   LIVE,
+  type TakenBack,
   type TreeWriter,
-  undoAnswer,
-  undoChange,
+  takeBackAll,
+  type UndoAnswer,
+  type UndoReport,
+  type UndoStep,
+  undoReports,
   type View,
 } from "@meridian/project-tree";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  answerOf,
+  type ClosedSource,
+  closedAnswer,
+  type Learned,
+  NO_OWNERS,
+  type TreeOwners,
+  treeOwners,
+} from "../../../shared/tree-owners.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { placedNodesSql } from "../../context/tree/tree-addresses.js";
 import type { AgentTreeHistory, TreeReceipt, TreeReceiptInput } from "../contracts.js";
 import { treeListOfNode, treeListsOfNodes } from "./drizzle-branch-tree-lists.js";
 
 /** Why a receipt's Undo leaves it as it is. */
-type Stayed = "changed_since" | "purged";
+type Stayed = "changed_since" | "purged" | "closed";
 
 const viewOf = (receipt: TreeReceipt): View =>
   receipt.draftBranchId ? { draft: receipt.draftBranchId } : LIVE;
 
-const stayedSkip = (receipt: TreeReceipt, cause: Stayed): TurnInverseSkip => ({
-  kind: "tree",
-  documentId: receipt.subject,
-  uri: receipt.shownAt ?? receipt.subject,
-  at: receipt.shownAt,
-  op: receipt.op,
-  cause,
-});
+/** A receipt that stayed. `closed` is the owner the Undo would have changed, when the receipt stayed for it. */
+function stayedSkip(receipt: TreeReceipt, cause: Stayed, closed?: ClosedSource): TurnInverseSkip {
+  const skip = {
+    kind: "tree" as const,
+    documentId: receipt.subject,
+    uri: receipt.shownAt ?? receipt.subject,
+    at: receipt.shownAt,
+    op: receipt.op,
+  };
+  return cause === "closed"
+    ? {
+        ...skip,
+        cause: "returned",
+        ...(closed ? { why: closed.why, ...(closed.owner ? { owner: closed.owner } : {}) } : {}),
+      }
+    : { ...skip, cause };
+}
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
 export type TreePlan = {
@@ -53,8 +75,16 @@ export type TreePlan = {
   taken: TreeReceipt[];
   /** How many of the reply's receipts an earlier card Undo took back. */
   undoneByCard: number;
-  /** The receipts that stay, with why: something changed them since, or their node is gone. */
+  /**
+   * The receipts that stay, with why: something changed them since, their node is gone, or an
+   * owner is closed (`returned`, with the owner).
+   */
   stayed: TurnInverseSkip[];
+  /**
+   * The owners of the sources the Undo changes, whose locks come before the lists': what
+   * `stayed` was judged from, and what `run` judges under the locks.
+   */
+  owners: TreeOwners;
   /** The lists that hold the steps' nodes, to be locked before any document key. */
   lists: TreeList[];
   /** The Works whose branches a drafted step writes. */
@@ -72,6 +102,7 @@ export const NO_TREE_STEPS: TreePlan = {
   taken: [],
   undoneByCard: 0,
   stayed: [],
+  owners: NO_OWNERS,
   lists: [],
   branches: [],
   documents: [],
@@ -145,10 +176,14 @@ export function createTurnTreeInverse(deps: {
   }
 
   /**
-   * The reply's receipts by what the card's Undo would do with each, judged by `undoChange` on
+   * The reply's receipts by what the card's Undo would do with each, judged by `takeBackAll` on
    * the lists as they stand: the steps it takes, those already taken, and those that stay.
    */
-  async function plan(threadId: ThreadId, turnId: TurnId): Promise<TreePlan> {
+  async function plan(
+    threadId: ThreadId,
+    turnId: TurnId,
+    learned?: Pick<Learned, "sources" | "owners">,
+  ): Promise<TreePlan> {
     const creates = await db()
       .select({ id: treeEditReceipts.nodeId })
       .from(treeEditReceipts)
@@ -197,8 +232,8 @@ export function createTurnTreeInverse(deps: {
       ).map((row) => [row.id as string, row.trashRecord]),
     );
     const listOf = await treeListsOfNodes(deps.db, [...new Set(ids)]);
-    // Each record's answer, one read of each list.
-    const answers = new Map<string, ReturnType<typeof undoAnswer>>();
+    // Each record's report, one read of each list, in the order the Undo takes the records; the
+    // sources they name say whose notes the Undo changes, and those owners judge what stays.
     const byList = new Map<string, { list: TreeList; receipts: TreeReceipt[] }>();
     for (const step of open) {
       const list = listOf.get(step.subject);
@@ -209,13 +244,47 @@ export function createTurnTreeInverse(deps: {
       entry.receipts.push(step);
       byList.set(key, entry);
     }
-    for (const { list, receipts } of byList.values()) {
-      const read = await deps.treeLists.read({
-        lists: [list],
-        view: ([end]) => (end ? receipts.flatMap((step) => judged(end.writer, step)) : []),
-      });
-      for (const [record, answer] of read) answers.set(record, answer);
-    }
+    const reportsUnder = async (closed?: (source: string) => boolean) => {
+      const reports = new Map<string, UndoReport>();
+      for (const { list, receipts } of byList.values()) {
+        const read = await deps.treeLists.read({
+          lists: [list],
+          view: ([end]) =>
+            end ? reportsOf(end.writer, receipts, closed) : new Map<string, UndoReport>(),
+        });
+        for (const [record, report] of read) reports.set(record, report);
+      }
+      return reports;
+    };
+    const sourcesOf = (reports: ReadonlyMap<string, UndoReport>) =>
+      [...reports.values()].flatMap((report) => report.sources);
+    let reports = await reportsUnder();
+    const sources = new Set([...(learned?.sources ?? []), ...sourcesOf(reports)]);
+    // Which records an owner holds decides what the others read, so once an owner is closed
+    // they are read again without the held ones, and what that names is judged in turn.
+    let owners = await treeOwners(deps.db, sources, learned?.owners);
+    let judge = await owners.judge();
+    if (sourcesOf(reports).some(judge.closed))
+      for (;;) {
+        reports = await reportsUnder(judge.closed);
+        const grown = sourcesOf(reports).filter((source) => !sources.has(source));
+        if (grown.length === 0) break;
+        for (const source of grown) sources.add(source);
+        owners = await treeOwners(deps.db, sources, learned?.owners);
+        judge = await owners.judge();
+      }
+    const answers = new Map<string, UndoAnswer>(
+      [...reports].map(([record, report]) => [record, answerOf(report, judge)]),
+    );
+    // The owner a receipt's closed record would change: what the card says stayed.
+    const closedOf = (step: TreeReceipt): ClosedSource | undefined => {
+      for (const entry of step.records) {
+        const source = reports.get(entry.record)?.sources.find(judge.closed);
+        const fate = source === undefined ? null : judge.fate(source);
+        if (fate?.kind === "closed") return fate;
+      }
+      return undefined;
+    };
     // A drafted receipt its Work's branch no longer holds was discarded: like discarded text, it
     // is neither taken back nor a part that stayed.
     const fates = new Map<TreeReceipt, ReturnType<typeof changeUndone> | "discarded">();
@@ -227,7 +296,7 @@ export function createTurnTreeInverse(deps: {
           ? "discarded"
           : own.some((answer) => answer === undefined)
             ? "purged"
-            : changeUndone(own as ReturnType<typeof undoAnswer>[]),
+            : changeUndone(own as UndoAnswer[]),
       );
     }
     const steps = open.filter((step) => fates.get(step) === "acts");
@@ -246,9 +315,12 @@ export function createTurnTreeInverse(deps: {
       steps,
       taken: open.filter((step) => fates.get(step) === "taken"),
       undoneByCard,
+      owners,
       stayed: open.flatMap((step) => {
         const fate = fates.get(step);
-        return fate === "changed_since" || fate === "purged" ? [stayedSkip(step, fate)] : [];
+        return fate === "changed_since" || fate === "purged" || fate === "closed"
+          ? [stayedSkip(step, fate, fate === "closed" ? closedOf(step) : undefined)]
+          : [];
       }),
       lists: [...lists.values()],
       branches: [
@@ -284,7 +356,7 @@ export function createTurnTreeInverse(deps: {
    * whole Undo, not once a receipt.
    */
   async function run(
-    plan: Pick<TreePlan, "steps" | "taken" | "undoneByCard" | "stayed">,
+    plan: Pick<TreePlan, "steps" | "taken" | "undoneByCard" | "stayed" | "owners">,
     input: {
       threadId: ThreadId;
       userId: UserId | undefined;
@@ -292,6 +364,8 @@ export function createTurnTreeInverse(deps: {
   ): Promise<{ reversed: number; skips: TurnInverseSkip[] }> {
     const actor = input.userId ? `user:${input.userId}` : "system";
     const skips: TurnInverseSkip[] = [...plan.stayed];
+    // Under the owners' locks: what they say now is what commits.
+    const judge = await plan.owners.judge();
     let reversed = plan.undoneByCard;
     const record = (
       receipt: TreeReceipt,
@@ -323,26 +397,42 @@ export function createTurnTreeInverse(deps: {
       batch = null;
       const { result } = await deps.treeLists.submit({
         lists: [list],
-        make: ([{ writer }]) =>
-          receipts.map((receipt) => {
+        make: ([{ writer }]) => {
+          const walked = takeBackAll(writer, actor, stepsOf(receipts), judge.closed);
+          const taken = receipts.map((receipt) => {
             const made: { record: string; node: string }[] = [];
-            const answers: ReturnType<typeof undoAnswer>[] = [];
+            const answers: UndoAnswer[] = [];
             let inLive = receipt.draftBranchId === null;
-            for (const entry of [...receipt.records].reverse()) {
-              const back = undoChange(writer, viewOf(receipt), actor, entry.record);
+            let closed: ClosedSource | undefined;
+            for (const entry of receipt.records.toReversed()) {
+              const back = walked.get(entry.record) as TakenBack;
               if (typeof back === "string") answers.push(back);
-              else {
+              else if ("closed" in back) {
+                answers.push(closedAnswer(judge, back.closed));
+                const fate = judge.fate(back.closed);
+                if (fate?.kind === "closed") closed ??= fate;
+              } else {
                 answers.push("undoes");
-                if (back.draft === null) inLive = true;
-                made.push({ record: back.id, node: entry.node });
+                if (back.record.draft === null) inLive = true;
+                made.push({ record: back.record.id, node: entry.node });
               }
             }
             const fate = changeUndone(answers.filter((answer) => answer !== "undoes"));
-            return { receipt, made, stayed: fate === "taken" ? null : (fate as Stayed), inLive };
-          }),
+            return {
+              receipt,
+              made,
+              stayed: fate === "taken" ? null : (fate as Stayed),
+              inLive,
+              closed,
+            };
+          });
+          // The answers about sources the locks missed were guesses: nothing of this commits.
+          judge.assertLocked();
+          return taken;
+        },
       });
-      for (const { receipt, made, stayed, inLive } of result) {
-        if (stayed) skips.push(stayedSkip(receipt, stayed));
+      for (const { receipt, made, stayed, inLive, closed } of result) {
+        if (stayed) skips.push(stayedSkip(receipt, stayed, closed));
         if (made.length === 0 && stayed) continue;
         reversed++;
         await record(receipt, {
@@ -375,9 +465,19 @@ export function createTurnTreeInverse(deps: {
   return { plan, run, draftStates };
 }
 
-/** `undoChange`'s answer for each of the receipt's records, in its own view, writing nothing. */
-function judged(writer: TreeWriter, step: TreeReceipt) {
-  return step.records.map(
-    (entry) => [entry.record, undoAnswer(writer, viewOf(step), entry.record)] as const,
+/**
+ * The steps of an Undo of the receipts, in the order the press takes them: each receipt's records
+ * newest first, each in its receipt's own view. An estimate walks these same steps, so it equals
+ * the press. A record belongs to one receipt: a walk answers an id once.
+ */
+const stepsOf = (receipts: readonly TreeReceipt[]): UndoStep[] =>
+  receipts.flatMap((receipt) =>
+    receipt.records.toReversed().map((entry) => ({ id: entry.record, view: viewOf(receipt) })),
   );
-}
+
+/** What the Undo of the receipts' records would do, writing nothing (`stepsOf`'s walk). */
+const reportsOf = (
+  writer: TreeWriter,
+  receipts: readonly TreeReceipt[],
+  closed?: (source: string) => boolean,
+) => undoReports(writer, stepsOf(receipts), closed);

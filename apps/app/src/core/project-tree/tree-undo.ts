@@ -2,7 +2,7 @@
  * Sidebar Undo: the writer's tree changes made in this browser, newest last, one stack per list
  * copy, read a source at a time. A step is the record ids one gesture appended and the view it
  * was made in, or an Apply, which the server takes back whole by its command id; nothing else is
- * stored. Whether a tree step can still be taken is read from the list at the press (`undoChange`:
+ * stored. Whether a tree step can still be taken is read from the list at the press (`takeBackAll`:
  * by the changes in force), and one that no longer fits is skipped for the one before it. An Apply is asked of
  * the server, and its press is spent once the server answers, whatever it took back. A notice's Undo (`undoStep`) takes back the same step a press would. There is
  * no Redo: an Undo's own records go on no stack.
@@ -23,7 +23,7 @@ import {
   sourceIdOf,
   type TreeProjection,
   TreeWriter,
-  undoChange,
+  takeBackAll,
   type View,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
@@ -482,11 +482,15 @@ function takeBack(
   pendingText?: ReadonlySet<string>,
 ): boolean {
   const writer = writerOf(session, view, pendingText);
-  let undone = 0;
-  // One update per opposite record: each is judged against the replay the one before it left.
-  for (const record of [...step.records].reverse()) {
-    const answer = undoChange(writer, view, actor, record);
-    if (typeof answer !== "string") undone += 1;
-  }
-  return undone > 0;
+  // One walk: each record is judged against the list the one before it left, and the records that
+  // land go into the list as one update. No source is closed here: admission drops a record into
+  // one when the update reaches the server.
+  const walked = takeBackAll(
+    writer,
+    actor,
+    [...step.records].reverse().map((id) => ({ id, view })),
+    () => false,
+    pendingText,
+  );
+  return [...walked.values()].some((back) => typeof back !== "string");
 }

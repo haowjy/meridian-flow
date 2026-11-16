@@ -468,6 +468,22 @@ msgid "{change} can no longer be taken back."
 msgstr ""
 
 #: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is archived. Unarchive it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+#~ msgid "{change} stayed: {owner} is deleted."
+#~ msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is deleted. Restore it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is in Trash. Restore it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: it has writing in it since."
 msgstr ""
 
@@ -476,7 +492,23 @@ msgid "{change} stayed: it was changed since."
 msgstr ""
 
 #: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its chat is in Trash. Restore it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its Work is archived. Unarchive it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: its Work is closed."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+#~ msgid "{change} stayed: its Work is deleted."
+#~ msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its Work is deleted. Restore it to undo this."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -7271,6 +7303,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because the text changed afterwards."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone because what it changed is gone."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

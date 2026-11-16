@@ -21,12 +21,15 @@ import {
   settledRecords,
   sourceIdOf,
   sourceRoot,
+  type TakenBack,
   type TrashEntry,
   type TreeNode,
   type TreeProjection,
   type TreeRecord,
-  undoChange,
+  takeBackAll,
+  type UndoAnswer,
 } from "@meridian/project-tree";
+import { type ClosedSource, closedAnswer, type TreeJudge } from "../../../shared/tree-owners.js";
 import type { TreeScope } from "../ports/context-adapter.js";
 import {
   candidates,
@@ -1152,6 +1155,8 @@ export type UndoneTree = {
    * card's Undo nothing to do either.
    */
   fate: ReturnType<typeof changeUndone> | "discarded";
+  /** The closed owner the Undo would have changed, when a record stayed for it. */
+  closed?: ClosedSource;
   /** Whether some record stayed while others were taken back. */
   partial: boolean;
   made: MadeRecord[];
@@ -1164,8 +1169,8 @@ export type UndoneTree = {
 };
 
 /**
- * Takes a receipt's records back, newest first, each by the package's `undoChange` (which finds
- * a record's copy after an Apply or a restored Discard). Only what the receipt did is taken back:
+ * Takes a receipt's records back, newest first, in one walk of the package's `takeBackAll` (which
+ * finds a record's copy after an Apply or a restored Discard). Only what the receipt did is taken back:
  * what others put in a folder it made stands, and keeps the folder standing.
  */
 export function runTreeUndo(
@@ -1174,6 +1179,7 @@ export function runTreeUndo(
   records: readonly MadeRecord[],
   subject: string,
   asked: string,
+  judge: TreeJudge,
 ): UndoneTree {
   const cx: Context = {
     scope,
@@ -1185,16 +1191,31 @@ export function runTreeUndo(
     concurrent: new Map(),
   };
   const before = scope.writer.view(scope.view);
-  const answers: Parameters<typeof changeUndone>[0][number][] = [];
+  const answers: UndoAnswer[] = [];
   let inLive = scope.view.draft === null;
-  for (const entry of [...records].reverse()) {
-    const back = undoChange(scope.writer, scope.view, scope.actor, entry.record);
-    answers.push(typeof back === "string" ? back : "undoes");
-    if (typeof back !== "string") {
-      if (back.draft === null) inLive = true;
-      remember(cx, back.id, entry.node);
+  let closed: ClosedSource | undefined;
+  const newestFirst = [...records].reverse();
+  const walked = takeBackAll(
+    scope.writer,
+    scope.actor,
+    newestFirst.map((entry) => ({ id: entry.record, view: scope.view })),
+    judge.closed,
+  );
+  for (const entry of newestFirst) {
+    const back = walked.get(entry.record) as TakenBack;
+    if (typeof back === "string") answers.push(back);
+    else if ("closed" in back) {
+      answers.push(closedAnswer(judge, back.closed));
+      const fate = judge.fate(back.closed);
+      if (fate?.kind === "closed") closed ??= fate;
+    } else {
+      answers.push("undoes");
+      if (back.record.draft === null) inLive = true;
+      remember(cx, back.record.id, entry.node);
     }
   }
+  // The answers about sources the locks missed were guesses: nothing of this commits.
+  judge.assertLocked();
   const after =
     scope.view.draft !== null && inLive ? scope.writer.view(LIVE) : scope.writer.view(scope.view);
   const touched = touchedNodes(cx, before, after);
@@ -1214,6 +1235,7 @@ export function runTreeUndo(
   });
   return {
     fate: fate === "taken" && discarded ? "discarded" : fate,
+    ...(closed ? { closed } : {}),
     partial: cx.made.length > 0 && stayed !== "taken",
     made: cx.made,
     inLive,

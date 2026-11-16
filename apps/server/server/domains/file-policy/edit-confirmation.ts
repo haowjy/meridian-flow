@@ -27,18 +27,29 @@ export class FileEditRefusedError extends Error {
 
 /**
  * Runs `operation` with these grants bound. Returns the refusal a seam threw,
- * even when the write path caught the error and turned it into an outcome.
+ * even when the write path caught the error and turned it into an outcome. `alsoLock` names
+ * more owners the seam locks with the grants': those of a source the write changes outside
+ * the grants' targets.
  */
 export async function runWithEditGrants<T>(
   access: Pick<FileAccess, "authorize" | "confirmEdit">,
   grants: readonly FileGrant<"edit" | "command">[],
   operation: () => Promise<T>,
+  alsoLock?: { works: readonly string[]; lineages: readonly string[] },
 ): Promise<{ ok: true; value: T } | { ok: false; refusal: FileEditRefusedError }> {
   let refusal: FileEditRefusedError | undefined;
   const confirmation: EditConfirmation = {
-    workIds: [...new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).workIds))].sort(),
+    workIds: [
+      ...new Set([
+        ...grants.flatMap((grant) => grantOwnerLocks(grant.facts).workIds),
+        ...(alsoLock?.works ?? []),
+      ]),
+    ].sort(),
     lineageRootIds: [
-      ...new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).lineageRootIds)),
+      ...new Set([
+        ...grants.flatMap((grant) => grantOwnerLocks(grant.facts).lineageRootIds),
+        ...(alsoLock?.lineages ?? []),
+      ]),
     ].sort(),
     async confirm() {
       const refused = await access.confirmEdit(grants);

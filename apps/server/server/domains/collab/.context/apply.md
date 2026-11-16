@@ -26,10 +26,9 @@ own row in the Work's tree (`branch_tree_nodes` against `tree_nodes`), not a bra
 
 The route authorizes a deleted item at its source through the draft destination
 (`restoreGrant`), not a live grant. A drafted delete of a document live deleted too
-uses `restoreGrant` alone: the branch view has no draft of it to grant. When a delete
-commits after the route resolved the item, its authorization or the transaction's
-grant confirmation refuses the live grant, nothing is claimed, and the route runs the
-click once more, which resolves the item as deleted.
+uses `restoreGrant` alone: the branch view has no draft of it to grant. A delete that
+commits after the route resolved the item doesn't refuse the live grant (`command` ignores it):
+the command reads it under its locks and brings the document back.
 
 Editor Undo sends an `unapply` command for the original Apply command (`POST .../branches/:branchId/unapply`: the command's own records name its documents, the URL names none). This path
 uses the forward-inverse kernel directly against live history, not the model/turn
@@ -206,12 +205,12 @@ A newer draft the reopen swaps out is closed with the reopening command's id, an
 restorable. The entry query lists `discard` and `undo_discard` commands, and an `unapply` only while a draft
 it swapped out is still closed under it; Restore accepts all three; the Un-Apply's answer carries `branchId` for it.
 
-Every route that writes documents on behalf of a command takes the same grants before it runs:
-Apply the draft's `command` grant and the live `edit` grant on each document (and a restore grant
-for one live has deleted), Un-Apply an `edit` grant, and Undo of a Discard and Discard the draft's
-`command` grant, on each document the command's own record names (`commandDocuments`). `command`
-ignores the owner's lifecycle (a closed Work or chat, a deleted document), so the route never answers
-for a closed owner; the Work lock does, in the command's transaction. A folder has no file of its own: the project's
+Every route that writes documents on behalf of a command takes `command` grants before it runs:
+Apply the draft's and the live document's on each item (a restore grant for one live has deleted),
+Un-Apply the live document's, and Undo of a Discard and Discard the draft's, on each document the
+command's own record names (`commandDocuments`). `command` ignores lifecycle (a closed Work or chat,
+a deleted document) and keeps the person and agent terms, so the route never answers for a closed
+owner; the owners' locks do, in the command's transaction (below). A folder has no file of its own: the project's
 owner is its only writer, which the branch's identity step proved. A creation only the Work
 showed, whose draft a Discard closed, has no tree row for any target to resolve until Undo of
 the Discard copies it back; it takes no grant, and the Work's lock (lifecycle) is its authority.
@@ -239,9 +238,77 @@ chat that cannot take the restore (archived, deleted, a chat in Trash) bounces: 
 changed, `restored: 0`, `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
 The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
 result in the command's mapper; Discard bounces the same way (the item as it stands, with the `returned` line). Apply and
-Un-Apply land on a closed owner, and it stays closed. `listDiscards(projectId)` is the document half of Trash's Discard entries.
+Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows.
+
+**A tree command is judged by every owner its effect touches.** Apply and Un-Apply change
+notes that may be another Work's or a chat lineage's, not the branch's. One thing says which
+sources a record changes: the replay that places it (`Change.sources`, `packages/project-tree`).
+The server never works it out from parent chains. `closed` is asked of that answer three ways:
+which owners to lock (an estimate), which records may commit (the judge, under the locks), and what
+stayed and why (the answer).
+
+*Estimate, before the locks* (`withTreeOwners`, `shared/tree-owners.ts`). Apply: the `sources` of
+each pending record of the branch in the Work's view, and where live has each node those records and
+the items name. Un-Apply: the `sources` of each copy the Apply made (`madeBy`), where live has each
+of those nodes, and where each document with an applied text effect stands. It is a guess and can
+miss without any race: an Apply that moved six notes out of six folders, whose folders live then
+moved into six other sources, returns each note to a source the estimate never saw. Its owners are
+locked with the branch's in the same `mutate` call (Works sorted by id, then lineages, before lists
+and documents). Never take a missed owner's lock inside a running attempt.
+
+*Judge, under the locks* (`TreeOwners.judge`). It reads which of the estimate's `context_sources`
+rows still exist, in one query, and answers per source:
+
+| Source | Judge | Apply's item | Un-Apply |
+|---|---|---|---|
+| No row (a Work or chat purged) | `gone` | `left_out purged`, the record stays pending | `left_out purged` for the node |
+| Work archived or deleted; chat lineage with no live member | `closed` with `why`, `owner`, `ownerKey` | `returned` | held |
+| Anything else: an open Work or chat, a project source, the account's files | open | lands | taken back |
+
+Every source has a row while it exists, the account's files included, so "no row" is gone, not
+ownerless. Reading existence under the locks covers a purge that lands between the estimate and the
+lock; without it a purged chat's source would read `chat_frozen` for one press, and the step would
+wait for an owner that cannot reopen. To the package both `gone` and `closed` are
+`closed(source) === true`; the server turns the `left` record into the right line by asking the judge
+again. A source the estimate did not read is answered `gone` and remembered. At the end of the tree
+half the attempt throws `TreeOwnersMoved` with the whole set of them, the transaction rolls back, and
+the command runs again with all of them added: every missed owner at once, and each restart
+adds a source, so it ends (one that names nothing is allowed four). Because the package asks about every source a committing record changes,
+a missed owner can never commit.
+
+`applyDraft` and `undoApply` take that predicate: a record whose effect would change a closed
+source stays pending, and the plan is made again without it, so nothing that commits touches a
+closed owner's notes. A record standing on a held one is `closed` too, with that source, so a note
+whose folder's create is in archived notes says so and not `needs`. Apply answers such an item
+`{ landed: false, settled: [returned] }`, the rest landing. The restore Apply makes so a document's
+text can land (`restoredByApply`) is made only for a document whose source is open.
+
+**Un-Apply's answer is a partition.** Everything of the Apply still applied before the press is in
+exactly one place: taken back (`reversedGroupIds`, `treeUndone`), left for a reason that will not
+change (`left_out`, `skippedGroupIds`), or held (`UnapplyClickResult.held`, one entry per node: `tree`
+when a tree fact of it is held, `groupIds` the text groups of it that are, `why`, `owner` and
+`ownerKey`). Something already taken back is in none; a text group an earlier Un-Apply took back is
+never held. In `drizzle-apply-click.ts` `unapply`, under the locks:
+
+1. The tree half runs first (`undoApply` with the judge). `left` for `closed` asks the judge again:
+   `closed` is a held entry with `tree`; `gone` is `left_out purged`. `already` is in no list.
+2. Then, per document, the text effects already taken back are dropped, and a document with none left
+   is skipped. For the rest, where the document stands *after* the tree half is read, and a closed
+   source holds every remaining group in that node's entry. Otherwise the inverse runs as before.
+   A node whose move back is held while its text, now in an open source, goes back is in
+   `reversedGroupIds` and in `held` with `tree: true` and no groups.
+
+The `returned` lines in `settled` (one per owner and reason, with `owner` and `items`) are derived
+from `held`, for the words and for a tab opened before. `already { unapplied }` with no item is the
+answer only when nothing was taken back, held or left. Restore and Discard write no live file, so
+they judge the branch's owner only. A file in the project (no Work, no lineage) has no closed owner.
+
+The file policy's own owner reader (`loadPhysicalOwnership`, `file-policy/adapters/drizzle-file-facts.ts`)
+stays separate: a grant is about a document's content where it stands now, live's placement
+first, while a tree command's owners come from where its records put things. Sharing it would
+bring back the miss of move destinations and folders.
 
 **The day-30 purge** (`recovery.purgeDiscards`, `adapters/drizzle-discard-purge.ts`, run hourly
 beside `purgeWorks` and `purgeDocuments`) is the only reader of the clock for Trash's command

@@ -22,7 +22,7 @@ import {
 import type { TreeProjection } from "./replay.js";
 import { childrenOf, descendantsOf, nameAmong, rankAmong } from "./shape.js";
 import { writable } from "./validate.js";
-import { LIVE, lastOfFamily, replayView, type View } from "./view.js";
+import { droppedRecords, LIVE, lastOfFamily, replayView, type View } from "./view.js";
 
 /** Where moved nodes land among the parent's children: an index there, or an edge by sibling id. */
 export type MovePlace = number | ContextSiblingPosition;
@@ -92,8 +92,27 @@ export class TreeWriter {
     } as TreeRecord);
   }
 
+  /** Appends one record. */
   append(record: TreeRecord): void {
     this.transact(() => recordsOf(this.doc).push([record]));
+  }
+
+  /**
+   * Appends records in one transaction. `seen` are the replays of the views with them appended,
+   * which the writer then keeps: the next read of each is not another replay of the whole list.
+   */
+  appendAll(
+    records: readonly TreeRecord[],
+    seen: ReadonlyArray<{ view: View; projection: TreeProjection }>,
+  ): void {
+    this.transact(() => recordsOf(this.doc).push([...records]));
+    const dropped = droppedRecords(this.doc);
+    for (const { view, projection } of seen)
+      this.replays.set(view.draft, {
+        records: recordsOf(this.doc).length,
+        settles: settleLogOf(this.doc).length,
+        projection: { ...projection, dropped },
+      });
   }
 
   author(

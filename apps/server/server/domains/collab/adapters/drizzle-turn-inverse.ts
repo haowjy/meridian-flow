@@ -23,13 +23,19 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { branchOwnerSql, closedOwnerOf, mergeOwnerLocks } from "../../../shared/draft-owner.js";
+import {
+  branchOwnerSql,
+  closedOwnerOf,
+  mergeOwnerLocks,
+  type OwnerLocks,
+} from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleSavepoint,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import { TreeOwnersMoved } from "../../../shared/tree-owners.js";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import {
@@ -52,7 +58,7 @@ import { createInverseDestinationResolver } from "../domain/inverse-draft-destin
 import type { InverseStep } from "../domain/inverse-stream.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
-import { ReversalConflictError, ReversalOwnersMoved } from "../domain/reversal-conflict.js";
+import { ReversalConflictError } from "../domain/reversal-conflict.js";
 import {
   createTurnInverseService,
   type InverseDocument,
@@ -110,7 +116,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   const treePlanOf = (query: TurnInverseQuery) =>
     query.model || !query.turnId
       ? Promise.resolve(NO_TREE_STEPS)
-      : treeInverse.plan(query.threadId, query.turnId);
+      : treeInverse.plan(query.threadId, query.turnId, query.learned);
   const readDisposition = createDraftDispositionReader(
     createDrizzleDraftDispositionStore(input.db),
   );
@@ -468,16 +474,17 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       try {
         captured = await capture(query);
       } catch (cause) {
-        if (cause instanceof InverseAttemptMiss) throw new ReversalOwnersMoved(mergeOwnerLocks());
+        if (cause instanceof InverseAttemptMiss) throw new TreeOwnersMoved();
         throw cause;
       }
       const { ids, draftIds } = captured;
       destroyDocuments(captured.documents);
       const tree = await treePlanOf(query);
-      let owners = await input.workProjection.ownersOf({
-        drafts: draftIds,
-        branches: tree.branches,
-      });
+      let owners = mergeOwnerLocks(
+        await input.workProjection.ownersOf({ drafts: draftIds, branches: tree.branches }),
+        // The Works and chats whose notes the tree steps change.
+        { workIds: tree.owners.works, lineageRootIds: tree.owners.lineages },
+      );
       // Each document's own Work, which its write grant locks with the branch's.
       const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
       if (principal)
@@ -544,20 +551,21 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       // Off every lock: the tree receipts the reply left, which lists and Works they write.
       const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query);
       const grants = await admitInverse(sequence, query, userId, tree.documents);
-      const works = { drafts: attempt.draftIds, branches: tree.branches };
-      if (query.declared) {
-        // What the scope below locks; a Work outside the caller's locks is past their order.
-        const effect = mergeOwnerLocks(
-          await input.workProjection.ownersOf(works),
-          ...(grants ?? []).map((grant) => grantOwnerLocks(grant.facts)),
-        );
-        const declared = query.declared;
-        if (
-          effect.workIds.some((id) => !declared.workIds.includes(id)) ||
-          effect.lineageRootIds.some((id) => !declared.lineageRootIds.includes(id))
-        )
-          throw new ReversalOwnersMoved(effect);
-      }
+      const works = {
+        drafts: attempt.draftIds,
+        branches: tree.branches,
+        works: tree.owners.works,
+        lineages: tree.owners.lineages,
+      };
+      // What the scope below locks; a Work outside the caller's locks is past their order.
+      const effect = mergeOwnerLocks(
+        await input.workProjection.ownersOf(works),
+        ...(grants ?? []).map((grant) => grantOwnerLocks(grant.facts)),
+      );
+      const within = (held: OwnerLocks, owners: OwnerLocks) =>
+        owners.workIds.every((id) => held.workIds.includes(id)) &&
+        owners.lineageRootIds.every((id) => held.lineageRootIds.includes(id));
+      if (query.declared && !within(query.declared, effect)) throw new TreeOwnersMoved([], effect);
       let treeReversed = 0;
       const operation = async () => {
         // What each plan was computed against is still what the documents hold.
@@ -579,6 +587,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
             throw new InverseAttemptMiss();
+          // The owners moved since the locks were chosen: past their order, so the caller runs again.
+          const owners = { workIds: now.owners.works, lineageRootIds: now.owners.lineages };
+          if (!within(effect, owners)) throw new TreeOwnersMoved([], owners);
           const done = await treeInverse.run(now, {
             threadId: query.threadId,
             userId,

@@ -25,10 +25,10 @@ import {
   TreeWriter,
   treeViolations,
   undoApply,
-  undoChange,
   type View,
   viewRecords,
 } from "./index.js";
+import { undoChange } from "./undo-open.js";
 
 // Reference admission, deliberately replaying one record at a time.
 function walk(doc: Y.Doc, added: readonly TreeRecord[], connection: Connection): string[] {

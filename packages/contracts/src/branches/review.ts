@@ -7,7 +7,12 @@
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
  */
 import { z } from "zod";
-import { CommandIdSchema, type CommandOutcome, type Settlement } from "../commands/index.js";
+import {
+  type ClosedOwnerWhy,
+  CommandIdSchema,
+  type CommandOutcome,
+  type Settlement,
+} from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchId, CommandId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
@@ -124,9 +129,15 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * Take back one Apply command: the surviving text groups of every document it applied, and
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
  * A tree fact something changed since stays (`left_out changed_since`), as does a created
- * document with text written since (`has_text`); a text group with nothing left to reverse
- * stays and is named in `skippedGroupIds`.
- * It took something back when `reversedGroupIds` or `treeUndone` is not empty.
+ * document with text written since (`has_text`); a text group whose reversal would change a
+ * word that holds writing made after the Apply stays applied and is named in `skippedGroupIds`.
+ * A source whose Work was purged takes nothing back: `left_out purged`.
+ *
+ * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in
+ * Trash) is taken back: it is in `held`. Everything of the Apply still applied before this press
+ * is in exactly one place: taken back (`reversedGroupIds`, `treeUndone`), left for a reason that
+ * will not change (`left_out`, `skippedGroupIds`), or held. A text group an earlier Un-Apply took
+ * back is in none. It took something back when `reversedGroupIds` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
@@ -144,8 +155,26 @@ export type UnapplyClickResult = {
   /** The nodes with a tree fact this command took back (a restore it undid included). */
   treeUndone: string[];
   /**
-   * `left_out` (what could not come back, one line per reason), or `already` (nothing was taken
-   * back and nothing was left: everything was taken back before).
+   * What is still applied because taking it back would change a closed owner's notes, per node:
+   * `tree` when a tree fact of it is held, `groupIds` the text groups of it that are held. A node
+   * whose tree fact went back and whose text is held is here with `tree: false`. `owner` is the
+   * owner's name and `ownerKey` which owner it is, so a tab can tell from the Works and chats it
+   * holds whether that owner has reopened. The `returned` lines of `settled` are derived from it.
+   * The server always fills it; an answer stored before it existed has none, which reads as nothing
+   * held.
+   */
+  held?: Array<{
+    node: string;
+    tree: boolean;
+    groupIds: string[];
+    why: ClosedOwnerWhy;
+    owner?: string;
+    ownerKey: DraftOwnerKey;
+  }>;
+  /**
+   * `left_out` (what could not come back, one line per reason), `returned` (what stayed for a
+   * closed owner, with `items`), or `already` (nothing was taken back and nothing was left:
+   * everything was taken back before).
    */
   settled?: Settlement[];
 };

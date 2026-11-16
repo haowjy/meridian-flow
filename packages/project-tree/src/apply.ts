@@ -10,7 +10,7 @@ import {
 } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { type NotUndone, undoFacts } from "./undo.js";
+import { type NotUndone, takeBackAll } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import {
   LIVE,
@@ -546,12 +546,29 @@ export function appliedNodes(
   restoredByApply: readonly string[],
 ): string[] {
   const standing = replayView(doc, LIVE).inForce;
+  return [
+    ...new Set(
+      madeBy(doc, applied, restoredByApply)
+        .filter((record) => standing.has(record.id))
+        .map((record) => record.node),
+    ),
+  ];
+}
+
+/**
+ * The live records an Apply command made: the restores it made first (`restoredByApply`), then
+ * its copies. Whether or not they still stand: `appliedNodes` filters, an estimate does not.
+ */
+export function madeBy(
+  doc: Y.Doc,
+  applied: string,
+  restoredByApply: readonly string[],
+): TreeRecord[] {
   const restores = new Set(restoredByApply);
-  const copies = appliedBy(doc, applied).copies.filter((copy) => standing.has(copy.id));
-  const restored = listRecords(doc).filter(
-    (record) => restores.has(record.id) && standing.has(record.id),
-  );
-  return [...new Set([...restored, ...copies].map((record) => record.node))];
+  return [
+    ...listRecords(doc).filter((record) => restores.has(record.id)),
+    ...appliedBy(doc, applied).copies,
+  ];
 }
 
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
@@ -597,34 +614,37 @@ export function undoApply(
   } = {},
 ): UndoApplyResult {
   assertNewCommand(writer.doc, command);
-  const { settled, copies } = appliedBy(writer.doc, applied);
-  const restores = new Set(options.restoredByApply);
-  const made = [...listRecords(writer.doc).filter((record) => restores.has(record.id)), ...copies];
+  const { settled } = appliedBy(writer.doc, applied);
+  const made = madeBy(writer.doc, applied, options.restoredByApply ?? []);
   const undone: TreeRecord[] = [];
   const left: UndoApplyResult["left"] = [];
   // The roots (`carries ?? id`) of the copies taken back, at least in part.
   const reversed = new Set<string>();
   writer.transact(() => {
-    for (const copy of made.reverse()) {
-      if (copy.type === "create" && options.writtenSince?.has(copy.node)) {
+    const copies = made.reverse();
+    const asked = copies.filter(
+      (copy) => !(copy.type === "create" && options.writtenSince?.has(copy.node)),
+    );
+    const answers = takeBackAll(
+      writer,
+      by,
+      asked.map((copy) => ({ id: copy.id, view: LIVE })),
+      options.closed,
+    );
+    for (const copy of copies) {
+      const back = answers.get(copy.id);
+      if (back === undefined) {
         left.push({ record: copy, why: "has_text" });
         continue;
       }
-      const back = undoFacts(writer, LIVE, by, copy.id);
       if (typeof back === "string") {
         left.push({ record: copy, why: back });
         continue;
       }
-      const source =
-        options.closed &&
-        replay([...viewRecords(writer.doc, LIVE), back.record])
-          .changes.get(back.record.id)
-          ?.sources.find(options.closed);
-      if (source) {
-        left.push({ record: copy, why: "closed", source });
+      if ("closed" in back) {
+        left.push({ record: copy, why: "closed", source: back.closed });
         continue;
       }
-      writer.append(back.record);
       undone.push(back.record);
       reversed.add(copy.carries ?? copy.id);
       // A move that also set a name, of which only one fact still stood: the other stays.

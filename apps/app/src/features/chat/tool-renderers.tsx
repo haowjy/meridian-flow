@@ -302,6 +302,8 @@ export function documentToolFailureCopy(tool: ToolView): string {
       return t`That change can't be undone because it was discarded.`;
     case "cant_undo_changed":
       return t`That change can't be undone because the text changed afterwards.`;
+    case "purged":
+      return t`That change can't be undone because what it changed is gone.`;
     case "insufficient_undo":
       return t`There isn't enough left to undo.`;
     case "nothing_to_revert":

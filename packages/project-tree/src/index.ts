@@ -17,6 +17,7 @@ export {
   discardDraft,
   discardedBy,
   type LeftRecord,
+  madeBy,
   recordsAdmittedAfter,
   restoreDiscard,
   undoApply,
@@ -79,7 +80,18 @@ export {
   type DefaultSiblingOrderEntry,
   type RankedSibling,
 } from "./siblings.js";
-export { changeUndone, deleteStands, undoAnswer, undoChange } from "./undo.js";
+export {
+  type ClosedUndo,
+  changeUndone,
+  deleteStands,
+  type TakenBack,
+  takeBackAll,
+  type UndoAnswer,
+  type UndoReport,
+  type UndoStep,
+  undoChange,
+  undoReports,
+} from "./undo.js";
 export type { ReadRecord } from "./validate.js";
 export {
   droppedRecords,
