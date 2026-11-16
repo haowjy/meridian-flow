@@ -12,11 +12,12 @@ import { Button } from "@/components/ui/button";
 import {
   dropdownGroupLabelClass,
   dropdownMenuSeparatorClass,
-  dropdownRowVariants,
+  dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -38,6 +39,7 @@ const VISIBLE_ROWS = 7;
 const MIN_ROWS = 5;
 const SEARCH_PX = 44;
 const POINT_DELAY_MS = 120;
+const FLYOUT_CLOSE_MS = 200;
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
@@ -331,7 +333,17 @@ export function AgentPickerPanel({
                     models={models}
                     rebuildsCache={Boolean(started && shown === own)}
                     onChoose={(id) =>
-                      choose(shown, { ...overrides, model: id === shown.model ? null : id })
+                      choose(shown, {
+                        model: id === shown.model ? null : id,
+                        // Reasoning belongs to the model: a level the new one lacks falls away.
+                        effort:
+                          overrides.effort &&
+                          modelLevels(models?.find((option) => option.id === id)).includes(
+                            overrides.effort,
+                          )
+                            ? overrides.effort
+                            : null,
+                      })
                     }
                   />
                   <ReasoningChoices
@@ -496,42 +508,116 @@ function ReasoningChoices({
 }: {
   agent: AgentCatalogItem;
   model: ModelOption | undefined;
+  /** The level in use, for the Agent in use; null shows the Agent file's own. */
   thinksAt: ReasoningChoice | null;
   onChoose: (level: ReasoningChoice) => void;
 }) {
-  const levels: ReasoningChoice[] = model
-    ? [...(model.canDisable ? (["disabled"] as const) : []), ...model.efforts]
-    : [];
-
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const rowRef = useRef<HTMLButtonElement | null>(null);
+  const levels = modelLevels(model);
   // A model with no levels to choose leaves the models the whole column.
-  if (levels.length === 0) return null;
+  if (!model || levels.length === 0) return null;
+  const shownLevel = thinksAt ?? agent.effort;
+  const hold = () => window.clearTimeout(closeTimer.current);
+  // Leaving the row toward the flyout crosses a gap; close only if the pointer doesn't arrive.
+  const release = () => {
+    hold();
+    closeTimer.current = window.setTimeout(() => setOpen(false), FLYOUT_CLOSE_MS);
+  };
   return (
-    <section aria-label={model ? t`Reasoning on ${model.name}` : t`Reasoning`} className="shrink-0">
+    <div className="shrink-0">
       <div aria-hidden className={dropdownMenuSeparatorClass} />
-      {/* One line of levels, so the models above keep the column's height. */}
-      <ul className="flex flex-wrap gap-1">
-        {levels.map((level) => (
-          <li key={level}>
-            <button
-              type="button"
-              data-list-item
-              aria-current={level === thinksAt || undefined}
-              className={cn(
-                dropdownRowVariants({ selected: level === thinksAt }),
-                "w-auto gap-1.5",
-              )}
-              onClick={() => onChoose(level)}
-            >
-              {reasoningName(level)}
-              {level === agent.effort ? (
-                <span className="text-xs text-muted-foreground">{t`Default`}</span>
-              ) : null}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverAnchor asChild>
+          <div>
+            <ListRow
+              density="menu"
+              ref={rowRef}
+              pointed={open}
+              frameProps={{
+                onPointerEnter: (event) => {
+                  if (event.pointerType === "touch") return;
+                  hold();
+                  setOpen(true);
+                },
+                onPointerLeave: release,
+              }}
+              controlProps={{
+                "aria-haspopup": "menu",
+                "aria-expanded": open,
+                onKeyDown: (event) => {
+                  if (event.key !== "ArrowRight") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOpen(true);
+                },
+              }}
+              onOpen={() => setOpen((value) => !value)}
+              title={
+                <span className="flex min-w-0 gap-3">
+                  <span className="text-muted-foreground">{t`Reasoning`}</span>
+                  <span className="truncate">
+                    {shownLevel ? reasoningName(shownLevel) : t`Default`}
+                  </span>
+                </span>
+              }
+              trailing={<ChevronRight aria-hidden className="text-muted-foreground" />}
+            />
+          </div>
+        </PopoverAnchor>
+        <PopoverContent
+          side="right"
+          align="end"
+          sideOffset={8}
+          aria-label={t`Reasoning on ${model.name}`}
+          className={cn(dropdownSurfaceVariants({ measure: "compact" }), "w-auto")}
+          onPointerEnter={hold}
+          onPointerLeave={release}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            focusCurrent(event.currentTarget as HTMLElement);
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            rowRef.current?.focus();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+              return;
+            }
+            handleListKeys(event);
+          }}
+        >
+          <p className={dropdownGroupLabelClass}>{model.name}</p>
+          <ul className="flex flex-col">
+            {levels.map((level) => (
+              <li key={level}>
+                <ListRow
+                  density="menu"
+                  current={level === thinksAt}
+                  title={reasoningName(level)}
+                  meta={level === agent.effort ? t`Default` : undefined}
+                  onOpen={() => {
+                    onChoose(level);
+                    setOpen(false);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
+}
+
+/** The reasoning levels a model accepts, Off first where it can switch reasoning off. */
+function modelLevels(model: ModelOption | undefined): ReasoningChoice[] {
+  return model ? [...(model.canDisable ? (["disabled"] as const) : []), ...model.efforts] : [];
 }
 
 /** Whether this deployment can run the model; an id it has never heard of can't run either. */
