@@ -614,7 +614,8 @@ function findStoppedMessageId(rows: readonly ViewRow[]): string | null {
   for (let i = replyAt - 1; i >= 0; i--) {
     const row = rows[i];
     if (!row || row.inherited) return null;
-    if (row.kind === "turn" && row.turn.role === "user") return row.queued ? null : row.turn.id;
+    if (row.kind === "turn" && row.turn.role === "user" && row.turn.origin === "writer")
+      return row.queued ? null : row.turn.id;
   }
   return null;
 }

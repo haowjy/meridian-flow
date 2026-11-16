@@ -41,8 +41,10 @@ reply (`cancelled`) and nothing closing follows it (`movedPast`); `findStoppedMe
 and the newest message is the one the writer would fix. A steer inside the reply makes the steer
 the message. Edit reads the stored blocks back through `userMessageBlocksFromTurn` and
 `composerDocFromHandedBack`, the same path a hand-back takes, so chips come back as chips, and
-puts them above what is typed through the draft owner's `putBack`, the one prepend rule a
-hand-back and a failed send's Edit use. The message and the stopped reply stay; Edit carries no
+puts them above what is typed through the draft owner's `putBack`. Every way words come back
+into a box (hand-back, a refused send's Edit, a deleted chat's transfer, Edit after Stop) goes
+through its one builder, `withReturned`: returned words above typed ones, one restorability check,
+the caret at the end of the returned words. The message and the stopped reply stay; Edit carries no
 receipt, so a second press puts the words back again. Branching an edited message (#628) is a
 different feature.
 

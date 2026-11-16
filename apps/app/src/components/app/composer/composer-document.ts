@@ -465,6 +465,20 @@ export function plainComposerDoc(text: string): JSONContent {
 }
 
 let restorableDraftSchema: ReturnType<typeof getSchema> | null = null;
+function restorableSchema(): ReturnType<typeof getSchema> {
+  restorableDraftSchema ??= getSchema([
+    StarterKit,
+    ComposerReferenceNode,
+    ComposerSkillNode,
+    ComposerUploadNode,
+  ]);
+  return restorableDraftSchema;
+}
+
+/** The position at the end of a composer document's last paragraph: where a caret after its words goes. */
+export function composerDocEnd(doc: JSONContent): number {
+  return Math.max(1, restorableSchema().nodeFromJSON(doc).content.size - 1);
+}
 
 /** Validate stored authoring state, excluding uploads whose bytes lived in memory. */
 export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnapshot | null {
@@ -519,13 +533,7 @@ export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnaps
     };
     const doc = clean(snapshot.doc);
     if (!doc) return null;
-    restorableDraftSchema ??= getSchema([
-      StarterKit,
-      ComposerReferenceNode,
-      ComposerSkillNode,
-      ComposerUploadNode,
-    ]);
-    const parsed = restorableDraftSchema.nodeFromJSON(doc);
+    const parsed = restorableSchema().nodeFromJSON(doc);
     parsed.check();
     const saved = snapshot.selection;
     const valid =
