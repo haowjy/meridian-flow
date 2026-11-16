@@ -65,6 +65,9 @@ an uncommitted claim can't be read, so an insert on its key waits on it and is r
 waits 5 s, under the client's timeout, and answers the stored outcome, or `running` while the
 first still holds the claim; the client sends again on `running`. Without it each resend compiled
 every document again before finding the claim taken.
+While it runs, a slow Apply holds two pooled connections: the first request's, and one resend's
+parked for up to 5 s. The pool is 10 per instance, so about five slow Apply alls at once would
+starve every other request.
 
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta

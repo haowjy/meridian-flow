@@ -5,7 +5,7 @@
  * document's earlier clicks, so its text cut is cut against what they left; the command goes
  * once every member has reached its queue's head and handed over its click. A member that ends
  * without sending (its draft closed, its room never read) is left out. Every member's queue gets
- * the one answer, and the command's answer is the first any of them settles on: the post's, a
+ * the one answer, and the command's answer is the first a sent member settles on: the post's, a
  * Retry's, or a lookup's after its draft closed.
  */
 import type { ApplyClick, ApplyClickAnswer, ApplyItemsClick } from "@meridian/contracts/branches";
@@ -70,6 +70,9 @@ export class GroupApply {
         this.check();
       },
       answered: (answer) => {
+        // Only a sent click's answer came from the server: a queue also refuses an unsent click
+        // itself, under the group's id.
+        if (!this.handed.has(index)) return;
         if (answer.status !== "landed" && answer.status !== "cancelled") this.heard(answer);
       },
     };

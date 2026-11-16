@@ -134,7 +134,8 @@ and unknown-delivery states, shown on the folder row with Retry, as a document's
 list response's `folders[].revision`, read once when the command first goes, so a resend
 carries the same body; folders lead the items. Every member's queue settles from the one answer,
 `conflict` included, and the group's answer, which makes the Undo step and the notice, is the
-first any member settles on: the post's, a Retry's, or a closed queue's lookup; groups are enqueued in item order in one turn, so two groups never wait on
+first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (a queue
+refuses an unsent click itself, under the group's id, and that refusal is not the command's); groups are enqueued in item order in one turn, so two groups never wait on
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
 
