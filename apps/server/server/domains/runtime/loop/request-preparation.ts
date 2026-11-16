@@ -159,6 +159,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     persistBake: false,
     bakeInitialPrompt: input.deps.repos.threads.bakeInitialPrompt.bind(input.deps.repos.threads),
     workContext: input.deps.workContext,
+    connections: input.deps.connections,
     eventSink: input.deps.eventSink,
     persistMediaProjection: async (projection) => {
       const updates = buildMediaProjectionEvents({

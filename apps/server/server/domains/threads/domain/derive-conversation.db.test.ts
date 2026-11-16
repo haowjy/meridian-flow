@@ -450,6 +450,7 @@ else
       const initialContent = {
         composedSystemPrompt: "Grandsource initial prompt",
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
       };
       const initialBake = await repos.threads.bakeInitialPrompt(fixture.source.id as never, {
@@ -471,6 +472,7 @@ else
       const boundaryContent = {
         composedSystemPrompt: "Grandsource second epoch",
         bakedSkillSlugs: ["updated"],
+        bakedConnections: [],
         bakedTools: [],
       };
       const boundaryBake = await repos.promptBakes.create({
@@ -499,6 +501,7 @@ else
       const forkEpochContent = {
         composedSystemPrompt: "First fork's later epoch",
         bakedSkillSlugs: ["later"],
+        bakedConnections: [],
         bakedTools: [],
       };
       const forkEpoch = await repos.promptBakes.create({

@@ -10,7 +10,7 @@ allowBuilds:
   protobufjs: false
 
 catalog:
-  '@meridian-flow/runtime': ^0.2.0
+  '@meridian-flow/runtime': ^0.4.0
   '@types/node': ^26
   '@types/react': ^19.3.0
   '@types/react-dom': ^19.3.0

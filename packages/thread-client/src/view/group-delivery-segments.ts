@@ -32,6 +32,12 @@ export type ToolView = {
    */
   streamedOutput: string | null;
   /**
+   * The calls a running `mcp_run` script has made, streamed as `meridian.tool.connection_call`
+   * events: `{ sequence, id, arguments, call? }`, with `call` set once the call finished. Once the
+   * tool has its result, the typed result lists every call.
+   */
+  connectionCalls: JsonValue[] | null;
+  /**
    * Server-authored result metadata persisted beside the result — never
    * model-authored. Carried as `content.metadata` on the durable tool_result
    * block and as `metadata` on the live `tool.result` event; this is where
@@ -55,6 +61,7 @@ type ToolFields = {
   isError: boolean;
   message: string | null;
   streamedOutput: string | null;
+  connectionCalls: JsonValue[] | null;
   metadata: Record<string, JsonValue> | null;
 };
 
@@ -93,6 +100,7 @@ function toToolView(block: Block): ToolView {
     isError: fields.isError,
     message: fields.message,
     streamedOutput: fields.streamedOutput,
+    connectionCalls: fields.connectionCalls,
     metadata: fields.metadata,
     keyBlock: block,
   };
@@ -151,6 +159,7 @@ function mergeToolResult(view: ToolView, resultBlock: Block): void {
   if (fields.streamedOutput && fields.streamedOutput.length > 0) {
     view.streamedOutput = fields.streamedOutput;
   }
+  if (fields.connectionCalls) view.connectionCalls = fields.connectionCalls;
   if (fields.metadata) view.metadata = fields.metadata;
 }
 
@@ -165,6 +174,7 @@ function toolResultOnlyView(block: Block): ToolView {
     isError: fields.isError,
     message: fields.message,
     streamedOutput: fields.streamedOutput,
+    connectionCalls: fields.connectionCalls,
     metadata: fields.metadata,
     keyBlock: block,
   };
@@ -183,6 +193,7 @@ function readToolFields(content: Record<string, JsonValue>): ToolFields {
     isError: booleanField(content, "isError") ?? false,
     message: stringField(content, "message"),
     streamedOutput: stringField(content, "streamedOutput"),
+    connectionCalls: Array.isArray(content.connectionCalls) ? content.connectionCalls : null,
     metadata: recordField(content, "metadata"),
   };
 }

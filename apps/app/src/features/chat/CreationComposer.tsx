@@ -17,6 +17,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { DEFAULT_AGENT_SLUG, pickableAgents } from "@/features/agents";
 import { boundAgentRow } from "@/features/agents/creation-agent";
+import { useNewChatConnectionMarks } from "@/features/connections/NewChatConnectionMarks";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
@@ -64,6 +65,7 @@ export function CreationComposer({
     onNewChatFocusHandled?.(newChatFocusRequestId);
   }, [newChatFocusRequestId, onNewChatFocusHandled]);
   const works = useWorks(projectId);
+  const connectionMarks = useNewChatConnectionMarks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
   // A new chat starts on the Agent of the project's newest chat (a send, handoff or fork shows
@@ -139,15 +141,18 @@ export function CreationComposer({
     <FolderMenuContext.Provider value={folders}>
       <Composer
         cards={
-          creation.draft.notices.length > 0
-            ? creation.draft.notices.map((notice) => (
+          creation.draft.notices.length > 0 || connectionMarks ? (
+            <>
+              {creation.draft.notices.map((notice) => (
                 <DeletedChatCard
                   key={notice.threadId}
                   notice={notice}
                   onDismiss={() => creation.draft.dismissNotice(notice.threadId)}
                 />
-              ))
-            : undefined
+              ))}
+              {connectionMarks}
+            </>
+          ) : undefined
         }
         key={creation.draft.key}
         initialDraft={creation.draft.initialDraft}
