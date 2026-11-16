@@ -101,3 +101,5 @@ export interface McpPinRequest {
 export interface McpConnectionResponse {
   connection: McpConnectionView;
 }
+
+export * from "./tool-results.js";
