@@ -432,7 +432,7 @@ export class DraftCommandOwner {
         (connection?.kind === "unauthorized" && !isSignInLapse(connection))
       ) {
         this.detach(entry);
-        entry.item.queue.refuseUnsent(entry.draftId);
+        entry.item.queue.roomEnded(entry.draftId);
       }
       // A released room is kept while it holds typing it can still send; this lets it go.
       this.releaseIdle(entry);
@@ -844,13 +844,27 @@ export class DraftCommandOwner {
       ...(restore ? { restore: true as const } : {}),
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
-    const acknowledged = binding.session.whenCurrentChangesAcknowledged();
+    // A room that ended delivers nothing more: the click goes anyway (`ApplyClickQueue.roomEnded`).
+    const acknowledged = binding.session.whenCurrentChangesAcknowledged().catch(() => undefined);
     this.setState(ref.itemKey, { failure: null });
     const frozen: FrozenApply = {
       body,
       optimistic,
       patched,
       acknowledged,
+      ...(target.kind === "draft"
+        ? {
+            wholeCut: {
+              commandId: body.commandId,
+              draftId: entry.draftId,
+              whole: true as const,
+              groupIds: [],
+              baseViewDelta: [],
+              ...(restore ? { restore: true as const } : {}),
+              ...(tree ? { tree: { revision: tree.revision } } : {}),
+            },
+          }
+        : {}),
       ...(joint ? { send: joint.send } : {}),
     };
     const scheduled = histories
