@@ -260,8 +260,8 @@ one source's tree contributes.
   Copy binds document blocks; Agent files bind plain code text for the planned address. The
   insertion accepts several destination folders in one submission, installs their initial
   states atomically, and schedules projections after commit. A failed plan creates no folders.
-- A copy keeps its source's names ([naming conflicts never
-  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)):
+- A copy keeps its source's names ([names
+  repeat](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#names-repeat)):
   beside a node of that name it is a twin. The plan (`planCopy`) reads nothing of the destination;
   the entries the insert answers carry the paths that landed (`insertTree`).
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
