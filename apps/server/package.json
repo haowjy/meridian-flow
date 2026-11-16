@@ -55,6 +55,7 @@
     "sharp": "^0.35.5",
     "stripe": "^22.3.0",
     "turndown": "^7.2.4",
+    "undici": "^8.12.4",
     "unified": "^11.0.5",
     "unpdf": "^2.1.0",
     "y-protocols": "^1.0.7",

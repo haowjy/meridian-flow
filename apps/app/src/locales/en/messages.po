@@ -3367,8 +3367,8 @@ msgid "Draft review"
 msgstr "Draft review"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Draft view"
-msgstr "Draft view"
+#~ msgid "Draft view"
+#~ msgstr "Draft view"
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft: {owner}"
@@ -4213,6 +4213,10 @@ msgstr "Live has no version of this page: it is new in a chat's draft."
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
 msgstr "Live view"
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Load image"
+msgstr "Load image"
 
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Loading"
@@ -5075,6 +5079,10 @@ msgstr "Offline"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr "ol"
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Only addresses on the standard web ports can be loaded."
+msgstr "Only addresses on the standard web ports can be loaded."
 
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
@@ -5948,6 +5956,7 @@ msgstr "scene break"
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch"
 msgstr "Scratch"
 
@@ -5960,6 +5969,7 @@ msgid "Scratch for {chatTitle}"
 msgstr "Scratch for {chatTitle}"
 
 #: src/features/chat/document-display-name.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch for {name}"
 msgstr "Scratch for {name}"
 
@@ -6151,16 +6161,20 @@ msgid "Show Work"
 msgstr "Show Work"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing draft"
-msgstr "Showing draft"
+#~ msgid "Showing draft"
+#~ msgstr "Showing draft"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing live"
-msgstr "Showing live"
+#~ msgid "Showing live"
+#~ msgstr "Showing live"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Shows token counts and the model on each reply and compaction"
 msgstr "Shows token counts and the model on each reply and compaction"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Sidebar version"
+msgstr "Sidebar version"
 
 #: src/features/account/AccountMenu.tsx
 msgid "Signed in"
@@ -6503,6 +6517,14 @@ msgstr "Text alignment"
 msgid "Text size"
 msgstr "Text size"
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not allowed (private or local)."
+msgstr "That address is not allowed (private or local)."
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not an image."
+msgstr "That address is not an image."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be made because this Work's drafts are archived."
 msgstr "That change can't be made because this Work's drafts are archived."
@@ -6799,6 +6821,10 @@ msgstr "The header row does not merge into the body."
 msgid "The header row stays first."
 msgstr "The header row stays first."
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The image could not be loaded."
+msgstr "The image could not be loaded."
+
 #: src/features/agents/AgentFileState.tsx
 msgid "The last Save left it out. Fix these and save again."
 msgstr "The last Save left it out. Fix these and save again."
@@ -6830,6 +6856,14 @@ msgstr "The review updated. Choose the change again."
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "The server couldn't do that. Try again."
 msgstr "The server couldn't do that. Try again."
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The server didn't answer."
+msgstr "The server didn't answer."
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The server took too long to answer."
+msgstr "The server took too long to answer."
 
 #: src/features/chat/ChatFilesMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -6976,6 +7010,10 @@ msgstr "This change only applies together with the rest of the document. Apply t
 #: src/features/editor/SessionEditor.tsx
 msgid "This chapter is temporarily unavailable"
 msgstr "This chapter is temporarily unavailable"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "This chat"
+msgstr "This chat"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
@@ -7401,6 +7439,10 @@ msgstr "Tokens after"
 msgid "Tokens before"
 msgstr "Tokens before"
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Too large to load (the limit is {megabytes} MB)."
+msgstr "Too large to load (the limit is {megabytes} MB)."
+
 #: src/features/project/context/DocumentProperties.tsx
 msgid "Too large to show"
 msgstr "Too large to show"
@@ -7616,12 +7658,16 @@ msgid "Undo switch to draft mode"
 msgstr "Undo switch to draft mode"
 
 #: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the Apply."
+msgstr "Undo takes back the Apply."
+
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Undo takes back the whole Apply, all {count} changes."
 msgstr "Undo takes back the whole Apply, all {count} changes."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Undo takes them back out."
-msgstr "Undo takes them back out."
+#~ msgid "Undo takes them back out."
+#~ msgstr "Undo takes them back out."
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undoing Apply"

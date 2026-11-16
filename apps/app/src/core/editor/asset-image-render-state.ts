@@ -10,8 +10,9 @@
  * ref-less source that is a document address (`uploads://seal.png`) is asked
  * by its address, as a ref-less link is. A document answer draws exactly as
  * an `asset:` picture does. A source that is neither draws only if
- * `browserPictureSource` allows it (http, https, protocol-relative, image
- * `data:`); anything else is unavailable with no Retry (retrying cannot change
+ * `inlinePictureSource` allows it (an image `data:` URL). A web address
+ * waits as `remote` for the writer's click and then draws through the image
+ * proxy; anything else is unavailable with no Retry (retrying cannot change
  * a stored source), never handed to the browser as a URL.
  *
  * Whether a document is gone is the server's answer, never a guess: the link
@@ -32,6 +33,7 @@
 import { t } from "@lingui/core/macro";
 import { resolveDocumentHref } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import { apiImageProxyPath } from "@meridian/contracts/protocol";
 import {
   type Dispatch,
   type SetStateAction,
@@ -46,7 +48,13 @@ import {
 import { documentDownloadUrl, getFigureSignedUrl } from "@/client/api/figures-api";
 import { httpErrorStatus } from "@/client/api/http-client";
 
-import { assetDocumentIdFromSrc, browserPictureSource, signedUrlRefreshDelayMs } from "./images";
+import {
+  assetDocumentIdFromSrc,
+  inlinePictureSource,
+  remotePictureSource,
+  signedUrlRefreshDelayMs,
+  useRemoteImageLoaded,
+} from "./images";
 import {
   type LinkAnswerCache,
   type LinkKey,
@@ -69,6 +77,8 @@ export type AssetImageRenderState =
   | { kind: "idle"; url: string | null; message?: string }
   | { kind: "loading"; url: string | null; message?: string }
   | { kind: "ready"; url: string; expiresAt?: string }
+  /** A web address, shown with a button until the writer loads it. */
+  | { kind: "remote"; url: null; address: string }
   /** Stored, but not drawable by this browser: the file card stands in. */
   | { kind: "file"; url: null; file: AssetFileFacts }
   | { kind: "error"; url: string | null; message: string }
@@ -83,6 +93,8 @@ export type AssetImageRenderState =
 type PictureTarget =
   | { kind: "empty" }
   | { kind: "literal"; url: string }
+  /** A web address the writer has not loaded yet. */
+  | { kind: "remote"; address: string }
   | { kind: "document"; documentId: string }
   /** No answer yet: no resolver registered, or the question is out. */
   | { kind: "resolving" }
@@ -109,6 +121,8 @@ function usePictureTarget(
     if (!cache.available) return UNASKED;
     return cache.read(key) ?? (cache.failed(key) ? null : UNASKED);
   });
+  const remote = remotePictureSource(src);
+  const remoteLoaded = useRemoteImageLoaded(remote);
   if (!src) return { kind: "empty" };
   const assetDocumentId = assetDocumentIdFromSrc(src);
   if (assetDocumentId) return { kind: "document", documentId: assetDocumentId };
@@ -116,10 +130,14 @@ function usePictureTarget(
     // Not a document, so only a supported web URL draws as written. Anything
     // else is a stored source no retry can change: nothing to draw, nothing
     // to retry, and not a gone document.
-    const url = browserPictureSource(src);
-    return url
-      ? { kind: "literal", url }
-      : { kind: "unavailable", message: t`Image could not be displayed.` };
+    const url = inlinePictureSource(src);
+    if (url) return { kind: "literal", url };
+    if (remote) {
+      return remoteLoaded
+        ? { kind: "literal", url: apiImageProxyPath(remote) }
+        : { kind: "remote", address: remote };
+    }
+    return { kind: "unavailable", message: t`Image could not be displayed.` };
   }
   // A document address is not a URL: an editor with no link lane has no way
   // to ask about it, which is a question that could not be asked.
@@ -164,6 +182,8 @@ function pictureTargetIdentity(target: PictureTarget): string {
   switch (target.kind) {
     case "literal":
       return `literal\u0000${target.url}`;
+    case "remote":
+      return `remote\u0000${target.address}`;
     case "document":
       return `document\u0000${target.documentId}`;
     case "unavailable":
@@ -456,6 +476,8 @@ function initialState(target: PictureTarget): AssetImageRenderState {
       return { kind: "idle", url: null, message: t`Missing figure source` };
     case "literal":
       return { kind: "ready", url: target.url };
+    case "remote":
+      return { kind: "remote", url: null, address: target.address };
     case "document":
     case "resolving":
       return { kind: "loading", url: null };

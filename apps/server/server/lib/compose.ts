@@ -630,7 +630,7 @@ export async function createProductionAppPorts(input: {
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
     sourceHints: projectHints,
-    copy: { documentSync, objectStore, release: objectRelease },
+    copy: { documentSync, branches: documentSync.branches, objectStore, release: objectRelease },
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, projectHints),
