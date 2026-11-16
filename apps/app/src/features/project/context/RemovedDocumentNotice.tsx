@@ -99,6 +99,40 @@ function oneSentence(title: string, voice: RemovalVoice): string {
   }
 }
 
+/** A model's write that came too late for the document: who removed it first; a null name reads "this document". */
+export function removedBeforeChangeSentence(name: string | null, voice: RemovalVoice): string {
+  switch (voice.kind) {
+    case "person": {
+      const who = voice.name;
+      if (voice.reason === "discarded")
+        return name
+          ? t`${who} discarded ${name} from the draft before this change could be made.`
+          : t`${who} discarded this document from the draft before this change could be made.`;
+      return name
+        ? t`${who} deleted ${name} before this change could be made.`
+        : t`${who} deleted this document before this change could be made.`;
+    }
+    case "agent": {
+      const { chat } = voice;
+      if (chat)
+        return name
+          ? t`The AI in ${chat} deleted ${name} before this change could be made.`
+          : t`The AI in ${chat} deleted this document before this change could be made.`;
+      return name
+        ? t`The AI in a chat deleted ${name} before this change could be made.`
+        : t`The AI in a chat deleted this document before this change could be made.`;
+    }
+    case "anonymous":
+      if (voice.reason === "discarded")
+        return name
+          ? t`${name} was discarded from the draft before this change could be made.`
+          : t`This document was discarded from the draft before this change could be made.`;
+      return name
+        ? t`${name} was deleted before this change could be made.`
+        : t`This document was deleted before this change could be made.`;
+  }
+}
+
 /**
  * Several documents closed together read as one count with their names in
  * parentheses; mixed causes read as "removed".

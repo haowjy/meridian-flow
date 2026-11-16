@@ -945,7 +945,7 @@ msgstr "{name} refused the request."
 msgid "{name} source"
 msgstr "{name} source"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} was deleted before this change could be made."
 msgstr "{name} was deleted before this change could be made."
 
@@ -957,7 +957,7 @@ msgstr "{name} was deleted before this change could be made."
 #~ msgid "{name} was deleted with the Work {work} before this change could be made."
 #~ msgstr "{name} was deleted with the Work {work} before this change could be made."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} was discarded from the draft before this change could be made."
 msgstr "{name} was discarded from the draft before this change could be made."
 
@@ -1173,19 +1173,19 @@ msgstr "{unavailable, plural, one {# unavailable} other {# unavailable}}"
 #~ msgid "{waiting} still a draft"
 #~ msgstr "{waiting} still a draft"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} deleted {name} before this change could be made."
 msgstr "{who} deleted {name} before this change could be made."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} deleted this document before this change could be made."
 msgstr "{who} deleted this document before this change could be made."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} discarded {name} from the draft before this change could be made."
 msgstr "{who} discarded {name} from the draft before this change could be made."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} discarded this document from the draft before this change could be made."
 msgstr "{who} discarded this document from the draft before this change could be made."
 
@@ -7493,7 +7493,7 @@ msgstr "The AI can't view this file."
 msgid "The AI in {chat} deleted {count} documents ({names})."
 msgstr "The AI in {chat} deleted {count} documents ({names})."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {name} before this change could be made."
 msgstr "The AI in {chat} deleted {name} before this change could be made."
 
@@ -7513,7 +7513,7 @@ msgstr "The AI in {chat} deleted {title}."
 msgid "The AI in {chat} deleted {title}. Applying brings it back."
 msgstr "The AI in {chat} deleted {title}. Applying brings it back."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted this document before this change could be made."
 msgstr "The AI in {chat} deleted this document before this change could be made."
 
@@ -7525,7 +7525,7 @@ msgstr "The AI in {chat} deleted this document."
 msgid "The AI in a chat deleted {count} documents ({names})."
 msgstr "The AI in a chat deleted {count} documents ({names})."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {name} before this change could be made."
 msgstr "The AI in a chat deleted {name} before this change could be made."
 
@@ -7545,7 +7545,7 @@ msgstr "The AI in a chat deleted {title}."
 msgid "The AI in a chat deleted {title}. Applying brings it back."
 msgstr "The AI in a chat deleted {title}. Applying brings it back."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted this document before this change could be made."
 msgstr "The AI in a chat deleted this document before this change could be made."
 
@@ -8067,7 +8067,7 @@ msgstr "This document was deleted"
 msgid "This document was deleted before its changes could be applied."
 msgstr "This document was deleted before its changes could be applied."
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted before this change could be made."
 msgstr "This document was deleted before this change could be made."
 
@@ -8091,7 +8091,7 @@ msgstr "This document was deleted."
 msgid "This document was discarded from the draft"
 msgstr "This document was discarded from the draft"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft before this change could be made."
 msgstr "This document was discarded from the draft before this change could be made."
 
