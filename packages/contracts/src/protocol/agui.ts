@@ -31,15 +31,11 @@ export type {
   TextMessageContentEvent,
   TextMessageEndEvent,
   TextMessageStartEvent,
-  ThinkingEndEvent,
-  ThinkingStartEvent,
-  ThinkingTextMessageContentEvent,
-  ThinkingTextMessageEndEvent,
-  ThinkingTextMessageStartEvent,
   ToolCallArgsEvent,
   ToolCallChunkEvent,
   ToolCallEndEvent,
   ToolCallResultEvent,
   ToolCallStartEvent,
 } from "@ag-ui/core";
-export { EventSchemas, EventType } from "@ag-ui/core";
+export { EventType } from "@ag-ui/core";
+export { EventSchemas } from "@ag-ui/core/schemas";

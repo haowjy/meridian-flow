@@ -92,30 +92,29 @@ export function executionReportContract(create: () => Promise<ExecutionScenario>
       expect(await repos.executionReports.listPendingPublication(10)).toEqual([]);
     });
 
-    it.each([
-      {},
-      { payload: null },
-      { payload: '{"nested":[1,true,null,"text"]}' },
-    ])("preserves payload presence and JSON scalar identity: %j", async (payload) => {
-      const s = await create();
-      await s.admit({
-        origin: "thread_run",
-        deliveryMode: "none",
-        callerThreadId: null,
-        callerTurnId: null,
-        toolCallId: null,
-        cardBlockId: null,
-      });
-      await s.capture({ summary: "saved", ...payload });
-      expect((await s.read())?.capture).toEqual({ summary: "saved", ...payload });
-      expect(await s.finalize(payload)).toMatchObject({ publication: "none" });
-      expect((await s.read())?.payload).toEqual(payload.payload);
-      if (typeof payload.payload === "string")
-        await expect(s.finalize({ payload: JSON.parse(payload.payload) })).rejects.toThrow();
-      await expect(
-        s.finalize({ payload: payload.payload === null ? undefined : null }),
-      ).rejects.toThrow();
-    });
+    it.each([{}, { payload: null }, { payload: '{"nested":[1,true,null,"text"]}' }])(
+      "preserves payload presence and JSON scalar identity: %j",
+      async (payload) => {
+        const s = await create();
+        await s.admit({
+          origin: "thread_run",
+          deliveryMode: "none",
+          callerThreadId: null,
+          callerTurnId: null,
+          toolCallId: null,
+          cardBlockId: null,
+        });
+        await s.capture({ summary: "saved", ...payload });
+        expect((await s.read())?.capture).toEqual({ summary: "saved", ...payload });
+        expect(await s.finalize(payload)).toMatchObject({ publication: "none" });
+        expect((await s.read())?.payload).toEqual(payload.payload);
+        if (typeof payload.payload === "string")
+          await expect(s.finalize({ payload: JSON.parse(payload.payload) })).rejects.toThrow();
+        await expect(
+          s.finalize({ payload: payload.payload === null ? undefined : null }),
+        ).rejects.toThrow();
+      },
+    );
 
     it("rolls back each supported repository phase without erasing committed predecessors", async () => {
       const s = await create();

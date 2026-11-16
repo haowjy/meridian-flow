@@ -7,7 +7,8 @@
       "{workspaceRoot}/.npmrc",
       "{workspaceRoot}/packages/tsconfig*.json",
       "{workspaceRoot}/patches/**/*",
-      "{workspaceRoot}/tools/ci/run-nx-target.mjs"
+      "{workspaceRoot}/tools/ci/run-nx-target.mjs",
+      "{workspaceRoot}/tools/ci/vitest-shared.ts"
     ],
     "production": ["default", "!{projectRoot}/**/*.test.ts", "!{projectRoot}/**/*.spec.ts"]
   },

@@ -101,7 +101,7 @@ function useDescriptions(projectId: string): Descriptions {
   const queryClient = useQueryClient();
   // A page only a draft holds has no live entry: the draft its view shows describes it, as it
   // does for main's address.
-  const describe = useCallback(
+  const describeDocument = useCallback(
     async (documentId: string, workId?: string) => {
       const pin = readDocumentView(accountId, projectId, documentId).pin;
       if (pin) {
@@ -190,13 +190,13 @@ function useDescriptions(projectId: string): Descriptions {
         const key = describeKey(document);
         if (asked.current.has(key)) continue;
         asked.current.add(key);
-        void describe(document.documentId, document.workId).then(
+        void describeDocument(document.documentId, document.workId).then(
           (tab) => store(key, tab),
           () => store(key, "failed"),
         );
       }
     },
-    [describe, store],
+    [describeDocument, store],
   );
   return useMemo(
     () => ({

@@ -20,17 +20,27 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 type StackItem = Y.UndoManager["undoStack"][number];
 
 type EditorHistoryAction = {
-  undo(): void;
+  /**
+   * Resolves false when the undo didn't happen: the entry goes back to the undo side at its
+   * place, unless it was redone or cleared since.
+   */
+  undo(): Promise<boolean>;
   redo(): void;
 };
+/** An Apply boundary in a history. `remove` ends it when its action can no longer run. */
+type ApplyEntry = { remove(): void };
+/**
+ * `hide` takes the entry out of both sides and keeps its place; `show` puts a hidden entry back on
+ * the undo side at that place, below what was done after it, and leaves the redo side alone.
+ */
+export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void };
 export type EditorHistoryHandle = {
-  /** Records an Apply boundary. The remover ends it when its action can no longer run. */
-  captureApply(action: EditorHistoryAction): () => void;
+  captureApply(action: EditorHistoryAction): ApplyEntry;
 };
 
 type Entry =
   | { kind: "yjs"; sequence: number; item: StackItem }
-  | { kind: "apply"; sequence: number; action: EditorHistoryAction };
+  | { kind: "apply"; sequence: number; action: EditorHistoryAction; presses: number };
 
 /** The history each mounted editor is attached to. */
 const histories = new WeakMap<Editor, DocumentHistory>();
@@ -134,19 +144,34 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.listeners.clear();
   }
 
-  captureApply(action: EditorHistoryAction): () => void {
-    if (!this.active) return noop;
+  captureApply(action: EditorHistoryAction): DocumentApplyEntry {
+    if (!this.active) return { remove: noop, hide: noop, show: noop };
     this.manager.stopCapturing();
-    const entry: Entry = { kind: "apply", sequence: ++this.sequence, action };
+    const entry: Entry = { kind: "apply", sequence: ++this.sequence, action, presses: 0 };
     this.undo.push(entry);
     this.clearRedo();
     this.changed();
-    return () => {
+    let hidden = false;
+    const take = () => {
       for (const entries of [this.undo, this.redo]) {
         const index = entries.indexOf(entry);
         if (index >= 0) entries.splice(index, 1);
       }
       this.changed();
+    };
+    return {
+      remove: take,
+      hide: () => {
+        if (hidden) return;
+        hidden = true;
+        take();
+      },
+      show: () => {
+        if (!hidden || !this.active) return;
+        hidden = false;
+        insert(this.undo, entry);
+        this.changed();
+      },
     };
   }
 
@@ -177,12 +202,26 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (entry.kind === "apply") {
       source.splice(direction === "undo" ? source.length - 1 : 0, 1);
       insert(direction === "undo" ? this.redo : this.undo, entry);
-      entry.action[direction]();
+      const press = ++entry.presses;
+      if (direction === "redo") entry.action.redo();
+      else
+        void entry.action.undo().then((happened) => {
+          if (!happened && entry.presses === press) this.reinstate(entry);
+        });
     } else {
       this.runNative(direction, source, editor);
     }
     this.changed();
     return true;
+  }
+
+  /** Puts an Apply whose undo didn't happen back on the undo side, if it still waits for redo. */
+  private reinstate(entry: Entry): void {
+    const at = this.redo.indexOf(entry);
+    if (!this.active || at < 0) return;
+    this.redo.splice(at, 1);
+    insert(this.undo, entry);
+    this.changed();
   }
 
   /** Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary. */

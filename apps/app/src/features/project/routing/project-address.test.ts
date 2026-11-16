@@ -111,10 +111,10 @@ describe("readable project addresses", () => {
     );
   });
 
-  it.each([
-    `?owner=work%3A${WORK}&owner=`,
-    "?unknown=%FE",
-  ])("rejects raw query ambiguity %s", (search) => {
-    expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
-  });
+  it.each([`?owner=work%3A${WORK}&owner=`, "?unknown=%FE"])(
+    "rejects raw query ambiguity %s",
+    (search) => {
+      expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
+    },
+  );
 });

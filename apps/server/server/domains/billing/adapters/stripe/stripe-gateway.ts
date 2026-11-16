@@ -50,7 +50,7 @@ function checkoutMetadata(input: StripeCheckoutInput): Stripe.MetadataParam {
 }
 
 export function createStripeBillingGateway(config: StripeGatewayConfig): StripeBillingGateway {
-  const stripe = new Stripe(config.secretKey);
+  const stripe = new Stripe(config.secretKey, { apiVersion: "2026-10-28.endive" });
 
   return {
     async createCustomer(input) {

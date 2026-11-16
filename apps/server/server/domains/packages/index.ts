@@ -1,6 +1,7 @@
 // Public package reading, compilation, catalog, and persistence surface.
 
 export { createDrizzleAgentRevisionStore } from "./adapters/drizzle-agent-revision-store.js";
+export { createGithubPackageFetcher } from "./adapters/github-package-fetcher.js";
 export {
   createInMemoryAgentRevisionStore,
   type InMemoryAgentRevisionStore,
@@ -20,6 +21,7 @@ export {
   createBoundAgentCatalog,
   isPrimary,
 } from "./domain/bound-agent-catalog.js";
+export { createCachedPackageFetcher } from "./domain/cached-package-fetcher.js";
 export {
   AgentSourceError,
   type AgentSourceSnapshot,
@@ -27,6 +29,7 @@ export {
   type PackageDiagnostic,
 } from "./domain/compile-package.js";
 export { generalAgentSource, readBuiltinPackages } from "./domain/default-package-seeding.js";
+export { createFetchBudget, FETCH_LIMITS, type FetchLimits } from "./domain/fetch-budget.js";
 export { type SkillListing, skillListingFromMarkdown } from "./domain/skill-listing.js";
 export type { SkillFiles } from "./domain/types.js";
 export {
@@ -42,3 +45,12 @@ export type {
   AgentRevisionBinding,
   AgentRevisionStore,
 } from "./ports/agent-revision-store.js";
+export {
+  type DroppedEntry,
+  type FetchBudget,
+  FetchBudgetError,
+  type FetchedTree,
+  type FetchRequest,
+  PackageFetchError,
+  type PackageFetcher,
+} from "./ports/package-fetcher.js";

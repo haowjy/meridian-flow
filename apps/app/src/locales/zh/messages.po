@@ -129,6 +129,8 @@ msgid "{0, plural, one {# document, deleted from {location}} other {# documents,
 msgstr ""
 
 #. placeholder {0}: counted(false)
+#. placeholder {0}: dock.files.length
+#: src/features/chat/DraftDock.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
 msgstr ""
@@ -349,6 +351,16 @@ msgstr ""
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0} items deleted."
+msgstr ""
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more in this Work"
+msgstr ""
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more to review"
 msgstr ""
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
@@ -781,6 +793,10 @@ msgid "{name} deleted {title}."
 msgstr "{name} 删除了{title}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "{name} deleted {title}. Applying brings it back."
+#~ msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
 msgstr "{name} 删除了这份文档。"
 
@@ -1015,6 +1031,10 @@ msgstr ""
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "{title} was deleted. Applying brings it back."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was discarded from the draft."
@@ -2698,6 +2718,10 @@ msgstr ""
 msgid "Couldn't load Trash."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't load what this chat runs."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
 msgstr ""
@@ -3176,6 +3200,10 @@ msgstr ""
 msgid "Deleted from {area}. Apply brings it back."
 msgstr ""
 
+#: src/features/editor/ManuscriptStateNotice.tsx
+#~ msgid "Deleted from {from}"
+#~ msgstr ""
+
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
 msgstr ""
@@ -3564,6 +3592,10 @@ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Edit goal"
+msgstr ""
+
+#: src/features/chat/UserTurn.tsx
+msgid "Edit in the message box"
 msgstr ""
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -4433,6 +4465,7 @@ msgid "Loading Works…"
 msgstr ""
 
 #: src/features/agents/AgentFileDialog.tsx
+#: src/features/agents/AgentPicker.tsx
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
@@ -6902,6 +6935,10 @@ msgstr ""
 msgid "The AI in {chat} deleted {title}."
 msgstr "{chat} 中的 AI 删除了{title}。"
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "The AI in {chat} deleted {title}. Applying brings it back."
+#~ msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in {chat} deleted this document before this change could be made."
 msgstr ""
@@ -6929,6 +6966,10 @@ msgstr ""
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {title}."
 msgstr "某个对话中的 AI 删除了{title}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "The AI in a chat deleted {title}. Applying brings it back."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in a chat deleted this document before this change could be made."
@@ -7112,6 +7153,7 @@ msgstr ""
 msgid "The Work did not change. Try again."
 msgstr ""
 
+#: src/features/project/context/entry-drag/entry-failure.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "The Work was closed."
 msgstr ""
@@ -7395,6 +7437,10 @@ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document's Work was deleted, so this change can't be reversed."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx

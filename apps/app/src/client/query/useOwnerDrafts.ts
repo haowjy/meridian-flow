@@ -41,7 +41,7 @@ export function treeOwnerOf(owner: string | null): { workId?: string; rootThread
 export function ownerDraftsQueryOptions(projectId: string, owner: string) {
   return {
     queryKey: projectQueryKeys.ownerDrafts(projectId, owner),
-    queryFn: (): Promise<ThreadDraftListResponse> => listOwnerDrafts(projectId, owner),
+    queryFn: () => listOwnerDrafts(projectId, owner),
     staleTime: 15_000,
   };
 }

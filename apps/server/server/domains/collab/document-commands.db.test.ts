@@ -54,44 +54,45 @@ describeBranchTreeDb("review commands (postgres)", (start) => {
         }
       },
     },
-  ])("12b: a twin that lost the race to its own command's effect answers the stored outcome when its grant is refused ($name)", async ({
-    refuse,
-  }) => {
-    const c = await twoChanges(start);
-    const { itemKey, branchId } = await c.item();
-    const request = {
-      branchId,
-      itemKey,
-      commandId: randomUUID(),
-    } as Parameters<typeof handleDiscardWorkDraftRequest>[1]["request"];
-    let twin: Awaited<ReturnType<typeof handleDiscardWorkDraftRequest>> | undefined;
-    const authorize = c.deps.fileAccess.authorize.bind(c.deps.fileAccess);
-    let first = true;
-    const deps = {
-      ...c.deps,
-      fileAccess: {
-        ...c.deps.fileAccess,
-        // The twin's grant arrives after the first request has committed and tombstoned.
-        authorize: async (...args: Parameters<typeof authorize>) => {
-          if (first) {
-            first = false;
-            twin = await handleDiscardWorkDraftRequest(c.deps, {
-              ...c.scope,
-              documentId: c.chapter,
-              request,
-            });
-            throw refuse();
-          }
-          return authorize(...args);
+  ])(
+    "12b: a twin that lost the race to its own command's effect answers the stored outcome when its grant is refused ($name)",
+    async ({ refuse }) => {
+      const c = await twoChanges(start);
+      const { itemKey, branchId } = await c.item();
+      const request = {
+        branchId,
+        itemKey,
+        commandId: randomUUID(),
+      } as Parameters<typeof handleDiscardWorkDraftRequest>[1]["request"];
+      let twin: Awaited<ReturnType<typeof handleDiscardWorkDraftRequest>> | undefined;
+      const authorize = c.deps.fileAccess.authorize.bind(c.deps.fileAccess);
+      let first = true;
+      const deps = {
+        ...c.deps,
+        fileAccess: {
+          ...c.deps.fileAccess,
+          // The twin's grant arrives after the first request has committed and tombstoned.
+          authorize: async (...args: Parameters<typeof authorize>) => {
+            if (first) {
+              first = false;
+              twin = await handleDiscardWorkDraftRequest(c.deps, {
+                ...c.scope,
+                documentId: c.chapter,
+                request,
+              });
+              throw refuse();
+            }
+            return authorize(...args);
+          },
         },
-      },
-    } as typeof c.deps;
-    const answered = await handleDiscardWorkDraftRequest(deps, {
-      ...c.scope,
-      documentId: c.chapter,
-      request,
-    });
-    expect(twin?.body).toMatchObject({ status: "discarded" });
-    expect(answered).toEqual(twin);
-  });
+      } as typeof c.deps;
+      const answered = await handleDiscardWorkDraftRequest(deps, {
+        ...c.scope,
+        documentId: c.chapter,
+        request,
+      });
+      expect(twin?.body).toMatchObject({ status: "discarded" });
+      expect(answered).toEqual(twin);
+    },
+  );
 });

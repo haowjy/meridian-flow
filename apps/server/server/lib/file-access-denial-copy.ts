@@ -13,13 +13,13 @@ import type { FileAccessDenied } from "../domains/file-policy/index.js";
 import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
 import type { WriteToolErrorOutput } from "./model-tools/tool-context.js";
 
-/** A file-policy refusal the model sees as `permission_denied`. */
+/** A file-policy refusal the model sees as `permission_denied`; a deleted Work's file reads as gone. */
 export type PermissionDenial = FileAccessDenied & {
-  reason: Exclude<FileAccessDenial, "not_found">;
+  reason: Exclude<FileAccessDenial, "not_found" | "work_deleted">;
 };
 
 export function isPermissionDenial(denial: FileAccessDenied): denial is PermissionDenial {
-  return denial.reason !== "not_found";
+  return denial.reason !== "not_found" && denial.reason !== "work_deleted";
 }
 
 const UPLOADS_READ_ONLY_MESSAGE = "Files in uploads:// are read-only, so this change wasn't made.";
