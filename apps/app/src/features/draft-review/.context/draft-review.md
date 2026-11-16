@@ -114,9 +114,9 @@ room-base-to-O delta. Its acknowledgement barrier waits for the server to acknow
 local update in the cut before sending; a room that ends releases it, since it will deliver
 nothing more. A whole-draft target then goes as the whole cut below (`wholeCut`), the draft
 as the server holds it, and typing the room never delivered comes back through the hand-back.
-A click on some changes goes frozen: it lands when the server holds its snapshot, and the
-server answers `unsynced` only when the chosen change holds typing the server never got, the
-one Apply no cut can carry. Either way a click whose room ended settles on its answer. The queue keeps its own `readDraftRoom` lease until
+A click on some changes goes frozen: it lands when the server holds its snapshot (the room
+ended while offline with nothing typed), and the server answers `unsynced` when the snapshot
+holds typing it never got, anywhere in the draft: the one Apply no cut can carry yet. Either way a click whose room ended settles on its answer. The queue keeps its own `readDraftRoom` lease until
 terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
 sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
 draft holds on receipt. That click has no optimistic base and no room to record it (`frozenOn`
