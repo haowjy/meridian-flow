@@ -571,10 +571,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPeers = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts,
-      draftCreatedDocuments: createDrizzleCreatedDrafts(deps.db, {
-        documents: runtime.markdownDocuments,
-        drafts,
-      }),
       draftCoordinator,
       blockText: createDrizzleBlockText(deps.db),
       draftPulls,
@@ -587,6 +583,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     deps.links,
+    createDrizzleCreatedDrafts(deps.db, { documents: runtime.markdownDocuments, drafts }),
   );
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({

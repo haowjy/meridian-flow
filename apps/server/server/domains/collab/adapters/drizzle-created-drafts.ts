@@ -1,21 +1,14 @@
-import { type BranchId, createdDraftId, type DocumentId, type UserId } from "@meridian/contracts";
-import { contextRootUri, isContextUriScheme } from "@meridian/contracts/context-uri";
+import { type BranchId, createdDraftId, type DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { documentDrafts } from "@meridian/database/schema";
-import {
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-  packCollabSchemaVersion,
-} from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { branchMayHold, loadBranchHolder } from "../../context/tree/branch-ownership.js";
+import { loadBranchHolder, loadDocumentOwners } from "../../context/tree/branch-ownership.js";
 import { livingDocumentSql, requireLivingDocument } from "../../context/tree/living-document.js";
-import { ownerFrom } from "../../context/tree/source-owner.js";
-import { isDrafted } from "../../file-policy/index.js";
 import { seedDraftState } from "../domain/draft-content.js";
 import type { MarkdownDocumentEngine } from "../domain/markdown-document.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
+import { assertDraftable, insertCreatedDrafts } from "./drizzle-drafts.js";
 
 export function createDrizzleCreatedDrafts(
   db: Database,
@@ -52,49 +45,20 @@ export function createDrizzleCreatedDrafts(
         fresh.map(({ id }) => sql`${id}::uuid`),
         sql`, `,
       );
-      const owners = await tx.execute<{
-        id: DocumentId;
-        living: boolean;
-        project_id: string | null;
-        user_id: string | null;
-        account_id: UserId;
-        scheme: string;
-      }>(sql`
-        select d.id, ${livingDocumentSql(sql`d.id`)} as living, coalesce(s.project_id, w.project_id) as project_id,
-          s.user_id, coalesce(s.user_id, p.user_id) as account_id, s.slug as scheme
-        from documents d
-        left join lateral (
-          select context_source_id from (
-            select id, context_source_id, file_type, 0 as ord from tree_nodes where id = d.id
-            union all
-            select id, context_source_id, file_type, 1 as ord from branch_tree_nodes where id = d.id
-          ) placement where file_type is not null order by ord limit 1
-        ) placement on true
-        left join context_sources s on s.id = placement.context_source_id
-        left join works w on w.id = s.work_id
-        left join projects p on p.id = coalesce(s.project_id, w.project_id)
-        where d.id in (${ids})`);
-      const ownerById = new Map(owners.map((row) => [row.id, row]));
+      const [owners, living] = await Promise.all([
+        loadDocumentOwners(
+          tx,
+          fresh.map(({ id }) => id),
+        ),
+        tx.execute<{ id: DocumentId; living: boolean }>(sql`
+          select d.id, ${livingDocumentSql(sql`d.id`)} as living from documents d where d.id in (${ids})`),
+      ]);
+      const livingById = new Map(living.map((row) => [row.id, row.living]));
       const holders = new Map<BranchId, Awaited<ReturnType<typeof loadBranchHolder>>>();
       for (const { id, branch_id } of fresh) {
-        const row = ownerById.get(id);
-        if (!row?.living) await requireLivingDocument(tx, id);
-        if (row && isContextUriScheme(row.scheme) && !isDrafted(row.scheme))
-          throw new Error(
-            `Document ${id} is in ${contextRootUri(row.scheme)}, which is never drafted`,
-          );
+        if (!livingById.get(id)) await requireLivingDocument(tx, id);
         if (!holders.has(branch_id)) holders.set(branch_id, await loadBranchHolder(tx, branch_id));
-        const holder = holders.get(branch_id);
-        if (
-          !row?.scheme ||
-          !holder ||
-          !branchMayHold(holder, {
-            owner: ownerFrom({ projectId: row.project_id, userId: row.user_id }),
-            accountId: row.account_id,
-            scheme: row.scheme,
-          })
-        )
-          throw new Error(`Branch ${branch_id} may not hold document ${id}`);
+        assertDraftable(id, branch_id, owners.get(id) ?? null, holders.get(branch_id) ?? null);
       }
       await deps.documents.installSeeds(fresh.map(({ id }) => ({ documentId: id, state: null })));
       const empty = createCollabYDoc({ gc: false });
@@ -104,28 +68,7 @@ export function createDrizzleCreatedDrafts(
       } finally {
         empty.destroy();
       }
-      const insertedIds = new Set<string>();
-      for (let offset = 0; offset < fresh.length; offset += 500) {
-        const inserted = await tx
-          .insert(documentDrafts)
-          .values(
-            fresh.slice(offset, offset + 500).map(({ id, branch_id }) => ({
-              id: createdDraftId(id),
-              documentId: id,
-              branchId: branch_id,
-              kind: "work_draft" as const,
-              status: "active" as const,
-              state: checkpoint.state,
-              stateVector: checkpoint.stateVector,
-              hasEffect: false,
-              hasEffectRevision: 0,
-              schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-            })),
-          )
-          .onConflictDoNothing()
-          .returning({ id: documentDrafts.id });
-        for (const { id } of inserted) insertedIds.add(id);
-      }
+      const insertedIds = await insertCreatedDrafts(db, fresh, checkpoint);
       other.push(...fresh.filter(({ id }) => !insertedIds.has(createdDraftId(id))));
     }
     for (const { id, branch_id } of other) {

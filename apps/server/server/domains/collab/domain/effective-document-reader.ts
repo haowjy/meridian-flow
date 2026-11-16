@@ -45,7 +45,6 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
-  draftCreatedDocuments: DraftPeerShadowAccess["draftCreatedDocuments"];
   draftCoordinator: Pick<DraftCoordinator, "copyDraft" | "loadBase" | "prepareAppend">;
   blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
@@ -56,7 +55,7 @@ export function createEffectiveDocumentReader(input: {
   links: DocumentLinkScopes;
   branches: Pick<Branches, "viewForOwner">;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
-}): DraftPeerShadowAccess {
+}): Omit<DraftPeerShadowAccess, "draftCreatedDocuments"> {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
@@ -230,6 +229,5 @@ export function createEffectiveDocumentReader(input: {
         }
       }
     },
-    draftCreatedDocuments: input.draftCreatedDocuments,
   };
 }
