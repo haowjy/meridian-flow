@@ -453,6 +453,10 @@ msgstr "{change} stayed: it has writing in it since."
 msgid "{change} stayed: it was changed since."
 msgstr "{change} stayed: it was changed since."
 
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "{change} stayed: its Work is closed."
+msgstr "{change} stayed: its Work is closed."
+
 #: src/features/chat/DraftDock.tsx
 msgid "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"
 msgstr "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"

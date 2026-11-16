@@ -377,9 +377,22 @@ function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
               : fact.folder
                 ? t`The change to this folder`
                 : t`The change to this document`;
-  if (why === "purged") return t`${change} can no longer be taken back.`;
-  if (why === "has_text") return t`${change} stayed: it has writing in it since.`;
-  return t`${change} stayed: it was changed since.`;
+  switch (why) {
+    case "purged":
+      return t`${change} can no longer be taken back.`;
+    case "has_text":
+      return t`${change} stayed: it has writing in it since.`;
+    case "closed":
+      return t`${change} stayed: its Work is closed.`;
+    case "would_loop":
+    case "after_press":
+    case "needs":
+    case "changed_since":
+    case "already":
+      return t`${change} stayed: it was changed since.`;
+    default:
+      return why satisfies never;
+  }
 }
 
 const factOf = (said: Extract<Said, { kind: "left" }>, node: string): TreeFact =>
