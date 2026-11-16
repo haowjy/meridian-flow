@@ -70,7 +70,7 @@ function mcpFailureText(code: string, record: object | null): string | null {
     case "mcp_unreachable":
       return name ? t`${name} couldn't be reached.` : t`The server couldn't be reached.`;
     case "mcp_unauthorized":
-      return name ? t`${name} refused the token.` : t`The server refused the token.`;
+      return name ? t`${name} needs a valid token.` : t`The server needs a valid token.`;
     case "mcp_aborted":
       return t`This was stopped before it finished.`;
     case "mcp_unknown_tool":

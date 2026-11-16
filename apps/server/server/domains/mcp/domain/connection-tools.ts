@@ -174,7 +174,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       }),
     );
     await bestEffort("record the call for the connection's status", () =>
-      deps.service.checks.recordCall(stored.row, { startedAt }, outcome),
+      deps.service.checks.recordCall(stored.row, { startedAt, loaded }, outcome),
     );
     return { kind: "called", connection: held.name, tool, recordId, outcome };
   }

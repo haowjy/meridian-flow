@@ -7,7 +7,7 @@
  */
 
 import { isIP } from "node:net";
-import { MCP_SESSIONS_PER_ACCOUNT } from "@meridian/contracts/mcp";
+import { MCP_SESSIONS_PER_ACCOUNT, mcpAddressProblem } from "@meridian/contracts/mcp";
 import { createMcpClient, type McpClient, type McpEvent } from "@meridian-flow/runtime/mcp";
 import { fetch as undiciFetch } from "undici";
 import { isPublicAddress, publicAddressDispatcher } from "./public-address-dispatcher.js";
@@ -18,9 +18,10 @@ import { isPublicAddress, publicAddressDispatcher } from "./public-address-dispa
  * is refused later by the dispatcher.
  */
 export function addressRefusal(url: URL): string | null {
-  if (url.protocol !== "https:")
+  const problem = mcpAddressProblem(url);
+  if (problem === "not_https")
     return "Flow connects only to https addresses, so the address must start with https://.";
-  if (url.port !== "" && url.port !== "443")
+  if (problem === "not_port_443")
     return "Flow connects only to port 443, so take the port out of the address.";
   const host = url.hostname.replace(/^\[|\]$/g, "");
   if (

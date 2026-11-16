@@ -19,7 +19,7 @@ of this ([design](https://github.com/haowjy/meridian-flow-docs/tree/main/work/sh
   bake will hold pin ids, so a pin's bytes never change.
 - `mcp_connection_tokens`: keyed on (connection, account), AES-256-GCM under `MCP_TOKEN_KEY`
   (`domain/token-cipher.ts`). The ciphertext is bound to its connection and account. A token is
-  never sent to the app (the list says "set" or "not set") and never logged. A key that no longer
+  never sent to the app (the list says "set" or "not set") and never logged. A 401 is worded from what was sent (`signInReason` in `domain/connection-checks.ts`): no token, a refused token, or a token that could not be opened; the app offers Add a token or Update the token from `tokenSet`. A key that no longer
   opens a token makes the connection `needs_sign_in` with its own reason, not an error. Losing
   the key means every writer enters their tokens again.
 - `mcp_calls`: one row per connection call (thread, turn, model response, tool call, sequence,
@@ -35,7 +35,7 @@ of this ([design](https://github.com/haowjy/meridian-flow-docs/tree/main/work/sh
   `sessionKey`). An edit of the address or the token bumps the version, so every server process
   stops using the old session at once; the process that handled the edit also closes it. The
   one process-wide client lives in `lib/`, over Flow's `fetch` on the public-address dispatcher
-  (https, port 443, no redirects, HTTP/1.1 only through `lib/outbound-http1.ts`, which every outbound request shares; `addressRefusal` in `lib/mcp-client.ts` is the one rule for the address, applied by `publicFetch` to each request and by the service at add and edit, so an address Flow will never contact is refused on the screen at once, not saved; a redirect is refused with a reason of its own: undici's HTTP/2 path leaves an orphan stream after an aborted request, whose idle close throws an uncaught `UND_ERR_INFO`, nodejs/undici#6143). Domains never import `lib/`, so the service takes the client
+  (https, port 443, no redirects, HTTP/1.1 only through `lib/outbound-http1.ts`, which every outbound request shares; `addressRefusal` in `lib/mcp-client.ts` is the one rule for the address, applied by `publicFetch` to each request and by the service at add and edit, so an address Flow will never contact is refused on the screen at once, not saved; its scheme and port part is `mcpAddressProblem` in `@meridian/contracts/mcp`, which the app also applies before it sends an add or edit; a redirect is refused with a reason of its own: undici's HTTP/2 path leaves an orphan stream after an aborted request, whose idle close throws an uncaught `UND_ERR_INFO`, nodejs/undici#6143). Domains never import `lib/`, so the service takes the client
   and the key function as dependencies.
 - **A connection may be saved with no pin.** Adding lists the server's tools; with no answer the
   connection is saved with no pin and the status says why. An edit of the address drops the pin

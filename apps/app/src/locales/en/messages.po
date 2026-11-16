@@ -840,6 +840,10 @@ msgstr "{name} is over {LIMIT_MB} MB, so it can't be added."
 msgid "{name} is unavailable"
 msgstr "{name} is unavailable"
 
+#: src/features/chat/tool-failure.tsx
+msgid "{name} needs a valid token."
+msgstr "{name} needs a valid token."
+
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "{name} on {runsAt}"
 msgstr "{name} on {runsAt}"
@@ -849,8 +853,8 @@ msgid "{name} refused the request."
 msgstr "{name} refused the request."
 
 #: src/features/chat/tool-failure.tsx
-msgid "{name} refused the token."
-msgstr "{name} refused the token."
+#~ msgid "{name} refused the token."
+#~ msgstr "{name} refused the token."
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -1327,6 +1331,7 @@ msgstr "Add a connection"
 msgid "Add a goal for this Work"
 msgstr "Add a goal for this Work"
 
+#: src/features/connections/connection-status.ts
 #: src/features/connections/ConnectionPanel.tsx
 msgid "Add a token"
 msgstr "Add a token"
@@ -3940,6 +3945,14 @@ msgstr "Fit"
 #: src/features/agents/PackageSave.tsx
 msgid "Fix these and save {label} again."
 msgstr "Fix these and save {label} again."
+
+#: src/features/connections/connection-status.ts
+msgid "Flow connects only to https addresses, so the address must start with https://."
+msgstr "Flow connects only to https addresses, so the address must start with https://."
+
+#: src/features/connections/connection-status.ts
+msgid "Flow connects only to port 443, so take the port out of the address."
+msgstr "Flow connects only to port 443, so take the port out of the address."
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "flowchart"
@@ -7328,13 +7341,18 @@ msgid "The server didn't list its tools."
 msgstr "The server didn't list its tools."
 
 #: src/features/chat/tool-failure.tsx
+#: src/features/connections/connection-status.ts
+msgid "The server needs a valid token."
+msgstr "The server needs a valid token."
+
+#: src/features/chat/tool-failure.tsx
 msgid "The server refused the request."
 msgstr "The server refused the request."
 
 #: src/features/chat/tool-failure.tsx
 #: src/features/connections/connection-status.ts
-msgid "The server refused the token."
-msgstr "The server refused the token."
+#~ msgid "The server refused the token."
+#~ msgstr "The server refused the token."
 
 #: src/features/connections/AddConnectionForm.tsx
 msgid "The server sees what the AI sends it and can steer what the AI does. Add only servers you trust."
@@ -7996,7 +8014,6 @@ msgid "Trash"
 msgstr "Trash"
 
 #: src/features/chat/ChatCards.tsx
-#: src/features/chat/mcp-renderers.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
 #: src/features/connections/connection-status.ts
 #: src/features/editor/InTrashStatus.tsx
@@ -8296,7 +8313,6 @@ msgstr "Untitled project"
 msgid "Update"
 msgstr "Update"
 
-#: src/features/chat/mcp-renderers.tsx
 #: src/features/connections/connection-status.ts
 msgid "Update the token"
 msgstr "Update the token"

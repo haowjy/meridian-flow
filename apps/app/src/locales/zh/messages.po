@@ -840,6 +840,10 @@ msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
 msgid "{name} is unavailable"
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "{name} needs a valid token."
+msgstr ""
+
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "{name} on {runsAt}"
 msgstr ""
@@ -849,8 +853,8 @@ msgid "{name} refused the request."
 msgstr ""
 
 #: src/features/chat/tool-failure.tsx
-msgid "{name} refused the token."
-msgstr ""
+#~ msgid "{name} refused the token."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -1327,6 +1331,7 @@ msgstr ""
 msgid "Add a goal for this Work"
 msgstr ""
 
+#: src/features/connections/connection-status.ts
 #: src/features/connections/ConnectionPanel.tsx
 msgid "Add a token"
 msgstr ""
@@ -3939,6 +3944,14 @@ msgstr ""
 
 #: src/features/agents/PackageSave.tsx
 msgid "Fix these and save {label} again."
+msgstr ""
+
+#: src/features/connections/connection-status.ts
+msgid "Flow connects only to https addresses, so the address must start with https://."
+msgstr ""
+
+#: src/features/connections/connection-status.ts
+msgid "Flow connects only to port 443, so take the port out of the address."
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -7328,13 +7341,18 @@ msgid "The server didn't list its tools."
 msgstr ""
 
 #: src/features/chat/tool-failure.tsx
+#: src/features/connections/connection-status.ts
+msgid "The server needs a valid token."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
 msgid "The server refused the request."
 msgstr ""
 
 #: src/features/chat/tool-failure.tsx
 #: src/features/connections/connection-status.ts
-msgid "The server refused the token."
-msgstr ""
+#~ msgid "The server refused the token."
+#~ msgstr ""
 
 #: src/features/connections/AddConnectionForm.tsx
 msgid "The server sees what the AI sends it and can steer what the AI does. Add only servers you trust."
@@ -7996,7 +8014,6 @@ msgid "Trash"
 msgstr ""
 
 #: src/features/chat/ChatCards.tsx
-#: src/features/chat/mcp-renderers.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
 #: src/features/connections/connection-status.ts
 #: src/features/editor/InTrashStatus.tsx
@@ -8296,7 +8313,6 @@ msgstr ""
 msgid "Update"
 msgstr ""
 
-#: src/features/chat/mcp-renderers.tsx
 #: src/features/connections/connection-status.ts
 msgid "Update the token"
 msgstr ""

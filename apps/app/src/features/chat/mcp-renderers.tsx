@@ -19,7 +19,11 @@ import { useMcpConnections, useRouteProjectId } from "@/client/query/useMcpConne
 import { Button } from "@/components/ui/button";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useTryAgain } from "@/features/connections/ConnectionRow";
-import { connectionStanding } from "@/features/connections/connection-status";
+import {
+  actionLabel,
+  connectionStanding,
+  standingAction,
+} from "@/features/connections/connection-status";
 import { formatBytes } from "@/lib/format-size";
 import { BoundLine, ExpandableProse } from "./ClippedExpand";
 import { CommandTitle } from "./CommandTitle";
@@ -263,20 +267,15 @@ function ConnectionFixFor({
         <Trans>{name} answers now. Ask the AI to try again.</Trans>
       </span>
     );
-  if (standing.kind === "problem" && standing.status === "needs_sign_in")
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="xs"
-        onClick={() => settings.open("connections")}
-      >
-        <Trans>Update the token</Trans>
-      </Button>
-    );
+  const action = standingAction(standing);
   return (
-    <Button type="button" variant="outline" size="xs" onClick={() => tryAgain.mutate()}>
-      <Trans>Try again</Trans>
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      onClick={() => (action === "try_again" ? tryAgain.mutate() : settings.open("connections"))}
+    >
+      {actionLabel(action ?? "try_again")}
     </Button>
   );
 }
