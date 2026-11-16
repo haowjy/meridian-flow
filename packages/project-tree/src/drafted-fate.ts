@@ -98,3 +98,19 @@ export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, Dr
   }
   return fates;
 }
+
+/**
+ * The Apply command that took each drafted record `ids` names, following its family as
+ * `draftedFates` does; a record no Apply took is absent.
+ */
+export function appliedBy(doc: Y.Doc, ids: readonly string[]): Map<string, string> {
+  const { records, drafted, settled } = indexOf(doc);
+  const by = new Map<string, string>();
+  for (const id of ids) {
+    const record = records.get(id);
+    const newest = record && drafted.get(record.carries ?? record.id)?.at(-1);
+    const settlement = newest ? settled.get(newest) : undefined;
+    if (settlement?.fate === "applied" && settlement.command) by.set(id, settlement.command);
+  }
+  return by;
+}

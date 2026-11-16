@@ -11,6 +11,7 @@ import type { TurnInverseSkip, TurnTreeState } from "@meridian/contracts/protoco
 import type { Database } from "@meridian/database";
 import { documents, treeEditReceipts, treeNodes } from "@meridian/database/schema";
 import {
+  appliedBy,
   changeUndone,
   type DraftedFate,
   draftedFates,
@@ -127,7 +128,7 @@ export function createTurnTreeInverse(deps: {
   async function draftStates(
     threadId: ThreadId,
     turnId: TurnId,
-  ): Promise<Record<string, TurnTreeState>> {
+  ): Promise<{ states: Record<string, TurnTreeState>; appliedBy: Record<string, string> }> {
     const receipts = await db()
       .select({ records: treeEditReceipts.records })
       .from(treeEditReceipts)
@@ -154,25 +155,29 @@ export function createTurnTreeInverse(deps: {
       byList.set(key, known);
     }
     const states: Record<string, TurnTreeState> = {};
+    const commands: Record<string, string> = {};
     const rank = { discarded: 0, replaced: 1, applied: 2, pending: 3 } as const;
     for (const { list, records } of byList.values()) {
-      const fates = await deps.treeLists.read<Map<string, DraftedFate>>({
+      const ids = records.map((entry) => entry.record);
+      const read = await deps.treeLists.read<{
+        fates: Map<string, DraftedFate>;
+        by: Map<string, string>;
+      }>({
         lists: [list],
         view: ([end]) =>
           end
-            ? draftedFates(
-                end.writer.doc,
-                records.map((entry) => entry.record),
-              )
-            : new Map(),
+            ? { fates: draftedFates(end.writer.doc, ids), by: appliedBy(end.writer.doc, ids) }
+            : { fates: new Map(), by: new Map() },
       });
       for (const { record, node } of records) {
-        const fate = fates.get(record) ?? "discarded";
+        const fate = read.fates.get(record) ?? "discarded";
         const was = states[node];
         if (!was || rank[fate] > rank[was]) states[node] = fate;
+        const command = read.by.get(record);
+        if (command) commands[node] = command;
       }
     }
-    return states;
+    return { states, appliedBy: commands };
   }
 
   /**
@@ -217,6 +222,28 @@ export function createTurnTreeInverse(deps: {
         )})`))
         held.add(`${branchId}:${row.id}`);
     const ids = open.map((step) => step.subject);
+    const listOf = await treeListsOfNodes(deps.db, [...new Set(ids)]);
+    // A drafted change an Apply took is the Apply's to take back (its Un-Apply, which the card
+    // sends): the card's own Undo leaves it, and says nothing of it.
+    const applied = new Set<TreeReceipt>();
+    const draftedBy = new Map<string, { list: TreeList; steps: TreeReceipt[] }>();
+    for (const step of open) {
+      const list = listOf.get(step.subject);
+      if (!list || !step.draftBranchId) continue;
+      const key = JSON.stringify(list);
+      const entry = draftedBy.get(key) ?? { list, steps: [] };
+      entry.steps.push(step);
+      draftedBy.set(key, entry);
+    }
+    for (const { list, steps } of draftedBy.values()) {
+      const records = steps.flatMap((step) => step.records.map((entry) => entry.record));
+      const by = await deps.treeLists.read({
+        lists: [list],
+        view: ([end]) => (end ? appliedBy(end.writer.doc, records) : new Map<string, string>()),
+      });
+      for (const step of steps)
+        if (step.records.every((entry) => by.has(entry.record))) applied.add(step);
+    }
     const subjects = new Set(
       (
         await db().select({ id: documents.id }).from(documents).where(inArray(documents.id, ids))
@@ -231,13 +258,16 @@ export function createTurnTreeInverse(deps: {
           .where(inArray(treeNodes.id, ids))
       ).map((row) => [row.id as string, row.trashRecord]),
     );
-    const listOf = await treeListsOfNodes(deps.db, [...new Set(ids)]);
     // Each record's report, one read of each list, in the order the Undo takes the records; the
     // sources they name say whose notes the Undo changes, and those owners judge what stays.
     const byList = new Map<string, { list: TreeList; receipts: TreeReceipt[] }>();
     for (const step of open) {
       const list = listOf.get(step.subject);
-      if (!list || (step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`)))
+      if (
+        !list ||
+        applied.has(step) ||
+        (step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`))
+      )
         continue;
       const key = JSON.stringify(list);
       const entry = byList.get(key) ?? { list, receipts: [] };
@@ -287,16 +317,18 @@ export function createTurnTreeInverse(deps: {
     };
     // A drafted receipt its Work's branch no longer holds was discarded: like discarded text, it
     // is neither taken back nor a part that stayed.
-    const fates = new Map<TreeReceipt, ReturnType<typeof changeUndone> | "discarded">();
+    const fates = new Map<TreeReceipt, ReturnType<typeof changeUndone> | "discarded" | "applied">();
     for (const step of open) {
       const own = step.records.map((entry) => answers.get(entry.record));
       fates.set(
         step,
-        step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`)
-          ? "discarded"
-          : own.some((answer) => answer === undefined)
-            ? "purged"
-            : changeUndone(own as UndoAnswer[]),
+        applied.has(step)
+          ? "applied"
+          : step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`)
+            ? "discarded"
+            : own.some((answer) => answer === undefined)
+              ? "purged"
+              : changeUndone(own as UndoAnswer[]),
       );
     }
     const steps = open.filter((step) => fates.get(step) === "acts");

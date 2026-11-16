@@ -24,6 +24,7 @@ export {
 } from "./apply.js";
 export { changedFolders, type LandingFault, landingFaults } from "./changes.js";
 export {
+  appliedBy,
   type DraftedFate,
   draftedFates,
   type RecordSettled,

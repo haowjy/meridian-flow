@@ -15,6 +15,7 @@ import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
   ReversalOutcome,
+  TurnAppliedCommand,
   TurnInverseSkip,
   TurnInverseSkipCause,
   TurnReceiptChip,
@@ -45,6 +46,8 @@ export type StoredInversePart = InversePart & {
   disposition: PartDisposition;
   /** A change waits in an open draft at this part's text, or the writer typed over it (read from the capture; the stored `has_effect` lags a Discard). */
   waiting?: boolean;
+  /** The Apply that took an applied part: its Un-Apply takes the part back, not the card's revert. */
+  appliedBy?: string;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -124,8 +127,21 @@ export interface TurnInverseStore {
   treeSteps(
     query: TurnInverseQuery,
   ): Promise<{ acting: number; taken: number; stayed: TurnInverseSkip[] }>;
-  /** What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`). */
-  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnTreeState>>;
+  /**
+   * What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`),
+   * and the Apply that took each applied one.
+   */
+  treeDraftStates(query: TurnInverseQuery): Promise<{
+    states: Record<string, TurnTreeState>;
+    appliedBy: Record<string, string>;
+  }>;
+  /**
+   * Each Apply command's branch and the nodes it landed on, read by its id; an id with no stored
+   * Apply is absent.
+   */
+  applyCommands(
+    commandIds: readonly string[],
+  ): Promise<Map<string, { branchId: string; nodes: readonly string[] }>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -223,8 +239,15 @@ async function prepare(
       at: number;
     }[] = [];
     const selection = new Map<InverseDestination, InversePart[]>();
-    for (const { at, parts } of originals) {
+    for (const { at, parts: all } of originals) {
       let chosen = 0;
+      // A part an Apply took goes back with that Apply's Un-Apply, which the card sends beside.
+      const parts = all.filter((part) => {
+        if (!part.appliedBy) return true;
+        skip(part, "applied");
+        return false;
+      });
+      if (parts.length === 0) continue;
       const entry = {
         id: parts[0]?.editId ?? "",
         handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
@@ -373,6 +396,42 @@ function draftStates(
   return Object.keys(states).length ? states : undefined;
 }
 
+/**
+ * The Applies in force that took the reply's drafted changes, text and tree, each read once by
+ * its id. One holds only this reply's changes when every node it landed on is the reply's and no
+ * other reply's part it took sits in the reply's documents.
+ */
+async function appliedCommandsOf(
+  store: TurnInverseStore,
+  documents: readonly InverseDocument[],
+  query: TurnInverseQuery,
+  treeAppliedBy: Record<string, string>,
+): Promise<TurnAppliedCommand[]> {
+  const ours = new Set<string>(Object.values(treeAppliedBy));
+  const others = new Set<string>();
+  for (const document of documents)
+    for (const part of document.history)
+      if (part.appliedBy) (targetsTurn(part, query) ? ours : others).add(part.appliedBy);
+  if (ours.size === 0) return [];
+  const nodes = new Set<string>([
+    ...documents.map((document) => document.documentId as string),
+    ...Object.keys(treeAppliedBy),
+  ]);
+  const stored = await store.applyCommands([...ours]);
+  return [...ours].flatMap((commandId) => {
+    const command = stored.get(commandId);
+    if (!command) return [];
+    return [
+      {
+        commandId,
+        branchId: command.branchId,
+        count: command.nodes.length,
+        onlyThisTurn: !others.has(commandId) && command.nodes.every((node) => nodes.has(node)),
+      },
+    ];
+  });
+}
+
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
@@ -388,8 +447,9 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
         );
-        const treeStates = await store.treeDraftStates(query);
+        const { states: treeStates, appliedBy: treeAppliedBy } = await store.treeDraftStates(query);
         const trees = Object.keys(treeStates).length ? treeStates : undefined;
+        const applied = await appliedCommandsOf(store, documents, query, treeAppliedBy);
         const { plans: undo, undoneByWriter } = await prepare(
           store,
           documents,
@@ -405,8 +465,11 @@ export function createTurnInverseService(store: TurnInverseStore) {
           documents.every(({ documentId }) => drafts[documentId] === "discarded");
         // A part an Undo took out has no skip, so the skips are the parts that stay.
         const skips = [...undo.flatMap((plan) => plan.skips), ...tree.stayed];
+        const withApplied = applied.length ? { applied } : {};
         if ((hasSteps(undo) && !allDiscarded) || tree.acting)
-          return { state: "live-active", control: "undo", drafts, trees, skips };
+          return { state: "live-active", control: "undo", drafts, trees, skips, ...withApplied };
+        if (applied.length)
+          return { state: "live-active", control: "view_change", drafts, trees, skips, applied };
         const state =
           tree.taken || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
         return { state, control: "view_change", drafts, trees, skips };

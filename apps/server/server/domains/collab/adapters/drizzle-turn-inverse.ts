@@ -8,7 +8,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
 import { type ItemRanges, textInRanges } from "@meridian/agent-edit/yjs-mutation";
-import type { BranchId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
+import type { BranchId, CommandId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
+import type { ApplyClickResult } from "@meridian/contracts/branches";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import {
   branches,
@@ -19,6 +20,11 @@ import {
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
+import {
+  applyCommandEffects,
+  applyCommandTrees,
+  commands as commandRows,
+} from "@meridian/database/schema";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
@@ -329,9 +335,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       for (const draftId of dispositionDraftIds) views.set(draftId, await readDisposition(draftId));
       const waitingParts = new Set<string>();
       const byPart = new Map<string, StoredInversePart["disposition"]>();
+      const appliedByPart = new Map<string, string>();
       for (const view of views.values())
-        for (const part of view?.parts ?? [])
+        for (const part of view?.parts ?? []) {
           if (part.waiting) waitingParts.add(`${part.editId}:${part.ordinal}`);
+          if (part.appliedBy) appliedByPart.set(`${part.editId}:${part.ordinal}`, part.appliedBy);
+        }
       for (const view of views.values())
         for (const part of view?.parts ?? [])
           if (
@@ -353,11 +362,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
           const classified = byPart.get(`${part.editId}:${part.ordinal}`);
+          const appliedBy =
+            classified === "applied"
+              ? appliedByPart.get(`${part.editId}:${part.ordinal}`)
+              : undefined;
           const destination = document.destinationOf(part.origin);
           // An open draft's unapplied part stays pending: "not pending any more" also means the
           // writer retyped it, which the receipt must call edited, not discarded.
           return {
             ...part,
+            ...(appliedBy ? { appliedBy } : {}),
             waiting: waitingParts.has(`${part.editId}:${part.ordinal}`),
             disposition:
               classified === "applied"
@@ -500,9 +514,47 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
       return owners;
     },
+    async applyCommands(commandIds) {
+      const found = new Map<string, { branchId: string; nodes: readonly string[] }>();
+      if (commandIds.length === 0) return found;
+      const ids = commandIds as CommandId[];
+      const outcomes = await db()
+        .select({ id: commandRows.id, outcome: commandRows.outcome })
+        .from(commandRows)
+        .where(inArray(commandRows.id, ids));
+      // The branch the Apply ran on: its tree half's row, or a text effect's draft.
+      const branchOf = new Map<string, string>();
+      for (const row of await db()
+        .select({ id: applyCommandTrees.commandId, branchId: applyCommandTrees.branchId })
+        .from(applyCommandTrees)
+        .where(inArray(applyCommandTrees.commandId, ids)))
+        branchOf.set(row.id, row.branchId);
+      const textOnly = ids.filter((id) => !branchOf.has(id));
+      if (textOnly.length)
+        for (const row of await db()
+          .selectDistinctOn([applyCommandEffects.commandId], {
+            id: applyCommandEffects.commandId,
+            branchId: documentDrafts.branchId,
+          })
+          .from(applyCommandEffects)
+          .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
+          .where(inArray(applyCommandEffects.commandId, textOnly)))
+          branchOf.set(row.id, row.branchId);
+      for (const { id, outcome } of outcomes) {
+        const branchId = branchOf.get(id);
+        const result =
+          outcome.status === "done" ? (outcome.result as Partial<ApplyClickResult>) : null;
+        if (!branchId || result?.status !== "applied") continue;
+        const nodes = (result.items ?? []).flatMap((item) =>
+          item.tree?.landed || item.text?.landed ? [item.node] : [],
+        );
+        found.set(id, { branchId, nodes });
+      }
+      return found;
+    },
     treeDraftStates: (query) =>
       query.model || !query.turnId
-        ? Promise.resolve({})
+        ? Promise.resolve({ states: {}, appliedBy: {} })
         : treeInverse.draftStates(query.threadId, query.turnId),
     async treeSteps(query) {
       const tree = await treePlanOf(query);

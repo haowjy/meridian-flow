@@ -4,6 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
+  ReversalOutcome,
   TreeReversalLanding,
   Turn,
   TurnDraftState,
@@ -20,9 +21,13 @@ import { successfulWorkReversals } from "@/client/api/reverse-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
+import { unappliedSentence } from "@/core/project-tree/tree-left-sentence";
+import type { Unapplied } from "@/core/project-tree/tree-undo";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
+import { useCardUnapply } from "@/features/draft-review/card-unapply";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import {
@@ -87,6 +92,9 @@ export function TurnEditsReceipt({
   const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
   const projectId = useProjectDocumentNavigationProjectId();
+  const unapply = useCardUnapply(projectId);
+  // What the card's last Undo of its applied changes answered.
+  const [unapplied, setUnapplied] = useState<Unapplied | null>(null);
 
   const drafts = receipt?.drafts;
   const trees = receipt?.trees;
@@ -109,7 +117,14 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  const reversible = receipt?.control === "undo";
+  // The Applies in force that took this reply's changes: the Undo takes each back whole.
+  const applies = receipt?.applied ?? [];
+  const reverses = receipt?.control === "undo";
+  const reversible = reverses || applies.length > 0;
+  const appliedCount = applies.reduce((sum, apply) => sum + apply.count, 0);
+  const wholeApply = applies.length > 1 || (applies[0] !== undefined && !applies[0].onlyThisTurn);
+  // An Un-Apply that took what it could says so in the Undo's place, as the Changes row does.
+  const unappliedWord = unapplied && applies.length === 0 ? unapplied.taken : null;
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
@@ -117,38 +132,55 @@ export function TurnEditsReceipt({
 
   if (!hasTurnEditsReceiptContent(documents, workReceipts)) return null;
 
+  /** What the reversal of the reply's changes no Apply took answered, said on the card. */
+  function said(outcome: ReversalOutcome) {
+    setActionSkips(outcome.skips ?? []);
+    const restored = successfulWorkReversals(outcome);
+    const status =
+      outcome.status === "partial" && outcome.acceptedParts
+        ? null
+        : refusedReversalStatus(outcome.status);
+    // A part a closed Work kept as it was is listed below with its reason; it isn't a refusal.
+    const onlyReturned =
+      !!outcome.skips?.length && outcome.skips.every((skip) => skip.cause === "returned");
+    const refusal = status && !onlyReturned ? status : null;
+    // Several tree changes that stayed are listed, each with why, under the list's heading.
+    const stayed = outcome.skips?.length === 1 ? outcome.skips[0] : undefined;
+    setCommandRefusal(
+      refusal === "not_undone"
+        ? stayed?.kind === "tree"
+          ? { status: refusal, stayed, folder: isFolder(stayed.documentId) }
+          : null
+        : refusal
+          ? { status: refusal, denial: outcome.denial }
+          : null,
+    );
+    const notices = [
+      ...(outcome.landings ?? []).map((landing) => treeLandingLine(landing, names)),
+      ...restored.map((work) => reversedWorkLine(work, names)),
+    ];
+    setOutcomeNotices(notices.length ? [...new Set(notices)] : null);
+    if (refusal || notices.length > 0 || outcome.skips?.length) setExpanded(true);
+  }
+
   async function reverseTurn() {
     if (pending || !reversible) return;
     setPending(true);
+    setUnapplied(null);
     try {
-      const outcome = await turnMutation.mutateAsync({ turnId: turn.id });
-      setActionSkips(outcome.skips ?? []);
-      const restored = successfulWorkReversals(outcome);
-      const status =
-        outcome.status === "partial" && outcome.acceptedParts
-          ? null
-          : refusedReversalStatus(outcome.status);
-      // A part a closed Work kept as it was is listed below with its reason; it isn't a refusal.
-      const onlyReturned =
-        !!outcome.skips?.length && outcome.skips.every((skip) => skip.cause === "returned");
-      const refusal = status && !onlyReturned ? status : null;
-      // Several tree changes that stayed are listed, each with why, under the list's heading.
-      const stayed = outcome.skips?.length === 1 ? outcome.skips[0] : undefined;
-      setCommandRefusal(
-        refusal === "not_undone"
-          ? stayed?.kind === "tree"
-            ? { status: refusal, stayed, folder: isFolder(stayed.documentId) }
-            : null
-          : refusal
-            ? { status: refusal, denial: outcome.denial }
-            : null,
-      );
-      const notices = [
-        ...(outcome.landings ?? []).map((landing) => treeLandingLine(landing, names)),
-        ...restored.map((work) => reversedWorkLine(work, names)),
-      ];
-      setOutcomeNotices(notices.length ? [...new Set(notices)] : null);
-      if (refusal || notices.length > 0 || outcome.skips?.length) setExpanded(true);
+      // One press: each Apply's Un-Apply, and the reversal of what no Apply took.
+      const [taken, outcome] = await Promise.all([
+        applies.length ? unapply(applies) : null,
+        reverses ? turnMutation.mutateAsync({ turnId: turn.id }) : null,
+      ]);
+      if (outcome) said(outcome);
+      if (taken?.taken === "failed") {
+        setCommandRefusal({ status: "request_failed" });
+        setExpanded(true);
+      } else if (taken) {
+        setUnapplied(taken);
+        if (taken.taken === "partly" || taken.taken === "nothing") setExpanded(true);
+      }
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
       // is the only thing that can report it, so it says so here rather than
@@ -190,20 +222,14 @@ export function TurnEditsReceipt({
               : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
-        {reversible ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            onClick={(event) => {
-              event.stopPropagation();
-              void reverseTurn();
-            }}
-            disabled={pending}
-            className="ml-auto shrink-0 text-jade-text"
-          >
-            {pending ? t`Undoing…` : t`Undo`}
-          </Button>
+        {unappliedWord ? (
+          <UnappliedWord taken={unappliedWord} />
+        ) : reversible ? (
+          <UndoButton
+            pending={pending}
+            wholeApply={wholeApply ? appliedCount : null}
+            onUndo={() => void reverseTurn()}
+          />
         ) : (
           <UndoneWord state={receipt?.state} />
         )}
@@ -237,6 +263,28 @@ export function TurnEditsReceipt({
                 ))}
               </ul>
             </div>
+          ) : null}
+          {unapplied && (unapplied.taken === "partly" || unapplied.taken === "nothing") ? (
+            <p
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
+              data-unapply-outcome
+              role="status"
+            >
+              {unappliedSentence({
+                ...unapplied,
+                name:
+                  documents.length === 1 && documents[0]
+                    ? documentDisplayName(documents[0].uri)
+                    : t`${appliedCount} changes`,
+                nodes: [
+                  ...new Set([
+                    ...unapplied.treeLeft.map((one) => one.node),
+                    ...unapplied.held.map((one) => one.node),
+                  ]),
+                ],
+                facts: new Map(),
+              })}
+            </p>
           ) : null}
           {outcomeNotices?.map((notice) => (
             <p
@@ -619,6 +667,61 @@ function skipsHeading(count: number, undone: boolean): string {
     one: "Undo leaves # part as it is",
     other: "Undo leaves # parts as they are",
   });
+}
+
+/**
+ * The card's Undo. When it takes back a whole Apply that held more than this reply's changes
+ * (`wholeApply`: how many it held in all), it says so, as the Changes row does.
+ */
+function UndoButton({
+  pending,
+  wholeApply,
+  onUndo,
+}: {
+  pending: boolean;
+  wholeApply: number | null;
+  onUndo: () => void;
+}) {
+  const takes =
+    wholeApply === null ? null : t`Takes back the whole Apply, all ${wholeApply} changes.`;
+  const button = (
+    <Button
+      type="button"
+      variant="quiet"
+      size="meta"
+      onClick={(event) => {
+        event.stopPropagation();
+        onUndo();
+      }}
+      disabled={pending}
+      aria-description={takes ?? undefined}
+      className="ml-auto shrink-0 text-jade-text"
+    >
+      {pending ? t`Undoing…` : takes ? t`Undo Apply` : t`Undo`}
+    </Button>
+  );
+  if (!takes) return button;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent>{takes}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** What the card's Un-Apply of its applied changes did, in the Undo's place. */
+function UnappliedWord({ taken }: { taken: Unapplied["taken"] }) {
+  return (
+    <span className="ml-auto shrink-0 text-muted-foreground" role="status">
+      {taken === "partly" ? (
+        <Trans>Partly undone</Trans>
+      ) : taken === "nothing" ? (
+        <Trans>Not undone</Trans>
+      ) : (
+        <Trans>Undone</Trans>
+      )}
+    </span>
+  );
 }
 
 /** Where Undo sat once the writer's Undo ran; an expired card has no word. */
