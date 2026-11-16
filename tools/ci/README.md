@@ -219,7 +219,7 @@ job's duration before considering a custom balancer.
 
 ## Slop lint
 
-`pnpm check:slop-lint` keeps five common agent mistakes out of new TypeScript:
+`pnpm check:slop-lint` keeps six common agent mistakes out of new TypeScript:
 
 - an empty `catch` block or a `.catch(() => null | undefined | [] | {} | false)`;
 - a new `biome-ignore` or TypeScript suppression comment;
@@ -227,6 +227,14 @@ job's duration before considering a custom balancer.
 - a middle dot (`·`) used to separate facts in a string, template text or JSX
   text. Use layout, weight or muted color in UI, and a sentence or parentheses
   in text.
+- in a `.tsx` file, an element with `text-xs` or `role.rowSecondary` written inside a menu row:
+  the children of a menu item (`DropdownMenuItem` and its checkbox, radio and sub-trigger
+  siblings, their `ContextMenu` and `EditorMenu` forms, `SelectItem`), of an element styled with
+  `dropdownRowVariants(...)`, or of a `SuggestionMenu` row's `content`. It sits 1px above the
+  label's baseline: pass the words as the row's `note`, or wrap them in `LabelNote`. A column
+  (`flex-col`) or a baseline-aligned line (`items-baseline`) inside the row is skipped. The rule
+  reads only what is written inside the row, so a small span inside a component the row renders
+  (`<SlashRow />`) or passed in through a prop isn't seen.
 - in a `*.test.ts(x)` file, a fixed real-time wait (`setTimeout(resolve, 50)`,
   `await sleep(50)`) or an assertion on the wall clock (`expect(elapsed)
   .toBeLessThan(50)`). These pass or fail with the machine's load. Wait for the
@@ -234,9 +242,9 @@ job's duration before considering a custom balancer.
   `setTimeout(resolve, 0)` only yields a tick and isn't a finding, and a timer
   whose delay is a named constant isn't detected.
 
-The checker uses the TypeScript AST for catch expressions, timing and middle
-dots, and the TypeScript comment scanner for suppressions and decision IDs. The
-first four rules exclude test files and test support/fixture/conformance
+The checker uses the TypeScript AST for catch expressions, timing, middle
+dots and menu rows, and the TypeScript comment scanner for suppressions and decision IDs. The
+first five rules exclude test files and test support/fixture/conformance
 directories, plus generated `.gen.ts`, `.generated.ts`, `dist` and `build`
 paths; the timing rule reads only `*.test.ts(x)` files. Decision IDs inside
 inline code and `@W<number>` handles are not findings.
@@ -264,7 +272,7 @@ void close().catch(() => undefined);
 ```
 
 The category must be `swallowed-error`, `suppression`, `decision-id`,
-`middle-dot`, or `test-timing`; the reason is required, and the checker fails on
+`middle-dot`, `row-note`, or `test-timing`; the reason is required, and the checker fails on
 an exception that no longer matches a finding. Every failure says what to do:
 handle or surface the error, fix the type or lint error, delete the decision ID,
 separate facts with spacing, weight or muted color in UI and with a sentence or

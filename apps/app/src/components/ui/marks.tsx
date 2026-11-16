@@ -1,5 +1,5 @@
 import { ChevronRight, ChevronsUpDown } from "lucide-react";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { role } from "./roles";
 
@@ -26,8 +26,24 @@ export function ChooserMark({ className }: { className?: string }) {
 }
 
 /**
+ * A menu or picker row's content with its `note`: small muted words at the row's end (a shortcut,
+ * a hint, where a file lives), on the label's baseline.
+ */
+export function withRowNote(children: ReactNode, note: ReactNode): ReactNode {
+  // Without a note the children pass through as they are: an `asChild` row slots onto one child.
+  if (note === null || note === undefined || note === false || note === "") return children;
+  return (
+    <>
+      {children}
+      <LabelNote className="ml-auto shrink-0 pl-4">{note}</LabelNote>
+    </>
+  );
+}
+
+/**
  * Small muted words beside a label (a shortcut, Default, Archived), on the label's baseline in a
- * row that centres its items. Pass `className` only for layout.
+ * row that centres its items. A row component with a `note` slot draws this for you. Pass
+ * `className` only for layout.
  */
 export function LabelNote({ className, children, ...props }: ComponentProps<"span">) {
   return (

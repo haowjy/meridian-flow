@@ -130,9 +130,10 @@ export function RowWord({
           ) : tone === "done" ? (
             <Check aria-hidden className="size-3.5 text-jade-text" />
           ) : null}
-          {/* As in LabelNote: the outer span keeps the text size around the word, so the word
-              sits on the baseline of the text beside it (a row's name) rather than centred. */}
-          <span>
+          {/* In a row, as in LabelNote: the outer span takes the row's text size, so the word
+              sits on the name's baseline rather than centred. Anywhere else it is text-xs like
+              the chips and buttons it sits among, and the line keeps its height. */}
+          <span className="text-xs in-data-list-row:text-[length:inherit] in-data-list-row:leading-[inherit]">
             <span className="text-xs">{word}</span>
           </span>
         </button>

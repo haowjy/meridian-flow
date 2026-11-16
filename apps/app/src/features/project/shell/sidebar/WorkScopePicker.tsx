@@ -124,12 +124,7 @@ export function WorkScopePicker({
           </>
         ) : null}
         {noWork ? (
-          <PickRow
-            name={t`None`}
-            selected={noWorkScoped}
-            onSelect={() => onPick(noWork.id)}
-            detail={null}
-          />
+          <PickRow name={t`None`} selected={noWorkScoped} onSelect={() => onPick(noWork.id)} />
         ) : null}
         {active.length > 0 ? (
           <>
@@ -140,7 +135,7 @@ export function WorkScopePicker({
                 name={<WorkName work={work} />}
                 selected={work.id === scoped?.id}
                 onSelect={() => onPick(work.id)}
-                detail={<WorkState work={work} needsYou={needsYou.get(work.id) ?? 0} />}
+                note={<WorkState work={work} needsYou={needsYou.get(work.id) ?? 0} />}
               />
             ))}
           </>
@@ -158,7 +153,6 @@ export function WorkScopePicker({
                   name={<WorkName work={work} />}
                   selected={work.id === scoped?.id}
                   onSelect={() => onPick(work.id)}
-                  detail={null}
                 />
               ))}
             </DropdownMenuSubContent>
@@ -176,17 +170,16 @@ function PickRow({
   name,
   selected,
   onSelect,
-  detail,
+  note,
 }: {
   name: React.ReactNode;
   selected: boolean;
   onSelect: () => void;
-  detail: React.ReactNode;
+  note?: React.ReactNode;
 }) {
   return (
-    <DropdownMenuItem selected={selected} onSelect={onSelect}>
+    <DropdownMenuItem selected={selected} onSelect={onSelect} note={note}>
       <span className="flex min-w-0 flex-1">{name}</span>
-      {detail}
     </DropdownMenuItem>
   );
 }
@@ -196,7 +189,7 @@ function WorkState({ work, needsYou }: { work: Work; needsYou: number }) {
   const toReview = useWorkReviewCount(work);
   if (toReview === 0 && needsYou === 0) return null;
   return (
-    <span className="flex shrink-0 gap-2 text-xs text-jade-text tabular-nums">
+    <span className="inline-flex gap-2 text-jade-text tabular-nums">
       {toReview > 0 ? <Trans>{toReview} to review</Trans> : null}
       {needsYou > 0 ? (
         <span>

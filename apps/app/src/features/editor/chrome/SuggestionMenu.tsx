@@ -20,16 +20,18 @@
  * (§5.7's height rule).
  *
  * A row a lane cannot take is shown greyed rather than hidden, with the reason
- * in `note` (law 5: absent beats disabled, disabled beats dead, and a writer
+ * in the menu's `note` (law 5: absent beats disabled, disabled beats dead, and a writer
  * who cannot see why an entry refuses is left to wonder). It keeps the hover
  * and focus path — `aria-disabled`, never the `disabled` attribute — because
  * that is the path the reason travels.
  */
 
 import type { Editor } from "@tiptap/core";
+import { ChevronRight } from "lucide-react";
 import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { dropdownPanelClass, dropdownRowVariants } from "@/components/ui/dropdown-presentation";
+import { withRowNote } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 
 import { EditorPopover } from "./EditorPopover";
@@ -41,9 +43,13 @@ export type SuggestionMenuRow = {
   key: string;
   /** A group heading or separator drawn above this row, when the lane wants one. */
   before?: ReactNode;
-  /** Visible, greyed, and not choosable. `note` says why. */
+  /** Visible, greyed, and not choosable. The menu's `note` says why. */
   blocked?: boolean;
   content: ReactNode;
+  /** Small words at the row's end (a hint, where a file lives), on the label's baseline. */
+  note?: ReactNode;
+  /** Choosing it opens a deeper list: the row ends with a chevron. */
+  opens?: boolean;
 };
 
 export type SuggestionMenuProps = {
@@ -210,7 +216,8 @@ export function SuggestionMenu({
                   if (!row.blocked) onChoose(index);
                 }}
               >
-                {row.content}
+                {withRowNote(row.content, row.note)}
+                {row.opens ? <ChevronRight aria-hidden /> : null}
               </button>
             </Fragment>
           );

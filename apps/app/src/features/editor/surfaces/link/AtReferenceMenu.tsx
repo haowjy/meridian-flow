@@ -1,13 +1,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { ChevronLeft, ChevronRight, FilePlus2, FileText, Folder, Image } from "lucide-react";
+import { ChevronLeft, FilePlus2, FileText, Folder, Image } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { EntryName } from "@/components/ui/entry-name";
 import { ListLine } from "@/components/ui/list-row";
-import { LabelNote } from "@/components/ui/marks";
 import {
   closedSuggestionMenu,
   type ReferenceBrowserMeta,
@@ -100,6 +99,9 @@ export function ReferenceSuggestionMenu({
       }
       rows={snapshot.items.map((row, index) => ({
         key: row.rowId,
+        note:
+          row.kind === "link-ahead" || row.kind === "folder-mention" ? undefined : rowLocation(row),
+        opens: row.kind !== "link-ahead" && row.kind !== "folder-mention" && row.kind !== "file",
         before:
           // The link-ahead row is a different kind of answer: everything above
           // it exists, and it does not yet.
@@ -125,8 +127,6 @@ export function ReferenceSuggestionMenu({
               <span className="min-w-0 truncate">
                 <EntryName name={row.label} suffix={row.suffix} truncate />
               </span>
-              <LabelNote className="ml-auto shrink-0 pl-4">{rowLocation(row)}</LabelNote>
-              {row.kind !== "file" ? <ChevronRight aria-hidden /> : null}
             </>
           ),
       }))}

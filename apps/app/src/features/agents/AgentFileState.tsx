@@ -115,7 +115,7 @@ function LevelFileState({
   const status = statusOf(files.packages, pkg);
   const trouble = file ? fileTrouble(file, status) : null;
   return (
-    <span className="flex min-w-0 shrink-0 items-center gap-1 text-xs" data-agent-file-state>
+    <span className="flex min-w-0 shrink-0 items-center gap-1" data-agent-file-state>
       {file && trouble ? <TroubleChip file={file} trouble={trouble} touch={touch} /> : null}
       <PackageSave
         projectId={projectId}

@@ -14,7 +14,7 @@ import {
   dropdownPanelClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
-import { ChooserMark } from "./marks";
+import { ChooserMark, withRowNote } from "./marks";
 
 function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />;
@@ -106,19 +106,23 @@ function SelectLabel({ className, ...props }: React.ComponentProps<typeof Select
 function SelectItem({
   className,
   children,
+  note,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+}: React.ComponentProps<typeof SelectPrimitive.Item> & {
+  /** Small words at the row's end, on the label's baseline; not part of the chosen value's text. */
+  note?: React.ReactNode;
+}) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
         dropdownRowVariants(),
-        "relative cursor-default data-[state=checked]:bg-ink-fill-strong [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative cursor-default data-[state=checked]:bg-ink-fill-strong [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:first:flex *:[span]:first:items-center *:[span]:first:gap-2",
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {withRowNote(<SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>, note)}
     </SelectPrimitive.Item>
   );
 }

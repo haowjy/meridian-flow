@@ -8,7 +8,6 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { LabelNote } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { closedSuggestionMenu } from "@/core/completion";
 import {
@@ -58,6 +57,7 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
             <div className={cn("px-2 pt-2 pb-1", role.groupLabel)}>{groupLabels[item.group]}</div>
           ) : undefined,
         content: <SlashRow item={item} />,
+        note: item.hint,
       }))}
     />
   );
@@ -69,7 +69,6 @@ function SlashRow({ item }: { item: SlashCommandItem }) {
     <>
       <Icon aria-hidden />
       <span>{item.label}</span>
-      {item.hint ? <LabelNote className="ml-auto pl-4">{item.hint}</LabelNote> : null}
     </>
   );
 }

@@ -95,6 +95,11 @@ Four text sizes, each with one job:
 
 Emphasis inside the chrome comes from weight, never from a third UI size.
 
+A 12px word beside a 13px label (a shortcut, a hint, a count, Default) goes in the row's `note`
+(menu items, `SelectItem`, slash and @ rows), `ListRow`'s `meta`, or `LabelNote`; never a bare
+`text-xs` span. A 12px box centred in the row sits 1px above the label's baseline.
+`pnpm check:slop-lint` flags a bare one written inside a menu row.
+
 Headings and emphasis are differentiated by **size + weight only**, never by a
 separate family — matching stock ProseMirror/TipTap (which ship no heading font).
 Long-form text must prioritize readability and stable rhythm (~68ch measure,

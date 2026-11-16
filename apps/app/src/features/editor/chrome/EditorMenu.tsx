@@ -124,7 +124,6 @@ export {
   DropdownMenuRadioGroup as EditorMenuRadioGroup,
   DropdownMenuRadioItem as EditorMenuRadioItem,
   DropdownMenuSeparator as EditorMenuSeparator,
-  DropdownMenuShortcut as EditorMenuShortcut,
   DropdownMenuSub as EditorMenuSub,
   DropdownMenuSubContent as EditorMenuSubContent,
   DropdownMenuSubTrigger as EditorMenuSubTrigger,

@@ -16,7 +16,7 @@
 import type { Editor } from "@tiptap/core";
 import { ClipboardPaste, Copy, Scissors } from "lucide-react";
 import { type ComponentType, useState } from "react";
-import { EditorMenuItem, EditorMenuShortcut } from "../../chrome";
+import { EditorMenuItem } from "../../chrome";
 
 import { type ClipboardAccess, clipboardAccess } from "../../clipboard";
 import {
@@ -137,10 +137,10 @@ export function ClipboardMenuItems({
                 setClipboard((current) => ({ ...current, [direction]: "unavailable" }));
               });
             }}
+            note={clipboardShortcut(id)}
           >
             <Icon />
             {clipboardLabel(id)}
-            <EditorMenuShortcut>{clipboardShortcut(id)}</EditorMenuShortcut>
           </EditorMenuItem>
         );
       })}

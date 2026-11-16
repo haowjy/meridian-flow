@@ -9,7 +9,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
   useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
@@ -48,10 +47,9 @@ export function ProjectMenu({
             <Trans>Export project…</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => dispatch(() => settings.open())}>
+          <DropdownMenuItem onSelect={() => dispatch(() => settings.open())} note="Ctrl ,">
             <Settings aria-hidden className="size-3.5" />
             <Trans>Settings</Trans>
-            <DropdownMenuShortcut>Ctrl ,</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link to="/">
