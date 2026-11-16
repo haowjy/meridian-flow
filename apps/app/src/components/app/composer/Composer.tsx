@@ -136,6 +136,11 @@ export type ComposerUploadPort = Readonly<{
 export type ComposerProps = {
   /** Hydrated before mounting; later prop changes never replace writer input. */
   initialDraft?: ComposerDraftSnapshot | null;
+  /**
+   * A write to the draft from outside the editor (a hand-back, an Edit, an Undo of a move): each
+   * new `seq` replaces the document in place, keeping the focus and what is being typed.
+   */
+  externalChange?: { seq: number; draft: ComposerDraftSnapshot | null };
   onSubmit: (envelope: ComposerSubmitEnvelope) => Promise<boolean>;
   onOpenReference?: (reference: DocumentReference) => void;
   onDraftChange?: (change: ComposerDraftChange) => void;
@@ -235,6 +240,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
   const revision = useRef(initialDraft?.revision ?? 0);
+  const appliedChange = useRef(props.externalChange?.seq);
   const inFlight = useRef<ComposerSubmitEnvelope | null>(null);
   const mountedRef = useRef(true);
   const scopeRef = useRef(uploadScope);
@@ -391,6 +397,33 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   useLayoutEffect(() => {
     if (editor && initialDraft) restoreComposerSelection(editor, initialDraft.selection);
   }, [editor, initialDraft]);
+  const external = props.externalChange;
+  useLayoutEffect(() => {
+    if (!editor || !external || external.seq === appliedChange.current) return;
+    appliedChange.current = external.seq;
+    const { draft } = external;
+    // Tiptap `flushSync`es a chip's React node view, which React forbids inside a commit.
+    queueMicrotask(() => {
+      if (editor.isDestroyed) return;
+      if (draft) revision.current = Math.max(revision.current, draft.revision);
+      const { state } = editor;
+      const next = editor.schema.nodeFromJSON(
+        draft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
+      );
+      // Words come back above what is typed: insert them there so the writer's caret and Undo
+      // history stay with their own words, instead of replacing the whole document under them.
+      const grew = next.content.size - state.doc.content.size;
+      const above = grew > 0 && next.content.cut(grew).eq(state.doc.content);
+      const tr = state.tr.setMeta("addToHistory", false);
+      if (above) tr.insert(0, next.content.cut(0, grew));
+      else tr.replaceWith(0, state.doc.content.size, next.content);
+      if (draft && !(above && editor.isFocused))
+        tr.setSelection(TextSelection.create(tr.doc, draft.selection.anchor, draft.selection.head));
+      suppressDraftChangeRef.current = true;
+      editor.view.dispatch(tr);
+      suppressDraftChangeRef.current = false;
+    });
+  }, [editor, external]);
   const snapshot = useCallback((): ComposerDraftSnapshot => {
     if (!editor || editor.isDestroyed)
       return {

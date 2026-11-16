@@ -162,8 +162,15 @@ export class ComposerSessionDraft {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
   private version = 0;
+  /** Counts the writes that change the document from outside the editor, which the box must take in. */
+  private externalWrites = 0;
   private listeners = new Set<() => void>();
   getVersion = () => this.version;
+  /** The document as the last outside write left it, numbered so a box applies each once. */
+  externalChange = (): { seq: number; draft: ComposerDraftSnapshot | null } => ({
+    seq: this.externalWrites,
+    draft: this.initialDraft,
+  });
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -323,16 +330,13 @@ export class ComposerSessionDraft {
       ...this.chatField(),
     };
     if (!this.record.write(stored)) return false;
-    // A new version remounts the editor (`useComposerSessionDraft` keys it), dropping its focus and
-    // the keystrokes typed meanwhile, so a write that changes only the pending commands or receipts
-    // must not publish.
-    const restarts = draft !== this.current || next.notices !== this.notices;
+    if (draft !== this.current) this.externalWrites += 1;
     this.notices = next.notices;
     this.received = next.received;
     this.handBacksPending = next.handBacks;
     this.current = draft;
     this.dirty = false;
-    if (restarts) this.publish();
+    this.publish();
     return true;
   }
 
