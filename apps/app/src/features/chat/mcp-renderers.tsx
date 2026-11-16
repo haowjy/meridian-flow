@@ -24,6 +24,7 @@ import { BoundLine, ExpandableProse } from "./ClippedExpand";
 import { CommandTitle } from "./CommandTitle";
 import { descriptorFor, mcpToolLabel, toolActivityPhrase } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
+import { scriptPhrase } from "./script-copy";
 import { failureText } from "./tool-failure";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
@@ -59,7 +60,16 @@ export const MCP_CALL_RENDERER: ToolRenderer = {
 };
 
 export const MCP_RUN_RENDERER: ToolRenderer = {
-  title: (tool) => phrase(tool),
+  // Not `phrase`: a failed script says why it stopped, where a failed row says only what it couldn't do.
+  title: (tool) => {
+    const { verb, parameter } = scriptPhrase(tool);
+    return (
+      <CommandTitle
+        verb={verb}
+        parameter={parameter ? <span className="min-w-0 truncate">{parameter}</span> : undefined}
+      />
+    );
+  },
   expand: (tool, renderRow) => {
     const { code, calls, result } = mcpRun(tool);
     if (!code && !calls.length && !result) return null;

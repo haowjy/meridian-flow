@@ -922,8 +922,12 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           if (!payload) return;
           const turn = activeAssistantTurn(store, threadId);
           if (!turn) return;
-          // Like output deltas: a call row with no tool block to join is dropped; the final result carries every call.
-          const existingTool = blockById(turn, `tool-${payload.toolCallId}`);
+          // A call row with no tool block to join is dropped; the final result carries every call.
+          // The server's own block replaces the live one (its id is not `tool-<call id>`), so the call id finds it.
+          const existingTool = turn.blocks.find(
+            (block) =>
+              block.blockType === "tool_use" && toolCallIdFromBlock(block) === payload.toolCallId,
+          );
           if (existingTool?.blockType !== "tool_use") return;
           const content = blockContentRecord(existingTool);
           const prior = preservedToolFields(content).connectionCalls ?? [];

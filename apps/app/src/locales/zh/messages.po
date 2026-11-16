@@ -6303,8 +6303,8 @@ msgid "Script couldn't run:"
 msgstr ""
 
 #: src/features/chat/script-copy.ts
-msgid "Script didn't finish"
-msgstr ""
+#~ msgid "Script didn't finish"
+#~ msgstr ""
 
 #: src/features/chat/TurnList.tsx
 msgid "Scroll to latest"

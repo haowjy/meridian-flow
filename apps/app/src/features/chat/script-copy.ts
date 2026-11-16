@@ -35,8 +35,8 @@ function stopReason(result: McpRunResult): string {
 
 export function scriptPhrase(tool: ToolView): ToolActivityPhrase {
   const { result, calls: live } = mcpRun(tool);
+  // No result yet: the arguments finish streaming before the script runs, so `status` cannot say it is running.
   if (!result) {
-    if (tool.status === "complete") return { verb: t`Script didn't finish` };
     return live.length
       ? { verb: t`Running a script:`, parameter: `${calls(live.length)}…` }
       : { verb: t`Running a script…` };
