@@ -63,6 +63,8 @@ the replay uses them (package `AGENTS.md`).
 - **A node can be acted on only if `placeIn` finds it in the view** (its create is in force, and it
   is not purged). The replay skips a record on any other node, Undo answers `purged` and
   appends nothing, and restoring a Discard leaves the record out and returns it.
+  A rank-only move under a purged parent is taken, since only a change of parent is checked
+  against the folder: its Undo lands and reorders the rescued siblings.
 - **Nothing is refused for what it says.** A client's record that the replay cannot place
   (a node that is not there, a folder inside itself, a name already taken) is skipped or numbered
   by the rules, the same in every replay; the writer keeps it in the list. The server writes one

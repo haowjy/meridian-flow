@@ -1,4 +1,4 @@
-import { type Actor, isSourceRoot, type TreeRecord, type TreeRecordInput } from "./record.js";
+import { type Actor, type TreeRecord, type TreeRecordInput } from "./record.js";
 import {
   type Change,
   labelOf,
@@ -63,7 +63,6 @@ function turn(
   writer: TreeWriter,
   view: View,
   actor: Actor,
-  tree: TreeStanding,
   history: NodeHistory,
   node: StandingNode,
   base: Change & { sets: Sets },
@@ -102,12 +101,6 @@ function turn(
       ...(both && named ? { kept: "place" as const } : {}),
     };
   const { parent, rank } = place.at(-1)?.says ?? history.born;
-  if (placed) {
-    // `wouldTake` checks the folder only when the parent changes: a move that keeps a purged
-    // parent (a rank change) would land there, and the answer is `purged`.
-    const back = tree.node(parent);
-    if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
-  }
   return {
     record: writer.prepare(
       view,
@@ -374,7 +367,6 @@ function opposite(
       writer,
       view,
       actor,
-      tree,
       history,
       node,
       base as Change & { sets: Sets },

@@ -438,6 +438,24 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     expect(t.at(a)).toMatchObject({ trashed: false, keptByChild: true });
   });
 
+  it("25b. undoes a reorder among siblings rescued from a purged folder: it lands and shows", () => {
+    const t = start();
+    const p = t.folder("P");
+    const n1 = t.chapter("N1", p);
+    t.chapter("N2", p);
+    t.chapter("N3", p);
+    const reorder = t.w.move(LIVE, CHAT, n1, p);
+    // The purge lists only P, so the three under it are rescued to the top, ordered by rank.
+    t.w.purge("system", t.w.delete(LIVE, WRITER, p), [p]);
+    expect(t.names(ROOT)).toEqual(["N2", "N3", "N1"]);
+    expect(undoChange(t.w, LIVE, WRITER, reorder.id)).toMatchObject({
+      type: "move",
+      undoes: reorder.id,
+    });
+    expect(t.names(ROOT)).toEqual(["N1", "N2", "N3"]);
+    t.valid();
+  });
+
   it("26. undoes a folder delete: the folder and its contents come back", () => {
     const t = start();
     const f = t.folder("Arc 2");
