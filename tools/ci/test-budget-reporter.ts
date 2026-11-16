@@ -32,7 +32,7 @@ import type { Reporter, TestModule } from "vitest/node";
 const BASELINE_PATH = fileURLToPath(new URL("./test-case-baseline.json", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const DEFAULT_DURATION_REFERENCE_SECONDS = 150;
-const DEFAULT_MEMORY_CEILING_MB = 5120;
+const DEFAULT_MEMORY_CEILING_MB = 4096;
 const SAMPLE_INTERVAL_MS = 250;
 const startedAt = performance.now();
 

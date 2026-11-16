@@ -151,11 +151,10 @@ every unit and DB run and compares the **expanded case count per test file**
   check what changed, not as a gate.
 - It also samples RSS across the whole process tree (descendants included, so a
   `forks` pool's children count) and enforces `TEST_MEMORY_CEILING_MB` (default
-  5120) **on every run except a refresh**: a `TEST_BUDGET_UPDATE=1` run writes
+  4096) **on every run except a refresh**: a `TEST_BUDGET_UPDATE=1` run writes
   the baseline and returns before both the growth and memory checks. Memory
   blocks everywhere else because it is a property of the suite, not of the
-  machine's load. Known peaks: unit 4.2-4.3 GB at 8 workers (Vitest 5; Vitest 4 peaked at 2.7 GB for the same cases in
-  the same wall time),
+  machine's load. Known peaks: unit 3.0 GB at 8 workers,
   DB 3.5 GB at 4 fork workers; the DB suite reaches 6.0 GB at 8 workers, so an
   eight-worker local DB run will trip the ceiling — that is the intended signal.
 - The DB suite is not sharded, but it uses the same baseline file so one number
@@ -172,6 +171,11 @@ every unit and DB run and compares the **expanded case count per test file**
   far more than file count, so deleting tests won't lower it. Measured on a
   24-core host: unit 3.0 GB at 8 workers, 4.0 GB at 12, 6.7 GB and a flake at
   24; DB 3.5 GB at 4 fork workers, 6.0 GB and a settlement flake at 8.
+- Vitest 5 does not pass the root config's `test` options to projects that are
+  config files, and a project's own `maxWorkers` default is every core. Every
+  project config spreads `sharedTest` from `tools/ci/vitest-shared.ts` (worker cap,
+  pool, shuffle); a new project config must do the same, or the suite runs 24
+  workers (4.7 GB instead of 2.4 GB) and stops shuffling.
 - Contracts, markup and DB suites reuse worker module caches: no module or
   global mocks there. Keep test data and connections instance-owned; DB
   rollback/FK resets, not fresh module loading, isolate persisted state.
