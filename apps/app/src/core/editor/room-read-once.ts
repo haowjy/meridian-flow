@@ -2,6 +2,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import { isSignInLapse } from "./document-session";
+import { createLocalPresence } from "./local-presence";
 
 /**
  * The room exactly as the server holds it now: one sync into a fresh document, with no local copy,
@@ -12,7 +13,7 @@ import { isSignInLapse } from "./document-session";
 export function readRoomOnce(roomKey: string): Promise<Y.Doc | "schema" | "refused"> {
   const document = new Y.Doc();
   const awareness = new Awareness(document);
-  awareness.setLocalState(null);
+  createLocalPresence(awareness).suspend();
   const transport = createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness });
   return new Promise((resolve) => {
     let done = false;
