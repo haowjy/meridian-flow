@@ -7,12 +7,11 @@ import {
   DeviceAccountRecentsStore,
   type RecentAddress,
   type RecentOpening,
-  type RecentRemoval,
   type ServerRecentRow,
 } from "./store";
 
 export { ACCOUNT_RECENTS_CAP, readableRecentPath } from "./store";
-export type { AccountRecentItem, RecentAddress, RecentOpening, RecentRemoval, ServerRecentRow };
+export type { AccountRecentItem, RecentAddress, RecentOpening, ServerRecentRow };
 
 export type AccountRecentsSnapshot = {
   bound: boolean;
@@ -94,10 +93,6 @@ export function applyServerRecentList(
   bindEpoch: number,
 ): void {
   if (browserStore()?.applyServerList(accountId, projectId, rows, bindEpoch)) publish();
-}
-
-export function removeAccountRecents(accountId: string, removed: readonly RecentRemoval[]): void {
-  if (browserStore()?.remove(accountId, removed)) publish();
 }
 
 export function patchAccountRecentsFromDocuments(

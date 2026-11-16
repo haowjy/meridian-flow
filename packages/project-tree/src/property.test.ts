@@ -236,8 +236,6 @@ function runSeed(seed: number): {
         if (landed.left.length > 0) leftPending += 1;
         if (random() < 0.3) {
           // Undo of an Apply at once: live and the draft both read as before it.
-          // A redo of an Undo with a later move on the node (including the one this very
-          // Undo took back) answers `changed_since` and stays; everything else goes back.
           const result = undoApply(writer, landed.command, "user:w", cmd());
           undone += 1;
           const doubled = landed.copies.some((op) => inLive.has(op.carries as string));

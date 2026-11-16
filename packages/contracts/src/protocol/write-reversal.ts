@@ -44,8 +44,6 @@ export const isDoneWriteStatus = (status: string): status is DoneWriteStatus =>
 export interface DocumentReversalResult {
   documentId: string;
   uri: string;
-  /** This reversal removed or restored the document's creation. */
-  created?: boolean;
   /** Where it was reversed: live, or a branch's proposal (its text draft or its moves and deletes). */
   destination?: { kind: "live" } | { kind: "draft"; branchId: string };
   status: WriteStatus | TreeReversalFault;
@@ -57,7 +55,7 @@ export interface WorkReversalResult {
   projectId: string;
   workId: string;
   name: string;
-  status: "reversed" | "redone" | "unavailable" | "already_applied" | "failed";
+  status: "reversed" | "unavailable" | "already_applied" | "failed";
   message?: string;
 }
 

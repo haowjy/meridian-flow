@@ -502,7 +502,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: LIVE_CHAT.threadId as never,
           turnId: LIVE_CHAT.turnId as never,
           userId: USER_ID as never,
-          direction: "undo",
           commandId: randomUUID() as never,
         },
       );

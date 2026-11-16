@@ -1,5 +1,5 @@
 /**
- * The tree half of a card's Undo or Redo of a reply: the reply's tree receipts (the model's
+ * The tree half of a card's Undo of a reply: the reply's tree receipts (the model's
  * moves, renames, deletes and creates), taken back by the package's `undoChange` in the list
  * that holds each node, as one step of the card's command. The receipts are the history the
  * model's own `undo` chooses from (`tree_edit_receipts` and their `reverses` links), and each
@@ -42,10 +42,9 @@ export type TreePlan = {
   /** The steps' documents, each where it is reversed, for the edit grants (a restore is its own). */
   documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
   /**
-   * Documents whose create this Undo takes back in live: text an Apply wrote there has no
-   * inverse of its own and leaves with the document.
+   * Documents created in this turn: their text stays with the document.
    */
-  leavingLive: string[];
+  createdDocuments: string[];
 };
 
 export const NO_TREE_STEPS: TreePlan = {
@@ -54,7 +53,7 @@ export const NO_TREE_STEPS: TreePlan = {
   lists: [],
   branches: [],
   documents: [],
-  leavingLive: [],
+  createdDocuments: [],
 };
 
 export type TurnTreeInverse = ReturnType<typeof createTurnTreeInverse>;
@@ -123,21 +122,25 @@ export function createTurnTreeInverse(deps: {
     return states;
   }
 
-  async function plan(
-    threadId: ThreadId,
-    turnId: TurnId,
-    direction: "undo" | "redo",
-  ): Promise<TreePlan> {
-    const all = await deps.history().turnSteps(threadId, turnId, direction);
-    if (all.length === 0) return NO_TREE_STEPS;
-    // A drafted Undo is applicable while its branch still places the node; once a Discard took it
-    // out there is no file to ask a grant about and nothing to reverse. A Redo's node is out of
-    // the branch (its Undo took it), and a Discard shows there as a record that no longer
-    // reverses. Every other denial of a step's document refuses the reversal.
+  async function plan(threadId: ThreadId, turnId: TurnId): Promise<TreePlan> {
+    const creates = await db()
+      .select({ id: treeEditReceipts.nodeId })
+      .from(treeEditReceipts)
+      .where(
+        and(
+          eq(treeEditReceipts.threadId, threadId),
+          eq(treeEditReceipts.turnId, turnId),
+          eq(treeEditReceipts.kind, "write"),
+          eq(treeEditReceipts.op, "create"),
+        ),
+      );
+    const createdDocuments = creates.map((row) => row.id as string);
+    const all = await deps.history().turnSteps(threadId, turnId);
+    if (all.length === 0) return { ...NO_TREE_STEPS, createdDocuments };
     const held = new Set<string>();
     const draftedIn = new Map<string, string[]>();
     for (const step of all)
-      if (step.draftBranchId && direction === "undo")
+      if (step.draftBranchId)
         draftedIn.set(step.draftBranchId, [
           ...(draftedIn.get(step.draftBranchId) ?? []),
           step.subject,
@@ -166,8 +169,7 @@ export function createTurnTreeInverse(deps: {
       ).map((row) => [row.id as string, row.trashRecord]),
     );
     // What the reversal does to the node: bring it back, or take it away.
-    const restores = (step: TreeReceipt) =>
-      direction === "undo" ? step.op === "delete" : step.op === "create" || step.op === "restore";
+    const restores = (step: TreeReceipt) => step.op === "delete";
     // A restore in live acts only through deletes that still hold its nodes in Trash: the
     // writer's restore or later delete, or a purge, leaves a delete nothing to take back.
     const standing = new Set<string>();
@@ -190,8 +192,7 @@ export function createTurnTreeInverse(deps: {
     const restoresNode = (step: TreeReceipt, node: string) =>
       step.records.some((entry) => entry.node === node && standing.has(entry.record));
     const acts = (step: TreeReceipt) => {
-      if (step.draftBranchId)
-        return direction === "redo" || held.has(`${step.draftBranchId}:${step.subject}`);
+      if (step.draftBranchId) return held.has(`${step.draftBranchId}:${step.subject}`);
       return !restores(step) || step.records.some((entry) => standing.has(entry.record));
     };
     const gone = all.filter((step) => !acts(step));
@@ -225,15 +226,7 @@ export function createTurnTreeInverse(deps: {
             ]
           : [];
       }),
-      leavingLive: steps.flatMap((step) =>
-        direction === "undo" &&
-        step.op === "create" &&
-        subjects.has(step.subject) &&
-        live.has(step.subject) &&
-        live.get(step.subject) === null
-          ? [step.subject]
-          : [],
-      ),
+      createdDocuments,
     };
   }
 
@@ -246,7 +239,6 @@ export function createTurnTreeInverse(deps: {
    */
   async function run(
     plan: Pick<TreePlan, "steps" | "gone">,
-    direction: "undo" | "redo",
     input: {
       threadId: ThreadId;
       userId: UserId | undefined;
@@ -273,7 +265,7 @@ export function createTurnTreeInverse(deps: {
         threadId: input.threadId,
         ...(receipt.turnId ? { turnId: receipt.turnId as TurnId } : {}),
         shownAt: receipt.shownAt ?? "",
-        reverses: { kind: direction, receipt: receipt.id },
+        reverses: { kind: "undo", receipt: receipt.id },
         ...fields,
       });
 

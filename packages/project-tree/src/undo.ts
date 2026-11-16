@@ -12,7 +12,7 @@ import {
   wouldLoop,
 } from "./replay.js";
 import { descendantsOf } from "./shape.js";
-import { LIVE, lastOfFamily, type View, viewRecords } from "./view.js";
+import { LIVE, lastOfFamily, type View } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /**
@@ -125,25 +125,6 @@ function turn(
   };
 }
 
-/**
- * The record an Undo of a create, delete or restore acts on: the last record in force of the
- * chain that undid it and redid it.
- */
-function redoneAs(
-  records: readonly TreeRecord[],
-  standing: ReadonlySet<string>,
-  record: TreeRecord,
-): TreeRecord {
-  const chain = new Set([record.carries ?? record.id]);
-  let head = record;
-  for (const later of records.slice(records.indexOf(record) + 1)) {
-    if (later.undoes === undefined || !chain.has(later.undoes)) continue;
-    chain.add(later.carries ?? later.id);
-    if (standing.has(later.id)) head = later;
-  }
-  return head;
-}
-
 /** Why an Undo appended nothing, in the words of the results that report it. */
 export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
 
@@ -154,8 +135,7 @@ export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
  * A move or rename, and any Undo about one, goes by what taking it out does to the change it is
  * about (`turn`): `changed_since` when a later change in force holds every fact that would turn,
  * or the place it would go back to is inside the node now, and nothing is written then. A create,
- * delete or restore goes by the record in force: `already` when its opposite already stands; a
- * change that was undone and redone is taken back by undoing the Redo (`redoneAs`). `purged`:
+ * delete or restore goes by the record in force: `already` when its opposite already stands; `purged`:
  * the node, or the folder a move would return to, is gone from the view, where the replay would
  * skip the opposite record. `unknown`: no such record. A move back into a folder in Trash needs
  * no answer: the node stands in it, and rule 3 keeps the folder standing. A drafted change an
@@ -210,25 +190,24 @@ export function undoFacts(
       change.root,
     );
   }
-  const record = redoneAs(viewRecords(writer.doc, view), projection.inForce, named);
-  const node = placeIn(projection.nodes, record.node);
+  const node = placeIn(projection.nodes, named.node);
   if (!node) return "purged";
-  const extra = { undoes: record.carries ?? record.id };
+  const extra = { undoes: named.carries ?? named.id };
   const author = (made: TreeRecordInput) => ({
     record: writer.author(view, actor, made, extra),
   });
-  switch (record.type) {
+  switch (named.type) {
     case "create":
       if (node.trashed) return "already";
       // Only the node the create made: what others put in a folder since stands, and keeps it standing.
-      return author({ type: "delete", node: record.node, cascade: [] });
+      return author({ type: "delete", node: named.node, cascade: [] });
     case "delete":
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.
-      if (!standsIn(projection, record)) return "already";
-      return author({ type: "restore", node: record.node });
+      if (!standsIn(projection, named)) return "already";
+      return author({ type: "restore", node: named.node });
     case "restore":
       if (node.trashed) return "already";
-      return author({ type: "delete", node: record.node, cascade: liftedBy(projection, record) });
+      return author({ type: "delete", node: named.node, cascade: liftedBy(projection, named) });
     case "purge":
       return "purged";
     // A move or rename the replay skipped, or an Undo of one whose change is not in the view.
