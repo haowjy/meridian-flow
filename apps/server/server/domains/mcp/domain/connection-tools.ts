@@ -184,9 +184,9 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
 
   /**
    * One call's outcome as the typed result both tools carry. `reply` shapes an answered call's
-   * reply (`mcp_call` stores its pictures, a script leaves them out); `schema` follows a failed
-   * call's words with the tool's schema, as `mcp_call` does and a script's failure list does once
-   * per tool.
+   * reply (`mcp_call` stores its pictures, a script leaves them out); `schema` sets the tool's
+   * schema on a failed call, which `mcp_call` follows its words with and a script's failure text
+   * gives once per tool.
    */
   async function shapeCall(
     request: Pick<CallRequest, "id" | "arguments" | "bake">,
@@ -224,15 +224,16 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       ms: outcome.ms,
       ...(reply ? { reply } : {}),
     });
-    const followed = (text: string) =>
-      how.schema ? `${text}\n\n${describeTool(request.id, tool)}` : text;
+    // The tool's schema follows a failed call's words for the model; the row shows the server's reply alone.
+    const schema = how.schema ? { schema: describeTool(request.id, tool) } : {};
     switch (outcome.kind) {
       case "answered": {
-        const shaped = await how.reply(recordId, outcome.reply);
-        // The tool's own error is followed by its schema, every time: the model has what it needs for the next call.
-        const reply = outcome.isError ? { ...shaped, text: followed(shaped.text) } : shaped;
+        const reply = await how.reply(recordId, outcome.reply);
         return outcome.isError
-          ? { isError: true, result: failure("The tool reported a problem.", reply) }
+          ? {
+              isError: true,
+              result: { ...failure("The tool reported a problem.", reply), ...schema },
+            }
           : {
               isError: false,
               result: {
@@ -247,7 +248,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
         const message = `The server refused the request: ${outcome.message}`;
         return {
           isError: true,
-          result: failure(message, { text: followed(message), cut: false }),
+          result: { ...failure(message, { text: message, cut: false }), ...schema },
         };
       }
       case "too_large":

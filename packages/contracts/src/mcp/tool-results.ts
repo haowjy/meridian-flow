@@ -46,6 +46,11 @@ export interface McpCallResult {
    * record.
    */
   reply?: { text: string; cut: boolean; media?: StoredMediaPart[] };
+  /**
+   * The tool's description and input schema, set when the tool reported a problem or the server
+   * refused. The model reads it after the server's words; the row does not show it.
+   */
+  schema?: string;
 }
 
 export interface McpDescribedItem {

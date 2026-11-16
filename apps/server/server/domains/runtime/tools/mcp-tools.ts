@@ -132,7 +132,11 @@ export function createMcpToolRegistrations(connections: ConnectionsPort): ToolRe
       historySummary: (_input, result) => (result as unknown as McpCallResult).outcome,
       renderResult: (result) => {
         const call = result as unknown as McpCallResult;
-        return [text(call.reply?.text ?? call.message ?? ""), ...(call.reply?.media ?? [])];
+        const said = call.reply?.text ?? call.message ?? "";
+        return [
+          text(call.schema ? `${said}\n\n${call.schema}` : said),
+          ...(call.reply?.media ?? []),
+        ];
       },
       execution: {
         type: "server",

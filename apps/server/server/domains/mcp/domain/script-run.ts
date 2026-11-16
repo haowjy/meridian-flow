@@ -177,7 +177,10 @@ export function createScriptRuns(deps: {
           result = { ...result, outcome: "too_large", code: "mcp_too_large", message: tooLarge };
         } else replyBytes += bytes;
       }
-      if (call.kind === "called" && result.outcome !== "answered")
+      if (
+        call.kind === "called" &&
+        (result.outcome === "tool_error" || result.outcome === "rejected")
+      )
         schemas.set(id, describeTool(id, call.tool));
       const row: McpScriptCall = {
         ...result,
@@ -301,7 +304,7 @@ export function createScriptRuns(deps: {
           ? `The script ran out of time: its own running time is limited to ${limits.cpuMs / 1000} seconds (waiting on calls is not counted).${none}`
           : `The script ran out of time: a run is limited to ${limits.wallMs / 1000} seconds, calls included.${none}`;
       case "too_large":
-        return `The script returned ${typed.bytes} bytes; the limit is ${limits.maxValueBytes}. Return less.${none}`;
+        return `The script returned ${typed.bytes} bytes; the limit is ${limits.maxValueBytes}. Return less.`;
       case "aborted":
         return `The writer stopped the script.${none}`;
       case "unavailable":
