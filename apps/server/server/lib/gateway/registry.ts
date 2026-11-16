@@ -311,7 +311,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
       const ids = Object.keys(rows).filter((id) => findFamily(row.id, id) === family);
       const newest = newestInFamily(
         family,
-        ids.map((id) => ({ id, provider: row.id, releaseDate: rows[id].release_date })),
+        ids.map((id) => ({ id, provider: row.id, release_date: rows[id].release_date })),
       );
       const names = pickerNames(family, newest, rows, ids);
       return ids.map((id): RegisteredOffering => {

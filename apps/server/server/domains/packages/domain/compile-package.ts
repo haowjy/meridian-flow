@@ -20,13 +20,13 @@ import {
   type Check,
   checkFiles,
   type Diagnostic,
-  flowEffort,
   GRAMMAR_VERSION,
   MANIFEST_PATH,
   type Prepared,
   projectRules,
   readPackage,
   skillSlugOf,
+  storedAgentEffort,
   type ToolProjection,
 } from "./mars.js";
 import type { SkillFiles } from "./types.js";
@@ -575,19 +575,9 @@ function rejectBrokenSubagents(drafts: Map<string, Draft>): void {
   }
 }
 
-/** A stored definition keeps max as `xhigh`, which `AGENT_EFFORT_CHOICE` reads back as max. */
-function storedEffort(
-  level: ReturnType<typeof flowEffort>,
-): Pick<NormalizedAgentMetadata, "effort"> {
-  if (level === null) return {};
-  if (level === "max") return { effort: "xhigh" };
-  if (level === "minimal" || level === "xhigh")
-    throw new Error(`meridian-flow never runs effort ${level}`);
-  return { effort: level };
-}
-
 function definitionOf(draft: Draft): CompiledAgentDefinition {
   const fields = draft.fields as AgentFields;
+  const effort = storedAgentEffort(fields.effort);
   const metadata: NormalizedAgentMetadata = {
     ...(fields.name !== null ? { name: fields.name } : {}),
     ...(fields.description !== null ? { description: fields.description } : {}),
@@ -595,7 +585,7 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     ...(fields.mode !== null ? { mode: fields.mode } : {}),
     "model-invocable": fields["model-invocable"],
     "user-invocable": fields["user-invocable"],
-    ...storedEffort(flowEffort(fields.effort)),
+    ...(effort !== undefined ? { effort } : {}),
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),

@@ -100,12 +100,9 @@ export const DEFAULT_MODEL_ID = "deepseek-flash";
  */
 export function newestInFamily(
   family: ModelFamily,
-  rows: readonly { id: string; provider: string; releaseDate?: string }[],
+  rows: { id: string; provider: string; release_date?: string }[],
 ): string | null {
-  return resolveAlias(
-    rows.map((row) => ({ id: row.id, provider: row.provider, release_date: row.releaseDate })),
-    { match: [...family.match], exclude: [...(family.exclude ?? [])] },
-  );
+  return resolveAlias(rows, { match: [...family.match], exclude: [...(family.exclude ?? [])] });
 }
 
 /** The first family of a provider that admits this models.dev id, or undefined. */

@@ -21,7 +21,7 @@ gateway's `resolveReasoning` clamps whichever runs to the nearest level the reso
 as it does for the Agent's own level. Every reader of the chat's model goes through `threadModelId`,
 which takes the gateway. The wire vocabulary is the gateway's (`low|medium|high|max` plus `disabled` and
 `adaptive`). An Agent file's `effort` is first read by Mars's rule for the `meridian-flow` host
-(`flowEffort`, from `@meridian-flow/mars-schema`'s `resolveEffort`): `minimal` reads as low, `xhigh` as
+(`storedAgentEffort`, from `@meridian-flow/mars-schema`'s `resolveEffort`): `minimal` reads as low, `xhigh` as
 max, and `auto` as no effort. The stored `xhigh`/`none` then read as `max`/`disabled`
 (`AGENT_EFFORT_CHOICE`). Mars and the gateway round a level the model lacks the same way: to the nearest
 on the ladder, a tie going up.
