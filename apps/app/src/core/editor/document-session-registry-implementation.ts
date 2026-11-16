@@ -300,8 +300,20 @@ export class DocumentSessionRegistry {
     return this.draftRooms.rebuild(roomKey);
   }
 
-  closeDraftRoom(roomKey: string): Promise<void> {
-    return this.draftRooms.close(roomKey);
+  /**
+   * The server closed the draft. A room that ended earlier (a schema reset, a lost sign-in) was
+   * retired without handing anything back and its copy may still hold typing the draft never took:
+   * the closed draft never opens again, so its copy's words are handed back here. A room whose
+   * session retires now does it in `retiring`; claiming twice stores one notice.
+   */
+  async closeDraftRoom(roomKey: string): Promise<void> {
+    const documentId = this.draftRooms.documentOf(roomKey);
+    const open = this.draftRooms.peek(roomKey);
+    await this.draftRooms.close(roomKey);
+    if (!open && documentId) {
+      const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
+      await this.handBackCopy(incarnationName(key, this.copies.current(key)), "closed");
+    }
   }
 
   reopenDraftRoom(roomKey: string): void {
@@ -618,15 +630,17 @@ export class DocumentSessionRegistry {
     const started = this.handingBack.get(session);
     if (started) return started;
     const copy = this.copyOfSession(session);
-    const name = incarnationName(copy.key, copy.incarnation);
-    const handing = this.copies.beyondMark(name).then(async (beyond) => {
-      if (beyond)
-        await readCopy(beyond.update, (document) =>
-          this.handBack(cause, name, document, beyond.lacking),
-        );
-    });
+    const handing = this.handBackCopy(incarnationName(copy.key, copy.incarnation), cause);
     this.handingBack.set(session, handing);
     return handing;
+  }
+
+  private async handBackCopy(name: string, cause: UnsentTypingCause): Promise<void> {
+    const beyond = await this.copies.beyondMark(name);
+    if (beyond)
+      await readCopy(beyond.update, (document) =>
+        this.handBack(cause, name, document, beyond.lacking),
+      );
   }
 
   /**

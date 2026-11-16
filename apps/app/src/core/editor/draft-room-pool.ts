@@ -55,6 +55,11 @@ export class DraftRoomPool {
     return this.rooms.get(roomKey);
   }
 
+  /** The document a retained room drafts; it stays known after the room retires. */
+  documentOf(roomKey: string): string | undefined {
+    return this.documents.get(roomKey);
+  }
+
   retain(ownerId: string, rooms: readonly DraftRoomRef[]): void {
     const keys = new Set<string>();
     for (const { roomKey, documentId } of rooms) {

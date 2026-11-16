@@ -721,7 +721,7 @@ from the wire alone, with nothing stored between handshakes.
   stays, and a retained session stays readable until its owner releases it or a restore
   restarts it. Once its last owner releases it, it retires on the next task, not after the
   grace: it can never reopen, and its retirement is what hands back typing that just left the
-  screen. The account command owner asks the server what each close means (fresh
+  screen. A room that ended earlier another way (a schema reset) retired with nothing handed back, so `closeDraftRoom` hands back what its copy holds beyond the server's mark when no session is open for the room: the closed draft's copy never opens again. The account command owner asks the server what each close means (fresh
   metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
   whichever arrives first; see Draft end and reopen in the
   [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the
