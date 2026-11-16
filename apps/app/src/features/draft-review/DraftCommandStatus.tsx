@@ -56,7 +56,7 @@ export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
   ) : state.applying ? (
     <Trans>Applying</Trans>
   ) : state.failure ? (
-    state.failure.serverCode === "needs_restore" ? (
+    state.failure.code !== "undo-left-out" && state.failure.serverCode === "needs_restore" ? (
       <ReviewMessageText failure={state.failure} />
     ) : (
       <InlineErrorRow

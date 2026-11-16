@@ -6,12 +6,12 @@ import {
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
 import type { Editor } from "@tiptap/core";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
 import { endUndoStep } from "@/core/editor/editor-history";
+import { markStepDone, touchedSince } from "@/core/editor/touched-since";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
 import type { DiscardUndo } from "./draft-notices";
 import { readChosen } from "./review-frame";
@@ -36,7 +36,11 @@ export function startDraftDiscardSession(input: {
    * not reviewing this draft, so nothing is written.
    */
   history: Editor | "notice" | null;
-  onNoticeEnd?: () => void;
+  /**
+   * `leftOut`: the Discard stays written, and this many of its changes can no longer come back.
+   * None: it was never written, was taken back, or Ctrl+Z dropped it (said on the draft's line).
+   */
+  onNoticeEnd?: (leftOut?: number) => void;
   entry: Entry | undefined;
   registry: DraftRoomRegistry;
   active(): boolean;
@@ -62,13 +66,14 @@ export function startDraftDiscardSession(input: {
   if (!editor) for (const attached of binding.runtime.editors()) endUndoStep(attached.state);
   // Its own origin, so the write is one stack item the notice can name.
   const origin = {};
+  const steps = editor ? binding.session.history : null;
   const history: Y.UndoManager =
-    (editor ? yUndoPluginKey.getState(editor.state)?.undoManager : undefined) ??
-    new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
+    steps?.manager ?? new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
   history.addTrackedOrigin(origin);
   recordRestorations(history);
   history.stopCapturing();
   let item: StackItem | null = null;
+  let changes = 0;
   const write = (): CommandOutcome => {
     if (!input.active() || entry.binding !== binding || input.state().ended)
       return { kind: "blocked" };
@@ -106,34 +111,41 @@ export function startDraftDiscardSession(input: {
       });
     history.stopCapturing();
     item = history.undoStack.length > before ? (history.undoStack.at(-1) ?? null) : null;
+    changes = ids.length;
     binding.runtime.projectNow();
-    if (item) watch();
+    if (item) {
+      markStepDone(doc, item);
+      // Ctrl+Z follows the notice's rule: a step whose text was edited since is dropped, not run.
+      // Its line shows where Ctrl+Z's results do, so it is said even with the notice gone.
+      steps?.guard(item, () => {
+        end();
+        input.setState({ failure: { code: "undo-left-out", leftOut: changes } });
+      });
+      watch();
+    }
     return { kind: "done" };
   };
-  // The Undo holds while the draft's prose is as the Discard left it: a later edit, local or
-  // remote, or Ctrl+Z taking it back ends it, so the notice and the editor never undo twice.
-  let undoing = false;
-  const onProse = (_events: unknown, transaction: Y.Transaction) => {
-    if (!undoing && transaction.origin !== origin) end();
-  };
+  // The Undo holds while what the Discard wrote and deleted stays as it left it, checked when
+  // it is pressed: an edit since into or beside that text, or deleting the block that holds it,
+  // means undoing would restore nothing or the same text twice. Edits elsewhere in the draft
+  // (Live typing reaching it) leave it standing. Ctrl+Z taking it back ends the notice's share,
+  // so the two never undo twice.
   const onPopped = ({ stackItem }: { stackItem: StackItem }) => {
-    if (!undoing && stackItem === item) end();
+    if (stackItem === item) end();
   };
   let watching = false;
   let stopAccess = () => {};
   const watch = () => {
     watching = true;
-    fragment.observeDeep(onProse);
     history.on("stack-item-popped", onPopped);
     // A room that turns read-only (its Work was archived) drops an Undo written into it.
     stopAccess = binding.session.subscribe((snapshot) => {
-      if (snapshot.access === "read") queueMicrotask(end);
+      if (snapshot.access === "read") queueMicrotask(expire);
     });
   };
   const unwatch = () => {
     if (!watching) return;
     watching = false;
-    fragment.unobserveDeep(onProse);
     history.off("stack-item-popped", onPopped);
     stopAccess();
   };
@@ -163,16 +175,21 @@ export function startDraftDiscardSession(input: {
     entry.users--;
     input.releaseIdle();
   };
-  const end = () => {
+  const end = (leftOut?: number) => {
     if (!active) return;
     active = false;
-    binding.notices.delete(end);
+    binding.notices.delete(expire);
     release();
-    onNoticeEnd?.();
+    onNoticeEnd?.(leftOut);
   };
-  binding.notices.add(end);
+  const expire = () => end(changes);
+  binding.notices.add(expire);
+  const take = (stackItem: StackItem) => {
+    if (steps) steps.take(stackItem);
+    else history.undoStack.splice(history.undoStack.indexOf(stackItem), 1);
+  };
   const handle: DiscardUndo = {
-    end,
+    end: () => end(),
     undo: () => {
       const none = Promise.resolve();
       if (!active) return { answer: "gone", landed: none };
@@ -189,21 +206,17 @@ export function startDraftDiscardSession(input: {
         !input.active() ||
         entry.binding !== binding ||
         input.state().ended ||
-        binding.session.getSnapshot().access === "read"
+        binding.session.getSnapshot().access === "read" ||
+        touchedSince(doc, item)
       ) {
+        if (item) take(item);
         end();
-        return { answer: "gone", landed: none };
+        return { answer: "gone", landed: none, leftOut: changes };
       }
-      const stackItem = item;
-      undoing = true;
       try {
-        if (history.undoStack.at(-1) === stackItem && !(editor?.isDestroyed ?? false))
-          history.undo();
-        else undoAlone(fragment, stackItem, history);
+        undoAlone(fragment, item, take);
       } catch {
         return { answer: "failed", landed: none };
-      } finally {
-        undoing = false;
       }
       binding.runtime.projectNow();
       // The prose is back in the room, which sends it whenever it can and drains unsent edits
@@ -262,12 +275,15 @@ export function startDraftDiscardSession(input: {
 type StackItem = Y.UndoManager["undoStack"][number];
 
 /**
- * Undoes one stack item whatever sits above it in its history (the reviewing editor went away
- * with its manager): a manager of its own pops it, with restorations recorded as any Undo does.
+ * Undoes one stack item whatever its history holds above it: `take` lifts it out, and a manager of
+ * its own pops it, with restorations recorded as any Undo does.
  */
-function undoAlone(fragment: Y.XmlFragment, stackItem: StackItem, owner: Y.UndoManager) {
-  const at = owner.undoStack.indexOf(stackItem);
-  if (at >= 0) owner.undoStack.splice(at, 1);
+function undoAlone(
+  fragment: Y.XmlFragment,
+  stackItem: StackItem,
+  take: (stackItem: StackItem) => void,
+) {
+  take(stackItem);
   const alone = new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
   recordRestorations(alone);
   alone.undoStack.push(stackItem);
