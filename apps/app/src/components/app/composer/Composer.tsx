@@ -423,6 +423,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       suppressDraftChangeRef.current = false;
       // The editor now holds exactly the owner's document; the dispatch's own revision bump would make `holds()` fail.
       if (draft) revision.current = draft.revision;
+      // The control that caused this write (Stop, a queue's x, Edit, an Undo) is gone or no longer
+      // the place to type: the box takes focus with the caret after the words, unless the writer is
+      // typing in another field.
+      const active = document.activeElement;
+      const typingElsewhere =
+        active instanceof HTMLElement &&
+        active !== editor.view.dom &&
+        (active.isContentEditable || active.matches("input, textarea, select"));
+      if (draft && !editor.isFocused && !typingElsewhere) {
+        editor.commands.focus("end", { scrollIntoView: false });
+      }
     });
   }, [editor, external]);
   const snapshot = useCallback((): ComposerDraftSnapshot => {
@@ -776,7 +787,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               variant="default"
               size="sm"
               data-composer-stop=""
-              onClick={() => onStop?.()}
+              onClick={() => {
+                // The button leaves with the click; the box takes the focus it held.
+                editor?.commands.focus("end", { scrollIntoView: false });
+                onStop?.();
+              }}
               disabled={stopInProgress}
               label={
                 stopInProgress
