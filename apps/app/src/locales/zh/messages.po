@@ -1361,8 +1361,8 @@ msgid "Actually…"
 msgstr "其实…"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Adaptive"
-msgstr ""
+#~ msgid "Adaptive"
+#~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
@@ -3940,6 +3940,10 @@ msgstr ""
 msgid "Exporting {project}."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Extra high"
+msgstr "超高"
+
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
 msgstr ""
@@ -4804,6 +4808,10 @@ msgstr ""
 #: src/components/app/composer/Composer.tsx
 msgid "Message"
 msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Minimal"
+msgstr "极低"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
