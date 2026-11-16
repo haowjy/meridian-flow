@@ -139,9 +139,8 @@ export function createBoundAgentCatalog(input: {
   levelFiles: AgentLevelFiles;
   /** The built-in packages, read once at boot. */
   builtins: AgentSourceSnapshot[];
-  defaultModel(): string | undefined;
-  /** Turns an alias in an Agent's `model` into the model id a chat starts with; an id stays as written. */
-  resolveModel(name: string): string;
+  /** The model id a chat starts with: the default for no name, else an alias resolved; an id stays as written. */
+  modelFor(named?: string): string | undefined;
   /** Host-owned routing/support checks, independent of source syntax compilation. */
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
 }): BoundAgentCatalog {
@@ -161,10 +160,8 @@ export function createBoundAgentCatalog(input: {
     (await install(pkg)).definitions.find((definition) => definition.slug === slug);
 
   /** The model a chat started on this Agent would run. */
-  const modelOf = (definition: CompiledAgentDefinition) => {
-    const named = definition.metadata.model;
-    return named === undefined ? input.defaultModel() : input.resolveModel(named);
-  };
+  const modelOf = (definition: CompiledAgentDefinition) =>
+    input.modelFor(definition.metadata.model);
 
   /** Why an Agent cannot run: its errors, then what the host adds. */
   const reasonsOf = (
@@ -264,8 +261,7 @@ export function createBoundAgentCatalog(input: {
       const configuration = await resolveAgentConfiguration({
         revision,
         store,
-        defaultModel: input.defaultModel(),
-        resolveModel: input.resolveModel,
+        modelFor: input.modelFor,
       });
       return { ok: true, revision, configuration };
     } catch (error) {
@@ -457,12 +453,17 @@ export function createBoundAgentCatalog(input: {
       let moved: { revision: AgentRevision; configuration: ResolvedAgentConfiguration } | undefined;
       if (newest.ok) {
         // An alias in the Agent's `model` was resolved when the chat started: a newer model in
-        // its family moves no running chat, only a change to the `model` line does.
+        // its family moves no running chat, only a change to the `model` line does, or the
+        // held model leaving the offered ones, which sends the chat to the Agent's current model.
         const named = newest.revision.definition.metadata.model;
-        const configuration =
-          named !== undefined && named === bound.revision.definition.metadata.model
-            ? { ...newest.configuration, model: bound.configuration.model }
-            : newest.configuration;
+        const holds =
+          named !== undefined &&
+          named === bound.revision.definition.metadata.model &&
+          input.unavailableReasons(newest.revision.definition, bound.configuration.model).length ===
+            0;
+        const configuration = holds
+          ? { ...newest.configuration, model: bound.configuration.model }
+          : newest.configuration;
         if (runsDifferently(bound, { definition: newest.revision.definition, ...configuration })) {
           moved = { revision: newest.revision, configuration };
         }

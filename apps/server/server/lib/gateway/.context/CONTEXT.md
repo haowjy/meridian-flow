@@ -18,8 +18,8 @@ when the registry is built, not in the deployment that holds that provider's key
   own field names, and the date it was taken. Never edit it by hand; `pnpm models:refresh` rewrites it.
 - `families.ts`: which models Flow offers, per provider, as `[models.<family>]`-style `match` and `exclude` globs (as in
   meridian-base's `mars.toml`), plus per-family facts models.dev lacks: tokenizer, `maxLinkBytes`, `thinksByDefault`.
-  A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`, `sol`, `terra`, `luna`, `deepseek`, `argon`);
-  Flow has no family Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others).
+  A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`, `sol`, `terra`, `luna`, `deepseek`, `argon`),
+  kept equal by hand: nothing in CI reads `mars.toml`. Flow has no family Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others).
   Also the default model; the build fails when the snapshot lacks it. A new version in a listed family appears at the
   next refresh; an `exclude` entry is a dated, deprecated or older-generation id Flow does not offer. Home of
   `resolveAlias`, Mars's alias rule, to be replaced by `@meridian-flow/mars-schema`'s when that ships.
@@ -28,7 +28,11 @@ when the registry is built, not in the deployment that holds that provider's key
   the one way Flow charges a price other than models.dev's (a rate per model id): DeepSeek's peak rates, and Gemini 4
   Argon's standard rates while models.dev lists Google's introductory ones. Each carries a `source` URL and a `checked`
   date; a refresh report flags one older than 90 days, prints models.dev's number beside the billed one, and says
-  "models.dev now agrees: delete the override" once they match.
+  "models.dev now agrees: delete the override" once they match. An override replaces every rate models.dev lists for
+  its model, and it is absolute (no multiplier, which would double-charge once models.dev catches up). Because a
+  family can admit a model its override was not written for, the build fails when a family has an override for any
+  model and another model it admits has none, or when models.dev lists a cache rate the override leaves unset; the
+  refresh report shows each as "Price overrides that do not cover the snapshot", naming the family and the rates.
 
 `registry.ts` joins them (`buildModelRegistry`) and keeps the exported registry types. Billing charges the snapshot's
 prices, never live data; a charge's `pricingSnapshot.source` reads `models.dev snapshot <date>`, plus the provider
@@ -37,12 +41,17 @@ the build throws when the step is not one threshold with one multiplier for ever
 allowlist no longer admits (a new `exclude`) gets no offering and stays in the file until the next refresh.
 
 **Names.** `RegisteredModel.displayName` is the picker name: the family alias on the newest model of a family (by
-`resolveAlias`), "alias version" on an older one (`fable 5.1`, the version being the first number in models.dev's name).
+`resolveAlias`), "alias version" on an older one (`fable 5.1`, the version being the first number in models.dev's name,
+or the id's suffix where that number doesn't tell two older models apart). Picker names are unique: the build fails on
+two offerings with the same name.
 An Agent file's `model` may be a picker name: `resolveModelName` turns a family alias into its newest available
-model and an "alias version" into that model; an id stays as written. It runs when a chat starts
-(`resolveAgentConfiguration`) and for the catalog's availability check, and the binding stores the id. A running chat
+model and an "alias version" into that model; an id stays as written. `modelFor(gateway, named?)` is the one port that
+names a model: the default for no name, else `resolveModelName`. It runs when a chat starts
+(`resolveAgentConfiguration`), for the catalog's availability check, and on a spawn's `overrides.model`
+(`resolveChildInvocation`), and the binding stores the id. A running chat
 keeps it: each turn reads the binding, and the one place that re-resolves is `refreshBinding` at a compaction, which
-keeps the bound model while the Agent's `model` line is unchanged.
+keeps the bound model while the Agent's `model` line is unchanged and the model is still offered; otherwise the chat
+follows the Agent's current model.
 
 Provider keys are read only from `FLOW_`-prefixed variables (`FLOW_ANTHROPIC_API_KEY`,
 `FLOW_DEEPSEEK_API_KEY`, …), never the vendors' unprefixed names. The owner's machine sets the unprefixed

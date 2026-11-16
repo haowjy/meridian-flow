@@ -47,8 +47,7 @@ async function criticTools() {
   const configuration = await resolveAgentConfiguration({
     revision: critic,
     store: agentRevisions,
-    defaultModel: "fixture-model",
-    resolveModel: (name) => name,
+    modelFor: (name) => name ?? "fixture-model",
   });
   await agentRevisions.bindThread(THREAD_ID, critic.id, configuration, null);
   const deps = {

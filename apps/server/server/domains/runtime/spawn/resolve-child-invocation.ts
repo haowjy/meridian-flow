@@ -31,8 +31,7 @@ export interface ResolveChildInvocationDeps {
     AgentRevisionStore,
     "readRevision" | "readSource" | "readPackageDefinitions"
   >;
-  defaultModel(): string | undefined;
-  resolveModel(name: string): string;
+  modelFor(named?: string): string | undefined;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   modelUnavailable(model: string): string[];
 }
@@ -103,8 +102,7 @@ export async function resolveChildInvocation(
     configuration = await resolveAgentConfiguration({
       revision: childAgent,
       store: deps.agentRevisions,
-      defaultModel: deps.defaultModel(),
-      resolveModel: deps.resolveModel,
+      modelFor: deps.modelFor,
     });
     resolvedSlug = requestedSlug;
     defaultTitle = `${requestedSlug} subagent`;
@@ -137,7 +135,11 @@ export async function resolveChildInvocation(
       }
       throw error;
     }
-    configuration = patched;
+    // A patched `model` is a name like an Agent file's, so it resolves the same way.
+    configuration =
+      input.overrides.model === undefined
+        ? patched
+        : { ...patched, model: deps.modelFor(patched.model) ?? patched.model };
   }
 
   const extra = toolsBeyond(parentAgent.configuration, configuration);

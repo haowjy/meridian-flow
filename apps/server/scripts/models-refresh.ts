@@ -19,6 +19,7 @@ import {
   buildModelRegistry,
   type ModelRegistry,
   type ModelsSnapshot,
+  PriceOverrideGaps,
   type SnapshotModel,
   unservableReason,
 } from "../server/lib/gateway/registry.js";
@@ -170,8 +171,8 @@ function notFromModelsDev(today: string): string[] {
   });
 }
 
-type CostField = "input" | "output" | "cache_read";
-const COST_FIELDS: readonly CostField[] = ["input", "output", "cache_read"];
+type CostField = "input" | "output" | "cache_read" | "cache_write";
+const COST_FIELDS: readonly CostField[] = ["input", "output", "cache_read", "cache_write"];
 
 /** Overridden prices with models.dev's number beside the billed one, and when an override can go. */
 function overrideLines(before: ModelsSnapshot, after: ModelsSnapshot): string[] {
@@ -215,10 +216,22 @@ function buildReport(input: {
   today: string;
   unservable: readonly string[];
   buildError: string | undefined;
+  /** Where price overrides leave a model or a rate at models.dev's price. */
+  overrideGaps: readonly string[];
   /** The snapshot differs from models.dev, or something can't be served. */
   changed: boolean;
 }): string {
-  const { before, after, oldRegistry, newRegistry, today, unservable, buildError, changed } = input;
+  const {
+    before,
+    after,
+    oldRegistry,
+    newRegistry,
+    today,
+    unservable,
+    buildError,
+    overrideGaps,
+    changed,
+  } = input;
   const [was, now] = [offeringFields(oldRegistry), offeringFields(newRegistry)];
   const isPrice = (path: string) => path.startsWith("price.");
   const added: string[] = [];
@@ -259,7 +272,7 @@ function buildReport(input: {
         "Flow charges the committed snapshot, so nothing here is billed yet. To apply it, run",
         "`pnpm models:refresh` on a branch, review the diff to `apps/server/server/lib/gateway/models-snapshot.json`,",
         "and open a PR. This issue closes itself once the snapshot matches models.dev.",
-        ...(unservable.length > 0 || buildError
+        ...(unservable.length > 0 || buildError || overrideGaps.length > 0
           ? ["", "`pnpm models:refresh` refuses to write until the problems below are fixed."]
           : []),
         "",
@@ -268,6 +281,7 @@ function buildReport(input: {
   return [
     ...header,
     ...section("Matched a family but can't be served", unservable),
+    ...section("Price overrides that do not cover the snapshot", overrideGaps),
     ...section("The new snapshot would not build", buildError ? [buildError] : []),
     ...section("New models", added),
     ...section("Removed models", removed),
@@ -298,13 +312,16 @@ const after: ModelsSnapshot = { takenAt: snapshotChanged ? today : before.takenA
 const oldRegistry = buildModelRegistry(before);
 let newRegistry = oldRegistry;
 let buildError: string | undefined;
+let overrideGaps: readonly string[] = [];
 try {
   newRegistry = buildModelRegistry(after);
 } catch (error) {
   if (!dryRun) throw error;
-  buildError = (error as Error).message;
+  if (error instanceof PriceOverrideGaps) overrideGaps = error.lines;
+  else buildError = (error as Error).message;
 }
-const changed = snapshotChanged || unservable.length > 0 || buildError !== undefined;
+const changed =
+  snapshotChanged || unservable.length > 0 || buildError !== undefined || overrideGaps.length > 0;
 const report = buildReport({
   before,
   after,
@@ -313,6 +330,7 @@ const report = buildReport({
   today,
   unservable,
   buildError,
+  overrideGaps,
   changed,
 });
 

@@ -183,20 +183,55 @@ export function unservableReason(model: Partial<SnapshotModel>): string | undefi
   return typeof tier === "string" ? tier : undefined;
 }
 
-/** What Flow charges for a row: models.dev's cost, with the provider's override laid over it. */
+/** Thrown when a provider's price overrides do not cover what its families admit; one line per gap. */
+export class PriceOverrideGaps extends Error {
+  constructor(readonly lines: readonly string[]) {
+    super(lines.join("\n"));
+  }
+}
+
+/**
+ * Where a provider's price overrides stop short: a model in a family that overrides another of
+ * its models but has no override itself, and a rate models.dev lists that an override leaves
+ * unset. Either would bill that rate at models.dev's number, not the one Flow pays.
+ */
+export function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
+  return PROVIDER_ROWS.flatMap((row) => {
+    const overrides = row.priceOverrides ?? {};
+    const rows = snapshot.providers[row.id] ?? {};
+    const overriddenFamilies = new Set(
+      Object.keys(overrides).flatMap((id) => findFamily(row.id, id)?.id ?? []),
+    );
+    return Object.entries(rows).flatMap(([id, model]) => {
+      const family = findFamily(row.id, id);
+      if (!family || !overriddenFamilies.has(family.id)) return [];
+      const { cost } = model;
+      const listed = `models.dev lists input $${cost.input}, output $${cost.output}${
+        cost.cache_read === undefined ? "" : `, cache read $${cost.cache_read}`
+      }${cost.cache_write === undefined ? "" : `, cache write $${cost.cache_write}`}`;
+      const override = overrides[id];
+      if (!override) {
+        return [
+          `- \`${row.id}/${id}\` is in family \`${family.id}\`, which has price overrides, but has none itself (${listed}). Add \`priceOverrides["${id}"]\` in \`provider-rows.ts\` with the rates Flow pays.`,
+        ];
+      }
+      return (["cache_read", "cache_write"] as const)
+        .filter((rate) => cost[rate] !== undefined && override[rate] === undefined)
+        .map(
+          (rate) =>
+            `- \`${row.id}/${id}\`: models.dev lists \`${rate}\` $${cost[rate]}, but its price override sets none. Set \`${rate}\` in the override to the rate Flow pays.`,
+        );
+    });
+  });
+}
+
+/** What Flow charges for a row: the provider's override when it has one, else models.dev's cost. */
 export function billedCost(row: ProviderRow, id: string, cost: SnapshotModel["cost"]) {
   const override = row.priceOverrides?.[id];
   if (!override) return { cost, override };
   if (cost.tiers) throw new Error(`${row.id}/${id}: a price override cannot sit on context tiers`);
-  return {
-    cost: {
-      ...cost,
-      input: override.input,
-      output: override.output,
-      ...(override.cache_read === undefined ? {} : { cache_read: override.cache_read }),
-    },
-    override,
-  };
+  const { input, output, cache_read, cache_write } = override;
+  return { cost: { input, output, cache_read, cache_write }, override };
 }
 
 function toPricing(
@@ -236,13 +271,35 @@ function toPricing(
   };
 }
 
-/** "5.1" from "Claude Fable 5.1": the first number in the model's name. */
-function versionOf(model: { id: string; name: string }): string {
-  return /\d+(\.\d+)*/.exec(model.name)?.[0] ?? model.id;
+/**
+ * Picker names for one family's models: the alias for the newest, "alias version" for the rest.
+ * The version is the first number in models.dev's name ("5.1" from "Claude Fable 5.1"); where
+ * that doesn't tell two models apart, it is the id past the prefix the family's ids share.
+ */
+function pickerNames(
+  family: ModelFamily,
+  newest: string | null,
+  rows: Readonly<Record<string, SnapshotModel>>,
+  ids: readonly string[],
+): Map<string, string> {
+  if (ids.length === 0) return new Map();
+  const version = (id: string) => /\d+(\.\d+)*/.exec(rows[id].name)?.[0] ?? id;
+  const older = ids.filter((id) => id !== newest);
+  let shared = 0;
+  while (shared < ids[0].length && ids.every((id) => id[shared] === ids[0][shared])) shared += 1;
+  const names = new Map<string, string>(newest === null ? [] : [[newest, family.id]]);
+  for (const id of older) {
+    const same = older.filter((other) => version(other) === version(id));
+    const tag = same.length === 1 ? version(id) : id.slice(shared).replace(/^[-_.]/, "") || id;
+    names.set(id, `${family.id} ${tag}`);
+  }
+  return names;
 }
 
 /** The registry the snapshot, the families and the provider rows describe. Throws on a row Flow cannot serve. */
 export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
+  const gaps = priceOverrideGaps(snapshot);
+  if (gaps.length > 0) throw new PriceOverrideGaps(gaps);
   const providers = PROVIDER_ROWS.map((row): RegisteredProvider => {
     const rows = snapshot.providers[row.id] ?? {};
     // A snapshot row the allowlist no longer admits stays in the file until the next refresh
@@ -253,6 +310,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
         ids.map((id) => ({ id, provider: row.id, releaseDate: rows[id].release_date })),
         family,
       );
+      const names = pickerNames(family, newest, rows, ids);
       return ids.map((id): RegisteredOffering => {
         const model = rows[id];
         const problem = unservableReason(model);
@@ -261,7 +319,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
           model: {
             id,
             tokenizer: family.tokenizer,
-            displayName: id === newest ? family.id : `${family.id} ${versionOf({ id, ...model })}`,
+            displayName: names.get(id) as string,
             ...(model.release_date === undefined ? {} : { releaseDate: model.release_date }),
             contextWindow: model.limit.context,
             maxOutputTokens: model.limit.output,
@@ -283,6 +341,11 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
       offerings,
     };
   });
+  const names = providers.flatMap((provider) =>
+    provider.offerings.map(({ model }) => model.displayName),
+  );
+  const repeated = names.find((name, at) => names.indexOf(name) !== at);
+  if (repeated !== undefined) throw new Error(`Two models are named "${repeated}" in the picker`);
   const registry = { providers, defaultModel: DEFAULT_MODEL_ID };
   if (
     !providers.some((provider) =>
@@ -308,6 +371,16 @@ export function resolveModelName(name: string, available: readonly { id: string 
     .flatMap((provider) => provider.offerings)
     .find(({ model }) => model.displayName === name && ids.has(model.id));
   return found?.model.id ?? name;
+}
+
+/** The one port that names a model: the gateway's default for no name, else `resolveModelName` over what it offers. */
+export function modelFor(
+  gateway: { getDefaultModel(): string | undefined; listModels(): readonly { id: string }[] },
+  named?: string,
+): string | undefined {
+  return named === undefined
+    ? gateway.getDefaultModel()
+    : resolveModelName(named, gateway.listModels());
 }
 
 /** Adapter-neutral registry checks, run as soon as a registry is loaded. */

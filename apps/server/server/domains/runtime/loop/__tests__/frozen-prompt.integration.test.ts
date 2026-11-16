@@ -69,8 +69,7 @@ async function fixture(
     store: agentRevisions,
     levelFiles: levels,
     builtins: [],
-    defaultModel: () => "gpt-5.6-luna",
-    resolveModel: (name) => name,
+    modelFor: (name) => name ?? "gpt-5.6-luna",
     unavailableReasons: () => [],
   });
   levels.write(

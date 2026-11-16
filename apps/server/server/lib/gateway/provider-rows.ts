@@ -36,9 +36,11 @@ export interface ProviderRow {
   longCacheWrite?: { multiplier: number } & Provenance;
   /**
    * Prices Flow charges where models.dev lists another, by model id: a rate models.dev has not
-   * updated yet, or one that is not the rate Flow pays. Each field replaces models.dev's. The
-   * refresh report prints both numbers and says an override can go once models.dev agrees.
-   * Not for a model with context tiers.
+   * updated yet, or one that is not the rate Flow pays. An override replaces every rate models.dev
+   * lists for the model. The registry refuses to build when a family has an override for one of
+   * its models and another model it admits has none, or when models.dev lists a rate (cache read
+   * or write) the override leaves unset. The refresh report prints both numbers and says an
+   * override can go once models.dev agrees. Not for a model with context tiers.
    */
   priceOverrides?: Readonly<Record<string, PriceOverride>>;
 }
@@ -48,6 +50,7 @@ export interface PriceOverride extends Provenance {
   input: number;
   output: number;
   cache_read?: number;
+  cache_write?: number;
 }
 
 export const PROVIDER_ROWS: readonly ProviderRow[] = [

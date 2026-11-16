@@ -74,15 +74,13 @@ You are Writer.
     const configuration = await resolveAgentConfiguration({
       revision: writer,
       store: agentRevisions,
-      defaultModel: "fixture-model",
-      resolveModel: (name) => name,
+      modelFor: (name) => name ?? "fixture-model",
     });
     const agentCatalog = createBoundAgentCatalog({
       store: agentRevisions,
       levelFiles: noLevelFiles,
       builtins: [launch],
-      defaultModel: () => "fixture-model",
-      resolveModel: (name) => name,
+      modelFor: (name) => name ?? "fixture-model",
       unavailableReasons: () => [],
     });
     const thread = await repos.threads.create({

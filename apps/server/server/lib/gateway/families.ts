@@ -19,7 +19,8 @@ export interface ModelFamily {
 
 /**
  * Keyed by Flow's provider id. A family id is its alias in meridian-base's mars.toml: the
- * picker shows it and an Agent file's `model` may name it. The `exclude` entries are dated,
+ * picker shows it and an Agent file's `model` may name it. Nothing checks the two agree; keep
+ * them equal by hand. The `exclude` entries are dated,
  * deprecated and older-generation ids that models.dev lists and Flow does not offer; delete
  * one to offer that model at the next refresh. Offerings keep this family order.
  */
@@ -78,7 +79,7 @@ interface AliasRule {
 }
 
 /**
- * Mars's alias rule (`auto_resolve_all` in meridian-cli `src/models/mod.rs`): the newest model
+ * Mars's alias rule (`auto_resolve_all` in `mars-agents/src/models/mod.rs`): the newest model
  * that every `match` glob hits and no `exclude` glob hits, within `provider` when one is set.
  * Ids ending in `-latest` are skipped. Newest is the latest `release_date`, then the shorter
  * id, then alphabetical order; a row without a date sorts last.
@@ -95,11 +96,13 @@ export function resolveAlias(
       rule.match.every((glob) => globToRegExp(glob).test(row.id)) &&
       !(rule.exclude ?? []).some((glob) => globToRegExp(glob).test(row.id)),
   );
+  // Byte order, as Mars compares: `localeCompare` ranks "gpt-6_1" and "gpt-6-1" the other way.
+  const byte = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   hits.sort(
     (a, b) =>
-      (b.releaseDate ?? "").localeCompare(a.releaseDate ?? "") ||
+      byte(b.releaseDate ?? "", a.releaseDate ?? "") ||
       a.id.length - b.id.length ||
-      a.id.localeCompare(b.id),
+      byte(a.id, b.id),
   );
   return hits[0]?.id ?? null;
 }

@@ -77,8 +77,7 @@ else
         store: revisions,
         levelFiles: levels,
         builtins: [],
-        defaultModel: () => "gpt-5.6-luna",
-        resolveModel: (name) => name,
+        modelFor: (name) => name ?? "gpt-5.6-luna",
         unavailableReasons: () => [],
       });
       const slug = `fork-agent-${crypto.randomUUID()}`;
