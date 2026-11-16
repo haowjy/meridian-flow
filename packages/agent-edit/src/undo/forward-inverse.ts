@@ -429,8 +429,8 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
  * over), so restoring it would put the old text next to what the writer has now. One part holds
  * every change of a write to a block, so a change is found from the immutable item structure: an
  * inserted run takes the place of the deleted run its `origin` or `rightOrigin` reaches, up to
- * restoration lineage, and deleted siblings are one run. A tombstone that already existed at the
- * part's frontier is not a boundary, since every backspace leaves one. Only text counts:
+ * restoration lineage, and deleted siblings are one run. Any deleted item of the part's text that existed before the write
+ * is not a boundary, whenever it was deleted, since every backspace leaves one. Only text counts:
  * attributes, containers and formats come and go with the text they belong to and never keep a
  * replacement standing. A deleted item with no inserted text beside it replaced nothing.
  * Every step is memoized so the work is linear in the part's items.
