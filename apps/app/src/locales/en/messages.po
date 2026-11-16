@@ -3446,6 +3446,10 @@ msgstr "Didn't go through. Try again."
 msgid "Didn't run: {calls}."
 msgstr "Didn't run: {calls}."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Didn't run: {label}"
+msgstr "Didn't run: {label}"
+
 #: src/features/draft-review/ReviewActions.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -6807,6 +6811,10 @@ msgstr "stopped"
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "Stopped"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Stopped: {label}"
+msgstr "Stopped: {label}"
 
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "Stopped."

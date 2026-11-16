@@ -133,12 +133,14 @@ backstop for the case no surface can report: a stage whose surface never mounts.
 
 A stopped reply keeps the words streamed before Stop and ends with one plain line
 (`TurnStoppedLine`): "Stopped." and, when calls never ran, "Stopped. Didn't run: create
-Scene C." A call the run ended before it settled carries `TOOL_NOT_RUN_CODE` in its
-result, and its row reads as done, not failed, titled by what it was going to do
-(`NotRunTitle`, for every tool). The server stores that result only for a document command;
-any other call a stopped or crashed run left without a result (a script, a connection call, a read)
-gets it from `viewAssistantTurn`, which reads every unanswered call of an `error` or
-`cancelled` turn that way. The model's own record of such a call is the request-time stub,
+Scene C." A call the run ended before it settled carries a result code, and its row reads as done, not
+failed, titled by what it was going to do (`EndedCallTitle`, for every tool). The code says what
+is known. `TOOL_NOT_RUN_CODE` (the server stores it for a document command; `viewAssistantTurn`
+gives it to a call whose input never finished streaming) means it never ran: "Didn't run: …".
+`TOOL_STOPPED_CODE` (only `viewAssistantTurn` makes it) is a call that was sent and has no result.
+A connection call or a script may have run, so the row reads "Stopped: …" and claims nothing more.
+`viewAssistantTurn` reads every unanswered call of an `error` or `cancelled` turn one of these
+ways. The model's own record of such a call is the request-time stub,
 which lists what a connection call sent ([recovery](../../../../../server/server/domains/runtime/.context/recovery.md)).
 Edits that landed stay landed and keep their receipt. A crashed reply keeps its failure card
 and adds the "Didn't run" line when calls never ran.

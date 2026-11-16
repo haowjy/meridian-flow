@@ -1,6 +1,6 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
-import type { JsonValue } from "@meridian/contracts/protocol";
+import { isToolNotRunResult, type JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
@@ -428,15 +428,15 @@ function removedWriteCopy(
       : t`This document was deleted before this change could be made.`;
 }
 
-/** A call the run ended never failed: its row reads as what it was going to do, whatever the tool. */
-export function NotRunTitle({ tool }: { tool: ToolView }) {
+/**
+ * A call the run ended never failed: its row names what it was going to do, whatever the tool. A
+ * stored "not run" says it never ran; a call the view found unanswered only says it was stopped.
+ */
+export function EndedCallTitle({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   const { verb, parameter } = descriptorFor(tool).phrases(tool, names).active;
-  return (
-    <PhraseTitle
-      phrase={{ verb: verb.replace(/…$/, ""), parameter: parameter?.replace(/…$/, "") }}
-    />
-  );
+  const label = [verb, parameter].filter(Boolean).join(" ").replace(/…$/, "");
+  return isToolNotRunResult(tool.result) ? t`Didn't run: ${label}` : t`Stopped: ${label}`;
 }
 
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
