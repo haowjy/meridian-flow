@@ -253,18 +253,18 @@ it("restored chat's fresh box moves on a second deletion even at the same revisi
     "Fresh words",
   );
 });
-it.each([
-  "unreadable journal",
-  "refused destination",
-])("retains all words and stays when cleanup has an %s", async (failure) => {
-  const f = fixture();
-  if (failure === "unreadable journal") f.ports.records = () => null;
-  else vi.spyOn(f.target, "prependSnapshots").mockReturnValue(false);
-  expect(await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports)).toBe(false);
-  expect(f.source.initialDraft).not.toBeNull();
-  expect(f.records()).toHaveLength(1);
-  expect(f.left()).toBeUndefined();
-});
+it.each(["unreadable journal", "refused destination"])(
+  "retains all words and stays when cleanup has an %s",
+  async (failure) => {
+    const f = fixture();
+    if (failure === "unreadable journal") f.ports.records = () => null;
+    else vi.spyOn(f.target, "prependSnapshots").mockReturnValue(false);
+    expect(await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports)).toBe(false);
+    expect(f.source.initialDraft).not.toBeNull();
+    expect(f.records()).toHaveLength(1);
+    expect(f.left()).toBeUndefined();
+  },
+);
 it("bind cleanup rechecks eligibility inside the lock when the chat becomes visible", async () => {
   const f = fixture();
   let eligible = true;

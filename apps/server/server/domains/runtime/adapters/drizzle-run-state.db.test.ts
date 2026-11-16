@@ -109,7 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const rows = await records(THREAD_A);
       expect(rows).toHaveLength(2);
       expect(first.version).toBe(eventSeqForJournalEvent(rows[0]?.seq as bigint, 0).toString());
-      expect((rows[1]?.payload as { runState: { items: unknown[] } }).runState.items).toHaveLength(
+      expect((rows[1]!.payload as { runState: { items: unknown[] } }).runState.items).toHaveLength(
         2,
       );
       expect(rows[1]?.seq as bigint).toBeGreaterThan(rows[0]?.seq as bigint);

@@ -54,10 +54,11 @@ export async function retainedPackageSkillMaps(
 export async function resolveAgentConfiguration(input: {
   revision: AgentRevision;
   store: Pick<AgentRevisionStore, "readSource" | "readPackageDefinitions">;
-  defaultModel: string | undefined;
+  modelFor(named?: string): string | undefined;
 }): Promise<ResolvedAgentConfiguration> {
   const { revision, store } = input;
-  const model = revision.definition.metadata.model ?? input.defaultModel;
+  const named = revision.definition.metadata.model;
+  const model = input.modelFor(named);
   if (!model) throw new AgentConfigurationError("No configured default model is available.");
 
   return { model, ...(await resolveAgentDependencies({ revision, store })) };

@@ -139,9 +139,12 @@ import {
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
+  createCachedPackageFetcher,
   createDrizzleAgentRevisionStore,
+  createGithubPackageFetcher,
   createInMemoryAgentRevisionStore,
   noLevelFiles,
+  type PackageFetcher,
   readBuiltinPackages,
 } from "../domains/packages/index.js";
 import {
@@ -295,7 +298,7 @@ import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
-import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
+import { MODEL_REGISTRY, modelFor, registryTokenRateSource } from "./gateway/registry.js";
 import {
   addressRefusal,
   createProcessMcpClient,
@@ -350,6 +353,7 @@ export type AppServices = {
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
@@ -454,6 +458,7 @@ export type ProductionAppPorts = {
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   accountSettings: AccountSettingsRepository;
   mcpConnections: McpConnections;
   mcpStore: ConnectionStore;
@@ -752,9 +757,10 @@ export async function createProductionAppPorts(input: {
         }
       }),
     builtins: await readBuiltinPackages(defaultModel),
-    defaultModel: () => gateway.getDefaultModel(),
+    modelFor: modelFor(gateway),
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons(gateway, model),
   });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
@@ -848,6 +854,9 @@ export async function createProductionAppPorts(input: {
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createCachedPackageFetcher(
+      createGithubPackageFetcher({ token: environment.FLOW_GITHUB_TOKEN }),
+    ),
     accountSettings,
     mcpConnections,
     mcpStore,
@@ -1208,7 +1217,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
-    defaultModel: () => ports.gateway.getDefaultModel(),
+    modelFor: modelFor(ports.gateway),
     repos: {
       threads: ports.threadRepos.threads,
       turns: ports.threadRepos.turns,
@@ -1376,6 +1385,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: ports.agentCatalog,
+    packageFetcher: ports.packageFetcher,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
@@ -1431,7 +1441,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
 }
 
-export function createInMemoryAppServices(): AppServices {
+/** `packageFetcher` is the live-network opt-in: without one, fetching a package throws. */
+export function createInMemoryAppServices(
+  options: { packageFetcher?: PackageFetcher } = {},
+): AppServices {
   const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
@@ -1616,9 +1629,10 @@ export function createInMemoryAppServices(): AppServices {
     store: agentRevisions,
     levelFiles: noLevelFiles,
     builtins: [],
-    defaultModel: () => "mock-model",
+    modelFor: (name) => name ?? "mock-model",
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons({ listModels: () => [] }, model),
   });
   return {
     gateway: {
@@ -1948,6 +1962,13 @@ export function createInMemoryAppServices(): AppServices {
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createCachedPackageFetcher(
+      options.packageFetcher ?? {
+        async fetchTree() {
+          throw new Error("Package fetching is unavailable in memory");
+        },
+      },
+    ),
     eventSink: createNoopEventSink(),
     accountSettings,
     mcpConnections: new Proxy({} as McpConnections, {

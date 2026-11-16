@@ -274,7 +274,7 @@ export interface OrchestratorDeps {
     | "recordInvokedSkill"
     | "replaceThreadBinding"
   >;
-  agentCatalog: Pick<BoundAgentCatalog, "resolveSkill" | "refreshBinding">;
+  agentCatalog: Pick<BoundAgentCatalog, "resolveSkill" | "refreshBinding" | "followRemovedModel">;
   toolRegistry: ToolRegistry;
   workContext: WorkContextReader;
   /** The writer's MCP connections: the prompt's catalogue and the tools' calls. Absent: none. */
@@ -1176,6 +1176,7 @@ async function prepareReferenceReads(input: {
     model: lazyThreadModel({
       thread: input.thread,
       agentRevisions: input.deps.agentRevisions,
+      agentCatalog: input.deps.agentCatalog,
       threads: input.deps.repos.threads,
       toolRegistry: input.deps.toolRegistry,
       gateway: input.deps.gateway,

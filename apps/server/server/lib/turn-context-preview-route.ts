@@ -6,7 +6,7 @@
 import type { TurnContextPreview } from "@meridian/contracts/threads";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../domains/observability/index.js";
-import type { AgentRevisionStore } from "../domains/packages/index.js";
+import type { AgentRevisionStore, BoundAgentCatalog } from "../domains/packages/index.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
 import type { WorkContextReader } from "../domains/runtime/loop/work-context.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
@@ -24,6 +24,7 @@ export interface TurnContextPreviewRouteDeps {
   repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks" | "promptBakes">;
   modelRequestDebug: ModelRequestDebugStore;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
+  agentCatalog: Pick<BoundAgentCatalog, "followRemovedModel">;
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
   workContext: WorkContextReader;
@@ -68,6 +69,7 @@ export async function handleGetTurnContextPreview(
     turns: conversation.turns,
     blocks: conversation.blocks,
     agentRevisions: deps.agentRevisions,
+    agentCatalog: deps.agentCatalog,
     gateway: deps.gateway,
     threads: deps.repos.threads,
     toolRegistry: deps.toolRegistry,

@@ -22,6 +22,7 @@ import {
   TreeDropScope,
   treeDropTargetKey,
 } from "../tree-drop/tree-drop";
+import { revealPlaced } from "../tree-reveal";
 import { DropChoiceMenu, type DropChoiceState } from "./DropChoiceMenu";
 import { activeDragSession } from "./drag-session";
 import {
@@ -47,12 +48,7 @@ import {
   resolveDrop,
 } from "./move-plan";
 import { planRestore, restoreLabel } from "./restore-drop";
-import {
-  type EntrySelection,
-  EntrySelectionProvider,
-  selectRows,
-  useEntrySelection,
-} from "./selection";
+import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
 type EntryListController = {
   selection: EntrySelection;
@@ -83,16 +79,12 @@ export function useEntryList({
 
   const runListMove = useCallback(
     (move: ReadyMove) =>
-      runMove({ actions, projectId, removal }, move.moves, (moved) =>
-        selectRows(latest.current.selection, moved),
-      ),
+      runMove({ actions, projectId, removal }, move.moves, latest.current.selection),
     [actions, projectId, removal],
   );
   const runListCopy = useCallback(
     (copy: ReadyCopy) =>
-      void runCopy({ actions, projectId, removal }, copy, (rows) =>
-        selectRows(latest.current.selection, rows),
-      ),
+      void runCopy({ actions, projectId, removal }, copy, latest.current.selection),
     [actions, projectId, removal],
   );
 
@@ -166,11 +158,17 @@ export function useEntryList({
         const dragging = activeDragSession();
         if (dragging?.source === "trash") {
           const plan = planRestore(latest.current, trashed(dragging), target);
-          if (plan.kind === "ready")
-            restoreInto(
-              plan.entries.map((entry) => ({ ref: trashRef(entry), name: entry.name })),
-              plan.destination,
-            );
+          if (plan.kind !== "ready") return;
+          const restored = plan.entries.map((entry) => ({
+            ref: trashRef(entry),
+            name: entry.name,
+          }));
+          restoreInto(restored, plan.destination);
+          revealPlaced(
+            plan.destination.parentId,
+            restored.map(({ ref }) => ref),
+            latest.current.selection,
+          );
           return;
         }
         const drop = resolve(target);

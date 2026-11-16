@@ -154,29 +154,29 @@ const record = (version: string, executionId: string | null, items: unknown[] = 
     execution: executionId ? { executionId, currentTurnId: null } : null,
   });
 
-describe.each([
-  EventType.RUN_FINISHED,
-  EventType.RUN_ERROR,
-])("durable owner after %s", (terminal) => {
-  it("replaces the original historical card with reads withheld and no new run", async () => {
-    vi.useFakeTimers();
-    const h = harness();
-    h.emit(runStarted("turn-1"), "1000");
-    h.emit(card("running"), "2000");
-    h.emit({ type: terminal, threadId: THREAD, runId: "turn-1" }, "3000");
-    await vi.advanceTimersByTimeAsync(260);
-    expect(h.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
-    const before = h.synced().turns[0];
-    expect(before?.blocks[0]?.id).toBe("card-1");
-    h.emit(card("completed"), "4000");
-    const after = h.synced().turns[0];
-    expect(after?.blocks[0]?.content).toMatchObject({
-      props: { status: "completed", toolCallId: "call-1", execution: "child-turn" },
+describe.each([EventType.RUN_FINISHED, EventType.RUN_ERROR])(
+  "durable owner after %s",
+  (terminal) => {
+    it("replaces the original historical card with reads withheld and no new run", async () => {
+      vi.useFakeTimers();
+      const h = harness();
+      h.emit(runStarted("turn-1"), "1000");
+      h.emit(card("running"), "2000");
+      h.emit({ type: terminal, threadId: THREAD, runId: "turn-1" }, "3000");
+      await vi.advanceTimersByTimeAsync(260);
+      expect(h.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
+      const before = h.synced().turns[0];
+      expect(before?.blocks[0]?.id).toBe("card-1");
+      h.emit(card("completed"), "4000");
+      const after = h.synced().turns[0];
+      expect(after?.blocks[0]?.content).toMatchObject({
+        props: { status: "completed", toolCallId: "call-1", execution: "child-turn" },
+      });
+      expect(after?.status).not.toBe("streaming");
+      expect(after?.blocks[0]?.sequence).toBe(before?.blocks[0]?.sequence);
     });
-    expect(after?.status).not.toBe("streaming");
-    expect(after?.blocks[0]?.sequence).toBe(before?.blocks[0]?.sequence);
-  });
-});
+  },
+);
 
 describe("the join", () => {
   it("subscribes only from a read, above every frame the cell holds", () => {

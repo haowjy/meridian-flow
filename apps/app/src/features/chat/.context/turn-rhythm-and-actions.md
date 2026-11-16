@@ -33,6 +33,21 @@ copy, and Hand off is already on the writer's message above it. Fork is not avai
 that spot, an accepted cost. It carries no "Stopped" label and no Retry: a stop is deliberate, and Retry would
 resend the same words.
 
+## Edit after Stop
+
+The writer's message above the chat's latest reply carries Edit when the writer stopped that
+reply (`cancelled`) and nothing closing follows it (`movedPast`); `findStoppedMessageId` in
+`TurnList.tsx` decides which message. Only that one: an older stopped reply's message is history,
+and the newest message is the one the writer would fix. A steer inside the reply makes the steer
+the message. Edit reads the stored blocks back through `userMessageBlocksFromTurn` and
+`composerDocFromHandedBack`, the same path a hand-back takes, so chips come back as chips, and
+puts them above what is typed through the draft owner's `putBack`. Every way words come back
+into a box (hand-back, a refused send's Edit, a deleted chat's transfer, Edit after Stop) goes
+through its one builder, `withReturned`: returned words above typed ones, one restorability check,
+the caret at the end of the returned words. The message and the stopped reply stay; Edit carries no
+receipt, so a second press puts the words back again. Branching an edited message (#628) is a
+different feature.
+
 ## The action row
 
 Copy takes `finalMessageItems` plus images. Markdown is the plain-text flavor and is

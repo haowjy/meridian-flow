@@ -5,7 +5,6 @@ import {
   type ChangeClassification,
   classifyChanges,
   diffBlocks,
-  type ItemRange,
   projectReview,
   REVIEW_BASE_FRAGMENT,
   type ReviewProjection,
@@ -42,11 +41,8 @@ export interface DraftDispositionView {
 const schema = buildDocumentSchema();
 
 export function createDraftDispositionReader(store: DraftDispositionStore) {
-  return async (
-    draftId: string,
-    options?: { writerRanges?: readonly ItemRange[] },
-  ): Promise<DraftDispositionView | null> => {
-    const cut = await store.capture(draftId, options);
+  return async (draftId: string): Promise<DraftDispositionView | null> => {
+    const cut = await store.capture(draftId);
     if (!cut) return null;
     const draft = cut.draft.documentDraft;
     if (!cut.draft.checkpoint) {
@@ -75,7 +71,6 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         snapshot: Y.snapshot(doc),
         userId: cut.userId,
         parts,
-        ...(cut.writers ? { writers: cut.writers } : {}),
       };
       const projection = projectReview(
         diffBlocks(

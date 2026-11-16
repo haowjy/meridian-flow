@@ -24,12 +24,13 @@ describe("parseContextUri", () => {
     expect(parseContextUri("unfiled://@w1/Untitled 1.md").ok).toBe(false);
     expect(canonicalContextUri("unfiled", "Untitled 1.md")).toBe("unfiled://Untitled 1.md");
   });
-  it.each([
-    "manuscript:////chapters//Chapter 1.md/",
-  ])("canonicalizes equivalent manuscript reference %s", (reference) => {
-    const parsed = parseContextUri(reference);
-    expect(parsed.ok && parsed.value.normalized).toBe("manuscript://chapters/Chapter 1.md");
-  });
+  it.each(["manuscript:////chapters//Chapter 1.md/"])(
+    "canonicalizes equivalent manuscript reference %s",
+    (reference) => {
+      const parsed = parseContextUri(reference);
+      expect(parsed.ok && parsed.value.normalized).toBe("manuscript://chapters/Chapter 1.md");
+    },
+  );
 
   it("recognizes qualifier chains through normalized separators", () => {
     expect(parseContextUri("scratch:////@w1//@w2/notes.md")).toMatchObject({
@@ -148,12 +149,12 @@ describe("parseContextUri", () => {
     );
   });
 
-  it.each([
-    "scratch://@w1/folder/@reserved/file.md",
-    "scratch://@w1/@c12/file.md",
-  ])("rejects reserved path segments: %s", (uri) => {
-    expect(parseContextUri(uri)).toMatchObject({ ok: false });
-  });
+  it.each(["scratch://@w1/folder/@reserved/file.md", "scratch://@w1/@c12/file.md"])(
+    "rejects reserved path segments: %s",
+    (uri) => {
+      expect(parseContextUri(uri)).toMatchObject({ ok: false });
+    },
+  );
 
   it("refuses to serialize authorities or paths the parser rejects", () => {
     expect(() =>
