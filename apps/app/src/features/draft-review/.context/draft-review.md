@@ -118,8 +118,9 @@ inline review (the item is `hidden`, `useReviewRoomOwner`) and its Apply waits o
 command, so no frozen click can follow the whole cut onto the same changes. A draft with no
 change on receipt comes back in the answer's `skipped` (`CommandOutcome.skipped`): that item
 shows no Applied notice and joins no Undo step, and a command that applied nothing has neither.
-Changes holds no room: its rows, their "N text changes" (`textChanges`, counted by the server)
-and Apply all read the list alone.
+Changes holds no room: its rows, their "N text changes" (`textChanges`, counted by the server's
+draft-effect projection, which wakes the list's owner when the number moves) and Apply all read
+the list alone.
 
 An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
 so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every document's click is

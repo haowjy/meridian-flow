@@ -441,7 +441,7 @@ export function createDrizzleDraftStore(
         if (!finalized) throw new Error(`Draft ${input.draftId} append was not finalized`);
         await recordAppendReceipts(tx, input, finalized, committed.rowIds);
         if (await chatJoinedDraft(tx, input.draftId, finalized.rows, committed.rowIds))
-          workProjection.draftAuthorJoined(input.draftId);
+          workProjection.draftRowChanged(input.draftId);
         await testHook("draft.append.beforeCommit");
         if (onAppendSequenced) {
           const { lockedAt, rowIds } = committed;
@@ -487,19 +487,25 @@ export function createDrizzleDraftStore(
     rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended"> {
     const write = async () => {
-      const [row] = await currentDrizzleDb(db)
+      const tx = currentDrizzleDb(db);
+      const [row] = await tx
+        .select({ textChanges: documentDrafts.textChanges })
+        .from(documentDrafts)
+        .where(
+          and(eq(documentDrafts.id, input.draftId), eq(documentDrafts.revision, input.revision)),
+        )
+        .for("update");
+      // The judgement no longer holds: the Work is not touched for it.
+      if (!row) throw new DraftWriteRollback({ status: "moved" });
+      await tx
         .update(documentDrafts)
         .set({
           hasEffect: input.hasEffect,
           textChanges: input.textChanges,
           hasEffectRevision: input.revision,
         })
-        .where(
-          and(eq(documentDrafts.id, input.draftId), eq(documentDrafts.revision, input.revision)),
-        )
-        .returning({ id: documentDrafts.id });
-      // The judgement no longer holds: the Work is not touched for it.
-      if (!row) throw new DraftWriteRollback({ status: "moved" });
+        .where(eq(documentDrafts.id, input.draftId));
+      if (row.textChanges !== input.textChanges) workProjection.draftRowChanged(input.draftId);
     };
     const { workId, rootThreadId } = input;
     try {
