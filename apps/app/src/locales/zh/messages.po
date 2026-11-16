@@ -7288,6 +7288,10 @@ msgstr ""
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
 msgstr ""
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document's Work was deleted, so this change can't be reversed."
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft changed since you looked. Check it, then discard again."
 msgstr ""

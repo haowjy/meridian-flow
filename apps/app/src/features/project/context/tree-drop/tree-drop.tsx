@@ -235,8 +235,8 @@ function targetAt(target: TreeDropTarget, edges: RowEdges | undefined, event: Dr
  * one back (moving from one edge to the other releases the first and its
  * spring at once, without waiting for `dragleave`), whatever its verdict is
  * by then. `reveal` shows what the row's own target holds (a collapsed folder
- * opens): after hovering it accepted for 600 ms, and on its drop, so the rows
- * that arrived are in view. Edges don't spring.
+ * opens) after hovering it accepted for 600 ms; what the drop places, its route
+ * shows (`revealPlaced`). Edges don't spring.
  */
 export function useTreeDropTarget(
   target: TreeDropTarget,
@@ -346,13 +346,10 @@ export function useTreeDropTarget(
         event.preventDefault();
         event.stopPropagation();
         const routes = latest.current.scope?.routes;
-        // Rows placed by a drop are shown by the move or copy that places them (`revealPlaced`).
+        // What a drop places is shown by the route that places it (`revealPlaced`).
         if (kind === "entries")
           routes?.entries?.drop(dropped, { x: event.clientX, y: event.clientY });
-        else {
-          routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
-          if (!dropped.position) latest.current.reveal?.();
-        }
+        else routes?.files?.drop(dropped, captureDrop(event.dataTransfer));
       },
     }),
     [hover, claim, resolve, verdictFor, release],

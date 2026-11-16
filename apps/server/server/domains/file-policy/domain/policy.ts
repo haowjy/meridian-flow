@@ -200,9 +200,9 @@ function branchOwnerTerms(owner: FileBranchOwnerFacts): Term[] {
   return workTerms({ id: owner.owner.workId, ...owner });
 }
 
-/** A deleted Work's files read until its purge; a write to one is refused as if it were gone. */
+/** A deleted Work's files read until its purge; a write to one is refused. */
 function workTerms(work: FileWorkFacts): Term[] {
-  if (work.deleted) return [{ cap: "read", limit: "not_found" }];
+  if (work.deleted) return [{ cap: "read", limit: "work_deleted" }];
   if (work.archived) {
     return [{ cap: "read", limit: "work_archived", work: { id: work.id, handle: work.handle } }];
   }

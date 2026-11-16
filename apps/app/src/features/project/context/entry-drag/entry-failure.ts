@@ -34,14 +34,20 @@ export type EntryContext = {
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
-/** A Copy the route refused: it has its own key, and Retry runs it again. */
-export type CopyFailure = {
+/** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
+type CopyFailure = {
   key: string;
   sources: readonly string[];
   destination: string | null;
+  refusal: CopyRefusal;
+  copy: ReadyCopy;
+};
+
+type CopyRefusal = {
   /** The route's answer, in its words, when it gave one. */
   reason: string | null;
-  copy: ReadyCopy;
+  /** Sending it again can't land it: the Work is closed, or the writer can't copy there. */
+  final: boolean;
 };
 
 /** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
@@ -62,28 +68,30 @@ export function runMove(
 }
 
 /** What the route said was wrong, when it said. */
-function reasonOf(error: unknown): string | null {
-  if (!isMeridianApiError(error)) return null;
+function refusalOf(error: unknown): CopyRefusal {
+  const retry = (reason: string | null) => ({ reason, final: false });
+  const final = (reason: string) => ({ reason, final: true });
+  if (!isMeridianApiError(error)) return retry(null);
   const { details } = error;
   const reason = details && typeof details === "object" && "reason" in details && details.reason;
-  if (reason === "source_behind") return t`The latest edits hadn't reached the server.`;
-  if (reason === "no_draft") return t`That Work no longer has a draft of it.`;
+  if (reason === "source_behind") return retry(t`The latest edits hadn't reached the server.`);
+  if (reason === "no_draft") return retry(t`That Work no longer has a draft of it.`);
   switch (error.code) {
     case "not_found":
     case "stale_source":
-      return t`A source is no longer there.`;
+      return retry(t`A source is no longer there.`);
     case "destination_missing":
     case "stale_target":
-      return t`The destination is no longer there.`;
+      return retry(t`The destination is no longer there.`);
     case "permission_denied":
-      return t`You can't copy there.`;
+      return final(t`You can't copy there.`);
     case "work_archived":
     case "work_deleted":
-      return t`The Work was closed.`;
+      return final(t`The Work was closed.`);
     case "work_missing":
-      return t`That Work isn't available.`;
+      return final(t`That Work isn't available.`);
     default:
-      return null;
+      return retry(null);
   }
 }
 
@@ -110,7 +118,7 @@ function copyFailureTitle(
   return reason ? `${said} ${reason}` : said;
 }
 
-/** Toasts a refused Copy; Retry runs it again. */
+/** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
 function showCopyFailure(
   context: EntryContext,
   failure: CopyFailure,
@@ -118,8 +126,10 @@ function showCopyFailure(
 ): void {
   notifyFailure({
     key: failure.key,
-    title: copyFailureTitle(failure.sources, failure.destination, failure.reason),
-    onRetry: () => void runCopy(context, failure.copy, selection),
+    title: copyFailureTitle(failure.sources, failure.destination, failure.refusal.reason),
+    onRetry: failure.refusal.final
+      ? undefined
+      : () => void runCopy(context, failure.copy, selection),
   });
 }
 
@@ -140,7 +150,7 @@ export async function runCopy(
         key: entryToast(context.projectId, crypto.randomUUID()),
         sources: copy.copies.map(({ name }) => name),
         destination: copy.destinationName,
-        reason: reasonOf(error),
+        refusal: refusalOf(error),
         copy,
       },
       selection,

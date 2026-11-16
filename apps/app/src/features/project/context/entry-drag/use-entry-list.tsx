@@ -22,6 +22,7 @@ import {
   TreeDropScope,
   treeDropTargetKey,
 } from "../tree-drop/tree-drop";
+import { revealPlaced } from "../tree-reveal";
 import { DropChoiceMenu, type DropChoiceState } from "./DropChoiceMenu";
 import { activeDragSession } from "./drag-session";
 import {
@@ -157,11 +158,17 @@ export function useEntryList({
         const dragging = activeDragSession();
         if (dragging?.source === "trash") {
           const plan = planRestore(latest.current, trashed(dragging), target);
-          if (plan.kind === "ready")
-            restoreInto(
-              plan.entries.map((entry) => ({ ref: trashRef(entry), name: entry.name })),
-              plan.destination,
-            );
+          if (plan.kind !== "ready") return;
+          const restored = plan.entries.map((entry) => ({
+            ref: trashRef(entry),
+            name: entry.name,
+          }));
+          restoreInto(restored, plan.destination);
+          revealPlaced(
+            plan.destination.parentId,
+            restored.map(({ ref }) => ref),
+            latest.current.selection,
+          );
           return;
         }
         const drop = resolve(target);

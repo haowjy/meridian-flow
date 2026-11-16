@@ -29,22 +29,13 @@ function personPrincipal(userId: string): Principal {
   return { accountId: userId as UserId };
 }
 
-/**
- * 404 hides existence; an archived Work's files are 403 `work_archived`, and a deleted Work's,
- * which still read, `work_deleted`.
- */
-export function throwFileAccessDenied(
-  denial: Pick<FileAccessDenied, "reason" | "level" | "facts">,
-): never {
-  // Only a reader is told: to anyone else the Work stays hidden.
-  if (
-    denial.level === "read" &&
-    (denial.facts?.ownerWork?.deleted || denial.facts?.branchOwner?.deleted)
-  )
-    throwContextWorkUnavailableHttpError("work_deleted");
+/** 404 hides existence; an archived Work's files are 403 `work_archived`, a deleted Work's 404 `work_deleted`. */
+export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
   switch (denial.reason) {
     case "not_found":
       throw createError({ statusCode: 404, message: "Document not found" });
+    case "work_deleted":
+      return throwContextWorkUnavailableHttpError("work_deleted");
     case "work_archived":
       return throwHttpInterrupt(
         meridianErrorFromSystem("work_archived", "This Work is archived and read-only."),

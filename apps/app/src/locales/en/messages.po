@@ -7288,6 +7288,10 @@ msgstr "This document's chat was deleted. Restore the chat to reverse this chang
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
 msgstr "This document's Work is archived. Unarchive the Work to reverse this change."
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document's Work was deleted, so this change can't be reversed."
+msgstr "This document's Work was deleted, so this change can't be reversed."
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft changed since you looked. Check it, then discard again."
 msgstr "This draft changed since you looked. Check it, then discard again."

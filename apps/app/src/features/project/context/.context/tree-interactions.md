@@ -295,14 +295,21 @@ A row no list will take (read-only, not open) toasts "Couldn't move chapter-3 to
 ("Couldn't move 3 items to Act 2." for several) with Retry for the rows it refused. The server
 refuses no move; one into a Work that closed meanwhile bounces on its row ("Not moved").
 
-Move…, Copy to… and a drop report the same way, through `runMove` and `runCopy`
-(`entry-drag/entry-failure.ts`), which call `revealPlaced` (`tree-reveal.ts`) at once: the sidebar
-shows the source whose tree holds the destination (a tab, or the foot's Scratch), that tree opens
-the destination folder and the folders above it, and the placed rows are selected and take focus
-as they arrive. A Copy knows its copies' ids before the server answers (the browser mints them), so
-it shows them the same way without waiting; a refused Copy leaves the selection and toasts with
-Retry. Expansion stays each tree's: the request goes by folder id, and a tree that mounts just
-after it (the tab it switched to) still takes it.
+Everything that places rows shows them through one `revealPlaced` (`tree-reveal.ts`), called at
+once: Move…, Copy to… and row drops (through `runMove` and `runCopy`, `entry-drag/entry-failure.ts`),
+a Trash restore drop, and an import (dropped files, or Import… on a folder). The sidebar shows the
+source that shows the destination folder, that tree opens the folder and the folders above it, and
+the placed rows are selected and take focus as they arrive. A Copy knows its copies' ids before the
+server answers (the browser mints them), so it selects them without waiting; a refused Copy leaves
+the selection and toasts, with Retry unless the refusal is final (the Work closed, or the writer
+can't copy there). An import's rows get their ids from the server, so it selects nothing. Expansion
+stays each tree's: the request goes by folder id, and a tree that mounts just after it (the tab it
+switched to) still takes it.
+
+Which source shows an entry is one rule (`sourceShowing`, `SourcesBody.tsx`), used for main's
+document, a placement and a creation request: the source on screen when it lists the entry, else
+Agents for what it lists, else the entry's own tree. Agents and Your files both list `~/.agents/`,
+so a placement inside the pane on screen never switches it.
 
 Placement is optimistic, exactly as for Move…: the record shows at once, and the server never
 refuses it (a change to a Work that closed meanwhile bounces on its row). Verdicts likewise resolve each
@@ -456,7 +463,7 @@ several trees (Scratch and its earlier notes) resolves the right one. The
 scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one
 block. Hovering a
-closed folder or area for 600 ms reveals it, and so does an accepted drop on it. The phone shell has no drag.
+closed folder or area for 600 ms reveals it; what a drop places, its route shows (`revealPlaced`). The phone shell has no drag.
 
 A scope holds two routes: `entries` (rows dragged inside the app) and `files` (desktop files, imported
 into the target's folder; see the [import feature](../../../import/AGENTS.md)). The routes share the
@@ -471,7 +478,7 @@ appeared to accept but landed elsewhere would mislead.
 A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, source: "trash" })`), carrying
 the entry's node (a document or a folder, `trashRef`). The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
-`restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per entry and a
+`restoreInto` on `DocumentTrashRestoreProvider` and shows the rows like a move (`revealPlaced`). It appends a `restore` record per entry and a
 `move` to the destination as one gesture (`TreeActions.restore` with its destination), one Undo step.
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
 refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
