@@ -7,23 +7,23 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { RowWord } from "@/components/app/RowWord";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
 /**
- * Beside a drafted document's name when the manuscript no longer has it: Apply brings it back.
+ * A drafted document's row word when the manuscript no longer has it: Apply brings it back.
  * Nothing when it's still there.
  */
 export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem | undefined }) {
   if (!isDeletedFromManuscript(item)) return null;
   return (
-    <span
-      title={t`Deleted from the manuscript. Apply brings it back.`}
-      className="shrink-0 text-xs font-normal text-muted-foreground"
-    >
-      <Trans>Deleted</Trans>
-    </span>
+    <RowWord
+      tone="note"
+      word={<Trans>Deleted</Trans>}
+      sentence={t`Deleted from the manuscript. Apply brings it back.`}
+    />
   );
 }
 

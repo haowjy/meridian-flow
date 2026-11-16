@@ -5,9 +5,10 @@ import { lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
 
 /**
- * What a sidebar row says about what just happened to it, in the row's trailing place (ListRow's
- * `notice`), never on a line of its own: "Undo" in jade, or a muted word with a mark ("Moved
- * back", "Applied"). Hover, keyboard focus and a long press show the sentence ("Deleted just now.
+ * What a row says about what happened to it, in the row's trailing place (ListRow's `notice`),
+ * never on a line of its own: "Undo" in jade, or a muted word with or without a mark ("Moved
+ * back", "Applied", "Deleted"). Every short word on a row whose reason is a sentence is one, so
+ * a phone reaches the sentence too. Hover, keyboard focus and a long press show the sentence ("Deleted just now.
  * Undo puts it back."); a click or a tap does the word's one action, and a word with none shows
  * the sentence, which stays until the next tap elsewhere. The host decides how long the word
  * shows: until the writer's next action there, or leaving.
@@ -27,8 +28,11 @@ export function RowWord({
   sentence: ReactNode;
   /** The button's name in full when the word alone doesn't say what it acts on ("Undo delete of Chapter 4"). */
   label?: string;
-  /** `action`: the word is a command. `done`: a fact with a check. `warning`: something came back. */
-  tone?: "action" | "done" | "warning";
+  /**
+   * `action`: the word is a command. `done`: a fact with a check. `warning`: something came back.
+   * `note`: a fact with no mark, or one the word draws itself.
+   */
+  tone?: "action" | "done" | "warning" | "note";
   onAction?: () => void;
   /** The action is running: the word stays, inert. */
   pending?: boolean;

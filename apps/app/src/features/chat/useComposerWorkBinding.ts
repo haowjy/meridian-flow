@@ -157,6 +157,7 @@ export function useComposerWorkBinding({
             works: allWorks,
             noWork: worksQuery.noWork,
             refreshing: worksQuery.isFetching,
+            handleOf: worksQuery.handleOf,
           };
   const busy = state.view.kind === "changing";
   const operation: WorkPickerOperation = {

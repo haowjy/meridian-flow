@@ -19,6 +19,7 @@ import { BookOpen, Bot, FilePlus, FolderPlus, Plus } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
 import type { TreeViewResult } from "@/client/query/useProjectTree";
+import { RowWord } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -35,7 +36,6 @@ import {
   ListRowField,
 } from "@/components/ui/list-row";
 import { ListSectionHeader } from "@/components/ui/list-section";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useInlineEdit } from "@/components/ui/use-inline-edit";
 import type { TreeActions } from "@/core/project-tree/tree-actions";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
@@ -258,7 +258,7 @@ function outOfUseInside(
 
 /**
  * A closed folder's count. Beside a package's Save it gives way to the name: a dot and the
- * number, said in full to a screen reader and in its tooltip.
+ * number, the full count its sentence, on a long press too.
  */
 function InsideCount({
   inside,
@@ -270,13 +270,12 @@ function InsideCount({
   if (!short)
     return <span className="shrink-0 px-1 text-muted-foreground text-xs">{inside.word}</span>;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className="flex shrink-0 items-center gap-1 px-1 text-muted-foreground text-xs tabular-nums"
-          aria-label={inside.word}
-          role="img"
-        >
+    <RowWord
+      tone="note"
+      label={inside.word}
+      sentence={inside.word}
+      word={
+        <span className="flex items-center gap-1 tabular-nums">
           <span
             aria-hidden
             className={cn(
@@ -290,9 +289,8 @@ function InsideCount({
           />
           {inside.count}
         </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{inside.word}</TooltipContent>
-    </Tooltip>
+      }
+    />
   );
 }
 

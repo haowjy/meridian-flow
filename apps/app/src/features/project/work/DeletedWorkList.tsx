@@ -7,7 +7,9 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { withGone } from "@/components/app/RowWord";
+import { WorkHandle } from "@/components/app/WorkIdentity";
 import { ListLine } from "@/components/ui/list-row";
+import type { WorkHandleOf } from "@/lib/work-name";
 import { RuledList } from "../RuledList";
 import { GoneWord } from "./GoneWord";
 import { type WorkPlace, workPlace } from "./useWorkDeletion";
@@ -16,10 +18,12 @@ import type { GoneEntry, ListedWorkEntry } from "./work-list-model";
 
 export function DeletedWorkList({
   entries,
+  handleOf,
   list,
   onRestore,
 }: {
   entries: readonly (ListedWorkEntry | GoneEntry)[];
+  handleOf: WorkHandleOf;
   /** This list's name, for the place a restored row leaves. */
   list: string;
   onRestore: (work: Work, place: WorkPlace) => void;
@@ -49,11 +53,16 @@ export function DeletedWorkList({
         key,
         node:
           entry.state === "gone" ? (
-            <DeletedRow name={entry.work.name} word={<GoneWord entry={entry} />} />
+            <DeletedRow
+              name={entry.work.name}
+              handle={handleOf(entry.work)}
+              word={<GoneWord entry={entry} />}
+            />
           ) : (
             <>
               <DeletedRow
                 name={entry.work.name}
+                handle={handleOf(entry.work)}
                 word={
                   <button
                     type="button"
@@ -82,11 +91,20 @@ export function DeletedWorkList({
   );
 }
 
-function DeletedRow({ name, word }: { name: string; word: React.ReactNode }) {
+function DeletedRow({
+  name,
+  handle,
+  word,
+}: {
+  name: string;
+  handle: string | null;
+  word: React.ReactNode;
+}) {
   return (
     <div className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5">
-      <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-muted-foreground">{name}</span>
+      <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className="truncate text-sm font-medium text-muted-foreground">{name}</span>
+        <WorkHandle handle={handle} />
       </div>
       {word}
     </div>

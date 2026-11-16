@@ -63,7 +63,7 @@ export function WorkCollection({
   onNew: () => void;
   deletion: WorkDeletion;
 }) {
-  const { works, deleted, creations, isError, isFetching, refetch } = useWorks(projectId);
+  const { works, deleted, creations, handleOf, isError, isFetching, refetch } = useWorks(projectId);
   const now = useMinuteClock();
   const { restore } = useWorkMutations(projectId);
   const restoring = useRestoringWorkIds(projectId);
@@ -90,6 +90,7 @@ export function WorkCollection({
       return (
         <WorkRow
           work={{ name: entry.work.name, goal: null }}
+          handle={handleOf(entry.work)}
           now={now}
           onOpen={() => undefined}
           gone
@@ -97,7 +98,7 @@ export function WorkCollection({
         />
       );
     const { work, state, failure } = entry;
-    const shared = { work, now, onOpen: () => onOpen(work.id) };
+    const shared = { work, handle: handleOf(work), now, onOpen: () => onOpen(work.id) };
     switch (state) {
       case "creating":
         return (
@@ -213,6 +214,7 @@ export function WorkCollection({
         ) : view === "deleted" ? (
           <DeletedWorkList
             entries={entries.deleted}
+            handleOf={handleOf}
             list={`works:${projectId}:deleted`}
             onRestore={(work, place) => {
               rememberWorkPlace(work.id, place);

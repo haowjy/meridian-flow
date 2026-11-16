@@ -6,12 +6,14 @@
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
+import { WorkHandle } from "@/components/app/WorkIdentity";
 import { ListRow } from "@/components/ui/list-row";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
 
 export function WorkRow({
   work,
+  handle,
   now,
   onOpen,
   actions,
@@ -21,6 +23,8 @@ export function WorkRow({
 }: {
   /** A Work still being created has no status yet; a purged one has no age. */
   work: Pick<Work, "name" | "goal"> & Partial<Pick<Work, "status" | "id" | "lastActivityAt">>;
+  /** Its handle, where another Work shares its name (`WorkHandleOf`). */
+  handle?: string | null;
   now: number;
   onOpen: () => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
@@ -45,7 +49,12 @@ export function WorkRow({
         }}
         title={
           <WorkTitleLine
-            title={<span className="truncate">{work.name}</span>}
+            title={
+              <span className="flex min-w-0 items-baseline gap-1.5">
+                <span className="truncate">{work.name}</span>
+                <WorkHandle handle={handle} />
+              </span>
+            }
             status={work.status}
           />
         }

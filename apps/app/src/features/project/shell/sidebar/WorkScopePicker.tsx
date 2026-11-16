@@ -5,7 +5,7 @@ import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
-import { WorkIdentity } from "@/components/app/WorkIdentity";
+import { WorkHandle, WorkIdentity } from "@/components/app/WorkIdentity";
 import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
@@ -48,7 +48,7 @@ export function WorkScopePicker({
   /** Opens the Manage Works dialog: new, rename, archive, restore, delete, and a Work's changes. */
   onManage: () => void;
 }) {
-  const { works, deleted, noWork } = useWorks(projectId);
+  const { works, deleted, noWork, handleOf } = useWorks(projectId);
   const bringBack = useBringWorkBack(projectId);
   const { threads } = useProjectThreads(projectId);
   const needsYou = useMemo(() => countNeedsYou(threads), [threads]);
@@ -79,6 +79,7 @@ export function WorkScopePicker({
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
               <WorkIdentity
                 work={shown ?? noWork}
+                handle={shown ? handleOf(shown) : null}
                 unavailableLabel={t`None`}
                 className={cn("min-w-0", role.row)}
               />
@@ -136,6 +137,7 @@ export function WorkScopePicker({
               <PickRow
                 key={work.id}
                 name={work.name}
+                handle={handleOf(work)}
                 selected={work.id === scoped?.id}
                 onSelect={() => onPick(work.id)}
                 detail={<WorkState work={work} needsYou={needsYou.get(work.id) ?? 0} />}
@@ -154,6 +156,7 @@ export function WorkScopePicker({
                 <PickRow
                   key={work.id}
                   name={work.name}
+                  handle={handleOf(work)}
                   selected={work.id === scoped?.id}
                   onSelect={() => onPick(work.id)}
                   detail={null}
@@ -172,18 +175,23 @@ export function WorkScopePicker({
 
 function PickRow({
   name,
+  handle,
   selected,
   onSelect,
   detail,
 }: {
   name: string;
+  handle?: string | null;
   selected: boolean;
   onSelect: () => void;
   detail: React.ReactNode;
 }) {
   return (
     <DropdownMenuItem selected={selected} onSelect={onSelect}>
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className="min-w-0 truncate">{name}</span>
+        <WorkHandle handle={handle} />
+      </span>
       {detail}
     </DropdownMenuItem>
   );

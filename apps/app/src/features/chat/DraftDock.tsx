@@ -124,8 +124,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         <span className="min-w-0 truncate text-foreground">
           {multi ? <ChangeCount count={dock.reviewCount} /> : only ? fileLabel(only) : null}
         </span>
-        {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
       </FoldToggle>
+      {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
       {trouble}
       {trouble || multi || dock.changeCount === null ? null : (
         <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">

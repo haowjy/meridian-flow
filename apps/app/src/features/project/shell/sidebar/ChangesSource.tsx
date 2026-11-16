@@ -655,14 +655,9 @@ function ChangeRow({
         disabled={!opens}
         controlProps={drag}
         icon={fileKindIcon(file.contextLocation?.path ?? name)}
-        title={
-          <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className={cn("truncate", deleted && "line-through")}>{name}</span>
-            <DeletedFromManuscriptTag item={file.draft} />
-          </span>
-        }
+        title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file, textChanges)}
-        notice={notice}
+        notice={notice ?? <DeletedFromManuscriptTag item={file.draft} />}
         revealActions={!touch}
         actions={
           <ReviewActions

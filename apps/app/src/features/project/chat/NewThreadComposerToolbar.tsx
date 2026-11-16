@@ -19,13 +19,14 @@ import {
 import type { AgentChoice } from "@/features/agents/AgentPicker";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { workDisplayName } from "@/lib/work-name";
+import { type WorkHandleOf, workDisplayName } from "@/lib/work-name";
 
 export function NewThreadComposerToolbar({
   projectId,
   work,
   selectedWorkId,
   works,
+  handleOf,
   noWork,
   worksStatus,
   agent: selectedAgent,
@@ -40,6 +41,7 @@ export function NewThreadComposerToolbar({
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
+  handleOf: WorkHandleOf;
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   agent: CreationAgent | null;
@@ -62,6 +64,7 @@ export function NewThreadComposerToolbar({
     work,
     selectedWorkId,
     works,
+    handleOf,
     noWork,
     worksStatus,
     onWorkChange,
@@ -80,6 +83,7 @@ function useProspectiveWorkControl({
   work,
   selectedWorkId,
   works,
+  handleOf,
   noWork,
   worksStatus,
   onWorkChange,
@@ -88,6 +92,7 @@ function useProspectiveWorkControl({
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
+  handleOf: WorkHandleOf;
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   onWorkChange(work: Work): void;
@@ -103,7 +108,7 @@ function useProspectiveWorkControl({
       ? { status: "error" as const, retry: onRetryWorks }
       : worksStatus === "loading" || !noWork
         ? { status: "loading" as const }
-        : { status: "ready" as const, works, noWork, refreshing: false };
+        : { status: "ready" as const, works, noWork, refreshing: false, handleOf };
   const view = deriveWorkPickerViewModel(catalog, query, false);
 
   const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`None`;
@@ -121,7 +126,11 @@ function useProspectiveWorkControl({
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger binding={trigger} ariaLabel={label}>
-        <WorkIdentity work={work} unavailableLabel={unavailableLabel} />
+        <WorkIdentity
+          work={work}
+          handle={work ? handleOf(work) : null}
+          unavailableLabel={unavailableLabel}
+        />
       </ComposerCurrentValueTrigger>
     ),
     panel: {
