@@ -1,4 +1,5 @@
 // Forward inverse receipts, cold lineage tracing, classification and admission.
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   intersectLineageRanges,
@@ -704,9 +705,59 @@ function computePreparedInverse(
   }
 }
 
-/** One immutable-view lineage for host inspection and inverses; discard before mutation. */
+/**
+ * One `compute` as bytes, for a thread that holds no Y.Doc of the caller's: the live document's
+ * update, the update of the draft view it lands in (`null` for live) and the history. A Y.Doc
+ * rebuilt from an update plans the same inverse as the one it encodes.
+ */
+export interface InverseJob {
+  live: Uint8Array;
+  view: Uint8Array | null;
+  history: readonly InversePart[];
+  selection: readonly InverseSelection[];
+  actionId: string;
+}
+export function runInverseJob(
+  job: InverseJob,
+  allocateClient: InverseAction["allocateClient"] = allocateDocumentClient,
+): ComputedInverse {
+  const cold = (update: Uint8Array) => {
+    const doc = new Y.Doc({ gc: false });
+    Y.applyUpdate(doc, update);
+    return doc;
+  };
+  const live = cold(job.live);
+  const view = job.view && cold(job.view);
+  try {
+    const roots = prepareEditRoots(live, job.history);
+    return (view ? roots.forView(view) : roots).compute(job.selection, {
+      actionId: job.actionId,
+      allocateClient,
+    });
+  } finally {
+    live.destroy();
+    view?.destroy();
+  }
+}
+
+/**
+ * One immutable-view lineage for host inspection and inverses; discard before mutation. The
+ * lineage is built on first use: it costs a string key per restored clock, which a host that
+ * plans the inverse on another thread never needs here.
+ */
 export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): PreparedEditRoots {
-  return preparedRoots(new Lineage(doc, history));
+  return preparedRoots(
+    doc,
+    history,
+    once(() => new Lineage(doc, history)),
+  );
+}
+function once<T>(make: () => T): () => T {
+  let made: { value: T } | undefined;
+  return () => {
+    made ??= { value: make() };
+    return made.value;
+  };
 }
 export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
@@ -721,25 +772,38 @@ export interface PreparedEditRoots {
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
 }
-function preparedRoots(index: Lineage): PreparedEditRoots {
-  const { doc, ordered: history } = index;
+function preparedRoots(
+  doc: Y.Doc,
+  history: readonly InversePart[],
+  lineage: () => Lineage,
+): PreparedEditRoots {
   return {
     forView(view) {
-      return preparedRoots(new Lineage(view, history, index));
+      return preparedRoots(
+        view,
+        history,
+        once(() => new Lineage(view, history, lineage())),
+      );
     },
     classify(parts) {
+      const index = lineage();
       return parts.map((part) => classify(index, part));
     },
     compute(selection, action) {
-      return computePreparedInverse(doc, history, selection, action, index);
+      const index = lineage();
+      return computePreparedInverse(doc, index.ordered, selection, action, index);
     },
     preview(selection, action) {
-      return computePreparedInverse(doc, history, selection, action, index, { preview: true });
+      const index = lineage();
+      return computePreparedInverse(doc, index.ordered, selection, action, index, {
+        preview: true,
+      });
     },
     roots(effect: EditEffect): string[] {
-      return index.rootsFor(effect);
+      return lineage().rootsFor(effect);
     },
     inspect(roots: Iterable<string>): { root: string; identity: string | null }[] {
+      const index = lineage();
       return [...roots].map((root) => {
         const effective = index.effective(root);
         return { root, identity: index.isVisible(effective) ? effective : null };
