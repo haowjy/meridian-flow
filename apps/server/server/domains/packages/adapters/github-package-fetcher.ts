@@ -78,7 +78,10 @@ const isSkipped = (segments: readonly string[]) =>
   segments.slice(0, -1).some((segment) => SKIPPED_DIRECTORIES.has(segment)) ||
   ARCHIVE_NAME.test(segments.at(-1) ?? "");
 
-export function createGithubPackageFetcher(options: { token?: string } = {}): PackageFetcher {
+export function createGithubPackageFetcher(
+  options: { token?: string; fetch?: typeof fetch } = {},
+): PackageFetcher {
+  const send = options.fetch ?? fetch;
   /** Follows redirects by hand so every hop is checked against the host list, and the token reaches only the API host. */
   async function request(url: string, budget: FetchBudget, accept: string): Promise<Response> {
     let target = url;
@@ -95,7 +98,7 @@ export function createGithubPackageFetcher(options: { token?: string } = {}): Pa
       if (options.token && hostname === API_HOST) headers.Authorization = `Bearer ${options.token}`;
       let response: Response;
       try {
-        response = await fetch(target, { headers, redirect: "manual", signal: budget.signal });
+        response = await send(target, { headers, redirect: "manual", signal: budget.signal });
       } catch (error) {
         budget.checkTime();
         throw new PackageFetchError("upstream", `GitHub request failed: ${String(error)}`);
