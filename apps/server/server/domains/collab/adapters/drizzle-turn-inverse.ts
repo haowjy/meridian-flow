@@ -499,12 +499,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         : treeInverse.draftStates(query.threadId, query.turnId),
     async treeSteps(query) {
       const tree = await treePlanOf(query);
-      return { acting: tree.steps.length, gone: tree.gone.length };
+      return {
+        acting: tree.steps.length,
+        taken: tree.taken.length + tree.undoneByCard,
+        stayed: tree.stayed,
+      };
     },
-    treeUndoneByCard: (query) =>
-      query.model || !query.turnId
-        ? Promise.resolve(false)
-        : treeHistory.undoneByCard(query.threadId, query.turnId),
     async readHistory(documentId) {
       return (await history([documentId])).map((part) => ({ ...part, disposition: "pending" }));
     },
@@ -573,7 +573,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           }
         };
         const runTree = async () => {
-          if (!tree.steps.length && !tree.gone.length) return;
+          if (!tree.steps.length && !tree.stayed.length && !tree.taken.length && !tree.undoneByCard)
+            return;
           const now = await treePlanOf(query);
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))

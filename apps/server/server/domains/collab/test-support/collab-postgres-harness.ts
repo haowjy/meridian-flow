@@ -546,7 +546,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     agentEdit: () => testAgentEdit,
     reverseTurn: turnReversal.reverseTurn,
     reversalOwners: turnInverse.reversalOwners,
-    getTurnReceiptChip: turnInverse.getTurnReceiptChip,
+    getDocumentAndTreeChip: turnInverse.getDocumentAndTreeChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,

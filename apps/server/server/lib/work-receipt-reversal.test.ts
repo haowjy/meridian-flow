@@ -11,7 +11,7 @@ import { createInMemoryWorkRepository } from "../domains/projects/index.js";
 import { rebindThreadWork } from "../domains/threads/index.js";
 import {
   combineWorkReversalOutcome,
-  getWorkReceiptReversalAvailability,
+  getTurnReceiptChip,
   reverseWorkReceipts,
 } from "./work-receipt-reversal.js";
 
@@ -37,6 +37,7 @@ function harness(receipts: WorkReceipt[]) {
       workContextNotices: { workChanged: vi.fn(async () => {}) },
       transaction: works.transaction,
       stopThreads: vi.fn(async () => {}),
+      documentSync: { getDocumentAndTreeChip: async () => null },
       blocks: {
         listByTurn: async () =>
           receipts.map((workReceipt) => ({
@@ -97,7 +98,7 @@ describe("Work receipt reversal", () => {
     ).toBe("partial_failure");
   });
 
-  it("undoes update/archive to exact captured states", async () => {
+  it("undoes update/archive to the exact captured state", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });
     await h.works.update(work.id, { name: "Arc revised" });
@@ -245,14 +246,14 @@ describe("Work receipt reversal", () => {
       listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
     });
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: false, undone: false });
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toBeNull();
     await expect(
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([]);
   });
 
-  it("plans A to B to C updates in reverse order", async () => {
+  it("undoes A to B to C updates in reverse order, then reads Undone", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "A" });
     await h.works.update(work.id, { name: "C" });
@@ -266,8 +267,8 @@ describe("Work receipt reversal", () => {
     });
 
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: true, undone: false });
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toMatchObject({ control: "undo" });
     await expect(
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([
@@ -275,6 +276,9 @@ describe("Work receipt reversal", () => {
       expect.objectContaining({ status: "reversed" }),
     ]);
     await expect(h.works.findById(work.id)).resolves.toMatchObject({ name: "A" });
+    await expect(
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toMatchObject({ state: "undone", control: "view_change" });
   });
 
   it("reports external C to D divergence without overwriting it", async () => {
@@ -288,8 +292,8 @@ describe("Work receipt reversal", () => {
     });
 
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: true, undone: false });
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toMatchObject({ control: "undo" });
     await h.works.update(work.id, { name: "D" });
     await expect(
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),

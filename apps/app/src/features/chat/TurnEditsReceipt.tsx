@@ -44,8 +44,8 @@ import {
   type ReversalRefusal,
   refusedReversalStatus,
   reversalRefusalCopy,
-  skipCauseCopy,
-  treeFaultLocation,
+  textSkipCauseCopy,
+  treeSkipSentence,
 } from "./turn-receipt-copy";
 import { workReceiptLine } from "./work-receipt-copy";
 
@@ -90,19 +90,20 @@ export function TurnEditsReceipt({
 
   const drafts = receipt?.drafts;
   const trees = receipt?.trees;
-  // A part the refusal line already names (a blocked or missing folder, or a document gone
-  // again) isn't listed a second time, nor is a drafted document's apply or discard: its row
-  // says what became of it.
+  // The tree change the refusal line already names isn't listed a second time, nor is a
+  // drafted document's apply or discard: its row says what became of it.
   const skips = (actionSkips ?? receipt?.skips ?? []).filter(
     (skip) =>
-      !(skip.kind === "tree" && commandRefusal?.status === skip.cause) &&
+      !(commandRefusal?.status === "not_undone" && skip === commandRefusal.stayed) &&
       !(
         (drafts?.[skip.documentId] || trees?.[skip.documentId]) &&
         (skip.cause === "applied" || skip.cause === "discarded")
       ),
   );
   const names = useOwnerNames();
-  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal, names) : undefined;
+  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal) : undefined;
+  const isFolder = (documentId: string) =>
+    documents.some((document) => document.documentId === documentId && document.folder);
   const hasEditedDocuments = documents.length > 0;
   // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
@@ -127,23 +128,20 @@ export function TurnEditsReceipt({
         outcome.status === "partial" && outcome.acceptedParts
           ? null
           : refusedReversalStatus(outcome.status);
-      // A Work-only turn has no document half, so its "nothing to undo" is a
-      // fact about documents that were never part of the claim. With a Work
-      // restored, repeating it would report a successful restore as refusal.
-      const documentHalfEmpty =
-        !hasEditedDocuments && restored.length > 0 && status === "nothing_to_undo";
       // A part a closed Work kept as it was is listed below with its reason; it isn't a refusal.
       const onlyReturned =
         !!outcome.skips?.length && outcome.skips.every((skip) => skip.cause === "returned");
-      const refusal = status && !documentHalfEmpty && !onlyReturned ? status : null;
+      const refusal = status && !onlyReturned ? status : null;
+      // Several tree changes that stayed are listed, each with why, under the list's heading.
+      const stayed = outcome.skips?.length === 1 ? outcome.skips[0] : undefined;
       setCommandRefusal(
-        refusal
-          ? {
-              status: refusal,
-              at: treeFaultLocation(refusal, outcome.skips),
-              denial: outcome.denial,
-            }
-          : null,
+        refusal === "not_undone"
+          ? stayed?.kind === "tree"
+            ? { status: refusal, stayed, folder: isFolder(stayed.documentId) }
+            : null
+          : refusal
+            ? { status: refusal, denial: outcome.denial }
+            : null,
       );
       const notices = [
         ...(outcome.landings ?? []).map((landing) => treeLandingLine(landing, names)),
@@ -230,7 +228,11 @@ export function TurnEditsReceipt({
                 {skips.map((skip, index) => (
                   <li key={`${skip.documentId}:${index}`}>
                     <SkipSubject skip={skip} />
-                    <span className="ml-1">{skipCauseCopy(skip)}</span>
+                    <span className="ml-1">
+                      {skip.kind === "tree"
+                        ? treeSkipSentence(skip, isFolder(skip.documentId))
+                        : textSkipCauseCopy(skip)}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -630,24 +632,12 @@ function UndoneWord({ state }: { state: TurnReceiptChip["state"] | undefined }) 
 }
 
 /**
- * What a part that stayed was: its text excerpts, or the document a move or delete named. A
- * part stopped by a place (taken, its folder gone, moved again) names the whole place, so the
+ * What a part that stayed was: its text excerpts, or the place a tree change named, whole, so the
  * writer can find it.
  */
 function SkipSubject({ skip }: { skip: TurnInverseSkip }) {
   const names = useOwnerNames();
-  if (skip.kind === "tree") {
-    const at = skip.at ?? skip.uri;
-    return (
-      <>
-        {skip.cause === "ancestor_taken" ||
-        skip.cause === "folder_missing" ||
-        skip.cause === "superseded"
-          ? documentLocationName(at, names)
-          : documentDisplayName(at)}
-      </>
-    );
-  }
+  if (skip.kind === "tree") return <>{documentLocationName(skip.at ?? skip.uri, names)}</>;
   if (!skip.before && !skip.after) return <>{documentDisplayName(skip.uri)}</>;
   return (
     <>

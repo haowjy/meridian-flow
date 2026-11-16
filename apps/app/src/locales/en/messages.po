@@ -441,19 +441,19 @@ msgstr "{answered, plural, one {# answered} other {# answered}}"
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} can no longer be taken back."
 msgstr "{change} can no longer be taken back."
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: it has writing in it since."
 msgstr "{change} stayed: it has writing in it since."
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: it was changed since."
 msgstr "{change} stayed: it was changed since."
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: its Work is closed."
 msgstr "{change} stayed: its Work is closed."
 
@@ -1148,8 +1148,8 @@ msgid "A chat you had open was deleted."
 msgstr "A chat you had open was deleted."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "A document blocks its folder path"
-msgstr "A document blocks its folder path"
+#~ msgid "A document blocks its folder path"
+#~ msgstr "A document blocks its folder path"
 
 #: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "A document blocks part of this location. Move or rename it, then apply again."
@@ -1816,24 +1816,24 @@ msgstr "Can't restore into {destinationName}"
 #~ msgstr "Can't undo"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: {place} was moved or deleted after this change."
-msgstr "Can't undo: {place} was moved or deleted after this change."
+#~ msgid "Can't undo: {place} was moved or deleted after this change."
+#~ msgstr "Can't undo: {place} was moved or deleted after this change."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: a document blocks its folder path. Move it, then try again."
-msgstr "Can't undo: a document blocks its folder path. Move it, then try again."
+#~ msgid "Can't undo: a document blocks its folder path. Move it, then try again."
+#~ msgstr "Can't undo: a document blocks its folder path. Move it, then try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
-msgstr "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
+#~ msgid "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
+#~ msgstr "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: the document was moved or deleted after this change."
-msgstr "Can't undo: the document was moved or deleted after this change."
+#~ msgid "Can't undo: the document was moved or deleted after this change."
+#~ msgstr "Can't undo: the document was moved or deleted after this change."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: the folder it would return to is gone."
-msgstr "Can't undo: the folder it would return to is gone."
+#~ msgid "Can't undo: the folder it would return to is gone."
+#~ msgstr "Can't undo: the folder it would return to is gone."
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/creation/CreationDialog.tsx
@@ -1941,8 +1941,8 @@ msgid "Changed after you picked it."
 msgstr "Changed after you picked it."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Changed since"
-msgstr "Changed since"
+#~ msgid "Changed since"
+#~ msgstr "Changed since"
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2416,8 +2416,8 @@ msgid "Couldn't be read"
 msgstr "Couldn't be read"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Couldn't be reversed"
-msgstr "Couldn't be reversed"
+#~ msgid "Couldn't be reversed"
+#~ msgstr "Couldn't be reversed"
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
@@ -3187,8 +3187,8 @@ msgid "Deleted just now. Undo puts it back."
 msgstr "Deleted just now. Undo puts it back."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Deleted since"
-msgstr "Deleted since"
+#~ msgid "Deleted since"
+#~ msgstr "Deleted since"
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -4172,8 +4172,8 @@ msgid "Its document wasn't restored"
 msgstr "Its document wasn't restored"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its folder is gone"
-msgstr "Its folder is gone"
+#~ msgid "Its folder is gone"
+#~ msgstr "Its folder is gone"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
@@ -4640,12 +4640,12 @@ msgid "Moved just now. Undo puts it back."
 msgstr "Moved just now. Undo puts it back."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Moved or deleted after this change"
-msgstr "Moved or deleted after this change"
+#~ msgid "Moved or deleted after this change"
+#~ msgstr "Moved or deleted after this change"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Moved since"
-msgstr "Moved since"
+#~ msgid "Moved since"
+#~ msgstr "Moved since"
 
 #. placeholder {0}: documentLocationName(landing.landedAt, names)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -5092,6 +5092,7 @@ msgstr "Not undone"
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr "Not undone: {label} was saved again since."
 
+#: src/features/chat/turn-receipt-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone."
 msgstr "Not undone."
@@ -6923,15 +6924,15 @@ msgstr "The change could not be confirmed. Try again."
 #~ msgid "The change didn't fit the current draft. The AI will read it again."
 #~ msgstr "The change didn't fit the current draft. The AI will read it again."
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The change to this document"
 msgstr "The change to this document"
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The change to this folder"
 msgstr "The change to this folder"
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The delete"
 msgstr "The delete"
 
@@ -6987,15 +6988,15 @@ msgstr "The last Save left it out. Fix these and save again."
 msgid "The latest edits hadn't reached the server."
 msgstr "The latest edits hadn't reached the server."
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The move"
 msgstr "The move"
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The new document"
 msgstr "The new document"
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The new folder"
 msgstr "The new folder"
 
@@ -7007,7 +7008,7 @@ msgstr "The project could not be reached. The link itself is fine."
 msgid "the project's"
 msgstr "the project's"
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The rename"
 msgstr "The rename"
 
@@ -7019,7 +7020,7 @@ msgstr "The requested passage in {name} wasn't specific enough."
 msgid "The requested passage wasn't specific enough."
 msgstr "The requested passage wasn't specific enough."
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "The restore from Trash"
 msgstr "The restore from Trash"
 

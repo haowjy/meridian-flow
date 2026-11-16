@@ -62,7 +62,7 @@ its chip choose from one selection (`prepare`): a taken part is neither a step n
 model's `undo` and `revert` list a taken part as `already removed`, and `read(format: "edits")`
 offers neither for it, because the listing asks the same planner. A model's forward revert is its
 own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
-(`getTurnReceiptChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
+(`getDocumentAndTreeChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
 the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
 card's undo receipts, whatever has happened to the nodes since), `partly` when parts stayed, else
 `expired` (the same rule as for tree receipts below). Effective action state is indexed per
@@ -97,16 +97,16 @@ be removed or restored, else `changed`; a part an Undo already took out is `chan
 `kernelCause` words it `already_undone` from the action index. Un-Apply inverts a group the same
 way as the card.
 A card's reversal decides which tree steps can still act before it plans or admits any text
-(`plan` in `adapters/drizzle-turn-tree-inverse.ts`): a restore in live acts only through deletes that
-still hold its nodes in Trash (`deleteStands`; the writer's restore or later delete, or a purge,
-leaves one nothing to take back), and a drafted Undo only while its Work's branch places the node.
-A step that can't act is skipped with `superseded` and never run, so one purged document never
+(`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from `undoChange`'s answers as the lists
+stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's branch
+places the node. A step that can't act is a skip and never runs, so one purged document never
 refuses the rest of the reply. The text targets and the grants come from the steps that act. A
 card never targets the text of a document created by the turn, even after the create was undone;
-the tree Undo takes the document back whole.
+the tree Undo takes the document back whole (`createdDocuments`).
 The Work's draft stays as it is, with any other turn's change in it.
 A reversal's result names a document in Trash by where it last stood.
-A turn's edit targets include its create transition even when the document is empty. A draft-scoped
+A turn's edit targets include its create transition even when the document is empty. A create
+that Undo removed stays addressable through that immutable target. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
 the Work of the branch its part was drafted in (`document_edit_parts.draft_branch_id`,
 recorded with the part, so a draft purged from Trash keeps its target, and reads what the purge
@@ -160,13 +160,15 @@ A tree change (create, move, rename, delete, restore, folders included) is its o
 with its records in the project's tree list, and a failed reply leaves what its tree calls did.
 A chat card's Undo of a turn takes the reply's tree receipts back too, in the same
 `reverse_turn` command as the text (`adapters/drizzle-turn-tree-inverse.ts`, after the text
-steps, newest receipt first). The receipts one list holds go back in one update of that list, so a browser showing
+steps, newest receipt first; a receipt the model's own `undo` reversed in the reply is part of
+what the reply did, and the card leaves it). The receipts one list holds go back in one update of that list, so a browser showing
 it redraws once for the whole Undo, not once a receipt. A create's receipt holds the folders the
 create made on the way (outermost first), so its Undo takes them back with it. It
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
-receipt, so the two histories are one. A receipt something changed since answers `superseded`
-(a skip, as `cant_undo_changed` is the model's answer). A reply that touched both a project's
+receipt, so the two histories are one. The model's `undo` reads the same fate (`runTreeUndo`):
+`taken` answers `reversed` and records the empty reversal, a receipt that stayed answers
+`cant_undo_changed`, the card's skip. A reply that touched both a project's
 files and `user://` locks both lists; nothing moves between them, so each receipt goes back in
 its own list. A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
@@ -247,10 +249,35 @@ after the commit, outside the scope.
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain
-those outcomes and refresh the turn query. A reversal that reversed nothing because a document
-blocks an ancestor folder, the folder is missing, or the document moved or was deleted again
-answers `ancestor_taken`, `folder_missing` or `superseded` (per document too), never `expired`. Every skipped part carries a typed `cause` (`TurnInverseSkipCause`) and the
-app words it; a tree skip names the path its entry was shown at.
+those outcomes and refresh the turn query. Every skipped part carries a typed `cause`
+(`TurnInverseSkipCause`) and the app words it; a tree skip names the path its entry was shown
+at, its `op`, and `changed_since` or `purged`.
+
+Each tree receipt's fate is decided once, from `undoChange`'s own answers for its records
+(`changeUndone` in `@meridian/project-tree`), and the planner, the reversal's status, the chip
+and the model's `undo` all read it. The card's planner (`drizzle-turn-tree-inverse.ts` `plan`)
+asks with `undoAnswer`, which writes nothing, inside its one read of each list:
+- `acts`: some record would be taken back. Only these are steps the chip offers Undo for.
+- `taken`: every record's opposite already stands (the writer restored what the model
+  deleted, or deleted what it created). It counts as taken back: the Undo records an empty
+  reversal for it, the status is `reversed` when nothing else stayed, and the chip reads
+  Undone. A receipt an earlier card Undo took counts the same, so a second Undo, concurrent or
+  from a stale tab, answers `reversed` too; text an earlier card Undo took out does the same.
+- `changed_since` or `purged`: the receipt stays, a skip with that cause, in the chip's skips
+  and the Undo's alike. A reply whose only parts stayed answers `not_undone`.
+
+The Work half (`lib/work-receipt-reversal.ts`) has fates of its own, one per Work, from where
+the turn started and ended it: `taken` when the Work stands as the turn found it (the writer
+deleted the Work the model made, or an earlier Undo did), `acts` when it stands as the turn left
+it, and `stayed` anywhere else (the writer renamed it since). A taken Work counts as reversed, so
+a second Undo answers `reversed`; a stayed one is a part the Undo left (`partial`, or `expired`
+when nothing else was taken back); only a Work step that throws is `partial_failure`. It runs
+after every document outcome, and the press's status comes from one count of the parts reversed,
+stayed and failed across documents, tree and Works (`combineWorkReversalOutcome`). The reply's
+chip is composed once (`getTurnReceiptChip` there; the collab port's `getDocumentAndTreeChip`
+knows nothing of Works, so nothing else answers the card with it):
+Undo while any part acts, Undone when every part is taken, `partly` when some stayed, with the
+documents' and tree's skips; a Work has no skip kind of its own.
 
 A released closed draft has no bytes from which to describe a receipt's prose.
 Live has unrelated Yjs identity, so skipped inverse parts can retain their cause

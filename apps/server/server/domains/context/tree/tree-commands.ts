@@ -9,6 +9,7 @@
 import { canonicalLeaf, type Filetype, storedFilename } from "@meridian/contracts/protocol";
 import {
   type Actor,
+  changeUndone,
   childrenOf,
   deleteCovering,
   descendantsOf,
@@ -16,6 +17,7 @@ import {
   LIVE,
   listRecords,
   type NodeKind,
+  settledRecords,
   sourceIdOf,
   sourceRoot,
   type TrashEntry,
@@ -1038,8 +1040,14 @@ export function runTreeCommand(
 }
 
 export type UndoneTree = {
-  /** Records the package refused to take back: something changed that fact since. */
-  outcomes: Array<"changed_since" | "purged" | "already" | "unknown">;
+  /**
+   * What the Undo did with the receipt (`changeUndone`): `taken` when every record's opposite
+   * stood already; `discarded` when a Discard took every record instead, which leaves the
+   * card's Undo nothing to do either.
+   */
+  fate: ReturnType<typeof changeUndone> | "discarded";
+  /** Whether some record stayed while others were taken back. */
+  partial: boolean;
   made: MadeRecord[];
   /** Whether any opposite record is in live (a drafted change an Apply landed is taken back there). */
   inLive: boolean;
@@ -1071,12 +1079,12 @@ export function runTreeUndo(
     concurrent: new Map(),
   };
   const before = scope.writer.view(scope.view);
-  const outcomes: UndoneTree["outcomes"] = [];
+  const answers: Parameters<typeof changeUndone>[0][number][] = [];
   let inLive = scope.view.draft === null;
   for (const entry of [...records].reverse()) {
     const back = undoChange(scope.writer, scope.view, scope.actor, entry.record);
-    if (typeof back === "string") outcomes.push(back);
-    else {
+    answers.push(typeof back === "string" ? back : "undoes");
+    if (typeof back !== "string") {
       if (back.draft === null) inLive = true;
       remember(cx, back.id, entry.node);
     }
@@ -1091,8 +1099,16 @@ export function runTreeUndo(
     return children.length > 0 ? [{ id, children }] : [];
   });
   const here = after.nodes.get(subject);
+  const stayed = changeUndone(answers.filter((answer) => answer !== "undoes"));
+  const fate = changeUndone(answers);
+  const settled = settledRecords(scope.writer.doc);
+  const discarded = records.every((entry) => {
+    const was = settled.get(entry.record)?.fate;
+    return was === "discarded" || was === "dropped";
+  });
   return {
-    outcomes,
+    fate: fate === "taken" && discarded ? "discarded" : fate,
+    partial: cx.made.length > 0 && stayed !== "taken",
     made: cx.made,
     inLive,
     // A create taken back leaves its node in Trash: the answer names the path it was asked by.

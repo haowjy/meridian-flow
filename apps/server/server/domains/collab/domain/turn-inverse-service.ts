@@ -112,12 +112,13 @@ export interface TurnInverseStore {
    */
   ownersOf(query: TurnInverseQuery, userId: UserId | undefined): Promise<OwnerLocks>;
   /**
-   * The reply's tree receipts the card's Undo would take back (`acting`), and those it finds
-   * with nothing left to act on, which it reports as skipped (`gone`).
+   * The reply's tree receipts by what the card's Undo does with each: those it would take back
+   * (`acting`), those already taken back (`taken`: by an earlier card Undo, or their opposite
+   * stands), and those that stay, with why (`stayed`).
    */
-  treeSteps(query: TurnInverseQuery): Promise<{ acting: number; gone: number }>;
-  /** Whether the card's Undo already took back any of the reply's tree changes. */
-  treeUndoneByCard(query: TurnInverseQuery): Promise<boolean>;
+  treeSteps(
+    query: TurnInverseQuery,
+  ): Promise<{ acting: number; taken: number; stayed: TurnInverseSkip[] }>;
   /** What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`). */
   treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnTreeState>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
@@ -134,7 +135,7 @@ export interface TurnInverseStore {
     updates: Uint8Array[];
     /** Steps that couldn't run; the rest ran. A model inverse refuses whole instead. */
     skips: TurnInverseSkip[];
-    /** Tree receipts of the reply taken back by the same command (a card's, never the model's). */
+    /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
     treeReversed: number;
     /** Text parts committed, by document and then by where they landed: the branch whose draft took them, null for live. */
     reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
@@ -342,13 +343,15 @@ function draftStates(
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
-    async getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
+    async getDocumentAndTreeChip(
+      threadId: ThreadId,
+      turnId: TurnId,
+    ): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
         // A reply that only changed the tree has no text to capture, and its card still takes it back.
-        const treeUndone = await store.treeUndoneByCard(query);
-        const treeUndo = (await store.treeSteps(query)).acting;
-        if (!documents.length && !treeUndone && !treeUndo) return null;
+        const tree = await store.treeSteps(query);
+        if (!documents.length && !tree.acting && !tree.taken && !tree.stayed.length) return null;
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
         );
@@ -359,18 +362,12 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const allDiscarded =
           drafts !== undefined &&
           documents.every(({ documentId }) => drafts[documentId] === "discarded");
-        if ((countAccepted(undo) && !allDiscarded) || treeUndo)
-          return {
-            state: "live-active",
-            control: "undo",
-            drafts,
-            trees,
-            skips: undo.flatMap((plan) => plan.skips),
-          };
-        // A part an Undo took out has no skip, so the skips left are the parts that stayed.
-        const skips = undo.flatMap((plan) => plan.skips);
+        // A part an Undo took out has no skip, so the skips are the parts that stay.
+        const skips = [...undo.flatMap((plan) => plan.skips), ...tree.stayed];
+        if ((countAccepted(undo) && !allDiscarded) || tree.acting)
+          return { state: "live-active", control: "undo", drafts, trees, skips };
         const state =
-          treeUndone || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
+          tree.taken || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
         return { state, control: "view_change", drafts, trees, skips };
       });
     },
@@ -387,9 +384,9 @@ export function createTurnInverseService(store: TurnInverseStore) {
       query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
-        const { plans } = prepare(store, documents, query, randomUUID());
+        const { plans, undoneByWriter } = prepare(store, documents, query, randomUUID());
         const tree = await store.treeSteps(query);
-        const treeSteps = tree.acting + tree.gone;
+        const treeSteps = tree.acting + tree.taken + tree.stayed.length;
         if (!query.documentIds && !plans.length && !treeSteps)
           return { status: "nothing_to_undo", documents: [] };
         const committed =
@@ -417,17 +414,19 @@ export function createTurnInverseService(store: TurnInverseStore) {
             0,
           );
         const skips = [...plans.flatMap((plan) => plan.skips), ...committed.skips];
-        // A reply of tree changes alone, each since changed again: the fault is the answer.
-        const onlySuperseded =
-          !plans.length && skips.length > 0 && skips.every((skip) => skip.cause === "superseded");
+        // A reply of tree changes alone, each of which stayed: the skips say why.
+        const treeStayed =
+          !plans.length && skips.length > 0 && skips.every((skip) => skip.kind === "tree");
+        // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
         return {
-          status: accepted
-            ? skips.length
-              ? "partial"
-              : "reversed"
-            : onlySuperseded
-              ? "superseded"
-              : "expired",
+          status:
+            accepted || undoneByWriter
+              ? skips.length
+                ? "partial"
+                : "reversed"
+              : treeStayed
+                ? "not_undone"
+                : "expired",
           // One row per destination a document's steps reversed in, or one for its refusal; a
           // document with no text to reverse (it left, or comes back, with its node) has none.
           documents: plans.flatMap((plan): DocumentReversalResult[] => {

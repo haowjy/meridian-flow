@@ -154,6 +154,34 @@ export function undoChange(
   return done.record;
 }
 
+/**
+ * What `undoChange` would answer now, writing nothing: `undoes` when it would write the opposite
+ * record. Each record is judged alone, against the list as it stands.
+ */
+export function undoAnswer(
+  writer: TreeWriter,
+  asked: View,
+  recordId: string,
+): "undoes" | NotUndone {
+  const done = undoFacts(writer, asked, "system", recordId);
+  return typeof done === "string" ? done : "undoes";
+}
+
+/**
+ * What an Undo of one change, made of several records, does with it, from each record's answer:
+ * `acts` while any record is taken back; else the change stays when any record stays
+ * (`unknown` read as `purged`); else every record's opposite already stands, and the change
+ * counts as taken back (`taken`).
+ */
+export function changeUndone(
+  answers: readonly ("undoes" | NotUndone)[],
+): "acts" | "taken" | "changed_since" | "purged" {
+  if (answers.includes("undoes")) return "acts";
+  if (answers.includes("changed_since")) return "changed_since";
+  if (answers.some((answer) => answer !== "already")) return "purged";
+  return "taken";
+}
+
 /** `undoChange`, saying which fact of a move that set a name stays (`kept`), when one does. */
 export function undoFacts(
   writer: TreeWriter,
