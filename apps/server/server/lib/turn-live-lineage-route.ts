@@ -141,7 +141,6 @@ function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocu
     ...(folder.ownerKey
       ? { scope: "draft" as const, owner: folder.ownerKey }
       : { scope: "live" as const }),
-    ...(folder.tree ? { tree: folder.tree } : {}),
   };
 }
 
@@ -161,10 +160,6 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
   };
 }
 
-/**
- * The file tree's order: its sections in their order, then within a source rank, then id, at
- * each level (`placement`). A row its view no longer places goes last, in the order it came.
- */
 /** The file tree's sections, in the sidebar's order. */
 const SECTIONS: readonly ContextUriScheme[] = [
   ...PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
@@ -172,6 +167,10 @@ const SECTIONS: readonly ContextUriScheme[] = [
   "uploads",
 ];
 
+/**
+ * The file tree's order: its sections in their order, then within a source rank, then id, at
+ * each level (`placement`). A row its view no longer places goes last, in the order it came.
+ */
 function inTreeOrder<Row extends { placement?: TreePlacement; uri?: string; at?: string }>(
   rows: Row[],
 ): Row[] {
