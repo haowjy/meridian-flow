@@ -6,6 +6,8 @@
  * the server's admission rule, not part of the format.
  */
 
+import { CONTEXT_URI_SCHEME_NAMES } from "./context-uri.js";
+
 export const EXPORT_MARKER_FILENAME = "meridian-export.json";
 
 export const EXPORT_AREAS = ["manuscript", "kb", "unfiled"] as const;
@@ -13,9 +15,9 @@ export type ExportArea = (typeof EXPORT_AREAS)[number];
 
 /** Top-level folder each area gets in an export, unless a marker names others. */
 export const DEFAULT_EXPORT_AREA_NAMES: Readonly<Record<ExportArea, string>> = {
-  manuscript: "Manuscript",
-  kb: "Knowledge Base",
-  unfiled: "Unfiled",
+  manuscript: CONTEXT_URI_SCHEME_NAMES.manuscript,
+  kb: CONTEXT_URI_SCHEME_NAMES.kb,
+  unfiled: CONTEXT_URI_SCHEME_NAMES.unfiled,
 };
 
 /** The top-level folder that holds Works; an import never lands it, so no area may use it. */

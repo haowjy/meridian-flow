@@ -6,6 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import {
+  CONTEXT_URI_SCHEME_NAMES,
   CONTEXT_URI_SCHEMES,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
@@ -78,8 +79,7 @@ export function schemeLabel(scheme: ProjectContextTreeScheme | null | undefined)
     case "uploads":
       return t`Uploads`;
     case "agents":
-      // The writer, the model and stored text spell the project's Agents folder this way.
-      return ".agents";
+      return CONTEXT_URI_SCHEME_NAMES.agents;
   }
 }
 

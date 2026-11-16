@@ -49,7 +49,7 @@ describe("parseExportMarker", () => {
 
   it("maps folder names back to areas", () => {
     const parsed = parseExportMarker(marker());
-    expect(parsed.status === "valid" && parsed.areas.get("Knowledge Base")).toBe("kb");
+    expect(parsed.status === "valid" && parsed.areas.get("Knowledge")).toBe("kb");
     expect(EXPORT_MARKER_FILENAME).toBe("meridian-export.json");
   });
 });
