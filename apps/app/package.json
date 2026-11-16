@@ -68,7 +68,6 @@
     "@workos/authkit-tanstack-react-start": "^0.12.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dexie": "4.4.7",
     "dompurify": "3.4.18",
     "lib0": "^0.2.120",
     "lowlight": "3.3.0",
