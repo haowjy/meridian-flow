@@ -1,10 +1,12 @@
-/** Attested deletion clears browser copies. Only the visible surface transfers words. */
+/** Attested deletion clears browser copies after the chat's unsent words move to its project's New chat box. */
+
 import {
   type ComposerDraftScope,
   type ComposerSessionDraft,
   composerSessionDraft,
   storedChatDraftIds,
 } from "@/client/composer-drafts";
+import type { ComposerDraftSnapshot } from "@/components/app/composer";
 import {
   plainComposerDoc,
   serializeComposerDraft,
@@ -23,8 +25,6 @@ import { probeChatDestination, type ThreadAvailability } from "./thread-availabi
 
 export type DeletedChatSurface = {
   visible(): boolean;
-  title(): string | null;
-  recordIds(): Set<string>;
   leave(moved: boolean): void;
 };
 export type DeletedChatPorts = {
@@ -34,26 +34,42 @@ export type DeletedChatPorts = {
   forgetOrder(): void;
   draft(accountId: string, scope: ComposerDraftScope): ComposerSessionDraft;
   surfaces(): DeletedChatSurface[];
+  /** Runs `run` once this tab is visible or focused: at once when it already is. */
+  attended(run: () => void): void;
+  /** A fresh read of whether the chat is still deleted. */
+  probe(): Promise<ThreadAvailability | "present" | "unknown">;
   lock: SubmissionLock;
 };
-const ownDeletes = new Map<string, { epoch: number; held: boolean }>();
 /**
- * The writer's own delete, published before DELETE can race an admission response. While it is
- * held (its Undo can still put the chat back) no cleanup runs: the composer's words and the
- * chat's records stay. `release` lets the own-delete cleanup run; `cancel` forgets the delete.
+ * What the writer's own delete moved into New chat, for Undo to move back: the New chat box as it
+ * was before and as the move left it (so a box the writer has typed in since is left alone), and
+ * the moved words.
  */
-export function beginOwnChatDelete(accountId: string, threadId: string) {
+type OwnMove = {
+  projectId: string;
+  before: ComposerDraftSnapshot | null;
+  after: ComposerDraftSnapshot | null;
+  snapshots: ComposerDraftSnapshot[];
+};
+const ownMoves = new Map<string, OwnMove>();
+/**
+ * Undo of the writer's own delete: the chat's words go back into its box and out of New chat,
+ * only while New chat still holds exactly what the move left. A box the writer has typed in since
+ * keeps the one copy and its note, and nothing goes back.
+ */
+export function restoreOwnDeletedChatWords(
+  accountId: string,
+  threadId: string,
+  draft: DeletedChatPorts["draft"] = composerSessionDraft,
+) {
   const key = surfaceKey(accountId, threadId);
-  const mark = { epoch: getChatSubmissionEpoch(), held: true };
-  ownDeletes.set(key, mark);
-  return {
-    release: () => {
-      mark.held = false;
-    },
-    cancel: () => {
-      if (ownDeletes.get(key) === mark) ownDeletes.delete(key);
-    },
-  };
+  const move = ownMoves.get(key);
+  if (!move) return;
+  ownMoves.delete(key);
+  const target = draft(accountId, { kind: "new-chat", id: move.projectId });
+  if (!target.holds(move.after)) return;
+  if (draft(accountId, { kind: "chat", id: threadId }).prependSnapshots(move.snapshots))
+    target.withdraw(threadId, move.before);
 }
 const surfaces = new Map<string, Set<DeletedChatSurface>>();
 const surfaceKey = (accountId: string, threadId: string) => JSON.stringify([accountId, threadId]);
@@ -80,9 +96,29 @@ function browserPorts(accountId: string, threadId: string): DeletedChatPorts {
     forgetOrder: () => forgetChatSubmissionOrder(accountId, threadId),
     draft: composerSessionDraft,
     surfaces: () => [...(surfaces.get(surfaceKey(accountId, threadId)) ?? [])],
+    attended: (run) => {
+      if (document.visibilityState === "visible") return run();
+      const onAttended = () => {
+        if (document.visibilityState !== "visible" && !document.hasFocus()) return;
+        document.removeEventListener("visibilitychange", onAttended);
+        window.removeEventListener("focus", onAttended);
+        run();
+      };
+      document.addEventListener("visibilitychange", onAttended);
+      window.addEventListener("focus", onAttended);
+    },
+    probe: () => probeChatDestination(accountId, threadId),
     lock: browserSubmissionLock,
   };
 }
+/**
+ * Moves a deleted chat's unsent words into its project's New chat box. The chat's unsent messages
+ * are shared by every tab (localStorage), so a tab takes them only where they land in front of the
+ * writer. The tab that deleted the chat, and a tab with a surface for it, claim at once. A tab with
+ * no surface never claims from the verdict it was given: it waits until it is visible or focused
+ * and asks the server again, so an Undo or a restore since ends it. The cross-tab lock keeps it to
+ * one claimant, and a tab that finds nothing left to take moves nothing.
+ */
 export async function cleanDeletedChat(
   accountId: string,
   threadId: string,
@@ -91,43 +127,43 @@ export async function cleanDeletedChat(
   ports = browserPorts(accountId, threadId),
   underSubmissionLock = false,
   eligible = () => true,
+  title: string | null = null,
 ): Promise<boolean> {
   const key = surfaceKey(accountId, threadId);
-  const ownMark = ownDeletes.get(key);
-  const clean = async () => {
+  const own = reason === "own-delete";
+  if (own) ownMoves.delete(key);
+  const claim = async () => {
     if (!ports.current() || !eligible()) return false;
-    const mark = ownDeletes.get(key);
-    const ownDelete = mark?.epoch === getChatSubmissionEpoch();
-    if (ownDelete && mark.held) return false;
     const panes = ports.surfaces();
-    const visible =
-      reason === "deleted" && !ownDelete ? panes.find((pane) => pane.visible()) : undefined;
     const source = ports.draft(accountId, { kind: "chat", id: threadId });
     const snapshot = ports.records();
     if (snapshot === null) return false;
     const records = snapshot.filter((entry) => entry.threadId === threadId);
+    // The box remembers its project for a chat no pane is showing (a reload, another tab's delete).
+    const project = projectId ?? source.project ?? records.find((e) => e.projectId)?.projectId;
+    const unsent = records.filter((entry) => !entry.control).sort(compareSubmissions);
+    const snapshots = unsent.map(
+      (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
+    );
+    const receipts = unsent.map((entry) => entry.recordId);
+    const box = source.initialDraft;
+    if (box && serializeComposerDraft(box.doc).text) snapshots.push(box);
     let moved = false;
-    if (visible && projectId) {
-      const shown = visible.recordIds();
-      const drafts = records.filter((entry) => shown.has(entry.recordId)).sort(compareSubmissions);
-      const snapshots = drafts.map(
-        (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
-      );
-      const receipts = drafts.map((entry) => entry.recordId);
-      const box = source.initialDraft;
-      if (box && serializeComposerDraft(box.doc).text) {
-        snapshots.push(box);
-      }
-      if (snapshots.length) {
-        const target = ports.draft(accountId, { kind: "new-chat", id: projectId });
-        moved = target.prependSnapshots(snapshots, receipts, {
-          threadId,
-          title: visible.title(),
-          count: snapshots.length,
-        });
-        // Preserve the source if the tab cannot durably receive its words.
-        if (!moved) return false;
-      }
+    if (snapshots.length) {
+      // No project to receive them: the words stay in this box and nothing is cleared.
+      if (!project) return false;
+      const target = ports.draft(accountId, { kind: "new-chat", id: project });
+      const before = target.initialDraft;
+      moved = target.prependSnapshots(snapshots, receipts, {
+        threadId,
+        title,
+        count: snapshots.length,
+        ...(own ? { own: true } : {}),
+      });
+      // Preserve the source if the tab cannot durably receive its words.
+      if (!moved) return false;
+      if (own)
+        ownMoves.set(key, { projectId: project, before, after: target.initialDraft, snapshots });
     }
     source.handoff();
     for (const entry of records) {
@@ -137,13 +173,22 @@ export async function cleanDeletedChat(
     for (const pane of panes) pane.leave(moved);
     return true;
   };
-  try {
-    return await (underSubmissionLock
-      ? clean()
-      : ports.lock.run(accountId, threadId, new AbortController().signal, clean));
-  } finally {
-    if (reason === "own-delete" && ownDeletes.get(key) === ownMark) ownDeletes.delete(key);
-  }
+  const claimUnderLock = () =>
+    ports.lock.run(accountId, threadId, new AbortController().signal, claim);
+  // The caller's lock covers only an immediate claim; a deferred one runs after it was released.
+  if (own || ports.surfaces().length) return underSubmissionLock ? claim() : claimUnderLock();
+  ports.attended(
+    () =>
+      void (async () => {
+        if (!ports.current() || !eligible()) return;
+        if (!ports.surfaces().length) {
+          const verdict = await ports.probe();
+          if (verdict !== "deleted" && verdict !== "project-deleted") return;
+        }
+        await claimUnderLock();
+      })().catch(reportError),
+  );
+  return false;
 }
 
 /** Once per bind, bounded read-only probes. Not-found and inconclusive results are inert. */
@@ -187,11 +232,13 @@ export async function cleanDeletedChatsOnBind(
     ...records.map((entry) => entry.threadId),
     ...storedChatDraftIds(accountId),
   ]);
-  const offScreen = (id: string) =>
-    !addressed(id) &&
-    ![...(surfaces.get(surfaceKey(accountId, id)) ?? [])].some((pane) => pane.visible());
+  const shown = (id: string) =>
+    [...(surfaces.get(surfaceKey(accountId, id)) ?? [])].some((pane) => pane.visible());
+  const offScreen = (id: string) => !addressed(id) && !shown(id);
+  // The chat the address names is its pane's to settle, unless its project is deleted: that
+  // project never mounts the chat, so nothing else would move its words.
   await sweepDeletedChats(
-    [...ids].filter(offScreen),
+    [...ids].filter((id) => !shown(id)),
     current,
     (id, signal) =>
       probeChatDestination(
@@ -202,6 +249,7 @@ export async function cleanDeletedChatsOnBind(
         signal,
       ),
     async (id, reason) => {
+      if (reason !== "project-deleted" && !offScreen(id)) return;
       await cleanDeletedChat(
         accountId,
         id,
@@ -209,7 +257,7 @@ export async function cleanDeletedChatsOnBind(
         reason,
         undefined,
         false,
-        () => current() && offScreen(id),
+        () => current() && (reason === "project-deleted" || offScreen(id)),
       );
     },
   );

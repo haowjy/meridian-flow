@@ -5,7 +5,7 @@
     "apps/app/src/client/api/figures-api.test.ts": 1,
     "apps/app/src/client/api/http-client.test.ts": 3,
     "apps/app/src/client/chat-submissions/awaiting-creation.test.tsx": 1,
-    "apps/app/src/client/chat-submissions/deleted-chat.test.ts": 17,
+    "apps/app/src/client/chat-submissions/deleted-chat.test.ts": 15,
     "apps/app/src/client/chat-submissions/driver.test.ts": 22,
     "apps/app/src/client/chat-submissions/owner.test.ts": 18,
     "apps/app/src/client/chat-submissions/store.test.ts": 7,

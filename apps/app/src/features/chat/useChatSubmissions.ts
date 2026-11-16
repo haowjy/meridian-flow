@@ -19,6 +19,7 @@ import { threadAvailability } from "@/client/chat-submissions/thread-availabilit
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useFailureLog } from "@/client/failures/failure-log";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
+import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
@@ -34,7 +35,7 @@ export function useChatSubmissions(
   actions: ThreadStoreActions,
   focusComposer: () => void,
   dissolveChat: () => void,
-  deletion?: { visible: boolean; title: string | null; leave(moved: boolean): void },
+  deletion?: { visible: boolean; leave(moved: boolean): void },
 ) {
   const queryClient = useQueryClient();
   const failureLog = useFailureLog();
@@ -73,8 +74,6 @@ export function useChatSubmissions(
     });
     const unregisterDeletion = registerDeletedChatSurface(accountId, threadId, {
       visible: () => latest.current.deletion?.visible ?? false,
-      title: () => latest.current.deletion?.title ?? null,
-      recordIds: owner.shownRecordIds,
       leave: (moved) => latest.current.deletion?.leave(moved),
     });
     driver.current = owner;
@@ -84,7 +83,16 @@ export function useChatSubmissions(
       accountId,
     );
     if (availability === "deleted" || availability === "project-deleted")
-      void cleanDeletedChat(accountId, threadId, projectId, availability).catch(reportError);
+      void cleanDeletedChat(
+        accountId,
+        threadId,
+        projectId,
+        availability,
+        undefined,
+        false,
+        undefined,
+        cachedChatTitle(queryClient, threadId),
+      ).catch(reportError);
     const wake = () => {
       if (current()) void owner.driver.drive(threadId);
     };
@@ -111,7 +119,16 @@ export function useChatSubmissions(
       ) {
         const availability = threadAvailability(event.query.state.error, accountId);
         if (availability === "deleted" || availability === "project-deleted")
-          void cleanDeletedChat(accountId, threadId, projectId, availability).catch(reportError);
+          void cleanDeletedChat(
+            accountId,
+            threadId,
+            projectId,
+            availability,
+            undefined,
+            false,
+            undefined,
+            cachedChatTitle(queryClient, threadId),
+          ).catch(reportError);
       }
       if (
         event.type === "updated" &&

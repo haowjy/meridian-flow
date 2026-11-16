@@ -38,7 +38,7 @@ composer). Back and Forward reopen a tab the writer closed, by design: the addre
 follow it. A close, a Discard, a removal or a vanished document closes its tab through the
 coordinator's `tabs` port (`forget`; a draft-only page's own Close closes it once main's address has
 left, so main's page is not drawn without it); a deleted chat, one `useMissingChatFallback` finds
-missing, or one deleted elsewhere (`useDropGoneChatTabs`, which also moves main off it to a new chat: the project's chat list holds
+missing, or one deleted elsewhere (`useDropGoneChatTabs`, which also moves its unsent words to the New chat box (`cleanDeletedChat`) and main off it to a new chat: the project's chat list holds
 primary chats only and learns of a delete elsewhere only by refetch; a delete's `project-chats-hint` names the removed chat ids and closes those tabs without a request; the owner-gate probe runs only at mount and on a hint marked `recheckTabs` (a deleted Work, a reconnect), one batch at a time, so a subagent's
 chat is never judged by it), drops its chat tab (`dropMainTabChat`). The commands read the lane the
 strip draws (`useLiveTabs`). `MainTabStrip` draws the mode's lane in main's band:
@@ -262,10 +262,9 @@ A chat delete belongs to the project, not the list (`shell/sidebar/chat-deletes.
 `ChatDeleteProvider` in `ProjectView`): its notice survives switching the sidebar's source, closing
 the phone's drawer and remounting the sidebar, and ends on the next delete, Dismiss, leaving the
 project, signing out or a reload. The delete takes main to `/chats` and forgets it as the current
-chat at once; the chat's saved composer words and unsent records stay held (`beginOwnChatDelete` in
-`client/chat-submissions/deleted-chat.ts`) until the notice ends without Undo, and then go only if
-the server still says the chat is deleted: no answer keeps them for the next load's sweep, since
-another tab or device may have restored it. Undo returns main to
+chat at once; the chat's unsent words move into New chat at once (`cleanDeletedChat` with `own-delete`), and Undo
+moves them back into the chat's box (`restoreOwnDeletedChatWords`) and out of New chat, but only if the
+writer has not typed in New chat since: then the one copy stays in New chat with its note. Undo returns main to
 the chat only if main is still on `/chats`, and the chat slot only if nothing has replaced it since. A
 chat with a reply running asks first: the server stops the run in the delete and Undo can't
 restart it. Every restore goes through `ChatDeletes` (Undo, and `restore` for a trashed chat's
