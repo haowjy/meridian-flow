@@ -11,7 +11,13 @@ import { browserRecord, isRecord, type StorageSource } from "./storage/browser-r
 /** `side-new-chat`: the side's new chat, kept apart so a chip it attaches never reaches `/chats`. */
 export type ComposerDraftScope = { kind: "chat" | "new-chat" | "side-new-chat"; id: string };
 
-export type DeletedChatCard = { threadId: string; title: string | null; count: number };
+/** `own`: the writer deleted the chat in this tab, so the note says so plainly. */
+export type DeletedChatCard = {
+  threadId: string;
+  title: string | null;
+  count: number;
+  own?: boolean;
+};
 
 /**
  * A hand-back request the writer pressed whose answer has not been written to the composer: kept
@@ -188,6 +194,24 @@ export class ComposerSessionDraft {
     return this.commit(edited, { received, notices, handBacks: this.handBacksPending });
   }
 
+  /**
+   * Takes back what a deleted chat's move put in (its Undo). The box returns to what it held
+   * before only while it still holds exactly what the move left; a box the writer has typed in
+   * since keeps its words and its note.
+   */
+  withdraw(
+    threadId: string,
+    before: ComposerDraftSnapshot | null,
+    after: ComposerDraftSnapshot | null,
+  ): void {
+    if (!after || !this.matches(after)) return;
+    this.commit(before, {
+      received: this.received,
+      notices: this.notices.filter((notice) => notice.threadId !== threadId),
+      handBacks: this.handBacksPending,
+    });
+  }
+
   /** The hand-back requests this tab pressed and has not written to the composer. */
   get handBacks(): readonly PendingHandBack[] {
     return this.handBacksPending;
@@ -355,7 +379,8 @@ export class ComposerSessionDraft {
               typeof item.threadId === "string" &&
               (item.title === null || typeof item.title === "string") &&
               typeof item.count === "number" &&
-              item.count > 0,
+              item.count > 0 &&
+              (item.own === undefined || typeof item.own === "boolean"),
           )
         )
           return undefined;

@@ -8338,6 +8338,14 @@ msgstr "Your sign-in has expired. Sign in again to keep your changes syncing; no
 #~ msgid "Your skill, in every project"
 #~ msgstr "Your skill, in every project"
 
+#: src/features/chat/DeletedChatCard.tsx
+msgid "Your unsent words from <0>{title}</0> are below."
+msgstr "Your unsent words from <0>{title}</0> are below."
+
+#: src/features/chat/DeletedChatCard.tsx
+msgid "Your unsent words from the chat you deleted are below."
+msgstr "Your unsent words from the chat you deleted are below."
+
 #: src/features/export/ExportProjectDialog.tsx
 msgid "your User files"
 msgstr "your User files"

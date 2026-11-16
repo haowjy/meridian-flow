@@ -3,16 +3,19 @@
  * ended by the next delete or the writer's next pick in the Chat list. The project owns it, so switching the sidebar's list, closing the phone's drawer or
  * remounting the sidebar keeps it; leaving the project, signing out or reloading ends it.
  *
- * A delete takes what showed the chat at once (main goes to a new chat, the side lets go of it) and leaves its saved words alone: the composer's draft and unsent records stay
- * while the Undo can still bring the chat back, and go when the notice ends without one. Undo
- * puts back each thing the delete took that nothing has replaced since.
+ * A delete takes what showed the chat at once (main goes to a new chat, the side lets go of it)
+ * and moves its unsent words into New chat, so the writer finds them there at once. Undo puts back
+ * each thing the delete took that nothing has replaced since, the words included.
  *
  * Every restore in the project goes through here, so a restore from anywhere else (the Trash
  * line over the chat's draft) ends the notice as Undo would, without putting views back.
  */
 import { t } from "@lingui/core/macro";
 import type { QueryClient } from "@tanstack/react-query";
-import { beginOwnChatDelete, cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
+import {
+  cleanDeletedChat,
+  restoreOwnDeletedChatWords,
+} from "@/client/chat-submissions/deleted-chat";
 import { probeChatDestination } from "@/client/chat-submissions/thread-availability";
 import { readLastShownChat, writeLastShownChat } from "@/client/project-shell/store";
 import {
@@ -51,10 +54,11 @@ type Taken = { main: boolean; current: boolean };
 type Held = {
   notice: ChatDeleteNotice;
   taken: Taken;
-  mark: ReturnType<typeof beginOwnChatDelete>;
+  /** The delete's words have moved into New chat (or have nothing to move). */
+  moved: Promise<unknown>;
   /** True once the server has the chat in Trash. */
   landed: Promise<boolean>;
-  /** The notice ended while its Undo was in flight: a failed Undo cleans up after it. */
+  /** The notice ended while its Undo was in flight: Undo then puts no view back. */
   ended: boolean;
 };
 
@@ -82,8 +86,8 @@ export class ChatDeletes {
     this.end();
     this.refusal = null;
     const { client, accountId, projectId } = this.ports;
-    const mark = beginOwnChatDelete(accountId, threadId);
     const taken = this.takeAway(threadId);
+    const moved = this.moveWords(threadId, title);
     const notice: ChatDeleteNotice = {
       id: this.nextId++,
       threadId,
@@ -94,15 +98,15 @@ export class ChatDeletes {
     const held: Held = {
       notice,
       taken,
-      mark,
+      moved,
       ended: false,
       landed: deleteProjectChat(client, projectId, threadId).then((outcome) => {
         if (outcome.status === "success") {
           announce(t`Chat deleted`);
           return true;
         }
-        mark.cancel();
         if (this.held === held) this.held = null;
+        void moved.then(() => restoreOwnDeletedChatWords(accountId, threadId));
         if (!this.closed) {
           this.putBack(threadId, taken);
           this.refusal = { threadId, title };
@@ -132,21 +136,20 @@ export class ChatDeletes {
     if (!(await held.landed)) return false;
     const { threadId, title } = held.notice;
     // Navigate first: main is back on the chat while the server restores it.
+    await held.moved;
+    restoreOwnDeletedChatWords(this.ports.accountId, threadId);
     if (!held.ended) this.putBack(threadId, held.taken);
     const outcome = await restoreProjectChat(this.ports.client, this.ports.projectId, threadId);
     if (outcome.status === "success") {
-      held.mark.cancel();
       if (this.held === held) this.held = null;
       this.publish();
       announce(t`${title} restored`);
       return true;
     }
-    if (held.ended) {
-      this.clean(held);
-      return false;
-    }
+    if (held.ended) return false;
     // Still in Trash: what Undo put back lets go again.
     this.takeAway(threadId);
+    held.moved = this.moveWords(threadId, title);
     this.update(held, "failed");
     announceError(t`Couldn't restore ${title}`);
     return false;
@@ -164,14 +167,13 @@ export class ChatDeletes {
     const back =
       held.notice.threadId === threadId || (await this.probe(held.notice.threadId)) === "present";
     if (back && this.held === held) {
-      held.mark.cancel();
       this.held = null;
       this.publish();
     }
     return outcome;
   }
 
-  /** The notice ends without Undo (the writer moved on in the list): the chat's saved words go. */
+  /** The notice ends without Undo (the writer moved on in the list). */
   dismiss = () => this.end();
 
   open() {
@@ -190,25 +192,20 @@ export class ChatDeletes {
     this.held = null;
     held.ended = true;
     this.publish();
-    if (held.notice.status !== "restoring") this.clean(held);
   }
 
-  private clean(held: Held) {
+  private moveWords(threadId: string, title: string) {
     const { accountId, projectId } = this.ports;
-    void held.landed.then(async (landed) => {
-      if (!landed) return;
-      // The notice stands as long as the writer leaves it, and the chat may be back since, from
-      // another tab or device. Only the server saying it is still in Trash drops its words; no
-      // answer keeps them for the next load's sweep.
-      if ((await this.probe(held.notice.threadId)) !== "deleted") {
-        held.mark.cancel();
-        return;
-      }
-      held.mark.release();
-      void cleanDeletedChat(accountId, held.notice.threadId, projectId, "own-delete").catch(
-        reportError,
-      );
-    });
+    return cleanDeletedChat(
+      accountId,
+      threadId,
+      projectId,
+      "own-delete",
+      undefined,
+      false,
+      undefined,
+      title,
+    ).catch(reportError);
   }
 
   private probe(threadId: string) {

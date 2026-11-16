@@ -15,10 +15,10 @@ import {
 import { browserSubmissionLock } from "./adapters/browser-lock";
 import { MemorySubmissionLock } from "./adapters/memory-lock";
 import {
-  beginOwnChatDelete,
   cleanDeletedChat,
   cleanDeletedChatsOnBind,
   type DeletedChatPorts,
+  restoreOwnDeletedChatWords,
   sweepDeletedChats,
 } from "./deleted-chat";
 import type { ChatSubmission } from "./store";
@@ -97,7 +97,11 @@ function fixture() {
     forgetOrder: () => {
       forgotten += 1;
     },
-    draft: (_account, scope) => (scope.kind === "chat" ? source : target),
+    draft: (_account, scope) => {
+      if (scope.kind === "chat") return source;
+      expect(scope.id).toBe("project");
+      return target;
+    },
     surfaces: () => [
       {
         visible: () => visible,
@@ -165,7 +169,14 @@ it("off-screen, own-delete and deleted-project cleanups move the words too", asy
     expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
       "Make the elder colder\n\nAnd quieter\n\nExisting writing",
     );
-    expect(f.target.notices).toEqual([{ threadId: "chat", title: "Arc 2 notes", count: 2 }]);
+    expect(f.target.notices).toEqual([
+      {
+        threadId: "chat",
+        title: "Arc 2 notes",
+        count: 2,
+        ...(reason === "own-delete" ? { own: true } : {}),
+      },
+    ]);
     expect(f.source.initialDraft).toBeNull();
     expect(f.records()).toEqual([]);
   }
@@ -289,49 +300,6 @@ it("bind cleanup rechecks eligibility inside the lock when the chat becomes visi
   expect(f.left()).toBeUndefined();
 });
 
-it("a held own delete keeps the chat's words and records through a send's deletion response", async () => {
-  const { QueryClient } = await import("@tanstack/react-query");
-  const { bindChatSubmissions } = await import("./index");
-  const { deleteProjectChat } = await import("@/client/query/delete-project-chat");
-  const memory = new MemorySubmissionLock();
-  const lock = vi.spyOn(browserSubmissionLock, "run").mockImplementation(memory.run.bind(memory));
-  bindChatSubmissions("owner", () => true);
-  const f = fixture();
-  let finishDelete!: () => void;
-  deleteApi.mockImplementation(
-    () =>
-      new Promise<void>((resolve) => {
-        finishDelete = resolve;
-      }),
-  );
-  let answerSend!: () => void;
-  const sendResponse = new Promise<void>((resolve) => {
-    answerSend = resolve;
-  });
-  const sending = f.ports.lock.run("owner", "chat", new AbortController().signal, async () => {
-    await sendResponse;
-    await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports, true);
-  });
-  const own = beginOwnChatDelete("owner", "chat");
-  const deleting = deleteProjectChat(new QueryClient(), "project", "chat");
-  answerSend();
-  await sending;
-  expect(f.target.notices).toEqual([]);
-  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "Existing writing",
-  );
-  expect(f.records()).toHaveLength(1);
-  expect(f.source.initialDraft).not.toBeNull();
-  finishDelete();
-  await deleting;
-  own.release();
-  await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
-  expect(f.records()).toEqual([]);
-  expect(f.target.notices).toHaveLength(1);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  lock.mockRestore();
-});
-
 it("bind skips URL and remembered dock chats before panes mount, and rechecks the queued lock", async () => {
   const {
     bindChatSubmissions,
@@ -380,54 +348,59 @@ it("bind skips URL and remembered dock chats before panes mount, and rechecks th
   probe.mockClear();
 });
 
-it("failed own DELETE cancels its disposition, and confirmed cleanup releases it for a restored chat", async () => {
-  const { bindChatSubmissions } = await import("./index");
-  bindChatSubmissions("owner", () => true);
-  const failed = beginOwnChatDelete("owner", "chat");
-  failed.cancel();
+it("only a tab with a surface or the deleting tab takes the shared messages", async () => {
   const f = fixture();
+  f.ports.surfaces = () => [];
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
-  expect(f.target.notices).toHaveLength(1);
-  f.target.handoff();
-  const confirmed = beginOwnChatDelete("owner", "chat");
-  confirmed.release();
-  await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
-  f.source.updateDraft({ text: "Restored writing", snapshot: f.snapshot("Restored writing") });
-  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  expect(f.records()).toHaveLength(1);
+  expect(f.source.initialDraft).toBeNull();
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "Restored writing",
+    "And quieter\n\nExisting writing",
   );
-});
-it("own DELETE's intent cannot survive an account rebind epoch", async () => {
-  const { bindChatSubmissions } = await import("./index");
-  bindChatSubmissions("owner", () => true);
-  const own = beginOwnChatDelete("owner", "chat");
-  bindChatSubmissions("another-owner", () => true);
-  bindChatSubmissions("owner", () => true);
-  const f = fixture();
-  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
-  expect(f.target.notices).toHaveLength(1);
-  own.cancel();
+  await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
+  expect(f.records()).toEqual([]);
+  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+    "Make the elder colder\n\nAnd quieter\n\nExisting writing",
+  );
 });
 
-it("incomplete own-delete releases its mark before restored writing is deleted elsewhere", async () => {
-  const { bindChatSubmissions } = await import("./index");
-  bindChatSubmissions("owner", () => true);
-  const own = beginOwnChatDelete("owner", "chat");
-  own.release();
+it("Undo of an own delete moves the words back, unless New chat was typed in since", async () => {
   const f = fixture();
-  const read = f.ports.records;
-  f.ports.records = () => null;
-  expect(await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports)).toBe(false);
-  f.ports.records = read;
-  for (const entry of f.records()) f.ports.retire(entry.recordId);
-  f.target.handoff();
-  f.source.updateDraft({
-    text: "Fresh restored writing",
-    snapshot: f.snapshot("Fresh restored writing"),
-  });
-  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
-  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "Fresh restored writing",
+  await cleanDeletedChat(
+    "owner",
+    "chat",
+    "project",
+    "own-delete",
+    f.ports,
+    false,
+    undefined,
+    "Arc 2",
   );
+  expect(f.target.notices).toEqual([{ threadId: "chat", title: "Arc 2", count: 2, own: true }]);
+  const before = f.target.initialDraft;
+  restoreOwnDeletedChatWords("owner", "chat", f.ports.draft);
+  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+    "Existing writing",
+  );
+  expect(f.target.notices).toEqual([]);
+  expect(serializeComposerDraft(f.source.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+    "Make the elder colder\n\nAnd quieter",
+  );
+  expect(before).not.toBeNull();
+  const g = fixture();
+  await cleanDeletedChat(
+    "owner",
+    "chat",
+    "project",
+    "own-delete",
+    g.ports,
+    false,
+    undefined,
+    "Arc 2",
+  );
+  const moved = g.target.initialDraft;
+  if (!moved) throw new Error("Missing move");
+  g.target.updateDraft({ text: "More", snapshot: { ...moved, revision: moved.revision + 1 } });
+  restoreOwnDeletedChatWords("owner", "chat", g.ports.draft);
+  expect(g.target.notices).toHaveLength(1);
 });
