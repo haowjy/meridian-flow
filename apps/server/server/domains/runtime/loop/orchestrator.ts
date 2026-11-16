@@ -738,9 +738,12 @@ async function runDrainTurn(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
-                deps.connections?.saved(
-                  preflight.assembled.thread,
-                  preflight.assembled.bakedConnections,
+                // A rolled-back bake starts no check.
+                deps.afterCommit(() =>
+                  deps.connections?.saved(
+                    preflight.assembled.thread,
+                    preflight.assembled.bakedConnections,
+                  ),
                 );
               }
               // A reply holds the run claim, so the chat's mode can't change under it.

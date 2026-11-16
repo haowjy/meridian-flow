@@ -40,10 +40,8 @@ else
         name: "notes",
         spec: { transport: "http", url: "https://example.com/mcp" },
         sealedToken: null,
-        limit: 20,
       });
-      if (added.kind !== "added") throw new Error("connection not added");
-      const saved = await store.savePin(added.connection.row.id, pin, "hash");
+      const saved = await store.savePin(added.row.id, pin, "hash");
 
       // Each refusal runs in its own savepoint so the test's transaction survives it.
       await expect(
@@ -55,7 +53,7 @@ else
         db.transaction((tx) => tx.delete(mcpPins).where(eq(mcpPins.id, saved.id))),
       ).rejects.toMatchObject({ cause: { message: "MCP pins are insert-only" } });
 
-      await db.delete(mcpConnections).where(eq(mcpConnections.id, added.connection.row.id));
+      await db.delete(mcpConnections).where(eq(mcpConnections.id, added.row.id));
       expect(await db.select().from(mcpPins).where(eq(mcpPins.id, saved.id))).toEqual([]);
     });
   });

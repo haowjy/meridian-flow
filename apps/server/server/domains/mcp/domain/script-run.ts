@@ -15,7 +15,7 @@ import {
   type ScriptResult,
   type ScriptRunner,
 } from "@meridian-flow/runtime/script";
-import type { ConnectionCall, ConnectionTools } from "./connection-tools.js";
+import { type ConnectionCall, type ConnectionTools, DO_NOT_REPEAT } from "./connection-tools.js";
 import { createLimiter, type Limiter } from "./limiter.js";
 import { prepareScript } from "./script-code.js";
 
@@ -48,9 +48,6 @@ const LIST_CHARS = 12_000;
 
 const MEDIA_LEFT_OUT = (count: number) =>
   `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply. Call this tool with mcp_call to see ${count === 1 ? "it" : "them"}.]`;
-
-const DO_NOT_REPEAT =
-  "These calls ran and are not undone. Do not repeat answered calls: their effects already happened. Continue only with calls that failed or have not yet run.";
 
 export interface ScriptRunRequest {
   thread: { id: string; userId: UserId };
@@ -300,9 +297,9 @@ export function createScriptRuns(deps: {
           ? "The script returned nothing. End it with `return` and the value you want."
           : JSON.stringify(typed.value);
       case "threw":
-        return `The script threw ${typed.error?.name}: ${typed.error?.message}${at}.${none}`;
+        return `The script threw ${typed.error?.name}: ${typed.error?.message?.replace(/\.$/, "")}${at}.${none}`;
       case "rejected_code":
-        return `The code could not be parsed: ${typed.error?.message}${at}. Nothing ran.`;
+        return `The code could not be parsed: ${typed.error?.message?.replace(/\.$/, "")}${at}. Nothing ran.`;
       case "timed_out":
         return typed.limit === "cpu"
           ? `The script ran out of time: its own running time is limited to ${limits.cpuMs / 1000} seconds (waiting on calls is not counted).${none}`
@@ -316,17 +313,35 @@ export function createScriptRuns(deps: {
     }
   }
 
-  /** A returned script lists its calls by name; any other end lists what each was sent and answered. */
+  /**
+   * A returned script lists its calls by name; any other end lists what each was sent and
+   * answered. A call refused before it was sent did not run, so it is listed apart.
+   */
   function callList(typed: Omit<McpRunResult, "text">): string {
-    if (!typed.calls.length) return "";
+    const ran = typed.calls.filter((call) => call.recordId !== null);
+    const refused = typed.calls.filter((call) => call.recordId === null);
+    return [listRan(typed, ran), listRefused(refused)].filter(Boolean).join("\n\n");
+  }
+
+  function listRefused(refused: McpScriptCall[]): string {
+    if (!refused.length) return "";
+    const lines = refused.map(
+      (call) =>
+        `${call.sequence + 1}. ${call.id}: ${cut(call.message ?? call.outcome, LIST_REPLY_CHARS)}`,
+    );
+    return `Refused before they were sent (nothing ran):\n${lines.join("\n")}`;
+  }
+
+  function listRan(typed: Omit<McpRunResult, "text">, ran: McpScriptCall[]): string {
+    if (!ran.length) return "";
     const full = typed.ended !== "returned";
     const lines: string[] = [];
     let size = 0;
-    for (const call of typed.calls) {
+    for (const call of ran) {
       const line = `${call.sequence + 1}. ${callLine(call, full)}`;
       if (size + line.length > LIST_CHARS) {
         lines.push(
-          `(${typed.calls.length - lines.length} more calls not shown; each is kept in its record.)`,
+          `(${ran.length - lines.length} more calls not shown; each is kept in its record.)`,
         );
         break;
       }

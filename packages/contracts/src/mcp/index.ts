@@ -20,6 +20,16 @@ export const MCP_NAME_MAX_LENGTH = 40;
 export const isMcpConnectionName = (name: string): boolean =>
   name.length > 0 && name.length <= MCP_NAME_MAX_LENGTH && MCP_NAME_PATTERN.test(name);
 
+/** `wanted` when no connection at the level has it, else the first free `<wanted>-2`, `-3`…, cut to fit the name limit. */
+export function nextFreeName(taken: ReadonlySet<string>, wanted: string): string {
+  if (!taken.has(wanted)) return wanted;
+  for (let n = 2; ; n++) {
+    const suffix = `-${n}`;
+    const candidate = `${wanted.slice(0, MCP_NAME_MAX_LENGTH - suffix.length)}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 /**
  * One connection a thread's prompt bake was made from. The pin is the one the bake read, so a
  * describe or a call finds the tool's schema and the server's name for it however the connection
@@ -37,8 +47,6 @@ export type McpBakedListing =
   /** One line in the catalogue, no tool lines: its status was bad when the bake was written. */
   | { listing: "by_name"; reason: Exclude<McpConnectionStatus, "connected"> };
 
-/** Per writer, across both levels. */
-export const MCP_CONNECTIONS_PER_ACCOUNT = 20;
 export const MCP_SESSIONS_PER_ACCOUNT = 8;
 
 /** Where a connection lives: every project of the account, or one project. */

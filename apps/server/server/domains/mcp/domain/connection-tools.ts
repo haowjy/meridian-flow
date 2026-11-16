@@ -30,6 +30,9 @@ import type { McpConnections } from "./connection-service.js";
 
 /** Characters of a reply the model reads; the full reply stays in the call's record. */
 export const REPLY_CHARACTER_LIMIT = 24_000;
+/** What the model reads wherever calls that ran are listed: a failed script's list and a restart's stub. */
+export const DO_NOT_REPEAT =
+  "These calls ran and are not undone. Do not repeat answered calls: their effects already happened. Continue only with calls that failed or have not yet run.";
 /** One call's limit, passed to the client: a slow server is `call_timeout`, never also the executor's timeout. */
 const CALL_TIMEOUT_MS = 60_000;
 
@@ -49,6 +52,8 @@ export interface ConnectionToolsDeps {
   client: McpClient;
   service: Pick<McpConnections, "serverFor" | "checks">;
   replies: ReplyStore;
+  /** Something after the call's answer failed and was passed over: the model still gets the outcome. */
+  warn(what: string, cause: unknown): void;
   now?: () => Date;
 }
 
@@ -152,23 +157,52 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
             { tool, arguments: request.arguments },
             { signal: request.signal, timeoutMs: CALL_TIMEOUT_MS },
           );
+    // From here the server has answered (or the call is known not to have run): nothing below may
+    // throw before the outcome reaches the model, or it would repeat a call that ran.
     const replyRef =
       outcome.kind === "answered" || outcome.kind === "rejected"
         ? await keepReply(request.thread.id, recordId, outcome.reply)
         : null;
-    await deps.calls.complete(recordId, {
-      outcomeKind: outcomeOf(outcome),
-      replyRef,
-      finishedAt: now(),
-    });
-    await deps.service.checks.recordCall(stored.row, { startedAt }, outcome);
+    await bestEffort("complete the call record", () =>
+      deps.calls.complete(recordId, {
+        outcomeKind: outcomeOf(outcome),
+        replyRef,
+        finishedAt: now(),
+      }),
+    );
+    await bestEffort("record the call for the connection's status", () =>
+      deps.service.checks.recordCall(stored.row, { startedAt }, outcome),
+    );
     return { kind: "called", connection: held.name, tool, recordId, outcome };
   }
 
-  async function keepReply(threadId: string, recordId: string, reply: JsonObject) {
+  async function bestEffort(what: string, step: () => Promise<unknown>): Promise<void> {
+    try {
+      await step();
+    } catch (cause) {
+      deps.warn(what, cause);
+    }
+  }
+
+  /** The reply's copy in the chat's storage, as the row holds it; a failed store is noted on the row instead. */
+  async function keepReply(
+    threadId: string,
+    recordId: string,
+    reply: JsonObject,
+  ): Promise<JsonObject> {
     const bytes = new TextEncoder().encode(JSON.stringify(reply));
-    const { key } = await deps.replies.put(threadId, `${recordId}.json`, bytes, "application/json");
-    return { key, bytes: bytes.byteLength };
+    try {
+      const { key } = await deps.replies.put(
+        threadId,
+        `${recordId}.json`,
+        bytes,
+        "application/json",
+      );
+      return { key, bytes: bytes.byteLength };
+    } catch (cause) {
+      deps.warn("keep the reply", cause);
+      return { notKept: cause instanceof Error ? cause.message : String(cause) };
+    }
   }
 
   /** `mcp_call`: the call, shaped for the model and for the app's row. */
@@ -282,16 +316,19 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     const text = parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
     const cut = text.length > REPLY_CHARACTER_LIMIT;
     const media: StoredMediaPart[] = [];
+    let lost = 0;
     for (const part of parts) {
       if (part.type !== "media") continue;
       const index = media.length;
       const bytes = Buffer.from(part.source.data, "base64");
-      const { key } = await deps.replies.put(
-        threadId,
-        `${recordId}-${index}`,
-        bytes,
-        part.mediaType,
-      );
+      let key: string;
+      try {
+        ({ key } = await deps.replies.put(threadId, `${recordId}-${index}`, bytes, part.mediaType));
+      } catch (cause) {
+        deps.warn("keep a reply picture", cause);
+        lost++;
+        continue;
+      }
       media.push({
         type: "media",
         ref: { documentId: recordId, uri: `mcp-call://${recordId}/${index}` },
@@ -301,10 +338,13 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
         chatCopy: { key },
       });
     }
+    const shown = cut
+      ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown. Ask for less: a narrower query or fewer results.]`
+      : text;
     return {
-      text: cut
-        ? `${text.slice(0, REPLY_CHARACTER_LIMIT)}\n\n[Reply cut: ${REPLY_CHARACTER_LIMIT} of ${text.length} characters shown. Ask for less: a narrower query or fewer results.]`
-        : text,
+      text: lost
+        ? `${shown}\n\n[${lost} picture${lost === 1 ? "" : "s"} in the reply could not be kept, so ${lost === 1 ? "it is" : "they are"} not shown.]`
+        : shown,
       cut,
       ...(media.length ? { media } : {}),
     };
@@ -363,18 +403,30 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     };
   }
 
-  /** One line for each recorded call of these turns: what was sent and how far it got. */
-  async function recordedCalls(threadId: string, turnIds: readonly string[]) {
+  /**
+   * One line for each recorded call of these turns, for the stub of a call that did not finish:
+   * the call as `mcp_call` takes it (the connection's name from the bake), what was sent, and how
+   * far it got. The stub opens with `DO_NOT_REPEAT`, the same rule a failed script's list states.
+   */
+  async function recordedCalls(
+    threadId: string,
+    turnIds: readonly string[],
+    baked: readonly McpBakedConnection[],
+  ) {
     return (await deps.calls.listForTurns(threadId, turnIds)).map((call) => {
       const sent = JSON.stringify(call.arguments);
       const arguments_ = sent.length > 300 ? `${sent.slice(0, 300)}…` : sent;
-      const ended = call.outcomeKind
-        ? `ended as ${call.outcomeKind}, but its result was not stored`
-        : "sent, and its end was not recorded, so it may have run";
+      const connection = baked.find((held) => held.connectionId === call.connectionId)?.name;
+      const id = connection ? toolId(connection, call.toolName) : call.toolName;
+      const ended = !call.outcomeKind
+        ? "sent, and its end was not recorded, so it may have run"
+        : call.replyKept
+          ? `${call.outcomeKind}; its reply was kept but is not shown here`
+          : `${call.outcomeKind}`;
       return {
         turnId: call.turnId,
         toolCallId: call.toolCallId,
-        line: `- ${call.toolName} with ${arguments_}: ${ended}`,
+        line: `- ${id}(${arguments_}): ${ended}`,
       };
     });
   }
