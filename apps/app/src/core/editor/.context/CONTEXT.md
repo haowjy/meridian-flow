@@ -276,7 +276,9 @@ identity in anchors or holds.
   happened; when it didn't (a refused or failed Un-Apply), the entry goes back to
   the undo side at its place, unless it was redone or cleared since. An owner can
   also hide an Apply entry (out of both sides) and show it again, back on the undo
-  side at its place with the redo side left alone. Undo gives back the text or cell range a change
+  side at its place with the redo side left alone. A guarded step (`guardStep`, a Discard's)
+  runs alone: no-op skipping stops before it, and when it is next its guard decides whether it
+  runs or is dropped unrun, which spends the press. Undo gives back the text or cell range a change
   started from (a drag, a cut, typing over a selection), captured by
   `editor-history.ts` on `beforeTransaction` and carried through the stack items
   that UndoManager generates. It is never read from y-tiptap's copy, which a

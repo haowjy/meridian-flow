@@ -48,6 +48,18 @@ const noop = () => {};
 const HISTORY_META = "meridian-editor-history";
 /** On a stack item: the range selection from just before the change it holds ran. */
 const RANGE_META = "meridian-editor-range";
+/** On a stack item: its `StepGuard`. */
+const GUARD_META = "meridian-editor-guard";
+
+/**
+ * A step that undoing may no longer take back (a Discard whose text was edited since): Ctrl+Z
+ * asks `runs` when the step is next, and drops it unrun when it says no, telling `dropped`.
+ */
+export type StepGuard = { runs(): boolean; dropped(): void };
+
+export function guardStep(item: StackItem, guard: StepGuard): void {
+  item.meta.set(GUARD_META, guard);
+}
 
 type RelativeSelection = ReturnType<typeof getRelativeSelection>;
 
@@ -239,14 +251,35 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.changed();
   }
 
-  /** Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary. */
+  /** Takes a step out of the history: its owner undid it some other way. */
+  take(item: StackItem): void {
+    for (const stack of [this.manager.undoStack, this.manager.redoStack]) {
+      const at = stack.indexOf(item);
+      if (at >= 0) stack.splice(at, 1);
+    }
+    this.removeMissing(this.undo, new Set(this.manager.undoStack));
+    this.removeMissing(this.redo, new Set(this.manager.redoStack));
+    this.changed();
+  }
+
+  /**
+   * Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary or reach a
+   * guarded step: that one runs alone, once its guard says it still can.
+   */
   private runNative(direction: "undo" | "redo", source: Entry[], editor: Editor): void {
     const segment: Extract<Entry, { kind: "yjs" }>[] = [];
     if (direction === "undo") {
       for (let index = source.length - 1; index >= 0; index--) {
         const entry = source[index];
         if (!entry || entry.kind === "apply") break;
+        const guard = entry.item.meta.get(GUARD_META) as StepGuard | undefined;
+        if (guard && segment.length) break;
         segment.push(entry);
+        if (!guard) continue;
+        if (guard.runs()) break;
+        this.take(entry.item);
+        guard.dropped();
+        return;
       }
     } else {
       for (const entry of source) {

@@ -6,12 +6,11 @@ import {
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
 import type { Editor } from "@tiptap/core";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
-import { endUndoStep } from "@/core/editor/editor-history";
+import { endUndoStep, guardStep } from "@/core/editor/editor-history";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
 import type { DiscardUndo } from "./draft-notices";
 import { readChosen } from "./review-frame";
@@ -36,8 +35,11 @@ export function startDraftDiscardSession(input: {
    * not reviewing this draft, so nothing is written.
    */
   history: Editor | "notice" | null;
-  /** `stands`: the Discard stays written, but its Undo can no longer take it back. */
-  onNoticeEnd?: (stands: boolean) => void;
+  /**
+   * `leftOut`: the Discard stays written, and this many of its changes can no longer come back.
+   * None: it was never written, or was taken back.
+   */
+  onNoticeEnd?: (leftOut?: number) => void;
   entry: Entry | undefined;
   registry: DraftRoomRegistry;
   active(): boolean;
@@ -63,13 +65,16 @@ export function startDraftDiscardSession(input: {
   if (!editor) for (const attached of binding.runtime.editors()) endUndoStep(attached.state);
   // Its own origin, so the write is one stack item the notice can name.
   const origin = {};
+  const steps = editor ? binding.session.history : null;
   const history: Y.UndoManager =
-    (editor ? yUndoPluginKey.getState(editor.state)?.undoManager : undefined) ??
-    new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
+    steps?.manager ?? new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
   history.addTrackedOrigin(origin);
   recordRestorations(history);
   history.stopCapturing();
   let item: StackItem | null = null;
+  /** The document's state right after the write: anything past it is a later edit. */
+  let after = new Map<number, number>();
+  let changes = 0;
   const write = (): CommandOutcome => {
     if (!input.active() || entry.binding !== binding || input.state().ended)
       return { kind: "blocked" };
@@ -107,27 +112,32 @@ export function startDraftDiscardSession(input: {
       });
     history.stopCapturing();
     item = history.undoStack.length > before ? (history.undoStack.at(-1) ?? null) : null;
+    after = Y.decodeStateVector(Y.encodeStateVector(doc));
+    changes = ids.length;
     binding.runtime.projectNow();
-    if (item) watch();
+    if (item) {
+      const written = item;
+      // Ctrl+Z follows the notice's rule: a step whose text was edited since is dropped, not run.
+      guardStep(written, {
+        runs: () => !touchedSince(doc, written, after),
+        dropped: () => end(changes),
+      });
+      watch();
+    }
     return { kind: "done" };
   };
-  // The Undo holds while what the Discard wrote stays as it left it: a later edit into that text,
-  // local or remote, or Ctrl+Z taking it back ends it, so an Undo never takes out a later edit and
-  // the notice and the editor never undo twice. Edits elsewhere in the draft (Live typing reaching
-  // it) leave the Undo standing: undoing the item touches only its own text.
-  let undoing = false;
-  const onProse = (events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction) => {
-    if (!undoing && transaction.origin !== origin && item && touches(item, events, transaction))
-      expire();
-  };
+  // The Undo holds while what the Discard wrote and deleted stays as it left it, checked when
+  // it is pressed: an edit since into or beside that text, or deleting the block that holds it,
+  // means undoing would restore nothing or the same text twice. Edits elsewhere in the draft
+  // (Live typing reaching it) leave it standing. Ctrl+Z taking it back ends the notice's share,
+  // so the two never undo twice.
   const onPopped = ({ stackItem }: { stackItem: StackItem }) => {
-    if (!undoing && stackItem === item) end();
+    if (stackItem === item) end();
   };
   let watching = false;
   let stopAccess = () => {};
   const watch = () => {
     watching = true;
-    fragment.observeDeep(onProse);
     history.on("stack-item-popped", onPopped);
     // A room that turns read-only (its Work was archived) drops an Undo written into it.
     stopAccess = binding.session.subscribe((snapshot) => {
@@ -137,7 +147,6 @@ export function startDraftDiscardSession(input: {
   const unwatch = () => {
     if (!watching) return;
     watching = false;
-    fragment.unobserveDeep(onProse);
     history.off("stack-item-popped", onPopped);
     stopAccess();
   };
@@ -167,15 +176,19 @@ export function startDraftDiscardSession(input: {
     entry.users--;
     input.releaseIdle();
   };
-  const end = (stands = false) => {
+  const end = (leftOut?: number) => {
     if (!active) return;
     active = false;
     binding.notices.delete(expire);
     release();
-    onNoticeEnd?.(stands);
+    onNoticeEnd?.(leftOut);
   };
-  const expire = () => end(true);
+  const expire = () => end(changes);
   binding.notices.add(expire);
+  const take = (stackItem: StackItem) => {
+    if (steps) steps.take(stackItem);
+    else history.undoStack.splice(history.undoStack.indexOf(stackItem), 1);
+  };
   const handle: DiscardUndo = {
     end: () => end(),
     undo: () => {
@@ -194,21 +207,17 @@ export function startDraftDiscardSession(input: {
         !input.active() ||
         entry.binding !== binding ||
         input.state().ended ||
-        binding.session.getSnapshot().access === "read"
+        binding.session.getSnapshot().access === "read" ||
+        touchedSince(doc, item, after)
       ) {
+        if (item) take(item);
         end();
-        return { answer: "gone", landed: none };
+        return { answer: "gone", landed: none, leftOut: changes };
       }
-      const stackItem = item;
-      undoing = true;
       try {
-        if (history.undoStack.at(-1) === stackItem && !(editor?.isDestroyed ?? false))
-          history.undo();
-        else undoAlone(fragment, stackItem, history);
+        undoAlone(fragment, item, take);
       } catch {
         return { answer: "failed", landed: none };
-      } finally {
-        undoing = false;
       }
       binding.runtime.projectNow();
       // The prose is back in the room, which sends it whenever it can and drains unsent edits
@@ -267,12 +276,15 @@ export function startDraftDiscardSession(input: {
 type StackItem = Y.UndoManager["undoStack"][number];
 
 /**
- * Undoes one stack item whatever sits above it in its history (the reviewing editor went away
- * with its manager): a manager of its own pops it, with restorations recorded as any Undo does.
+ * Undoes one stack item whatever its history holds above it: `take` lifts it out, and a manager of
+ * its own pops it, with restorations recorded as any Undo does.
  */
-function undoAlone(fragment: Y.XmlFragment, stackItem: StackItem, owner: Y.UndoManager) {
-  const at = owner.undoStack.indexOf(stackItem);
-  if (at >= 0) owner.undoStack.splice(at, 1);
+function undoAlone(
+  fragment: Y.XmlFragment,
+  stackItem: StackItem,
+  take: (stackItem: StackItem) => void,
+) {
+  take(stackItem);
   const alone = new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
   recordRestorations(alone);
   alone.undoStack.push(stackItem);
@@ -283,26 +295,43 @@ function undoAlone(fragment: Y.XmlFragment, stackItem: StackItem, owner: Y.UndoM
   }
 }
 
-/** The transaction changed text the stack item inserted: deleted it, or wrote into or beside it. */
-function touches(
-  stackItem: StackItem,
-  events: readonly Y.YEvent<Y.AbstractType<unknown>>[],
-  transaction: Y.Transaction,
-): boolean {
-  const written = (id: Y.ID | null) => id !== null && Y.isDeleted(stackItem.insertions, id);
-  let deleted = false;
-  Y.iterateDeletedStructs(transaction, transaction.deleteSet, (struct) => {
-    if (written(struct.id)) deleted = true;
-  });
-  if (deleted) return true;
-  return events.some((event) => {
-    for (let type: Y.AbstractType<unknown> | null = event.target; type?._item; ) {
-      if (written(type._item.id)) return true;
-      type = type._item.parent instanceof Y.AbstractType ? type._item.parent : null;
-    }
-    for (const added of event.changes.added)
-      if (added instanceof Y.Item && (written(added.origin) || written(added.rightOrigin)))
-        return true;
+/**
+ * Whether an edit since the step (`after`: the state vector right after it) deleted text it
+ * inserted, wrote into or beside text it inserted or deleted, or deleted a block holding either.
+ */
+function touchedSince(doc: Y.Doc, stackItem: StackItem, after: Map<number, number>): boolean {
+  const { insertions, deletions } = stackItem;
+  const ours = (id: Y.ID | null) =>
+    id !== null && (Y.isDeleted(insertions, id) || Y.isDeleted(deletions, id));
+  const later = (struct: Y.Item) => struct.id.clock >= (after.get(struct.id.client) ?? 0);
+  const besideLater = (start: Y.Item | null, side: "left" | "right") => {
+    for (let next = start; next && !ours(next.id) && later(next); next = next[side])
+      if (ours(next.origin) || ours(next.rightOrigin)) return true;
     return false;
-  });
+  };
+  const touched = (struct: Y.Item | Y.AbstractStruct, inserted: boolean) => {
+    // A collected struct went with a deleted block.
+    if (!(struct instanceof Y.Item)) return true;
+    if (inserted && struct.deleted && !Y.isDeleted(deletions, struct.id)) return true;
+    for (let parent = struct.parent; parent instanceof Y.AbstractType && parent._item; ) {
+      const holder: Y.Item = parent._item;
+      if (holder.deleted && !Y.isDeleted(deletions, holder.id)) return true;
+      parent = holder.parent;
+    }
+    return besideLater(struct.left, "left") || besideLater(struct.right, "right");
+  };
+  for (const [set, inserted] of [
+    [insertions, true],
+    [deletions, false],
+  ] as const)
+    for (const [client, ranges] of set.clients) {
+      const structs = doc.store.clients.get(client) ?? [];
+      for (const { clock, len } of ranges)
+        for (let at = Y.findIndexSS(structs, clock); at < structs.length; at++) {
+          const struct = structs[at];
+          if (!struct || struct.id.clock >= clock + len) break;
+          if (touched(struct, inserted)) return true;
+        }
+    }
+  return false;
 }

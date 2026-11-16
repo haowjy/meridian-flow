@@ -270,18 +270,22 @@ the page as discarded ("This destination is unavailable"). If the server never l
 the retries, main stays where it is. A room that turned read-only (its Work archived) ends the notice. An Undo
 that throws keeps the notice with Retry, and Retry takes back only the rooms that failed.
 
-A room's share of a notice's Undo holds while the text the Discard wrote is as the Discard left it.
-A transaction that deletes that text or writes into or beside it (`touches`), the room closing,
-resetting or turning read-only (`binding.notices`), or Ctrl+Z popping the item from the reviewing
-editor ends it, so an Undo never takes out a later edit and the notice and Ctrl+Z never undo the
-same Discard twice. Edits elsewhere in the draft leave it standing: Live typing that reaches the
-draft while a Discard all is in flight must not cost a document its Undo, and undoing the item
-touches only its own text. A share ended with its Discard still written (`partEnded(handle,
-stands)`) stays in the notice's sentence, which names the whole action the writer took, and its
-Undo counts it among what couldn't come back. A share whose Discard was refused or taken back by
-Ctrl+Z leaves the sentence. While the reviewing editor lives and
-the item is on top of its stack, the notice's Undo is that editor's Undo; once the editor is gone
-the item is undone alone through a short-lived manager.
+A room's share of a notice's Undo holds while what the Discard wrote and deleted is as the Discard
+left it, checked when Undo is pressed (`touchedSince`, against the room's state vector right after
+the Discard): an edit since that deletes text the Discard wrote, writes into or beside text it
+wrote or deleted, or deletes the block holding either means undoing would restore nothing (the
+block is gone) or the same text twice (the model drafted it again), so it doesn't run. A Discard is
+one Yjs step per room, so one such edit to any of a document's discarded changes ends that
+document's whole Undo. Edits elsewhere in the draft leave it standing: Live typing that reaches the
+draft while a Discard all is in flight must not cost a document its Undo. The notice's Undo always
+takes this Discard's own step out of whatever history holds it and undoes it alone through a
+short-lived manager, so it can never pop another step. Ctrl+Z in the reviewing editor applies the
+same check: the step is guarded (`guardStep`), so when it is next and was touched it is dropped
+unrun. A share that can't come back (touched, the room closing, resetting or turning read-only
+through `binding.notices`, or a `gone` answer) stays in the notice's sentence, which names the
+whole action the writer took, and the notice says how many of its changes couldn't come back
+(`partEnded(handle, leftOut)`, counted in changes, not documents). A share whose Discard was
+refused or taken back by Ctrl+Z leaves the sentence.
 Both paths record restorations, so marks after an Undo match marks before the Discard. Each Undo
 handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
 kept open; `DraftCommandOwner.close()` ends every notice.
