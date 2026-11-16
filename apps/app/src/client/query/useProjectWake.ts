@@ -24,8 +24,8 @@ export function useProjectWake(projectId: string): void {
   useEffect(() => {
     if (!projectId || !transport) return;
     // Another client's reply or question: the chat list's marks and the chat feed's rows follow
-    // it. A read already under way may have started before this hint's commit, so a hint that
-    // lands during a refresh queues exactly one more after it.
+    // it. A read someone else started may predate this hint's commit, so the refresh cancels and
+    // restarts it; a hint that lands during our own refresh queues exactly one more after it.
     let refreshing = false;
     let trailing = false;
     let active = true;
@@ -36,14 +36,11 @@ export function useProjectWake(projectId: string): void {
       }
       refreshing = true;
       void Promise.all([
-        queryClient.invalidateQueries(
-          { queryKey: projectQueryKeys.threads(projectId), exact: true },
-          { cancelRefetch: false },
-        ),
-        queryClient.invalidateQueries(
-          { queryKey: projectQueryKeys.chatFeed(projectId) },
-          { cancelRefetch: false },
-        ),
+        queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.threads(projectId),
+          exact: true,
+        }),
+        queryClient.invalidateQueries({ queryKey: projectQueryKeys.chatFeed(projectId) }),
       ]).finally(() => {
         refreshing = false;
         if (active && trailing) {
@@ -52,30 +49,54 @@ export function useProjectWake(projectId: string): void {
         }
       });
     };
-    // A draft owner's list is stale, or every owner's when `owner` is not named.
-    const refreshDrafts = (owner?: string) => {
-      void queryClient.invalidateQueries({
-        queryKey:
-          owner === undefined
-            ? projectQueryKeys.ownerDraftsOf(projectId)
-            : projectQueryKeys.ownerDrafts(projectId, owner),
-      });
-      // Which drafts are open is each draft's metadata too: a restore elsewhere reopens one
-      // this tab holds as ended, and its rows and rooms follow the fresh answer.
-      void queryClient.invalidateQueries({
-        queryKey:
-          owner === undefined
-            ? projectQueryKeys.draftMetadataOf(projectId)
-            : projectQueryKeys.ownerDraftMetadataOfOwner(projectId, owner),
-      });
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) });
+    // Draft owners' lists are stale, every owner's when the set holds `undefined`. An Apply of many
+    // documents sends a hint per document: as with chats, one read runs and one more follows it.
+    let draftsRefreshing = false;
+    let draftsTrailing: Set<string | undefined> | null = null;
+    const readDrafts = (owners: ReadonlySet<string | undefined>) => {
+      draftsRefreshing = true;
+      const all = owners.has(undefined);
+      const named = [...owners].filter((owner): owner is string => owner !== undefined);
+      const reads = (all ? [undefined] : named).flatMap((owner) => [
+        queryClient.invalidateQueries({
+          queryKey:
+            owner === undefined
+              ? projectQueryKeys.ownerDraftsOf(projectId)
+              : projectQueryKeys.ownerDrafts(projectId, owner),
+        }),
+        // Which drafts are open is each draft's metadata too: a restore elsewhere reopens one
+        // this tab holds as ended, and its rows and rooms follow the fresh answer.
+        queryClient.invalidateQueries({
+          queryKey:
+            owner === undefined
+              ? projectQueryKeys.draftMetadataOf(projectId)
+              : projectQueryKeys.ownerDraftMetadataOfOwner(projectId, owner),
+        }),
+      ]);
       // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
-      if (owner === undefined || workIdOfDraftOwnerKey(owner))
-        void repairWorksSnapshot(queryClient, projectId);
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
-      });
+      if (all || named.some((owner) => workIdOfDraftOwnerKey(owner)))
+        reads.push(repairWorksSnapshot(queryClient, projectId));
+      reads.push(
+        queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) }),
+        queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+        }),
+      );
       bumpLinkResolutionEpoch(projectId);
+      void Promise.allSettled(reads).finally(() => {
+        draftsRefreshing = false;
+        const next = draftsTrailing;
+        draftsTrailing = null;
+        if (active && next) readDrafts(next);
+      });
+    };
+    const refreshDrafts = (owner?: string) => {
+      if (!draftsRefreshing) {
+        readDrafts(new Set([owner]));
+        return;
+      }
+      draftsTrailing ??= new Set();
+      draftsTrailing.add(owner);
     };
     const refreshSources = () => {
       void queryClient.invalidateQueries({

@@ -21,8 +21,8 @@ when the registry is built, not in the deployment that holds that provider's key
   A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`, `sol`, `terra`, `luna`, `deepseek`, `argon`),
   kept equal by hand: nothing in CI reads `mars.toml`. Flow has no family Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others).
   Also the default model; the build fails when the snapshot lacks it. A new version in a listed family appears at the
-  next refresh; an `exclude` entry is a dated, deprecated or older-generation id Flow does not offer. Home of
-  `resolveAlias`, Mars's alias rule, to be replaced by `@meridian-flow/mars-schema`'s when that ships.
+  next refresh; an `exclude` entry is a dated, deprecated or older-generation id Flow does not offer. `newestInFamily`
+  applies Mars's alias rule (`resolveAlias` from `@meridian-flow/mars-schema`) to a family.
 - `provider-rows.ts`: per provider, the wire, base URL, `FLOW_` key name, tool-schema projection, the full
   `promptCache` descriptor, the long-TTL cache-write multiplier (Anthropic 2x input, OpenAI 2.5x) and `priceOverrides`,
   the one way Flow charges a price other than models.dev's (a rate per model id): DeepSeek's peak rates, and Gemini 4
@@ -43,7 +43,7 @@ the build throws when the step is not one threshold with one multiplier for ever
 allowlist no longer admits (a new `exclude`) gets no offering and stays in the file until the next refresh.
 
 **Names.** `RegisteredModel.displayName` is the picker name: the family alias on the newest model of a family (by
-`resolveAlias`), "alias version" on an older one (`fable 5.1`, the version being the first number in models.dev's name,
+`newestInFamily`), "alias version" on an older one (`fable 5.1`, the version being the first number in models.dev's name,
 so two older models can share it). Of those, the shorter id keeps "alias version" and each other is marked with what its
 id adds (`fable 5.1 20261201`): a name once shown never changes when a sibling arrives. Picker names are unique: the
 build fails, naming the models, on two offerings with the same name.

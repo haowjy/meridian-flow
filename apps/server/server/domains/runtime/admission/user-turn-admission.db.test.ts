@@ -246,7 +246,6 @@ if (!RUN) {
       await firstDb.insert(schema.contextSources).values({
         id: SOURCE,
         projectId: PROJECT,
-        name: "Uploads",
         slug: "uploads",
         scope: "chat",
         chatThreadId: THREAD,

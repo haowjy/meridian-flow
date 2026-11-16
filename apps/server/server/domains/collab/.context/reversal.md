@@ -237,10 +237,15 @@ differently from `compute` in two cases: the kernel's own checks throw, or the l
 classifies active but `executeUndo` would return no updates (never seen in 62k random rows).
 Change `compute` and
 `preview` together, and check them against each other on random documents and peer edits. `prepare`
-yields (`setImmediate`) between documents, so other requests get a turn between two documents'
-inverses. It does not shorten any one inverse: each large document's is about 300 ms of
-synchronous CPU, and a request with many sequential I/O waits queues behind a chunk at each
-one, so a real Undo of many large documents still slows concurrent reads (4–13 s measured).
+plans a card's documents on a worker pool (`inverse-worker.ts`, two threads): the planner sends each
+document's live and draft updates, its history, the selection and the action id, and the worker's
+`runInverseJob` (agent-edit) rebuilds the documents and runs `compute`. The result is the same
+`ComputedInverse`, with plain objects where `compute` returns Yjs `ID`s. A worker that crashes or
+passes 120 s fails the command with the same 500 an in-process throw gives. The planner's own
+lineage is built only when something on the server classifies against it, because building one
+costs a string key per restored clock: it is not built for a plan that computes on a worker. The
+chip's `preview` stays in-process, one document per turn of the loop (`setImmediate`). The model's own
+`undo` plans one document at a time through `compute` on a scratch view and stays in-process.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,

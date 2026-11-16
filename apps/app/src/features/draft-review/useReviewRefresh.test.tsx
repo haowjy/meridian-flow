@@ -107,10 +107,7 @@ describe("useReviewRefresh", () => {
         await act(async () => rebind(false));
         await act(async () => rebind(true));
         await wait(400);
-        expect(invalidate).toHaveBeenCalledWith(
-          expect.objectContaining({ queryKey: metadataKey }),
-          expect.anything(),
-        );
+        expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: metadataKey }));
       },
     );
   });

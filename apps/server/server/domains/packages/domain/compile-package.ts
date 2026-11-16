@@ -26,6 +26,7 @@ import {
   projectRules,
   readPackage,
   skillSlugOf,
+  storedAgentEffort,
   type ToolProjection,
 } from "./mars.js";
 import type { SkillFiles } from "./types.js";
@@ -576,6 +577,7 @@ function rejectBrokenSubagents(drafts: Map<string, Draft>): void {
 
 function definitionOf(draft: Draft): CompiledAgentDefinition {
   const fields = draft.fields as AgentFields;
+  const effort = storedAgentEffort(fields.effort);
   const metadata: NormalizedAgentMetadata = {
     ...(fields.name !== null ? { name: fields.name } : {}),
     ...(fields.description !== null ? { description: fields.description } : {}),
@@ -583,9 +585,7 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     ...(fields.mode !== null ? { mode: fields.mode } : {}),
     "model-invocable": fields["model-invocable"],
     "user-invocable": fields["user-invocable"],
-    ...(fields.effort !== null
-      ? { effort: fields.effort === "max" ? "xhigh" : fields.effort }
-      : {}),
+    ...(effort !== undefined ? { effort } : {}),
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),

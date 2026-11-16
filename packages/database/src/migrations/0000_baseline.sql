@@ -409,7 +409,6 @@ CREATE TABLE "context_sources" (
 	"work_id" uuid,
 	"root_thread_id" uuid,
 	"chat_thread_id" uuid,
-	"name" text NOT NULL,
 	"slug" text NOT NULL,
 	"scope" text DEFAULT 'project' NOT NULL,
 	"description" text,
@@ -955,6 +954,7 @@ CREATE TABLE "document_drafts" (
 	"seed_live_state" "bytea",
 	"seed_live_position" bigint,
 	"has_effect" boolean DEFAULT true NOT NULL,
+	"text_changes" integer DEFAULT 0 NOT NULL,
 	"has_effect_revision" bigint DEFAULT -1 NOT NULL,
 	"schema_version" integer DEFAULT 3001000 NOT NULL,
 	"revision" bigint DEFAULT 0 NOT NULL,
@@ -1800,7 +1800,7 @@ CREATE FUNCTION public.create_account_source() RETURNS trigger
     AS $$
 BEGIN
   -- An account's home folder has its source from the moment the account exists.
-  INSERT INTO context_sources (user_id, name, slug, scope) VALUES (NEW.id, 'User Files', 'user', 'account');
+  INSERT INTO context_sources (user_id, slug, scope) VALUES (NEW.id, 'user', 'account');
   RETURN NEW;
 END;
 $$;

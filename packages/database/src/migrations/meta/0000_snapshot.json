@@ -3956,12 +3956,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "slug": {
           "name": "slug",
           "type": "text",
@@ -9538,6 +9532,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "text_changes": {
+          "name": "text_changes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "has_effect_revision": {
           "name": "has_effect_revision",

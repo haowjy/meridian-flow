@@ -5,9 +5,10 @@
  * canonical transaction participant for every mutation visible in a Works snapshot. It owns
  * the Work's stored pending count (the badge): every Work a transaction locks through it is
  * recounted at commit, and a moved count, or a mark that its current drafts changed
- * (`draftMembershipChanged`), bumps the Work's revision and sends a notice. A chat's first write
- * to a draft (`draftAuthorJoined`) and a live change under a branch's rows (`liveChangedUnder`)
- * only wake the owner: the list names each draft's chats and reads live where it has rows. Every
+ * (`draftMembershipChanged`), bumps the Work's revision and sends a notice. A change to a draft's
+ * row that no count shows (`draftRowChanged`: a new author, or a new number of text changes) and
+ * a live change under a branch's rows (`liveChangedUnder`) only wake the owner: the list names
+ * each draft's chats and its text changes, and reads live where it has rows. Every
  * owner a commit wakes, for any of these reasons, gets one hint, in one publish. An
  * ordinary draft append (a keystroke) never enters it: the draft-effect projection runs after
  * every append and recounts then, through `mutate`.
@@ -117,11 +118,12 @@ export type WorkProjectionMutation = {
    */
   draftMembershipChanged(owner: DraftOwner): void;
   /**
-   * A chat wrote a draft for the first time in the caller's transaction: once it commits, the
-   * draft's owner gets its `draft-owner-hint`, because the list names each draft's chats
-   * (`actorThreads`) and neither its count nor its membership moved. No lock, no revision.
+   * The draft's row in its owner's list changed in the caller's transaction where neither the
+   * count nor the membership shows it: a chat wrote the draft for the first time (`actorThreads`)
+   * or its number of text changes moved (`textChanges`). Once it commits, the draft's owner gets
+   * its `draft-owner-hint`. No lock, no revision.
    */
-  draftAuthorJoined(draftId: string): void;
+  draftRowChanged(draftId: string): void;
   /**
    * A tree commit changed live rows that these branches have rows on, or their rows' parents: once it commits, each
    * branch's owner gets its `draft-owner-hint`, since its list reads live there (`deletedLive`,
@@ -488,7 +490,7 @@ export function createWorkProjectionMutation(input: {
       if (owner.kind === "work") state.membershipWorkIds.add(owner.workId);
       else state.membershipRootIds.set(owner.rootThreadId, owner.projectId);
     },
-    draftAuthorJoined(draftId) {
+    draftRowChanged(draftId) {
       worksNoticeState().wakeDraftIds.add(draftId);
     },
     liveChangedUnder(branchIds) {

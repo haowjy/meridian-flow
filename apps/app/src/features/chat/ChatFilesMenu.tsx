@@ -19,6 +19,7 @@ import { PickerResults, PickerSection } from "@/components/ui/picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import { MenuScratchSection } from "@/features/project/chat/ChatScratch";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 import { LIVE_VIEW } from "@/features/project/context/entry-drag/entry";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import {
@@ -150,7 +151,7 @@ function FilesDropdown({
           />
           <UploadsRefuseDrops>
             <PickerSection
-              label={t`Uploads`}
+              label={schemeLabel("uploads")}
               state={
                 uploads.length === 0 ? (
                   <ListLine density="menu" iconSlot>

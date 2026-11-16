@@ -139,6 +139,7 @@ export type {
   EditKind,
   EditRange,
   EditTarget,
+  InverseJob,
   InversePart,
   InverseSelection,
   PartClassification,
@@ -153,6 +154,7 @@ export {
   computeInverse,
   inspectEditRoots,
   prepareEditRoots,
+  runInverseJob,
 } from "./undo/forward-inverse.js";
 export { heldDeletes } from "./undo/held-deletes.js";
 export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";

@@ -23,7 +23,7 @@ import type {
   UndoDiscardClick,
 } from "@meridian/contracts/branches";
 import { CLOSED_DRAFTS_MAX } from "@meridian/contracts/branches";
-import type { CommandLookupResponse } from "@meridian/contracts/commands";
+import type { CommandLookupResponse, CommandRunning } from "@meridian/contracts/commands";
 import {
   apiClosedDraftsPath,
   apiCommandPath,
@@ -89,15 +89,37 @@ export function getDraftMetadata(
     { signal },
   );
 }
+/**
+ * Posts an Apply or Un-Apply, and again under the same id after a timeout and for as long as the
+ * server says the first request is still running: a large Apply outlasts one request's timeout,
+ * and the resend waits on it server-side instead of applying again. A resend that times out too
+ * means the server isn't answering: that throws, as any lost request does.
+ */
+async function postCommand<A>(url: string, body: unknown): Promise<A> {
+  let timedOut = false;
+  for (;;) {
+    let answer: A | CommandRunning;
+    try {
+      answer = await postJson<A | CommandRunning>(url, body, {
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (cause) {
+      if (timedOut || (cause as { name?: unknown } | null)?.name !== "TimeoutError") throw cause;
+      timedOut = true;
+      continue;
+    }
+    if ((answer as { status?: unknown }).status !== "running") return answer as A;
+    timedOut = false;
+  }
+}
 export function applyDraftClick(draft: DraftAddress, body: ApplyClick) {
-  return postJson<ApplyClickAnswer>(
+  return postCommand<ApplyClickAnswer>(
     apiProjectBranchDocumentDraftApplyPath(
       draft.projectId,
       branchOf(draft.itemKey),
       draft.documentId,
     ),
     body,
-    { signal: AbortSignal.timeout(10_000) },
   );
 }
 export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObservation> {
@@ -111,15 +133,11 @@ export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObs
 }
 /** Several nodes, folders included, as one Apply command. */
 export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick) {
-  return postJson<ApplyClickAnswer>(apiProjectBranchApplyPath(projectId, branchId), body, {
-    signal: AbortSignal.timeout(10_000),
-  });
+  return postCommand<ApplyClickAnswer>(apiProjectBranchApplyPath(projectId, branchId), body);
 }
 /** Takes one Apply command back, every document and the tree, by its id. */
 export function unapplyCommand(projectId: string, branchId: string, body: UnapplyClick) {
-  return postJson<UnapplyClickAnswer>(apiProjectBranchUnapplyPath(projectId, branchId), body, {
-    signal: AbortSignal.timeout(10_000),
-  });
+  return postCommand<UnapplyClickAnswer>(apiProjectBranchUnapplyPath(projectId, branchId), body);
 }
 export function unapplyDraftClick(draft: DraftAddress, body: UnapplyClick) {
   return unapplyCommand(draft.projectId, branchOf(draft.itemKey), body);

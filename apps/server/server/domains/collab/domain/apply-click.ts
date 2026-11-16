@@ -1,4 +1,7 @@
-/** Frozen Apply compilation and command identity: no live state or locks enter the clicked cut. */
+/**
+ * Apply compilation and command identity. A frozen cut is the writer's click on their room; a
+ * whole cut is the server's replica on receipt. No live state or locks enter either.
+ */
 import {
   type ApplyEntry,
   applyRecordOf,
@@ -59,6 +62,7 @@ export type PreparedUnapply = {
 };
 export type CompiledClick = {
   schema: import("prosemirror-model").Schema;
+  /** Empty only for a whole cut whose draft had no change on receipt: the item's text is skipped. */
   groups: CompiledApplyGroup[];
 };
 /**
@@ -110,6 +114,16 @@ function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
   return Y.equalDeleteSets(current.ds, Y.mergeDeleteSets([current.ds, clicked.ds]));
 }
 
+function decodeClickedSnapshot(encoded: string): Y.Snapshot {
+  try {
+    const bytes = Buffer.from(encoded, "base64");
+    if (bytes.toString("base64") !== encoded) throw new Error("Invalid base64");
+    return Y.decodeSnapshotV2(bytes);
+  } catch {
+    throw new ApplyClickRefused("malformed");
+  }
+}
+
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
@@ -118,16 +132,9 @@ export function compileClick(
     parts: import("@meridian/agent-edit/diff").Provenance["parts"];
   },
 ): CompiledClick {
-  let snapshot: Y.Snapshot;
-  try {
-    if (!request.snapshot) throw new Error("Missing snapshot");
-    const bytes = Buffer.from(request.snapshot, "base64");
-    if (bytes.toString("base64") !== request.snapshot) throw new Error("Invalid base64");
-    snapshot = Y.decodeSnapshotV2(bytes);
-  } catch {
-    throw new ApplyClickRefused("malformed");
-  }
   const current = Y.snapshot(doc);
+  // A whole cut is the replica as received: no click froze it, so nothing can be unsynced.
+  const snapshot = "whole" in request ? current : decodeClickedSnapshot(request.snapshot);
   if (!containsSnapshot(current, snapshot)) throw new ApplyClickRefused("unsynced");
   const cut = Y.equalSnapshots(current, snapshot)
     ? doc
@@ -136,7 +143,7 @@ export function compileClick(
     const base = readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
     let patches: SpanPatch[];
     try {
-      patches = request.baseViewDelta.map((patch) => ({
+      patches = ("whole" in request ? [] : request.baseViewDelta).map((patch) => ({
         ...patch,
         blocks: patch.blocks.map((node) => schema.nodeFromJSON(node)),
       }));
@@ -148,11 +155,14 @@ export function compileClick(
     const projection = projectReview(
       diffBlocks(optimistic, readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema)),
     );
+    if ("whole" in request && projection.groups.length === 0) return { schema, groups: [] };
+    const groupIds =
+      "whole" in request ? projection.groups.map((group) => group.id) : request.groupIds;
     const known = new Set(projection.groups.map((group) => group.id));
     if (
-      !request.groupIds.length ||
-      new Set(request.groupIds).size !== request.groupIds.length ||
-      request.groupIds.some((id) => !known.has(id))
+      !groupIds.length ||
+      new Set(groupIds).size !== groupIds.length ||
+      groupIds.some((id) => !known.has(id))
     )
       throw new ApplyClickRefused("malformed");
     const classifications = classifyChanges(
@@ -163,7 +173,7 @@ export function compileClick(
     );
     const chosen: Hunk[] = [];
     let before = optimistic;
-    const groups = request.groupIds.map((groupId): CompiledApplyGroup => {
+    const groups = groupIds.map((groupId): CompiledApplyGroup => {
       const group = projection.groups.find((candidate) => candidate.id === groupId);
       if (!group) throw new ApplyClickRefused("malformed");
       chosen.push(...group.hunks.map((hunk) => projection.diff.hunks[hunk.index]));
@@ -215,7 +225,7 @@ export function createApplyClickService(input: {
           prepared.push({ node: item.node, tree, text: null });
           continue;
         }
-        if (!cut.groupIds.length) throw new ApplyClickRefused("malformed");
+        if (!("whole" in cut) && !cut.groupIds.length) throw new ApplyClickRefused("malformed");
         const start = performance.now();
         const base = await input.store.loadBase({
           draftId: cut.draftId,

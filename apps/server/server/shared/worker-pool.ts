@@ -1,9 +1,8 @@
 /**
- * The one worker-thread pool for file conversions (image previews, EPUB and PDF text): a decoder
- * that is synchronous or hostile-input-bound must never run on the server's event loop, and only
- * a thread can be stopped. Each pool owns its jobs: a worker that crashes, runs out of memory or
- * outlives the job's deadline is terminated and replaced, and its job fails with a
- * `WorkerPoolError`.
+ * The worker-thread pool: CPU that is synchronous or bound by hostile input (file conversions,
+ * inverse planning) must never run on the server's event loop, and only a thread can be stopped.
+ * Each pool owns its jobs: a worker that crashes, runs out of memory or outlives the job's
+ * deadline is terminated and replaced, and its job fails with a `WorkerPoolError`.
  *
  * The protocol: the pool posts `{ id, input }`; the worker answers `{ id, reply }` and reports a
  * failure in its reply, not by throwing (a job with no reply runs to its deadline). A worker file
@@ -40,6 +39,8 @@ export function createWorkerPool<In, Out>(options: {
   /** The worker file, as a URL relative to the file that makes the pool (`nitro.config.ts` bundles it). */
   entry: URL;
   size: number;
+  /** Node flags for each worker, for a worker file that must be loaded from source. */
+  execArgv?: string[];
   /** Each worker's JS heap cap; buffers outside the heap are bounded by what the job reads. */
   maxOldGenerationSizeMb: number;
   /** A worker whose reply makes it unfit for another job (a decoder left in a bad state) is replaced. */
@@ -67,6 +68,7 @@ export function createWorkerPool<In, Out>(options: {
 
   function spawnSlot(): Slot<In, Out> {
     const worker = new Worker(options.entry, {
+      execArgv: options.execArgv,
       resourceLimits: { maxOldGenerationSizeMb: options.maxOldGenerationSizeMb },
     });
     const slot: Slot<In, Out> = { worker };

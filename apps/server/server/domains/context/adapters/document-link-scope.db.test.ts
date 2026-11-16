@@ -126,8 +126,8 @@ if (!RUN) {
         { id: OTHER_PROJECT, userId: USER, name: "Other", slug: "other" },
       ]);
       await db.insert(contextSources).values([
-        { id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript" },
-        { id: OTHER_SOURCE, projectId: OTHER_PROJECT, name: "Manuscript", slug: "manuscript" },
+        { id: SOURCE, projectId: PROJECT, slug: "manuscript" },
+        { id: OTHER_SOURCE, projectId: OTHER_PROJECT, slug: "manuscript" },
       ]);
       // A retired lineage Scratch source keeps its documents.
       await db.insert(threads).values({
@@ -143,7 +143,6 @@ if (!RUN) {
         projectId: PROJECT,
         rootThreadId: RETIRED_CHAT,
         scope: "lineage",
-        name: "Scratch",
         slug: "scratch",
         deletedAt: new Date(),
       });

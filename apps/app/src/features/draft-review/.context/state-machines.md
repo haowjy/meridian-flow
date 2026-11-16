@@ -13,6 +13,7 @@ stateDiagram-v2
   queued --> cancelled: the click is taken back before it is sent
   queued --> sent: it is the head, and nothing else is in flight
   sent --> settled: applied, or a final refusal
+  sent --> sent: a timeout, or the server says the first request is still running
   sent --> retrying: no usable answer
   retrying --> sent: after 1, 2, then 4 seconds, with the same body
   retrying --> stalled: three retries used
@@ -24,12 +25,18 @@ stateDiagram-v2
 
 - **A click can be taken back only before it is sent.** Once `sent`, the server may have it,
   and the same command id is resent until the server answers.
+- **A timeout is not a failure.** The request is sent again under the same id at once, and
+  again for as long as the server answers `running` (the first request still holds the id);
+  the head stays `sent`, shown as Applying. Only a resend that times out too, or any other
+  lost answer, moves to `retrying`.
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
   the head where it is. A stalled head holds every later command behind it, because sending
   them around it would apply changes out of order.
-- **An Apply settles when the server's record shows it**, not on the answer. The server keeps
-  a row for each applied command, and the command settles once its id is among them. An Undo
-  settles when the rows it reversed are gone.
+- **A frozen Apply settles when the server's record shows it**, not on the answer. The server
+  keeps a row for each applied command in the draft's room, and the command settles once its id
+  is among them. A click with no frozen cut (a tree cut alone, or a whole-draft cut sent with
+  no room open) settles on the answer: no room here records it. An Undo settles when the rows it
+  reversed are gone.
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
   queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.

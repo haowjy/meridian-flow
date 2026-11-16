@@ -30,6 +30,7 @@ import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
+import { INVERSE_WORKERS } from "./inverse-worker.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
@@ -201,10 +202,9 @@ async function prepare(
   const selectedAction = selected?.id;
   const accepted = selected?.targets ?? new Set<string>();
   const consumes = selectedAction ? [selectedAction] : [];
-  const plans: PreparedDocumentInverse[] = [];
-  for (const document of documents) {
-    // One document's plan is synchronous CPU of hundreds of milliseconds; the server answers
-    // its other requests between documents.
+  const planOf = async (document: InverseDocument): Promise<PreparedDocumentInverse> => {
+    // A preview plans in-process, a document's lineage at a time: the server answers its other
+    // requests between documents.
     await setImmediate();
     const targets = document.history.filter(
       (part) =>
@@ -283,10 +283,16 @@ async function prepare(
     // Each destination's parts compute as one selection in step order over that destination's
     // view; one edit lands in one destination. Review membership does not decide inverse
     // eligibility.
-    const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
-      [...selection].map(([destination, parts]) => {
-        return [destination, entryPlanner.compute(destination, parts, actionId, { preview })];
-      }),
+    const computed = new Map(
+      await Promise.all(
+        [...selection].map(
+          async ([destination, parts]) =>
+            [
+              destination,
+              await entryPlanner.compute(destination, parts, actionId, { preview }),
+            ] as const,
+        ),
+      ),
     );
     const classifiedKeys = new Set(
       [...computed.values()].flatMap((result) =>
@@ -322,8 +328,28 @@ async function prepare(
           ]
         : [];
     });
-    plans.push({ document, steps, consumes, skips });
-  }
+    return { document, steps, consumes, skips };
+  };
+  // As many documents at once as the worker pool has threads. A planner keeps its lineage until
+  // its document is done, so a preview, which builds it here, would hold every document's if
+  // they all started at once.
+  const plans: PreparedDocumentInverse[] = [];
+  let next = 0;
+  // One failed document ends every lane, so no more jobs go to the pool for a failed command.
+  let failed = false;
+  await Promise.all(
+    Array.from({ length: Math.min(INVERSE_WORKERS, documents.length) }, async () => {
+      while (next < documents.length && !failed) {
+        const at = next++;
+        try {
+          plans[at] = await planOf(documents[at] as InverseDocument);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
+    }),
+  );
   return plans;
 }
 

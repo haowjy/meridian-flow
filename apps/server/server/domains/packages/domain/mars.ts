@@ -1,5 +1,5 @@
 /**
- * The only module in the server that imports `@meridian-flow/mars-schema`. A package is read
+ * Reads Mars files with `@meridian-flow/mars-schema`. A package is read
  * whole with `prepare` (`readPackage`), which adds the package's `[package.tools]` to each Agent
  * as `mars sync` does; a lone file (a skill, a manifest) is read with `read`. `prepare` never
  * runs with `migrate`, and a package it classes as anything but schema 1 is refused by the
@@ -11,11 +11,13 @@ import {
   check,
   type DefinitionRead,
   type Diagnostic,
+  type Effort,
   type ManifestRead,
   type Prepared,
   prepare,
   project,
   read,
+  resolveEffort,
   rewriteBlock,
   type SkillFields,
   type ToolProjection,
@@ -23,6 +25,27 @@ import {
 } from "@meridian-flow/mars-schema";
 
 export { rewriteBlock };
+
+/** Flow stores max as `xhigh`, which `AGENT_EFFORT_CHOICE` reads back as max. */
+const STORED_EFFORT: Record<Effort, "none" | "low" | "medium" | "high" | "xhigh"> = {
+  none: "none",
+  minimal: "low",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: "xhigh",
+};
+
+/**
+ * An Agent file's `effort` as Flow stores it, read by Mars's rule for the `meridian-flow` host:
+ * `minimal` runs at low, `xhigh` at max. `auto` and a missing key store nothing, the model's own
+ * default. The model's own levels are applied later, per call, by the gateway.
+ */
+export function storedAgentEffort(effort: AgentFields["effort"]) {
+  const { level } = resolveEffort(effort, null, "meridian-flow");
+  return level === null ? undefined : STORED_EFFORT[level];
+}
 
 /**
  * The reader that produced a stored definition row. Whoever changes the availability table or

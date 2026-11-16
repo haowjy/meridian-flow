@@ -20,6 +20,8 @@ export type WorkBranchDraftMetadata = {
   updatedAt: Date;
   /** Whether the draft differs from its review base. */
   hasEffect: boolean;
+  /** How many review groups that difference makes, judged with `hasEffect`. */
+  textChanges: number;
 };
 
 export type WorkBranchPendingStore = {

@@ -129,6 +129,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
           documentId: documentDrafts.documentId,
           updatedAt: documentDrafts.updatedAt,
           hasEffect: documentDrafts.hasEffect,
+          textChanges: documentDrafts.textChanges,
         })
         .from(documentDrafts)
         .where(

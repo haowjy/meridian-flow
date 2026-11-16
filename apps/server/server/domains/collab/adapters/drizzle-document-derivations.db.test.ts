@@ -115,7 +115,6 @@ describe("durable document derivations", () => {
     await db.insert(contextSources).values({
       id: sourceId,
       projectId,
-      name: "Manuscript",
       slug: "manuscript",
       scope: "project",
     });

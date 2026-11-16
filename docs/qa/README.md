@@ -199,7 +199,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    create into a refusal that closes locally.
 10. Verify atomic reveal and complete documents with the notes-folder fixture under
    `apps/server/server/domains/import/__fixtures__/`, including properties and links.
-11. Verify order. In one project make a Knowledge Base folder with four documents and
+11. Verify order. In one project make a Knowledge folder with four documents and
    reorder one of them (Move… > Change position, or a row-edge drag) so the folder is
    manual; make a second folder with the same documents and leave it alone. Import 100+
    files and a nested folder into each. In the default folder the arrivals list in name
@@ -326,7 +326,7 @@ Three harness artifacts have produced false defects. Rule them out first.
 ## Project export
 
 1. Start an owned worktree with `pnpm dev` and discover its HTTPS routes with
-   `pnpm portless:list`. Seed links across Manuscript and Knowledge Base, a
+   `pnpm portless:list`. Seed links across Manuscript and Knowledge, a
    binary image, case-only siblings, two Works with Scratch and Uploads, and a
    No Work chat with Scratch. Seed `documents.metadata.properties` directly
    as `{ "format": "yaml", "text": "..." }`.

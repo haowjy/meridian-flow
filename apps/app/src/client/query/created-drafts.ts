@@ -62,6 +62,7 @@ export function useCreatedDrafts(
         documentId,
         draftId: createdDraftId(documentId),
         hasDraft: true,
+        textChanges: 0,
         origin: "created",
         isNew: true,
         binary: false,

@@ -65,7 +65,6 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
   await db.insert(schema.contextSources).values({
     id: ids.contextId,
     projectId: ids.projectId,
-    name: "Project context",
     slug: "project-context",
   });
   await treeSeeder(db).document(ids.contextId, "Branch target", { id: ids.documentId });
