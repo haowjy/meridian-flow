@@ -4573,8 +4573,8 @@ msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to disca
 msgstr "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its chat is in Trash, so this stayed as it is"
-msgstr "Its chat is in Trash, so this stayed as it is"
+#~ msgid "Its chat is in Trash, so this stayed as it is"
+#~ msgstr "Its chat is in Trash, so this stayed as it is"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Its chat is in Trash."
@@ -4601,8 +4601,8 @@ msgid "Its subagent {name} is unavailable."
 msgstr "Its subagent {name} is unavailable."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its Work was closed, so this stayed as it is"
-msgstr "Its Work was closed, so this stayed as it is"
+#~ msgid "Its Work was closed, so this stayed as it is"
+#~ msgstr "Its Work was closed, so this stayed as it is"
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
