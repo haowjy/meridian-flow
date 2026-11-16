@@ -9,7 +9,6 @@ import {
   type StandingNode,
   standingOf,
   startReplay,
-  type TreeProjection,
   type TreeStanding,
   withTurned,
 } from "./replay.js";
