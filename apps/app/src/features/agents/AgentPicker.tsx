@@ -8,12 +8,16 @@ import { ChevronRight, Settings2 } from "lucide-react";
 import { type CSSProperties, type Ref, type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
+import {
+  dropdownGroupLabelClass,
+  dropdownRowVariants,
+} from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
+import { cn } from "@/lib/utils";
 import { useOpenAgentFile } from "./agent-file-document";
 import type { CreationAgent } from "./creation-agent";
 import { ModelMark } from "./ModelMark";
@@ -58,8 +62,8 @@ type AgentPickerPanelProps = {
 };
 
 /**
- * The Agent picker, in columns: a search and the Agents; a card about the Agent pointed at, beside
- * its row; and that Agent's models and reasoning levels. Its size follows the number of Agents alone, so nothing
+ * The Agent picker: a search and the Agents on the left; on the right the Agent pointed at, a card
+ * about it over its models and reasoning levels. Its size follows the number of Agents alone, so nothing
  * moves while the writer points or searches.
  */
 export function AgentPickerPanel({
@@ -274,70 +278,72 @@ export function AgentPickerPanel({
               </li>
             </ul>
           </div>
-          <div className="hidden min-h-0 w-56 flex-none flex-col @[40rem]/agents:flex">
-            <AgentCard
-              key={shown.slug}
-              agent={shown}
-              thisChat={started && shown === own ? started.threadId : null}
-              useLabel={
-                handsOff || (started && shown !== own)
-                  ? t`Hand off to ${shown.name}`
-                  : shown.slug === current.slug
-                    ? null
-                    : t`Use ${shown.name}`
-              }
-              onUse={() => choose(shown, NO_OVERRIDES)}
-            />
-          </div>
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the choices' arrow keys; its rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
-          <div
-            ref={choicesRef}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                listRef.current
-                  ?.querySelector<HTMLElement>(
-                    `li[data-agent="${CSS.escape(shown.slug)}"] [data-list-item]`,
-                  )
-                  ?.focus();
-                return;
-              }
-              handleListKeys(event);
-              // Up and Down stay in the choices even with no rows to move between.
-              if (event.key === "ArrowUp" || event.key === "ArrowDown") event.preventDefault();
-            }}
-            className="flex min-h-0 min-w-0 flex-1 flex-col"
-          >
-            {pickable(shown) ? (
-              <>
-                <ModelChoices
-                  agent={shown}
-                  runsOn={runsOn}
-                  models={models}
-                  rebuildsCache={Boolean(started && shown === own)}
-                  onChoose={(id) =>
-                    choose(shown, { ...overrides, model: id === shown.model ? null : id })
-                  }
-                />
-                <ReasoningChoices
-                  agent={shown}
-                  model={runsOnOption}
-                  thinksAt={thinksAt}
-                  onChoose={(level) =>
-                    choose(shown, { ...overrides, effort: level === shown.effort ? null : level })
-                  }
-                />
-              </>
-            ) : (
-              <Unusable
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+            <div className="hidden max-h-[40%] shrink-0 flex-col @[34rem]/agents:flex">
+              <AgentCard
+                key={shown.slug}
                 agent={shown}
-                onOpenFile={() => {
-                  if (!shown.path || shown.level === "builtin") return;
-                  onClose();
-                  openAgentFile(shown.level, shown.path);
-                }}
+                thisChat={started && shown === own ? started.threadId : null}
+                useLabel={
+                  handsOff || (started && shown !== own)
+                    ? t`Hand off to ${shown.name}`
+                    : shown.slug === current.slug
+                      ? null
+                      : t`Use ${shown.name}`
+                }
+                onUse={() => choose(shown, NO_OVERRIDES)}
               />
-            )}
+            </div>
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the choices' arrow keys; its rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
+            <div
+              ref={choicesRef}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  listRef.current
+                    ?.querySelector<HTMLElement>(
+                      `li[data-agent="${CSS.escape(shown.slug)}"] [data-list-item]`,
+                    )
+                    ?.focus();
+                  return;
+                }
+                handleListKeys(event);
+                // Up and Down stay in the choices even with no rows to move between.
+                if (event.key === "ArrowUp" || event.key === "ArrowDown") event.preventDefault();
+              }}
+              className="flex min-h-0 min-w-0 flex-1 flex-col"
+            >
+              {pickable(shown) ? (
+                <>
+                  <ModelChoices
+                    agent={shown}
+                    runsOn={runsOn}
+                    models={models}
+                    rebuildsCache={Boolean(started && shown === own)}
+                    onChoose={(id) =>
+                      choose(shown, { ...overrides, model: id === shown.model ? null : id })
+                    }
+                  />
+                  <ReasoningChoices
+                    agent={shown}
+                    model={runsOnOption}
+                    thinksAt={thinksAt}
+                    onChoose={(level) =>
+                      choose(shown, { ...overrides, effort: level === shown.effort ? null : level })
+                    }
+                  />
+                </>
+              ) : (
+                <Unusable
+                  agent={shown}
+                  onOpenFile={() => {
+                    if (!shown.path || shown.level === "builtin") return;
+                    onClose();
+                    openAgentFile(shown.level, shown.path);
+                  }}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -491,18 +497,27 @@ function ReasoningChoices({
   return (
     <section
       aria-label={model ? t`Reasoning on ${model.name}` : t`Reasoning`}
-      className="mt-1 shrink-0 border-t border-border-subtle pt-1"
+      className="mt-1 shrink-0 border-t border-border-subtle pt-2"
     >
-      <ul className="flex flex-col">
+      {/* One line of levels, so the models above keep the column's height. */}
+      <ul className="flex flex-wrap gap-1">
         {choices.map((level) => (
           <li key={level ?? "default"}>
-            <ListRow
-              density="menu"
-              current={level === thinksAt}
-              title={level ? reasoningName(level) : t`Default`}
-              meta={level && level === agent.effort ? t`Default` : undefined}
-              onOpen={() => onChoose(level)}
-            />
+            <button
+              type="button"
+              data-list-item
+              aria-current={level === thinksAt || undefined}
+              className={cn(
+                dropdownRowVariants({ selected: level === thinksAt }),
+                "w-auto gap-1.5",
+              )}
+              onClick={() => onChoose(level)}
+            >
+              {level ? reasoningName(level) : t`Default`}
+              {level && level === agent.effort ? (
+                <span className="text-xs text-muted-foreground">{t`Default`}</span>
+              ) : null}
+            </button>
           </li>
         ))}
       </ul>

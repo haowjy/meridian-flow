@@ -49,7 +49,7 @@ export const dropdownSurfaceVariants = cva(
         identity: "[--dropdown-preferred-width:18rem]",
         catalog: "[--dropdown-preferred-width:20rem]",
         /** A list beside the detail of the row pointed at. */
-        split: "[--dropdown-preferred-width:50rem]",
+        split: "[--dropdown-preferred-width:38rem]",
       },
     },
     defaultVariants: { measure: "compact" },
