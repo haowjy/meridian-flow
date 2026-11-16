@@ -54,6 +54,7 @@ export function createDrizzleCallStore({ db }: { db: Database }): CallStore {
         toolName: row.toolName,
         arguments: row.arguments as never,
         outcomeKind: row.outcomeKind,
+        replyKept: typeof (row.replyRef as { key?: unknown } | null)?.key === "string",
         sentAt: row.sentAt,
       }));
     },

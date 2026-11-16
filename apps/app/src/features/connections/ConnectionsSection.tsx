@@ -1,11 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  MCP_CONNECTIONS_PER_ACCOUNT,
-  type McpConnectionLevel,
-  type McpConnectionView,
-  type McpToolView,
-} from "@meridian/contracts/mcp";
+import type { McpConnectionLevel, McpConnectionView, McpToolView } from "@meridian/contracts/mcp";
 import { Plug, Plus } from "lucide-react";
 import { useState } from "react";
 import {
@@ -55,7 +50,6 @@ export function ConnectionsSection() {
   const [removeFailed, setRemoveFailed] = useState<string | null>(null);
 
   const connections = list.data ?? [];
-  const atLimit = connections.length >= MCP_CONNECTIONS_PER_ACCOUNT;
   const nameOf = (id: string | null) =>
     connections.find((connection) => connection.id === id)?.name ?? null;
 
@@ -145,7 +139,6 @@ export function ConnectionsSection() {
     <Button
       size="sm"
       variant="outline"
-      disabled={atLimit}
       onClick={() => setAdding({ kind: "form", values: EMPTY_ADD, error: null })}
     >
       <Plus aria-hidden />
@@ -165,15 +158,6 @@ export function ConnectionsSection() {
       </header>
 
       {adding.kind === "closed" && list.isSuccess ? <div className="mb-5">{addButton}</div> : null}
-
-      {atLimit && adding.kind === "closed" ? (
-        <p className="-mt-3 mb-4 text-xs text-muted-foreground">
-          <Trans>
-            You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can have. Remove one to
-            add another.
-          </Trans>
-        </p>
-      ) : null}
 
       {adding.kind === "form" ? (
         <div className="mb-5">

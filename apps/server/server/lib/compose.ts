@@ -291,7 +291,12 @@ import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
 import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
-import { createProcessMcpClient, parseSessionKey, sessionKey } from "./mcp-client.js";
+import {
+  addressRefusal,
+  createProcessMcpClient,
+  parseSessionKey,
+  sessionKey,
+} from "./mcp-client.js";
 import { resolveMcpTokenKey } from "./mcp-token-key.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
@@ -587,6 +592,7 @@ export async function createProductionAppPorts(input: {
   const mcpConnections = createMcpConnections({
     store: mcpStore,
     client: mcpClient,
+    addressRefusal,
     cipher: createTokenCipher(resolveMcpTokenKey(environment)),
     sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
     // A hint, then the app asks again; one hint per open project of the account.

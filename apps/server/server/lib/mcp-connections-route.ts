@@ -11,8 +11,6 @@ import { requireRequestId } from "./request-id.js";
 const STATUS: Record<McpConnectionError["code"], number> = {
   invalid: 400,
   not_found: 404,
-  name_taken: 409,
-  limit: 409,
   not_listed: 422,
   not_read_only: 422,
 };

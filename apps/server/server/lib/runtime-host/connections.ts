@@ -15,6 +15,7 @@ import {
   createConnectionBake,
   createConnectionTools,
   createScriptRuns,
+  DO_NOT_REPEAT,
   type McpConnections,
   SCRIPT_LIMITS,
 } from "../../domains/mcp/index.js";
@@ -39,6 +40,13 @@ export function createConnections(deps: {
 }): ConnectionsPort {
   const baker = createConnectionBake(deps);
   const tools = createConnectionTools({
+    warn: (what, cause) =>
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "mcp.call",
+        name: "McpCallAfterAnswerFailed",
+        payload: { what, ...unknownToEventPayload(cause) },
+      }),
     store: deps.store,
     calls: deps.calls,
     client: deps.client,
@@ -105,7 +113,12 @@ export function createConnections(deps: {
       return null;
     },
 
-    recordedCalls: tools.recordedCalls,
+    doNotRepeat: DO_NOT_REPEAT,
+
+    async recordedCalls(threadId, turnIds) {
+      const bake = await bakeOf(await threadOf(threadId));
+      return tools.recordedCalls(threadId, turnIds, bake?.bakedConnections ?? []);
+    },
 
     async call(caller, input) {
       const thread = await threadOf(caller.threadId);

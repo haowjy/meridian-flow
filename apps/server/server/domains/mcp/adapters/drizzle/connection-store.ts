@@ -1,5 +1,5 @@
 import type { ProjectId, UserId } from "@meridian/contracts";
-import type { McpConnectionId } from "@meridian/contracts/mcp";
+import { nextFreeName } from "@meridian/contracts/mcp";
 import type { Database } from "@meridian/database";
 import { mcpConnections, mcpConnectionTokens, mcpPins, users } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
@@ -58,12 +58,13 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
     }));
   }
 
-  const nameTaken = async (
+  /** The names of the live connections at a row's level. */
+  const liveNames = async (
     conn: DrizzleDb,
-    row: { id?: McpConnectionId; accountId: UserId; projectId: ProjectId | null; name: string },
+    row: { accountId: UserId; projectId: ProjectId | null },
   ) => {
-    const [taken] = await conn
-      .select({ id: mcpConnections.id })
+    const taken = await conn
+      .select({ name: mcpConnections.name })
       .from(mcpConnections)
       .where(
         and(
@@ -71,15 +72,13 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
           row.projectId
             ? eq(mcpConnections.projectId, row.projectId)
             : isNull(mcpConnections.projectId),
-          eq(mcpConnections.name, row.name),
           isNull(mcpConnections.deletedAt),
         ),
-      )
-      .limit(1);
-    return taken !== undefined && taken.id !== row.id;
+      );
+    return new Set(taken.map(({ name }) => name));
   };
 
-  /** One account lock orders the count, the name check and the insert of concurrent adds. */
+  /** One account lock orders the name choice and the write of concurrent adds and undos. */
   const lockAccount = (conn: DrizzleDb, accountId: UserId) =>
     conn.select({ id: users.id }).from(users).where(eq(users.id, accountId)).for("update");
 
@@ -116,21 +115,14 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
     add(input) {
       return db.transaction(async (tx) => {
         await lockAccount(tx, input.accountId);
-        const [{ live = 0 } = {}] = await tx
-          .select({ live: sql<number>`count(*)::int` })
-          .from(mcpConnections)
-          .where(
-            and(eq(mcpConnections.accountId, input.accountId), isNull(mcpConnections.deletedAt)),
-          );
-        if (live >= input.limit) return { kind: "limit" as const };
-        if (await nameTaken(tx, input)) return { kind: "name_taken" as const };
+        const name = nextFreeName(await liveNames(tx, input), input.name);
         const [row] = await tx
           .insert(mcpConnections)
           .values({
             id: input.id,
             accountId: input.accountId,
             projectId: input.projectId,
-            name: input.name,
+            name,
             spec: input.spec,
           })
           .returning();
@@ -143,7 +135,7 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
           });
         const [connection] = await hydrate(tx, [row]);
         if (!connection) throw new Error("Connection insert vanished");
-        return { kind: "added" as const, connection };
+        return connection;
       });
     },
 
@@ -152,7 +144,7 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
         const [row] = await tx
           .update(mcpConnections)
           .set({
-            ...(change.spec ? { spec: change.spec } : {}),
+            ...(change.spec ? { spec: change.spec, currentPinId: null } : {}),
             settingsVersion: sql`${mcpConnections.settingsVersion} + 1`,
             updatedAt: new Date(),
           })
@@ -193,11 +185,13 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
           .from(mcpConnections)
           .where(and(eq(mcpConnections.id, id), eq(mcpConnections.accountId, accountId)));
         if (!row) return "missing" as const;
-        if (at === null && row.deletedAt !== null && (await nameTaken(tx, row)))
-          return "name_taken" as const;
+        const name =
+          at === null && row.deletedAt !== null
+            ? nextFreeName(await liveNames(tx, row), row.name)
+            : row.name;
         await tx
           .update(mcpConnections)
-          .set({ deletedAt: at, updatedAt: new Date() })
+          .set({ name, deletedAt: at, updatedAt: new Date() })
           .where(eq(mcpConnections.id, id));
         return "ok" as const;
       });

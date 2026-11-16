@@ -8,7 +8,9 @@ of this ([design](https://github.com/haowjy/meridian-flow-docs/tree/main/work/sh
 
 ## What is stored
 
-- `mcp_connections`: name (letters, digits, `-`, `_`; unique among live rows of its level), a
+- `mcp_connections`: name (letters, digits, `-`, `_`; unique among live rows of its level: add and
+  Undo never refuse a name taken there, they take the next free `<name>-2`, `-3`…, and there is no cap on
+  how many connections a writer has), a
   transport-tagged `spec`, the current pin, a **settings version**, soft delete, and the status
   columns ([state machine](state-machines.md)). Removal is soft so Undo brings back the pin and
   the token. A sweep on the recovery scheduler (`mcp-removed-purge`) deletes a connection removed
@@ -33,10 +35,13 @@ of this ([design](https://github.com/haowjy/meridian-flow-docs/tree/main/work/sh
   `sessionKey`). An edit of the address or the token bumps the version, so every server process
   stops using the old session at once; the process that handled the edit also closes it. The
   one process-wide client lives in `lib/`, over Flow's `fetch` on the public-address dispatcher
-  (https, port 443, no redirects, HTTP/1.1 only: undici's HTTP/2 path leaves an orphan stream after an aborted request, whose idle close throws an uncaught `UND_ERR_INFO`, nodejs/undici#6143; the connector's `allowH2: false` goes once undici releases the fix). Domains never import `lib/`, so the service takes the client
+  (https, port 443, no redirects, HTTP/1.1 only; `addressRefusal` in `lib/mcp-client.ts` is the one rule for the address, applied by `publicFetch` to each request and by the service at add and edit, so an address Flow will never contact is refused on the screen at once, not saved; a redirect is refused with a reason of its own: undici's HTTP/2 path leaves an orphan stream after an aborted request, whose idle close throws an uncaught `UND_ERR_INFO`, nodejs/undici#6143; the connector's `allowH2: false` goes once undici releases the fix). Domains never import `lib/`, so the service takes the client
   and the key function as dependencies.
 - **A connection may be saved with no pin.** Adding lists the server's tools; with no answer the
-  connection is saved with no pin and the status says why. Only read-only tools can be pinned
+  connection is saved with no pin and the status says why. An edit of the address drops the pin
+  (it listed another server) and, in the background, pins again what the new server lists of the
+  tools the writer had chosen (read-only ones); a server that cannot be listed leaves no pin, and
+  the screen offers Choose tools. Only read-only tools can be pinned
   until the owner decides how calls with effects are held.
 - **Starting a chat never waits for a check**, and a check runs no tool.
 
@@ -56,9 +61,11 @@ connections are prompt text, not tool definitions.
   subagent takes its parent's bake in effect, at each prompt it writes (first turn and each
   compaction), so a connection added since is not offered to it. A fork inherits the bake. No
   network call is made while a bake is composed or saved; saving a prompt starts the checks its
-  connections are due (`saved`), in the background.
+  connections are due (`saved`), in the background, after the transaction that saved it commits
+  (`afterCommit`), so a rolled-back bake starts none.
 - **Listed by name.** A connection whose status is needs sign-in, or unreachable from a check that
-  ended within two minutes, is one line with the reason and no tool lines. `mcp_describe` with its
+  started within two minutes (`status_started_at`: a later check that learned nothing, a rate
+  limit, does not make an old failure look fresh), is one line with the reason and no tool lines. `mcp_describe` with its
   name lists its tools from the pin, and `mcp_call` goes out whatever the status.
 - **`callConnectionTool`** (`domain/connection-tools.ts`) is the one function that calls a
   connection's tool, and a script's call will use it too. It reads the pin through the bake, writes
@@ -66,7 +73,11 @@ connections are prompt text, not tool definitions.
   called, completes it after, keeps the full reply in the chat's storage prefix
   (`chat-media/<thread>/mcp/`, which the Work purge clears), and feeds the connection's status
   (`checks.recordCall`). Nothing that calls a connection may run inside a longer transaction: the
-  row must be committed the moment the call leaves.
+  row must be committed the moment the call leaves. Once the client has answered, nothing throws
+  before the outcome reaches the model, or it would repeat a call that ran: keeping the reply
+  (and each picture) is best-effort (a failed store is noted on the row as `reply_ref`
+  `{notKept}`, the picture is left out and said so), and completing the row and feeding the status
+  warn (`McpCallAfterAnswerFailed`) and carry on.
 - **Results.** Each outcome has its own code (`mcp_tool_error`, `mcp_rejected`, `mcp_too_large`,
   `mcp_unreachable`, `mcp_unauthorized`, `mcp_aborted`, `mcp_unknown_tool`,
   `mcp_connection_removed`); the typed result (`@meridian/contracts/mcp`) names connection, tool,
@@ -74,8 +85,11 @@ connections are prompt text, not tool definitions.
   characters with a line saying so. A tool's own error or a rejection is followed by the tool's
   schema. Pictures are stored in the chat's prefix and travel as stored media parts. An id the
   thread does not hold, and a connection removed since, are made without calling the client.
-- **Restart.** The request-time stub for a connection call with no stored result lists its record
-  (what was sent and how far it got): it is never sent again.
+- **Restart.** The request-time stub for a connection call with no stored result opens with
+  `DO_NOT_REPEAT`, the text a failed script's list opens with too, and lists its records: each
+  call as the id `mcp_call` takes (`<connection>/<tool>`, the name from the thread's bake), what
+  was sent, and whether it was answered (its reply is kept, not shown) or its end was not
+  recorded and it may have run. It is never sent again.
 - **`mcp_run`** (`domain/script-run.ts`) runs the model's JavaScript on the one QuickJS runner made
   in `createAppServices` and closed at shutdown; it throws at creation when the bundle lost the
   runner's worker or `.wasm`, so `pnpm smoke:prod-boot` proves the build (Nitro `traceDeps` holds
@@ -86,7 +100,8 @@ connections are prompt text, not tool definitions.
   value. Code goes through `script-code.ts` first (fences off, types stripped in place by Node's
   `stripTypeScriptTypes`, so an error's line is the line the model wrote). The result text is the
   value, the calls, the logs; a script that did not return also lists each call's arguments and
-  reply and says not to repeat answered calls (without that, models repeated writes). Each call is
+  reply and says not to repeat answered calls (without that, models repeated writes); a call
+  refused before it was sent is listed apart, as not run. Each call is
   journaled as `tool.connection_call` (sent, then finished) for the chat's live rows; the final
   typed result (`McpRunResult`) lists every call. Limits are `SCRIPT_LIMITS`, which the tool
   description reads.

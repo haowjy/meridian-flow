@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 import type { ProjectId, UserId } from "@meridian/contracts";
 import {
   isMcpConnectionName,
-  MCP_CONNECTIONS_PER_ACCOUNT,
   type McpConnectionId,
   type McpConnectionStatus,
   type McpConnectionView,
@@ -32,13 +31,7 @@ import type { TokenCipher } from "./token-cipher.js";
 /** A refusal the settings API words for the writer; `code` picks the HTTP status. */
 export class McpConnectionError extends Error {
   constructor(
-    readonly code:
-      | "invalid"
-      | "not_found"
-      | "name_taken"
-      | "limit"
-      | "not_listed"
-      | "not_read_only",
+    readonly code: "invalid" | "not_found" | "not_listed" | "not_read_only",
     message: string,
   ) {
     super(message);
@@ -50,6 +43,8 @@ export interface McpConnectionsDeps {
   store: ConnectionStore;
   client: McpClient;
   cipher: TokenCipher;
+  /** Why Flow will never contact this address, or null: an address like that is a typo, so add and edit refuse it at once. */
+  addressRefusal(url: URL): string | null;
   /** The sessions key: account, connection and settings version. */
   sessionKey(row: ConnectionRow): string;
   statusChanged(row: ConnectionRow): void;
@@ -60,20 +55,6 @@ export interface McpConnectionsDeps {
 const LIST_TIMEOUT_MS = 15_000;
 /** A removed connection stays for Undo this long; then it goes with its token and pins. */
 export const REMOVED_RETENTION_MS = 30 * 24 * 60 * 60_000;
-
-function parseUrl(raw: unknown): string {
-  if (typeof raw !== "string") throw new McpConnectionError("invalid", "The address is missing.");
-  let url: URL;
-  try {
-    url = new URL(raw.trim());
-  } catch {
-    throw new McpConnectionError("invalid", "That is not a web address.");
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:")
-    throw new McpConnectionError("invalid", "The address must start with https://.");
-  url.hash = "";
-  return url.toString();
-}
 
 const isReadOnly = (tool: { annotations?: unknown }): boolean => {
   const { annotations } = tool as { annotations?: { readOnlyHint?: unknown } };
@@ -91,6 +72,20 @@ function toolViews(
 }
 
 export function createMcpConnections(deps: McpConnectionsDeps) {
+  function parseUrl(raw: unknown): string {
+    if (typeof raw !== "string") throw new McpConnectionError("invalid", "The address is missing.");
+    let url: URL;
+    try {
+      url = new URL(raw.trim());
+    } catch {
+      throw new McpConnectionError("invalid", "That is not a web address.");
+    }
+    const refusal = deps.addressRefusal(url);
+    if (refusal) throw new McpConnectionError("invalid", refusal);
+    url.hash = "";
+    return url.toString();
+  }
+
   const now = deps.now ?? (() => new Date());
   const checks = createConnectionChecks({
     store: deps.store,
@@ -188,6 +183,36 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
     return null;
   }
 
+  const chosenTools = (stored: StoredConnection) =>
+    stored.pin?.pin.tools.map((tool) => tool.name) ?? [];
+
+  /**
+   * After an address edit: pins what the new server lists of the tools the writer had chosen
+   * (read-only ones only, as `pin` requires). A server that cannot be listed leaves the connection
+   * with no pin, and the screen offers Choose tools.
+   */
+  async function repin(after: StoredConnection, chosen: readonly string[]): Promise<void> {
+    if (chosen.length === 0) return;
+    const listing = await listingOf(after);
+    if (!listing) return;
+    const names = chosen.filter((name) =>
+      listing.tools.some((tool) => String(tool.name) === name && isReadOnly(tool)),
+    );
+    if (names.length === 0) return;
+    const made = makePin(listing, { tools: names, pinnedAt: now().toISOString() });
+    if ("problems" in made) return;
+    // Another edit while the server was listing: its own re-pin follows, this listing is of an old address.
+    const current = await deps.store.find(after.row.accountId, after.row.id);
+    if (
+      !current ||
+      current.row.deletedAt ||
+      current.row.settingsVersion !== after.row.settingsVersion
+    )
+      return;
+    await deps.store.savePin(after.row.id, made.pin, pinHash(made.pin));
+    deps.statusChanged(after.row);
+  }
+
   return {
     resolve,
     checks,
@@ -218,23 +243,12 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
         name: input.name,
         spec: { transport: "http", url },
         sealedToken: token ? deps.cipher.seal(token, { connectionId: id, accountId }) : null,
-        limit: MCP_CONNECTIONS_PER_ACCOUNT,
       });
-      if (added.kind === "name_taken")
-        throw new McpConnectionError(
-          "name_taken",
-          `You already have a connection named ${input.name} here.`,
-        );
-      if (added.kind === "limit")
-        throw new McpConnectionError(
-          "limit",
-          `You can have ${MCP_CONNECTIONS_PER_ACCOUNT} connections. Remove one to add another.`,
-        );
       // The listing is the first contact: an answer shows the tools, none leaves the connection
       // saved with no pin, and the check that follows says why.
       const startedAt = now();
-      const tools = await listTools(added.connection);
-      if (tools === null) await checks.check(added.connection.row);
+      const tools = await listTools(added);
+      if (tools === null) await checks.check(added.row);
       else
         await deps.store.writeStatus({
           connectionId: id,
@@ -244,7 +258,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
           reason: null,
           finishedAt: now(),
         });
-      const fresh = (await deps.store.find(accountId, id)) ?? added.connection;
+      const fresh = (await deps.store.find(accountId, id)) ?? added;
       return { connection: view(fresh, null), tools };
     },
 
@@ -254,9 +268,10 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       change: { url?: string; token?: string },
     ): Promise<McpConnectionView> {
       const before = await owned(accountId, id);
+      const url = change.url !== undefined ? parseUrl(change.url) : undefined;
       const spec =
-        change.url !== undefined
-          ? { transport: "http" as const, url: parseUrl(change.url) }
+        url !== undefined && url !== before.row.spec.url
+          ? { transport: "http" as const, url }
           : undefined;
       const token = change.token?.trim();
       const sealedToken =
@@ -273,6 +288,8 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       // A new version has no result; the check that learns one runs in the background.
       deps.statusChanged(after.row);
       void checks.check(after.row).catch((cause) => deps.failed(cause, after.row));
+      if (spec)
+        void repin(after, chosenTools(before)).catch((cause) => deps.failed(cause, after.row));
       return view(after, null);
     },
 
@@ -325,12 +342,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
     async undo(accountId: UserId, id: McpConnectionId): Promise<McpConnectionView> {
       const stored = await deps.store.find(accountId, id);
       if (!stored) throw new McpConnectionError("not_found", "No such connection.");
-      const restored = await deps.store.setRemoved(accountId, id, null);
-      if (restored === "name_taken")
-        throw new McpConnectionError(
-          "name_taken",
-          `Another connection is named ${stored.row.name} now. Rename or remove it, then undo.`,
-        );
+      await deps.store.setRemoved(accountId, id, null);
       deps.statusChanged(stored.row);
       const fresh = (await deps.store.find(accountId, id)) ?? stored;
       checks.startDue([fresh.row]);
