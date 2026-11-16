@@ -16,6 +16,7 @@ import type {
   AgentRevision,
   AgentRevisionStore,
   CatalogRevision,
+  LatestSave,
   PackageSave,
   SaveOwner,
 } from "../ports/agent-revision-store.js";
@@ -138,9 +139,14 @@ export function createInMemoryAgentRevisionStore(input: {
       return copy(save);
     },
     async readSaved(owner) {
-      const latest = new Map<string, PackageSave>();
+      const latest = new Map<string, LatestSave>();
       for (const { owner: by, ...save } of state().saves.values()) {
-        if (by === ownerKey(owner)) latest.set(save.folder, save);
+        if (by !== ownerKey(owner)) continue;
+        const undone = latest.get(save.folder)?.undoneSaveIds ?? [];
+        latest.set(save.folder, {
+          ...save,
+          undoneSaveIds: save.undoneSaveId ? [...undone, save.undoneSaveId] : undone,
+        });
       }
       return copy([...latest.values()]);
     },

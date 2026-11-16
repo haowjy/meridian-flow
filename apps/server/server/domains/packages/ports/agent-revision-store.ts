@@ -27,6 +27,11 @@ export interface PackageSave {
   savedBy: "writer" | "ai";
 }
 
+/** A package's latest Save, with every earlier Save of it that an Undo took back. */
+export interface LatestSave extends PackageSave {
+  undoneSaveIds: string[];
+}
+
 /** An available Agent as one reader version read it. The runtime never sees an unavailable one. */
 export interface AgentRevision {
   id: string;
@@ -91,7 +96,7 @@ export interface AgentRevisionStore {
     }>,
   ): Promise<{ value: T; row?: PackageSave }>;
   /** Each package's latest Save of `owner`, one row per folder. */
-  readSaved(owner: SaveOwner): Promise<PackageSave[]>;
+  readSaved(owner: SaveOwner): Promise<LatestSave[]>;
   /**
    * Saves the version before `saveId` again, unless a later Save of that package exists, which
    * leaves everything as it is. `undone` is the Save that was undone, with the new row as

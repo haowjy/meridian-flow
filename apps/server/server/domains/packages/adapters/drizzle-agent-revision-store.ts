@@ -7,7 +7,7 @@ import {
   agentPackageSaves,
   threadAgentBindings,
 } from "@meridian/database/schema";
-import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lt, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import {
   type CompiledAgentDefinition,
@@ -201,7 +201,16 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         )
         .where(ownerIs(owner))
         .orderBy(agentPackageSaves.folder, desc(agentPackageSaves.seq));
-      return rows.map((row) => saveOf(row.save, row.digest, row.hasPrevious));
+      const undos = await db()
+        .select({ folder: agentPackageSaves.folder, undone: agentPackageSaves.undoneSaveId })
+        .from(agentPackageSaves)
+        .where(and(ownerIs(owner), isNotNull(agentPackageSaves.undoneSaveId)));
+      return rows.map((row) => ({
+        ...saveOf(row.save, row.digest, row.hasPrevious),
+        undoneSaveIds: undos
+          .filter((undo) => undo.folder === row.save.folder)
+          .map((undo) => undo.undone as string),
+      }));
     },
     async undoSave(owner, saveId, restore) {
       return runInDrizzleTransaction(database, async () => {

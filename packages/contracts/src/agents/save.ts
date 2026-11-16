@@ -63,7 +63,8 @@ export interface AgentPackageStatus {
   savedAt: string | null;
   /** The package's latest Save, for Undo; null with none. */
   saveId: string | null;
-  undoneSaveId: string | null;
+  /** Every Save of this package that an Undo took back, so an old receipt can say "Undone". */
+  undoneSaveIds: string[];
   undoable: { saveId: string; at: string; by: "writer" | "ai" } | null;
   /** Files added, changed or deleted since the saved version. */
   changes: AgentFileChange[];
@@ -76,7 +77,7 @@ export const agentPackageStatusSchema = z.object({
   state: z.enum(["saved", "unsaved", "cant-save", "not-saved", "removed"]),
   savedAt: z.string().nullable(),
   saveId: z.string().nullable(),
-  undoneSaveId: z.string().nullable(),
+  undoneSaveIds: z.array(z.string()),
   undoable: z
     .object({ saveId: z.string(), at: z.string(), by: z.enum(["writer", "ai"]) })
     .nullable(),

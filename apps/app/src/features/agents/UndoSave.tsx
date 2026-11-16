@@ -20,7 +20,7 @@ export function UndoSave({
   if (!status) return null;
   if (status.undoable?.saveId !== saveId) {
     if (status.saveId === saveId) return null;
-    const undone = status.undoneSaveId === saveId;
+    const undone = status.undoneSaveIds.includes(saveId);
     return (
       <RowWord
         tone="done"

@@ -205,7 +205,7 @@ export function createPackageSaver(input: {
           state,
           savedAt: saved ? saved.createdAt.toISOString() : null,
           saveId: save?.id ?? null,
-          undoneSaveId: save?.undoneSaveId ?? null,
+          undoneSaveIds: save?.undoneSaveIds ?? [],
           undoable:
             save?.hasPrevious && !save.undoneSaveId
               ? { saveId: save.id, at: save.createdAt.toISOString(), by: save.savedBy }
@@ -305,7 +305,11 @@ export function createPackageSaver(input: {
           continue;
         }
         input.onSaved?.(userId, projectId, level);
-        saves[level] = [...saves[level].filter((item) => item.folder !== folder), row];
+        const undone = saves[level].find((item) => item.folder === folder)?.undoneSaveIds ?? [];
+        saves[level] = [
+          ...saves[level].filter((item) => item.folder !== folder),
+          { ...row, undoneSaveIds: undone },
+        ];
         const after = namesOf(await levels.fromSaves(saves));
         outcomes.push({
           ...outcome,
