@@ -12,7 +12,7 @@ is the authoring boundary; admission and server authority live outside it.
 - Only registered command atoms execute; typed `/slug` prose never activates a
   skill. `compact`, `handoff` and `clear` are reserved slugs.
 - Usage waiting comes from the chat's `RunState`, never a client balance guess.
-- Hosts own session persistence through `initialDraft` and `onDraftChange`.
+- Hosts own session persistence through `initialDraft` and `onDraftChange`. A write from outside the editor (a hand-back, Edit, an Undo of a move) arrives as `externalChange`: each new `seq` is applied into the live editor, never by remounting it.
 
 Reference spelling, commands, draft restore:
 [`.context/CONTEXT.md`](.context/CONTEXT.md).

@@ -7,10 +7,10 @@
  * around a rendered diagram. It also owns the seam policy: where a caret goes
  * when the pointer is between blocks, and which neighbour wins.
  *
- * A press never makes a paragraph, with one exception: a press past the end of
- * a document whose last block can't take a caret and no gap cursor fits (a
- * closed diagram) asks for a new empty line, the only way to reach that spot.
- * The walk stays pure; `pressOnInertTarget` does the write.
+ * A press past the document's end, below a last block that isn't prose, goes
+ * where Ctrl/Cmd+End goes (`documentEndTransaction`): the only press that can
+ * write, since after a fence or diagram that place is a new empty line. The
+ * walk stays pure; `pressOnInertTarget` does the write.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -18,7 +18,7 @@ import { GapCursor } from "@tiptap/pm/gapcursor";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, type Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
-import { gapCursorFits } from "../objects/object-selection";
+import { documentEndTransaction, gapCursorFits } from "../objects/object-selection";
 import { isCodeBlock, isObjectLike, isOpaqueObject, isSourceBlock } from "../objects/object-types";
 import {
   type Child,
@@ -41,18 +41,18 @@ export function pressSelection(
   start?: Child,
 ): Selection | null {
   const press = pressOutcome(state, point, geometry, start);
-  return press === NEW_LINE ? null : press;
+  return press === DOCUMENT_END ? null : press;
 }
 
-/** A press past a document's end that only a new empty line can answer. */
-const NEW_LINE = "new-line";
+/** A press past the document's end, below a last block that isn't prose. */
+const DOCUMENT_END = "document-end";
 
 function pressOutcome(
   state: EditorState,
   point: Point,
   geometry: Geometry,
   start?: Child,
-): Selection | typeof NEW_LINE | null {
+): Selection | typeof DOCUMENT_END | null {
   const landing = landingAt(state, point, geometry, start);
   if (landing.kind === "seam") return seamSelection(state, landing.pos, point, geometry, start);
   return state.doc.resolve(landing.pos).parent.inlineContent
@@ -66,7 +66,7 @@ function seamSelection(
   point: Point,
   geometry: Geometry,
   start?: Child,
-): Selection | typeof NEW_LINE | null {
+): Selection | typeof DOCUMENT_END | null {
   const { doc } = state;
   const $seam = doc.resolve(seam);
   const above = $seam.nodeBefore && {
@@ -85,14 +85,15 @@ function seamSelection(
     const line = lineIn(state, near, nearIsAbove, point, geometry, start);
     if (line) return line;
   }
+  if (seam === doc.content.size && above && !isProse(above.node)) return DOCUMENT_END;
   if (near && isTable(near.node) && gapCursorFits($seam)) return new GapCursor($seam);
   // Beside a table, source or an object, prose beats it.
   if (near && far && isProse(far.node)) {
     const line = lineIn(state, far, !nearIsAbove, point, geometry, start);
     if (line) return line;
   }
-  // A fence with no prose on its other side (a document's end, a diagram, a
-  // table) is the nearest text there is: the caret goes to its edge facing the
+  // A fence with no prose on its other side (a diagram, a table, a cell's
+  // edge) is the nearest text there is: the caret goes to its edge facing the
   // seam.
   for (const [fence, other] of [
     [near, far],
@@ -103,7 +104,6 @@ function seamSelection(
     return TextSelection.create(doc, fence === above ? seam - 1 : seam + 1);
   }
   if (gapCursorFits($seam)) return new GapCursor($seam);
-  if (!start && seam === doc.content.size) return NEW_LINE;
 
   const scope = { node: $seam.parent, start: $seam.start() };
   const outward = nearestWriterText(scope, seam, 1) ?? nearestWriterText(scope, seam, -1);
@@ -143,14 +143,9 @@ export function pressOnInertTarget(view: EditorView, editor: Editor, event: Mous
     { x: event.clientX, y: event.clientY },
     viewGeometry(view, editor),
   );
-  if (press === NEW_LINE) {
-    const { state } = view;
-    const end = state.doc.content.size;
-    const line = state.schema.nodes.paragraph.createAndFill();
-    if (line) {
-      const tr = state.tr.insert(end, line);
-      view.dispatch(tr.setSelection(TextSelection.create(tr.doc, end + 1)));
-    }
+  if (press === DOCUMENT_END) {
+    const transaction = documentEndTransaction(view.state);
+    if (transaction) view.dispatch(transaction);
     view.focus();
     return true;
   }

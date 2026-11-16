@@ -144,7 +144,8 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
   text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the forced-render
   selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
-  capture and restore (`resolveRelativeCellSelection`), and `recoverSelectionEndpoint` trusting a
+  capture and restore (`resolveRelativeCellSelection`), the gap-cursor restore (a remote edit
+  used to turn the gap below a final table into a caret in its last cell), and `recoverSelectionEndpoint` trusting a
   position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`; upstream
   [tiptap#8594](https://github.com/ueberdosis/tiptap/issues/8594), open: drop this change once a release fixes it).
 - Undo step boundaries: y-tiptap 3.x closes the capture window only for a document-changing
@@ -372,15 +373,21 @@ keyboard, pointer, drop, or draft-recovery answer.
   the pointer's column; a table gets a gap cursor; prose beats source and
   objects, so a seam between a fence and a paragraph puts the caret in the
   paragraph. A fence with no prose beside it takes the caret at its facing
-  edge. A press never makes a paragraph, with one exception: past the end of the
-  document, when the last block can't take a caret and no gap cursor fits (a
-  closed diagram), it appends an empty paragraph and puts the caret in it, the
-  only way to reach that spot. `pressSelection` stays pure; the write is in
-  `pressOnInertTarget`, so one undo removes the line. A document already ending
-  on an empty paragraph gets the caret there, and a press in a cell never makes
-  one. Ctrl/Cmd+Home and End go to the same gap cursor when a table or other
-  object starts or ends the document (`documentEdgeTransaction`); the browser's
-  own keys would put the caret inside the cell. A press that lands
+  edge. **The document's end is one place** however the writer reaches it:
+  Ctrl/Cmd+End, a press below a last block that isn't prose, and an arrow off
+  the last block all go through `documentEndTransaction`. After a table, figure,
+  rule or other block object that is the gap cursor. After a fence or diagram,
+  which no gap cursor can follow, it is a new empty line, the only way to reach
+  that spot. `exitFence` builds it, the same line the fence's own ArrowDown and
+  Enter make, in the fence's quotes and list item. The line is written by that
+  one action, never kept as a standing trailing node: a standing node would be
+  written by every client on every load; this one only by the writer who acts.
+  So one undo removes it, a document already ending on an empty paragraph gets
+  the caret there, and two writers pressing at once get two lines (both writes
+  kept). A press
+  never makes a paragraph anywhere else, and a press in a cell never makes one.
+  Ctrl/Cmd+Home goes to the gap cursor before a table or object that starts the
+  document (`documentStartTransaction`). A press that lands
   where the caret already stands is left to the browser, which knows the line
   the caret is on. A press in a cell stays in that cell.
 - **A selection drag** (`landing/selection-drag.ts`) is the one press on text

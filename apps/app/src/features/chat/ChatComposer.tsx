@@ -99,6 +99,7 @@ function ChatComposerComponent({
         key={draft.key}
         autoFocus={place === "main" && !mainTabStripHasFocus()}
         initialDraft={draft.initialDraft}
+        externalChange={draft.externalChange}
         onDraftChange={draft.updateDraft}
         onOpenReference={onOpenReference}
         ref={composerRef}

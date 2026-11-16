@@ -7,7 +7,7 @@
  *
  * The package decides everything (identity, order, answers, which failures owe a card); this file
  * is adapters. A reload re-posts every command the draft still holds (`resume`), and a change
- * to the draft re-checks what still owes a card (`reconcile`).
+ * to the draft's store (any write to it) re-checks what still owes a card (`reconcile`).
  */
 import {
   type ChatReferenceScope,

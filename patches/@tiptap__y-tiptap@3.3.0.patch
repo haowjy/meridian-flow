@@ -1,8 +1,8 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e22fae9b90 100644
+index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca78bcc3d2a 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -594,15 +594,90 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
+@@ -594,15 +594,99 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
  };
  //#endregion
  //#region src/lib/utils/positions/restoreRelativeSelection.ts
@@ -90,11 +90,20 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
 +				const mappedHead = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
 +				tr.setSelection(prosemirror_state.Selection.near(tr.doc.resolve(head ?? anchor ?? mappedHead ?? tr.selection.head)));
 +			}
++		} else if (relSel.type === "gapcursor") {
++			// Meridian patch: keep a gap cursor a gap cursor. The text branch below would turn the gap
++			// below a final table into a caret in its last cell on every remote edit.
++			const head = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
++			if (head !== null) {
++				const $head = tr.doc.resolve(head);
++				const gap = prosemirror_state.Selection.fromJSON(tr.doc, { type: "gapcursor", pos: head });
++				tr.setSelection(gap.constructor.valid($head) ? gap : prosemirror_state.Selection.near($head));
++			}
 +		} else if (relSel.type === "all") tr.setSelection(new prosemirror_state.AllSelection(tr.doc));
  		else if (relSel.type === "node") {
  			const anchor = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.anchor, binding.mapping);
  			if (anchor !== null) tr.setSelection(createSafeNodeSelection(tr, anchor));
-@@ -653,13 +728,22 @@ const getRelativeSelection = (pmbinding, state) => {
+@@ -653,13 +737,22 @@ const getRelativeSelection = (pmbinding, state) => {
  	const selection = state.selection;
  	const json = selection.toJSON();
  	const type = typeof json.type === "string" ? json.type : "text";
@@ -121,7 +130,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  	};
  };
  //#endregion
-@@ -761,8 +845,6 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
+@@ -761,8 +854,6 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
  			return;
  		}
  		if (!(type instanceof yjs.XmlText)) return;
@@ -130,7 +139,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  		const textNodes = createTextNodesFromYText(type, schema, meta, snapshot, prevSnapshot, computeYChange);
  		if (textNodes === null) hasSkippedChild = true;
  		textNodes === null || textNodes === void 0 || textNodes.forEach((textNode) => children.push(textNode));
-@@ -873,29 +955,106 @@ const equalAttrs = (pattrs, yattrs) => {
+@@ -873,29 +964,106 @@ const equalAttrs = (pattrs, yattrs) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/equalYTextPText.ts
@@ -253,7 +262,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -955,23 +1114,73 @@ const ytextTrans = (ytext) => {
+@@ -955,23 +1123,73 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -344,7 +353,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1042,125 +1251,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1042,125 +1260,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -794,7 +803,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1195,6 +1614,10 @@ var ProsemirrorBinding = class {
+@@ -1195,6 +1623,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = (0, lib0_mutex.createMutex)();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -805,7 +814,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1281,7 +1704,6 @@ var ProsemirrorBinding = class {
+@@ -1281,7 +1713,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -813,7 +822,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1325,7 +1747,7 @@ var ProsemirrorBinding = class {
+@@ -1325,7 +1756,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = lib0_math.min(lib0_math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = lib0_math.min(lib0_math.max(sel.head, 0), tr.doc.content.size);
@@ -822,7 +831,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1426,8 +1848,14 @@ var ProsemirrorBinding = class {
+@@ -1426,8 +1857,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -837,7 +846,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1498,6 +1926,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1498,6 +1935,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -903,7 +912,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1633,14 +2120,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1633,14 +2129,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -930,7 +939,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1758,6 +2255,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1758,6 +2264,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -957,7 +966,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1784,6 +2301,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
+@@ -1784,6 +2310,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.findAbsolutePositionAfterStructuralChange = findAbsolutePositionAfterStructuralChange;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -1069,10 +1078,10 @@ index cd119d0d4ccbf7c175052efb60907f98c6f93859..a25c38bac7ea41bb4eccb448a11325c6
  /** A selection stored as Yjs relative positions. */
  type CursorAwarenessSelection = {
 diff --git a/dist/index.js b/dist/index.js
-index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc700d436b32 100644
+index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64cb3dc869 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -561,15 +561,90 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
+@@ -561,15 +561,99 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
  };
  //#endregion
  //#region src/lib/utils/positions/restoreRelativeSelection.ts
@@ -1160,11 +1169,20 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
 +				const mappedHead = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
 +				tr.setSelection(Selection.near(tr.doc.resolve(head ?? anchor ?? mappedHead ?? tr.selection.head)));
 +			}
++		} else if (relSel.type === "gapcursor") {
++			// Meridian patch: keep a gap cursor a gap cursor. The text branch below would turn the gap
++			// below a final table into a caret in its last cell on every remote edit.
++			const head = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
++			if (head !== null) {
++				const $head = tr.doc.resolve(head);
++				const gap = Selection.fromJSON(tr.doc, { type: "gapcursor", pos: head });
++				tr.setSelection(gap.constructor.valid($head) ? gap : Selection.near($head));
++			}
 +		} else if (relSel.type === "all") tr.setSelection(new AllSelection(tr.doc));
  		else if (relSel.type === "node") {
  			const anchor = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.anchor, binding.mapping);
  			if (anchor !== null) tr.setSelection(createSafeNodeSelection(tr, anchor));
-@@ -620,13 +695,22 @@ const getRelativeSelection = (pmbinding, state) => {
+@@ -620,13 +704,22 @@ const getRelativeSelection = (pmbinding, state) => {
  	const selection = state.selection;
  	const json = selection.toJSON();
  	const type = typeof json.type === "string" ? json.type : "text";
@@ -1191,7 +1209,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  	};
  };
  //#endregion
-@@ -728,8 +812,6 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
+@@ -728,8 +821,6 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
  			return;
  		}
  		if (!(type instanceof Y.XmlText)) return;
@@ -1200,7 +1218,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  		const textNodes = createTextNodesFromYText(type, schema, meta, snapshot, prevSnapshot, computeYChange);
  		if (textNodes === null) hasSkippedChild = true;
  		textNodes === null || textNodes === void 0 || textNodes.forEach((textNode) => children.push(textNode));
-@@ -840,29 +922,106 @@ const equalAttrs = (pattrs, yattrs) => {
+@@ -840,29 +931,106 @@ const equalAttrs = (pattrs, yattrs) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/equalYTextPText.ts
@@ -1323,7 +1341,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -922,23 +1081,73 @@ const ytextTrans = (ytext) => {
+@@ -922,23 +1090,73 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -1414,7 +1432,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1009,125 +1218,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1009,125 +1227,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -1864,7 +1882,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1162,6 +1581,10 @@ var ProsemirrorBinding = class {
+@@ -1162,6 +1590,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = createMutex();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -1875,7 +1893,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1248,7 +1671,6 @@ var ProsemirrorBinding = class {
+@@ -1248,7 +1680,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -1883,7 +1901,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1292,7 +1714,7 @@ var ProsemirrorBinding = class {
+@@ -1292,7 +1723,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = math.min(math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = math.min(math.max(sel.head, 0), tr.doc.content.size);
@@ -1892,7 +1910,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1393,8 +1815,14 @@ var ProsemirrorBinding = class {
+@@ -1393,8 +1824,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -1907,7 +1925,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1465,6 +1893,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1465,6 +1902,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -1973,7 +1991,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1600,14 +2087,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1600,14 +2096,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -2000,7 +2018,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1725,6 +2222,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1725,6 +2231,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -2027,7 +2045,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1740,6 +2257,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1740,6 +2266,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
  	};
  };
  //#endregion
