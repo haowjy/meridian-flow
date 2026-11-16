@@ -41,6 +41,8 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`A document blocks part of this location. Move or rename it, then apply again.`;
     case "left_out_not_on_server":
       return msg`The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft.`;
+    case "left_out_not_in_draft":
+      return msg`The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft.`;
     default:
       return undefined;
   }
@@ -52,7 +54,8 @@ function answersAlone(serverCode: string | undefined): boolean {
     serverCode === "stale" ||
     serverCode === "needs_restore" ||
     serverCode === "changed" ||
-    serverCode === "left_out_not_on_server"
+    serverCode === "left_out_not_on_server" ||
+    serverCode === "left_out_not_in_draft"
   );
 }
 
@@ -105,7 +108,7 @@ export function ReviewMessageText({
     case "discard-refused":
       return (
         <>
-          <Trans>Couldn't discard this draft.</Trans>
+          {answersAlone(serverCode) ? null : <Trans>Couldn't discard this draft.</Trans>}
           <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );

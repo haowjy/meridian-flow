@@ -7416,6 +7416,10 @@ msgstr ""
 msgid "The document could not be created. Try again."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
+msgstr ""
+
 #: src/features/draft-review/UnsentDraftTextNotice.tsx
 #~ msgid "The draft was discarded before your latest typing reached it."
 #~ msgstr ""

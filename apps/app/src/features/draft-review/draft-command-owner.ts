@@ -7,9 +7,7 @@ import {
   APPLY_RECORD_ROOT,
   applySpanPatches,
   baseViewDelta,
-  blocksEqual,
   composeGroups,
-  type ReviewGroup,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
 import { type BranchId, type DraftItemKey, draftItemKey } from "@meridian/contracts";
@@ -22,7 +20,6 @@ import type {
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
-import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import * as Y from "yjs";
 import {
   applyDraftClick,
@@ -52,7 +49,14 @@ import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
-import { buildFrame, type ReviewFrame, readBase, roomContent } from "./review-frame";
+import {
+  buildFrame,
+  inSchema,
+  type ReviewFrame,
+  readBase,
+  readChosen,
+  roomContent,
+} from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
@@ -171,31 +175,6 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
       return "gone";
   }
 }
-const family = (id: string) => id.replace(/~\d+$/, "");
-const baseRange = (group: ReviewGroup) =>
-  group.hunks.map((h) => `${h.baseTokens.from}-${h.baseTokens.to}`).join(",");
-/**
- * The id `read` gives the change `shown` calls `group`. Identical edits share an id up to the `~n`
- * they take in document order, so one id can name another edit in the other frame. On the same
- * base the base tokens an edit replaces tell repeats apart; on different bases a shift can line one
- * repeat up with another, so only an edit with no repeat in either frame is named.
- */
-const sameChange = (
-  shown: readonly ReviewGroup[],
-  read: readonly ReviewGroup[],
-  sameBase: boolean,
-  group: ReviewGroup,
-) => {
-  const repeats = (groups: readonly ReviewGroup[]) =>
-    groups.filter((other) => family(other.id) === family(group.id));
-  const candidates = repeats(read);
-  if (sameBase) return candidates.find((other) => baseRange(other) === baseRange(group))?.id;
-  return repeats(shown).length === 1 && candidates.length === 1 ? candidates[0].id : undefined;
-};
-const inSchema = (schema: Schema, blocks: readonly PMNode[]) =>
-  blocks.every((block) => block.type.schema === schema)
-    ? blocks
-    : blocks.map((block) => schema.nodeFromJSON(block.toJSON()));
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
@@ -826,22 +805,23 @@ export class DraftCommandOwner {
       return null;
     const frame = binding.runtime.projectNow();
     if (!frame) return null;
-    if (
-      target.kind === "groups" &&
-      (!blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
-        !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks))
-    ) {
+    // The room may have moved since the writer chose (Live typing reaching the base): name the
+    // chosen changes as this frame does, and keep in the draft any it has no name for.
+    const chosen =
+      target.kind === "draft"
+        ? { going: frame.groups.map((group) => ({ read: group.id })), stayed: [] }
+        : readChosen(target.frame, frame, target.groupIds);
+    const ids = chosen.going.map((pair) => pair.read);
+    if (!ids.length) {
+      if (!chosen.stayed.length) return null;
       this.setState(ref.itemKey, {
-        failure: { code: "apply-refused", serverCode: "review_updated" },
+        failure: { code: "apply-refused", serverCode: "left_out_not_on_server" },
       });
       return {
         sent: false,
-        outcome: Promise.resolve({ kind: "change-refused", code: "review_updated" }),
+        outcome: Promise.resolve({ kind: "change-refused", code: "left_out_not_on_server" }),
       };
     }
-    const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
-    if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id)))
-      return null;
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
     const patched = applySpanPatches(
@@ -869,6 +849,7 @@ export class DraftCommandOwner {
       target.kind === "draft" ? null : ids,
       frame,
       body,
+      chosen.stayed,
     );
     const frozen: FrozenApply = {
       body,
@@ -935,7 +916,7 @@ export class DraftCommandOwner {
       ...(restore ? { restore: true as const } : {}),
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
-    const rebuilt = this.rebuilder(draftId, groupIds, frame, body);
+    const rebuilt = this.rebuilder(draftId, groupIds, frame, body, []);
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
     this.setState(ref.itemKey, { failure: null });
@@ -961,8 +942,9 @@ export class DraftCommandOwner {
   /**
    * A text click again, for a room that ended before the server had its typing: the whole draft
    * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
-   * server now. A choice is never widened: a chosen change goes only when the server's read has
-   * the same change (`sameChange`); any other stays (`stayed`).
+   * server now. A choice is never widened: a chosen change goes only when the server's read names
+   * the same change (`readChosen`); any other stays (`stayed`, after `left`, what the caller
+   * already left out).
    * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
    * it applies (the read's own blocks are another schema's). A room that
    * can't be read sends the click as it was frozen, and the server says why; `needsReload` when
@@ -973,9 +955,10 @@ export class DraftCommandOwner {
     chosen: readonly string[] | null,
     shown: ReviewFrame,
     body: ApplyClick,
+    left: readonly string[],
   ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[]; needsReload: boolean } {
     const result = {
-      stayed: [] as string[],
+      stayed: [...left],
       needsReload: false,
       rebuild: async (signal: AbortSignal) => {
         const fields = {
@@ -1000,13 +983,8 @@ export class DraftCommandOwner {
           const schema = content.doc.type.schema;
           const base = readBase(fresh, schema);
           const frame = buildFrame(fresh, base, content.doc);
-          const sameBase = blocksEqual(base, inSchema(schema, shown.diff.base.blocks));
-          const going = shown.groups.flatMap((group) => {
-            const read =
-              chosen.includes(group.id) && sameChange(shown.groups, frame.groups, sameBase, group);
-            return read ? [{ shown: group.id, read }] : [];
-          });
-          result.stayed = chosen.filter((id) => !going.some((pair) => pair.shown === id));
+          const { going, stayed } = readChosen(shown, frame, chosen);
+          result.stayed = [...left, ...stayed];
           if (!going.length) return null;
           return {
             body: {

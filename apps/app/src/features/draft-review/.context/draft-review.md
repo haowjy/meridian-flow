@@ -31,9 +31,19 @@ authority to Discard.
 ## Commands and attribution
 
 - The base provider receives the room and schema and isn't called per keystroke.
-- Every displayed group carries its immutable `frame`. Command callbacks get that frame,
-  not a later read of the runtime, and the owner validates it before interpreting
-  projection-local ids.
+- Every displayed group carries its immutable `frame`, the meaning of the writer's choice: a
+  command names its changes by id (`TextTarget`) and, with a room open, reads the room when it
+  runs. The draft's base follows Live about 2 s behind, so a click or a Redo meets a newer frame
+  than the one on screen, and a command never refuses for that. `readChosen` (`review-frame.ts`)
+  maps the ids chosen on `frame` to the frame being read, and Apply, Redo, Discard and `rebuilder`
+  all use it: a chosen change goes only when the read has the same change. Identical edits are
+  numbered `X`, `X~1` in document order, so one id can name another edit in the other frame.
+  Where the two frames' draft blocks are equal (the base lag), an edit is the one over the same
+  draft tokens; where their bases are equal, over the same base tokens; otherwise only an edit
+  with no repeat in either frame, and the same three base tokens on each side of it in both, is named. A chosen change with no name stays in the draft: an
+  Apply says `left_out_not_on_server`, a Discard says `left_out_not_in_draft` ("The draft didn't
+  have this change as you saw it, so it wasn't discarded. It's kept in the draft."); a command
+  never answers silently.
 - An absent attribution entry is explicitly unknown, so candidate chat rows stay visible
   without a byline. `room-attribution.ts` fetches on unresolved clock-range changes,
   Apply/restoration root revisions and reconnect, not text-frame identity. Local
@@ -120,13 +130,9 @@ typing shows again only when another change comes to that draft.
 A click on some changes is built again when it reaches the head of the queue (`rebuilder`): the
 draft is read as the server holds it into a fresh document (`readRoomOnce`, one sync, nothing sent),
 its review recomputed, and the chosen changes it finds go as an ordinary frozen click from that
-read, so the snapshot is the server's exactly. A chosen change goes only when the read has the
-same change (`sameChange`). Identical edits are numbered `X`, `X~1` in document order, so one id
-can name another edit in the other frame. When the read's base equals the base the writer chose
-on, an edit is the one with the same id up to its `~n` over the same base tokens. When the bases
-differ (another tab applied a change, an earlier click left part out), a shift can line one
-repeat up with another, so only an edit with no repeat in either frame goes, by its id; a
-repeated one stays. Any other chosen change (typing the server never got, an edit changed since
+read, so the snapshot is the server's exactly. A chosen change goes only when `readChosen`
+names it in the read; when the bases differ (another tab applied a change, an earlier click left
+part out), a repeated edit stays. Any other chosen change (typing the server never got, an edit changed since
 by another client) stays in the draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
 The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
 the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
@@ -283,8 +289,8 @@ of the previous document doesn't let `DraftOnlySettlement` close it first and en
 
 Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
-change rather than waiting for animation frames. Changed base or prose refuses the stale
-write and restores the row.
+change rather than waiting for animation frames. A write finds the room as it is then
+and takes the chosen changes from it by `readChosen`.
 
 Direct writes never impersonate the binding origin: its delete-only transactions without a
 writer ProseMirror transaction are schema-repair evidence. The draft-only editor plugin

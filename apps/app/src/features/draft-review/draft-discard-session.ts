@@ -1,7 +1,6 @@
 /** Local Discard and its one Undo: the notice's handle, and Ctrl+Z when a reviewing editor issued it. */
 import {
   applySpanPatches,
-  blocksEqual,
   composeGroups,
   recordRestorations,
   writeDiscardBlocks,
@@ -15,6 +14,7 @@ import { readDraftRoom } from "@/core/editor/draft-room-read";
 import { endUndoStep } from "@/core/editor/editor-history";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
 import type { DiscardUndo } from "./draft-notices";
+import { readChosen } from "./review-frame";
 import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
 
@@ -55,17 +55,8 @@ export function startDraftDiscardSession(input: {
     input.state().discarding
   )
     return null;
-  const frame = editor ? binding.runtime.projectNow() : binding.runtime.state().frame;
-  if (!frame) return null;
-  if (
-    !blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
-    !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks)
-  ) {
-    input.setState({ failure: { code: "discard-refused", serverCode: "review_updated" } });
-    return null;
-  }
-  const ids = target.groupIds;
-  if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id))) return null;
+  const chosen = target.groupIds;
+  if (!chosen.length) return null;
   const doc = binding.session.document;
   const fragment = doc.getXmlFragment("prosemirror");
   if (!editor) for (const attached of binding.runtime.editors()) endUndoStep(attached.state);
@@ -86,26 +77,33 @@ export function startDraftDiscardSession(input: {
       input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
       return { kind: "change-refused", code: "read_only" };
     }
+    // The room may have moved since the click (Live typing reaching the base, a remote edit):
+    // write the chosen changes as it names them now. One it can't name for certain stays in the draft.
     const current = binding.runtime.projectNow();
-    if (
-      !current ||
-      !blocksEqual(frame.diff.base.blocks, current.diff.base.blocks) ||
-      !blocksEqual(frame.diff.draft.blocks, current.diff.draft.blocks)
-    ) {
-      input.setState({ failure: { code: "discard-refused", serverCode: "review_updated" } });
-      return { kind: "change-refused", code: "review_updated" };
+    if (!current) return { kind: "blocked" };
+    const { going, stayed } = readChosen(target.frame, current, chosen);
+    if (!going.length) {
+      input.setState({
+        failure: { code: "discard-refused", serverCode: "left_out_not_in_draft" },
+      });
+      return { kind: "change-refused", code: "left_out_not_in_draft" };
     }
+    const ids = going.map((pair) => pair.read);
     const blocks = applySpanPatches(
-      frame.diff.draft.blocks,
-      composeGroups(frame.doc.type.schema, frame, ids, "discard"),
+      current.diff.draft.blocks,
+      composeGroups(current.doc.type.schema, current, ids, "discard"),
       "draft",
     );
     const before = history.undoStack.length;
     try {
-      doc.transact(() => writeDiscardBlocks(fragment, frame.doc.type.schema, blocks), origin);
+      doc.transact(() => writeDiscardBlocks(fragment, current.doc.type.schema, blocks), origin);
     } finally {
       history.removeTrackedOrigin(origin);
     }
+    if (stayed.length)
+      input.setState({
+        failure: { code: "discard-refused", serverCode: "left_out_not_in_draft" },
+      });
     history.stopCapturing();
     item = history.undoStack.length > before ? (history.undoStack.at(-1) ?? null) : null;
     binding.runtime.projectNow();
@@ -243,7 +241,7 @@ export function startDraftDiscardSession(input: {
     release();
   };
   input.setState({
-    discarding: (change) => change.frame?.diff === frame.diff && ids.includes(change.id),
+    discarding: (change) => change.frame?.diff === target.frame.diff && chosen.includes(change.id),
     failure: null,
   });
   let paintFrame = 0;
