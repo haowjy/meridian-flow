@@ -29,6 +29,7 @@ export type UndoOutcome =
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
+  | "purged"
   | "insufficient_undo"
   | "nothing_to_revert";
 

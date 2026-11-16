@@ -34,6 +34,7 @@ export type UndoOutcome =
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
+  | "purged"
   | "insufficient_undo"
   | "nothing_to_revert";
 
@@ -263,6 +264,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_undo_applied":
     case "cant_undo_discarded":
     case "cant_undo_changed":
+    case "purged":
     case "insufficient_undo":
     case "nothing_to_revert":
     case "reconciled":

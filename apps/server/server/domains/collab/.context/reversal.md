@@ -171,7 +171,7 @@ chooses from the same receipts and `reverses` links the model's `undo` does (`tu
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. The model's `undo` reads the same fate (`runTreeUndo`):
 `taken` answers `reversed` and records the empty reversal, a receipt that stayed answers
-`cant_undo_changed`, the card's skip. A reply that touched both a project's
+`cant_undo_changed`, the card's skip, or `purged` when what it touched is gone (the card's `purged` too). A reply that touched both a project's
 files and `user://` locks both lists; nothing moves between them, so each receipt goes back in
 its own list. A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:

@@ -271,7 +271,9 @@ async function reverseReceipt(
   const status = !undone
     ? done.fate === "closed"
       ? "returned"
-      : "cant_undo_changed"
+      : done.fate === "purged"
+        ? "purged"
+        : "cant_undo_changed"
     : done.partial
       ? "partial"
       : "reversed";
@@ -284,7 +286,9 @@ async function reverseReceipt(
           message:
             done.fate === "closed"
               ? closedMessage(done.closed)
-              : `Can't ${input.command}: something changed it after that change, or it is gone.`,
+              : done.fate === "purged"
+                ? `Can't ${input.command}: what that change touched is gone.`
+                : `Can't ${input.command}: something changed it after that change, or it is gone.`,
         }
       : {}),
   };

@@ -6730,6 +6730,10 @@ msgid "That change can't be undone because the text changed afterwards."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone because what it changed is gone."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone here because it was already applied to your manuscript."
 msgstr ""
 

@@ -138,11 +138,16 @@ the replay uses them (package `AGENTS.md`).
   admission refuses a copy that has one.
   `undoReports` is the estimate: what each record's Undo would do and the sources it would change,
   for the owners to lock and the chip, from one replay with every opposite record in it, given in
-  the order the Undo takes them. With `closed`, the first record to hit a closed source is held
-  and the rest are replayed without it, until none hits one: the first hit's sources come only from
-  records that land, so it is exact, and a held parent folder's return does not hold an independent
-  child rename (two records on one node are read from one list state, and the press asks again,
-  record by record).
+  the order the Undo takes them. With `closed`, the records that hit a closed source are held and
+  one more replay reads the rest without them, until a replay finds no hit (`holdClosed`). A hit
+  whose node or destination sits under a folder an earlier hit keeps out waits for that replay, so
+  a held parent folder's return does not hold an independent child rename, however many records
+  hit: the replays are the length of that chain plus one, not one per record. Two records on one
+  node are read from one list state here.
+  `takeBackAll` is the press for one command's records (Un-Apply): the same replays shared, and
+  only the records that land are written, in one transaction. A node's records go a layer at a time
+  (its newest first, then the next), since the Undo of the first changes what the Undo of the
+  second means. `undoChange` and `takeBack` stay one record at a time, for the receipts.
 - **Creates, deletes and restores** follow the same in-force rule, but Trash keeps its own
   record-order account: it counts each delete of a node, and a restore lifts deletes outside any
   Undo chain (a plain restore, rule 9). `undoChange` on them takes back the record in force
@@ -194,12 +199,12 @@ the replay uses them (package `AGENTS.md`).
   land with `would_loop` or `purged`, `lifted` the copies that lifted a delete (rule 9).
   `covers(doc, saw)` says whether a copy holds the state the writer saw.
 - **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { writtenSince,
-  restoredByApply })` writes each landed copy's opposite record through `undoChange` (a create's
+  restoredByApply, closed })` writes each landed copy's opposite record through `takeBackAll` (a create's
   opposite is a delete that keeps what others put inside standing), then puts back to pending the
   records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored
   Discard's record is itself a copy, so its id is not its live copy's `carries`. It answers
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
-  `purged`, `already`, `has_text`). A move that also set a name is two facts: its Undo changes
+  `purged`, `already`, `has_text`, `closed` with the source). A move that also set a name is two facts: its Undo changes
   whichever no later change holds (a move without the name, or a rename whose undo puts no delete
   back), and `left` names the one that stays (`fact`, from `takeBack`'s `kept`). `undoChange` answers
   `changed_since | purged | already | unknown`, or `{ closed }`. `changeUndone` reads a change's

@@ -10,7 +10,7 @@ import {
 } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { type NotUndone, takeBack } from "./undo.js";
+import { type NotUndone, takeBackAll } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import {
   LIVE,
@@ -576,12 +576,23 @@ export function undoApply(
   // The roots (`carries ?? id`) of the copies taken back, at least in part.
   const reversed = new Set<string>();
   writer.transact(() => {
-    for (const copy of made.reverse()) {
-      if (copy.type === "create" && options.writtenSince?.has(copy.node)) {
+    const copies = made.reverse();
+    const asked = copies.filter(
+      (copy) => !(copy.type === "create" && options.writtenSince?.has(copy.node)),
+    );
+    const answers = takeBackAll(
+      writer,
+      LIVE,
+      by,
+      asked.map((copy) => copy.id),
+      options.closed,
+    );
+    for (const copy of copies) {
+      const back = answers.get(copy.id);
+      if (back === undefined) {
         left.push({ record: copy, why: "has_text" });
         continue;
       }
-      const back = takeBack(writer, LIVE, by, copy.id, options.closed ?? (() => false));
       if (typeof back === "string") {
         left.push({ record: copy, why: back });
         continue;

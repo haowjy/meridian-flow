@@ -84,6 +84,7 @@ export {
   type ClosedUndo,
   changeUndone,
   deleteStands,
+  takeBackAll,
   type UndoAnswer,
   type UndoReport,
   undoChange,
