@@ -34,7 +34,13 @@ export const packageFetchCommand: CommandSpec = {
   args: "<url>",
   route: "GET /api/debug/package-fetch",
   options: {
-    commit: { type: "string", description: "Fetch exactly this commit SHA" },
+    commit: {
+      type: "string",
+      description:
+        "Pin the fetch to this commit SHA; no ref lookup is made. Pair with --ref and --path from an earlier fetch",
+    },
+    ref: { type: "string", description: "With --commit: the ref the earlier fetch reported" },
+    path: { type: "string", description: "With --commit: the path the earlier fetch reported" },
     depth: { type: "string", description: "Directory levels in the printed shape (default 2)" },
     files: { type: "boolean", description: "List every file" },
   },
@@ -46,6 +52,10 @@ export const packageFetchCommand: CommandSpec = {
     const search = new URLSearchParams({ url: requirePositional(ctx, 0, "<url>") });
     const commit = stringOption(ctx, "commit");
     if (commit !== undefined) search.set("commit", commit);
+    for (const name of ["ref", "path"]) {
+      const value = stringOption(ctx, name);
+      if (value !== undefined) search.set(name, value);
+    }
     const depth = Number(stringOption(ctx, "depth") ?? 2);
     const session = await ctx.session();
     const tree = (await session.request("GET", `/api/debug/package-fetch?${search}`, undefined, {

@@ -9,10 +9,10 @@ export type FetchRequest = {
   /** `https://github.com/<o>/<r>`, `…/tree/<ref>` or `…/tree/<ref>/<path>`. */
   url: string;
   /**
-   * The commit an earlier fetch of this URL returned. Import passes it so it reads the tree
-   * inspect saw, even when the branch has moved since.
+   * What an earlier fetch of this URL returned. Import passes it so it reads the tree inspect
+   * saw, even when the branch has moved or gone: the adapter asks GitHub nothing about refs.
    */
-  commit?: string;
+  pin?: Pick<FetchedTree, "commit" | "ref" | "path">;
 };
 
 export type DroppedEntry = {
@@ -20,6 +20,7 @@ export type DroppedEntry = {
   reason: "link" | "too-large";
 };
 
+/** Read-only: a cache may hand the same tree to several callers. */
 export type FetchedTree = {
   /** Full commit SHA the tree was read at. */
   commit: string;

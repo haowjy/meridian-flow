@@ -15,8 +15,8 @@ const API_HOST = "api.github.com";
 const ALLOWED_HOSTS = new Set(["github.com", API_HOST, "codeload.github.com"]);
 const MAX_REDIRECTS = 5;
 const MAX_TAG_HOPS = 5;
-const REF_PAGE_SIZE = 100;
-const REF_PAGE_LIMIT = 10;
+/** Ref and tag API bodies are small; a body past this is refused. */
+const MAX_API_BYTES = 8 * 1024 * 1024;
 /** A file over this is left out with a warning (foreign-import §1, stored package). */
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const SKIPPED_DIRECTORIES = new Set(["node_modules", ".git", "dist", "build"]);
@@ -37,7 +37,16 @@ function parseGithubUrl(raw: string): ParsedUrl {
   if (url.protocol !== "https:" || url.hostname !== "github.com") {
     throw new PackageFetchError("host-refused", "Only https://github.com URLs can be imported");
   }
-  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const parts = url.pathname
+    .split("/")
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch {
+        throw new PackageFetchError("bad-url", `Malformed percent-escape in ${part}`);
+      }
+    });
   const [owner, repoPart, kind, ...segments] = parts;
   const repo = repoPart?.replace(/\.git$/, "");
   if (!owner || !repo || !NAME.test(owner) || !NAME.test(repo)) {
@@ -64,8 +73,9 @@ function normalizeSegments(raw: string, what: string): string[] {
   return segments;
 }
 
+/** A skipped name matches a directory, so only the segments above the file count. */
 const isSkipped = (segments: readonly string[]) =>
-  segments.some((segment) => SKIPPED_DIRECTORIES.has(segment)) ||
+  segments.slice(0, -1).some((segment) => SKIPPED_DIRECTORIES.has(segment)) ||
   ARCHIVE_NAME.test(segments.at(-1) ?? "");
 
 export function createGithubPackageFetcher(options: { token?: string } = {}): PackageFetcher {
@@ -125,8 +135,29 @@ export function createGithubPackageFetcher(options: { token?: string } = {}): Pa
       "application/vnd.github+json",
     );
     if (!response.ok) throw await failure(response, path);
-    budget.checkTime();
-    return (await response.json()) as T;
+    return JSON.parse(await readCapped(response, budget)) as T;
+  }
+
+  /** Reads an API body, counting it toward the download budget and refusing one past `MAX_API_BYTES`. */
+  async function readCapped(response: Response, budget: FetchBudget): Promise<string> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    try {
+      for await (const chunk of Readable.fromWeb(
+        (response.body ?? new Blob([]).stream()) as never,
+      )) {
+        size += (chunk as Buffer).length;
+        if (size > MAX_API_BYTES) {
+          throw new PackageFetchError("upstream", `GitHub's answer is over ${MAX_API_BYTES} bytes`);
+        }
+        budget.download((chunk as Buffer).length);
+        chunks.push(chunk as Buffer);
+      }
+    } catch (error) {
+      budget.checkTime();
+      throw error;
+    }
+    return Buffer.concat(chunks).toString("utf8");
   }
 
   /** Every branch and tag whose name starts with `prefix`, by full name (`heads/x/y`). */
@@ -136,15 +167,12 @@ export function createGithubPackageFetcher(options: { token?: string } = {}): Pa
     prefix: string,
     budget: FetchBudget,
   ): Promise<Map<string, GitObject>> {
+    const refs = await api<{ ref: string; object: GitObject }[]>(
+      `/repos/${owner}/${repo}/git/matching-refs/${kind}/${encodeURIComponent(prefix)}`,
+      budget,
+    );
     const found = new Map<string, GitObject>();
-    for (let page = 1; page <= REF_PAGE_LIMIT; page += 1) {
-      const refs = await api<{ ref: string; object: GitObject }[]>(
-        `/repos/${owner}/${repo}/git/matching-refs/${kind}/${encodeURIComponent(prefix)}?per_page=${REF_PAGE_SIZE}&page=${page}`,
-        budget,
-      );
-      for (const { ref, object } of refs) found.set(ref.slice(`refs/${kind}/`.length), object);
-      if (refs.length < REF_PAGE_SIZE) break;
-    }
+    for (const { ref, object } of refs) found.set(ref.slice(`refs/${kind}/`.length), object);
     return found;
   }
 
@@ -170,12 +198,10 @@ export function createGithubPackageFetcher(options: { token?: string } = {}): Pa
   /** The longest leading run of segments that names a branch or tag is the ref; the rest is the path. */
   async function resolve(
     parsed: ParsedUrl,
-    pinned: string | undefined,
     budget: FetchBudget,
   ): Promise<{ ref: string | null; commit: string; path: string[] }> {
     const { owner, repo, segments } = parsed;
     if (segments.length === 0) {
-      if (pinned) return { ref: null, commit: pinned, path: [] };
       const head = await api<{ sha: string }>(`/repos/${owner}/${repo}/commits/HEAD`, budget);
       return { ref: null, commit: head.sha, path: [] };
     }
@@ -188,7 +214,7 @@ export function createGithubPackageFetcher(options: { token?: string } = {}): Pa
       if (object) {
         return {
           ref: name,
-          commit: pinned ?? (await peel(parsed, object, budget)),
+          commit: await peel(parsed, object, budget),
           path: segments.slice(length),
         };
       }
@@ -288,11 +314,14 @@ export function createGithubPackageFetcher(options: { token?: string } = {}): Pa
   }
 
   return {
-    async fetchTree({ url, commit }: FetchRequest, budget: FetchBudget): Promise<FetchedTree> {
+    async fetchTree({ url, pin }: FetchRequest, budget: FetchBudget): Promise<FetchedTree> {
       const parsed = parseGithubUrl(url);
-      const resolved = await resolve(parsed, commit, budget);
+      // A pin already holds the split, so no ref call is made and a deleted branch can't fail it.
+      const resolved = pin
+        ? { ref: pin.ref, commit: pin.commit, path: pin.path.split("/") }
+        : await resolve(parsed, budget);
       const path = normalizeSegments(resolved.path.join("/"), "The URL path");
-      const at = commit ?? resolved.commit;
+      const at = resolved.commit;
       if (!SHA.test(at)) throw new PackageFetchError("bad-url", `Not a full commit SHA: ${at}`);
       const { files, dropped, sawFile } = await download(parsed, at, path, budget);
       if (files.size === 0 && dropped.length === 0 && path.length > 0) {

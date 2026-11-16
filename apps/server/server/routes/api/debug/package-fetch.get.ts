@@ -1,4 +1,4 @@
-/** GET /api/debug/package-fetch?url=&commit= — authenticated, dev-only: fetches a GitHub tree through the package fetch port. */
+/** GET /api/debug/package-fetch?url=[&commit=&ref=&path=] — authenticated, dev-only: fetches a GitHub tree through the package fetch port. */
 import { createError, defineEventHandler, getQuery } from "nitro/h3";
 import {
   createFetchBudget,
@@ -13,14 +13,24 @@ export default defineEventHandler(async (event) => {
   if (!debugPathsEnabled) {
     throw createError({ statusCode: 404, message: "Debug paths are not enabled" });
   }
-  const { url, commit } = getQuery(event);
+  const { url, commit, ref, path } = getQuery(event);
   if (typeof url !== "string") {
     throw createError({ statusCode: 400, message: "url is required" });
   }
   const budget = createFetchBudget();
   try {
     const tree = await app.packageFetcher.fetchTree(
-      { url, commit: typeof commit === "string" ? commit : undefined },
+      {
+        url,
+        pin:
+          typeof commit === "string"
+            ? {
+                commit,
+                ref: typeof ref === "string" ? ref : null,
+                path: typeof path === "string" ? path : "",
+              }
+            : undefined,
+      },
       budget,
     );
     return {

@@ -1349,7 +1349,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
 }
 
-export function createInMemoryAppServices(): AppServices {
+/** `packageFetcher` is the live-network opt-in: without one, fetching a package throws. */
+export function createInMemoryAppServices(
+  options: { packageFetcher?: PackageFetcher } = {},
+): AppServices {
   const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
@@ -1867,7 +1870,13 @@ export function createInMemoryAppServices(): AppServices {
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog,
-    packageFetcher: createGithubPackageFetcher(),
+    packageFetcher: createCachedPackageFetcher(
+      options.packageFetcher ?? {
+        async fetchTree() {
+          throw new Error("Package fetching is unavailable in memory");
+        },
+      },
+    ),
     eventSink: createNoopEventSink(),
     accountSettings,
     workingSet,

@@ -9,7 +9,7 @@ const treeBytes = (tree: FetchedTree) =>
 /**
  * Remembers recent trees by URL and commit so an import's second fetch, which names the commit
  * inspect returned, costs no download. A hit spends none of the caller's budget. Only a request
- * that names a commit reads the cache.
+ * that carries a pin reads the cache. Trees are frozen, so a caller that edits one fails loudly.
  */
 export function createCachedPackageFetcher(inner: PackageFetcher): PackageFetcher {
   const trees = new Map<string, { tree: FetchedTree; bytes: number }>();
@@ -17,15 +17,18 @@ export function createCachedPackageFetcher(inner: PackageFetcher): PackageFetche
   return {
     async fetchTree(request, budget) {
       const key = (commit: string) => `${request.url}\n${commit}`;
-      if (request.commit) {
-        const hit = trees.get(key(request.commit));
+      if (request.pin) {
+        const hit = trees.get(key(request.pin.commit));
         if (hit) {
-          trees.delete(key(request.commit));
-          trees.set(key(request.commit), hit);
+          trees.delete(key(request.pin.commit));
+          trees.set(key(request.pin.commit), hit);
           return hit.tree;
         }
       }
       const tree = await inner.fetchTree(request, budget);
+      Object.freeze(tree.files);
+      Object.freeze(tree.dropped);
+      Object.freeze(tree);
       const bytes = treeBytes(tree);
       if (bytes <= MAX_BYTES) {
         const replaced = trees.get(key(tree.commit));

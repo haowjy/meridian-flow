@@ -179,7 +179,8 @@ export async function readTar(
       async body() {
         consume();
         const data = bodyBytes === 0 ? EMPTY : await mustRead(reader, bodyPadded);
-        return data.subarray(0, bodyBytes);
+        // A copy, so a kept file does not pin the whole gunzip chunk it arrived in.
+        return Buffer.from(data.subarray(0, bodyBytes));
       },
       async skip() {
         consume();

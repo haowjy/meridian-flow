@@ -138,17 +138,17 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   rules are supported, deleting that manifest drops them.
 - The adapter reads files one by one, so a multi-file Apply can be seen half done; an Agent's
   access comes from its own file and the chain takes the minimum, so this never widens one.
-- **Fetching a tree** goes through the `PackageFetcher` port (`ports/package-fetcher.ts`): `fetchTree({ url, commit? }, budget)`
+- **Fetching a tree** goes through the `PackageFetcher` port (`ports/package-fetcher.ts`): `fetchTree({ url, pin? }, budget)`
   returns the resolved commit SHA, the ref and import root the URL named, and the files as bytes under that root. A
-  `commit` makes the fetch read exactly that commit, so import's second call matches inspect's. `createGithubPackageFetcher`
+  `pin` (the `commit`, `ref` and `path` an earlier fetch returned) makes the fetch read exactly that commit with no ref call, so import's second call matches inspect's and survives a deleted branch. A returned tree is read-only. `createGithubPackageFetcher`
   (wired in `lib/compose.ts` behind `createCachedPackageFetcher`, which keeps recent trees by URL and commit so a repeat
-  costs no download) resolves the longest leading run of URL segments that names a branch or tag (`matching-refs`), peels annotated tags to a
+  costs no download) resolves the longest leading run of URL segments that names a branch or tag (one `matching-refs` call per kind), peels annotated tags to a
   commit, and streams `codeload.github.com`'s tarball through gunzip and a tar reader. One `FetchBudget` per import
   (`createFetchBudget`, limits in `FETCH_LIMITS`) is counted as bytes arrive; crossing one throws
   `FetchBudgetError` naming it (`download`, `expanded`, `entries`, `wall-time`). Every request hop must be on github.com,
   api.github.com or codeload.github.com, and `FLOW_GITHUB_TOKEN` goes only to api.github.com. Archive paths that are
   absolute, use `..` or repeat are refused; links are dropped and listed, files over 2 MB are dropped and listed, and
-  `node_modules/`, `.git/`, `dist/`, `build/` and archives are skipped without a word. A second adapter (a pack
+  files under `node_modules/`, `.git/`, `dist/` or `build/` directories, and archives are skipped without a word. A second adapter (a pack
   bundle answering a pinned commit) goes behind a wrapper that picks by URL; callers don't change. `./mf package fetch`
   reaches it through `GET /api/debug/package-fetch`.
 - Callers authorize source, Project, and thread access before selecting or
