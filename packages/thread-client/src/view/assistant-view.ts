@@ -8,6 +8,7 @@ import {
   type Block,
   blockPlainText,
   TOOL_NOT_RUN_CODE,
+  TOOL_STOPPED_CODE,
   type Turn,
 } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
@@ -97,15 +98,16 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks" | "status">): Assist
 }
 
 /**
- * A stopped or failed reply has no running call: one that never got its result (the run was stopped
- * before it started, or its process died) reads as a call the run ended, whatever the tool.
+ * A stopped or failed reply has no running call. One whose input never finished streaming was
+ * never sent: it did not run. One that was sent and has no result may have run (a connection call
+ * can finish on the far side), so it only reads as stopped.
  */
 function settleUnanswered(tool: ToolView): void {
   if (tool.result !== null || tool.isError) return;
-  tool.result = {
-    code: TOOL_NOT_RUN_CODE,
-    message: "This call did not run: the reply ended first.",
-  };
+  tool.result =
+    tool.status === "partial"
+      ? { code: TOOL_NOT_RUN_CODE, message: "This call did not run: the reply ended first." }
+      : { code: TOOL_STOPPED_CODE, message: "The reply ended before this call answered." };
   tool.isError = true;
   tool.status = "complete";
 }
