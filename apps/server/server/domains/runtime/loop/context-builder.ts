@@ -302,7 +302,7 @@ function userTurnContentParts(blocks: readonly Block[]): (TextPart | MediaPart)[
   return parts;
 }
 
-/** A user turn's text and projected media; every other block has no user-side part. */
+/** A user turn's text and projected media. Reference blocks are added separately by `userTurnContentParts`; other blocks map to no part. */
 function blockToUserPart(block: Block): TextPart | MediaPart | null {
   switch (block.blockType) {
     case "text":
