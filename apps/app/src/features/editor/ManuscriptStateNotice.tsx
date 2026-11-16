@@ -23,16 +23,17 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { appliedSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import {
   type PendingTreeChange,
   treeNoticeLabel,
   treeNoticeSentence,
 } from "@/features/draft-review/tree-line";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useLiveDraftCue } from "@/features/project/context/LiveDraftNotice";
-import { deletedFromManuscriptSentence } from "@/features/project/context/RemovedDocumentNotice";
+import { deletedLiveSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { cn } from "@/lib/utils";
@@ -62,7 +63,7 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   );
   useEffect(() => owner.keepApplyFactsOnly(projectId, documentId), [owner, projectId, documentId]);
   const item = files.find((file) => file.documentId === documentId)?.draft;
-  const deleted = isDeletedFromManuscript(item);
+  const deleted = isDeletedLive(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
   const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
@@ -71,19 +72,25 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const cue = useLiveDraftCue(projectId, tab);
   const shell = useShellTreeVersion();
   const shown = shell?.showing === "draft" ? shell.ownerKey : cue?.ownerKey;
+  const { scheme } = tabLocation(tab);
+  const area = schemeLabel(scheme);
   if (deleted) {
-    const sentence = deletedFromManuscriptSentence(
+    const sentence = deletedLiveSentence(
       title,
+      area,
       removal?.kind === "removed" ? removal.record : null,
     );
-    return { kind: "deleted", sentence, label: t`Deleted from the manuscript` };
+    return { kind: "deleted", sentence, label: t`Deleted from ${area}` };
   }
   const renamed = renamedPath ? documentBasename(renamedPath) : null;
   if (restored || renamed)
     return {
       kind: "applied",
-      sentence: appliedSentence(restored ? [title] : [], renamed ? [renamed] : []),
-      label: renamed ? t`Added as ${renamed}` : t`Back in the manuscript`,
+      sentence: appliedSentence(
+        restored ? [{ name: title, scheme }] : [],
+        renamed ? [renamed] : [],
+      ),
+      label: renamed ? t`Added as ${renamed}` : t`Back in ${area}`,
       dismiss: () => owner.forgetApplyFacts(projectId, documentId),
     };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>

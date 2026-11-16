@@ -57,6 +57,11 @@ export function documentPlace(scheme: ProjectContextTreeScheme, path: string) {
   return schemeLocation(scheme, path.split("/").filter(Boolean).slice(0, -1));
 }
 
+/** The area a sentence names a document's source by, or null when its source is unknown. */
+export function areaName(scheme: ProjectContextTreeScheme | null | undefined): string | null {
+  return scheme ? schemeLabel(scheme) : null;
+}
+
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   switch (scheme) {
     case "manuscript":

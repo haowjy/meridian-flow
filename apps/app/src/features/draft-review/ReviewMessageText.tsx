@@ -26,7 +26,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
     case "gone":
       return msg`That change is no longer in the draft.`;
     case "needs_restore":
-      return msg`This document was deleted from the manuscript. Apply again to bring it back.`;
+      return msg`This document was deleted. Apply again to bring it back.`;
     case "changed":
       return msg`This move or delete changed since you looked. Check it, then apply again.`;
     case "draft_changed":

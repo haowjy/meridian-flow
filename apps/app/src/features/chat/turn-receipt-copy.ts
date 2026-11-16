@@ -44,7 +44,7 @@ export function treeFaultLocation(
 export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames): string {
   switch (refusal.status) {
     case "nothing_to_redo":
-      return t`Redo is no longer available because the manuscript changed.`;
+      return t`Redo is no longer available because the documents changed.`;
     case "nothing_to_undo":
       return t`Undo is no longer available.`;
     case "expired":
@@ -144,7 +144,7 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
     case "refused":
       return t`Couldn't be reversed`;
     case "applied":
-      return t`Applied to the manuscript`;
+      return t`Already applied`;
     case "discarded":
       return t`Discarded`;
     case "already_undone":

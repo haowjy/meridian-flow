@@ -24,12 +24,9 @@ import {
   useDraftNoticeWords,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
-import {
-  DeletedFromManuscriptTag,
-  DraftCommandStatus,
-} from "@/features/draft-review/DraftCommandStatus";
+import { DeletedLiveTag, DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
-import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
@@ -268,7 +265,7 @@ export function ChangesSource({
     folders: readonly string[],
     name?: string,
   ) => {
-    const restoring = targets.filter((file) => isDeletedFromManuscript(file.draft));
+    const restoring = targets.filter((file) => isDeletedLive(file.draft));
     const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
     if (restoring.length > 0 || deleting.length > 0)
       setAsking({ targets, folders, deleting, restoring, name });
@@ -281,7 +278,13 @@ export function ChangesSource({
     ? {
         kind: "apply-all",
         sentence: (
-          <ApplyAllQuestion deleting={names(asking.deleting)} restoring={names(asking.restoring)} />
+          <ApplyAllQuestion
+            deleting={names(asking.deleting)}
+            restoring={asking.restoring.map((file) => ({
+              name: reviewFileTargetName(file, untitled),
+              scheme: file.draft.contextLocation?.scheme,
+            }))}
+          />
         ),
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply all</Trans>,
@@ -658,7 +661,7 @@ function ChangeRow({
         icon={fileKindIcon(file.contextLocation?.path ?? name)}
         title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file, textChanges)}
-        notice={notice ?? <DeletedFromManuscriptTag item={file.draft} />}
+        notice={notice ?? <DeletedLiveTag item={file.draft} />}
         revealActions={!touch}
         actions={
           <ReviewActions

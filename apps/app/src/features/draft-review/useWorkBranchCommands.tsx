@@ -33,7 +33,7 @@ import {
   useOptionalDraftOnlyPresentations,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
-import { isDeletedFromManuscript } from "./deleted-drafts";
+import { isDeletedLive } from "./deleted-drafts";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import type {
   AppliedFact,
@@ -154,7 +154,14 @@ export function useWorkBranchCommands({
         ...done.flatMap(({ item, outcome }) => {
           const name = titleOf(item);
           return outcome.restored && name && item
-            ? [{ documentId: item.documentId, kind: "restored" as const, name }]
+            ? [
+                {
+                  documentId: item.documentId,
+                  kind: "restored" as const,
+                  name,
+                  scheme: item.contextLocation?.scheme ?? null,
+                },
+              ]
             : [];
         }),
         ...said.flatMap((fact): AppliedFact[] => {
@@ -191,7 +198,12 @@ export function useWorkBranchCommands({
         const name = titleOf(item);
         if (item && name && !told.has(item.documentId)) {
           told.add(item.documentId);
-          fresh.push({ documentId: item.documentId, kind: "applied", name });
+          fresh.push({
+            documentId: item.documentId,
+            kind: "applied",
+            name,
+            scheme: item.contextLocation?.scheme ?? null,
+          });
         }
       }
       const facts = [...held, ...fresh.map((fact) => (step ? { ...fact, step } : fact))];
@@ -263,7 +275,7 @@ export function useWorkBranchCommands({
       const started = owner.apply(
         ref(draft),
         target,
-        isDeletedFromManuscript(item),
+        isDeletedLive(item),
         (tree && item?.tree) || undefined,
         editorHistoryOf(reviewEditor?.(draft)),
       );
@@ -357,9 +369,7 @@ export function useWorkBranchCommands({
           });
           return settled.map((outcome, index): CommandOutcome => {
             const member = members[index];
-            return outcome.kind === "needs-restore" &&
-              member &&
-              isDeletedFromManuscript(row(member.draft))
+            return outcome.kind === "needs-restore" && member && isDeletedLive(row(member.draft))
               ? { kind: "needs-restore", deleted: true }
               : outcome;
           });

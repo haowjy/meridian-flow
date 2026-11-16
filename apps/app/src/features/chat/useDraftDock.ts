@@ -6,7 +6,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
-import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { hasLine } from "@/features/draft-review/draft-notices";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
@@ -212,8 +212,8 @@ export function useDraftDock({
     imagePreview,
     closeImagePreview: () => setImagePreview(null),
     /** The files Apply would bring back from a delete; more than one file asks first. */
-    deletedToApply: applicable.filter((file) => isDeletedFromManuscript(file.row.draft)),
-    /** The files Apply would delete from the manuscript; more than one file asks first. */
+    deletedToApply: applicable.filter((file) => isDeletedLive(file.row.draft)),
+    /** The files Apply would delete; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
     apply: (restore: ReadonlySet<string>) => send("apply", restore),
     discard: () => void send("discard"),
