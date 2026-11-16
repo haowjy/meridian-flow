@@ -822,8 +822,7 @@ export class DraftCommandOwner {
       ...(restore ? { restore: true as const } : {}),
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
-    // A room that ended delivers nothing more: the click goes anyway (`ApplyClickQueue.roomEnded`).
-    const acknowledged = binding.session.whenCurrentChangesAcknowledged().catch(() => undefined);
+    const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     this.setState(ref.itemKey, { failure: null });
     const frozen: FrozenApply = {
       body,
