@@ -94,8 +94,9 @@ export interface McpRunResult {
   value?: JsonValue;
   /** `threw`, `rejected_code` and `unavailable`: the failure in the runner's or stripper's words. */
   error?: { name: string; message: string; line?: number; column?: number };
-  /** `timed_out`: which limit. */
+  /** `timed_out`: which limit, and how long it is. */
   limit?: "wall" | "cpu";
+  limitMs?: number;
   /** `too_large`: the size the value had. */
   bytes?: number;
   /** In the order the script made them. A reply is cut to what the row shows; the record has it whole. */

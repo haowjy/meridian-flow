@@ -18,6 +18,7 @@ import {
 } from "@meridian/thread-client";
 import {
   BookOpen,
+  Code,
   Copy,
   FilePlus2,
   FolderInput,
@@ -41,6 +42,7 @@ import {
   folderDisplayName,
   type OwnerNames,
 } from "./document-display-name";
+import { scriptPhrase } from "./script-copy";
 import { workReceiptLine } from "./work-receipt-copy";
 
 export type ToolActivityPhrase = {
@@ -296,6 +298,17 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     pathlessTitle: null,
     expand: "renderer",
   },
+  // A script's row is worded from its typed result (`scriptPhrase`): its calls and why it stopped.
+  "mcp-run": {
+    Icon: Code,
+    phrases: (tool) => {
+      const active = scriptPhrase(tool);
+      return { active, complete: active };
+    },
+    failureVerb: () => t`Couldn't run a script`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
   "mcp-describe": {
     Icon: Plug,
     phrases: (tool) => {
@@ -484,6 +497,7 @@ export function liveToolActivityLabel(toolName: string, input: unknown): string 
     isError: false,
     message: null,
     streamedOutput: null,
+    connectionCalls: null,
     metadata: null,
     keyBlock: {} as ToolView["keyBlock"],
   };

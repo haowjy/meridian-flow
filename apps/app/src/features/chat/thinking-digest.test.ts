@@ -21,6 +21,7 @@ function tool(toolName: string, command?: string): ToolView {
     isError: false,
     message: null,
     streamedOutput: null,
+    connectionCalls: null,
     metadata: null,
     keyBlock: {
       id: "call-1",

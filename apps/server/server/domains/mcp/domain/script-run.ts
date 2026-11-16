@@ -254,7 +254,12 @@ export function createScriptRuns(deps: {
           ...base,
         };
       case "timed_out":
-        return { ended: "timed_out", limit: ran.limit, ...base };
+        return {
+          ended: "timed_out",
+          limit: ran.limit,
+          limitMs: ran.limit === "cpu" ? limits.cpuMs : limits.wallMs,
+          ...base,
+        };
       case "too_large":
         return { ended: "too_large", bytes: ran.bytes, ...base };
       case "aborted":

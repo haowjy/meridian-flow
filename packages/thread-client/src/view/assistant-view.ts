@@ -118,6 +118,7 @@ function sameTool(left: ToolView, right: ToolView): boolean {
     isError: "value",
     message: "value",
     streamedOutput: "value",
+    connectionCalls: "json",
     metadata: "json",
     keyBlock: "reference",
   } satisfies Record<keyof ToolView, "value" | "json" | "reference">;
