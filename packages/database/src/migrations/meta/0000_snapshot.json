@@ -9784,7 +9784,7 @@
         },
         "document_drafts_closed_cause_valid": {
           "name": "document_drafts_closed_cause_valid",
-          "value": "\"document_drafts\".\"closed_cause\" IN ('discarded', 'document_removed')"
+          "value": "\"document_drafts\".\"closed_cause\" IN ('discarded', 'document_removed', 'left_out')"
         },
         "document_drafts_status_valid": {
           "name": "document_drafts_status_valid",

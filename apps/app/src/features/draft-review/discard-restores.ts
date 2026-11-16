@@ -1,12 +1,15 @@
 import type { RestoreReturned } from "./draft-notices";
 
+/** The documents whose text draft was reopened, and whose tree changes came back, by one restore. */
+export type RestoredHalves = { text: readonly string[]; tree: readonly string[] };
+
 /** What one restore of a Discard answered (`restoreDiscard`). */
 export type RestoreAnswer = {
   answer: "ok" | "failed" | "gone" | "returned";
   /** What the Discard held that could not come back. */
   leftOut?: number;
-  /** The documents whose drafts stayed closed, so an Undo of this restore leaves them alone. */
-  leftOutDocuments?: readonly string[];
+  /** The halves this restore brought back, so an Undo of it takes back those and no more. */
+  brought?: RestoredHalves;
   why?: RestoreReturned;
   /** The Work's current branch, where the drafts came back. */
   branchId?: string;
@@ -20,7 +23,7 @@ export type DiscardRestoreState =
       kind: "restored";
       branchId?: string;
       leftOut: number;
-      leftOutDocuments: readonly string[];
+      brought: RestoredHalves;
     }
   /** Nothing came back: Live's text was edited over every change. The entry has left Trash. */
   | { kind: "left_out"; leftOut: number }
@@ -77,7 +80,7 @@ const stateOf = (answer: RestoreAnswer): DiscardRestoreState =>
       ? {
           kind: "restored",
           leftOut: answer.leftOut ?? 0,
-          leftOutDocuments: answer.leftOutDocuments ?? [],
+          brought: answer.brought ?? { text: [], tree: [] },
           ...(answer.branchId ? { branchId: answer.branchId } : {}),
         }
       : answer.answer === "returned" && answer.why

@@ -102,7 +102,8 @@ export class MemoryDraftStore implements DraftStore {
     for (const id of draftIds) {
       const draft = this.drafts.get(id);
       if (draft?.status === "active") states[id] = "open";
-      else if (draft?.closedCause) states[id] = draft.closedCause;
+      else if (draft?.closedCause)
+        states[id] = draft.closedCause === "left_out" ? "discarded" : draft.closedCause;
     }
     return states;
   }

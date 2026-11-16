@@ -694,7 +694,8 @@ export class DraftNotices {
   private outstanding(parts: readonly DiscardPart[]) {
     return parts.filter((part) => {
       const state = part.restore ? this.restores.state(part.restore) : undefined;
-      return state?.kind !== "restored" && state?.kind !== "returned";
+      // A fully left-out restore is as settled as a restored one: its entry has left Trash.
+      return state?.kind !== "restored" && state?.kind !== "left_out" && state?.kind !== "returned";
     });
   }
 

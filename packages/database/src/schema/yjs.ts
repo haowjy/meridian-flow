@@ -55,10 +55,11 @@ export const documentDrafts = pgTable(
       .notNull()
       .references(() => branches.id, { onDelete: "cascade" }),
     status: text("status").$type<DocumentDraftStatus>().notNull().default("active"),
-    closedCause: text("closed_cause").$type<"discarded" | "document_removed">(),
+    closedCause: text("closed_cause").$type<"discarded" | "document_removed" | "left_out">(),
     /**
      * The Discard or restore command that closed the draft, null for any other close. A restore
-     * reopens the same row and clears it; a retirement acts on the draft only while it still
+     * reopens the same row and clears it (a `left_out` draft keeps it, so the retention purge still
+     * finds it); a retirement acts on the draft only while it still
      * names the command it retires for. A command id, no foreign key: purging a command must not
      * touch the draft.
      */
@@ -116,7 +117,7 @@ export const documentDrafts = pgTable(
     ),
     check(
       "document_drafts_closed_cause_valid",
-      sql`${table.closedCause} IN ('discarded', 'document_removed')`,
+      sql`${table.closedCause} IN ('discarded', 'document_removed', 'left_out')`,
     ),
     check("document_drafts_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(

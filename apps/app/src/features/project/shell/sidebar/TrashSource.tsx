@@ -277,7 +277,7 @@ function useTrashDiscardRows(projectId: string) {
     undoOf: (entry: DiscardEntry) => {
       const state = states.get(entry.commandId);
       if (state?.kind !== "restored" || !state.branchId || !entry.workId) return undefined;
-      const { branchId, leftOutDocuments } = state;
+      const { branchId, brought } = state;
       const ownerKey = workOwnerKey({ id: entry.workId });
       return () => {
         if (undoing.get(entry.commandId) === "sending") return;
@@ -286,7 +286,10 @@ function useTrashDiscardRows(projectId: string) {
           projectId,
           ownerKey,
           branchId,
-          documentIds: documentsOf(entry).filter((id) => !leftOutDocuments.includes(id)),
+          items: [...new Set([...brought.text, ...brought.tree])].map((documentId) => ({
+            documentId,
+            ends: brought.text.includes(documentId) ? ("item" as const) : ("tree" as const),
+          })),
         }).then((outcome) => {
           if (outcome.kind !== "done") return mark(entry.commandId, "failed");
           // The restored row gives way to the new entry the refetch lists.

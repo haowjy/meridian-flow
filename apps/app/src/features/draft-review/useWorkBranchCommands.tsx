@@ -980,9 +980,13 @@ export async function restoreDiscard(
     const edited = answer.settled?.find(
       (one) => one.rule === "left_out" && one.why === "changed_since",
     );
-    const leftOutDocuments = edited && "items" in edited ? edited.items : [];
     if (answer.restored > 0)
-      return { answer: "ok", leftOut: answer.leftOut, leftOutDocuments, branchId: answer.branchId };
+      return {
+        answer: "ok",
+        leftOut: answer.leftOut,
+        brought: answer.brought,
+        branchId: answer.branchId,
+      };
     // Everything it held was edited in Live since: the notice says how many changes stayed out.
     if (edited) return { answer: "gone", leftOut: answer.leftOut };
     return answer.settled?.some((one) => one.rule === "already")
@@ -1003,14 +1007,19 @@ const reviewOf = (item: ThreadDraftListItem): ReviewFileTarget => ({
 });
 
 /**
- * Discards these documents' drafts of a Work's branch as one command (`DraftCommandOwner
+ * Discards these documents of a Work's branch as one command (`DraftCommandOwner
  * .discardBranch`, the one a selection's Discard sends): the Undo of a restore made from Trash,
- * which puts them back in Trash as a new entry.
+ * which puts them back in Trash as a new entry. `ends: "tree"` leaves a document's text alone.
  */
 export async function discardDrafts(
   queryClient: QueryClient,
   owner: DraftCommandOwner,
-  input: { projectId: string; ownerKey: string; branchId: string; documentIds: readonly string[] },
+  input: {
+    projectId: string;
+    ownerKey: string;
+    branchId: string;
+    items: readonly { documentId: string; ends: "tree" | "item" }[];
+  },
 ): Promise<CommandOutcome> {
   const { projectId, ownerKey, branchId } = input;
   const outcome = await owner.discardBranch({
@@ -1018,14 +1027,14 @@ export async function discardDrafts(
     branchId,
     commandId: crypto.randomUUID(),
     selection: {
-      items: input.documentIds.map((documentId) => ({
+      items: input.items.map(({ documentId, ends }) => ({
         ref: {
           projectId,
           ownerKey,
           documentId,
           itemKey: draftItemKey(branchId as BranchId, documentId),
         },
-        ends: "item" as const,
+        ends,
       })),
     },
   });

@@ -220,6 +220,8 @@ export type UndoDiscardResult = {
   swapped: number;
   /** What the Discard held that could not come back: a purged node or document, or the changes of a draft whose Live text was edited since. */
   leftOut: number;
+  /** The halves this restore brought back, by document: what an Undo of it takes back, and no more. */
+  brought: { text: string[]; tree: string[] };
   /**
    * Why `restored` is 0: `returned` (the draft's owner is closed), `already` (a restore took the
    * members), `left_out purged` (the entry is gone from Trash or what it held was purged), `left_out changed_since` (Live's text was edited over the draft: it stays closed, `items` names its documents, and the entry leaves Trash).

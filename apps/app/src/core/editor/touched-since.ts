@@ -12,7 +12,9 @@ export function markStepDone(doc: Y.Doc, stackItem: StackItem): void {
 
 /**
  * Whether an edit since the step was marked done deleted text it inserted, wrote beside text it
- * inserted or deleted, or deleted a block holding either.
+ * inserted or deleted, or deleted a block holding either (a join into the block before, a new
+ * block type). A neighbouring word, its marks and a split of the block do not count. The server's
+ * Restore of a Discard judges Live's edits the same way (`drizzle-reopen-drafts.ts`).
  */
 export function touchedSince(doc: Y.Doc, stackItem: StackItem): boolean {
   const after = stackItem.meta.get(AFTER_META) as Map<number, number>;

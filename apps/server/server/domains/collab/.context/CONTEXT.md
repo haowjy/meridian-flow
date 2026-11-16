@@ -103,7 +103,7 @@ Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
 cause, by?)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
 `{ documentRemoved: record }`. It prelocks the drafts in ID order, derives the durable
-`closed_cause` (`document_removed` for a removal, else `discarded`) and, when a Discard or restore
+`closed_cause` (`document_removed` for a removal, else `discarded`; a Restore that left the draft out sets `left_out`, which `apply.md` describes) and, when a Discard or restore
 command (or an Apply of the document's delete) closes it, `closed_by` (that command's id), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once

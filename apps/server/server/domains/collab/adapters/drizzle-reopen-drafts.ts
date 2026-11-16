@@ -21,6 +21,7 @@ import {
 } from "@meridian/agent-edit/content-merge";
 import {
   diffBlocks,
+  type Hunk,
   projectReview,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
@@ -32,7 +33,7 @@ import type { BranchId, CommandId, DocumentId, DraftOwner } from "@meridian/cont
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, documentDrafts } from "@meridian/database/schema";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
@@ -98,6 +99,11 @@ export function reverseBaseHalf(
   return { rows: row ? [row] : [], rules: total.counts, overrode };
 }
 
+/** Two token ranges overlap, or one is a pure insertion at the other's edge or inside it. */
+const reaches = (a: Hunk, b: Hunk) =>
+  (a.from < b.to && b.from < a.to) ||
+  ((a.from === a.to || b.from === b.to) && a.from <= b.to && b.from <= a.to);
+
 export type ReopenDrafts = ReturnType<typeof createReopenDrafts>;
 
 export function createReopenDrafts(
@@ -113,12 +119,18 @@ export function createReopenDrafts(
   },
 ) {
   return {
-    /** The drafts `command` closed on `branchId` that are still closed. */
+    /** The drafts `command` closed on `branchId` that are still closed and in its entry. */
     async closedBy(command: CommandId, branchId: BranchId) {
       return currentDrizzleDb(db)
         .select({ draftId: documentDrafts.id, documentId: documentDrafts.documentId })
         .from(documentDrafts)
-        .where(and(eq(documentDrafts.closedBy, command), eq(documentDrafts.branchId, branchId)));
+        .where(
+          and(
+            eq(documentDrafts.closedBy, command),
+            eq(documentDrafts.branchId, branchId),
+            ne(documentDrafts.closedCause, "left_out"),
+          ),
+        );
     },
 
     async reopen(input: {
@@ -142,23 +154,22 @@ export function createReopenDrafts(
       // Draft rows lock in id order: two reopens of overlapping drafts cannot deadlock.
       const ordered = [...input.drafts].sort((a, b) => a.draftId.localeCompare(b.draftId));
       const leftOut: { documentId: string; changes: number }[] = [];
+      const leftOutIds: string[] = [];
       const drafts: (typeof input.drafts)[number][] = [];
       for (const draft of ordered) {
         const changes = input.leaveOutEdited ? await editedSince(draft) : 0;
-        if (changes > 0) leftOut.push({ documentId: draft.documentId, changes });
-        else drafts.push(draft);
+        if (changes > 0) {
+          leftOut.push({ documentId: draft.documentId, changes });
+          leftOutIds.push(draft.draftId);
+        } else drafts.push(draft);
       }
-      // A left-out draft stays closed and leaves the entry: Restore answered for it.
+      // A left-out draft stays closed under its Discard, which the purge still reaches, and leaves
+      // the entry: Restore answered for it.
       if (leftOut.length > 0)
         await tx
           .update(documentDrafts)
-          .set({ closedBy: null })
-          .where(
-            inArray(
-              documentDrafts.id,
-              ordered.filter((draft) => !drafts.includes(draft)).map((draft) => draft.draftId),
-            ),
-          );
+          .set({ closedCause: "left_out" })
+          .where(inArray(documentDrafts.id, leftOutIds));
       let swapped = 0;
       for (const draft of drafts) {
         const [newer] = await tx
@@ -206,11 +217,12 @@ export function createReopenDrafts(
   };
 
   /**
-   * How many changes of the closed draft Live's text has since overtaken: all of them when Live
-   * edited the text the draft changed, or right beside it, since the base the draft last saw (a
-   * pull merges only into an open draft, so that base is stale), else 0. The room path's
-   * `touchedSince` counts the same span: an edit that deletes, or writes into or beside, what the
-   * change wrote or deleted. The draft's change would otherwise come back over the writer's word.
+   * How many changes of the closed draft Live's text has since overtaken (all of them or none):
+   * Live edited the text the draft changed, or wrote a pure insertion at its edge, since the base the
+   * draft last saw (a pull merges only into an open draft, so that base is stale). The same rule as
+   * the room Discard's `touchedSince` (`touched-since.ts`), on token ranges: a neighbouring word, or
+   * or a split of a block, is not an edit of it; a join into the block before, or a new block type, is, because the room's Undo cannot follow the text out. Live's diff and the
+   * draft's `raw` (uncleaned) hunks run over the same base tokens, so their ranges compare directly.
    */
   async function editedSince(draft: { draftId: string; documentId: string }): Promise<number> {
     // The base the draft reopens with: its waiting Un-Applies replayed on a copy.
@@ -229,10 +241,27 @@ export function createReopenDrafts(
     try {
       const liveBlocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
       const changed = diffBlocks(baseBlocks, draftBlocks);
-      // Both diffs run over the same base tokens, so their ranges compare directly.
-      const edits = diffBlocks(baseBlocks, liveBlocks, { cleanup: false }).hunks;
-      const touched = edits.some((edit) =>
-        changed.hunks.some((hunk) => edit.from <= hunk.to && hunk.from <= edit.to),
+      const edits = diffBlocks(baseBlocks, liveBlocks, { cleanup: false });
+      const { toks, starts, blockOf } = edits.base;
+      // A Live edit that removes a block's start (a join into the block before, or a new block
+      // type) rewrites the text it holds, and an Undo in the room cannot follow the text out.
+      const holdsChange = (edit: Hunk) =>
+        toks.slice(edit.from, edit.to).some((tok, i) => {
+          if (tok.kind !== "block") return false;
+          const block = blockOf[edit.from + i];
+          const [first, end] = [starts[block], starts[block + 1]];
+          return changed.raw.some((hunk) =>
+            hunk.from === hunk.to
+              ? hunk.from > first && hunk.from <= end
+              : hunk.from < end && hunk.to > first,
+          );
+        });
+      // A split inserts block starts beside the change without touching its characters.
+      const split = (edit: Hunk) =>
+        edit.from === edit.to && edit.ins.every((tok) => tok.kind === "block");
+      const touched = edits.raw.some(
+        (edit) =>
+          holdsChange(edit) || (!split(edit) && changed.raw.some((hunk) => reaches(edit, hunk))),
       );
       return touched ? projectReview(changed).groups.length : 0;
     } finally {

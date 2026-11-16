@@ -79,6 +79,7 @@ export function createDrizzleUndoDiscard(
         restored: 0,
         swapped: 0,
         leftOut,
+        brought: { text: [], tree: [] },
         settled,
       });
       const purged = (items: string[] = []) =>
@@ -202,6 +203,14 @@ export function createDrizzleUndoDiscard(
                 restored: treeCopies + reopened,
                 swapped,
                 leftOut: leftOut.length + editedChanges,
+                brought: {
+                  text: drafts
+                    .filter((draft) => !edited.some((one) => one.documentId === draft.documentId))
+                    .map((draft) => draft.documentId),
+                  tree: [
+                    ...new Set(restoredTree.flatMap((one) => one.copies.map((copy) => copy.node))),
+                  ],
+                },
                 ...(settled.length > 0 ? { settled } : {}),
               };
             },
