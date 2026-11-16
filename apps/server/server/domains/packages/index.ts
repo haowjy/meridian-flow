@@ -18,6 +18,7 @@ export {
   type BoundAgentCatalogItem,
   type CatalogSkill,
   createBoundAgentCatalog,
+  isPrimary,
 } from "./domain/bound-agent-catalog.js";
 export {
   AgentSourceError,

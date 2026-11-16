@@ -506,7 +506,7 @@ function runsDifferently(
  * Whether a writer can start a conversation with the Agent: only `mode: primary`. An Agent with no
  * `mode` is a subagent, as `mars agents` lists it.
  */
-function isPrimary(definition: CompiledAgentDefinition): boolean {
+export function isPrimary(definition: CompiledAgentDefinition): boolean {
   return definition.metadata.mode === "primary" && definition.metadata["user-invocable"] !== false;
 }
 
