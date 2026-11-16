@@ -64,6 +64,7 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
+import { createDrizzleCreatedDrafts } from "./adapters/drizzle-created-drafts.js";
 import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
@@ -570,6 +571,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPeers = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts,
+      draftCreatedDocuments: createDrizzleCreatedDrafts(deps.db, {
+        documents: runtime.markdownDocuments,
+        drafts,
+      }),
       draftCoordinator,
       blockText: createDrizzleBlockText(deps.db),
       draftPulls,

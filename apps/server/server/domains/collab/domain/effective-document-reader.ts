@@ -45,11 +45,12 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
+  draftCreatedDocuments: DraftPeerShadowAccess["draftCreatedDocuments"];
   draftCoordinator: Pick<DraftCoordinator, "copyDraft" | "loadBase" | "prepareAppend">;
   blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: AgentEditRouter;
-  documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument" | "ensureDocumentAuthority">;
+  documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
@@ -229,11 +230,6 @@ export function createEffectiveDocumentReader(input: {
         }
       }
     },
-    async draftCreatedDocuments(created) {
-      for (const { documentId, branchId } of created) {
-        await input.documents.ensureDocumentAuthority(documentId);
-        await input.drafts.ensureCreatedDocumentDraft({ documentId, branchId });
-      }
-    },
+    draftCreatedDocuments: input.draftCreatedDocuments,
   };
 }
