@@ -12,7 +12,7 @@ let configValidated = false;
  * `signOut` return to `/` without a WorkOS call; the tokens are never read.
  */
 function devAuthResult(dev: { externalId: string; email: string }): AuthResult {
-  const now = new Date().toISOString();
+  const now = new Date();
   return {
     user: {
       object: "user",
@@ -40,7 +40,7 @@ function devAuthResult(dev: { externalId: string; email: string }): AuthResult {
 /**
  * AuthKit middleware with a per-request redirect URI (portless / Tailscale in dev).
  *
- * SYNC: keep aligned with `@workos/authkit-tanstack-react-start@0.10.1`
+ * SYNC: keep aligned with `@workos/authkit-tanstack-react-start@0.12.1`
  * `dist/server/middleware-body.js` — `redirectUri` resolution and the dev-auth bypass
  * branch differ. A bypass-refused request gets `{ user: null }`, so loaders that call
  * `getSignInUrl` on it can fail (no WorkOS keys, or a no-op `__setPendingHeader` drops

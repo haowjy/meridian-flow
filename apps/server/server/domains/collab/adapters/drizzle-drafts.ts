@@ -43,9 +43,11 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import {
+  type BranchHolder,
   branchMayHold,
   loadBranchHolder,
   loadDocumentOwner,
+  type SourceOwner,
 } from "../../context/tree/branch-ownership.js";
 import { requireLivingDocument } from "../../context/tree/living-document.js";
 import { isDrafted } from "../../file-policy/index.js";
@@ -103,6 +105,50 @@ export type AppendCommitted = {
 
 /** The projection write's bound on each lock acquisition, not on the transaction (G5, C1). */
 const EFFECT_WRITE_LOCK_TIMEOUT = "100ms";
+
+function draftRow(input: {
+  id: string;
+  documentId: DocumentId;
+  branchId: BranchId;
+  state: Buffer;
+  stateVector: Buffer;
+  schemaVersion: number;
+}) {
+  return {
+    ...input,
+    kind: "work_draft" as const,
+    status: "active" as const,
+    hasEffect: false,
+    hasEffectRevision: 0,
+  };
+}
+
+export async function insertCreatedDrafts(
+  db: Database,
+  fresh: readonly { id: DocumentId; branch_id: BranchId }[],
+  checkpoint: { state: Buffer; stateVector: Buffer },
+): Promise<Set<string>> {
+  const insertedIds = new Set<string>();
+  for (let offset = 0; offset < fresh.length; offset += 500) {
+    const inserted = await currentDrizzleDb(db)
+      .insert(documentDrafts)
+      .values(
+        fresh.slice(offset, offset + 500).map(({ id, branch_id }) =>
+          draftRow({
+            id: createdDraftId(id),
+            documentId: id,
+            branchId: branch_id,
+            ...checkpoint,
+            schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
+          }),
+        ),
+      )
+      .onConflictDoNothing()
+      .returning({ id: documentDrafts.id });
+    for (const { id } of inserted) insertedIds.add(id);
+  }
+  return insertedIds;
+}
 
 export function createDrizzleDraftStore(
   db: Database,
@@ -238,12 +284,16 @@ export function createDrizzleDraftStore(
     const [inserted] = await currentDrizzleDb(db)
       .insert(documentDrafts)
       .values({
-        id: named ?? `draft_${randomUUID()}`,
-        documentId: input.documentId,
-        kind: "work_draft",
-        branchId: input.branchId,
-        status: "active",
-        ...checkpoint,
+        ...draftRow({
+          id: named ?? `draft_${randomUUID()}`,
+          documentId: input.documentId,
+          branchId: input.branchId,
+          ...checkpoint,
+          schemaVersion: packCollabSchemaVersion(
+            (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
+              COLLAB_SCHEMA_VERSION,
+          ),
+        }),
         ...(seed
           ? {
               seedOrigins: seed.origins,
@@ -254,12 +304,6 @@ export function createDrizzleDraftStore(
               seedLivePosition: seed.liveAttribution?.position,
             }
           : {}),
-        hasEffect: false,
-        hasEffectRevision: 0,
-        schemaVersion: packCollabSchemaVersion(
-          (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
-            COLLAB_SCHEMA_VERSION,
-        ),
       })
       .onConflictDoNothing()
       .returning({ id: documentDrafts.id });
@@ -356,15 +400,8 @@ export function createDrizzleDraftStore(
   ): Promise<void> {
     const tx = currentDrizzleDb(db);
     const owner = await loadDocumentOwner(tx, documentId);
-    if (owner && isContextUriScheme(owner.scheme) && !isDrafted(owner.scheme)) {
-      throw new Error(
-        `Document ${documentId} is in ${contextRootUri(owner.scheme)}, which is never drafted`,
-      );
-    }
     const holder = await loadBranchHolder(tx, branchId);
-    if (!owner || !holder || !branchMayHold(holder, owner)) {
-      throw new Error(`Branch ${branchId} may not hold document ${documentId}`);
-    }
+    assertDraftable(documentId, branchId, owner, holder);
   }
 
   async function _getDraftSnapshot(draftId: string): Promise<DraftSnapshot> {
@@ -679,6 +716,22 @@ export function createDrizzleDraftStore(
     ensureCreatedDocumentDraft,
     ensureLiveDocumentDraft,
   };
+}
+
+export function assertDraftable(
+  documentId: DocumentId,
+  branchId: BranchId,
+  owner: SourceOwner | null,
+  holder: BranchHolder | null,
+): void {
+  if (owner && isContextUriScheme(owner.scheme) && !isDrafted(owner.scheme)) {
+    throw new Error(
+      `Document ${documentId} is in ${contextRootUri(owner.scheme)}, which is never drafted`,
+    );
+  }
+  if (!owner || !holder || !branchMayHold(holder, owner)) {
+    throw new Error(`Branch ${branchId} may not hold document ${documentId}`);
+  }
 }
 
 function resolved({ draftId, status, lifecycle, seed }: DraftSnapshot): ResolvedDraft {

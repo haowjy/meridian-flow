@@ -32,7 +32,11 @@ import type {
   ThreadMediaInclusionRepository,
 } from "../../threads/ports/repositories.js";
 import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
-import { reasoningOfChoice, resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
+import {
+  type ResolveAgentThreadTurnContextInput,
+  reasoningOfChoice,
+  resolveAgentThreadTurnContext,
+} from "../tools/agent-thread-context.js";
 import {
   resolveThreadModelAvailableSkills,
   resolveThreadPreloadedSkills,
@@ -80,6 +84,7 @@ export interface AssembleNextTurnContextInput {
   turns: Turn[];
   blocks: Block[];
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
+  agentCatalog: ResolveAgentThreadTurnContextInput["agentCatalog"];
   threads: Parameters<typeof resolveAgentThreadTurnContext>[0]["threads"];
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway: Pick<Gateway, "getDefaultModel" | "listModels">;
@@ -228,7 +233,13 @@ function modelOf(
 export function lazyThreadModel(
   input: Pick<
     AssembleNextTurnContextInput,
-    "thread" | "agentRevisions" | "threads" | "toolRegistry" | "gateway" | "baseTools"
+    | "thread"
+    | "agentRevisions"
+    | "agentCatalog"
+    | "threads"
+    | "toolRegistry"
+    | "gateway"
+    | "baseTools"
   >,
 ): () => Promise<ModelInfo | undefined> {
   let model: Promise<ModelInfo | undefined> | undefined;
@@ -256,6 +267,7 @@ export async function prepareNextTurnContext(
   const agentContext = await resolveAgentThreadTurnContext({
     thread,
     agentRevisions: input.agentRevisions,
+    agentCatalog: input.agentCatalog,
     threads: input.threads,
     toolRegistry: input.toolRegistry,
     baseTools: input.baseTools,

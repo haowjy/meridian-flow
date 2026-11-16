@@ -10,7 +10,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { ownedByRequest, ownerFrom, sourceOwnerProjectId } from "./source-owner.js";
-import { loadDocumentPlacement } from "./tree-addresses.js";
+import { loadDocumentPlacements } from "./tree-addresses.js";
 
 /** A branch as ownership sees it: its project and the account that owns that project. */
 export type BranchHolder = { projectId: ProjectId; accountId: UserId };
@@ -55,14 +55,28 @@ export async function loadSourceOwners(
  * The owner of the source a document is placed in (live's row, else any Work's). A document no
  * view places has no source and no owner.
  */
+export async function loadDocumentOwners(
+  db: DrizzleDb,
+  documentIds: readonly DocumentId[],
+): Promise<ReadonlyMap<DocumentId, SourceOwner>> {
+  const placements = await loadDocumentPlacements(db, documentIds);
+  const owners = await loadSourceOwners(
+    db,
+    [...placements.values()].map((p) => p.contextSourceId),
+  );
+  const result = new Map<DocumentId, SourceOwner>();
+  for (const [id, placement] of placements) {
+    const owner = owners.get(placement.contextSourceId);
+    if (owner) result.set(id, owner);
+  }
+  return result;
+}
+
 export async function loadDocumentOwner(
   db: DrizzleDb,
   documentId: DocumentId,
 ): Promise<SourceOwner | null> {
-  const placed = await loadDocumentPlacement(db, documentId);
-  return placed
-    ? ((await loadSourceOwners(db, [placed.contextSourceId])).get(placed.contextSourceId) ?? null)
-    : null;
+  return (await loadDocumentOwners(db, [documentId])).get(documentId) ?? null;
 }
 
 export async function loadBranchHolder(

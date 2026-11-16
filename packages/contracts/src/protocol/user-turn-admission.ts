@@ -75,6 +75,42 @@ export function userMessageTurnBlock(block: AdmittedMessageBlock): {
   }
 }
 
+/**
+ * The inverse of `userMessageTurnBlock`: a writer's stored turn blocks back to the message blocks
+ * they were built from, in block order. Hand-back and Edit after Stop both read a sent message
+ * this way. A reference's adoption-time `read` snapshot is dropped, and a block that is none of
+ * text, reference, skill or image is skipped.
+ */
+export function userMessageBlocksFromTurn(
+  blocks: readonly { blockType: string; content: unknown; sequence?: number }[],
+): UserMessageBlock[] {
+  const ordered = [...blocks].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
+  return ordered.flatMap((block): UserMessageBlock[] => {
+    if (block.blockType === "media") {
+      const content = block.content as Partial<StoredMediaPart> | null;
+      return content?.type === "media" && content.ref
+        ? [
+            {
+              type: "image",
+              documentId: content.ref.documentId as DocumentId,
+              uri: content.ref.uri as CanonicalContextUri,
+            },
+          ]
+        : [];
+    }
+    if (block.blockType !== "text") return [];
+    if (typeof block.content === "string") return [{ type: "text", text: block.content }];
+    const reference = referenceOccurrenceContent(block);
+    if (reference) {
+      if (reference.kind === "folder") return [reference];
+      const { read: _read, ...document } = reference;
+      return [document];
+    }
+    const skill = skillOccurrenceContent(block);
+    return skill ? [skill] : [];
+  });
+}
+
 export type SubmittedReference =
   | {
       kind: "document";
