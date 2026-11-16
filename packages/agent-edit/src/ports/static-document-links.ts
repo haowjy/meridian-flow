@@ -6,11 +6,17 @@
 import {
   type CatalogDocument,
   type CatalogFolder,
-  matchDocumentPath,
+  matchOmittedExtension,
   parseContextUri,
   parseLinkRef,
   splitDocumentHrefSuffix,
 } from "@meridian/contracts";
+import {
+  addressCandidates,
+  childAtSegment,
+  readSegment,
+  type Walkable,
+} from "@meridian/contracts/protocol";
 import {
   type AssetAddress,
   createHolderLinkScope,
@@ -124,12 +130,14 @@ export function createStaticDocumentLinks(
         loaded[target.kind === "folder" ? "folderAddresses" : "addresses"].add(target.uri);
       }
       // A row an address load found is known by id too, as the server remembers it.
-      for (const entry of catalog.documents) {
-        if ([...loaded.addresses].some((uri) => matchDocumentPath([entry], uri, (doc) => doc.uri)))
-          loaded.ids.add(entry.documentId);
+      const tree = catalogTree(catalog.documents, catalog.folders);
+      for (const uri of loaded.addresses) {
+        const found = tree.documentAt(uri);
+        if (found) loaded.ids.add(found.documentId);
       }
-      for (const folder of catalog.folders ?? []) {
-        if (loaded.folderAddresses.has(folder.uri)) loaded.folderIds.add(folder.folderId);
+      for (const uri of loaded.folderAddresses) {
+        const found = tree.folderAt(uri);
+        if (found) loaded.folderIds.add(found.folderId);
       }
     },
     scopeFor,
@@ -153,20 +161,17 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
     document: (id) => ifLoaded("ids", id, () => byId(id)),
     folder: (id) => ifLoaded("folderIds", id, () => folderById(id)),
     folderAt: (uri) =>
-      ifLoaded(
-        "folderAddresses",
-        uri,
-        () =>
-          catalog.folders?.find((entry) => entry.uri === uri && entry.readable && entry.nameable) ??
-          null,
-      ),
+      ifLoaded("folderAddresses", uri, () => {
+        const folder = catalogTree(catalog.documents, catalog.folders).folderAt(uri);
+        return folder?.readable && folder.nameable ? folder : null;
+      }),
     settlement: (aheadId) =>
       ifLoaded("aheadIds", aheadId, () => catalog.settlements?.get(aheadId) ?? null),
     documentAt: (uri) =>
-      ifLoaded("addresses", uri, () => present().find((entry) => entry.uri === uri) ?? null),
+      ifLoaded("addresses", uri, () => catalogTree(present(), catalog.folders).documentAt(uri)),
     documentFor: (uri) =>
       ifLoaded("addresses", uri, () =>
-        matchDocumentPath(present().filter(reachable), uri, (entry) => entry.uri),
+        catalogTree(present().filter(reachable), catalog.folders).documentAt(uri),
       ),
     assetAddress: (id) =>
       ifLoaded("ids", id, (): AssetAddress | null | undefined => {
@@ -191,6 +196,94 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
           present().find((entry) => entry.image && entry.uri === splitDocumentHrefSuffix(uri).path)
             ?.documentId ?? null,
       ),
+  };
+}
+
+type CatalogNode = Walkable & {
+  children: CatalogNode[];
+  document?: StaticCatalogDocument;
+  folder?: CatalogFolder;
+};
+
+/**
+ * The catalog's addresses read as the tree reads them: folders are walked by segment (a document
+ * `Kael` beside a folder `Kael~f051` leaves `Kael/Note` in the folder), the leaf is the exact name
+ * or its alias, else the one document that differs only by a left-off extension. The catalog has
+ * addresses, not parents, so the tree is rebuilt from them: a folder it lists keeps its id, and a
+ * directory it does not list stands in as a folder whose id begins with its `~` suffix.
+ */
+function catalogTree(
+  documents: readonly StaticCatalogDocument[],
+  folders: readonly CatalogFolder[] = [],
+) {
+  const dirs = new Map<string, CatalogNode>();
+  const sourceOf = (parsed: Extract<ReturnType<typeof parseContextUri>, { ok: true }>) =>
+    JSON.stringify([parsed.value.scheme, parsed.value.authority]);
+  const dirAt = (source: string, path: string, listed?: CatalogFolder): CatalogNode => {
+    const key = `${source}\0${path}`;
+    let node = dirs.get(key);
+    if (!node) {
+      const slash = path.lastIndexOf("/");
+      const { name, suffix } = readSegment(path.slice(slash + 1));
+      node = { id: suffix ?? key, kind: "folder", name, suffix, trashed: false, children: [] };
+      if (path !== "") dirAt(source, path.slice(0, Math.max(slash, 0))).children.push(node);
+      dirs.set(key, node);
+    }
+    if (listed) Object.assign(node, { id: listed.folderId, folder: listed });
+    return node;
+  };
+  const leafOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+  const dirOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf("/"), 0));
+  for (const listed of folders) {
+    const parsed = parseContextUri(listed.uri);
+    if (parsed.ok) dirAt(sourceOf(parsed), parsed.value.path, listed);
+  }
+  for (const document of documents) {
+    const parsed = parseContextUri(document.uri);
+    if (!parsed.ok) continue;
+    const { name, suffix } = readSegment(leafOf(parsed.value.path));
+    dirAt(sourceOf(parsed), dirOf(parsed.value.path)).children.push({
+      id: document.documentId,
+      kind: "document",
+      name,
+      suffix,
+      trashed: false,
+      children: [],
+      document,
+    });
+  }
+  /** The folder reached by walking `segments` at folder level from the root of the address's source. */
+  const walk = (source: string, segments: readonly string[]): CatalogNode | undefined => {
+    let at = dirs.get(`${source}\0`);
+    for (const segment of segments) {
+      at = at && childAtSegment(at.children, segment, "folder");
+    }
+    return at;
+  };
+  return {
+    documentAt(uri: string): StaticCatalogDocument | null {
+      const parsed = parseContextUri(uri);
+      if (!parsed.ok) return null;
+      const segments = parsed.value.path.split("/");
+      const leaf = segments.pop() as string;
+      const folder = walk(sourceOf(parsed), segments);
+      if (!folder) return null;
+      for (const candidate of addressCandidates(leaf)) {
+        const found = childAtSegment(folder.children, candidate);
+        if (found?.document) return found.document;
+      }
+      return (
+        matchOmittedExtension(
+          folder.children.filter((node) => node.document),
+          leaf,
+          (node) => (node.suffix === undefined ? node.name : `${node.name}~${node.suffix}`),
+        )?.document ?? null
+      );
+    },
+    folderAt(uri: string): CatalogFolder | null {
+      const parsed = parseContextUri(uri);
+      return (parsed.ok && walk(sourceOf(parsed), parsed.value.path.split("/"))?.folder) || null;
+    },
   };
 }
 

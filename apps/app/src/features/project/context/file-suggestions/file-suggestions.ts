@@ -1,7 +1,7 @@
 /** Pure projection of the replay's trees, and ranking, for file suggestion hosts. */
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
+import { type ProjectContextTreeScheme, readSegment } from "@meridian/contracts/protocol";
+import type { TreeEntry, TreeView } from "@/core/project-tree/tree-view";
 
 export type FileSuggestionKind = "file" | "dir";
 
@@ -10,6 +10,8 @@ export type FileSuggestion = {
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
+  /** A twin's `~id` (`EntryName`). */
+  suffix?: string;
   kind: FileSuggestionKind;
   parents: readonly string[];
 };
@@ -29,14 +31,7 @@ export function treeFileSuggestions(
     });
     const walk = (parentId: string) => {
       for (const entry of tree.children(parentId)) {
-        suggestions.push({
-          entryId: entry.kind === "dir" ? entry.entryId : entry.documentId,
-          scheme,
-          path: entry.path,
-          name: entry.name,
-          kind: entry.kind === "dir" ? "dir" : "file",
-          parents: entry.path.split("/").filter(Boolean).slice(0, -1),
-        });
+        suggestions.push(fileSuggestion(scheme, entry));
         if (entry.kind === "dir") walk(entry.entryId);
       }
     };
@@ -45,16 +40,26 @@ export function treeFileSuggestions(
   return suggestions;
 }
 
-/** One file as a suggestion, keyed by its document. */
-export function fileSuggestion(scheme: ProjectContextTreeScheme, file: TreeFile): FileSuggestion {
+/** One entry as a suggestion, a file keyed by its document. */
+export function fileSuggestion(scheme: ProjectContextTreeScheme, entry: TreeEntry): FileSuggestion {
   return {
-    entryId: file.documentId,
+    entryId: entry.kind === "dir" ? entry.entryId : entry.documentId,
     scheme,
-    path: file.path,
-    name: file.name,
-    kind: "file",
-    parents: file.path.split("/").filter(Boolean).slice(0, -1),
+    path: entry.path,
+    name: entry.name,
+    ...(entry.suffix ? { suffix: entry.suffix } : {}),
+    kind: entry.kind,
+    parents: folderNames(entry.path),
   };
+}
+
+/** The folders above a path as the writer reads them: a twin's `~id` is not part of a name. */
+function folderNames(path: string): string[] {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .slice(0, -1)
+    .map((segment) => readSegment(segment).name);
 }
 
 /**

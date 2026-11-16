@@ -11,6 +11,7 @@ import {
   type Filetype,
   filenameForBinary,
   type ParsedDocumentFilename,
+  readSegment,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { splitPath } from "../../context/paths.js";
@@ -22,6 +23,8 @@ export type CreateTarget = {
   name: string;
   extension: string;
   filetype: Filetype;
+  /** The leaf's `~id`, which picks the twin an ensure reuses; a create lands under `name`. */
+  suffix?: string;
 };
 
 /** How the router already read the destination, or the source extension a bare name inherits. */
@@ -54,7 +57,8 @@ export function resolveCreateTarget(
   if (classifyFiletype(parsed.filetype).kind !== "tracked") {
     return Err(binaryTrackedWriteFault(path));
   }
-  return Ok({ dir, ...parsed });
+  const { suffix } = readSegment(splitPath(path).filename);
+  return Ok({ dir, ...parsed, ...(suffix ? { suffix } : {}) });
 }
 
 /**

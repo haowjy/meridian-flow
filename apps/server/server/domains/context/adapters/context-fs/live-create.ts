@@ -2,8 +2,8 @@
  * ContextFS's live create (contract §6.3, §6.4): the document's `create` record, its first
  * Yjs state and its arrival in one command transaction. The record is made at the call, under
  * the list's lock; the content is then seeded under the new document's own lock, which sorts
- * after the list's. An occupied name refuses the create: a live create never replaces or joins
- * another document.
+ * after the list's. A live create never replaces or joins another document: beside one of its
+ * name it makes a twin.
  */
 import type { DocumentId } from "@meridian/contracts";
 import { renderFilename } from "@meridian/contracts/protocol";
@@ -50,7 +50,7 @@ export class LiveCreate {
     path: string,
     content: BoundWrite | null,
     options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
     const target = resolveCreateTarget(this.deps.scheme, path);
     if (!target.ok) return target;
     const withContent = content !== null && content.markdown.length > 0 ? content : null;
@@ -58,7 +58,9 @@ export class LiveCreate {
       if (withContent && !this.deps.boundWrites.boundFor(path, withContent, null))
         return Err({ code: "stale_target" } as AdapterFault);
       const created = await this.atomically(target.value, withContent, { options });
-      return created.ok ? Ok({ documentId: created.value.documentId }) : created;
+      return created.ok
+        ? Ok({ documentId: created.value.documentId, path: created.value.path })
+        : created;
     });
   }
 
@@ -72,7 +74,14 @@ export class LiveCreate {
     extra: { options?: ContextWriteOptions; into?: string } = {},
   ): Promise<
     Result<
-      { documentId: string; record: string; folders: MadeFolder[]; markdown: string },
+      {
+        documentId: string;
+        record: string;
+        folders: MadeFolder[];
+        markdown: string;
+        /** The source-relative path it landed at. */
+        path: string;
+      },
       AdapterFault
     >
   > {
@@ -81,6 +90,7 @@ export class LiveCreate {
     let createdId: string | null = null;
     let createdRecord: string | null = null;
     let createdFolders: MadeFolder[] = [];
+    let createdPath = "";
     try {
       const created = await this.deps.documentCreation.createDocumentAtomically({
         persistIdentity: async () => {
@@ -108,6 +118,7 @@ export class LiveCreate {
           createdId = made.value.id;
           createdRecord = made.value.record;
           createdFolders = made.value.folders;
+          createdPath = made.value.path.join("/");
           return made.value.id as DocumentId;
         },
         initializeContent: async (documentId) => {
@@ -131,7 +142,11 @@ export class LiveCreate {
           return content.markdown;
         },
       });
-      if (!created.created) return Err(refusal ?? { code: "conflict", occupantKind: "file" });
+      const refused = refusal as AdapterFault | null;
+      if (!created.created) {
+        if (!refused) throw new Error("A create made no document and gave no reason");
+        return Err(refused);
+      }
       if (createdId === null || createdRecord === null)
         throw new Error("A created document reported no identity");
       return Ok({
@@ -139,6 +154,7 @@ export class LiveCreate {
         record: createdRecord,
         folders: createdFolders,
         markdown: created.value,
+        path: createdPath,
       });
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);

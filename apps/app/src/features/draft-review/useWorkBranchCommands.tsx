@@ -238,10 +238,7 @@ export function useWorkBranchCommands({
                 name: documentBasename(transition.to) ?? "",
               },
             ];
-          if (picked.has(fact.itemKey)) {
-            const name = fact.renamed ? documentBasename(fact.renamed) : null;
-            return name ? [{ documentId, kind: "renamed", name }] : [];
-          }
+          if (picked.has(fact.itemKey)) return [];
           const from = documentBasename(transition?.from);
           const to = documentBasename(transition?.to);
           return from && to ? [{ documentId, kind: "also", from, to }] : [];

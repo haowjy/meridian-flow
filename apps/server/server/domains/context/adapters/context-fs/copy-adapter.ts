@@ -26,6 +26,7 @@ import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree.js";
 
 type ContextFsCopyDeps = CopyTreeDeps & {
+  store: ContextDocumentStore;
   documentSync: CopyTreeDeps["documentSync"] &
     Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
 };
@@ -87,11 +88,8 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
         name: folder.name,
         children: siblings.map((sibling) =>
           "folder" in sibling
-            ? folderSnapshot(joinPath(path, sibling.folder.name), sibling.folder)
-            : fileSnapshot(
-                joinPath(path, renderFilename(sibling.document.name, sibling.document.extension)),
-                sibling.document,
-              ),
+            ? folderSnapshot(joinPath(path, sibling.folder.segment), sibling.folder)
+            : fileSnapshot(joinPath(path, sibling.document.segment), sibling.document),
         ),
       };
     };
@@ -119,7 +117,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   return {
     sourceId: () => store.existingContextSourceId(),
     snapshotSource,
-    planCopy: async (input) => Ok(await planCopyTree(deps, input)),
+    planCopy: async (input) => Ok(planCopyTree(deps, input)),
     copyInto: async (input) =>
       input.plan.dir.join("/") !== input.dir.join("/")
         ? Ok({ kind: "replan" })

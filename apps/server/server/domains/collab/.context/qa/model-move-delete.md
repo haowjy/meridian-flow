@@ -32,10 +32,11 @@ model.
    "Deleted ch2". The card's Undo brings ch2 back into the tree. The other
    Work's chat still docks "ch2 1 change Discard Apply".
 3. **Name taken.** Delete ch2, create a document at `manuscript://ch2` (`./mf doc put`),
-   then press Undo: the original returns at `manuscript://ch2 (2)` and the expanded card
-   reads "Restored as ch2 (2)." The new ch2 stays where it was. Script a model move of ch1
-   onto the occupied `manuscript://ch2`: its tool result, expanded turn receipt, Undo landing
-   copy and Recent dock entry all name the committed suffixed path, not the requested path.
+   then press Undo: the original returns as it stood and the two read as twins (the later
+   arrival's path carries `~` and a few hex digits). The new ch2 stays where it was. Script a
+   model move of ch1 onto the occupied `manuscript://ch2`: its tool result, expanded turn
+   receipt, Undo landing copy and Recent dock entry all name the committed twin path, not the
+   requested path.
 4. **Absorbed folder.** In a draft-mode chat, move a document into a new `arc/` folder, then
    move it out. Create a live `arc/` folder so it absorbs the hidden draft folder. Model Undo
    of the second move returns the document inside the live `arc/`, not `folder_missing`.
@@ -67,7 +68,7 @@ the text it found or a block hash from that read.
    (Cancel). ch3's Discard: its row goes at once, ch3 stays live. Apply all: ch4 → ch5
    and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
    in one Apply transaction. Apply a drafted move after a new live document takes its target:
-   the move lands at the next free name and the footer says "Added as <name>."
+   the move lands as a twin of that document (its path ends `~id`) and the footer names no rename.
 8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
    its manuscript destination, and live still has it in Scratch. Script `undo` by either path:

@@ -9,7 +9,7 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { Schema, Slice } from "@tiptap/pm/model";
 import { EditorState } from "@tiptap/pm/state";
 import { expect, it } from "vitest";
-
+import { linkIndexOf } from "@/test-support/link-trees";
 import { createStandaloneEditorExtensions } from "../config";
 import { registerImageIngressHost } from "../images/image-ingress-runtime";
 import { insertImageFile } from "../images/image-uploads";
@@ -290,7 +290,7 @@ it("carries what a copied link names across the clipboard", async () => {
     };
     editor.storage[LINK_SURFACE_NAME].resolution.registerResolver(
       {
-        index: { documents, folders: [] },
+        index: linkIndexOf(documents),
         local: ({ ref }) => {
           const answer = ref ? settled[ref] : undefined;
           return answer ? { kind: "answered", answer } : { kind: "unasked" };

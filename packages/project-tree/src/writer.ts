@@ -1,6 +1,6 @@
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
-import { freeName, shownName } from "./names.js";
+import { shownName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
@@ -20,7 +20,7 @@ import {
   type TreeRecordInput,
 } from "./record.js";
 import type { TreeProjection } from "./replay.js";
-import { childrenOf, descendantsOf, nameAmong, rankAmong } from "./shape.js";
+import { childrenOf, descendantsOf, rankAmong } from "./shape.js";
 import { writable } from "./validate.js";
 import { droppedRecords, LIVE, lastOfFamily, replayView, type View } from "./view.js";
 
@@ -143,14 +143,14 @@ export class TreeWriter {
   }
 
   /**
-   * Creates, in order, against one replay of the view: a name is numbered against the shown
-   * siblings and the ones this call made before it, a rank is placed among them, and a parent
-   * may be a node an earlier input created. A replay per create would cost the whole list each.
+   * Creates, in order, against one replay of the view: a rank is placed among the shown siblings
+   * and the ones this call made before it, and a parent may be a node an earlier input created.
+   * A replay per create would cost the whole list each.
    */
   createAll(view: View, actor: Actor, inputs: readonly CreateInput[]): CreateRecord[] {
     const projection = this.view(view);
     const sources = new Map<string, string>();
-    const siblings = new Map<string, { name: string; rank: string }[]>();
+    const siblings = new Map<string, string[]>();
     const out: CreateRecord[] = [];
     this.transact(() => {
       for (const input of inputs) {
@@ -160,23 +160,17 @@ export class TreeWriter {
         if (source === undefined) throw new Error(`create under unknown parent ${input.parent}`);
         let kids = siblings.get(input.parent);
         if (!kids) {
-          kids = childrenOf(projection, input.parent).map((node) => ({
-            name: node.displayName,
-            rank: node.rank,
-          }));
+          kids = childrenOf(projection, input.parent).map((node) => node.rank);
           siblings.set(input.parent, kids);
         }
-        const name = freeName(
+        const name = shownName(
           input.kind,
-          shownName(input.kind, input.name, input.kind === "document" ? input.filetype : undefined),
-          new Set(kids.map((kid) => kid.name)),
+          input.name,
+          input.kind === "document" ? input.filetype : undefined,
         );
         const at = Math.max(0, Math.min(input.index ?? kids.length, kids.length));
-        const rank = rankAmong(
-          kids.map((kid) => kid.rank),
-          at,
-        );
-        kids.splice(at, 0, { name, rank });
+        const rank = rankAmong(kids, at);
+        kids.splice(at, 0, rank);
         const record = this.author(view, actor, {
           type: "create",
           node: input.node ?? newId(),
@@ -213,9 +207,8 @@ export class TreeWriter {
    * Moves `nodes` into `parent` together, in order, against one replay of the view: the first
    * lands at `place`, each later one right after the one before it. An index counts the parent's
    * children without the node being placed; a sibling `place` names gone from the parent means
-   * the end. A name taken there is numbered and carried by the move itself, so the number stays
-   * when the other node is renamed; two nodes moved under one name are numbered in turn. Callers
-   * pass distinct nodes, none inside another, and no anchor among them.
+   * the end. A name taken there stays taken: twins are made, nothing is numbered. Callers pass
+   * distinct nodes, none inside another, and no anchor among them.
    */
   moveAll(
     view: View,
@@ -225,15 +218,11 @@ export class TreeWriter {
     place: MovePlace = { kind: "end" },
   ): MoveRecord[] {
     const projection = this.view(view);
-    const siblings = new Map<string, { id: string; name: string; rank: string }[]>();
+    const siblings = new Map<string, { id: string; rank: string }[]>();
     const kidsOf = (folder: string) => {
       let kids = siblings.get(folder);
       if (!kids) {
-        kids = childrenOf(projection, folder).map((child) => ({
-          id: child.id,
-          name: child.displayName,
-          rank: child.rank,
-        }));
+        kids = childrenOf(projection, folder).map((child) => ({ id: child.id, rank: child.rank }));
         siblings.set(folder, kids);
       }
       return kids;
@@ -249,9 +238,6 @@ export class TreeWriter {
           if (at >= 0) left.splice(at, 1);
         }
         const kids = kidsOf(parent);
-        const name = current
-          ? freeName(current.kind, current.name, new Set(kids.map((kid) => kid.name)))
-          : "";
         const at = indexOf(
           kids,
           previous === undefined ? place : { kind: "after", siblingId: previous },
@@ -260,7 +246,7 @@ export class TreeWriter {
           kids.map((kid) => kid.rank),
           at,
         );
-        kids.splice(at, 0, { id: node, name, rank });
+        kids.splice(at, 0, { id: node, rank });
         previous = node;
         out.push(
           this.author(view, actor, {
@@ -269,7 +255,6 @@ export class TreeWriter {
             parent,
             rank,
             from: { parent: current?.parent ?? parent, rank: current?.rank ?? "" },
-            ...(current && name !== current.name ? { name } : {}),
           }) as MoveRecord,
         );
       }
@@ -283,15 +268,7 @@ export class TreeWriter {
     return this.author(view, actor, {
       type: "rename",
       node,
-      name: current
-        ? nameAmong(
-            projection,
-            current.parent,
-            current.kind,
-            shownName(current.kind, name, filetype ?? current.filetype),
-            node,
-          )
-        : name,
+      name: current ? shownName(current.kind, name, filetype ?? current.filetype) : name,
       fromName: current?.name ?? "",
       ...(filetype ? { filetype } : {}),
     }) as RenameRecord;
@@ -356,7 +333,7 @@ export class TreeWriter {
   }
 }
 
-/** What a create asks for: the name is numbered and the rank placed by the writer. */
+/** What a create asks for: the rank is placed by the writer. */
 export type CreateInput = {
   name: string;
   parent: string;

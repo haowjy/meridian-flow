@@ -25,7 +25,7 @@ export function landingFaults(
     if (reason === "cycle" && record.type === "move")
       faults.set(record.node, {
         kind: "inside-itself",
-        into: work.nodes.get(record.parent)?.displayName ?? "",
+        into: work.nodes.get(record.parent)?.name ?? "",
       });
     else if (GONE.has(reason)) faults.set(record.node, { kind: "gone" });
   }
@@ -50,7 +50,8 @@ export function changedFolders(
   for (const { node } of pending) {
     if (work.nodes.get(node)?.kind !== "folder") continue;
     const row = differing.get(node);
-    if (row ? !(row.existsOnlyInDraft && row.deleted) : faults.has(node)) folders.add(node);
+    if (row?.changed ? !(row.existsOnlyInDraft && row.deleted) : faults.has(node))
+      folders.add(node);
   }
   return folders;
 }

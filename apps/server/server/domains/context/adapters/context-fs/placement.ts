@@ -9,9 +9,9 @@ import type { BranchId } from "@meridian/contracts";
  */
 
 import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contracts";
-import { renderFilename } from "@meridian/contracts/protocol";
+import { entrySegment, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
-import { Err, Ok, type Result } from "../../../../shared/result.js";
+import { Ok, type Result } from "../../../../shared/result.js";
 import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
@@ -20,8 +20,7 @@ import type { ContextDocumentStore } from "../../ports/context-document-store.js
 import type { ContextScheme, ContextWriteBinaryOptions } from "../../ports/context-port.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
-import { binaryTrackedWriteFault } from "./bound-writes.js";
-import { resolveBinaryTarget, resolveCreateTarget } from "./create-target.js";
+import { type CreateTarget, resolveBinaryTarget, resolveCreateTarget } from "./create-target.js";
 import type { LiveCreate } from "./live-create.js";
 import { actorOf, type SourceTree, type TreeWriteTarget, viewOfBranch } from "./tree-writes.js";
 
@@ -53,15 +52,20 @@ export interface CreatePlacement {
   readView(version: "draft" | "live" | undefined): Promise<TreeView>;
   /** The fault a live-only command meets here, or null when it may run. */
   refuse(command: LiveOnlyCommand): AdapterFault | null;
-  /** An empty tracked document at `path`: the existing one, or a create. */
+  /**
+   * A tracked document at `path`: the one the path reaches, or a create where it reaches none, a
+   * folder or a stored file (a twin beside it), or where `options.beside` asks for a new one.
+   */
   ensureTracked(
     path: string,
     options?: ContextEnsureTrackedOptions,
-  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>>;
+  ): Promise<Result<{ documentId: string; created: boolean; path: string }, AdapterFault>>;
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<{ documentId: string; placement: ContextPlacement["kind"] }, AdapterFault>>;
+  ): Promise<
+    Result<{ documentId: string; placement: ContextPlacement["kind"]; path: string }, AdapterFault>
+  >;
   /** The branch a drafted move or delete is made in, or null where this adapter has none. */
   readonly branchOwner: BranchCommandOwner | null;
 }
@@ -85,19 +89,19 @@ export function createPlacement(
     : draftPlacement(placement, deps);
 }
 
-/** An existing node at the path an ensure or create finds: a tracked document is reused. */
+/** The tracked document an ensure reuses at its target: the one its leaf reaches, if any. */
 async function existingTracked(
   deps: CreatePlacementDeps,
   target: TreeWriteTarget,
-  path: string,
-  where: { dir: readonly string[]; filename: string; into?: string | undefined },
-): Promise<Result<{ documentId: string } | null, AdapterFault>> {
-  const existing = await deps.tree.find(target, where.dir, where.filename, where.into);
-  if (!existing) return Ok(null);
-  if (existing.kind === "file") return Err(binaryTrackedWriteFault(path));
-  if (existing.kind === "folder") return Err({ code: "conflict", occupantKind: "folder" });
+  at: CreateTarget,
+  options: ContextEnsureTrackedOptions | undefined,
+): Promise<{ documentId: string; path: string } | null> {
+  if (options?.beside) return null;
+  const leaf = entrySegment(renderFilename(at.name, at.extension), at.suffix);
+  const existing = await deps.tree.find(target, at.dir, leaf, options?.into);
+  if (existing?.kind !== "document") return null;
   await deps.documentSync.ensureDocumentAuthority(existing.id as DocumentId);
-  return Ok({ documentId: existing.id });
+  return { documentId: existing.id, path: existing.path };
 }
 
 /** A binary file at the path, as a record of the view; its bytes are already in storage. */
@@ -106,7 +110,7 @@ async function createBinary(
   target: TreeWriteTarget,
   path: string,
   options: ContextWriteBinaryOptions,
-): Promise<Result<{ documentId: string }, AdapterFault>> {
+): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
   const resolved = resolveBinaryTarget(deps.scheme, path, options);
   if (!resolved.ok) return resolved;
   const { dir, name, extension } = resolved.value;
@@ -119,7 +123,9 @@ async function createBinary(
     ...(options.hasPreview ? { hasPreview: true } : {}),
     ...(options.metadata ? { metadata: options.metadata } : {}),
   });
-  return created.ok ? Ok({ documentId: created.value.id }) : created;
+  return created.ok
+    ? Ok({ documentId: created.value.id, path: created.value.path.join("/") })
+    : created;
 }
 
 function livePlacement(
@@ -135,18 +141,12 @@ function livePlacement(
         : Promise.resolve(LIVE_TREE),
     refuse: () => null,
     ensureTracked(path, options) {
-      return executor.run<{ documentId: string; created: boolean }>(async () => {
+      return executor.run<{ documentId: string; created: boolean; path: string }>(async () => {
         const resolved = resolveCreateTarget(deps.scheme, path, options);
         if (!resolved.ok) return resolved;
-        const { dir, name, extension } = resolved.value;
         const target = { view: LIVE, actor: actorOf(options?.origin) };
-        const existing = await existingTracked(deps, target, path, {
-          dir,
-          filename: renderFilename(name, extension),
-          into: options?.into,
-        });
-        if (!existing.ok) return existing;
-        if (existing.value) return Ok({ documentId: existing.value.documentId, created: false });
+        const existing = await existingTracked(deps, target, resolved.value, options);
+        if (existing) return Ok({ ...existing, created: false });
         const created = await deps.liveCreate.atomically(resolved.value, null, {
           ...(options ? { options } : {}),
           ...(options?.into ? { into: options.into } : {}),
@@ -156,8 +156,13 @@ function livePlacement(
           documentId: created.value.documentId as DocumentId,
           record: created.value.record,
           folders: created.value.folders,
+          path: created.value.path,
         });
-        return Ok({ documentId: created.value.documentId, created: true });
+        return Ok({
+          documentId: created.value.documentId,
+          created: true,
+          path: created.value.path,
+        });
       });
     },
     writeBinary(path, options) {
@@ -173,7 +178,7 @@ function livePlacement(
         // ref waiting at its address publish together, under the namespace key the arrival takes
         // after the list's.
         await deps.liveCreate.arrive([created.value.documentId as DocumentId]);
-        return Ok({ documentId: created.value.documentId, placement: "live" as const });
+        return Ok({ ...created.value, placement: "live" as const });
       });
     },
     branchOwner: placement.branch ? branchOwnerOf(placement.branch) : null,
@@ -200,7 +205,7 @@ function draftPlacement(
       message: `In draft mode, you can't ${operation}; create the file empty and write into it`,
     }),
     ensureTracked(path, options) {
-      return inBranch<{ documentId: string; created: boolean }>(async (branch) => {
+      return inBranch<{ documentId: string; created: boolean; path: string }>(async (branch) => {
         const resolved = resolveCreateTarget(deps.scheme, path, options);
         if (!resolved.ok) return resolved;
         const { dir, name, extension, filetype } = resolved.value;
@@ -208,17 +213,11 @@ function draftPlacement(
           view: viewOfBranch(branch.id),
           actor: actorOf(options?.origin),
         };
-        const filename = renderFilename(name, extension);
-        const existing = await existingTracked(deps, target, path, {
-          dir,
-          filename,
-          into: options?.into,
-        });
-        if (!existing.ok) return existing;
-        if (existing.value) return Ok({ documentId: existing.value.documentId, created: false });
+        const existing = await existingTracked(deps, target, resolved.value, options);
+        if (existing) return Ok({ ...existing, created: false });
         const created = await tree.create(target, {
           dir,
-          filename,
+          filename: renderFilename(name, extension),
           kind: "document",
           filetype,
           ...(options?.into ? { into: options.into } : {}),
@@ -232,8 +231,9 @@ function draftPlacement(
           record: created.value.record,
           folders: created.value.folders,
           draftBranchId: branch.id,
+          path: created.value.path.join("/"),
         });
-        return Ok({ documentId, created: true });
+        return Ok({ documentId, created: true, path: created.value.path.join("/") });
       });
     },
     writeBinary(path, options) {
@@ -245,9 +245,7 @@ function draftPlacement(
           path,
           options,
         );
-        return created.ok
-          ? Ok({ documentId: created.value.documentId, placement: "draft" as const })
-          : created;
+        return created.ok ? Ok({ ...created.value, placement: "draft" as const }) : created;
       });
     },
     branchOwner: owner,
@@ -257,10 +255,3 @@ function draftPlacement(
 function branchOwnerOf(placement: BranchPlacement): BranchCommandOwner {
   return { owner: placement.owner, threadId: placement.threadId, userId: placement.userId };
 }
-
-/** What a path two of a Work's files share answers, to a create and to a read alike. */
-export const AMBIGUOUS_PATH_FAULT: AdapterFault = {
-  code: "invalid_operation",
-  reason: "ambiguous_path",
-  message: "Two of this Work's drafts share this path. Review the drafts to keep one.",
-};

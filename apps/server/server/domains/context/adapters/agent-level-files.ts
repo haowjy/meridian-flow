@@ -58,7 +58,7 @@ export function createAgentLevelFiles(
   }
 
   return {
-    prepareFiles: (input) => prepareLevelFiles(deps, input),
+    prepareFiles: async (input) => prepareLevelFiles(deps, input),
 
     read(input): Promise<LevelFiles> {
       // Inside a command transaction the snapshot below would join it, not isolate the read.

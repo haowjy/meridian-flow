@@ -46,6 +46,12 @@ interface WriteOutcomeBase {
   /** Host-only: where each settled `ahead:` ref in `nodes` points, read with `nodes` (`includeNodes`). */
   aheadSettlements?: ReadonlyMap<string, string>;
   /**
+   * Host-only: a `create` without overwrite found text in its document and wrote nothing. The
+   * host makes another document of that name (a twin) and writes there instead. Never copied
+   * into `result`.
+   */
+  occupied?: true;
+  /**
    * Host-only showing evidence: each link the rendered result showed the
    * model, with the address shown (truncated blocks count only links ending
    * inside the shown prefix), and the holder URI and view it was spelled

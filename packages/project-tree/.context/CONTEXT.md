@@ -10,10 +10,10 @@ page says where each part lives and what the code decided where the design left 
 |---|---|
 | `record.ts` | Record and settlement types, `source:<id>` roots, the two arrays (`ops`, `settle`) |
 | `validate.ts` | `readStored` (every read of the list) builds the record a value stands for from its own allowed fields, or says why there is none; `writable`, which every record the package writes goes through; which fields are the server's |
-| `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`), `freeName`: numbering, from the contracts filename codec |
+| `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`) |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
-| `replay.ts` | `startReplay`, an open replay (`push`, `wouldTake`, `standing`, `finish`); `replay` is `startReplay(values).finish()`: rules 1 to 13, then one pass over the nodes for Trash and kept folders (`stand`), then the names |
+| `replay.ts` | `startReplay`, an open replay (`push`, `wouldTake`, `standing`, `finish`); `replay` is `startReplay(values).finish()`: rules 1 to 13, then one pass over the nodes for Trash and kept folders (`stand`), then the twin suffixes (rule 14, in `derive`) |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
 | `writer.ts` | `TreeWriter`: makes records in one copy of the list |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
@@ -27,7 +27,7 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 1. A move that would put a folder inside itself is skipped (`skipped`, reason `cycle`).
 2. A delete takes the node and the nodes its author saw inside it that are still inside it.
 3. A node nobody deleted keeps the folders above it standing (`keptByChild`).
-4. Two shown siblings with one name both stay; the later arrival shows a number.
+4. Two shown siblings with one name both stay, and both keep the name.
 5. A drafted record takes effect at its Apply: `viewRecords` replays live, then the Work's.
 6. A drafted create whose folder was discarded shows at the top of its `source` (`rescued`).
 7. A Work's view keeps a live-deleted node standing while the Work has a pending change to it
@@ -47,8 +47,25 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 11. A document create or rename to a type that is not a tracked document is skipped
     (`type-not-editable`).
 12. A rename to a type of another Yjs schema is skipped (`type-across-schemas`).
-13. A name is `normalEntryName(kind, typed)` for the node's kind, in every create, rename and
-    move; nothing is refused for its name.
+13. A name is `normalEntryName(kind, typed)` for the node's kind, in every create and rename;
+    nothing is refused for its name.
+14. Of shown siblings with one name, every one but the first to arrive (`arrivedAt`, then
+    creation: list order, no clock) carries a `suffix`: the shortest start, four hex digits or
+    more, of its id's hex digits (the uuid without dashes) that no other shown sibling's begins
+    with. Its path segment is `name~suffix` (`segmentOf`). A segment with a suffix reaches the
+    shown child whose id begins with it, the lowest id if two do, whatever name is in front; one
+    without reaches the child of that name with no suffix (`childAtSegment`). Arrival is the
+    latest of where it came to stand (a create or a plain restore), where its parent last changed
+    and where the name it shows last changed (`stoodAt`, `placedAt`, `namedAt`), or a purge's
+    rehoming. An Undo of a move or rename settles those from the changes still in force, and a
+    restore that `undoes` a delete leaves them alone, so an Undo leaves the twins as they were.
+    What an Apply's restore brings back keeps its own arrival, so a returning twin may take the
+    plain name and the twin the writer applied may then read suffixed (the property test's seed 137
+    pins it).
+
+A row that differs from live only in a suffix is no change the Work made: `BranchRow.changed`
+is false, and the count and the Changes list skip it (`changedFolders`, the server's
+`treeChanges`).
 
 Rules 11 to 13 read `classifyFiletype`, `schemaType` and `normalEntryName`, which are frozen as
 the replay uses them (package `AGENTS.md`).
@@ -70,8 +87,8 @@ the replay uses them (package `AGENTS.md`).
   A rank-only move under a purged parent is taken, since only a change of parent is checked
   against the folder: its Undo lands and reorders the rescued siblings.
 - **Nothing is refused for what it says.** A client's record that the replay cannot place
-  (a node that is not there, a folder inside itself, a name already taken) is skipped or numbered
-  by the rules, the same in every replay; the writer keeps it in the list. The server writes one
+  (a node that is not there, a folder inside itself, a name already taken) is skipped, or stands
+  as a twin, by the rules, the same in every replay; the writer keeps it in the list. The server writes one
   verdict, `dropped` (admission, below).
 - **`guard` closes a copy that does what an honest client never does**: a deletion, content
   outside `ops`, a struct whose position cannot be decided (a gap in a writer's own clock, a
@@ -132,8 +149,7 @@ the replay uses them (package `AGENTS.md`).
   stale Undo has to take that copy out, so a later Undo of the other Undo doesn't find the change
   still taken out by the Apply. The record is a move when the place turns, a rename when only the
   name does (the replay's Trash reads that: a rename leaves the deletes a move lifted lifted), and
-  otherwise of the base change's type. `takeBackAll` also says which fact of a move that
-  also set a name stays (`kept`), for `undoApply`'s `left`.
+  otherwise of the base change's type.
   Every Undo is one walk (`takeBack` in `undo.ts`; `undoChange` is a walk of one step, `takeBackAll`
   the press of many, `undoReports` the estimate): the steps (`{ id, view }`) are taken back in the
   order given, each against the tree the earlier ones left. Per view one replay stays open
@@ -187,12 +203,12 @@ the replay uses them (package `AGENTS.md`).
   the server's Un-Apply estimate reads `Change.sources` of each. `appliedBy` keeps
   copies not in force, so `undoApply` reports them `already`. One Undo takes out every copy of a
   record: when a record applied, Un-Applied and applied again has its first copy back in force (an
-  Undo of the Un-Apply's Undo), Un-Apply of the second Apply takes out both. Apply's
-  numbering never bakes a number into a copy of an Undo, and after one it reads what live has
-  from a replay, not the copy's fields.
-- **Whoever makes a record numbers a clash it can see** (`nameAmong`, Apply too); the replay
-  numbers only the clashes nobody saw. A move that numbers its arrival carries the name itself,
-  not a paired `rename`.
+  Undo of the Un-Apply's Undo), Un-Apply of the second Apply takes out both. After a copy of
+  an Undo, Apply reads what live has from a replay, not the copy's fields.
+- **Nothing numbers a name.** A writer stores the typed name (`shownName`) whatever its siblings
+  are called, and a clash stands as twins (rule 14). Apply copies the drafted name as it is: the
+  twin the Work shows suffixed arrives last in live too. A move sets only the place and carries no
+  name; an old stored move's `name` is dropped when it is read.
 - **A repeated command is the caller's to answer.** The package throws when a command id was
   already used (`assertNewCommand`); the document command table answers a repeat first.
 - **Apply never blocks.** `applyDraft(writer, draft, by, command, only?, saw?)` lands what the
@@ -210,9 +226,7 @@ the replay uses them (package `AGENTS.md`).
   records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored
   Discard's record is itself a copy, so its id is not its live copy's `carries`. It answers
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
-  `purged`, `already`, `has_text`, `closed` with the source). A move that also set a name is two facts: its Undo changes
-  whichever no later change holds (a move without the name, or a rename whose undo puts no delete
-  back), and `left` names the one that stays (`fact`, from `takeBackAll`'s `kept`). `undoChange` answers
+  `purged`, `already`, `has_text`, `closed` with the source). `undoChange` answers
   `changed_since | purged | already | unknown`, or `{ closed }`. `changeUndone` reads a change's
   records together: `acts`, `changed_since`, `purged`, `closed` (the one that can pass, so last),
   or `taken`.
@@ -241,8 +255,7 @@ the replay uses them (package `AGENTS.md`).
   restore copies, kept creates) is built through `writable`,
   which runs `readStored` on it and throws, saying why, when the reader would drop it. A name
   with a `/` or over 255 characters is thrown at the caller, not stored and then lost from every
-  view. `freeName` takes the room for a number and the extension from the end of the base, so a
-  numbered name stays within the limit.
+  view.
 - **A document's `create` states its `filetype`**, from a client and from the server; a file's
   type is in its blob. The replay never has to guess a document's type.
 - **The server's settlement actor is `system`.** A `dropped` is not any account's act.

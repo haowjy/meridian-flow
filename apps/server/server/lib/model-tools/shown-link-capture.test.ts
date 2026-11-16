@@ -122,7 +122,6 @@ function readOnlyStore(documents: ContextDocument[]): ContextDocumentStore {
     },
     readSubtree: async () => null,
     listTree: async () => ({ folders: [], documents }),
-    namesAt: async () => new Set(documents.map((document) => document.name)),
     listFolders: async () => [],
     listDocuments: async () => documents,
   };
@@ -273,6 +272,7 @@ async function harness(
       folderId: null,
       name: names[id] as string,
       extension: "",
+      segment: names[id] as string,
       fileType: null,
       filetype: "markdown" as const,
       storageUrl: null,

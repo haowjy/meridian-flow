@@ -1,4 +1,5 @@
 import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
+import { readSegment } from "@meridian/contracts/protocol";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
@@ -220,6 +221,6 @@ function tabAtLocator(tab: OpenDocument, locator: ContextRouteRequest): OpenDocu
     ...tab,
     scheme: locator.scheme,
     path: locator.path,
-    name: locator.path.slice(locator.path.lastIndexOf("/") + 1),
+    name: readSegment(locator.path.slice(locator.path.lastIndexOf("/") + 1)).name,
   };
 }

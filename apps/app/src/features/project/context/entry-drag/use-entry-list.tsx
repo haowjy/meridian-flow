@@ -32,7 +32,6 @@ import { activeDragSession } from "./drag-session";
 import {
   askLabel,
   type DropAction,
-  describeRenames,
   dropChoices,
   insideItself,
   moveLabel,
@@ -42,7 +41,6 @@ import {
 import { trashRef } from "./entry";
 import { useEntryActions } from "./entry-actions";
 import { runCopy, runMove } from "./entry-failure";
-import { renamesOnArrival } from "./execute-move";
 import {
   type MoveArea,
   type PlacementView,
@@ -129,24 +127,13 @@ export function useEntryList({
       if (resolved.insideItself) return { kind: "refuse", label: insideItself() };
       // A drop that asks offers what the menu would; the hint is the first thing it offers.
       if (resolved.asks) {
-        const { items, plans } = dropChoices(resolved, target);
-        const first = items.find((item) => item.enabled);
+        const first = dropChoices(resolved, target).items.find((item) => item.enabled);
         if (!first) return null;
-        // A move renames a row the writer already has; a copy is new, so it needs no warning.
-        const moved = first.action === "move" && plans.move ? renamesOnArrival(plans.move) : [];
-        return {
-          kind: "accept",
-          label: askLabel(first.label),
-          warning: describeRenames(moved),
-        };
+        return { kind: "accept", label: askLabel(first.label) };
       }
       const planned = planMove(resolved);
       if (planned.kind !== "ready") return null;
-      return {
-        kind: "accept",
-        label: moveLabel(planned),
-        warning: describeRenames(renamesOnArrival(planned)),
-      };
+      return { kind: "accept", label: moveLabel(planned) };
     };
     // `dragover` repeats many times a second over one target; its answer changes
     // only with the drag, the target or what the list shows.

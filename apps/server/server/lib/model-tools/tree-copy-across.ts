@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import type { ThreadId, TurnId } from "@meridian/contracts";
 import { joinContextUri } from "@meridian/contracts/context-uri";
 import { canonicalLeaf, storedFilename } from "@meridian/contracts/protocol";
-import { descendantsOf, listRecords } from "@meridian/project-tree";
+import { descendantsOf, listRecords, segmentOf } from "@meridian/project-tree";
 import type { TreeScope } from "../../domains/context/ports/context-adapter.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
@@ -192,7 +192,8 @@ export async function recordCopies(
         records.push(...recordsOf([entry.id, ...descendantsOf(before, entry.id)]));
         const renamed = name ? renameCopy(scope, entry.id, name) : undefined;
         if (renamed) records.push({ record: renamed, node: entry.id });
-        return scope.writer.view(scope.view).nodes.get(entry.id)?.displayName;
+        const shown = scope.writer.view(scope.view).nodes.get(entry.id);
+        return shown && segmentOf(shown);
       });
       return { result: { records, names, draftBranchId: scope.view.draft } };
     },
@@ -252,13 +253,13 @@ function renameCopy(scope: TreeScope, node: string, name: string): string | unde
   const copied = scope.writer.view(scope.view).nodes.get(node);
   if (!copied) return undefined;
   if (copied.kind === "folder") {
-    if (name === copied.displayName) return undefined;
+    if (name === copied.name) return undefined;
     return scope.writer.rename(scope.view, scope.actor, node, name).id;
   }
-  if (canonicalLeaf(name) === canonicalLeaf(copied.displayName)) return undefined;
-  const ext = copied.displayName.lastIndexOf(".");
+  if (canonicalLeaf(name) === canonicalLeaf(copied.name)) return undefined;
+  const ext = copied.name.lastIndexOf(".");
   const parsed = storedFilename(name, {
-    extension: ext > 0 ? copied.displayName.slice(ext + 1).toLowerCase() : "",
+    extension: ext > 0 ? copied.name.slice(ext + 1).toLowerCase() : "",
     editable: copied.kind === "document",
     filetype: copied.filetype,
   });

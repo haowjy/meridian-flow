@@ -123,7 +123,6 @@ export type CommandOutcome =
       applied?: {
         itemKey: string;
         transition?: { from: string | null; to: string | null };
-        renamed?: string;
       }[];
       /** A Discard's answer: what of what it was sent it took (`DiscardTook`). */
       took?: DiscardTook;
@@ -251,8 +250,6 @@ export class DraftCommandOwner {
   private readonly endedAt = new Map<string, number>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
-  /** Final paths allocated by Apply, until dismissed or another document shows. */
-  private readonly renamedDocuments = new Map<string, string>();
   private active = true;
   private revision = 0;
   /** Each Discard's restore, whatever sent it: the one progress every view reads. */
@@ -506,15 +503,8 @@ export class DraftCommandOwner {
     return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
   }
 
-  renamedPath(projectId: string, documentId: string): string | null {
-    return this.renamedDocuments.get(JSON.stringify([projectId, documentId])) ?? null;
-  }
-
   forgetApplyFacts(projectId: string, documentId: string): void {
-    const key = JSON.stringify([projectId, documentId]);
-    const restored = this.restoredDocuments.delete(key);
-    const renamed = this.renamedDocuments.delete(key);
-    if (restored || renamed) this.publish();
+    if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
   }
 
   /** The writer moved on to `documentId`: every other document's Apply fact ends. */
@@ -523,8 +513,6 @@ export class DraftCommandOwner {
     let changed = false;
     for (const key of this.restoredDocuments)
       if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
-    for (const key of this.renamedDocuments.keys())
-      if (key !== kept) changed = this.renamedDocuments.delete(key) || changed;
     if (changed) this.publish();
   }
 
@@ -751,13 +739,7 @@ export class DraftCommandOwner {
       );
       if (restored) this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
       const branchId = parseDraftItemKey(ref.itemKey)?.branchId;
-      let renamed = false;
-      for (const one of answer.items) {
-        if (!one.tree?.landed || !one.tree.renamed) continue;
-        renamed = true;
-        this.renamedDocuments.set(JSON.stringify([ref.projectId, one.node]), one.tree.renamed.path);
-      }
-      if (restored || renamed) this.publish();
+      if (restored) this.publish();
       return {
         kind: "done",
         commandId: answer.commandId,
@@ -773,9 +755,6 @@ export class DraftCommandOwner {
                       itemKey: draftItemKey(branchId, one.node as DocumentId),
                       ...(one.tree?.landed && one.tree.transition
                         ? { transition: one.tree.transition }
-                        : {}),
-                      ...(one.tree?.landed && one.tree.renamed
-                        ? { renamed: one.tree.renamed.path }
                         : {}),
                     },
                   ]

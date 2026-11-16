@@ -1,6 +1,7 @@
 /** Where a level's Agent files live. The one place that spells those addresses. */
 
 import type { ContextUriScheme, ProjectScopedContextUriScheme } from "../context-uri.js";
+import { readSegment } from "../protocol/entry-segment.js";
 
 export type AgentsLevel = "user" | "project";
 
@@ -39,8 +40,12 @@ export function agentsLocationOf(scheme: ContextUriScheme, path: string): Agents
 const AGENT_FILE = /^(?:packages\/[^/]+\/)?agents\/([^/]+)\.md$/;
 const SKILL_FILE = /^(?:packages\/[^/]+\/)?skills\/([^/]+)\/SKILL\.md$/;
 
-/** What a level-relative path defines, if anything: an Agent or a skill, and its name. */
+/**
+ * What a level-relative path defines, if anything: an Agent or a skill, and its name. A twin
+ * (a segment with `~id`, anywhere in the path) defines nothing: Mars sees one file per name.
+ */
 export function agentsFileOf(path: string): { kind: "agent" | "skill"; slug: string } | null {
+  if (path.split("/").some((segment) => readSegment(segment).suffix !== undefined)) return null;
   const agent = AGENT_FILE.exec(path)?.[1];
   if (agent) return { kind: "agent", slug: agent };
   const skill = SKILL_FILE.exec(path)?.[1];

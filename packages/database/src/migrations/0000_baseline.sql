@@ -792,11 +792,14 @@ CREATE TABLE "branch_tree_nodes" (
 	"context_source_id" uuid NOT NULL,
 	"parent_id" uuid,
 	"name" text NOT NULL,
+	"suffix" text,
+	"segment" text GENERATED ALWAYS AS (name || coalesce('~' || suffix, '')) STORED,
 	"extension" text DEFAULT '' NOT NULL,
 	"file_type" text,
 	"rank" text NOT NULL,
 	"deleted" boolean NOT NULL,
 	"exists_only_in_draft" boolean NOT NULL,
+	"changed" boolean NOT NULL,
 	CONSTRAINT "branch_tree_nodes_branch_id_id_pk" PRIMARY KEY("branch_id","id"),
 	CONSTRAINT "branch_tree_nodes_kind_valid" CHECK ("branch_tree_nodes"."kind" IN ('folder', 'document')),
 	CONSTRAINT "branch_tree_nodes_file_type_of_document" CHECK (("branch_tree_nodes"."kind" = 'folder') = ("branch_tree_nodes"."file_type" IS NULL)),
@@ -816,6 +819,8 @@ CREATE TABLE "tree_nodes" (
 	"context_source_id" uuid NOT NULL,
 	"parent_id" uuid,
 	"name" text NOT NULL,
+	"suffix" text,
+	"segment" text GENERATED ALWAYS AS (name || coalesce('~' || suffix, '')) STORED,
 	"extension" text DEFAULT '' NOT NULL,
 	"stem" text GENERATED ALWAYS AS (CASE WHEN extension <> '' THEN left(name, -(length(extension) + 1)) ELSE name END) STORED,
 	"file_type" text,
@@ -1286,9 +1291,9 @@ CREATE INDEX "asks_thread_created" ON "asks" USING btree ("thread_id","created_a
 CREATE INDEX "asks_held_by_thread" ON "asks" USING btree ("thread_id") WHERE "asks"."status" IN ('pending', 'open') OR "asks"."continuation" = 'pending';--> statement-breakpoint
 CREATE UNIQUE INDEX "asks_one_live_per_thread" ON "asks" USING btree ("thread_id") WHERE "asks"."status" IN ('pending', 'open');--> statement-breakpoint
 CREATE INDEX "branch_tree_nodes_list" ON "branch_tree_nodes" USING btree ("list_id","branch_id");--> statement-breakpoint
-CREATE INDEX "branch_tree_nodes_walk" ON "branch_tree_nodes" USING btree ("branch_id","context_source_id","parent_id","name");--> statement-breakpoint
+CREATE INDEX "branch_tree_nodes_walk" ON "branch_tree_nodes" USING btree ("branch_id","context_source_id","parent_id","segment");--> statement-breakpoint
 CREATE INDEX "branch_tree_nodes_siblings" ON "branch_tree_nodes" USING btree ("branch_id","context_source_id","parent_id","rank" COLLATE "C","id");--> statement-breakpoint
-CREATE INDEX "tree_nodes_walk" ON "tree_nodes" USING btree ("context_source_id","parent_id","name");--> statement-breakpoint
+CREATE INDEX "tree_nodes_walk" ON "tree_nodes" USING btree ("context_source_id","parent_id","segment");--> statement-breakpoint
 CREATE INDEX "tree_nodes_by_name" ON "tree_nodes" USING btree ("name","context_source_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_by_stem" ON "tree_nodes" USING btree ("stem","context_source_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_siblings" ON "tree_nodes" USING btree ("context_source_id","parent_id","rank" COLLATE "C","id") WHERE "tree_nodes"."trash_record" IS NULL;--> statement-breakpoint

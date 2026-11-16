@@ -61,19 +61,10 @@ export type TreeSaw = {
   account?: { list: string; vector: string };
 };
 
-export type ApplyRenamedNote = {
-  code: "renamed";
-  /** The branch path the change asked for. */
-  wanted: string;
-  /** The live path the document claimed. */
-  path: string;
-};
-
 export type AppliedReviewItem = {
   itemKey: DraftItemKey;
   /** The committed move, when this click settled the item's branch tree row. */
   transition?: { from: string | null; to: string | null };
-  renamed?: ApplyRenamedNote;
 };
 
 /**
@@ -93,7 +84,6 @@ export type ApplyItemResult = {
   tree?: ApplyHalfResult & {
     /** Where live had the document before and after this command, when its tree half landed. */
     transition?: { from: string | null; to: string | null };
-    renamed?: ApplyRenamedNote;
     /**
      * The live restore this command made of the document so its text could land: the record
      * Un-Apply takes back, and what `appliedNodes` reads to tell whether it still stands.

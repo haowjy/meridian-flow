@@ -6,7 +6,7 @@
  * where a document lives now treats `deleted` as "no address".
  *
  */
-import { type DocumentId, isAheadFilename, type ProjectId } from "@meridian/contracts";
+import { type DocumentId, isAheadFilename } from "@meridian/contracts";
 import {
   contextRootUri,
   isOwnedContextScheme,
@@ -105,10 +105,13 @@ export async function resolveCanonicalAddress(
   return resolveAddressCoordinates(db, input, "document");
 }
 
-/** A decoded canonical folder address resolved to the same storage coordinates as a document. */
-export async function resolveCanonicalFolderAddress(
+/**
+ * A decoded canonical address resolved to storage coordinates without a filename rule: a folder
+ * or a link's path that may leave its extension off.
+ */
+export async function resolveCanonicalPath(
   db: DrizzleDb,
-  input: { holderProjectId: ProjectId; address: string },
+  input: AheadHolder & { address: string },
 ): Promise<DocumentCoordinates> {
   return resolveAddressCoordinates(db, input, "folder");
 }
@@ -286,7 +289,6 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           return current.node.kind === "document"
             ? { kind: "current", documentId: current.node.document.id }
             : null;
-        if (current.kind === "ambiguous") return null;
         const [previous] = await tx
           .select({ documentId: documentPreviousLocations.documentId })
           .from(documentPreviousLocations)

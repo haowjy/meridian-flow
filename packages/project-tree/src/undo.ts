@@ -1,4 +1,4 @@
-import { type Actor, type TreeRecord, type TreeRecordInput } from "./record.js";
+import type { Actor, TreeRecord, TreeRecordInput } from "./record.js";
 import {
   type Change,
   labelOf,
@@ -44,9 +44,6 @@ export function deleteStands(writer: TreeWriter, asked: View, recordId: string):
   return standsIn(writer.view(record.draft === null ? LIVE : asked), record);
 }
 
-/** A move's fact that stays where a later change holds it, when its Undo turns the other. */
-export type Kept = "name" | "place";
-
 /**
  * The Undo of `named`, a move or rename or an Undo about one. Taking `named` out flips which
  * records about its change are in force (`flips`, as the replay will read them): the change goes
@@ -56,8 +53,6 @@ export type Kept = "name" | "place";
  * works that out again from the records in force, so a copy that had not seen an earlier change
  * settles on the same tree. It is a move when the place turns, a rename when only the name does
  * (Trash reads that: a rename leaves what the move lifted lifted), else of the change's type.
- * `kept` names a fact of a move that set a name which a later change holds, when it turns the
- * other.
  */
 function turn(
   writer: TreeWriter,
@@ -68,7 +63,7 @@ function turn(
   base: Change & { sets: Sets },
   flips: readonly Change[],
   undoes: string,
-): { record: TreeRecord; kept?: Kept } | NotUndone {
+): TreeRecord | NotUndone {
   let place = history.place;
   let label = history.label;
   for (const each of flips)
@@ -79,44 +74,34 @@ function turn(
   const placed = place.at(-1) !== history.place.at(-1);
   const named = label.at(-1) !== history.label.at(-1);
   if (flips.length > 0 && !placed && !named) return "changed_since";
-  const both = base.sets.place !== undefined && base.sets.label !== undefined;
   const shows = labelOf(node.kind, history.born, label);
   const extra = { undoes };
   if (!placed && (named || !base.sets.place))
-    return {
-      record: writer.prepare(
-        view,
-        actor,
-        {
-          type: "rename",
-          node: node.id,
-          name: shows.name,
-          fromName: node.name,
-          ...(shows.filetype && shows.filetype !== node.filetype
-            ? { filetype: shows.filetype }
-            : {}),
-        },
-        extra,
-      ),
-      ...(both && named ? { kept: "place" as const } : {}),
-    };
-  const { parent, rank } = place.at(-1)?.says ?? history.born;
-  return {
-    record: writer.prepare(
+    return writer.prepare(
       view,
       actor,
       {
-        type: "move",
+        type: "rename",
         node: node.id,
-        parent,
-        rank,
-        from: { parent: node.parent, rank: node.rank },
-        ...(named && shows.name !== node.name ? { name: shows.name } : {}),
+        name: shows.name,
+        fromName: node.name,
+        ...(shows.filetype && shows.filetype !== node.filetype ? { filetype: shows.filetype } : {}),
       },
       extra,
-    ),
-    ...(both && placed && !named ? { kept: "name" as const } : {}),
-  };
+    );
+  const { parent, rank } = place.at(-1)?.says ?? history.born;
+  return writer.prepare(
+    view,
+    actor,
+    {
+      type: "move",
+      node: node.id,
+      parent,
+      rank,
+      from: { parent: node.parent, rank: node.rank },
+    },
+    extra,
+  );
 }
 
 /** Why an Undo appended nothing, in the words of the results that report it. */
@@ -132,7 +117,7 @@ export type ClosedUndo = { closed: string };
 export type UndoAnswer = "undoes" | NotUndone | "closed";
 
 /** One record of an Undo: its opposite (written), why there is none, or the closed source that holds it. */
-export type TakenBack = { record: TreeRecord; kept?: Kept } | NotUndone | ClosedUndo;
+export type TakenBack = TreeRecord | NotUndone | ClosedUndo;
 
 /** What the Undo of one record would do now: `undoes`, or why it would not, and the sources it would change. */
 export type UndoReport = { answer: "undoes" | NotUndone; sources: readonly string[] };
@@ -226,7 +211,7 @@ function takeBack(
       answer(made);
       continue;
     }
-    const would = replay.wouldTake(made.record);
+    const would = replay.wouldTake(made);
     if ("skipped" in would) {
       answer(notTaken(would.skipped));
       continue;
@@ -236,9 +221,9 @@ function takeBack(
       answer({ closed: source }, would.sources);
       continue;
     }
-    replay.push(made.record);
-    landed.push(made.record);
-    if (made.record.draft === null) landedLive.push(made.record);
+    replay.push(made);
+    landed.push(made);
+    if (made.draft === null) landedLive.push(made);
     answer(made, would.sources);
   }
   if (write && landed.length > 0) {
@@ -276,10 +261,9 @@ export function undoChange(
   closed: (source: string) => boolean,
   pendingText?: ReadonlySet<string>,
 ): TreeRecord | NotUndone | ClosedUndo {
-  const done = takeBackAll(writer, actor, [{ id: recordId, view: asked }], closed, pendingText).get(
+  return takeBackAll(writer, actor, [{ id: recordId, view: asked }], closed, pendingText).get(
     recordId,
   ) as TakenBack;
-  return typeof done === "string" || "closed" in done ? done : done.record;
 }
 
 /**
@@ -338,7 +322,7 @@ export function changeUndone(
 
 /**
  * The opposite record of `named`, the last of its family in `view`, made against the tree an open
- * replay has (`tree`) and not written; `kept` as `turn` says. Whether the tree can take it is the
+ * replay has (`tree`) and not written. Whether the tree can take it is the
  * replay's to say (`wouldTake`), not this function's.
  */
 function opposite(
@@ -347,7 +331,7 @@ function opposite(
   actor: Actor,
   tree: TreeStanding,
   named: TreeRecord,
-): { record: TreeRecord; kept?: Kept } | NotUndone {
+): TreeRecord | NotUndone {
   const change = tree.changes.get(named.id);
   if (!change?.inForce) return "already";
   const base = change.base;
@@ -376,9 +360,7 @@ function opposite(
   }
   if (!node) return "purged";
   const extra = { undoes: named.carries ?? named.id };
-  const author = (made: TreeRecordInput) => ({
-    record: writer.prepare(view, actor, made, extra),
-  });
+  const author = (made: TreeRecordInput) => writer.prepare(view, actor, made, extra);
   switch (named.type) {
     case "create":
       if (node.trashed) return "already";

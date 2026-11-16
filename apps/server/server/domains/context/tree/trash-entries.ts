@@ -7,7 +7,6 @@ import {
   discardedBy,
   isSourceRoot,
   type NodeKind,
-  nameSet,
   type TreeRecord,
 } from "@meridian/project-tree";
 import type { TreeList, TreeListStore } from "../ports/tree-list-store.js";
@@ -44,8 +43,7 @@ export async function discardedTree(
           if (record.type === "create")
             made.set(record.node, { kind: record.kind, name: record.name, parent: record.parent });
           const node = made.get(record.node);
-          const named = nameSet(record);
-          if (named !== undefined && node) node.name = named;
+          if (record.type === "rename" && node) node.name = record.name;
           if (record.type === "move" && node) node.parent = record.parent;
         }
         const pathOf = (id: string): string[] => {

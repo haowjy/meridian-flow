@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import { createLinkAnswerCache, type LinkAnswerCache, type LinkTarget } from "@/core/editor/links";
-
+import { linkIndexOf } from "@/test-support/link-trees";
 import { CHECKING_DELAY_MS, type FollowReporter, type LinkDestination } from "./follow-link";
 import type { LinkResolutionScope } from "./project-link-resolver";
 import { type LinkFollower, useLinkFollower } from "./use-link-follower";
@@ -59,7 +59,7 @@ const open: LinkDestination = async (document) => {
 
 /** Incomplete, so every question reaches the (mocked) server. */
 function catalog(revision: string): LinkableDocumentIndex {
-  return { documents: [], folders: [], revision, complete: false };
+  return { ...linkIndexOf([]), revision, complete: false };
 }
 
 function Probe({

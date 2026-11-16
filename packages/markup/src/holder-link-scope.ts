@@ -48,7 +48,7 @@ export interface HolderLinkScope extends DocumentLinkScope {
     link: { ref: string | null; href: string },
     address?: ResolvedDocumentHref | null,
   ): LinkResolution;
-  /** Pass 3 resolve: exact, then unique extension-omitted (matchDocumentPath), in this view. */
+  /** Pass 3 resolve: the document the view's tree reaches at the address, in this view. */
   documentFor(uri: string): CatalogDocument | null;
   /** Pass 3 exact folder lookup in this view. */
   folderFor(uri: string): CatalogFolder | null;

@@ -5,8 +5,8 @@ import {
   API_AUTH_ME_PATH,
   apiProjectContextSourcesPath,
   type ContextSource,
-  parseDocumentFilename,
-  renderFilename,
+  canonicalLeaf,
+  childAtSegment,
 } from "@meridian/contracts/protocol";
 import { childrenOf, sourceRoot, type TreeNode, type TreeProjection } from "@meridian/project-tree";
 import { CliError } from "../../core/cli-error";
@@ -120,14 +120,16 @@ export class Trees {
 
 type OpenedList = { list: TreeList; sources: ContextSource[]; actor: string };
 
-/** A node's name as a path segment spells it: exactly, or by the stored name the codec makes of it. */
-function spelled(node: TreeNode, segment: string, last: boolean): boolean {
-  if (node.displayName === segment) return true;
-  if (!last || node.kind !== "document") return false;
-  const parsed = parseDocumentFilename(segment);
-  return (
-    parsed.ok && renderFilename(parsed.value.name, parsed.value.extension) === node.displayName
-  );
+/**
+ * The shown child a path segment reaches: as written (a twin's `~id` included), else, for the
+ * leaf, the document the codec's spelling of it names (`ch1.md` is `ch1`).
+ */
+function childAt(kids: readonly TreeNode[], segment: string, last: boolean): TreeNode | undefined {
+  if (!last) return childAtSegment(kids, segment, "folder");
+  const exact = childAtSegment(kids, segment);
+  if (exact) return exact;
+  const alias = childAtSegment(kids, canonicalLeaf(segment));
+  return alias?.kind === "document" ? alias : undefined;
 }
 
 export type PathLookup = {
@@ -148,7 +150,7 @@ export function lookupPath(
   let parent = sourceRoot(source.id);
   for (const [at, segment] of segments.entries()) {
     const last = at === segments.length - 1;
-    const found = childrenOf(projection, parent).find((node) => spelled(node, segment, last));
+    const found = childAt(childrenOf(projection, parent), segment, last);
     if (!found || (!last && found.kind !== "folder"))
       return { node: undefined, parent, missing: segments.slice(at, -1) };
     if (last) return { node: found, parent, missing: [] };

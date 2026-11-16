@@ -78,10 +78,6 @@ import type {
 import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import type { DraftBase } from "../domain/draft-runtime.js";
-import type {
-  BranchDocumentTree,
-  BranchTreeStateReader,
-} from "../domain/ports/branch-tree-state.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
@@ -141,7 +137,6 @@ function treeResult(
   node: string,
   one: TreeItemFacts,
   last: Settled | null,
-  wanted: BranchDocumentTree | undefined,
   judge: TreeJudge,
 ): NonNullable<ApplyItemResult["tree"]> {
   const left = new Set(one.left.map(({ record }) => record.id));
@@ -175,9 +170,6 @@ function treeResult(
     ...(notes.length ? { settled: notes } : {}),
     ...restore,
     transition: { from, to },
-    ...(wanted?.uri && to && wanted.uri !== to
-      ? { renamed: { code: "renamed" as const, wanted: wanted.uri, path: to } }
-      : {}),
   };
 }
 
@@ -190,7 +182,6 @@ function appliedOf(branchId: BranchId, results: readonly ApplyItemResult[]): App
       {
         itemKey: draftItemKey(branchId, result.node as DocumentId),
         ...(tree?.landed && tree.transition ? { transition: tree.transition } : {}),
-        ...(tree?.landed && tree.renamed ? { renamed: tree.renamed } : {}),
       },
     ];
   });
@@ -208,7 +199,6 @@ export function createDrizzleApplyClick(
     arrivals?: Pick<DocumentArrivals, "settle">;
     treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
     tree: Pick<TreeReader, "identityStatus">;
-    branchTree: BranchTreeStateReader;
     close: Pick<DraftClose, "closeDrafts">;
     onCommitted(documentId: DocumentId): Promise<void>;
     /** What the click's content merges did: how often each rule fired, and the live words the draft overrode. */
@@ -918,13 +908,6 @@ export function createDrizzleApplyClick(
                   await deps.branches.lockActive(branchId);
                   const judge = await owners.judge(locked);
                   const nodes = items.map((item) => item.node);
-                  // Read before the locks, for the `renamed` note's wanted path only: nothing in it
-                  // decides a write.
-                  const wanted = new Map(
-                    (await deps.branchTree.read(branchId, [], nodes as DocumentId[])).map(
-                      (item) => [item.documentId as string, item],
-                    ),
-                  );
                   const listOf = await treeHalf.lockItems(nodes);
                   const draftOf = (item: PreparedApplyItem) =>
                     item.text?.base.snapshot.draftId ?? item.closedDraftId;
@@ -1059,17 +1042,10 @@ export function createDrizzleApplyClick(
                     const text = texts.get(item.node);
                     return {
                       node: item.node,
-                      // A restore is a tree fact of this command too: Un-Apply takes it back, and a
-                      // name taken meanwhile gives the document a new path to report.
+                      // A restore is a tree fact of this command too: Un-Apply takes it back.
                       ...(one.ran || one.restore || (item.tree && !listOf.get(item.node))
                         ? {
-                            tree: treeResult(
-                              item.node,
-                              one,
-                              settled(item.node).tree.last,
-                              wanted.get(item.node),
-                              judge,
-                            ),
+                            tree: treeResult(item.node, one, settled(item.node).tree.last, judge),
                           }
                         : {}),
                       ...(text ? { text } : {}),

@@ -268,14 +268,13 @@ export type AppliedUndo = { undo: () => void; count: number };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
- * only its row says), landed somewhere new (`uri`), was added under another name than the one
- * asked for, came back to its area (`scheme`, its source), or was applied along with the documents picked
+ * only its row says), landed somewhere new (`uri`), came back to its area (`scheme`, its source),
+ * or was applied along with the documents picked
  * (`also`: its old and new names). `step`: the Apply's Undo, while it can be taken back.
  */
 export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
   | { kind: "applied"; name: string; scheme: ProjectContextTreeScheme | null }
   | { kind: "landed"; uri: string; name: string }
-  | { kind: "renamed"; name: string }
   | { kind: "restored"; name: string; scheme: ProjectContextTreeScheme | null }
   | { kind: "also"; from: string; to: string }
 );

@@ -306,8 +306,8 @@ importers:
         specifier: ^6.12.0
         version: 6.12.0(@babel/core@8.1.2)(babel-plugin-macros@3.1.0)(react@19.3.1)
       '@meridian-flow/mars-schema':
-        specifier: 0.34.5
-        version: 0.34.5
+        specifier: 0.35.0
+        version: 0.35.0
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -589,8 +589,8 @@ importers:
         specifier: 4.8.0
         version: 4.8.0(srvx@1.0.8)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=599ba77cec8aac3ffb466d8939d0139c385fa337e88629ed88247bab7f485ed5)))(yjs@13.6.33(patch_hash=599ba77cec8aac3ffb466d8939d0139c385fa337e88629ed88247bab7f485ed5))
       '@meridian-flow/mars-schema':
-        specifier: 0.34.5
-        version: 0.34.5
+        specifier: 0.35.0
+        version: 0.35.0
       '@meridian-flow/runtime':
         specifier: 'catalog:'
         version: 0.4.0(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(vitest@5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.0.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(ws@8.23.0)
@@ -2580,8 +2580,8 @@ packages:
       rolldown:
         optional: true
 
-  '@meridian-flow/mars-schema@0.34.5':
-    resolution: {integrity: sha512-f0BMCOCb2m2KeqTBw8SpD6YL1HfCH0hAXfLMyvLuZnTfUojwHISPWYS6DYSSJNYo/TLxY9P3OmjVWUGnduvkHQ==}
+  '@meridian-flow/mars-schema@0.35.0':
+    resolution: {integrity: sha512-0my/tbtu+ZReMh+YMmu/14cLvvPUzwdYngSdEwwP6PGjIUsA3RCCZo034Iw96zAlPwWaxQRjPTOhn95foUTcrA==}
 
   '@meridian-flow/runtime@0.4.0':
     resolution: {integrity: sha512-RcjVWkXGRLZ+xgv9lonno+R4yaPtMneFBSyjW/S6t4HKb0g5I4YnndQWfoWsvPNuk1dFY40J2K52UJt85ryN1g==}
@@ -8426,7 +8426,7 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  '@meridian-flow/mars-schema@0.34.5': {}
+  '@meridian-flow/mars-schema@0.35.0': {}
 
   '@meridian-flow/runtime@0.4.0(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(vitest@5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.0.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(ws@8.23.0)':
     dependencies:

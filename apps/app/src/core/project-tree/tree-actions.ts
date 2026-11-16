@@ -1,7 +1,7 @@
 /**
  * The writer's tree actions: each appends a record to the browser's own copy of the list, so
- * the change shows at once from the replay and Yjs carries it to the server. A name is numbered
- * when the clash is visible in the copy (`TreeWriter`). No action is refused: a node or parent the
+ * the change shows at once from the replay and Yjs carries it to the server. No action is refused:
+ * a node or parent the
  * copy lacks is made as asked and the replay places it or skips it. A change to a Work that was
  * closed is sent like any other; the server stamps it `dropped` ("Work was closed"), every replay
  * leaves it out, and its row says so (`tree-bounces.ts`). A deleted Work (`TreeVersion.ended`)
@@ -14,6 +14,7 @@ import {
   childrenOf,
   isSourceRoot,
   type NodeKind,
+  pathOf,
   sourceIdOf,
   sourceRoot,
   type TreeProjection,
@@ -33,7 +34,7 @@ import {
   type Was,
 } from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
-import type { TreeDestination } from "./tree-view";
+import type { TreeDestination, TreeView } from "./tree-view";
 
 export class TreeActions {
   constructor(
@@ -125,7 +126,7 @@ export class TreeActions {
     provisional?: true;
     kind: Exclude<NodeKind, "file">;
     filetype?: string;
-  }): { node: string; name: string } {
+  }): { node: string; name: string; path: string | undefined } {
     const made = this.writable();
     const before = made.replay();
     const parent = this.parentOf(before, input.parentId);
@@ -140,7 +141,17 @@ export class TreeActions {
         : { kind: "document" as const, filetype: input.filetype ?? "markdown" }),
     });
     this.remember(made, "create", before, [record]);
-    return { node: record.node, name: record.name };
+    return { node: record.node, name: record.name, path: this.pathOf(record.node) };
+  }
+
+  /**
+   * Where a node is now in the version acted on: a twin of a name already in its folder takes a
+   * `~` suffix, so the typed name may reach the other one. None when the replay doesn't show it.
+   */
+  pathOf(node: string): string | undefined {
+    const replay = this.writable().replay();
+    const at = replay.nodes.get(node);
+    return at ? pathOf(replay, at) : undefined;
   }
 
   rename(node: string, name: string, filetype?: string): { name: string } {
@@ -208,4 +219,18 @@ export class TreeActions {
     this.remember(made, "restore", before, records);
     return { records };
   }
+}
+
+/** The id of the folder at `path` in `view`: the deepest one that exists, then the ones it lacks. */
+export function makeFolders(view: TreeView, actions: TreeActions, path: string): string {
+  const folders = path.split("/").filter(Boolean);
+  const missing: string[] = [];
+  let found = view.findFolder(folders.join("/"));
+  while (!found) {
+    missing.unshift(folders.pop() as string);
+    found = view.findFolder(folders.join("/"));
+  }
+  let parentId = found.entryId;
+  for (const name of missing) parentId = actions.create({ parentId, name, kind: "folder" }).node;
+  return parentId;
 }

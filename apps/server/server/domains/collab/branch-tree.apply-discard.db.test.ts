@@ -123,7 +123,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       liveCoordinator: {} as never,
       treeLists,
       tree,
-      branchTree,
       close: draftClose,
       onCommitted: async () => {},
       merged: () => {},

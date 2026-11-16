@@ -53,12 +53,14 @@ export function createProjectLinkCatalog(
   });
   const held = (document: LinkableDocument | null | undefined) =>
     document ? catalogDocument(document) : undefined;
+  // Rule 4's lookup by address and pass 3's read the same tree walk.
+  const documentFor = (uri: string) =>
+    index.complete ? (held(indexedDocumentAt(index, uri)) ?? null) : undefined;
   return {
     indexed: (documentId) => byId.get(documentId),
     indexedFolder: (folderId) => foldersById.get(folderId),
     folder: (folderId) => (index.complete ? catalogFolder(foldersById.get(folderId)) : undefined),
-    folderAt: (uri) =>
-      index.complete ? catalogFolder(indexedFolderAt(index.folders, uri)) : undefined,
+    folderAt: (uri) => (index.complete ? catalogFolder(indexedFolderAt(index, uri)) : undefined),
     document: (documentId) => (index.complete ? held(byId.get(documentId)) : undefined),
     settlement(aheadId) {
       const settled = settlements.get(aheadId);
@@ -67,15 +69,8 @@ export function createProjectLinkCatalog(
       // Not known settled: rule 4 shows what is at its address while the server is asked.
       return settled ?? null;
     },
-    documentAt(uri) {
-      if (!index.complete) return undefined;
-      const document = index.documents.find((candidate) => candidate.uri === uri);
-      return document ? catalogDocument(document) : null;
-    },
-    documentFor(uri) {
-      if (!index.complete) return undefined;
-      return held(indexedDocumentAt(index.documents, uri)) ?? null;
-    },
+    documentAt: documentFor,
+    documentFor,
     assetAddress: () => undefined,
     assetFor: () => undefined,
   };

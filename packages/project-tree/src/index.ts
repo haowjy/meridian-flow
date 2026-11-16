@@ -39,7 +39,6 @@ export {
   isSourceRoot,
   type MoveRecord,
   type NodeKind,
-  nameSet,
   newId,
   type PurgeRecord,
   type RenameRecord,
@@ -61,6 +60,7 @@ export {
   recordsOfItem,
   replay,
   type SkipReason,
+  suffixesInArrival,
   type TrashEntry,
   type TreeNode,
   type TreeProjection,
@@ -73,7 +73,15 @@ export {
   pendingCreates,
   projectedRows,
 } from "./rows.js";
-export { childrenOf, descendantsOf, fingerprint, rankAt, treeViolations } from "./shape.js";
+export {
+  childrenOf,
+  descendantsOf,
+  fingerprint,
+  pathOf,
+  rankAt,
+  segmentOf,
+  treeViolations,
+} from "./shape.js";
 export {
   compareCatalogSiblings,
   compareDefaultSiblings,

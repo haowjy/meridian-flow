@@ -413,8 +413,8 @@ export function createTurnTreeInverse(deps: {
                 if (fate?.kind === "closed") closed ??= fate;
               } else {
                 answers.push("undoes");
-                if (back.record.draft === null) inLive = true;
-                made.push({ record: back.record.id, node: entry.node });
+                if (back.draft === null) inLive = true;
+                made.push({ record: back.id, node: entry.node });
               }
             }
             const fate = changeUndone(answers.filter((answer) => answer !== "undoes"));

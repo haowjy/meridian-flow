@@ -9,13 +9,12 @@ import type {
 } from "./http-types.js";
 
 /**
- * Why an operation can't run, when a caller words it: a path two nodes share, a rename
+ * Why an operation can't run, when a caller words it: a rename
  * whose extension would change how the document is stored (a binary file to a text one or
  * back), or which kind of text document it is, or a Copy of a Work's draft of a document that
  * Work holds no draft of.
  */
 export type InvalidOperationReason =
-  | "ambiguous_path"
   | "file_type_conversion"
   | "document_type_conversion"
   | "no_draft";
@@ -26,7 +25,7 @@ export type ContextError =
   | { code: "not_found"; uri: string }
   | { code: "destination_missing"; uri: string }
   | { code: "permission_denied"; uri: string }
-  | { code: "conflict"; uri: string; occupantKind?: "file" | "folder" }
+  | { code: "conflict"; uri: string }
   | { code: "stale_source"; uri: string }
   | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string; reason?: InvalidOperationReason }

@@ -132,7 +132,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         arrivals: { settle: async () => 0 },
         treeLists,
         tree: treeReader,
-        branchTree,
         close: draftClose,
         onCommitted: async () => {},
         merged: () => {},

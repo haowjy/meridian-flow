@@ -16,41 +16,27 @@ export interface ApplyFilesInput {
   level: AgentsLevel;
   userId: string;
   projectId?: string;
-  /** Level-relative paths. No base means empty text; no target requests deletion. */
+  /** Level-relative paths. No base means empty text; a path with no target is skipped. */
   files: Record<string, { base?: string; target?: string }>;
-  create: boolean;
-  delete: boolean;
 }
 
-export type FileChange =
-  | {
-      outcome: "created" | "merged" | "deleted" | "unchanged" | "skipped";
-      clashes: number;
-      documentId?: string;
-      text?: string;
-    }
-  | {
-      outcome: "landed-elsewhere";
-      path: string;
-      actualPath: string;
-      clashes: number;
-      documentId?: string;
-      text?: string;
-    };
+export interface FileChange {
+  outcome: "merged" | "unchanged" | "skipped";
+  clashes: number;
+  documentId?: string;
+  text?: string;
+}
 
 export type FileChanges = Record<string, FileChange>;
 
 export interface AgentLevelFiles {
   read(input: { level: AgentsLevel; userId: string; projectId?: string }): Promise<LevelFiles>;
   /**
-   * Plan and bind before the caller opens its transaction. With creation off no binding is
-   * needed, so Undo may prepare inside its transaction. Call the returned applyFiles inside
-   * that transaction after the package's Save locks; it takes the list before document locks.
-   * An obstructed path (folder, blocked ancestor, prose or binary) keeps its occupant.
-   * With creation enabled, a target lands at a settled name and reports landed-elsewhere
-   * with requested path and actualPath; deletion is skipped. Calls retain no path history:
-   * import and update callers must record actualPath and pass it on their next call.
-   * A deletion keeps a file whose text differs from its base and reports one clash.
+   * Merge each file's target into the document that holds it, through the documents' own write
+   * path. Call the returned applyFiles inside the caller's transaction after the package's Save
+   * locks; it takes the list before document locks. A file with no document, or whose path is
+   * obstructed (folder, blocked ancestor, prose or binary), is skipped and keeps its occupant;
+   * Undo never creates or deletes a file.
    */
   prepareFiles(input: ApplyFilesInput): Promise<{ applyFiles(): Promise<FileChanges> }>;
 }
