@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
+import { LabelNote } from "@/components/ui/marks";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -621,9 +622,7 @@ function ReasoningChoices({
               onClick={() => onChoose(level)}
             >
               {level ? reasoningName(level) : t`Default`}
-              {level && level === own ? (
-                <span className="text-xs text-muted-foreground">{t`Default`}</span>
-              ) : null}
+              {level && level === own ? <LabelNote>{t`Default`}</LabelNote> : null}
             </button>
           </li>
         ))}

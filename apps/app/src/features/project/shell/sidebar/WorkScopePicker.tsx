@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
   useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
-import { ChooserMark } from "@/components/ui/marks";
+import { ChooserMark, LabelNote } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { cn } from "@/lib/utils";
 import { useWorkReviewCount } from "../../tree-version";
@@ -82,12 +82,12 @@ export function WorkScopePicker({
               <WorkIdentity
                 work={shown ?? noWork}
                 unavailableLabel={t`None`}
-                className={cn("min-w-0", role.row)}
+                className="min-w-0 font-medium"
               />
               {shown === scoped && ended !== "active" ? (
-                <span className={cn("shrink-0 text-xs", role.secondary)}>
+                <LabelNote className="shrink-0">
                   {ended === "deleted" ? <Trans>Deleted</Trans> : <Trans>Archived</Trans>}
-                </span>
+                </LabelNote>
               ) : null}
             </span>
           ) : (

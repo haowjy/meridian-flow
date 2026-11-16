@@ -13,6 +13,7 @@ import {
   dropdownPanelClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
+import { LabelNote } from "./marks";
 
 function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
   return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -167,11 +168,7 @@ function DropdownMenuSeparator({
 
 function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
   return (
-    <span
-      data-slot="dropdown-menu-shortcut"
-      className={cn("ml-auto text-xs text-muted-foreground", className)}
-      {...props}
-    />
+    <LabelNote data-slot="dropdown-menu-shortcut" className={cn("ml-auto", className)} {...props} />
   );
 }
 

@@ -76,7 +76,6 @@ export function DocumentVersionMenu({
       <WorkIdentity
         work={ownerWork(hint.owner)}
         unavailableLabel={hint.label || t`Unnamed draft`}
-        className="text-sm font-normal"
       />
     ),
     detail: hint.tree ? (
