@@ -8,6 +8,7 @@
  * gateway is created from env.
  */
 
+import { effortLevels } from "@meridian-flow/mars-schema";
 import type {
   BuiltinAdapter,
   GatewayConfig,
@@ -133,13 +134,14 @@ function usd(price: number, multiplier = 1): string {
   return formatUsd(toNano(price * multiplier));
 }
 
-/** The levels models.dev lists, in its order, plus `none` when the model has a toggle and doesn't list it. */
+/** The levels models.dev lists that are on Mars's ladder, in ladder order (lowest first), plus `none` when the model has a toggle. */
 function toReasoning(model: SnapshotModel, thinksByDefault: boolean): ReasoningSupport {
   const effort = model.reasoning_options.find((option) => option.type === "effort");
   const values = effort?.type === "effort" ? effort.values : [];
   const toggle = model.reasoning_options.some((option) => option.type === "toggle");
+  const offered = new Set<string>(toggle ? ["none", ...values] : values);
   return {
-    efforts: toggle && !values.includes("none") ? ["none", ...values] : values,
+    efforts: effortLevels().filter((level) => offered.has(level)),
     ...(thinksByDefault ? { thinksByDefault: true as const } : {}),
   };
 }
