@@ -136,6 +136,11 @@ export class DraftNotices {
   /** A Discard notice's shares still holding an Undo. */
   private readonly parts = new Map<number, DiscardPart[]>();
   /**
+   * A Discard notice's shares whose Discard stands but whose Undo ended (the draft moved on, its
+   * room closed): the notice still names them, and its Undo reports them as not coming back.
+   */
+  private readonly expired = new Map<number, DiscardPart[]>();
+  /**
    * The notice's own Undo: in flight, or a room's share that failed. A server share's progress is
    * `DiscardRestores`'.
    */
@@ -261,19 +266,24 @@ export class DraftNotices {
     else this.endIf(ownerKey, id);
   }
 
-  /** A room's Undo ended on its own: the room closed, its text moved on, or Ctrl+Z took it back. */
-  partEnded(handle: DiscardUndo) {
+  /**
+   * A share's Undo ended on its own. `stands`: its Discard is still written (its text moved on,
+   * its room closed), so the notice keeps naming it. Otherwise it was never written or was taken
+   * back (refused, Ctrl+Z), and the notice stops naming it.
+   */
+  partEnded(handle: DiscardUndo, stands = false) {
     for (const [id, parts] of this.parts) {
       const index = parts.findIndex((part) => part.handle === handle);
       if (index < 0) continue;
-      parts.splice(index, 1);
+      const [part] = parts.splice(index, 1);
+      const expired = this.expired.get(id) ?? [];
+      if (stands && part) this.expired.set(id, [...expired, part]);
       const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
       if (notice?.kind !== "discarded" || notice.status === "undoing") return;
-      if (parts.length === 0) {
-        this.notices.delete(notice.ownerKey);
-        this.parts.delete(id);
-        this.pressed.delete(id);
-      } else this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
+      if (parts.length === 0) this.forget(notice);
+      else if (!stands)
+        this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf([...parts, ...expired]) });
+      else return;
       this.publish();
       return;
     }
@@ -352,7 +362,7 @@ export class DraftNotices {
     const returned = restores.find((state) => state?.kind === "returned");
     const leftOut = restores.reduce(
       (sum, state) => sum + (state?.kind === "restored" ? state.leftOut : 0),
-      0,
+      (this.expired.get(id) ?? []).reduce((sum, part) => sum + (part.count ?? 1), 0),
     );
     const out = this.outstanding(parts);
     const status: Discarded["status"] | null =
@@ -368,9 +378,7 @@ export class DraftNotices {
                 ? "partial"
                 : null;
     if (status === null) {
-      this.notices.delete(ownerKey);
-      this.parts.delete(id);
-      this.pressed.delete(id);
+      this.forget(notice);
       this.publish();
       return;
     }
@@ -424,11 +432,16 @@ export class DraftNotices {
   }
 
   private drop(notice: DraftNotice) {
-    this.notices.delete(notice.ownerKey);
     const parts = this.parts.get(notice.id) ?? [];
-    this.parts.delete(notice.id);
-    this.pressed.delete(notice.id);
+    this.forget(notice);
     for (const part of parts) part.handle.end();
+  }
+
+  private forget(notice: DraftNotice) {
+    this.notices.delete(notice.ownerKey);
+    this.parts.delete(notice.id);
+    this.expired.delete(notice.id);
+    this.pressed.delete(notice.id);
   }
 
   private publish() {

@@ -1129,8 +1129,8 @@ export class DraftCommandOwner {
     const started = startDraftDiscardSession({
       target,
       history,
-      onNoticeEnd: () => {
-        if (handle) this.notices.partEnded(handle);
+      onNoticeEnd: (stands) => {
+        if (handle) this.notices.partEnded(handle, stands);
       },
       entry,
       registry: this.registry,

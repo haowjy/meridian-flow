@@ -36,7 +36,8 @@ export function startDraftDiscardSession(input: {
    * not reviewing this draft, so nothing is written.
    */
   history: Editor | "notice" | null;
-  onNoticeEnd?: () => void;
+  /** `stands`: the Discard stays written, but its Undo can no longer take it back. */
+  onNoticeEnd?: (stands: boolean) => void;
   entry: Entry | undefined;
   registry: DraftRoomRegistry;
   active(): boolean;
@@ -110,11 +111,14 @@ export function startDraftDiscardSession(input: {
     if (item) watch();
     return { kind: "done" };
   };
-  // The Undo holds while the draft's prose is as the Discard left it: a later edit, local or
-  // remote, or Ctrl+Z taking it back ends it, so the notice and the editor never undo twice.
+  // The Undo holds while what the Discard wrote stays as it left it: a later edit into that text,
+  // local or remote, or Ctrl+Z taking it back ends it, so an Undo never takes out a later edit and
+  // the notice and the editor never undo twice. Edits elsewhere in the draft (Live typing reaching
+  // it) leave the Undo standing: undoing the item touches only its own text.
   let undoing = false;
-  const onProse = (_events: unknown, transaction: Y.Transaction) => {
-    if (!undoing && transaction.origin !== origin) end();
+  const onProse = (events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction) => {
+    if (!undoing && transaction.origin !== origin && item && touches(item, events, transaction))
+      expire();
   };
   const onPopped = ({ stackItem }: { stackItem: StackItem }) => {
     if (!undoing && stackItem === item) end();
@@ -127,7 +131,7 @@ export function startDraftDiscardSession(input: {
     history.on("stack-item-popped", onPopped);
     // A room that turns read-only (its Work was archived) drops an Undo written into it.
     stopAccess = binding.session.subscribe((snapshot) => {
-      if (snapshot.access === "read") queueMicrotask(end);
+      if (snapshot.access === "read") queueMicrotask(expire);
     });
   };
   const unwatch = () => {
@@ -163,16 +167,17 @@ export function startDraftDiscardSession(input: {
     entry.users--;
     input.releaseIdle();
   };
-  const end = () => {
+  const end = (stands = false) => {
     if (!active) return;
     active = false;
-    binding.notices.delete(end);
+    binding.notices.delete(expire);
     release();
-    onNoticeEnd?.();
+    onNoticeEnd?.(stands);
   };
-  binding.notices.add(end);
+  const expire = () => end(true);
+  binding.notices.add(expire);
   const handle: DiscardUndo = {
-    end,
+    end: () => end(),
     undo: () => {
       const none = Promise.resolve();
       if (!active) return { answer: "gone", landed: none };
@@ -276,4 +281,28 @@ function undoAlone(fragment: Y.XmlFragment, stackItem: StackItem, owner: Y.UndoM
   } finally {
     alone.destroy();
   }
+}
+
+/** The transaction changed text the stack item inserted: deleted it, or wrote into or beside it. */
+function touches(
+  stackItem: StackItem,
+  events: readonly Y.YEvent<Y.AbstractType<unknown>>[],
+  transaction: Y.Transaction,
+): boolean {
+  const written = (id: Y.ID | null) => id !== null && Y.isDeleted(stackItem.insertions, id);
+  let deleted = false;
+  Y.iterateDeletedStructs(transaction, transaction.deleteSet, (struct) => {
+    if (written(struct.id)) deleted = true;
+  });
+  if (deleted) return true;
+  return events.some((event) => {
+    for (let type: Y.AbstractType<unknown> | null = event.target; type?._item; ) {
+      if (written(type._item.id)) return true;
+      type = type._item.parent instanceof Y.AbstractType ? type._item.parent : null;
+    }
+    for (const added of event.changes.added)
+      if (added instanceof Y.Item && (written(added.origin) || written(added.rightOrigin)))
+        return true;
+    return false;
+  });
 }
