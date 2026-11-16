@@ -529,11 +529,6 @@ export function createDrizzleApplyClick(
                     await deps.onCommitted(documentId);
                   });
                 }
-                // A document the Apply restored is back in Trash, and its draft holds text again
-                // only now: the Work's row on it, which the tree half's write dropped, is put back.
-                const restoredByApply = pairs.filter(({ tree }) => tree.restored.length > 0);
-                if (restoredByApply.length > 0)
-                  await deps.treeLists.resync(restoredByApply.map(({ list }) => list));
                 return {
                   status: "unapplied",
                   commandId,

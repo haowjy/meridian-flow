@@ -42,6 +42,7 @@ import {
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import {
   type BranchHolder,
   branchMayHold,
@@ -69,6 +70,7 @@ import {
 } from "../domain/draft-store.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
+import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
@@ -164,9 +166,11 @@ export function createDrizzleDraftStore(
     onRewriteCommitted?: (detail: RewriteCommitted) => void;
     /** An `appendRows` committed: its wait for the row lock and its hold to `COMMIT`. */
     onAppendSequenced?: (detail: AppendCommitted) => void;
+    /** Lists' rows read whether a draft holds text: a judgement that flips it resyncs them. */
+    treeLists: Pick<TreeListStore, "lock" | "resync">;
   },
 ): ApplicationDraftStore {
-  const { live, workProjection, branches, onRewriteCommitted, onAppendSequenced } = deps;
+  const { live, workProjection, branches, onRewriteCommitted, onAppendSequenced, treeLists } = deps;
   /** The owner of the thread's drafts: its primary Work, or its lineage when that is No Work. */
   async function findPrimaryOwner(threadId: ThreadId): Promise<DraftOwner> {
     const [row] = await currentDrizzleDb(db)
@@ -486,7 +490,23 @@ export function createDrizzleDraftStore(
     rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended"> {
     const write = async () => {
-      const [row] = await currentDrizzleDb(db)
+      const tx = currentDrizzleDb(db);
+      // A list's rows read whether the draft holds text: the last judgement's answer, or yes when
+      // a write came after it. Rows are brought to it whenever the judged answer changes, which
+      // is also the first moment a write that revived an emptied draft shows. The list's key
+      // comes before the draft row's.
+      const [before] = await tx
+        .select({ documentId: documentDrafts.documentId, hasEffect: documentDrafts.hasEffect })
+        .from(documentDrafts)
+        .where(
+          and(eq(documentDrafts.id, input.draftId), eq(documentDrafts.revision, input.revision)),
+        );
+      const list =
+        before && before.hasEffect !== input.hasEffect
+          ? await treeListOfNode(tx, before.documentId)
+          : null;
+      if (list) await treeLists.lock([list]);
+      const [row] = await tx
         .update(documentDrafts)
         .set({ hasEffect: input.hasEffect, hasEffectRevision: input.revision })
         .where(
@@ -495,6 +515,7 @@ export function createDrizzleDraftStore(
         .returning({ id: documentDrafts.id });
       // The judgement no longer holds: the Work is not touched for it.
       if (!row) throw new DraftWriteRollback({ status: "moved" });
+      if (list) await treeLists.resync([list]);
     };
     const { workId, rootThreadId } = input;
     try {
