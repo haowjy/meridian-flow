@@ -5,6 +5,7 @@
  */
 
 import type { JsonValue, ProviderErrorResponse } from "@meridian-flow/runtime/gateway/shapes";
+import type { McpBakedConnection } from "../mcp/index.js";
 import type { PromptBakeId, ThreadId } from "../runtime/ids.js";
 
 import type { ControlBody } from "./control-body.js";
@@ -282,6 +283,8 @@ export interface PromptBake {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
   bakedTools: JsonValue;
+  /** The connections the catalogue was made from; empty when the thread cannot call a connection tool. */
+  bakedConnections: McpBakedConnection[];
   contentHash: string;
   createdAt: string;
 }

@@ -20,6 +20,23 @@ export const MCP_NAME_MAX_LENGTH = 40;
 export const isMcpConnectionName = (name: string): boolean =>
   name.length > 0 && name.length <= MCP_NAME_MAX_LENGTH && MCP_NAME_PATTERN.test(name);
 
+/**
+ * One connection a thread's prompt bake was made from. The pin is the one the bake read, so a
+ * describe or a call finds the tool's schema and the server's name for it however the connection
+ * changes afterwards.
+ */
+export type McpBakedConnection = {
+  /** The name the thread knows it by. */
+  name: string;
+  connectionId: McpConnectionId;
+  pinId: McpPinId;
+} & McpBakedListing;
+
+export type McpBakedListing =
+  | { listing: "full" }
+  /** One line in the catalogue, no tool lines: its status was bad when the bake was written. */
+  | { listing: "by_name"; reason: Exclude<McpConnectionStatus, "connected"> };
+
 /** Per writer, across both levels. */
 export const MCP_CONNECTIONS_PER_ACCOUNT = 20;
 export const MCP_SESSIONS_PER_ACCOUNT = 8;
