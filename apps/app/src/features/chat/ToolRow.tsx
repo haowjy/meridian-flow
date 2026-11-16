@@ -20,7 +20,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import { isToolNotRunResult } from "@meridian/contracts/protocol";
+import { isToolNotRunResult, isToolStoppedResult } from "@meridian/contracts/protocol";
 import { isNotesStepHeldResult } from "@meridian/contracts/threads";
 import { documentToolReturned, type ToolView } from "@meridian/thread-client";
 import { Pause } from "lucide-react";
@@ -28,7 +28,7 @@ import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
 import { errorMessageExpand } from "./tool-failure";
-import { rendererFor, toolRowFailed } from "./tool-renderers";
+import { EndedCallTitle, rendererFor, toolRowFailed } from "./tool-renderers";
 
 export type ToolRowProps = {
   tool: ToolView;
@@ -45,21 +45,27 @@ function ToolRowComponent({ tool }: ToolRowProps) {
   return <ExecutedToolRow tool={tool} />;
 }
 
+const renderChild = (child: ToolView) => <ToolRow tool={child} />;
+
 function ExecutedToolRow({ tool }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
+  const ended = isToolNotRunResult(tool.result) || isToolStoppedResult(tool.result);
   const status: ActivityRowStatus =
     tool.status === "partial"
       ? "running"
-      : toolRowFailed(tool) && !isToolNotRunResult(tool.result) && !documentToolReturned(tool)
+      : toolRowFailed(tool) && !ended && !documentToolReturned(tool)
         ? "error"
         : "done";
   const presentation = useMemo(
-    () => ({
-      title: renderer.title(tool),
-      // Every failed row can open to say why, whatever its renderer shows otherwise.
-      expand: renderer.expand?.(tool) ?? errorMessageExpand(tool) ?? undefined,
-    }),
-    [renderer, tool],
+    () =>
+      ended
+        ? { title: <EndedCallTitle tool={tool} />, expand: undefined }
+        : {
+            title: renderer.title(tool),
+            // Every failed row can open to say why, whatever its renderer shows otherwise.
+            expand: renderer.expand?.(tool, renderChild) ?? errorMessageExpand(tool) ?? undefined,
+          },
+    [renderer, tool, ended],
   );
   return (
     <div data-tool-call-id={tool.toolCallId ?? undefined}>

@@ -64,6 +64,11 @@ async function createAppServices(): Promise<AppServices> {
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       { name: "ask-expiry", delayMs: ASK_EXPIRY_SWEEP_MS, run: app.recovery.expireAsks },
+      {
+        name: "mcp-removed-purge",
+        delayMs: RETENTION_PURGE_INTERVAL_MS,
+        run: () => app.mcpConnections.purgeRemoved(),
+      },
       { name: "work-purge", delayMs: RETENTION_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
       {
         name: "document-purge",

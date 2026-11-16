@@ -20,6 +20,11 @@
 - A user-attached image doesn't render in the user turn: the transcript shows a
   link, not the picture.
 
+- A picture in an `mcp_call` reply shows as its name, type and size, not the
+  picture: its only bytes are the chat's copy (`chatCopy.key`, under
+  `chat-media/<thread>/mcp/`), and no route serves a chat copy to the app.
+  Showing it needs that route first.
+
 - Reload resets transcript reading position and follow mode
   (`useChatFollowScroll.ts`), process and subagent expansion
   (`subagent/DisclosureStore.tsx`) and the expanded draft list (`DraftDock.tsx`).

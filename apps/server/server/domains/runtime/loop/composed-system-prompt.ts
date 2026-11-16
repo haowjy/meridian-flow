@@ -21,6 +21,8 @@ export interface AssembleComposedSystemPromptInput {
   /** Preloaded (`skills.load`) bodies, frozen with the first bake. */
   preloadedSkills?: readonly ActivatedSkillBody[];
   namedSubagents?: readonly PromptInventoryListing[];
+  /** The connections' catalogue, written by `mcp/domain/connection-bake.ts`. */
+  connectionCatalogue?: string | null;
   subagentGuidance?: string | null;
   permissionGuidance?: string | null;
 }
@@ -38,6 +40,7 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
     ),
     input.preloadedSkills?.length ? formatInvokedSkills(input.preloadedSkills) : undefined,
     inventorySection("Named subagents", input.namedSubagents),
+    input.connectionCatalogue,
     DOCUMENT_DIALECT_CORE_INSTRUCTION,
     RUNTIME_URI_SYSTEM_INSTRUCTION,
     input.subagentGuidance,

@@ -3,7 +3,7 @@
  * a read is stale, and the read comes again. The tree itself is not read this way (the project's
  * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and,
  * for a Work, its row in the Works list: its count and its lifecycle), the project's sources, and
- * what Mars reads of the Agent files.
+ * what Mars reads of the Agent files, and the writer's connections.
  * Hints sent while the socket was down are lost, so a reconnect makes every one of those stale.
  */
 import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
@@ -14,6 +14,7 @@ import { useAccountId } from "@/features/project/context/account-feature-context
 import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
 import { invalidateAgentReads } from "./useAgentFiles";
+import { invalidateMcpConnections } from "./useMcpConnections";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
 
 export function useProjectWake(projectId: string): void {
@@ -91,6 +92,7 @@ export function useProjectWake(projectId: string): void {
           refreshDrafts();
           refreshSources();
           void invalidateAgentReads(queryClient, projectId, accountId);
+          void invalidateMcpConnections(queryClient, accountId);
         }
       } else if (hint.type === "draft-owner-hint") {
         refreshDrafts(hint.owner);
@@ -100,6 +102,9 @@ export function useProjectWake(projectId: string): void {
       } else if (hint.type === "agent-files-hint") {
         // An Agent file's text changed elsewhere (another tab, the AI): its verdict is read again.
         void invalidateAgentReads(queryClient, projectId, accountId);
+      } else if (hint.type === "mcp-connections-hint") {
+        // A connection was checked, edited or removed: its status and tools are read again.
+        void invalidateMcpConnections(queryClient, accountId);
       }
     });
     return () => {

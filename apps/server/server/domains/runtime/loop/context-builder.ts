@@ -43,8 +43,48 @@ export interface BuildContextInput {
    */
   systemPrompt?: string;
   tools?: Tool[];
+  /**
+   * The recorded connection calls of a call that did not finish, by `connectionCallKey`: what the
+   * stub tells the model beside "did not finish", so it can see what was sent.
+   */
+  recordedCalls?: ReadonlyMap<string, readonly string[]>;
   /** Dev observability for invalid persisted chat contracts. */
   eventSink?: EventSink;
+}
+
+/** The tools whose calls are recorded in `mcp_calls`: an unfinished one's stub lists its record. */
+const CONNECTION_CALL_TOOLS: ReadonlySet<string> = new Set(["mcp_call", "mcp_run"]);
+
+export const connectionCallKey = (turnId: string, toolCallId: string) => `${turnId}\n${toolCallId}`;
+
+/** The assistant turns that have a connection tool call with no stored result: whose records the stub lists. */
+export function turnsWithUnfinishedConnectionCalls(
+  turns: readonly Turn[],
+  blocks: readonly Block[],
+): string[] {
+  const answered = new Set(
+    blocks.flatMap((block) =>
+      block.blockType === "tool_result"
+        ? [
+            connectionCallKey(
+              block.turnId as string,
+              (block.content as { toolCallId?: string })?.toolCallId ?? "",
+            ),
+          ]
+        : [],
+    ),
+  );
+  const open = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockType !== "tool_use") continue;
+    const content = block.content as { toolCallId?: string; toolName?: string } | null;
+    if (
+      CONNECTION_CALL_TOOLS.has(content?.toolName ?? "") &&
+      !answered.has(connectionCallKey(block.turnId as string, content?.toolCallId ?? ""))
+    )
+      open.add(block.turnId as string);
+  }
+  return turns.filter((turn) => open.has(turn.id as string)).map((turn) => turn.id as string);
 }
 
 export function buildContext(input: BuildContextInput): {
@@ -53,7 +93,7 @@ export function buildContext(input: BuildContextInput): {
 } {
   reportPersistedContractFailures(input);
   const messages: Message[] = [];
-  const sourceTurnStatusByMessage = new Map<Message, Turn["status"]>();
+  const sourceTurnByMessage = new Map<Message, Turn>();
 
   if (isThreadPromptFrozen(input.thread) && input.systemPrompt === undefined)
     throw new Error(`Prompt bake is required for frozen thread ${input.thread.id}`);
@@ -72,13 +112,13 @@ export function buildContext(input: BuildContextInput): {
     const rendered = turnContextMessages(turn, turnBlocks);
     for (const message of rendered) {
       messages.push(message);
-      if (message.role === "assistant") sourceTurnStatusByMessage.set(message, turn.status);
+      if (message.role === "assistant") sourceTurnByMessage.set(message, turn);
     }
   }
 
   return {
     messages: mergeAdjacentUserMessages(
-      completeToolResultGroups(messages, sourceTurnStatusByMessage),
+      completeToolResultGroups(messages, sourceTurnByMessage, input.recordedCalls),
     ),
     tools: input.tools?.length ? input.tools : undefined,
   };
@@ -213,7 +253,8 @@ function mergeAdjacentUserMessages(messages: readonly Message[]): Message[] {
 
 function completeToolResultGroups(
   messages: readonly Message[],
-  sourceTurnStatusByMessage: ReadonlyMap<Message, Turn["status"]>,
+  sourceTurnByMessage: ReadonlyMap<Message, Turn>,
+  recordedCalls: ReadonlyMap<string, readonly string[]> = new Map(),
 ): Message[] {
   const completed: Message[] = [];
 
@@ -225,6 +266,7 @@ function completeToolResultGroups(
     const missingResultIds = new Set(
       message.content.flatMap((part) => (part.type === "tool_use" ? [part.toolCallId] : [])),
     );
+    const sourceTurn = sourceTurnByMessage.get(message);
     if (missingResultIds.size === 0) continue;
 
     let nextIndex = index + 1;
@@ -238,12 +280,19 @@ function completeToolResultGroups(
     }
     index = nextIndex - 1;
 
-    const missingResultMessage =
-      sourceTurnStatusByMessage.get(message) === "cancelled"
-        ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
-        : "Tool call did not finish; no result recorded. Side effects unknown — re-read state before retrying.";
+    const unfinished =
+      sourceTurn?.status === "cancelled"
+        ? "Tool call cancelled; no result recorded."
+        : "Tool call did not finish: the turn ended before it returned (for example, Flow's server restarted); no result recorded. This is not a time limit.";
+    const missingResultMessage = `${unfinished} Side effects unknown — re-read state before retrying.`;
     for (const toolCallId of missingResultIds) {
-      completed.push(toolResult(toolCallId, [text(missingResultMessage)], true));
+      const recorded = sourceTurn
+        ? recordedCalls.get(connectionCallKey(sourceTurn.id, toolCallId))
+        : undefined;
+      const stub = recorded?.length
+        ? `${unfinished}\n${recorded.join("\n")}`
+        : missingResultMessage;
+      completed.push(toolResult(toolCallId, [text(stub)], true));
     }
   }
 

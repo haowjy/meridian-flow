@@ -10,6 +10,9 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { MockScriptQueue } from "@meridian-flow/runtime/gateway/mock";
+import type { McpClient } from "@meridian-flow/runtime/mcp";
+import type { ScriptRunner } from "@meridian-flow/runtime/script";
+import { createQuickJsRunner } from "@meridian-flow/runtime/script/quickjs";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -116,6 +119,14 @@ import {
   listOpenImports,
   type OrganizeWakeHub,
 } from "../domains/import/index.js";
+import {
+  type ConnectionStore,
+  createDrizzleCallStore,
+  createDrizzleConnectionStore,
+  createMcpConnections,
+  createTokenCipher,
+  type McpConnections,
+} from "../domains/mcp/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -178,6 +189,7 @@ import {
 } from "../domains/runtime/handoff/brief-service.js";
 import {
   type CommandResolver,
+  type ConnectionsPort,
   createChildRunCoordinator,
   createChildRunDriver,
   createCommandRecovery,
@@ -195,6 +207,7 @@ import {
   createInMemoryThreadLock,
   createInspectionToolRegistrations,
   createLineageCancellation,
+  createMcpToolRegistrations,
   createOrchestrator,
   createOrphanReportRepair,
   createPrefixCacheStateService,
@@ -286,10 +299,18 @@ import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
 import { MODEL_REGISTRY, modelFor, registryTokenRateSource } from "./gateway/registry.js";
+import {
+  addressRefusal,
+  createProcessMcpClient,
+  parseSessionKey,
+  sessionKey,
+} from "./mcp-client.js";
+import { resolveMcpTokenKey } from "./mcp-token-key.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { createChatMedia } from "./runtime-host/chat-media.js";
+import { createConnections } from "./runtime-host/connections.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -336,6 +357,10 @@ export type AppServices = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
+  /** The writer's MCP connections, over the process's one MCP client. */
+  mcpConnections: McpConnections;
+  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
+  connections: ConnectionsPort;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
@@ -435,6 +460,14 @@ export type ProductionAppPorts = {
   agentCatalog: BoundAgentCatalog;
   packageFetcher: PackageFetcher;
   accountSettings: AccountSettingsRepository;
+  mcpConnections: McpConnections;
+  mcpStore: ConnectionStore;
+  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
+  connections: ConnectionsPort;
+  /** The one MCP client, closed with the app. */
+  mcpClient: McpClient;
+  /** The one script runner behind `mcp_run`, closed with the app. */
+  scriptRunner: ScriptRunner;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -549,6 +582,52 @@ export async function createProductionAppPorts(input: {
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
+  const mcpClient = createProcessMcpClient((event) => {
+    // A child's stderr is a program's own text; only the session's life goes to the log.
+    if (event.type !== "stderr")
+      emitEvent(eventSink, {
+        level: "info",
+        source: "mcp.session",
+        sensitivity: "safe",
+        name: event.type === "session_started" ? "McpSessionStarted" : "McpSessionEnded",
+        payload: (({ connectionId, version }) => ({ connectionId, settingsVersion: version }))(
+          parseSessionKey(event.key),
+        ),
+      });
+  });
+  // Throws here when the bundle lost the runner's worker or .wasm, so a broken build fails at boot.
+  const scriptRunner = createQuickJsRunner();
+  const mcpStore = createDrizzleConnectionStore({ db });
+  const mcpConnections = createMcpConnections({
+    store: mcpStore,
+    client: mcpClient,
+    addressRefusal,
+    cipher: createTokenCipher(resolveMcpTokenKey(environment)),
+    sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
+    // A hint, then the app asks again; one hint per open project of the account.
+    statusChanged: (row) =>
+      projectWakeHub.publishToUser(row.accountId, (projectId) => ({
+        type: "mcp-connections-hint",
+        projectId: projectId as import("@meridian/contracts/runtime").ProjectId,
+      })),
+    failed: (cause, row) =>
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "mcp.connection-check",
+        name: "McpConnectionCheckFailed",
+        payload: { connectionId: row.id, ...unknownToEventPayload(cause) },
+      }),
+  });
+  const connections = createConnections({
+    service: mcpConnections,
+    store: mcpStore,
+    calls: createDrizzleCallStore({ db }),
+    client: mcpClient,
+    runner: scriptRunner,
+    objectStore,
+    repos: threadRepos,
+    eventSink,
+  });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const agentRevisions = createDrizzleAgentRevisionStore(db);
@@ -780,6 +859,11 @@ export async function createProductionAppPorts(input: {
       createGithubPackageFetcher({ token: environment.FLOW_GITHUB_TOKEN }),
     ),
     accountSettings,
+    mcpConnections,
+    mcpStore,
+    connections,
+    mcpClient,
+    scriptRunner,
     workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
@@ -990,6 +1074,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }))
     toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations()) {
+    toolRegistry.register(registration);
+  }
+  for (const registration of createMcpToolRegistrations(ports.connections)) {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry, commandResolver);
@@ -1209,6 +1296,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentCatalog: ports.agentCatalog,
     toolRegistry,
     workContext,
+    connections: ports.connections,
     childRunCoordinator,
     billingUsage: ports.billingUsage,
     rateSource: ports.rateSource,
@@ -1302,6 +1390,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
+    mcpConnections: ports.mcpConnections,
+    connections: ports.connections,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
     orchestrator,
@@ -1331,6 +1421,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
+      await ports.scriptRunner.close();
+      await ports.mcpClient.close();
       await ports.documentSync.dispose();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
@@ -1880,6 +1972,16 @@ export function createInMemoryAppServices(
     ),
     eventSink: createNoopEventSink(),
     accountSettings,
+    mcpConnections: new Proxy({} as McpConnections, {
+      get() {
+        throw new Error("MCP connections require Postgres");
+      },
+    }),
+    connections: new Proxy({} as ConnectionsPort, {
+      get() {
+        throw new Error("MCP connections require Postgres");
+      },
+    }),
     workingSet,
     recentDocuments,
     orchestrator: {

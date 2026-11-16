@@ -9,6 +9,7 @@ export * from "./branches";
 export * from "./content";
 export * from "./document-edits";
 export * from "./imports";
+export * from "./mcp";
 export * from "./model-evidence";
 export * from "./recent-documents";
 export * from "./results";

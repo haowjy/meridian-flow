@@ -103,6 +103,7 @@ Required baseline:
 | `WORKOS_CLIENT_ID` | AuthKit client id |
 | `WORKOS_COOKIE_PASSWORD` | Sealed session cookie encryption (≥32 chars) |
 | `WORKOS_REDIRECT_URI` | AuthKit callback URL registered in WorkOS |
+| `MCP_TOKEN_KEY` | Key that encrypts writers' MCP connection tokens: 32 random bytes, base64 (`openssl rand -base64 32`). Losing or changing it makes every saved token unreadable, and each writer enters theirs again |
 | `MERIDIAN_API_ORIGIN` | Public server/API origin used by app SSR when the app and server are not same-process |
 | `APP_ENV` | Set to `production` for production deploys and `staging` for staging; with `NODE_ENV=production` and `APP_ENV` unset, the server counts as production |
 

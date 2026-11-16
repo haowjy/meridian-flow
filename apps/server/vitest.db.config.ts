@@ -26,6 +26,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/adapters/draft-journal-reads.db.test.ts",
   "apps/server/server/lib/thread-deletion-proof.db.test.ts",
   "apps/server/server/domains/preferences/adapters/drizzle/account-settings-repository.db.test.ts",
+  "apps/server/server/domains/mcp/adapters/drizzle/connection-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed.adapter-contract.db.test.ts",
   "apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts",
