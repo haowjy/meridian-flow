@@ -98,11 +98,10 @@ export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: Re
   null;
 
 /**
- * Changes are named by id (a content hash). With a room open a command reads the room when it
- * runs and never compares it with `frame`: the draft's base follows Live about 2 s behind, so a
- * click or a Redo meets a newer frame than the one chosen on, and the server settles what that
- * leaves. `frame` is the cut a command sends when no room is open. A tree line is the item's
- * move or delete: alone (`tree`), or with text groups (`groups.tree`).
+ * Changes are named by id, in the frame the writer chose on. With a room open a command reads the
+ * room when it runs and maps the ids to it (`readChosen`), never refusing because the room moved:
+ * the draft's base follows Live about 2 s behind. Without a room, `frame` is the cut it sends. A
+ * tree line is the item's move or delete: alone (`tree`), or with text groups (`groups.tree`).
  */
 export type TextTarget =
   | { kind: "groups"; frame: ReviewFrame; groupIds: string[]; tree?: true }

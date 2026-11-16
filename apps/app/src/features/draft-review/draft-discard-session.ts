@@ -1,7 +1,6 @@
 /** Local Discard and its one Undo: the notice's handle, and Ctrl+Z when a reviewing editor issued it. */
 import {
   applySpanPatches,
-  blocksEqual,
   composeGroups,
   recordRestorations,
   writeDiscardBlocks,
@@ -15,6 +14,7 @@ import { readDraftRoom } from "@/core/editor/draft-room-read";
 import { endUndoStep } from "@/core/editor/editor-history";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
 import type { DiscardUndo } from "./draft-notices";
+import { readChosen } from "./review-frame";
 import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
 
@@ -55,10 +55,8 @@ export function startDraftDiscardSession(input: {
     input.state().discarding
   )
     return null;
-  const frame = editor ? binding.runtime.projectNow() : binding.runtime.state().frame;
-  if (!frame) return null;
-  const ids = target.groupIds;
-  if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id))) return null;
+  const chosen = target.groupIds;
+  if (!chosen.length) return null;
   const doc = binding.session.document;
   const fragment = doc.getXmlFragment("prosemirror");
   if (!editor) for (const attached of binding.runtime.editors()) endUndoStep(attached.state);
@@ -80,10 +78,15 @@ export function startDraftDiscardSession(input: {
       return { kind: "change-refused", code: "read_only" };
     }
     // The room may have moved since the click (Live typing reaching the base, a remote edit):
-    // write the chosen changes as it holds them now. One it no longer has is already gone.
+    // write the chosen changes as it names them now. One it has no name for is already gone.
     const current = binding.runtime.projectNow();
-    if (!current || ids.some((id) => !current.groups.some((group) => group.id === id)))
-      return { kind: "blocked" };
+    if (!current) return { kind: "blocked" };
+    const { going, stayed } = readChosen(target.frame, current, chosen);
+    if (!going.length) {
+      input.setState({ failure: { code: "discard-refused", serverCode: "gone" } });
+      return { kind: "change-refused", code: "gone" };
+    }
+    const ids = going.map((pair) => pair.read);
     const blocks = applySpanPatches(
       current.diff.draft.blocks,
       composeGroups(current.doc.type.schema, current, ids, "discard"),
@@ -95,6 +98,7 @@ export function startDraftDiscardSession(input: {
     } finally {
       history.removeTrackedOrigin(origin);
     }
+    if (stayed.length) input.setState({ failure: { code: "discard-refused", serverCode: "gone" } });
     history.stopCapturing();
     item = history.undoStack.length > before ? (history.undoStack.at(-1) ?? null) : null;
     binding.runtime.projectNow();
@@ -232,7 +236,7 @@ export function startDraftDiscardSession(input: {
     release();
   };
   input.setState({
-    discarding: (change) => change.frame?.diff === frame.diff && ids.includes(change.id),
+    discarding: (change) => change.frame?.diff === target.frame.diff && chosen.includes(change.id),
     failure: null,
   });
   let paintFrame = 0;
