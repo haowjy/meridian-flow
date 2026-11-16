@@ -1,5 +1,5 @@
 /** The typed `result` of the two connection tools, which the chat rows read. */
-import type { JsonObject } from "../threads/index.js";
+import type { JsonObject, StoredMediaPart } from "../threads/index.js";
 
 /**
  * How one `mcp_call` ended. `answered` is the tool's reply; `tool_error` is the tool running and
@@ -39,8 +39,13 @@ export interface McpCallResult {
   message?: string;
   /** Milliseconds the server took, when it was called. */
   ms?: number;
-  /** The reply was longer than the model reads and was cut. */
-  cut?: boolean;
+  /**
+   * What the model read of the reply: its text after the long-reply cut, with `cut` true when it
+   * was cut, and the stored media parts. Absent when the call has no reply (`unreachable`,
+   * `aborted`, `too_large`, `unknown_tool`, `connection_removed`). The full reply is in the
+   * record.
+   */
+  reply?: { text: string; cut: boolean; media?: StoredMediaPart[] };
 }
 
 export interface McpDescribedItem {
