@@ -506,6 +506,8 @@ export const modelListSchema = z.object({
       name: z.string(),
       /** False when this deployment can't run it (no provider key): a chat set to it falls back to its Agent's model. */
       available: z.boolean(),
+      /** Who made the model, for its mark; null for one the registry doesn't know (a mock). */
+      maker: z.enum(["anthropic", "openai", "deepseek", "google"]).nullable(),
       /** The levels it accepts, in the order a picker shows them. */
       efforts: z.array(z.enum(REASONING_LEVELS)),
       /** Whether reasoning can be switched off (`disabled`); otherwise `disabled` runs at the lowest level. */

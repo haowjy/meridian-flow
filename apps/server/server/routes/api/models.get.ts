@@ -12,17 +12,17 @@ export default defineEventHandler(async (event) => {
   // The registry's own name and levels first: under LIVE_TEST_MODEL the gateway reports every id
   // as the redirect target. A model the gateway lists but the registry lacks (a mock) falls back
   // to the gateway's.
-  const known = new Map(
-    [
-      ...gatewayModels,
-      ...MODEL_REGISTRY.providers.flatMap((provider) =>
-        provider.offerings.map((offering) => offering.model),
-      ),
-    ].map((model) => [model.id, model] as const),
+  const registered = MODEL_REGISTRY.providers.flatMap((provider) =>
+    provider.offerings.map((offering) => offering.model),
   );
+  const known = new Map(
+    [...gatewayModels, ...registered].map((model) => [model.id, model] as const),
+  );
+  const makers = new Map(registered.map((model) => [model.id, model.maker] as const));
   const models = [...known.values()].map(({ id, displayName, reasoning }) => ({
     id,
     name: displayName,
+    maker: makers.get(id) ?? null,
     available: usable.has(id),
     efforts: REASONING_LEVELS.filter((level) => reasoning.efforts.includes(level)),
     canDisable: reasoning.canDisable === true,

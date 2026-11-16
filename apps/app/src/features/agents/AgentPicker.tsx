@@ -5,7 +5,14 @@ import { agentsRootOf } from "@meridian/contracts/agents";
 import type { ModelList } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import { Check, Settings2 } from "lucide-react";
-import { type CSSProperties, type Ref, type RefObject, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type Ref,
+  type RefObject,
+  useRef,
+  useState,
+} from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
@@ -17,6 +24,7 @@ import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-st
 import { cn } from "@/lib/utils";
 import { useOpenAgentFile } from "./agent-file-document";
 import type { CreationAgent } from "./creation-agent";
+import { ModelMark } from "./ModelMark";
 import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
 
 export type ModelOption = ModelList["models"][number];
@@ -24,10 +32,12 @@ export type ModelOption = ModelList["models"][number];
 export type AgentChoice = { agent: CreationAgent; overrides: ThreadOverrides };
 export const NO_OVERRIDES: ThreadOverrides = { model: null, effort: null };
 
-const ROW_PX = 32;
-const VISIBLE_ROWS = 10;
-const MIN_ROWS = 8;
+/** An Agent row: its name over a line of its description. */
+const ROW_PX = 40;
+const VISIBLE_ROWS = 8;
+const MIN_ROWS = 6;
 const SEARCH_PX = 44;
+const FOOTER_PX = 40;
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
@@ -124,7 +134,7 @@ export function AgentPickerPanel({
   // A short list still leaves the detail room for its model choices.
   const rows = Math.min(Math.max(agents.length + (own ? 1 : 0), MIN_ROWS), VISIBLE_ROWS);
   // The search, the footer line and the rows: the one height, whatever is pointed at or searched.
-  const height = SEARCH_PX + (rows + 1) * ROW_PX + 24;
+  const height = SEARCH_PX + rows * ROW_PX + FOOTER_PX + 24;
 
   const choose = (agent: AgentCatalogItem, overrides: ThreadOverrides) => {
     if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), overrides });
@@ -156,7 +166,13 @@ export function AgentPickerPanel({
                 : undefined
           }
           // One Tab stop for the list: the row whose detail shows. Arrows move between rows.
-          controlProps={{ tabIndex: agent.slug === shown.slug ? 0 : -1 }}
+          controlProps={{
+            tabIndex: agent.slug === shown.slug ? 0 : -1,
+            title:
+              agent.path && agent.level !== "builtin"
+                ? `${agent.description}\n${fileAddress(agent)}`
+                : agent.description || undefined,
+          }}
           onOpen={() => {
             if (!tapPicks.current) {
               tapPicks.current = true;
@@ -166,6 +182,7 @@ export function AgentPickerPanel({
             choose(agent, isCurrent ? current.overrides : NO_OVERRIDES);
           }}
           title={agent.name}
+          detail={agent.description || undefined}
           meta={sameName.has(agent.name) ? fileName(agent) : undefined}
           describedBy={pickable(agent) ? undefined : `agent-unusable-${agent.slug}`}
         />
@@ -201,18 +218,12 @@ export function AgentPickerPanel({
               if (event.key === "ArrowRight" && event.target instanceof HTMLElement) {
                 if (!event.target.closest("li[data-agent]")) return;
                 event.preventDefault();
-                // The first control on screen: the touch-only "Use" button is hidden under a mouse.
-                [
-                  ...(detailRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ??
-                    []),
-                ]
-                  .find((button) => button.checkVisibility())
-                  ?.focus();
+                focusColumn(detailRef.current, "models");
                 return;
               }
               handleListKeys(event);
             }}
-            className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-52 @[28rem]/agents:flex-none @[28rem]/agents:border-r @[28rem]/agents:border-border-subtle @[28rem]/agents:pr-1"
+            className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-56 @[28rem]/agents:flex-none @[28rem]/agents:border-r @[28rem]/agents:border-border-subtle @[28rem]/agents:pr-1"
           >
             <div className="shrink-0 pb-1">
               <PickerSearch
@@ -337,47 +348,52 @@ function AgentDetail({
 }) {
   const runsOn = overrides.model ?? agent.model;
   const usable = pickable(agent);
+  const option = runsOn ? models?.find((model) => model.id === runsOn) : undefined;
+  const levels: ReasoningChoice[] = option
+    ? [...(option.canDisable ? (["disabled"] as const) : []), ...option.efforts]
+    : [];
+  const thinksAt = overrides.effort ?? agent.effort;
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: routes arrow keys between the detail's controls. slop-lint: allow suppression the reason is stated in this comment
+    // biome-ignore lint/a11y/noStaticElementInteractions: routes arrow keys between the detail's columns. slop-lint: allow suppression the reason is stated in this comment
     <div
       ref={ref}
       onKeyDown={(event) => {
+        const column = (event.target as HTMLElement).closest<HTMLElement>("[data-column]");
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          onBack();
+          if (column?.dataset.column === "reasoning") focusColumn(event.currentTarget, "models");
+          else onBack();
+          return;
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          if (column?.dataset.column === "models") focusColumn(event.currentTarget, "reasoning");
           return;
         }
         handleListKeys(event);
-        // Up and Down stay in the detail even with no rows to move between.
-        if (event.key === "ArrowUp" || event.key === "ArrowDown") event.preventDefault();
       }}
-      className="app-scroll flex min-h-0 flex-1 flex-col gap-2 border-t border-border-subtle px-2 pt-2 @[28rem]/agents:border-t-0 @[28rem]/agents:pt-1.5"
+      className="flex min-h-0 flex-1 flex-col gap-2 border-t border-border-subtle pt-2 @[28rem]/agents:border-t-0 @[28rem]/agents:pt-0"
     >
-      {/* One size for every Agent, so the models below never move as the writer points. The row
-          on the left names the Agent; the full text and the file show on hover. */}
-      <p
-        className="line-clamp-2 h-10 shrink-0 text-sm text-foreground"
-        title={
-          agent.path && agent.level !== "builtin"
-            ? `${agent.description}\n${fileAddress(agent)}`
-            : agent.description
-        }
-      >
-        {agent.description}
-      </p>
-      {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
-      {useLabel && usable ? (
-        // Touch picks here, having no hover to point with; a mouse or the keyboard picks the row.
-        <button
-          type="button"
-          className="hidden self-start rounded-md bg-ink-fill-strong px-3 py-1.5 text-sm font-medium text-foreground [@media(hover:none)]:inline-flex coarse:inline-flex"
-          onClick={onUse}
-        >
-          {useLabel}
-        </button>
+      {thisChat || (useLabel && usable) ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pt-1.5">
+          {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
+          {useLabel && usable ? (
+            // Touch picks here, having no hover to point with; a mouse or the keyboard picks the row.
+            <button
+              type="button"
+              className="hidden rounded-md bg-ink-fill-strong px-3 py-1.5 text-sm font-medium text-foreground [@media(hover:none)]:inline-flex coarse:inline-flex"
+              onClick={onUse}
+            >
+              {useLabel}
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {!usable ? (
-        <div id={`agent-unusable-${agent.slug}`} className="flex flex-col gap-1 text-sm">
+        <div
+          id={`agent-unusable-${agent.slug}`}
+          className="flex flex-col gap-1 px-2 pt-1.5 text-sm"
+        >
           <p className="text-muted-foreground">
             <Trans>Can't be used right now.</Trans>
           </p>
@@ -397,30 +413,79 @@ function AgentDetail({
           ) : null}
         </div>
       ) : (
-        <section
-          aria-label={t`Model`}
-          className="-mx-2 flex flex-col border-t border-border-subtle px-2 pt-2"
-        >
-          {runsOn && models && !runsAvailable(models, runsOn) ? (
-            <p className="pb-1 text-xs text-muted-foreground">
-              {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
-            </p>
-          ) : null}
-          {thisChat ? (
-            <p className="pb-1 text-xs text-muted-foreground">
-              <Trans>Changing it rebuilds the chat's cache.</Trans>
-            </p>
-          ) : null}
-          <ModelChoices
-            own={agent.model}
-            runsOn={runsOn}
-            models={models}
-            onChoose={(id) => onChoose({ ...overrides, model: id === agent.model ? null : id })}
-          />
-        </section>
+        <div className="flex min-h-0 flex-1">
+          <section
+            aria-label={t`Model`}
+            data-column="models"
+            onKeyDown={stayInColumn}
+            className="app-scroll flex min-h-0 min-w-0 flex-1 flex-col px-1"
+          >
+            {runsOn && models && !runsAvailable(models, runsOn) ? (
+              <p className="px-1 pb-1 text-xs text-muted-foreground">
+                {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
+              </p>
+            ) : null}
+            {thisChat ? (
+              <p className="px-1 pb-1 text-xs text-muted-foreground">
+                <Trans>Changing the model rebuilds the chat's cache.</Trans>
+              </p>
+            ) : null}
+            <ModelChoices
+              own={agent.model}
+              runsOn={runsOn}
+              models={models}
+              onChoose={(id) => onChoose({ ...overrides, model: id === agent.model ? null : id })}
+            />
+          </section>
+          <section
+            aria-label={t`Reasoning`}
+            data-column="reasoning"
+            onKeyDown={stayInColumn}
+            className="app-scroll flex min-h-0 w-34 flex-none flex-col border-l border-border-subtle px-1"
+          >
+            <ul className="flex flex-col">
+              {levels.map((level) => (
+                <li key={level}>
+                  <ListRow
+                    density="menu"
+                    leading={
+                      <Check
+                        aria-hidden
+                        className={cn("size-3.5", level !== thinksAt && "invisible")}
+                      />
+                    }
+                    title={reasoningName(level)}
+                    meta={level === agent.effort ? t`Default` : undefined}
+                    onOpen={() =>
+                      onChoose({ ...overrides, effort: level === agent.effort ? null : level })
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
       )}
     </div>
   );
+}
+
+/** Up and Down move within one detail column, even one with no rows to move between. */
+function stayInColumn(event: KeyboardEvent<HTMLElement>) {
+  if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+  handleListKeys(event);
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+/** Focuses a detail column's checked row, else its first. */
+function focusColumn(detail: HTMLElement | null, column: "models" | "reasoning") {
+  const rows = [
+    ...(detail?.querySelectorAll<HTMLElement>(
+      `[data-column="${column}"] [data-list-item]:not(:disabled)`,
+    ) ?? []),
+  ];
+  (rows.find((row) => row.querySelector("svg:not(.invisible)")) ?? rows[0])?.focus();
 }
 
 function ModelChoices({
@@ -451,7 +516,13 @@ function ModelChoices({
             density="menu"
             disabled={!option.available}
             leading={
-              <Check aria-hidden className={cn("size-3.5", option.id !== runsOn && "invisible")} />
+              <>
+                <Check
+                  aria-hidden
+                  className={cn("size-3.5", option.id !== runsOn && "invisible")}
+                />
+                <ModelMark maker={option.maker} />
+              </>
             }
             title={option.name}
             meta={option.id === own ? t`Default` : undefined}
