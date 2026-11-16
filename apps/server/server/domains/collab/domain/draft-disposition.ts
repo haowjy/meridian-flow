@@ -34,8 +34,15 @@ export interface DraftDispositionView {
   projection: ReviewProjection | null;
   classifications: ReadonlyMap<string, ChangeClassification>;
   applyRecord: readonly ApplyEntry[];
-  /** `waiting`: the part is a member of a change that waits in an open draft. */
-  parts: readonly (DraftReceiptPart & { disposition: PartDisposition; waiting: boolean })[];
+  /**
+   * `waiting`: the part is a member of a change that waits in an open draft. `appliedBy`: the
+   * Apply command that took an applied part, which its Un-Apply takes back.
+   */
+  parts: readonly (DraftReceiptPart & {
+    disposition: PartDisposition;
+    waiting: boolean;
+    appliedBy?: string;
+  })[];
 }
 
 const schema = buildDocumentSchema();
@@ -63,6 +70,7 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
     try {
       const applyRecord = readApplyRecord(doc);
       const applied = appliedParts(doc, cut.parts, applyRecord);
+      const by = appliedByCommand(doc, cut.parts, applyRecord, applied);
       const parts = cut.parts.map((part, index) => ({
         ...part,
         status: applied[index] ? ("applied" as const) : ("pending" as const),
@@ -90,6 +98,7 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         applyRecord,
         parts: parts.map((part, index) => ({
           ...part,
+          ...(by[index] ? { appliedBy: by[index] } : {}),
           waiting: part.status !== "applied" && draft.status === "active" && pending.has(index),
           disposition:
             part.status === "applied"
@@ -103,4 +112,27 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
       doc.destroy();
     }
   };
+}
+
+/**
+ * The Apply command that took each applied part, read from that command's own entries of the Apply
+ * record; the later command when two did.
+ */
+function appliedByCommand(
+  doc: Y.Doc,
+  parts: Parameters<typeof appliedParts>[1],
+  record: readonly ApplyEntry[],
+  applied: readonly boolean[],
+): (string | undefined)[] {
+  const by: (string | undefined)[] = parts.map(() => undefined);
+  if (!applied.some(Boolean)) return by;
+  const commands = new Map<string, ApplyEntry[]>();
+  for (const entry of record)
+    if (entry.commandId)
+      commands.set(entry.commandId, [...(commands.get(entry.commandId) ?? []), entry]);
+  for (const [command, entries] of commands)
+    appliedParts(doc, parts, entries).forEach((took, index) => {
+      if (took && applied[index]) by[index] = command;
+    });
+  return by;
 }

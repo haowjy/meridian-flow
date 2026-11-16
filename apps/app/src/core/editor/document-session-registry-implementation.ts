@@ -2,7 +2,8 @@
  * Account-scoped owner of live document sessions and stable-id draft rooms.
  * Live acquisition is lease-required; draft rooms retain their stable room identity.
  */
-import type { AccountId } from "@meridian/contracts/protocol";
+import type { DraftState } from "@meridian/contracts/branches";
+import { type AccountId, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
@@ -21,7 +22,7 @@ import type {
   UnsentTypingObserver,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import { type DraftCloseCause, DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
 import type { DocumentHistory } from "./editor-history";
 import {
   createHandBackNotices,
@@ -41,11 +42,18 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
+/** Draft copies the start sweep handles at once. */
+const SWEEP_LOADS = 4;
+/** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
+const KEPT_FOR_UNDO_CAP = 8;
+const SWEEP_DELIVERY_MS = 30_000;
 
 /**
  * The resets that end a room for good: its unsent typing is handed back when the session retires,
  * not at the reset. A session kept on screen still shows that text, and a restore that restarts it
- * delivers it, so handing it back earlier would offer text the document then gets too.
+ * delivers it, so handing it back earlier would offer text the document then gets too. Handing
+ * back never deletes the copy: Undo Discard reopens a closed draft and replays the copy into it, so
+ * the writer may see the notice and also get the words back; losing them is the failure.
  */
 const UNSENT_CAUSE_OF_RESET: Readonly<
   Record<ResetDisposition | "none", UnsentTypingCause | undefined>
@@ -80,7 +88,10 @@ export class DocumentSessionRegistry {
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
     (session) => {
-      const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
+      // A draft the server closed hands back with that close's cause whatever ended the session's socket first.
+      const cause =
+        this.draftRooms.closedCause(session.roomKey) ??
+        UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
       if (cause) void this.handBackUnsent(session, cause).catch(reportError);
     },
   );
@@ -93,6 +104,9 @@ export class DocumentSessionRegistry {
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
   private readonly holdCapStops = new Map<string, () => void>();
+  /** Sessions no host holds, kept while their history has something to undo or redo. */
+  private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
+  private undoClock = 0;
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
     string,
@@ -308,8 +322,108 @@ export class DocumentSessionRegistry {
     return this.draftRooms.rebuild(roomKey);
   }
 
-  closeDraftRoom(roomKey: string): Promise<void> {
-    return this.draftRooms.close(roomKey);
+  /**
+   * The server closed the draft, as `closed` (a Discard) or `removed` (its document went). A
+   * session the pool holds retires with that cause, which hands its copy back at the right time:
+   * when nothing shows its text any more. With no session
+   * (the room ended earlier, by a schema reset or a terminal close, or never opened here) the copy
+   * is handed back now. The copy stays either way: Undo Discard reopens the same draft.
+   */
+  async closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void> {
+    const documentId = this.draftRooms.documentOf(roomKey);
+    const held = this.draftRooms.peek(roomKey);
+    await this.draftRooms.close(roomKey, cause);
+    if (documentId && !held) {
+      const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
+      await this.handBackCopy(incarnationName(key, this.copies.current(key)), cause);
+    }
+  }
+
+  /**
+   * Settles the draft copies no room of this tab owns, found at start, by their draft's state.
+   * A closed draft's copy is handed back as `closed` (a Discard) or `removed` (its document went)
+   * for what it holds beyond its mark; it covers a draft that closed while no page was open, so no
+   * draft owner ran `closeDraftRoom`, and the copy stays (see `closeDraftRoom`). An open draft's
+   * copy that holds typing beyond its mark has its room opened through the pool, as if the writer
+   * had reopened the draft, and released once the server acknowledges: the typing is delivered to
+   * the draft. A copy another tab has open is left to that tab. Each copy is swept once: it is
+   * then recorded as swept, and a later start skips it without loading it until a session opens
+   * the copy again (a restore). A copy with no mark proves nothing undelivered. At most
+   * `SWEEP_LOADS` copies are handled at once.
+   */
+  async sweepDraftCopies(
+    statesOf: (draftIds: string[]) => Promise<ReadonlyMap<string, DraftState>>,
+  ): Promise<void> {
+    const copies = (await this.copies.unsweptDraftCopies()).flatMap((copy) => {
+      const room = parseYjsRoomName(copy.roomKey);
+      return room?.kind === "draft" && !this.draftRooms.peek(copy.roomKey)
+        ? [{ ...copy, draftId: room.draftId }]
+        : [];
+    });
+    if (copies.length === 0) return;
+    const states = await statesOf([...new Set(copies.map(({ draftId }) => draftId))]);
+    const openRooms = new Map<string, { documentId: DocumentId; names: string[] }>();
+    const todo: (() => Promise<void>)[] = [];
+    for (const { name, roomKey, documentId, draftId } of copies) {
+      const state = states.get(draftId);
+      if (state === "open") {
+        const room = openRooms.get(roomKey) ?? { documentId, names: [] };
+        room.names.push(name);
+        openRooms.set(roomKey, room);
+      } else if (state) {
+        const cause = state === "discarded" ? ("closed" as const) : ("removed" as const);
+        todo.push(async () => {
+          await this.handBackCopy(name, cause, true);
+          this.copies.markSwept(name);
+        });
+      }
+    }
+    for (const [roomKey, { documentId, names }] of openRooms)
+      todo.push(() => this.deliverOpenDraftCopy(roomKey, documentId, names));
+    const sweepOne = async () => {
+      for (let next = todo.shift(); next; next = todo.shift()) {
+        try {
+          await next();
+        } catch (error) {
+          reportError(error);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: SWEEP_LOADS }, sweepOne));
+  }
+
+  /**
+   * Opens the room of an open draft whose copies (every incarnation) hold typing beyond their
+   * mark, and releases it once acknowledged. The session delivers like any other (the older
+   * incarnations are read against its first handshake); a page that opens the room meanwhile
+   * shares this session, so nothing is sent twice, and the copy is left unswept. A copy version
+   * older than the current one is read, not delivered: its words come back as an `owner-closed`
+   * notice, and a notice that can't be stored is retried at the next open. Not acknowledged within
+   * `SWEEP_DELIVERY_MS` (offline), the room is released anyway: the pool keeps draining it, and the
+   * copy is swept again at the next start.
+   */
+  private async deliverOpenDraftCopy(
+    roomKey: string,
+    documentId: DocumentId,
+    names: readonly string[],
+  ): Promise<void> {
+    const key = draftRoomPersistenceKey(this.accountId, documentId, roomKey);
+    if (await this.copies.heldByAnotherTab(incarnationName(key, this.copies.current(key)))) return;
+    let typed = false;
+    for (const name of names) typed ||= (await this.copies.beyondMark(name, true)) !== null;
+    if (typed) {
+      const owner = `sweep:${roomKey}`;
+      this.draftRooms.retain(owner, [{ roomKey, documentId }]);
+      try {
+        if (!(await acknowledged(this.draftRooms.get(roomKey)))) return;
+        // A page that shares this session keeps the copy's mark clear: its `hold` cleared it, and
+        // typing offline there must not be hidden by a mark set now.
+        if (this.draftRooms.isRetained(roomKey, owner)) return;
+      } finally {
+        this.draftRooms.release(owner);
+      }
+    }
+    for (const name of names) this.copies.markSwept(name);
   }
 
   reopenDraftRoom(roomKey: string): void {
@@ -368,6 +482,8 @@ export class DocumentSessionRegistry {
     this.pendingTeardownTimers.clear();
     for (const stop of this.holdCapStops.values()) stop();
     this.holdCapStops.clear();
+    for (const kept of this.keptForUndo.values()) kept.stop();
+    this.keptForUndo.clear();
     const liveSessions = [...this.liveRooms.entries()].flatMap(([documentId, { session, hold }]) =>
       session ? [{ documentId, session, hold }] : [],
     );
@@ -511,7 +627,7 @@ export class DocumentSessionRegistry {
     });
     if (session.room.kind === "live")
       session.subscribe(() => {
-        this.retireDrainedRoom(session);
+        this.settleDrainedRoom(session);
         this.settleRetainedTransport(session);
       });
     return session;
@@ -626,15 +742,21 @@ export class DocumentSessionRegistry {
     const started = this.handingBack.get(session);
     if (started) return started;
     const copy = this.copyOfSession(session);
-    const name = incarnationName(copy.key, copy.incarnation);
-    const handing = this.copies.beyondMark(name).then(async (beyond) => {
-      if (beyond)
-        await readCopy(beyond.update, (document) =>
-          this.handBack(cause, name, document, beyond.lacking),
-        );
-    });
+    const handing = this.handBackCopy(incarnationName(copy.key, copy.incarnation), cause);
     this.handingBack.set(session, handing);
     return handing;
+  }
+
+  private async handBackCopy(
+    name: string,
+    cause: UnsentTypingCause,
+    requireMark = false,
+  ): Promise<void> {
+    const beyond = await this.copies.beyondMark(name, requireMark);
+    if (beyond)
+      await readCopy(beyond.update, (document) =>
+        this.handBack(cause, name, document, beyond.lacking),
+      );
   }
 
   /**
@@ -788,23 +910,52 @@ export class DocumentSessionRegistry {
   }
 
   private scheduleTeardown(roomKey: string): void {
-    if (this.pendingTeardownTimers.has(roomKey) || this.holdCapStops.has(roomKey)) return;
+    if (
+      this.pendingTeardownTimers.has(roomKey) ||
+      this.holdCapStops.has(roomKey) ||
+      this.keptForUndo.has(roomKey)
+    )
+      return;
     const timer = setTimeout(() => {
       this.pendingTeardownTimers.delete(roomKey);
       const state = this.liveRooms.get(roomKey);
       if (!state?.session || this.isRetained(roomKey)) return;
-      // Like draft rooms, a session with unsent edits stays until they are acknowledged.
-      // `retireDrainedRoom` ends the hold when the room can no longer take them; a room that
-      // stays connected without acknowledging ends it at the cap. Offline time never counts.
-      // The other exits (removed document, revoked access, account close) go
-      // through `clearLocalCopy` and `invalidateAll`.
-      if (this.mustKeepForUnsentEdits(state.session)) {
-        this.holdUntilAcknowledged(roomKey, state, state.session);
-        return;
-      }
-      this.retireLiveSession(roomKey, state);
+      this.releaseUnheld(roomKey, state, state.session);
     }, this.teardownGraceMs);
     this.pendingTeardownTimers.set(roomKey, timer);
+  }
+
+  /**
+   * A session no host holds. Like draft rooms, one with unsent edits stays until they are
+   * acknowledged: `settleDrainedRoom` ends the hold when the room can no longer take them, and a
+   * room that stays connected without acknowledging ends it at the cap; offline time never counts.
+   * Then one whose room still takes writes and whose history has entries is kept for its undo,
+   * wherever it was shown; a room that can't take them (ended, read-only) retires. The other exits
+   * (removed document, revoked access, account close) go through `clearLocalCopy` and `invalidateAll`.
+   */
+  private releaseUnheld(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
+    if (this.mustKeepForUnsentEdits(session)) this.holdUntilAcknowledged(roomKey, state, session);
+    else if (session.canDeliverUnsentEdits() && session.history.hasEntries())
+      this.keepForUndo(roomKey, state, session);
+    else this.retireLiveSession(roomKey, state);
+  }
+
+  /** Off the socket; a host that takes it back reattaches it, and an emptied history ends it. */
+  private keepForUndo(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
+    const history = session.history;
+    const kept = { changed: ++this.undoClock, stop: () => {} };
+    kept.stop = history.subscribe(() => {
+      if (history.hasEntries()) kept.changed = ++this.undoClock;
+      else this.retireLiveSession(roomKey, state);
+    });
+    this.keptForUndo.set(roomKey, kept);
+    this.detachUnwantedTransport(session);
+    if (this.keptForUndo.size <= KEPT_FOR_UNDO_CAP) return;
+    const [oldest] = [...this.keptForUndo].reduce((least, entry) =>
+      entry[1].changed < least[1].changed ? entry : least,
+    );
+    const oldestState = this.liveRooms.get(oldest);
+    if (oldestState) this.retireLiveSession(oldest, oldestState);
   }
 
   private holdUntilAcknowledged(
@@ -846,13 +997,14 @@ export class DocumentSessionRegistry {
       .catch(() => undefined);
   }
 
-  private retireDrainedRoom(session: DocumentSession): void {
+  private settleDrainedRoom(session: DocumentSession): void {
     const roomKey = session.documentId;
     if (!this.holdCapStops.has(roomKey)) return;
     const state = this.liveRooms.get(roomKey);
     if (state?.session !== session) return;
     if (this.mustKeepForUnsentEdits(session)) return;
-    this.retireLiveSession(roomKey, state);
+    this.cancelPendingTeardown(roomKey);
+    this.releaseUnheld(roomKey, state, session);
   }
 
   // A restart cancels the pending teardown; a room no host retains still needs one.
@@ -863,6 +1015,8 @@ export class DocumentSessionRegistry {
   private cancelPendingTeardown(roomKey: string): void {
     this.holdCapStops.get(roomKey)?.();
     this.holdCapStops.delete(roomKey);
+    this.keptForUndo.get(roomKey)?.stop();
+    this.keptForUndo.delete(roomKey);
     const timer = this.pendingTeardownTimers.get(roomKey);
     if (!timer) return;
     clearTimeout(timer);
@@ -908,4 +1062,26 @@ export class DocumentSessionRegistry {
       `[document-session-registry] live document session count (${liveCount}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
     );
   }
+}
+
+/** Whether the server acknowledges everything the session holds: false when the room cannot, or at the wait's end. */
+function acknowledged(session: DocumentSession): Promise<boolean> {
+  return new Promise((resolve) => {
+    let stop = () => {};
+    let settled = false;
+    const done = (delivered: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stop();
+      resolve(delivered);
+    };
+    const timer = setTimeout(() => done(false), SWEEP_DELIVERY_MS);
+    // `subscribe` calls back at once, before `stop` exists.
+    stop = session.subscribe((snapshot) => {
+      if (snapshot.serverHasLocalChanges) done(true);
+      else if (!session.canDeliverUnsentEdits()) done(false);
+    });
+    if (settled) stop();
+  });
 }

@@ -32,3 +32,14 @@ export type DraftsProvenanceRequest = {
 };
 /** Evidence by draft id; a draft that is not the owner's active draft of its document is absent. */
 export type DraftsProvenanceResponse = { drafts: Record<string, DraftProvenanceResponse> };
+
+/** The most drafts one draft-state read may name; a client with more sends several. */
+export const DRAFT_STATES_MAX = 200;
+/** The drafts a browser holds copies of. */
+export type DraftStatesRequest = { draftIds: readonly string[] };
+/** Why a draft closed: a Discard (a restore from Trash reopens it), or its document went (a restore may not). */
+export type ClosedDraftCause = "discarded" | "document_removed";
+/** Whether a draft is still open, or why it closed. */
+export type DraftState = "open" | ClosedDraftCause;
+/** The state of each named draft the account has; one it doesn't have is absent. */
+export type DraftStatesResponse = { states: Record<string, DraftState> };

@@ -328,7 +328,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
             contextWindow: model.limit.context,
             maxOutputTokens: model.limit.output,
             inputModalities: model.modalities.input,
-            ...(family.maxLinkBytes === undefined ? {} : { maxLinkBytes: family.maxLinkBytes }),
+            ...(row.maxLinkBytes === undefined ? {} : { maxLinkBytes: row.maxLinkBytes }),
             reasoning: toReasoning(model, family),
           },
           pricing: toPricing(row, snapshot, id, model),

@@ -26,14 +26,24 @@ type EditorHistoryAction = {
    */
   undo(): Promise<boolean>;
   redo(): void;
+  /**
+   * The Apply waits for an owner to reopen: an undo passes over its entry to the one under it,
+   * and its boundary still keeps the edits on either side apart.
+   */
+  passedOver?(): boolean;
+  /** An undo just passed over it: the writer pressed Undo and an older step went instead. */
+  passed?(): void;
+  /** Its redo is gone: new edits cleared the redo side, or the history closed with it there. */
+  dropped?(): void;
 };
 /** An Apply boundary in a history. `remove` ends it when its action can no longer run. */
 type ApplyEntry = { remove(): void };
 /**
  * `hide` takes the entry out of both sides and keeps its place; `show` puts a hidden entry back on
  * the undo side at that place, below what was done after it, and leaves the redo side alone.
+ * `restate`: whether it is passed over changed, so what Undo offers is read again.
  */
-export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void };
+export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void; restate(): void };
 export type EditorHistoryHandle = {
   captureApply(action: EditorHistoryAction): ApplyEntry;
 };
@@ -50,6 +60,8 @@ const HISTORY_META = "meridian-editor-history";
 const RANGE_META = "meridian-editor-range";
 
 type RelativeSelection = ReturnType<typeof getRelativeSelection>;
+
+const passedOver = (entry: Entry) => entry.kind === "apply" && entry.action.passedOver?.() === true;
 
 function insert(entries: Entry[], entry: Entry): void {
   const index = entries.findIndex((candidate) => candidate.sequence > entry.sequence);
@@ -109,6 +121,8 @@ export class DocumentHistory implements EditorHistoryHandle {
   /** The range selected when the dispatch now running began, for the stack item that dispatch adds. */
   private rangeBeforeDispatch: RelativeSelection | null = null;
   private active = true;
+  /** Apply entries hidden while an Un-Apply sent from elsewhere is out: they may come back. */
+  private hiddenApplies = 0;
   /** The editors showing this document now. */
   private readonly editors = new Set<Editor>();
   private readonly listeners = new Set<() => void>();
@@ -139,13 +153,15 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.manager.off("stack-item-added", this.managerAdded);
     this.manager.off("stack-cleared", this.managerCleared);
     this.manager.destroy();
+    const redone = this.redo.splice(0);
     this.undo.length = 0;
-    this.redo.length = 0;
+    this.hiddenApplies = 0;
     this.listeners.clear();
+    for (const entry of redone) if (entry.kind === "apply") entry.action.dropped?.();
   }
 
   captureApply(action: EditorHistoryAction): DocumentApplyEntry {
-    if (!this.active) return { remove: noop, hide: noop, show: noop };
+    if (!this.active) return { remove: noop, hide: noop, show: noop, restate: noop };
     this.manager.stopCapturing();
     const entry: Entry = { kind: "apply", sequence: ++this.sequence, action, presses: 0 };
     this.undo.push(entry);
@@ -159,25 +175,39 @@ export class DocumentHistory implements EditorHistoryHandle {
       }
       this.changed();
     };
+    const unhide = () => {
+      if (!hidden) return;
+      hidden = false;
+      this.hiddenApplies--;
+    };
     return {
-      remove: take,
+      remove: () => {
+        unhide();
+        take();
+      },
       hide: () => {
         if (hidden) return;
         hidden = true;
+        this.hiddenApplies++;
         take();
       },
       show: () => {
         if (!hidden || !this.active) return;
-        hidden = false;
+        unhide();
         insert(this.undo, entry);
         this.changed();
       },
+      restate: () => this.changed(),
     };
   }
 
-  /** Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. */
+  /**
+   * Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. An
+   * Apply passed over for a closed owner counts: Undo takes it once the owner reopens. So does a
+   * hidden Apply, which may come back.
+   */
   hasEntries(): boolean {
-    return this.canUndo() || this.canRedo();
+    return this.active && (this.undo.length > 0 || this.redo.length > 0 || this.hiddenApplies > 0);
   }
 
   /** Calls `listener` after the stacks change. Returns the unsubscribe. */
@@ -187,7 +217,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   }
 
   canUndo(): boolean {
-    return this.active && this.undo.length > 0;
+    return this.active && this.undo.some((entry) => !passedOver(entry));
   }
 
   canRedo(): boolean {
@@ -197,10 +227,13 @@ export class DocumentHistory implements EditorHistoryHandle {
   run(direction: "undo" | "redo", editor: Editor): boolean {
     if (!this.active) return false;
     const source = direction === "undo" ? this.undo : this.redo;
-    const entry = direction === "undo" ? source.at(-1) : source[0];
+    const entry = direction === "undo" ? source.findLast((each) => !passedOver(each)) : source[0];
+    if (direction === "undo")
+      for (const over of source.slice(entry ? source.indexOf(entry) + 1 : 0))
+        if (over.kind === "apply") over.action.passed?.();
     if (!entry) return false;
     if (entry.kind === "apply") {
-      source.splice(direction === "undo" ? source.length - 1 : 0, 1);
+      source.splice(source.indexOf(entry), 1);
       insert(direction === "undo" ? this.redo : this.undo, entry);
       const press = ++entry.presses;
       if (direction === "redo") entry.action.redo();
@@ -224,12 +257,16 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.changed();
   }
 
-  /** Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary. */
+  /**
+   * Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary. An undo
+   * passes over an Apply that waits for a closed owner, as a press does.
+   */
   private runNative(direction: "undo" | "redo", source: Entry[], editor: Editor): void {
     const segment: Extract<Entry, { kind: "yjs" }>[] = [];
     if (direction === "undo") {
       for (let index = source.length - 1; index >= 0; index--) {
         const entry = source[index];
+        if (entry && passedOver(entry)) continue;
         if (!entry || entry.kind === "apply") break;
         segment.push(entry);
       }
@@ -398,7 +435,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   }
 
   private clearRedo(): void {
-    this.redo.length = 0;
+    for (const entry of this.redo.splice(0)) if (entry.kind === "apply") entry.action.dropped?.();
     if (this.manager.redoStack.length > 0) {
       this.suppressManagerEvents = true;
       try {

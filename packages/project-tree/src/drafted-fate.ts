@@ -27,7 +27,11 @@ type Index = {
   /** Each family's drafted records in list order: the original and a restored Discard's copies. */
   drafted: Map<string, string[]>;
   settled: Map<string, RecordSettled>;
-  /** The records in force: an Undo took out the rest. */
+  /**
+   * The drafted records in force: an Undo in the Work's view took out the rest. A drafted record's
+   * fate is the Work's, so live records don't count: an Un-Apply's live Undo of the Apply's copy
+   * names the same family root, and must not take out the drafted record it reopened.
+   */
   standing: Set<string>;
 };
 
@@ -69,7 +73,12 @@ function indexOf(doc: Y.Doc): Index {
         settled.set(target, { fate, command: settle.command, at });
       }
     });
-  const index = { records, drafted, settled, standing: standingOf(all) };
+  const index = {
+    records,
+    drafted,
+    settled,
+    standing: standingOf(all.filter((record) => record.draft !== null)),
+  };
   indexes.set(doc, index);
   doc.once("update", () => indexes.delete(doc));
   return index;
@@ -97,4 +106,20 @@ export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, Dr
     fates.set(id, fate === "dropped" ? "discarded" : fate);
   }
   return fates;
+}
+
+/**
+ * The Apply command that took each drafted record `ids` names, following its family as
+ * `draftedFates` does; a record no Apply took is absent.
+ */
+export function appliedBy(doc: Y.Doc, ids: readonly string[]): Map<string, string> {
+  const { records, drafted, settled } = indexOf(doc);
+  const by = new Map<string, string>();
+  for (const id of ids) {
+    const record = records.get(id);
+    const newest = record && drafted.get(record.carries ?? record.id)?.at(-1);
+    const settlement = newest ? settled.get(newest) : undefined;
+    if (settlement?.fate === "applied" && settlement.command) by.set(id, settlement.command);
+  }
+  return by;
 }

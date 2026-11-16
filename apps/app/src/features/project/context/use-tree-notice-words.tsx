@@ -3,13 +3,12 @@ import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { type GoneRow, RowWord } from "@/components/app/RowWord";
-import { treeLeftSentence } from "@/core/project-tree/tree-left-sentence";
+import { stayedSentence } from "@/core/project-tree/tree-left-sentence";
 import {
   type Bounce,
   endTreeNotice,
   type Said,
   subscribeTreeNotices,
-  type TreeFact,
   type TreeStep,
   treeBounces,
   treeNotice,
@@ -329,9 +328,7 @@ function SaidWord({
         />
       );
     case "left": {
-      const fact = factOf(said, node);
-      const tree = said.treeLeft.find((one) => one.node === node);
-      const stayed = tree ? treeLeftSentence(fact, tree.why) : "";
+      const stayed = stayedSentence(said, node);
       return said.taken === "nothing" ? (
         <RowWord
           tone="warning"
@@ -359,9 +356,6 @@ function SaidWord({
   }
 }
 
-const factOf = (said: Extract<Said, { kind: "left" }>, node: string): TreeFact =>
-  said.facts.get(node) ?? { did: null, folder: false };
-
 /** Whether anything of `node`'s change stayed: a row taken back whole says nothing. */
 const leftOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
-  said.treeLeft.some((one) => one.node === node);
+  said.treeLeft.some((one) => one.node === node) || said.held.some((one) => one.node === node);

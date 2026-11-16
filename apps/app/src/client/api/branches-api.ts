@@ -12,6 +12,9 @@ import type {
   DraftDiscardRequest,
   DraftDiscardResponse,
   DraftMetadataResponse,
+  DraftState,
+  DraftStatesRequest,
+  DraftStatesResponse,
   DraftsProvenanceRequest,
   DraftsProvenanceResponse,
   ThreadDraftListResponse,
@@ -20,9 +23,11 @@ import type {
   UndoDiscardAnswer,
   UndoDiscardClick,
 } from "@meridian/contracts/branches";
+import { DRAFT_STATES_MAX } from "@meridian/contracts/branches";
 import type { CommandLookupResponse, CommandRunning } from "@meridian/contracts/commands";
 import {
   apiCommandPath,
+  apiDraftStatesPath,
   apiProjectBranchApplyPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
@@ -48,6 +53,18 @@ export async function listOwnerDrafts(projectId: string, owner: string): Promise
     ...(await getJson<ThreadDraftListResponse>(apiProjectDraftsPath(projectId, owner))),
     readAt,
   };
+}
+
+/** The state of each of these draft ids the account has (open, or why it closed), asked in as many requests as the limit needs. */
+export async function listDraftStates(draftIds: string[]): Promise<Map<string, DraftState>> {
+  const states = new Map<string, DraftState>();
+  for (let at = 0; at < draftIds.length; at += DRAFT_STATES_MAX) {
+    const answer = await postJson<DraftStatesResponse>(apiDraftStatesPath(), {
+      draftIds: draftIds.slice(at, at + DRAFT_STATES_MAX),
+    } satisfies DraftStatesRequest);
+    for (const [id, state] of Object.entries(answer.states)) states.set(id, state);
+  }
+  return states;
 }
 
 /** The authorship evidence of an owner's drafts, many in one request. */

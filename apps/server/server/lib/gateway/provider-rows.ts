@@ -28,6 +28,8 @@ export interface ProviderRow {
   baseUrl?: string;
   /** Anthropic-format hosts that need Anthropic's tool-schema projection; the first-party API is the only one today. */
   projectToolSchema?: true;
+  /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
+  maxLinkBytes?: number;
   promptCache: { descriptor: PromptCacheDescriptor } & Provenance;
   /**
    * The long-TTL cache-write rate (Anthropic 1h, OpenAI 12h) as a multiple of the input price.
@@ -126,6 +128,8 @@ export const PROVIDER_ROWS: readonly ProviderRow[] = [
     adapter: "gemini",
     apiKeyEnv: "FLOW_GEMINI_API_KEY",
     baseUrl: "https://generativelanguage.googleapis.com",
+    // Gemini fetches a link up to 15 MB (ai.google.dev file-input docs).
+    maxLinkBytes: 15_000_000,
     // Google's standard rates; models.dev lists the introductory ones, which end 2026-11-30
     // ("$2.00 through November 30, 2026. $4.00 starting December 1, 2026").
     priceOverrides: {

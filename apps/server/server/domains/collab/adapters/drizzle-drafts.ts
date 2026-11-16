@@ -12,14 +12,17 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { type BranchId, createdDraftId, type DraftOwner } from "@meridian/contracts";
+import type { DraftState } from "@meridian/contracts/branches";
 import { contextRootUri, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  branches as branchRows,
   commands,
   documentDrafts,
   documentEditParts,
   draftWriteJournal,
+  projects,
   threads,
   threadWorks,
   works,
@@ -29,7 +32,7 @@ import {
   createCollabYDoc,
   packCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { branchOwnedBy, chatOwner } from "../../../shared/draft-owner.js";
@@ -625,6 +628,26 @@ export function createDrizzleDraftStore(
         .where(eq(documentDrafts.id, draftId))
         .limit(1);
       return row ? mapDraft(row) : null;
+    },
+
+    async draftStates(userId, draftIds) {
+      if (draftIds.length === 0) return {};
+      const rows = await currentDrizzleDb(db)
+        .select({
+          id: documentDrafts.id,
+          status: documentDrafts.status,
+          cause: documentDrafts.closedCause,
+        })
+        .from(documentDrafts)
+        .innerJoin(branchRows, eq(branchRows.id, documentDrafts.branchId))
+        .innerJoin(projects, eq(projects.id, branchRows.projectId))
+        .where(and(inArray(documentDrafts.id, [...draftIds]), eq(projects.userId, userId)));
+      const states: Record<string, DraftState> = {};
+      for (const row of rows) {
+        if (row.status === "active") states[row.id] = "open";
+        else if (row.cause) states[row.id] = row.cause;
+      }
+      return states;
     },
 
     readDraftAt(draftId, since) {

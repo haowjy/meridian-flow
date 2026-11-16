@@ -21,14 +21,13 @@ import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename, type ReviewFileTarget } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
 import {
-  type ApplyStep,
+  dropUndoStep,
   endWhenTakenBack,
   pushUndoStep,
   shownSourceOf,
-  unapplyAnswer,
-  undoApply,
 } from "@/core/project-tree/tree-undo";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
+import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
@@ -36,7 +35,8 @@ import {
   useOptionalDraftOnlyPresentations,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
-import { AppliedEntry } from "./apply-history";
+import { useClosedOwners } from "@/features/project/context/closed-owners";
+import { AppliedCommand, type ApplyInit, type Seat, serverPort } from "./apply-history";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import {
   type AppliedFact,
@@ -54,6 +54,14 @@ import type { DraftReviewSelection } from "./draft-review-session";
 import type { ChangeTarget } from "./review-model";
 
 export type BranchCommandOutcome = CommandOutcome;
+/** What an Apply that landed landed, which its Undo step is made of. */
+type StepData = {
+  commandId: string;
+  branchId: string;
+  nodes: readonly string[];
+  name: string;
+  halves?: ApplyHalves;
+};
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
 export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 
@@ -93,6 +101,7 @@ export function useWorkBranchCommands({
   // The Work's own creates the server has not listed (`useCreatedDrafts`) are rows too: a
   // command on one finds no row in the query cache, and a missing row is blocked silently.
   const { created } = useOwnerDraftList(projectId, ownerKey, Boolean(ownerKey));
+  const closed = useClosedOwners(projectId);
   return useMemo(() => {
     const ref = (draft: DraftReviewSelection) => ({ projectId, ownerKey, ...draft });
     /** The cut the review rows were read at: records after it are ones the writer hadn't seen. */
@@ -269,106 +278,139 @@ export function useWorkBranchCommands({
         notices.showApplied({ projectId, ownerKey, surface: noticeSurface(draft), facts });
     };
     /**
-     * An Apply goes on the sidebar's Undo stack as one step (design §5): its Undo is the server's
-     * Un-Apply of the whole command, fact by fact: what changed since stays, and the step is spent
-     * once pressed. The editors open on its documents hold the same step, and their Redo is
-     * `again`; a Redo's Apply hands its step to the `entry` it came from. A band's Apply has its
-     * editor's Undo instead.
+     * What a landed Apply's step is made of, read from the Work's tree: the nodes it took, their
+     * sources, what its tree half did to each. `account`: a node the project's list doesn't show is
+     * in the account's, whose list its tree half is read in too. Null without the tree lists.
      */
-    const rememberApply = (
-      commandId: string,
-      branchId: string,
-      nodes: readonly string[],
-      name: string,
-      halves: ApplyHalves = { text: true, tree: true, restores: [], did: {} },
-      again: (entry: AppliedEntry) => Promise<void> = () => Promise.resolve(),
-      redone?: AppliedEntry,
-    ): AppliedUndo | null => {
-      if (surface === "band" || !treeLists) return null;
+    const stepOf = (data: StepData) => {
+      if (!treeLists) return null;
+      const halves = data.halves ?? { text: true, tree: true, restores: [], did: {} };
       const handle = treeLists.acquire({ kind: "project", projectId });
       const session = handle.session;
       // The Work's tree shows every node the Apply took, before it and after.
       const { view, pendingText } = draftTreeVersion(
-        branchId,
+        data.branchId,
         listed(),
         work ? workLifecycleState(work) : "active",
       );
       const shown = session.replay(view, pendingText);
-      const documentIds = nodes.filter((node) => shown.nodes.get(node)?.kind !== "folder");
-      // A resend after a lost answer names the same Un-Apply: the server answers it once.
-      const unapplyId = crypto.randomUUID();
-      let entry = redone ?? null;
-      const unapplyOnServer = async (): Promise<Awaited<ReturnType<ApplyStep["unapply"]>>> => {
-        try {
-          const answer = await unapplyCommand(projectId, branchId, {
-            commandId: unapplyId,
-            applyCommandId: commandId,
-          });
-          if (answer.status === "conflict") return { taken: "failed" };
+      handle.release();
+      const init: ApplyInit = {
+        sources: [...new Set(data.nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
+        name: data.name,
+        nodes: data.nodes,
+        facts: new Map(
+          data.nodes.map((node) => [
+            node,
+            { did: halves.did[node] ?? null, folder: shown.nodes.get(node)?.kind === "folder" },
+          ]),
+        ),
+        text: halves.text,
+        tree: halves.tree ? { command: data.commandId, restores: halves.restores } : null,
+      };
+      return {
+        init,
+        session,
+        documentIds: data.nodes.filter((node) => shown.nodes.get(node)?.kind !== "folder"),
+        account: data.nodes.some((node) => !shown.nodes.has(node)),
+      };
+    };
+    /**
+     * The sidebar stack's seat for an Apply: on it, with a watch that ends its tree half once
+     * nothing of it stands (a card's Undo of its rename). `account()`: a node of it is in the
+     * account's list, which the watch reads too. Leaving ends the watch and the step's notice; a
+     * newer Apply's notice stays.
+     */
+    const seatOn = (session: TreeListSession, account: () => boolean): Seat => ({
+      session,
+      enter: (step) => {
+        const accountList = account() && treeLists ? treeLists.acquire(treeLists.account) : null;
+        pushUndoStep(session, step);
+        const stopWatch = endWhenTakenBack(
+          accountList ? [session, accountList.session] : [session],
+          step,
+        );
+        return () => {
+          stopWatch();
+          accountList?.release();
+          dropUndoStep(session, step);
+          if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step?.command === step))
+            endNotice();
+        };
+      },
+    });
+    /**
+     * An Apply goes on the sidebar's Undo stack as one step (`AppliedCommand`): its Undo is the
+     * server's Un-Apply of the whole command, fact by fact: what changed since stays, what a closed
+     * owner holds waits in its place, and otherwise the step is spent once pressed. The editors
+     * open on its documents show the same step, and their Redo is `again`, whose Apply the step
+     * becomes. A band's Apply has its editor's Undo instead, and comes onto the stack only when it
+     * holds a tree change (`joinStack`).
+     */
+    const rememberApply = (
+      data: StepData,
+      again: (step: AppliedCommand) => Promise<StepData | null>,
+    ): AppliedCommand | null => {
+      const made = stepOf(data);
+      if (!made) return null;
+      let { documentIds, account } = made;
+      let { branchId } = data;
+      const port = serverPort({
+        commandId: data.commandId,
+        unapply: (body) => unapplyCommand(projectId, branchId, body),
+        heard: async (answer) => {
           refresh(documentIds);
-          const unapplied = unappliedOf(answer);
           // The Apply's notice ends once the list has the Work's row back: the list the Apply
           // left has none, so ending it earlier leaves the writer no row until the read lands.
           await queryClient.refetchQueries(
             { queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) },
             { cancelRefetch: false },
           );
-          if (unapplied.taken !== "nothing")
+          if (unappliedOf(answer).taken !== "nothing")
             for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
-          return unapplied;
-        } catch {
-          return { taken: "failed" };
-        }
-      };
-      // A node the project's list doesn't show is in the account's: its tree half is read there too.
-      const account = nodes.some((node) => !shown.nodes.has(node))
-        ? treeLists.acquire(treeLists.account)
-        : null;
-      let stopWatch = () => {};
-      const step: ApplyStep = {
-        kind: "apply",
-        sources: [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
-        name,
-        nodes,
-        facts: new Map(
-          nodes.map((node) => [
-            node,
-            { did: halves.did[node] ?? null, folder: shown.nodes.get(node)?.kind === "folder" },
-          ]),
-        ),
-        text: halves.text,
-        tree: halves.tree ? { command: commandId, restores: halves.restores } : null,
-        ended: () => {
-          stopWatch();
-          account?.release();
-          // The step's notice ends with it; a newer Apply's notice stays.
-          if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step === undo)) endNotice();
         },
-        unapply: async () => {
-          entry?.leaving(step);
-          const said = await unapplyOnServer();
-          entry?.answered(step, unapplyAnswer(said));
-          // The press says what became of it on the rows (`TreeNotice`): the Apply's own words,
-          // and its Undo, give way.
-          if (notices.appliedFacts(ownerKey)) endNotice();
-          return said;
+        again: async () => {
+          const landed = await again(step);
+          const next = landed && stepOf(landed);
+          if (!landed || !next) return null;
+          ({ documentIds, account, branchId } = { ...next, branchId: landed.branchId });
+          return { commandId: landed.commandId, init: next.init };
         },
-      };
-      pushUndoStep(session, step);
-      stopWatch = endWhenTakenBack(session, account ? [session, account.session] : [session], step);
-      handle.release();
-      if (entry) entry.follow(step);
-      else entry = new AppliedEntry(session, step, () => documentIds.map(liveHistory), again);
-      // The applied rows' Undo is this step, the one Ctrl+Z takes.
-      const undo: AppliedUndo = { undo: () => void undoApply(session, step), count: nodes.length };
-      return undo;
+      });
+      const step: AppliedCommand = new AppliedCommand(
+        made.init,
+        port,
+        () => documentIds.map(liveHistory),
+        {
+          closed,
+          seat: seatOn(made.session, () => account),
+          said: ({ from, answer, step }) =>
+            notices.showPress({
+              projectId,
+              ownerKey,
+              documentId:
+                documentIds.find((id) => liveHistory(id) === from) ?? documentIds[0] ?? "",
+              step,
+              answer,
+            }),
+          over: () => owner.applied.delete(step),
+        },
+      );
+      owner.applied.add(step);
+      return step;
     };
-    /** `redone`: the editor entry whose Redo this Apply is. */
+    /** The applied rows' Undo: `step`, the one Ctrl+Z takes, over the changes it landed. */
+    const undoOf = (step: AppliedCommand | null, data: StepData | null): AppliedUndo | null =>
+      step && data ? { command: step, count: data.nodes.length } : null;
+    /**
+     * `redone`: the Apply whose Redo this is, which becomes this Apply's step. `landed`: what it
+     * landed, null when nothing did.
+     */
     const applyOne = (
       draft: DraftReviewSelection,
       target: ChangeTarget,
-      redone?: AppliedEntry,
-    ): CommandStart => {
+      redone?: AppliedCommand,
+    ): CommandStart & { landed: Promise<StepData | null> } => {
       endNotice();
       const item = row(draft);
       const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
@@ -380,61 +422,88 @@ export function useWorkBranchCommands({
             Boolean(tree && item?.tree),
             sawNow(),
             surface === "band"
-              ? () => [editorHistoryOf(reviewEditor?.(draft)), liveHistory(draft.documentId)]
+              ? {
+                  histories: () => [
+                    editorHistoryOf(reviewEditor?.(draft)),
+                    liveHistory(draft.documentId),
+                  ],
+                  closed,
+                }
               : null,
           );
-      if (!started) {
-        redone?.retire();
-        return blocked();
-      }
-      void started.outcome.then((outcome) => {
+      if (!started) return { ...blocked(), landed: Promise.resolve(null) };
+      const landed = started.outcome.then((outcome) => {
         if (outcome.kind === "done" && item)
           dropTaken(item, {
             tree: Boolean(outcome.treeWhole && tree && item.tree),
             text: target.kind === "draft" && (outcome.halves?.text ?? true),
           });
-        const step =
-          outcome.kind === "done" && outcome.commandId && item
-            ? rememberApply(
-                outcome.commandId,
-                item.branchId,
-                [draft.documentId],
-                titleOf(item) ?? t`Untitled document`,
-                outcome.halves,
-                (entry) => applyOne(draft, target, entry).outcome.then(() => undefined),
-                redone,
-              )
+        const name = titleOf(item) ?? t`Untitled document`;
+        const band = started.band;
+        // A band's Apply is its editors' Undo; the sidebar takes only a tree fact it held.
+        if (band && outcome.kind === "done" && item) {
+          band.name = name;
+          band.joinStack = () => {
+            const made = stepOf({
+              commandId: band.commandId,
+              branchId: item.branchId,
+              nodes: [draft.documentId],
+              name,
+              halves: {
+                text: band.text,
+                tree: true,
+                restores: outcome.halves?.restores ?? [],
+                did: outcome.halves?.did ?? {},
+              },
+            });
+            if (!made) return;
+            const { tree, sources, facts } = made.init;
+            band.placeOn(
+              seatOn(made.session, () => made.account),
+              { tree, sources, facts },
+            );
+          };
+        }
+        const data: StepData | null =
+          !band && outcome.kind === "done" && outcome.commandId && item
+            ? {
+                commandId: outcome.commandId,
+                branchId: item.branchId,
+                nodes: [draft.documentId],
+                name,
+                halves: outcome.halves,
+              }
             : null;
-        if (!step) redone?.retire();
-        if (outcome.kind === "done") applied(draft, [{ item, outcome }], step);
+        const step =
+          redone ?? (data && rememberApply(data, (step) => applyOne(draft, target, step).landed));
+        if (outcome.kind === "done") applied(draft, [{ item, outcome }], undoOf(step, data));
         if (!owner.state(draft.itemKey).pending) refresh([draft.documentId]);
+        return data;
       });
-      return started;
+      return { ...started, landed };
     };
     /**
      * Several drafts and folders as one Apply command, one step of Undo: Apply all, a folder's ✓.
      * `folders`: the folder changes it takes, with what is listed under them. `redone`: the
-     * editor entry whose Redo this Apply is. `outcomes` resolves to each item's outcome;
-     * `remembered` once its Undo step is kept, or none is.
+     * Apply whose Redo this is. `outcomes` resolves to each item's outcome; `landed` to what the
+     * command landed, once its Undo step is kept, or null when nothing landed.
      */
     const applyGroup = (
       items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
       folders: readonly string[] = [],
       name?: string,
-      redone?: AppliedEntry,
-    ): { outcomes: Promise<CommandOutcome[]>; remembered: Promise<void> } => {
+      redone?: AppliedCommand,
+    ): { outcomes: Promise<CommandOutcome[]>; landed: Promise<StepData | null> } => {
       endNotice();
       const listed = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       );
       const branchId = listed?.branchId;
-      if (locked || !branchId) {
-        redone?.retire();
+      if (locked || !branchId)
         return {
           outcomes: Promise.resolve(items.map(() => ({ kind: "blocked" as const }))),
-          remembered: Promise.resolve(),
+          landed: Promise.resolve(null),
         };
-      }
       const members = items.map(({ draft, target }) => {
         const item = row(draft);
         const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
@@ -468,48 +537,47 @@ export function useWorkBranchCommands({
       });
       const [first] = members;
       const outcomes = Promise.all(started.outcomes.slice(0, members.length));
-      const remembered = Promise.all([
-        outcomes,
-        Promise.all(started.outcomes),
-        started.answer,
-      ]).then(([settled, _all, answer]) => {
-        // The step is what the answer says landed, not what was pressed: an item settled
-        // before it (an earlier Discard's, another Apply's) is no part of its Undo.
-        const landed = answer?.status === "applied" ? answer : null;
-        const taken =
-          landed?.items.flatMap((item) =>
-            item.tree?.landed || item.text?.landed ? [item.node] : [],
-          ) ?? [];
-        const only =
-          taken.length === 1
-            ? titleOf(members.find((m) => m.draft.documentId === taken[0])?.item)
-            : null;
-        const count = taken.length;
-        // Only an Apply that landed something is a step: Ctrl+Z would take an empty one.
-        const step =
-          count > 0 && landed
-            ? rememberApply(
-                landed.commandId,
-                branchId,
-                taken,
-                name ?? only ?? t`${count} changes`,
-                halvesOf(landed),
-                (entry) => applyGroup(items, folders, name, entry).remembered,
-                redone,
-              )
-            : null;
-        if (!step) redone?.retire();
-        if (first)
-          applied(
-            first.draft,
-            settled.flatMap((outcome, index) =>
-              outcome.kind === "done" ? [{ item: members[index]?.item, outcome }] : [],
-            ),
-            step,
-          );
-        if (folders.length > 0) refresh([]);
-      });
-      return { outcomes, remembered };
+      const landed = Promise.all([outcomes, Promise.all(started.outcomes), started.answer]).then(
+        ([settled, _all, answer]) => {
+          // The step is what the answer says landed, not what was pressed: an item settled
+          // before it (an earlier Discard's, another Apply's) is no part of its Undo.
+          const landed = answer?.status === "applied" ? answer : null;
+          const taken =
+            landed?.items.flatMap((item) =>
+              item.tree?.landed || item.text?.landed ? [item.node] : [],
+            ) ?? [];
+          const only =
+            taken.length === 1
+              ? titleOf(members.find((m) => m.draft.documentId === taken[0])?.item)
+              : null;
+          const count = taken.length;
+          // Only an Apply that landed something is a step: Ctrl+Z would take an empty one.
+          const data: StepData | null =
+            count > 0 && landed
+              ? {
+                  commandId: landed.commandId,
+                  branchId,
+                  nodes: taken,
+                  name: name ?? only ?? t`${count} changes`,
+                  halves: halvesOf(landed),
+                }
+              : null;
+          const step =
+            redone ??
+            (data && rememberApply(data, (step) => applyGroup(items, folders, name, step).landed));
+          if (first)
+            applied(
+              first.draft,
+              settled.flatMap((outcome, index) =>
+                outcome.kind === "done" ? [{ item: members[index]?.item, outcome }] : [],
+              ),
+              undoOf(step, data),
+            );
+          if (folders.length > 0) refresh([]);
+          return data;
+        },
+      );
+      return { outcomes, landed };
     };
     const applyMany = (
       items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
@@ -846,6 +914,7 @@ export function useWorkBranchCommands({
     queryClient,
     work,
     created,
+    closed,
   ]);
 }
 

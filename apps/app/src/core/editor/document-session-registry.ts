@@ -1,8 +1,9 @@
 /** Structural, lease-qualified session-registry surfaces. */
+import type { DraftState } from "@meridian/contracts/branches";
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
-import type { DraftRoomRef } from "./draft-room-pool";
+import type { DraftCloseCause, DraftRoomRef } from "./draft-room-pool";
 import type { DocumentHistory } from "./editor-history";
 
 export type RetainedLiveDocumentReference = Readonly<{
@@ -68,7 +69,7 @@ export interface LiveDocumentSessionRegistry {
    */
   openStateVector(documentId: DocumentId, view?: "live" | "draft"): Uint8Array | null;
   /**
-   * The writer's Undo of the document's live session in this tab, shown or kept for an open tab;
+   * The writer's Undo of the document's live session in this tab, shown or kept for its undo;
    * null when the tab holds none.
    */
   liveHistory(documentId: DocumentId): DocumentHistory | null;
@@ -94,7 +95,11 @@ export interface LiveDocumentSessionRegistry {
    * observer starts the account's read of the notices stored before.
    */
   observeUnsentTyping(observer: UnsentTypingObserver): () => void;
-  closeDraftRoom(roomKey: string): Promise<void>;
+  closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void>;
+  /** Settles the draft copies no room here owns, once each, by the state `statesOf` reports for their drafts; see the implementation. */
+  sweepDraftCopies(
+    statesOf: (draftIds: string[]) => Promise<ReadonlyMap<string, DraftState>>,
+  ): Promise<void>;
   /** A restore reopened the draft: its room may open again under the same id. */
   reopenDraftRoom(roomKey: string): void;
   /**
