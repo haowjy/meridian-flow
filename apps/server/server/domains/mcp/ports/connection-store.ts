@@ -39,11 +39,6 @@ export interface StoredConnection {
   tokenSet: boolean;
 }
 
-export type AddConnectionResult =
-  | { kind: "added"; connection: StoredConnection }
-  | { kind: "name_taken" }
-  | { kind: "limit" };
-
 export interface StatusWrite {
   connectionId: McpConnectionId;
   /** The settings version the check or call ran under. */
@@ -63,7 +58,7 @@ export interface ConnectionStore {
   ): Promise<{ account: StoredConnection[]; project: StoredConnection[] }>;
   /** Removed connections included: undo needs them. */
   find(accountId: UserId, id: McpConnectionId): Promise<StoredConnection | null>;
-  /** Counts the account's live connections and checks the name in one transaction. */
+  /** Saves the connection under its name, or under the next free `<name>-2`, `-3`… when the level already has it. */
   add(input: {
     id: McpConnectionId;
     accountId: UserId;
@@ -71,8 +66,7 @@ export interface ConnectionStore {
     name: string;
     spec: McpConnectionSpec;
     sealedToken: string | null;
-    limit: number;
-  }): Promise<AddConnectionResult>;
+  }): Promise<StoredConnection>;
   /** Bumps the settings version. `sealedToken`: a string replaces the token, null clears it, undefined leaves it. */
   edit(
     accountId: UserId,
@@ -81,12 +75,8 @@ export interface ConnectionStore {
   ): Promise<StoredConnection | null>;
   /** Inserts the pin and makes it the connection's current one. */
   savePin(connectionId: McpConnectionId, pin: McpPin, pinHash: string): Promise<PinRecord>;
-  /** Null restores. `name_taken` when a restore finds its name used again. */
-  setRemoved(
-    accountId: UserId,
-    id: McpConnectionId,
-    at: Date | null,
-  ): Promise<"ok" | "missing" | "name_taken">;
+  /** Null restores, under the next free name when the level has taken it since. */
+  setRemoved(accountId: UserId, id: McpConnectionId, at: Date | null): Promise<"ok" | "missing">;
   /** A pin by id, whether or not it is still its connection's current one. */
   findPin(pinId: McpPinId): Promise<PinRecord | null>;
   /** Deletes connections removed before `cutoff`, with their pins and tokens; returns how many. */

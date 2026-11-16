@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 import type { ProjectId, UserId } from "@meridian/contracts";
 import {
   isMcpConnectionName,
-  MCP_CONNECTIONS_PER_ACCOUNT,
   type McpConnectionId,
   type McpConnectionStatus,
   type McpConnectionView,
@@ -32,13 +31,7 @@ import type { TokenCipher } from "./token-cipher.js";
 /** A refusal the settings API words for the writer; `code` picks the HTTP status. */
 export class McpConnectionError extends Error {
   constructor(
-    readonly code:
-      | "invalid"
-      | "not_found"
-      | "name_taken"
-      | "limit"
-      | "not_listed"
-      | "not_read_only",
+    readonly code: "invalid" | "not_found" | "not_listed" | "not_read_only",
     message: string,
   ) {
     super(message);
@@ -218,23 +211,12 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
         name: input.name,
         spec: { transport: "http", url },
         sealedToken: token ? deps.cipher.seal(token, { connectionId: id, accountId }) : null,
-        limit: MCP_CONNECTIONS_PER_ACCOUNT,
       });
-      if (added.kind === "name_taken")
-        throw new McpConnectionError(
-          "name_taken",
-          `You already have a connection named ${input.name} here.`,
-        );
-      if (added.kind === "limit")
-        throw new McpConnectionError(
-          "limit",
-          `You can have ${MCP_CONNECTIONS_PER_ACCOUNT} connections. Remove one to add another.`,
-        );
       // The listing is the first contact: an answer shows the tools, none leaves the connection
       // saved with no pin, and the check that follows says why.
       const startedAt = now();
-      const tools = await listTools(added.connection);
-      if (tools === null) await checks.check(added.connection.row);
+      const tools = await listTools(added);
+      if (tools === null) await checks.check(added.row);
       else
         await deps.store.writeStatus({
           connectionId: id,
@@ -244,7 +226,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
           reason: null,
           finishedAt: now(),
         });
-      const fresh = (await deps.store.find(accountId, id)) ?? added.connection;
+      const fresh = (await deps.store.find(accountId, id)) ?? added;
       return { connection: view(fresh, null), tools };
     },
 
@@ -325,12 +307,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
     async undo(accountId: UserId, id: McpConnectionId): Promise<McpConnectionView> {
       const stored = await deps.store.find(accountId, id);
       if (!stored) throw new McpConnectionError("not_found", "No such connection.");
-      const restored = await deps.store.setRemoved(accountId, id, null);
-      if (restored === "name_taken")
-        throw new McpConnectionError(
-          "name_taken",
-          `Another connection is named ${stored.row.name} now. Rename or remove it, then undo.`,
-        );
+      await deps.store.setRemoved(accountId, id, null);
       deps.statusChanged(stored.row);
       const fresh = (await deps.store.find(accountId, id)) ?? stored;
       checks.startDue([fresh.row]);
