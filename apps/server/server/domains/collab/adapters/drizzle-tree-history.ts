@@ -1,7 +1,7 @@
 /**
  * The model's tree changes as receipts: the rows its call keeps in the tool call's own
  * transaction (a write ordinal on each node it changed, from the counter the node's text edits
- * take too), the one history of a node `undo`, `redo` and `revert` choose from, and the Works
+ * take too), the one history of a node `undo` and `revert` choose from, and the Works
  * whose drafts outlive a delete.
  */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
@@ -22,7 +22,7 @@ import { boundCommandId } from "./drizzle-document-edits.js";
 export function createDrizzleTreeHistory(
   db: Database,
   journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
-  /** The text engine's own stack of a document for a chat: ordinals of what Undo and Redo would take. */
+  /** The text engine's own stack of a document for a chat: ordinals of what Undo would take. */
   textStack: (
     threadId: string,
     documentId: string,
@@ -137,24 +137,11 @@ export function createDrizzleTreeHistory(
       return (await turnReceipts(threadId, turnId)).byCard.length > 0;
     },
 
-    async turnSteps(threadId, turnId, direction) {
-      const { mine, undoneBy, byCard: undos } = await turnReceipts(threadId, turnId);
+    async turnSteps(threadId, turnId) {
+      const { mine, undoneBy } = await turnReceipts(threadId, turnId);
       if (mine.length === 0) return [];
       const reversedIds = new Set(undoneBy.flatMap((row) => (row.reverses ? [row.reverses] : [])));
-      let chosen: (typeof mine)[number][];
-      if (direction === "undo") {
-        chosen = mine.filter((row) => row.kind !== "undo" && !reversedIds.has(row.id));
-      } else {
-        const redone = new Set(
-          (await reversing(undos.map((row) => row.id))).flatMap((row) =>
-            row.reverses ? [row.reverses] : [],
-          ),
-        );
-        const order = new Map(mine.map((row) => [row.id, row.seq]));
-        chosen = undos
-          .filter((row) => !redone.has(row.id))
-          .sort((a, b) => (order.get(a.reverses ?? "") ?? 0) - (order.get(b.reverses ?? "") ?? 0));
-      }
+      const chosen = mine.filter((row) => row.kind !== "undo" && !reversedIds.has(row.id));
       if (chosen.length === 0) return [];
       const touched = await tx()
         .select({
@@ -203,7 +190,7 @@ export function createDrizzleTreeHistory(
       const ids = mine.map((row) => row.receiptId);
       const stack = isDocument && ids.length > 0 ? await textStack(threadId, nodeId) : { undo: [] };
       const text = { ...stack, commands: await textCommands(threadId, nodeId, stack.undo) };
-      if (ids.length === 0) return { undo: [], redo: [], all: [], text };
+      if (ids.length === 0) return { undo: [], all: [], text };
       const rows = await tx()
         .select()
         .from(treeEditReceipts)
@@ -237,7 +224,6 @@ export function createDrizzleTreeHistory(
       });
       return {
         undo: all.filter((r) => r.kind !== "undo" && !reversed.has(r.id)),
-        redo: all.filter((r) => r.kind === "undo" && !reversed.has(r.id)),
         all,
         text,
       } satisfies NodeHistory;

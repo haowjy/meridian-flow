@@ -84,10 +84,7 @@ export function createDrizzleFileFacts(
     } else {
       const found = (
         await loadDocuments(db, [target.documentId], view, {
-          includeTreeDeletion: !(
-            target.kind === "restore" ||
-            (target.kind === "draft" && target.restore)
-          ),
+          includeTreeDeletion: target.kind !== "restore",
         })
       ).get(target.documentId);
       base = found?.base ?? null;

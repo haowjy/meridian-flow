@@ -133,7 +133,7 @@ export type FileOwnerRef =
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }
-  | { kind: "draft"; documentId: DocumentId; owner: DraftOwner; restore?: boolean }
+  | { kind: "draft"; documentId: DocumentId; owner: DraftOwner }
   | { kind: "restore"; documentId: DocumentId }
   | { kind: "container"; scheme: ContextUriScheme; owner: FileOwnerRef };
 

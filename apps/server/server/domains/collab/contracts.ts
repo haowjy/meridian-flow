@@ -251,7 +251,6 @@ export type NodeHistory = {
   /** Receipts that take a step back (a write or a redo) and were not themselves reversed, newest first. */
   undo: TreeReceipt[];
   /** Receipts that took a step back (an undo) and were not redone, newest first. */
-  redo: TreeReceipt[];
   /** Every receipt of the node by its handle on that node. */
   all: TreeReceipt[];
   /** The ordinals of the text edits Undo would take, newest first. */
@@ -276,7 +275,7 @@ export type AgentTreeHistory = {
    * with the nodes it changed. The same receipts, reversed by the same `reverses` links, as
    * the model's `undo` chooses from.
    */
-  turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
+  turnSteps(threadId: ThreadId, turnId: TurnId): Promise<TreeReceipt[]>;
   /** Whether the reply's card Undo took back any of its tree changes: true for good once it did. */
   undoneByCard(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   /** The chat's receipts for the path its model wrote, newest first: how an undo finds a deleted node. */
