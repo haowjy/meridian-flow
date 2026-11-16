@@ -7,9 +7,10 @@
  * A copy is deleted only on a fact that is final (`list-removal-observer`: the node's purge, its
  * Work or chat purged, the account removed from the project) or when the account signs out here.
  * A session closing, a draft's Discard or an access the account lost for now never deletes one: a
- * closed draft's copy is handed back as a notice (`DocumentSessionRegistry.handBackClosedDraftCopies`)
- * and kept, because Undo Discard reopens the same draft and replays the copy into it. A copy with
- * no mark is not offered there, since it proves nothing undelivered.
+ * closed draft's copy is handed back as a notice (`DocumentSessionRegistry.sweepDraftCopies`)
+ * and kept, because Undo Discard reopens the same draft and replays the copy into it; an open
+ * draft's copy is delivered to the draft by opening its room. A copy with no mark is not swept,
+ * since it proves nothing undelivered.
  *
  * One Web Lock per database keeps a tab from deleting a database another tab has open: a session
  * holds it shared while it lives, a deletion takes it exclusive. A deletion that finds a hold
@@ -354,13 +355,26 @@ export class LocalDocumentCopies {
     this.pointers.setItem(`${SWEPT_PREFIX}${name}`, "1");
   }
 
-  /** The names of this account's draft copies (every incarnation) the start sweep has not handled, with the draft room each belongs to. */
-  async unsweptDraftCopies(): Promise<{ name: string; roomKey: string }[]> {
+  /** Whether another tab has the database `name` open: its session holds the lock shared while it lives. */
+  async heldByAnotherTab(name: string): Promise<boolean> {
+    if (!this.locks) return false;
+    return this.locks.request(
+      this.lockName(name),
+      { mode: "exclusive", ifAvailable: true },
+      (lock) => lock === null,
+    );
+  }
+
+  /** The names of this account's draft copies (every incarnation) the start sweep has not handled, with the draft room and document each belongs to. */
+  async unsweptDraftCopies(): Promise<{ name: string; roomKey: string; documentId: DocumentId }[]> {
     const head = `${DRAFT_PREFIX}${encodeURIComponent(this.accountId)}/`;
     return (await this.names()).flatMap((name) => {
       if (!name.startsWith(head) || this.pointers.getItem(`${SWEPT_PREFIX}${name}`)) return [];
       const [, , roomKey] = parseName(name).key.slice(DRAFT_PREFIX.length).split("/");
-      return roomKey ? [{ name, roomKey: decodeURIComponent(roomKey) }] : [];
+      const documentId = documentOf(name, this.accountId);
+      return roomKey && documentId
+        ? [{ name, roomKey: decodeURIComponent(roomKey), documentId }]
+        : [];
     });
   }
 
