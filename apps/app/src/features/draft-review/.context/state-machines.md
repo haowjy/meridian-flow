@@ -41,12 +41,49 @@ stateDiagram-v2
   reversed are gone.
 - **An Undo waits for the Apply it takes back** and is sent when either half of that Apply
   landed; when neither did, the Undo ends `cancelled` without a request.
+- **An Undo's answer is acted on when it arrives** (`heard`): the notice, the history and a held
+  tree fact's hand-over don't wait for its rows to leave the room. One whose draft half waits for
+  its closed draft (`draftHalfWaits`) settles at once, since its rows never leave. A Redo pressed
+  before the answer narrows to what the Undo took back, and is cancelled when it took nothing.
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
   queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.
 - **A member of an Apply of several is `sent` by its group** (`group-apply.ts`): its send waits
   until every member is its own queue's head, then the group posts the one command, and each
   member's queue settles from its own entry in the same answer.
+
+The pattern:
+[a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
+
+## An Apply's Undo
+
+One Apply as the one object every Undo of it presses (`AppliedCommand` in `apply-history.ts`): the
+sidebar's step, an applied row's or a chat card's Undo, and Ctrl+Z in each editor showing one of
+its documents, whose history entries read this state and keep none.
+
+```mermaid
+stateDiagram-v2
+  [*] --> in_force: the Apply landed something
+  in_force --> asking: a press (any surface)
+  asking --> in_force: no answer reached the server
+  asking --> held: nothing taken back, something held for a closed owner
+  asking --> taken: something taken back, nothing held
+  asking --> held: something taken back, something held (a band hands the held tree fact to the sidebar and is taken)
+  asking --> ended: nothing was left (already taken back, or only left out)
+  held --> asking: a press once an owner it waits for reopened
+  taken --> in_force: Redo from the editor that pressed (a new Apply command)
+  taken --> ended: that editor's Redo is cleared, or the Redo's Apply didn't land
+  in_force --> ended: a watch saw it taken back elsewhere, or its draft ended (a band's)
+  ended --> [*]
+```
+
+- **`held` is in force.** The step keeps its place on the sidebar's stack and in every history; a
+  press passes over it while every owner it waits for is closed (`waitsForClosed`), and the
+  histories read Undo again when the tab's view of those owners changes (`useClosedOwners`).
+- **A late answer names its own press.** An editor's entry goes back to Undo on a held or failed
+  answer only if it is still the Redo entry that press made (`DocumentHistory`'s `presses`).
+- **`taken` keeps one Redo**: in the editor that pressed. A press from the sidebar, a row or a card
+  leaves no Redo anywhere.
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
