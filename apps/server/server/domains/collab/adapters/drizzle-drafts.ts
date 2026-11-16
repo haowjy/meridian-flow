@@ -40,6 +40,7 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
+  sqlState,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import {
@@ -760,17 +761,6 @@ class NoPrimaryWorkError extends Error {
 
 function isRewriteOutcome(outcome: DraftWriteRollback["outcome"]): outcome is RewriteOutcome {
   return !["contained", "prefixMissing", "refused"].includes(outcome.status);
-}
-
-/** The PostgreSQL SQLSTATE of `cause` or of an error it wraps (Drizzle wraps in `cause`). */
-function sqlState(cause: unknown): string | null {
-  let current: unknown = cause;
-  while (current) {
-    const code = (current as { code?: unknown }).code;
-    if (typeof code === "string") return code;
-    current = (current as { cause?: unknown }).cause;
-  }
-  return null;
 }
 
 /** Whether a chat's row in this append is its first in the draft: the draft's chats changed. */

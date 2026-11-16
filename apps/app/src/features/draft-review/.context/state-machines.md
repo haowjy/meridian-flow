@@ -13,6 +13,7 @@ stateDiagram-v2
   queued --> cancelled: the click is taken back before it is sent
   queued --> sent: it is the head, and nothing else is in flight
   sent --> settled: applied, or a final refusal
+  sent --> sent: a timeout, or the server says the first request is still running
   sent --> retrying: no usable answer
   retrying --> sent: after 1, 2, then 4 seconds, with the same body
   retrying --> stalled: three retries used
@@ -24,6 +25,10 @@ stateDiagram-v2
 
 - **A click can be taken back only before it is sent.** Once `sent`, the server may have it,
   and the same command id is resent until the server answers.
+- **A timeout is not a failure.** The request is sent again under the same id at once, and
+  again for as long as the server answers `running` (the first request still holds the id);
+  the head stays `sent`, shown as Applying. Only a resend that times out too, or any other
+  lost answer, moves to `retrying`.
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
   the head where it is. A stalled head holds every later command behind it, because sending
   them around it would apply changes out of order.

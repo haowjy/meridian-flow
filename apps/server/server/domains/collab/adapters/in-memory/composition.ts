@@ -347,6 +347,9 @@ function createInMemoryBranchStub(): CollabBranches {
       async lookupCommand() {
         return { kind: "none" };
       },
+      async awaitCommand() {
+        return { kind: "none" };
+      },
       discardItem: (input) => gone(input.item),
       discardBranch: gone,
     },

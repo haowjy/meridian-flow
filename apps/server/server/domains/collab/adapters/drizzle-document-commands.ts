@@ -3,7 +3,11 @@
 import type { StoredDocumentCommandResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
-import { lookupCommand, runCommand } from "../../../shared/commands/drizzle-commands.js";
+import {
+  awaitCommand,
+  lookupCommand,
+  runCommand,
+} from "../../../shared/commands/drizzle-commands.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { type DocumentCommands, documentOutcomeOf } from "../domain/document-commands.js";
 import { bindEditsToCommand } from "./drizzle-document-edits.js";
@@ -13,6 +17,7 @@ export function createDrizzleDocumentCommands(db: Database): DocumentCommands {
     async lookup(key) {
       return lookupCommand(currentDrizzleDb(db), key);
     },
+    await: (envelope) => awaitCommand(db, envelope),
     run: (envelope, effect, refusal) => runDocumentCommand(db, envelope, effect, refusal),
   };
 }

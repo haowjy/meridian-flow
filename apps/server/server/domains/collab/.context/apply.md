@@ -58,6 +58,14 @@ account that sent it; `POST /api/commands/:id/resolve` (`lib/command-route.ts`) 
 answers the stored outcome, or stores `never` where there is no row (a late request under the id then
 answers `command_conflict` on an old-shape route).
 
+A resend of an Apply or Un-Apply that arrives while the first request is still committing (an
+Apply all of a few hundred documents outlasts the client's 10 s timeout) waits on that request's
+claim before resolving or compiling anything (`awaitCommand` in `shared/commands/drizzle-commands.ts`):
+an uncommitted claim can't be read, so an insert on its key waits on it and is rolled back. It
+waits 5 s, under the client's timeout, and answers the stored outcome, or `running` while the
+first still holds the claim; the client sends again on `running`. Without it each resend compiled
+every document again before finding the claim taken.
+
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta
 chain before selecting effects that remain active, so an earlier partial reversal

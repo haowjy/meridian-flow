@@ -72,6 +72,12 @@ export type ReturnedWhy =
 /** What a stored command result may carry beyond its own fields. */
 export type StoredResult = { settled?: Settlement[] };
 
+/**
+ * A resend's answer while the first request under its id is still running: nothing is known yet,
+ * and sending it again waits on that request for its answer.
+ */
+export type CommandRunning = { status: "running"; commandId: string };
+
 /** `GET /api/commands/:id`: the stored outcome, or `none` (also for another account's id). */
 export type CommandLookupResponse =
   | { status: "none" }

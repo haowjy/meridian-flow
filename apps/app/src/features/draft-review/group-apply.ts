@@ -5,9 +5,11 @@
  * document's earlier clicks, so its text cut is cut against what they left; the command goes
  * once every member has reached its queue's head and handed over its click. A member that ends
  * without sending (its draft closed, its room never read) is left out. Every member's queue gets
- * the one answer.
+ * the one answer, and the command's answer is the first any of them settles on: the post's, a
+ * Retry's, or a lookup's after its draft closed.
  */
 import type { ApplyClick, ApplyClickAnswer, ApplyItemsClick } from "@meridian/contracts/branches";
+import type { ApplyClickOutcome } from "./apply-click-queue";
 
 type Item = ApplyItemsClick["items"][number];
 
@@ -52,6 +54,7 @@ export class GroupApply {
   ): {
     send(body: ApplyClick): Promise<ApplyClickAnswer>;
     drop(): void;
+    answered(answer: ApplyClickOutcome): void;
   } {
     const index = this.members++;
     return {
@@ -66,6 +69,9 @@ export class GroupApply {
         this.dropped.add(index);
         this.check();
       },
+      answered: (answer) => {
+        if (answer.status !== "landed" && answer.status !== "cancelled") this.heard(answer);
+      },
     };
   }
 
@@ -79,6 +85,11 @@ export class GroupApply {
     if (!this.sealedAll || this.handed.size + this.dropped.size < this.members) return;
     this.ready();
     if (this.handed.size === 0) this.settle(null);
+  }
+
+  private heard(answer: ApplyClickAnswer) {
+    this.answered ??= answer;
+    this.settle(this.answered);
   }
 
   /** One request at a time; a member's queue retries a failed delivery, with the same id. */
@@ -101,8 +112,7 @@ export class GroupApply {
       )
       .then(
         (answer) => {
-          this.answered = answer;
-          this.settle(answer);
+          this.heard(answer);
           this.request = null;
           return answer;
         },

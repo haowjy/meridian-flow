@@ -133,7 +133,8 @@ under `folderKey(branchId, folderId)`, so a folder-only command has the same pen
 and unknown-delivery states, shown on the folder row with Retry, as a document's. Its cut is the
 list response's `folders[].revision`, read once when the command first goes, so a resend
 carries the same body; folders lead the items. Every member's queue settles from the one answer,
-`conflict` included; groups are enqueued in item order in one turn, so two groups never wait on
+`conflict` included, and the group's answer, which makes the Undo step and the notice, is the
+first any member settles on: the post's, a Retry's, or a closed queue's lookup; groups are enqueued in item order in one turn, so two groups never wait on
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
 
@@ -153,7 +154,11 @@ The account owner keeps the answer's `restored` and `renamed` facts, so an edito
 keeps its result after navigation.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
-Retry. Transient disconnects keep acknowledgement barriers pending. Each click has two
+Retry. A timeout is not one of those failures: the Apply and Un-Apply requests
+(`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
+server answers `running`, so a large Apply stays `Applying` until its answer instead of
+stalling. Changes shows one "Applying" line while rows are hidden by an Apply in flight, and
+hides a folder whose own cut is in flight once nothing under it is listed. Transient disconnects keep acknowledgement barriers pending. Each click has two
 independent duties:
 
 - *Release* (the head leaves the FIFO and its optimistic contribution ends) happens once:

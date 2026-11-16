@@ -29,6 +29,7 @@ import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
+import { ReviewStatusContent } from "@/features/draft-review/ReviewCompletion";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   type ChangeGroup,
@@ -162,10 +163,11 @@ export function ChangesSource({
   const touch = useCoarsePointer();
   const drafts = useOwnerDrafts(projectId, ownerKey);
   // A command in flight hides its row, until its delivery needs the writer's Retry.
-  const listedFiles = (drafts.files ?? []).filter((file) => {
-    const state = controller.owner.state(file.draft.itemKey);
-    return !state.hidden || state.stalled;
-  });
+  const inFlight = (itemKey: string) => {
+    const state = controller.owner.state(itemKey);
+    return state.hidden && !state.stalled;
+  };
+  const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.draft.itemKey));
   const shell = useShellTreeVersion();
   const tree = shell?.ownerKey === ownerKey ? shell.tree : null;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
@@ -175,9 +177,29 @@ export function ChangesSource({
       if (!next.delete(id)) next.add(id);
       return next;
     });
-  const groups = tree
-    ? groupByChangedFolder(listedFiles, tree)
-    : [{ folder: null, files: listedFiles, inner: [] }];
+  const folderInFlight = (id: string) =>
+    drafts.branchId !== null && inFlight(folderKey(drafts.branchId, id));
+  // A folder whose own cut is in flight hides as a document does, once nothing under it shows.
+  const shownGroups = (list: ChangeGroup<ReviewFileTarget>[]): ChangeGroup<ReviewFileTarget>[] =>
+    list.flatMap((group) => {
+      const inner = shownGroups(group.inner);
+      return group.folder && folderInFlight(group.folder.id) && !group.files.length && !inner.length
+        ? []
+        : [{ ...group, inner }];
+    });
+  const grouped = tree ? groupByChangedFolder(listedFiles, tree) : null;
+  const groups = grouped ? shownGroups(grouped) : [{ folder: null, files: listedFiles, inner: [] }];
+  // An Apply the server is still running (a large Apply all) says so where its rows were.
+  const applyingKey = (itemKey: string) =>
+    inFlight(itemKey) && controller.owner.state(itemKey).applying;
+  const applying =
+    (drafts.files ?? []).some((file) => applyingKey(file.draft.itemKey)) ||
+    (drafts.branchId !== null &&
+      (grouped ?? []).some((group) =>
+        (group.folder?.folders ?? []).some((id) =>
+          applyingKey(folderKey(drafts.branchId as string, id)),
+        ),
+      ));
   // Grouped, the list's order is the groups' order: every index below reads this one.
   const files = groups.flatMap(groupFiles);
   // Apply needs what it would apply: a new file, a move or delete, or a draft.
@@ -425,6 +447,15 @@ export function ChangesSource({
             </ListLine>
           </div>
         ) : null}
+        {applying ? (
+          <div className="px-2">
+            <ListLine iconSlot status>
+              <span className="inline-flex items-center gap-1.5">
+                <ReviewStatusContent completing="apply" />
+              </span>
+            </ListLine>
+          </div>
+        ) : null}
         {hasFiles || goneRows ? (
           <ul className="flex flex-col px-2">
             {shown.map(({ row: item, gone }) => {
@@ -521,7 +552,7 @@ export function ChangesSource({
             onRetry={drafts.refetch}
             actionLabel={t`Retry changes`}
           />
-        ) : (
+        ) : applying ? null : (
           <div className="px-2">
             {drafts.status === "loading" ? (
               <ListLine iconSlot status>

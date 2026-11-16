@@ -7,6 +7,7 @@ import type {
   ApplyClickAnswer,
   UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
+import type { CommandRunning } from "@meridian/contracts/commands";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { projects, works } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -274,7 +275,7 @@ async function fixture(
         ),
       };
     },
-    send(click: FrozenClick, changedDigest?: string): Promise<ApplyClickAnswer> {
+    send(click: FrozenClick, changedDigest?: string): Promise<ApplyClickAnswer | CommandRunning> {
       return handleApplyClickRequest(routeServices, {
         userId: h.ids.user,
         projectId: h.ids.project,
@@ -283,7 +284,10 @@ async function fixture(
         request: changedDigest ? { ...click.request, groupIds: ["changed-digest"] } : click.request,
       });
     },
-    unapply(click: FrozenClick, commandId = randomUUID()): Promise<UnapplyClickAnswer> {
+    unapply(
+      click: FrozenClick,
+      commandId = randomUUID(),
+    ): Promise<UnapplyClickAnswer | CommandRunning> {
       return handleUnapplyClickRequest(routeServices, {
         userId: h.ids.user,
         projectId: h.ids.project,

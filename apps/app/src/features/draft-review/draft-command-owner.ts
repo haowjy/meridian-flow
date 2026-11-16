@@ -139,8 +139,15 @@ type Entry = {
   lease: DraftRoomRead | null;
   unwatchLease(): void;
 };
-/** A click that is one member of a several-item Apply: it takes the group's id and send. */
-type Joint = { commandId: string; send(body: ApplyClick): Promise<ApplyClickAnswer> };
+/**
+ * A click that is one member of a several-item Apply: it takes the group's id and send, and
+ * hands back whatever answer its queue settles on, however it came (`GroupApply.answered`).
+ */
+type Joint = {
+  commandId: string;
+  send(body: ApplyClick): Promise<ApplyClickAnswer>;
+  answered(answer: ApplyClickOutcome): void;
+};
 export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
 /**
  * A refusal the screen already explains reverts silently (offer only what
@@ -780,6 +787,7 @@ export class DraftCommandOwner {
     const outcome = this.item(ref)
       .queue.enqueue(frozen)
       .then((answer) => {
+        joint?.answered(answer);
         this.setState(ref.itemKey, { hidden: false }, id);
         return this.settled(ref, id, answer, restore);
       });
@@ -871,9 +879,10 @@ export class DraftCommandOwner {
       this.bandApplies.add(band);
     }
     binding.runtime.projectNow();
-    const outcome = scheduled.outcome.then((answer) =>
-      this.settled(ref, entry.draftId, answer, restore),
-    );
+    const outcome = scheduled.outcome.then((answer) => {
+      joint?.answered(answer);
+      return this.settled(ref, entry.draftId, answer, restore);
+    });
     return { sent: true, outcome };
   }
 
@@ -920,10 +929,7 @@ export class DraftCommandOwner {
     const outcomes = input.members.map(({ ref, target, restore, tree }) => {
       const member = group.member(ref.documentId);
       return joined(
-        this.apply(ref, target, restore, tree, null, {
-          commandId: group.commandId,
-          send: member.send,
-        }),
+        this.apply(ref, target, restore, tree, null, { commandId: group.commandId, ...member }),
         member,
       );
     });
@@ -943,7 +949,7 @@ export class DraftCommandOwner {
             ? null
             : this.captureOnReceipt(ref, { tree: { revision: null } }, false, {
                 commandId: group.commandId,
-                send: member.send,
+                ...member,
               }),
           member,
         ),
