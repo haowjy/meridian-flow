@@ -20,12 +20,31 @@ the ratio. The frame is itself a size container, so the cap is a registered
 length that resolves to pixels at the prose root; `cqh` read inside a frame
 would answer to the frame.
 
-A pasted web picture becomes a link first; import replaces that link only after
+A pasted `data:` picture becomes a link first; import replaces that link only after
 the bytes belong to the project. Refusal leaves the link and creates no hidden
-asset. Raw `asset:` sources and arbitrary browser URLs don't enter the document.
+asset. A pasted web picture, from any source and as HTML or Markdown, lands as a remote
+picture (below) and is never imported. Raw `asset:` sources and arbitrary browser URLs
+don't enter the document.
 
-All source allow-listing and signed URL resolution sits in `browserPictureSource`
+All source allow-listing and signed URL resolution sits in `inlinePictureSource`
 and the asset render state.
+
+**Remote pictures never load on their own.** A web address (`http(s)://`, `//`) that an
+image, figure or Markdown image holds renders `RemoteImagePlaceholder`: the address and a
+Load image button. The click asks `/api/image-proxy` (server fetch through the
+public-address dispatcher; refusals carry a typed reason the placeholder words) and then
+draws from the proxy URL, for the rest of the tab (`remote-image.ts`, nothing stored). The
+page's `img-src` policy (`apps/app/src/server/content-security-policy.ts`) allows only
+Flow's origin, the object store's signed-URL origin, `data:` and `blob:`, so an `<img>` that
+bypasses the placeholder is refused by the browser. A new `<img>` fed from a document's
+source goes through the placeholder or the asset render state, never a bare address. The
+clipboard and drag HTML of a remote picture carries its address in `data-remote-src`, never in
+`src`, because a serialized `<img src>` would be fetched (`pictureSourceAttributes` in
+`meridian-extensions.ts`). The parse rule and the paste sanitizer read it back. Any other
+pasted web picture (a foreign page's `<img src>`, the chat Copy button's HTML, Markdown
+`![alt](address)`) also lands as the same remote picture: `linkExternalPastedImages` keeps
+every web-address image and only `data:` images are imported. The address is therefore never
+requested, by the browser or the proxy, until the writer clicks Load image.
 
 ## Size, cap and states
 
