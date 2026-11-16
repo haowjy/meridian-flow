@@ -21,6 +21,7 @@ import {
   isHttpInterruptEnvelope,
   throwHttpInterrupt,
 } from "../shared/interrupt-boundary.js";
+import { throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 
 export { containerTarget, documentTarget } from "./file-targets.js";
 
@@ -28,8 +29,19 @@ function personPrincipal(userId: string): Principal {
   return { accountId: userId as UserId };
 }
 
-/** 404 hides existence; an archived Work's files are 403 `work_archived`. */
-export function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never {
+/**
+ * 404 hides existence; an archived Work's files are 403 `work_archived`, and a deleted Work's,
+ * which still read, `work_deleted`.
+ */
+export function throwFileAccessDenied(
+  denial: Pick<FileAccessDenied, "reason" | "level" | "facts">,
+): never {
+  // Only a reader is told: to anyone else the Work stays hidden.
+  if (
+    denial.level === "read" &&
+    (denial.facts?.ownerWork?.deleted || denial.facts?.branchOwner?.deleted)
+  )
+    throwContextWorkUnavailableHttpError("work_deleted");
   switch (denial.reason) {
     case "not_found":
       throw createError({ statusCode: 404, message: "Document not found" });

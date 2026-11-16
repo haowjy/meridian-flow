@@ -47,6 +47,7 @@ import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { subscribePlacedReveal } from "../../context/tree-reveal";
 import { useScopeScratchSource } from "../../context/use-scratch-trees";
 import { useWorkSourceWritable } from "../../context/use-work-source-writable";
 import { useAiDraftLauncher } from "../../review-launch";
@@ -389,6 +390,16 @@ export function SourcesBody({
       if (shownRef.current !== "user") follow("agents");
     } else follow(source);
   }, [activeScheme, placed, inAgents, follow]);
+  // Rows an action placed show in the source that holds them.
+  const placedIn = useRef<(folderId: string) => void>(() => undefined);
+  placedIn.current = (folderId) => {
+    const key = TREE_SCHEMES.find((scheme) => {
+      const tree = catalogs[scheme].tree;
+      return tree && (tree.root.entryId === folderId || tree.entry(folderId) !== null);
+    });
+    if (key) follow(key);
+  };
+  useEffect(() => subscribePlacedReveal((folderId) => placedIn.current(folderId)), []);
   const undo = useSidebarUndo(projectId, version);
   const { openReviewFile } = useAiDraftLauncher();
   // On Draft a document the Work drafts opens on its draft, as its Changes row does.

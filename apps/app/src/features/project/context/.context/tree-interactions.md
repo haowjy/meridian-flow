@@ -289,16 +289,20 @@ the name in the replay, so a concurrent create can still move it. The hover show
 would arrive renamed carries a warning, drawn as a second line under the hint
 ("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed"). Letting
 go accepts it; Escape or another target declines it. A drop moves every carried row through
-`moveRows` (`entry-drag/execute-move.ts`), reselects them and reveals the destination (the target's
-own `reveal`, the same one the spring calls). The tree is the whole report of a move that works.
+`moveRows` (`entry-drag/execute-move.ts`) and shows where they landed (`revealPlaced`, below). The
+tree is the whole report of a move that works.
 A row no list will take (read-only, not open) toasts "Couldn't move chapter-3 to Act 2."
 ("Couldn't move 3 items to Act 2." for several) with Retry for the rows it refused. The server
 refuses no move; one into a Work that closed meanwhile bounces on its row ("Not moved").
 
-Move… and Copy to… report the same way, whether or not a list is mounted. A desktop list
-selects the moved row; the phone browser needs no selection or drop scope. Move… does not reveal a
-collapsed destination (expansion belongs to each section); moving the open
-document reveals it through the active-document reveal.
+Move…, Copy to… and a drop report the same way, through `runMove` and `runCopy`
+(`entry-drag/entry-failure.ts`), which call `revealPlaced` (`tree-reveal.ts`) at once: the sidebar
+shows the source whose tree holds the destination (a tab, or the foot's Scratch), that tree opens
+the destination folder and the folders above it, and the placed rows are selected and take focus
+as they arrive. A Copy knows its copies' ids before the server answers (the browser mints them), so
+it shows them the same way without waiting; a refused Copy leaves the selection and toasts with
+Retry. Expansion stays each tree's: the request goes by folder id, and a tree that mounts just
+after it (the tab it switched to) still takes it.
 
 Placement is optimistic, exactly as for Move…: the record shows at once, and the server never
 refuses it (a change to a Work that closed meanwhile bounces on its row). Verdicts likewise resolve each

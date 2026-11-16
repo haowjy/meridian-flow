@@ -21,17 +21,16 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, type RefObject, useMemo, useRef, useState } from "react";
-import { useTreeActions } from "@/client/query/useTreeActions";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
 import { useShellTreeVersion } from "../tree-version";
 import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
-import { copyRows } from "./entry-drag/execute-copy";
-import type { ReadyCopy } from "./entry-drag/move-plan";
-import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
-import { revealFolder } from "./tree-reveal";
+import { useEntryActions } from "./entry-drag/entry-actions";
+import { runCopy, runMove } from "./entry-drag/entry-failure";
+import { namedRowOf, type ReadyCopy } from "./entry-drag/move-plan";
+import { useOptionalEntrySelection } from "./entry-drag/selection";
 import { useProjectMenuSource } from "./use-project-menu-source";
 import { useScopeScratchSource } from "./use-scratch-trees";
 
@@ -77,13 +76,11 @@ function OpenPicker({
   rowRef,
 }: Omit<EntryDestinationPickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
   const shell = useShellTreeVersion();
-  const projectActions = useTreeActions({ kind: "project", projectId });
-  const accountActions = useTreeActions({ kind: "account" });
+  const actions = useEntryActions(projectId);
   const selection = useOptionalEntrySelection();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  // A moved selection keeps focus at its first row in its new place, not at the row it left.
-  const movedSeveral = useRef(false);
+  // Placed rows take focus where they land, not the row the picker opened from.
+  const placedRows = useRef(false);
   const scheme = from?.scheme;
   const owner = from?.owner;
   const own = useMemo(
@@ -198,50 +195,45 @@ function OpenPicker({
   function move(trail: readonly DrillNode[], index?: number) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination?.writable || pending || (index === undefined && refusalAt(destination)))
-      return;
-    setError(null);
-    const actions = destination.scheme === "user" ? accountActions : projectActions;
-    const moving = placed.filter(
-      ({ at: here }) => here && !(several && here.entry.parentId === destination.entryId),
-    );
-    actions.moveAll(
-      moving.map(({ row }) => ({
-        node: row.ref.id,
-        parentId: destination.entryId,
-        ...(index === undefined ? {} : { index }),
-      })),
-    );
-    selectRows(
-      selection,
-      moving.map(({ row }) => row.ref),
-    );
-    revealFolder(destination.entryId);
-    movedSeveral.current = several;
+    if (!destination?.writable || (index === undefined && refusalAt(destination))) return;
+    const area = {
+      scheme: destination.scheme,
+      owner: destination.owner,
+      tree: destination.tree,
+      writable: destination.writable,
+    };
+    const moves = placed.flatMap(({ row, at: here }) => {
+      if (!here) return [];
+      const from = here.entry.parentId ?? here.tree.root.entryId;
+      if (several && from === destination.entryId) return [];
+      return [
+        {
+          entry: row.ref,
+          name: row.name,
+          from,
+          to: { parentId: destination.entryId, ...(index === undefined ? {} : { index }) },
+          area,
+          named: namedRowOf(here.entry),
+        },
+      ];
+    });
+    runMove({ actions, projectId }, moves, selection);
+    placedRows.current = true;
     onOpenChange(false);
     // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
     if (several) selection?.focus();
   }
 
-  /** Copies the row into the folder at the end of `trail`. */
-  async function copy(trail: readonly DrillNode[]) {
+  /** Copies the rows into the folder at the end of `trail`. */
+  function copy(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!folder || !destination?.writable || pending || refusalAt(destination)) return;
-    setPending(true);
-    setError(null);
-    try {
-      const plan = copyPlan(destination, folder.name);
-      if (!plan) throw new Error(unavailable);
-      const rows = await copyRows(projectId, plan);
-      selectRows(selection, rows);
-      revealFolder(destination.entryId);
-      onOpenChange(false);
-    } catch {
-      setError(unavailable);
-    } finally {
-      setPending(false);
-    }
+    if (!folder || !destination?.writable || refusalAt(destination)) return;
+    const plan = copyPlan(destination, folder.name);
+    if (!plan) return setError(unavailable);
+    void runCopy({ actions, projectId }, plan, selection);
+    placedRows.current = true;
+    onOpenChange(false);
   }
 
   const copyPlan = (
@@ -315,7 +307,7 @@ function OpenPicker({
       }}
       onCloseAutoFocus={(event) => {
         event.preventDefault();
-        if (movedSeveral.current && selection) return selection.focus();
+        if (placedRows.current && selection) return selection.focus();
         rowRef.current?.querySelector<HTMLElement>("[data-list-item]")?.focus();
       }}
       status={error}
@@ -337,10 +329,7 @@ function OpenPicker({
               key: "copy",
               icon: Copy,
               label: t`Copy here`,
-              disabled: pending,
-              onSelect: () => {
-                void copy(trail);
-              },
+              onSelect: () => copy(trail),
             },
           ];
         }
@@ -352,11 +341,9 @@ function OpenPicker({
               key: "position",
               icon: ArrowDownUp,
               label: t`Change position`,
-              disabled: pending,
               onSelect: () => undefined,
               choices: positions.map((choice) => ({
                 ...choice,
-                disabled: pending,
                 onSelect: () => {
                   move(trail, choice.index);
                 },
@@ -368,7 +355,7 @@ function OpenPicker({
             key: "move",
             icon: FolderInput,
             label: already ? t`Already in ${folder.name}` : t`Move here`,
-            disabled: already || pending,
+            disabled: already,
             onSelect: () => move(trail),
           },
         ];

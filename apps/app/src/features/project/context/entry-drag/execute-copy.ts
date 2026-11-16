@@ -40,22 +40,25 @@ function ownerFields(area: Pick<MoveArea, "owner" | "scheme">) {
 }
 
 /**
- * Sends one Copy of the plan's rows. Returns the copies' identities; a refusal throws the route's
- * error.
+ * Sends one Copy of the plan's rows. The copies' identities are the browser's, so they come back
+ * at once, before the server answers; `answered` rejects with the route's error on a refusal.
  */
-export async function copyRows(projectId: string, copy: ReadyCopy): Promise<readonly EntryRef[]> {
-  const copyIds: string[] = copy.copies.map(() => crypto.randomUUID());
+export function copyRows(
+  projectId: string,
+  copy: ReadyCopy,
+): { copies: readonly EntryRef[]; answered: Promise<void> } {
+  const minted = copy.copies.map((row) => ({ row, copyId: crypto.randomUUID() }));
   const destination = destinationOf(copy);
   const folder = copy.into === copy.area.tree.root.entryId ? null : copy.area.tree.entry(copy.into);
   const body: CopyContextEntriesRequest = {
     operationId: crypto.randomUUID(),
-    sources: copy.copies.map((row, index) => ({
+    sources: minted.map(({ row, copyId }) => ({
       scheme: row.place.scheme,
       path: withoutLeadingSlash(row.place.path),
       expected: { kind: row.entry.kind, nodeId: row.entry.id },
       ...ownerFields(row.place),
       view: row.view,
-      copyId: copyIds[index],
+      copyId,
     })),
     destinationScheme: copy.scheme,
     destinationFolderPath: folder ? withoutLeadingSlash(folder.path) : "",
@@ -67,8 +70,8 @@ export async function copyRows(projectId: string, copy: ReadyCopy): Promise<read
     ...(copy.area.view?.kind === "draft" ? { destinationView: copy.area.view } : {}),
     ...(copy.position ? { position: copy.position } : {}),
   };
-  const { entries } = await copyContextEntries(projectId, body);
-  return entries
-    .filter((entry) => copyIds.includes(entry.id))
-    .map((entry) => ({ kind: entry.kind, id: entry.id }));
+  return {
+    copies: minted.map(({ row, copyId }) => ({ kind: row.entry.kind, id: copyId })),
+    answered: copyContextEntries(projectId, body).then(() => undefined),
+  };
 }

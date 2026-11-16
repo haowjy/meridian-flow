@@ -15,12 +15,13 @@ import {
   type NoticeSurface,
 } from "@/features/draft-review/draft-notices";
 import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
+import { revealPlaced } from "../tree-reveal";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
 import { copyRows } from "./execute-copy";
 import { moveRows } from "./execute-move";
 import type { MoveRow, ReadyCopy } from "./move-plan";
-import { leaveSelections } from "./selection";
+import { type EntrySelection, leaveSelections } from "./selection";
 
 export type EntryContext = {
   projectId: string;
@@ -46,13 +47,18 @@ export type CopyFailure = {
 /** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
 export const entryToast = (projectId: string, failure = "") => `entry:${projectId}:${failure}`;
 
-/** Moves and deletes are appended to the copy of the list and cannot fail here; a Copy is a route. */
+/**
+ * Moves and deletes are appended to the copy of the list and cannot fail here; a Copy is a route.
+ * Either shows where its rows landed at once (`revealPlaced`), selected in `selection`.
+ */
 export function runMove(
   context: EntryContext,
   rows: readonly MoveRow[],
-  onMoved?: (moved: readonly EntryRef[]) => void,
+  selection: EntrySelection | null,
 ): void {
-  onMoved?.(moveRows(rows, context.actions));
+  const moved = moveRows(rows, context.actions);
+  const [first] = rows;
+  if (first) revealPlaced(first.to.parentId, moved, selection);
 }
 
 /** What the route said was wrong, when it said. */
@@ -71,7 +77,10 @@ function reasonOf(error: unknown): string | null {
       return t`The destination is no longer there.`;
     case "permission_denied":
       return t`You can't copy there.`;
-    case "context_unavailable":
+    case "work_archived":
+    case "work_deleted":
+      return t`The Work was closed.`;
+    case "work_missing":
       return t`That Work isn't available.`;
     default:
       return null;
@@ -102,29 +111,40 @@ function copyFailureTitle(
 }
 
 /** Toasts a refused Copy; Retry runs it again. */
-function showCopyFailure(context: EntryContext, failure: CopyFailure): void {
+function showCopyFailure(
+  context: EntryContext,
+  failure: CopyFailure,
+  selection: EntrySelection | null,
+): void {
   notifyFailure({
     key: failure.key,
     title: copyFailureTitle(failure.sources, failure.destination, failure.reason),
-    onRetry: () => void runCopy(context, failure.copy),
+    onRetry: () => void runCopy(context, failure.copy, selection),
   });
 }
 
 export async function runCopy(
   context: EntryContext,
   copy: ReadyCopy,
-  onCopied?: (copies: readonly EntryRef[]) => void,
+  selection: EntrySelection | null,
 ): Promise<void> {
+  const { copies, answered } = copyRows(context.projectId, copy);
+  revealPlaced(copy.into, copies, selection);
   try {
-    onCopied?.(await copyRows(context.projectId, copy));
+    await answered;
   } catch (error) {
-    showCopyFailure(context, {
-      key: entryToast(context.projectId, crypto.randomUUID()),
-      sources: copy.copies.map(({ name }) => name),
-      destination: copy.destinationName,
-      reason: reasonOf(error),
-      copy,
-    });
+    leaveSelections(copies);
+    showCopyFailure(
+      context,
+      {
+        key: entryToast(context.projectId, crypto.randomUUID()),
+        sources: copy.copies.map(({ name }) => name),
+        destination: copy.destinationName,
+        reason: reasonOf(error),
+        copy,
+      },
+      selection,
+    );
   }
 }
 

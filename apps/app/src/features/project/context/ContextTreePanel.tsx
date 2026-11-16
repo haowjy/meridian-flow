@@ -33,7 +33,7 @@ import { matchFileSuggestions, treeFileSuggestions } from "./file-suggestions/fi
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
-import { subscribeFolderReveal } from "./tree-reveal";
+import { subscribePlacedReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
 import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
@@ -155,7 +155,9 @@ export function useContextTree({
     [tree, revealPath, setExpandedEntryIds],
   );
 
-  useEffect(() => subscribeFolderReveal(openFolder), [openFolder]);
+  const openPlaced = useRef(openFolder);
+  openPlaced.current = openFolder;
+  useEffect(() => subscribePlacedReveal((folderId) => openPlaced.current(folderId)), []);
 
   // An import landing here opens its destination folder, once.
   const importSnapshot = useImportsSnapshot(imports?.coordinator ?? null);

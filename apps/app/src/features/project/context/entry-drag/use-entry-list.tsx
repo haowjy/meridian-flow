@@ -47,12 +47,7 @@ import {
   resolveDrop,
 } from "./move-plan";
 import { planRestore, restoreLabel } from "./restore-drop";
-import {
-  type EntrySelection,
-  EntrySelectionProvider,
-  selectRows,
-  useEntrySelection,
-} from "./selection";
+import { type EntrySelection, EntrySelectionProvider, useEntrySelection } from "./selection";
 
 type EntryListController = {
   selection: EntrySelection;
@@ -83,16 +78,12 @@ export function useEntryList({
 
   const runListMove = useCallback(
     (move: ReadyMove) =>
-      runMove({ actions, projectId, removal }, move.moves, (moved) =>
-        selectRows(latest.current.selection, moved),
-      ),
+      runMove({ actions, projectId, removal }, move.moves, latest.current.selection),
     [actions, projectId, removal],
   );
   const runListCopy = useCallback(
     (copy: ReadyCopy) =>
-      void runCopy({ actions, projectId, removal }, copy, (rows) =>
-        selectRows(latest.current.selection, rows),
-      ),
+      void runCopy({ actions, projectId, removal }, copy, latest.current.selection),
     [actions, projectId, removal],
   );
 

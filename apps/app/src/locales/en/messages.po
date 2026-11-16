@@ -7006,6 +7006,7 @@ msgstr "The uploaded file is no longer available."
 msgid "The Work did not change. Try again."
 msgstr "The Work did not change. Try again."
 
+#: src/features/project/context/entry-drag/entry-failure.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "The Work was closed."
 msgstr "The Work was closed."
