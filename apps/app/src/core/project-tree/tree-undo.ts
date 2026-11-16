@@ -2,9 +2,9 @@
  * Sidebar Undo: the writer's tree changes made in this browser, newest last, one stack per list
  * copy, read a source at a time. A step is the record ids one gesture appended and the view it
  * was made in, or an Apply, which the server takes back whole by its command id; nothing else is
- * stored. Whether a step can still be taken is read from the list at the press (`undoChange`: by
- * history), or asked of the server for an Apply, and a step that no longer fits is skipped for
- * the one before it. A notice's Undo (`undoStep`) takes back the same step a press would. There is
+ * stored. Whether a step can still be taken is read from the list at the press (`undoChange`:
+ * by the changes in force), or asked of the server for an Apply, and a step that no longer fits
+ * is skipped for the one before it. A notice's Undo (`undoStep`) takes back the same step a press would. There is
  * no Redo: an Undo's own records go on no stack.
  *
  * Each list also holds the notice its rows show (`treeNotice`): the writer's latest gesture with
