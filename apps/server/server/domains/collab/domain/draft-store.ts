@@ -10,7 +10,8 @@ import type {
   SemanticEditIRV1,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
-import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { ClosedDraftCause } from "@meridian/contracts/branches";
+import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
@@ -62,7 +63,7 @@ export type DraftSnapshot = {
   projectId: ProjectId;
   status: DraftStatus;
   /** Why a closed draft closed; null while active. A `document_removed` close outlives a restore. */
-  closedCause: "discarded" | "document_removed" | null;
+  closedCause: ClosedDraftCause | null;
   /** Bumped by every committed write to the draft; the fence of exact rewrites. */
   revision: number;
   /** The revision the checkpoint was written at. */
@@ -209,6 +210,11 @@ export type StaleEffectCursor = { draftId: string; updatedAt: string };
 export type DraftStore = {
   /** The row only; content comes through `readDraftAt`. */
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
+  /** Which of these draft ids are closed drafts in the user's projects, and why; any other id is left out. */
+  closedDrafts(
+    userId: UserId,
+    draftIds: readonly string[],
+  ): Promise<Record<string, ClosedDraftCause>>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
   /**
    * Which of these text ids a writer's journal row or a late-typing recovery row inserted

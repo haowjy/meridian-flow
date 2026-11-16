@@ -6,7 +6,10 @@
  *
  * A copy is deleted only on a fact that is final (`list-removal-observer`: the node's purge, its
  * Work or chat purged, the account removed from the project) or when the account signs out here.
- * A session closing, a draft's Discard or an access the account lost for now never deletes one.
+ * A session closing, a draft's Discard or an access the account lost for now never deletes one: a
+ * closed draft's copy is handed back as a notice (`DocumentSessionRegistry.handBackClosedDraftCopies`)
+ * and kept, because Undo Discard reopens the same draft and replays the copy into it. A copy with
+ * no mark is not offered there, since it proves nothing undelivered.
  *
  * One Web Lock per database keeps a tab from deleting a database another tab has open: a session
  * holds it shared while it lives, a deletion takes it exclusive. A deletion that finds a hold
@@ -69,6 +72,8 @@ export function draftRoomPersistenceKey(
 }
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";
+/** Set once the start sweep has handed a closed draft's copy back; a session opening the copy clears it. */
+const SWEPT_PREFIX = "meridian:copy-swept:";
 /** Opens the database `name` if it exists; null when it does not, and none is created. */
 function openExisting(idb: IDBFactory, name: string): Promise<IDBDatabase | null> {
   return new Promise((resolve, reject) => {
@@ -118,10 +123,11 @@ export type BeyondMark = { update: Uint8Array; lacking: Ranges };
 
 function markedBeyond(
   loaded: { update: Uint8Array; mark: Uint8Array | null } | null,
+  requireMark = false,
 ): BeyondMark | null {
-  if (!loaded) return null;
+  if (!loaded || (requireMark && !loaded.mark)) return null;
   // No mark proves nothing the server holds (a copy written before marks, or a first write lost):
-  // the whole copy is offered.
+  // the whole copy is offered, unless the caller needs a mark to claim that anything lacks.
   const lacking = beyondMark(loaded.update, loaded.mark ?? NO_MARK);
   return lacking.size > 0 ? { update: loaded.update, lacking } : null;
 }
@@ -253,8 +259,17 @@ export class LocalDocumentCopies {
     return () => this.observers.delete(observer);
   }
 
-  /** Shared hold while a session has the database `name` open; release it once the session is destroyed. */
+  /**
+   * Shared hold while a session has the database `name` open; release it once the session is
+   * destroyed. A session may write to the copy again (a restore reopened its draft), so it is no
+   * longer swept.
+   */
   async hold(name: string): Promise<CopyHold> {
+    this.pointers.removeItem(`${SWEPT_PREFIX}${name}`);
+    return this.acquire(name);
+  }
+
+  private async acquire(name: string): Promise<CopyHold> {
     const documentId = documentOf(name, this.accountId);
     if (documentId) {
       this.known = new Set([...(this.known ?? []), documentId]);
@@ -286,7 +301,7 @@ export class LocalDocumentCopies {
       return documentOf(name, this.accountId) === documentId && incarnation === this.current(key);
     });
     if (!idb || names.length === 0) return null;
-    const holds = await Promise.all(names.map((name) => this.hold(name)));
+    const holds = await Promise.all(names.map((name) => this.acquire(name)));
     try {
       const texts = await Promise.all(
         names.map(async (name) => {
@@ -321,17 +336,32 @@ export class LocalDocumentCopies {
 
   /**
    * What the copy `name` holds beyond its mark, read under a shared hold; null when it is gone or
-   * holds nothing beyond it.
+   * holds nothing beyond it. `requireMark`: a copy with no mark holds nothing beyond it.
    */
-  async beyondMark(name: string): Promise<BeyondMark | null> {
+  async beyondMark(name: string, requireMark = false): Promise<BeyondMark | null> {
     const idb = this.idb;
     if (!idb) return null;
-    const hold = await this.hold(name);
+    const hold = await this.acquire(name);
     try {
-      return markedBeyond(await load(idb, name));
+      return markedBeyond(await load(idb, name), requireMark);
     } finally {
       hold.release();
     }
+  }
+
+  /** Records that the start sweep is done with the copy `name`; the next start skips it until a session opens it. */
+  markSwept(name: string): void {
+    this.pointers.setItem(`${SWEPT_PREFIX}${name}`, "1");
+  }
+
+  /** The names of this account's draft copies (every incarnation) the start sweep has not handled, with the draft room each belongs to. */
+  async unsweptDraftCopies(): Promise<{ name: string; roomKey: string }[]> {
+    const head = `${DRAFT_PREFIX}${encodeURIComponent(this.accountId)}/`;
+    return (await this.names()).flatMap((name) => {
+      if (!name.startsWith(head) || this.pointers.getItem(`${SWEPT_PREFIX}${name}`)) return [];
+      const [, , roomKey] = parseName(name).key.slice(DRAFT_PREFIX.length).split("/");
+      return roomKey ? [{ name, roomKey: decodeURIComponent(roomKey) }] : [];
+    });
   }
 
   /**
@@ -414,6 +444,7 @@ export class LocalDocumentCopies {
   /** `all`: no copy of the document is left, so its pointers and its place in `known` go too. */
   private async deleteCopies(documentId: DocumentId, names: readonly string[], all = true) {
     await Promise.all(names.map((name) => this.deleteDatabase(name)));
+    for (const name of names) this.pointers.removeItem(`${SWEPT_PREFIX}${name}`);
     if (!all) return;
     for (const { key } of names.map(parseName)) this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
     if (this.known?.delete(documentId)) this.publish();
