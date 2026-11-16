@@ -448,12 +448,7 @@ export function createBoundAgentCatalog(input: {
       if (text === undefined) return undefined;
       // A binding that only moves to another model is not a newer saved version.
       const refreshed = await catalog.refreshBinding(userId, projectId, thread);
-      // What the next turn runs: the binding, unless its model left the host, when the turn
-      // moves to the newest save as `followRemovedModel` does.
-      const runs =
-        modelStillOffered({ ...bound, revision }) || !refreshed?.revision
-          ? { ...bound, revision }
-          : { ...refreshed, revision: refreshed.revision };
+      const runs = await effectiveBinding(userId, projectId, thread, bound);
       return {
         name: revision.definition.metadata.name ?? revision.slug,
         text,
@@ -466,17 +461,15 @@ export function createBoundAgentCatalog(input: {
         model: runs.configuration.model,
         effort: runs.configuration.effort ? AGENT_EFFORT_CHOICE[runs.configuration.effort] : null,
         unavailableReasons: input.unavailableReasons(
-          runs.revision.definition,
+          (runs.revision ?? revision).definition,
           runs.configuration.model,
         ),
       };
     },
 
     async followRemovedModel(userId, projectId, thread, bound) {
-      if (!bound.revision || modelStillOffered({ ...bound, revision: bound.revision }))
-        return bound;
-      const moved = await refreshFrom(userId, projectId, thread, bound);
-      if (!moved?.revision) return bound;
+      const moved = await effectiveBinding(userId, projectId, thread, bound);
+      if (moved === bound || !moved.revision) return bound;
       await store.replaceThreadBinding(
         thread.id,
         moved.revision.id,
@@ -492,6 +485,21 @@ export function createBoundAgentCatalog(input: {
       return refreshFrom(userId, projectId, thread, bound);
     },
   };
+  /**
+   * The binding a chat's next turn runs on, read-only: the stored one, unless the host no longer
+   * offers its model and the Agent's newest save resolves to another, which `followRemovedModel`
+   * writes for the turn and the chat's Agent read reports.
+   */
+  async function effectiveBinding(
+    userId: string,
+    projectId: string | undefined,
+    thread: { id: string; parentThreadId: string | null },
+    bound: AgentRevisionBinding,
+  ): Promise<AgentRevisionBinding> {
+    if (!bound.revision || modelStillOffered({ ...bound, revision: bound.revision })) return bound;
+    const moved = await refreshFrom(userId, projectId, thread, bound);
+    return moved?.revision ? moved : bound;
+  }
   /** Whether the host still offers the model the chat is bound to. */
   const modelStillOffered = (bound: AgentRevisionBinding & { revision: AgentRevision }) =>
     input.modelUnavailable(bound.configuration.model).length === 0;
