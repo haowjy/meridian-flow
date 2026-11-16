@@ -18,9 +18,6 @@ import { resolveCanonicalAddresses } from "./document-address.js";
 
 const BATCH = 500;
 
-const byName = (a: ImportRevealNode, b: ImportRevealNode) =>
-  a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1;
-
 export function createDrizzleContextImportReveal(deps: {
   db: Database;
   tree: Pick<TreeListStore, "submit">;
@@ -53,11 +50,9 @@ export function createDrizzleContextImportReveal(deps: {
         lists: [{ kind: "project", projectId }],
         make: ([{ writer }]) => {
           const inputs: CreateInput[] = [];
-          // A parent comes before its children; the top level arrives after what the folder
-          // already holds, a new folder's children in name order. The writer numbers each name
-          // against the list as it stands now, so a name taken since the plan is renumbered.
+          // Preserve the plan’s sibling arrival order so predicted segments match replay.
           const place = (kids: ImportRevealNode[], parent: string, source: string) => {
-            for (const node of kids.sort(byName)) {
+            for (const node of kids) {
               const base = { node: node.id, name: node.name, parent };
               inputs.push(
                 node.kind === "folder"

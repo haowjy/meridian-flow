@@ -289,7 +289,7 @@ async function classifyStored(
   };
 }
 
-/** The name a file of this type takes, before any copy number. */
+/** The name a file of this type takes. */
 function uploadName(
   upload: Pick<UploadReservation, "filename" | "mimeType">,
   fileType: Filetype,
@@ -299,8 +299,7 @@ function uploadName(
   const named = keptAsFile
     ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
     : intakeFilename(filename, fileType, mimeType);
-  // A name whose extension no file type claims ("notes.zip") stays whole in the parse; a copy
-  // must number the stem ("notes (2).zip"), so the extension is split off here.
+  // A name whose extension no file type claims stays whole in the parse; split it here.
   return named.ok && classifyFiletype(fileType).kind !== "tracked" && named.value.extension === ""
     ? { ok: true as const, value: { ...named.value, ...keptFileName(named.value.name) } }
     : named;

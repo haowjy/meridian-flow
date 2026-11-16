@@ -74,7 +74,6 @@ export function deriveIdentityCommitPlan(
   const desired = {
     destination: identityDestination(location, editorWorkId, target.destination),
     name: stored.ok ? stored.name : target.name.trim(),
-    ...(target.typedName ? { typedName: target.typedName } : {}),
   };
 
   const current = identityDestination(location, editorWorkId);

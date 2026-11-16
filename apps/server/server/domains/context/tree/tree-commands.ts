@@ -679,15 +679,6 @@ function keptStanding(
     .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;
 }
 
-/** The folder a several-move went into, now that the call has made it. */
-function destinationNode(cx: Context, to: Located): string | undefined {
-  const found = resolveShown(cx.scope.writer.view(cx.scope.view), cx.shown, to.root, {
-    segments: to.segments,
-    folder: true,
-  });
-  return found.kind === "node" ? found.node.id : undefined;
-}
-
 /** The path the node had in Trash, matched against what the model wrote for it. */
 function pathMatches(
   projection: TreeProjection,
@@ -841,6 +832,7 @@ export function runTreeCommand(
       const arrived: string[] = [];
       let nothingToMake: string | undefined;
       let made = 0;
+      let movedNode = "";
       for (const from of command.from) {
         const fromPath = pathFrom(cx, from);
         const leaf = fromPath.segments.at(-1) ?? "";
@@ -865,6 +857,7 @@ export function runTreeCommand(
           nothingToMake ??= result.skip.node;
         } else if (result.done) {
           made += 1;
+          movedNode = result.done.subject;
           arrived.push(...result.done.arrived);
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
@@ -879,12 +872,16 @@ export function runTreeCommand(
         );
       }
       const kept = keptTrashed(cx, projection, folder.destination.trashed);
+      const after = cx.scope.writer.view(cx.scope.view);
+      const subject = (after.nodes.get(movedNode) as TreeNode).parent;
+      const folderNode = after.nodes.get(subject);
+      const landedAt = folderNode ? nodeUri(cx, after, folderNode) : uriOf(to.area, [], true);
       return finish({
         ok: true,
-        subject: destinationNode(cx, to) ?? (cx.made[0]?.node as string),
+        subject,
         made: [],
-        shownAt: command.path,
-        landedAt: uriOf(to.area, to.segments, true),
+        shownAt: landedAt,
+        landedAt,
         moved: { made, of: command.from.length },
         notMoved,
         ...(leftOut.length > 0 ? { leftOut } : {}),

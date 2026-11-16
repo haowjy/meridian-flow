@@ -1,7 +1,7 @@
 /**
  * The writer's tree actions: each appends a record to the browser's own copy of the list, so
- * the change shows at once from the replay and Yjs carries it to the server. A name is numbered
- * when the clash is visible in the copy (`TreeWriter`). No action is refused: a node or parent the
+ * the change shows at once from the replay and Yjs carries it to the server. No action is refused:
+ * a node or parent the
  * copy lacks is made as asked and the replay places it or skips it. A change to a Work that was
  * closed is sent like any other; the server stamps it `dropped` ("Work was closed"), every replay
  * leaves it out, and its row says so (`tree-bounces.ts`). A deleted Work (`TreeVersion.ended`)

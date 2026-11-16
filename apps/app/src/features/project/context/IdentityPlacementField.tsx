@@ -173,7 +173,6 @@ export function IdentityPlacementField({
     await runCommit({
       destination: identityDestination(location, editorWorkId, destination ?? undefined),
       name,
-      typedName: name,
     });
   }
 
