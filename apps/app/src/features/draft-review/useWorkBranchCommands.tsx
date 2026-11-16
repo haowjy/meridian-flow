@@ -272,6 +272,12 @@ export function useWorkBranchCommands({
           });
           if (answer.status === "conflict") return { answer: "failed" };
           refresh(documentIds);
+          // The Apply's notice ends once the list has the Work's row back: the list the Apply
+          // left has none, so ending it earlier leaves the writer no row until the read lands.
+          await queryClient.refetchQueries(
+            { queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) },
+            { cancelRefetch: false },
+          );
           if (answer.status !== "unapplied") return { answer: "skipped" };
           for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
           return { answer: "unapplied" };

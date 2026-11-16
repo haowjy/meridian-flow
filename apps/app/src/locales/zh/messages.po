@@ -8966,6 +8966,14 @@ msgstr ""
 #~ msgid "Your skill, in every project"
 #~ msgstr ""
 
+#: src/features/chat/DeletedChatCard.tsx
+msgid "Your unsent words from <0>{title}</0> are below."
+msgstr ""
+
+#: src/features/chat/DeletedChatCard.tsx
+msgid "Your unsent words from the chat you deleted are below."
+msgstr ""
+
 #: src/features/export/ExportProjectDialog.tsx
 msgid "your User files"
 msgstr ""
