@@ -2,12 +2,16 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'tools/mf'
+verifyDepsBeforeRun: false
 allowBuilds:
   nx: true
+  esbuild: false
+  lefthook: false
+  protobufjs: false
 
 catalog:
   '@meridian-flow/runtime': ^0.1.0
-  '@types/node': ^24
+  '@types/node': ^26
   '@types/react': ^19.2.17
   '@types/react-dom': ^19.2.3
   '@vitejs/plugin-react': ^6.0.3
@@ -20,6 +24,10 @@ catalog:
   typescript: ^6.0.3
   vite: ^8.1.0
   vitest: ^4.1.9
+
+# First-party packages are ours: take a release before the age cutoff passes.
+minimumReleaseAgeExclude:
+  - '@meridian-flow/*'
 
 # Use the upstream traversal-delta fix plus the scoped stale-POP/go(0) patch below.
 overrides:
