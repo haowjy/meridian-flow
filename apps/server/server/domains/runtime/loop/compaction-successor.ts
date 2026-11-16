@@ -509,7 +509,9 @@ export async function completeCompactionCurrent(input: {
         afterEvents: async () => {
           const thread = await deps.repos.threads.findById(threadId);
           if (!thread) throw new Error("Compacted thread disappeared");
-          deps.connections?.saved(thread, prepared.composition.bakeContent.bakedConnections);
+          deps.afterCommit(() =>
+            deps.connections?.saved(thread, prepared.composition.bakeContent.bakedConnections),
+          );
           await recordReferenceEvidence(
             deps,
             { projectId: thread.projectId as ProjectId, threadId, turnId: placeholder.id },
