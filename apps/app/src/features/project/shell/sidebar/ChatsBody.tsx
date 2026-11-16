@@ -196,9 +196,7 @@ export function ChatsBody({
     <div ref={root} className="flex min-h-0 flex-1 flex-col">
       <SourcePane
         label={t`Chats`}
-        search={
-          <SettledSearchField quiet label={t`Find a chat`} value={search} onSettle={setSearch} />
-        }
+        search={<SettledSearchField label={t`Find a chat`} value={search} onSettle={setSearch} />}
         actions={
           <Button
             variant="quiet"

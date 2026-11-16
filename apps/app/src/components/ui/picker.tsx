@@ -50,7 +50,7 @@ export function Picker({
 export function PickerSearch(
   props: Omit<Parameters<typeof SearchField>[0], "listItem" | "className">,
 ) {
-  return <SearchField {...props} listItem className="mx-2 shrink-0" />;
+  return <SearchField {...props} listItem className="shrink-0" />;
 }
 
 export function PickerResults({

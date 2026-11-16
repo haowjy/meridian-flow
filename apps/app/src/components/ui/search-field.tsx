@@ -4,7 +4,10 @@ import { type Ref, useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-/** The one search box: pickers' and lists' filters. Its label is also the placeholder. */
+/**
+ * The one search box: pickers' and lists' filters. Borderless, like the rows under it: it fills
+ * on hover and rings while focused. Its label is also the placeholder.
+ */
 export function SearchField({
   ref,
   value,
@@ -14,7 +17,6 @@ export function SearchField({
   onSubmit,
   listItem,
   className,
-  quiet = false,
 }: {
   ref?: Ref<HTMLInputElement>;
   value: string;
@@ -27,15 +29,11 @@ export function SearchField({
   listItem?: boolean;
   /** Its placement in the host. */
   className?: string;
-  /** A sidebar list's search: a borderless row that fills on hover, like the rows under it. */
-  quiet?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "relative min-w-0",
-        quiet &&
-          "rounded-md text-muted-foreground transition-colors hover:bg-ink-fill focus-within:bg-ink-fill focus-within:ring-1 focus-within:ring-focus focus-within:ring-inset",
+        "relative min-w-0 rounded-md text-muted-foreground transition-colors hover:bg-ink-fill focus-within:bg-ink-fill focus-within:ring-1 focus-within:ring-focus focus-within:ring-inset",
         className,
       )}
     >
@@ -64,7 +62,7 @@ export function SearchField({
         // The browser's own clear button takes the platform's accent; this one takes ours.
         className={cn(
           "h-8 pr-7 pl-8 coarse:h-11 coarse:pr-11 [&::-webkit-search-cancel-button]:appearance-none",
-          quiet && "border-transparent focus-visible:border-transparent",
+          "border-transparent focus-visible:border-transparent",
         )}
       />
       {value && !disabled ? (

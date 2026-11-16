@@ -31,9 +31,6 @@ const VISIBLE_ROWS = 7;
 const MIN_ROWS = 5;
 const SEARCH_PX = 44;
 
-/** What the right side shows: the Agent pointed at, or the choices a footer row opened. */
-type Pane = "agent" | "model" | "reasoning";
-
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
   /**
@@ -61,9 +58,9 @@ type AgentPickerPanelProps = {
 };
 
 /**
- * The Agent picker. On the left a search, the Agents, and the chosen Agent's model and reasoning;
- * on the right a card for the Agent pointed at, or the list a model or reasoning row opened. Its
- * size follows the number of Agents alone, so nothing moves while the writer points or searches.
+ * The Agent picker, in columns: a search and the Agents; the models and reasoning levels of the
+ * Agent pointed at; and a card about it. Its size follows the number of Agents alone, so nothing
+ * moves while the writer points or searches.
  */
 export function AgentPickerPanel({
   status,
@@ -78,13 +75,12 @@ export function AgentPickerPanel({
   focusRefs,
 }: AgentPickerPanelProps) {
   const [pointed, setPointed] = useState<string | null>(null);
-  const [pane, setPane] = useState<Pane>("agent");
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
-  // A touch has no hover: its first tap on a row shows the row's card, a second tap picks it.
+  // A touch has no hover: its first tap on a row shows the row's choices, a second tap picks it.
   // Decided at pointer-down: Android focuses the row on tap, which points it before the click.
   const tapPicks = useRef(true);
-  const paneRef = useRef<HTMLDivElement | null>(null);
+  const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
   const agents = catalog.filter((agent) => agent.primary);
@@ -123,30 +119,18 @@ export function AgentPickerPanel({
     own ??
     listed[0] ??
     agents[0];
-  // The model and reasoning rows set the chosen Agent's; a turn's picker only hands off.
-  const chosen = handsOff ? undefined : agents.find((agent) => agent.slug === current.slug);
-  const settings = chosen && pickable(chosen) ? chosen : undefined;
-  const runsOn = current.overrides.model ?? settings?.model ?? null;
-  const thinksAt = current.overrides.effort ?? settings?.effort ?? null;
+  // The current Agent runs at the overrides chosen here; any other starts on its own.
+  const overrides = shown.slug === current.slug && !handsOff ? current.overrides : NO_OVERRIDES;
   const sameName = new Set(
     agents.map((agent) => agent.name).filter((name, index, names) => names.indexOf(name) !== index),
   );
   const firstPickable = listed.find(pickable)?.slug;
   const rows = Math.min(Math.max(agents.length, MIN_ROWS), VISIBLE_ROWS);
-  const footerLines = (settings ? 2 : 0) + 1;
-  // The search, the rows and the footer: the one height, whatever is pointed at or opened.
-  const height = SEARCH_PX + rows * ROW_PX + (own ? 2 * LINE_PX : 0) + footerLines * LINE_PX + 24;
+  // The search, the rows and the footer: the one height, whatever is pointed at.
+  const height = SEARCH_PX + rows * ROW_PX + (own ? 2 * LINE_PX : 0) + LINE_PX + 24;
 
-  const choose = (agent: AgentCatalogItem, overrides: ThreadOverrides) => {
-    if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), overrides });
-  };
-  const setOverrides = (overrides: ThreadOverrides) => {
-    if (settings) choose(settings, overrides);
-  };
-  const openPane = (next: Pane, focus: boolean) => {
-    setPane(next);
-    // The list renders on this commit; focus its current row after it.
-    if (focus) requestAnimationFrame(() => focusCurrent(paneRef.current));
+  const choose = (agent: AgentCatalogItem, next: ThreadOverrides) => {
+    if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), overrides: next });
   };
   const row = (agent: AgentCatalogItem) => {
     const isCurrent = agent.slug === current.slug;
@@ -158,19 +142,14 @@ export function AgentPickerPanel({
           tapPicks.current = event.pointerType !== "touch" || agent.slug === shown.slug;
         }}
         onPointerEnter={(event) => {
-          if (event.pointerType === "touch") return;
-          setPointed(agent.slug);
-          setPane("agent");
+          if (event.pointerType !== "touch") setPointed(agent.slug);
         }}
-        onFocus={() => {
-          setPointed(agent.slug);
-          setPane("agent");
-        }}
+        onFocus={() => setPointed(agent.slug)}
       >
         <ListRow
           density="menu"
           current={isCurrent}
-          pointed={pane === "agent" && agent.slug === shown.slug}
+          pointed={agent.slug === shown.slug}
           crossedOut={!pickable(agent)}
           ref={
             isCurrent
@@ -179,7 +158,7 @@ export function AgentPickerPanel({
                 ? focusRefs.first
                 : undefined
           }
-          // One Tab stop for the list: the row whose card shows. Arrows move between rows.
+          // One Tab stop for the list: the row whose choices show. Arrows move between rows.
           controlProps={{ tabIndex: agent.slug === shown.slug ? 0 : -1 }}
           onOpen={() => {
             if (!tapPicks.current) {
@@ -197,35 +176,9 @@ export function AgentPickerPanel({
       </li>
     );
   };
-  const opener = (kind: Exclude<Pane, "agent">, label: string, value: string) => (
-    <li
-      key={kind}
-      data-opens={kind}
-      onPointerEnter={(event) => {
-        if (event.pointerType !== "touch") setPane(kind);
-      }}
-    >
-      <ListRow
-        density="menu"
-        pointed={pane === kind}
-        onOpen={() => openPane(kind, true)}
-        title={
-          <span className="flex min-w-0 gap-3">
-            <span className="text-muted-foreground">{label}</span>
-            <span className="truncate">{value}</span>
-          </span>
-        }
-        trailing={<ChevronRight aria-hidden className="text-muted-foreground" />}
-      />
-    </li>
-  );
-  const back = () => {
-    const from =
-      pane === "agent"
-        ? `li[data-agent="${CSS.escape(shown.slug)}"] [data-list-item]`
-        : `li[data-opens="${pane}"] [data-list-item]`;
-    listRef.current?.querySelector<HTMLElement>(from)?.focus();
-  };
+  const runsOn = overrides.model ?? shown.model;
+  const thinksAt = overrides.effort ?? shown.effort;
+  const runsOnOption = runsOn ? models?.find((option) => option.id === runsOn) : undefined;
 
   return (
     <Picker>
@@ -233,7 +186,7 @@ export function AgentPickerPanel({
         className="@container/agents flex min-h-0 shrink flex-col"
         style={{ "--agents-height": `${height}px` } as CSSProperties}
       >
-        {/* Stacked on a phone, the list and the pane each need their own rows: twice the height. */}
+        {/* Stacked on a phone, the list and the choices each need their own rows: twice the height. */}
         <div className="flex h-[calc(var(--agents-height)*2)] max-h-full min-h-0 flex-col gap-2 @[28rem]/agents:h-(--agents-height) @[28rem]/agents:flex-row">
           {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the list's arrow keys; the rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
           <div
@@ -253,19 +206,14 @@ export function AgentPickerPanel({
                 return;
               }
               if (event.key === "ArrowRight" && event.target instanceof HTMLElement) {
-                const opens = event.target.closest<HTMLElement>("li[data-opens]")?.dataset.opens;
-                if (opens === "model" || opens === "reasoning") {
-                  event.preventDefault();
-                  return openPane(opens, true);
-                }
                 if (!event.target.closest("li[data-agent]")) return;
                 event.preventDefault();
-                focusCurrent(paneRef.current);
+                focusCurrent(choicesRef.current);
                 return;
               }
               handleListKeys(event);
             }}
-            className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-72 @[28rem]/agents:flex-none"
+            className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-60 @[28rem]/agents:flex-none"
           >
             <div className="shrink-0 pb-1">
               <PickerSearch
@@ -274,7 +222,6 @@ export function AgentPickerPanel({
                 onChange={(value) => {
                   setQuery(value);
                   setPointed(null);
-                  setPane("agent");
                 }}
                 onSubmit={() => {
                   const first = listed.find(pickable);
@@ -312,17 +259,7 @@ export function AgentPickerPanel({
                 {listed.map(row)}
               </PickerSection>
             </section>
-            <ul className="mt-1 flex shrink-0 flex-col border-t border-border-subtle pt-1">
-              {settings ? (
-                <>
-                  {opener("model", t`Model`, runsOn ? modelName(models, runsOn) : t`Default`)}
-                  {opener(
-                    "reasoning",
-                    t`Reasoning`,
-                    thinksAt ? reasoningName(thinksAt) : t`Default`,
-                  )}
-                </>
-              ) : null}
+            <ul className="mt-1 shrink-0 border-t border-border-subtle pt-1">
               <li>
                 <ListRow
                   density="menu"
@@ -337,68 +274,70 @@ export function AgentPickerPanel({
               </li>
             </ul>
           </div>
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the pane's arrow keys; its rows and buttons are the controls. slop-lint: allow suppression the reason is stated in this comment */}
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the choices' arrow keys; its rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
           <div
-            ref={paneRef}
+            ref={choicesRef}
             onKeyDown={(event) => {
               if (event.key === "ArrowLeft") {
                 event.preventDefault();
-                back();
+                listRef.current
+                  ?.querySelector<HTMLElement>(
+                    `li[data-agent="${CSS.escape(shown.slug)}"] [data-list-item]`,
+                  )
+                  ?.focus();
                 return;
               }
               handleListKeys(event);
-              // Up and Down stay in the pane even with no rows to move between.
+              // Up and Down stay in the choices even with no rows to move between.
               if (event.key === "ArrowUp" || event.key === "ArrowDown") event.preventDefault();
             }}
-            className="app-scroll flex min-h-0 flex-1 flex-col"
+            className="flex min-h-0 min-w-0 flex-1 flex-col"
           >
-            {pane === "agent" || !settings ? (
-              <AgentCard
-                key={shown.slug}
+            {pickable(shown) ? (
+              <>
+                <ModelChoices
+                  agent={shown}
+                  runsOn={runsOn}
+                  models={models}
+                  rebuildsCache={Boolean(started && shown === own)}
+                  onChoose={(id) =>
+                    choose(shown, { ...overrides, model: id === shown.model ? null : id })
+                  }
+                />
+                <ReasoningChoices
+                  agent={shown}
+                  model={runsOnOption}
+                  thinksAt={thinksAt}
+                  onChoose={(level) =>
+                    choose(shown, { ...overrides, effort: level === shown.effort ? null : level })
+                  }
+                />
+              </>
+            ) : (
+              <Unusable
                 agent={shown}
-                thisChat={started && shown === own ? started.threadId : null}
-                useLabel={
-                  handsOff || (started && shown !== own)
-                    ? t`Hand off to ${shown.name}`
-                    : shown.slug === current.slug
-                      ? null
-                      : t`Use ${shown.name}`
-                }
-                onUse={() => choose(shown, NO_OVERRIDES)}
                 onOpenFile={() => {
                   if (!shown.path || shown.level === "builtin") return;
                   onClose();
                   openAgentFile(shown.level, shown.path);
                 }}
               />
-            ) : pane === "model" ? (
-              <ModelChoices
-                agent={settings}
-                runsOn={runsOn}
-                models={models}
-                rebuildsCache={Boolean(started)}
-                onChoose={(id) =>
-                  setOverrides({
-                    ...current.overrides,
-                    model: id === settings.model ? null : id,
-                  })
-                }
-              />
-            ) : (
-              <ReasoningChoices
-                agent={settings}
-                model={runsOn ? models?.find((option) => option.id === runsOn) : undefined}
-                modelLabel={runsOn ? modelName(models, runsOn) : t`the default model`}
-                thinksAt={thinksAt}
-                rebuildsCache={Boolean(started)}
-                onChoose={(level) =>
-                  setOverrides({
-                    ...current.overrides,
-                    effort: level === settings.effort ? null : level,
-                  })
-                }
-              />
             )}
+          </div>
+          <div className="hidden min-h-0 w-56 flex-none flex-col @[40rem]/agents:flex">
+            <AgentCard
+              key={shown.slug}
+              agent={shown}
+              thisChat={started && shown === own ? started.threadId : null}
+              useLabel={
+                handsOff || (started && shown !== own)
+                  ? t`Hand off to ${shown.name}`
+                  : shown.slug === current.slug
+                    ? null
+                    : t`Use ${shown.name}`
+              }
+              onUse={() => choose(shown, NO_OVERRIDES)}
+            />
           </div>
         </div>
       </div>
@@ -421,7 +360,6 @@ function AgentCard({
   thisChat,
   useLabel,
   onUse,
-  onOpenFile,
 }: {
   agent: AgentCatalogItem;
   /** The chat's id when this is the Agent the chat runs. */
@@ -429,18 +367,16 @@ function AgentCard({
   /** Picks this Agent on its own model; null when it is already the one picked. */
   useLabel: string | null;
   onUse: () => void;
-  onOpenFile: () => void;
 }) {
-  const usable = pickable(agent);
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-ink-fill p-3">
+    <div className="flex max-h-full flex-col gap-2 overflow-y-auto overscroll-y-contain rounded-lg bg-ink-fill p-3">
       <p className="text-sm font-medium">{agent.name}</p>
       {agent.description ? <p className="text-sm text-foreground">{agent.description}</p> : null}
       {agent.path && agent.level !== "builtin" ? (
         <p className="truncate font-mono text-xs text-muted-foreground">{fileAddress(agent)}</p>
       ) : null}
       {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
-      {useLabel && usable ? (
+      {useLabel && pickable(agent) ? (
         // Touch picks here, having no hover to point with; a mouse or the keyboard picks the row.
         <button
           type="button"
@@ -450,26 +386,29 @@ function AgentCard({
           {useLabel}
         </button>
       ) : null}
-      {!usable ? (
-        <div id={`agent-unusable-${agent.slug}`} className="flex flex-col gap-1 text-sm">
-          <p className="text-muted-foreground">
-            <Trans>Can't be used right now.</Trans>
-          </p>
-          <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-            {agent.unavailableReasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-          {agent.path && agent.level !== "builtin" ? (
-            <button
-              type="button"
-              className="self-start text-sm font-medium underline underline-offset-2"
-              onClick={onOpenFile}
-            >
-              {t`Open ${fileName(agent)}`}
-            </button>
-          ) : null}
-        </div>
+    </div>
+  );
+}
+
+function Unusable({ agent, onOpenFile }: { agent: AgentCatalogItem; onOpenFile: () => void }) {
+  return (
+    <div id={`agent-unusable-${agent.slug}`} className="flex flex-col gap-1 px-2 pt-1.5 text-sm">
+      <p className="text-muted-foreground">
+        <Trans>Can't be used right now.</Trans>
+      </p>
+      <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+        {agent.unavailableReasons.map((reason) => (
+          <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+      {agent.path && agent.level !== "builtin" ? (
+        <button
+          type="button"
+          className="self-start text-sm font-medium underline underline-offset-2"
+          onClick={onOpenFile}
+        >
+          {t`Open ${fileName(agent)}`}
+        </button>
       ) : null}
     </div>
   );
@@ -490,13 +429,14 @@ function ModelChoices({
 }) {
   if (!models)
     return (
-      <ListLine density="menu" status>
-        <Trans>Loading models…</Trans>
-      </ListLine>
+      <div className="app-scroll">
+        <ListLine density="menu" status>
+          <Trans>Loading models…</Trans>
+        </ListLine>
+      </div>
     );
   return (
-    <section aria-label={t`Model for ${agent.name}`} className="flex flex-col">
-      <h3 className={dropdownGroupLabelClass}>{t`Model for ${agent.name}`}</h3>
+    <section aria-label={t`Model for ${agent.name}`} className="app-scroll flex flex-col">
       {runsOn && !runsAvailable(models, runsOn) ? (
         <p className="px-2 pb-1 text-xs text-muted-foreground">
           {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
@@ -532,16 +472,12 @@ function ModelChoices({
 function ReasoningChoices({
   agent,
   model,
-  modelLabel,
   thinksAt,
-  rebuildsCache,
   onChoose,
 }: {
   agent: AgentCatalogItem;
   model: ModelOption | undefined;
-  modelLabel: string;
   thinksAt: ReasoningChoice | null;
-  rebuildsCache: boolean;
   /** A level, or null for the model's own when the Agent's file sets none. */
   onChoose: (level: ReasoningChoice | null) => void;
 }) {
@@ -550,33 +486,26 @@ function ReasoningChoices({
     : [];
   // An Agent whose file sets no level runs at the model's own: that is its Default.
   const choices: (ReasoningChoice | null)[] = agent.effort ? levels : [null, ...levels];
+  // A model with no levels to choose leaves the models the whole column.
+  if (levels.length === 0) return null;
   return (
-    <section aria-label={t`Reasoning on ${modelLabel}`} className="flex flex-col">
-      <h3 className={dropdownGroupLabelClass}>{t`Reasoning on ${modelLabel}`}</h3>
-      {rebuildsCache ? (
-        <p className="px-2 pb-1 text-xs text-muted-foreground">
-          <Trans>Changing it rebuilds the chat's cache.</Trans>
-        </p>
-      ) : null}
-      {choices.length === 0 ? (
-        <ListLine density="menu" status>
-          {t`${modelLabel} has no reasoning levels to choose.`}
-        </ListLine>
-      ) : (
-        <ul className="flex flex-col">
-          {choices.map((level) => (
-            <li key={level ?? "default"}>
-              <ListRow
-                density="menu"
-                current={level === thinksAt}
-                title={level ? reasoningName(level) : t`Default`}
-                meta={level && level === agent.effort ? t`Default` : undefined}
-                onOpen={() => onChoose(level)}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+    <section
+      aria-label={model ? t`Reasoning on ${model.name}` : t`Reasoning`}
+      className="mt-1 shrink-0 border-t border-border-subtle pt-1"
+    >
+      <ul className="flex flex-col">
+        {choices.map((level) => (
+          <li key={level ?? "default"}>
+            <ListRow
+              density="menu"
+              current={level === thinksAt}
+              title={level ? reasoningName(level) : t`Default`}
+              meta={level && level === agent.effort ? t`Default` : undefined}
+              onOpen={() => onChoose(level)}
+            />
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
