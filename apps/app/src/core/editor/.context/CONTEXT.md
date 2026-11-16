@@ -80,6 +80,16 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
   read) and keep `refreshProseMirrorDoc`, `sameBlock` and the forced-render selection
   resolver (until upstream resolves valid selections there too).
+- `updateYText` places a typed or deleted run where the transaction put it (`placeByStep`). `simpleDiff`
+  puts an edit at the far end of any run of equal characters, so a space typed before a space, or
+  a letter beside the same letter, became the item at the other end of the run: the word's
+  characters then sat in the wrong item order, and the Copy notice for unsent typing read them
+  split and out of order (`Second\nunsent `). The sync plugin's `apply` records the range of a
+  local transaction with one changed step inside a text-only block (`binding.edit`, with the block
+  node); `updateYText` uses it only for that node and only when it reproduces the new text, after trimming the
+  characters the replacement shares at both ends so only the changed ones get new or deleted items. A split,
+  a join or a multi-step transaction records nothing and the plain diff stands. To drop it,
+  upstream's diff must take the steps' range.
 - The binding’s forced render replaces the editor’s document before restoring its selection.
   It resolves offsets from the previous document to a valid selection in the rendered one,
   a text selection when text is available. A clamped offset alone can land at a table
@@ -132,7 +142,7 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
   the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
-  text-run grouping, the id pairing with `movedIds`, the empty-fragment guard, the forced-render
+  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the forced-render
   selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
   capture and restore (`resolveRelativeCellSelection`), and `recoverSelectionEndpoint` trusting a
   position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`; upstream
