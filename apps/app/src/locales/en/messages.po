@@ -459,6 +459,14 @@ msgstr "{answered, plural, one {# answered} other {# answered}}"
 #~ msgid "{applied} applied"
 #~ msgstr "{applied} applied"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount, plural, one {# change} other {# changes}}"
+#~ msgstr "{appliedCount, plural, one {# change} other {# changes}}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount} changes"
+#~ msgstr "{appliedCount} changes"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
@@ -550,6 +558,7 @@ msgid "{count, plural, one {# change was applied before your Discard reached it.
 msgstr "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr "{count, plural, one {# change} other {# changes}}"
 
@@ -1175,6 +1184,10 @@ msgstr "{who} discarded {name} from the draft before this change could be made."
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} discarded this document from the draft before this change could be made."
 msgstr "{who} discarded this document from the draft before this change could be made."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
+msgstr "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -4560,8 +4573,8 @@ msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to disca
 msgstr "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its chat is in Trash, so this stayed as it is"
-msgstr "Its chat is in Trash, so this stayed as it is"
+#~ msgid "Its chat is in Trash, so this stayed as it is"
+#~ msgstr "Its chat is in Trash, so this stayed as it is"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Its chat is in Trash."
@@ -4588,8 +4601,8 @@ msgid "Its subagent {name} is unavailable."
 msgstr "Its subagent {name} is unavailable."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its Work was closed, so this stayed as it is"
-msgstr "Its Work was closed, so this stayed as it is"
+#~ msgid "Its Work was closed, so this stayed as it is"
+#~ msgstr "Its Work was closed, so this stayed as it is"
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
@@ -5567,6 +5580,7 @@ msgstr "Not sent, signed out"
 msgid "Not sent: {0}"
 msgstr "Not sent: {0}"
 
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone"
 msgstr "Not undone"
@@ -5575,6 +5589,7 @@ msgstr "Not undone"
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr "Not undone: {label} was saved again since."
 
+#: src/core/project-tree/tree-left-sentence.ts
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone."
@@ -7233,6 +7248,10 @@ msgstr "Tabs"
 msgid "Taken out"
 msgstr "Taken out"
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Takes back the whole Apply, all {wholeApply} changes."
+#~ msgstr "Takes back the whole Apply, all {wholeApply} changes."
+
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "Talk it out"
@@ -8525,6 +8544,7 @@ msgstr "Undid"
 msgid "Undid change to Work {name}."
 msgstr "Undid change to Work {name}."
 
+#: src/core/project-tree/tree-left-sentence.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undid part of applying {name}."
 msgstr "Undid part of applying {name}."
@@ -8541,6 +8561,10 @@ msgstr "Undid part of applying {name}."
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "Undo"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undo Apply"
+msgstr "Undo Apply"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Undo applying {name}"

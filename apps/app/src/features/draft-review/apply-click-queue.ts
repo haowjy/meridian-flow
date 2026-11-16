@@ -80,30 +80,42 @@ export type UnapplyCommand = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   patchFor(groupIds: readonly string[]): readonly PMNode[];
-  selectionChanged(groupIds: readonly string[], tree: boolean): void;
+  /** What the answer took back (`held`: it left something for a closed owner). */
+  selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
   ready: Promise<boolean>;
   groupIds: Set<string>;
   sent: boolean;
   attempts: number;
   stalled: boolean;
   answer?: UnapplyClickResult;
+  /** The server's answer as it arrives, or how the command ended without one. */
+  heard: Promise<UnapplyClickOutcome>;
+  hear(result: UnapplyClickOutcome): void;
   outcome: Promise<UnapplyClickOutcome>;
   finish(result: UnapplyClickOutcome): void;
 };
 type Command = ApplyCommand | UnapplyCommand;
 
 export type ApplyCommandHandle = {
-  /** Resolves false when the Un-Apply was refused, and the Apply stands. */
-  undo(): Promise<boolean>;
-  redo(): void;
   /**
-   * Once nothing is outstanding: the Apply an Un-Apply takes back, and the click a Redo sends
+   * The Un-Apply's answer as soon as the server gives it, while its rows may still be leaving the
+   * room; `unsent` when it was refused and the Apply stands, `cancelled` when the Apply was never
+   * sent.
+   */
+  undo(): Promise<UnapplyClickOutcome>;
+  /** Queues the Redo at once; resolves with what became of it. */
+  redo(): Promise<ApplyClickOutcome>;
+  /**
+   * The Apply in force, which a Redo replaces only once it lands, and the click a Redo sends
    * again (a new command id to fill).
    */
   replay(): { applyCommandId: string; again: ApplyClick };
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
+  /** The latest Apply queued: the one an Un-Apply names, or cancels before it is sent. */
   current: ApplyCommand;
+  /** The Apply in force: the first, or the latest Redo that landed. */
+  inForce: ApplyCommand;
   reversal: Promise<UnapplyClickOutcome>;
   replaySelection: string[];
   /** The Un-Apply took this item's tree change back, so a Redo carries the tree cut again. */
@@ -185,12 +197,14 @@ export class ApplyClickQueue {
     const landed = (answer: ApplyClickOutcome) => {
       if (answer.status === "landed") return true;
       if (answer.status !== "applied") return false;
-      const item = itemOf(answer, this.port.node);
-      return item?.tree?.landed === true || item?.text?.landed === true;
+      return (
+        itemOf(answer, this.port.node)?.tree?.landed === true || textLanded(answer, this.port.node)
+      );
     };
     let handle!: ScheduledApplyHandle;
     handle = {
       current: initial,
+      inForce: initial,
       reversal: Promise.resolve({ status: "cancelled" }),
       replaySelection: [...initial.body.groupIds],
       replayTree: initial.body.tree === true,
@@ -200,7 +214,7 @@ export class ApplyClickQueue {
         handle.pendingReplay = null;
         if (this.cancel(handle.current.body.commandId)) {
           handle.reversal = Promise.resolve({ status: "cancelled" });
-          return Promise.resolve(true);
+          return handle.reversal;
         }
         handle.replaySelection = [...handle.current.body.groupIds];
         handle.replayTree = handle.current.body.tree === true;
@@ -222,26 +236,32 @@ export class ApplyClickQueue {
             }
             return landed(answer);
           }),
-          selectionChanged: (groupIds, tree) => {
+          // A Redo pressed before the answer brings back only what the Un-Apply took back, and
+          // nothing when it took nothing or held something: a held Apply stays in force whole.
+          selectionChanged: (groupIds, tree, held) => {
             handle.replaySelection = [...groupIds];
             handle.replayTree = tree;
             const replay = handle.pendingReplay;
-            if (replay && !replay.sent) {
-              replay.body = { ...replay.body, groupIds: [...groupIds], tree: tree || undefined };
-              replay.patched = input.patchFor(groupIds);
+            if (!replay || replay.sent) return;
+            if (held || (groupIds.length === 0 && !tree)) {
+              handle.pendingReplay = null;
+              this.cancel(replay.body.commandId);
+              return;
             }
+            replay.body = { ...replay.body, groupIds: [...groupIds], tree: tree || undefined };
+            replay.patched = input.patchFor(groupIds);
           },
         });
         handle.reversal = inverse.outcome;
-        return inverse.outcome.then((answer) => {
-          const happened = answer.status === "unapplied" || answer.status === "cancelled";
-          if (!happened) input.unapplyRefused(answer);
-          return happened;
+        return inverse.heard.then((answer) => {
+          if (answer.status === "unsent") input.unapplyRefused(answer);
+          return answer;
         });
       },
       redo: () => {
         input.intent();
-        handle.current = this.queueApply({
+        const before = handle.inForce;
+        const replay = this.queueApply({
           body: {
             ...handle.current.body,
             commandId: crypto.randomUUID(),
@@ -257,17 +277,26 @@ export class ApplyClickQueue {
               this.cancel(replay.body.commandId);
           }),
         });
-        const replay = handle.current;
-        handle.pendingReplay = handle.current;
+        handle.current = replay;
+        handle.pendingReplay = replay;
         this.startFeedback();
         this.port.changed();
-        void handle.current.outcome.then((answer) => {
+        return replay.outcome.then((answer) => {
+          if (landed(answer)) handle.inForce = replay;
+          // A replay that never reached the server leaves the Apply it would have replaced as the
+          // one in force, the one the next Un-Apply names.
+          else if (
+            (answer.status === "cancelled" || answer.status === "unsent") &&
+            handle.current === replay
+          )
+            handle.current = before;
           if (answer.status !== "cancelled") input.replayed(answer);
+          return answer;
         });
       },
       replay: () => ({
-        applyCommandId: handle.current.body.commandId,
-        again: { ...handle.current.body, groupIds: [...handle.replaySelection], tree: undefined },
+        applyCommandId: handle.inForce.body.commandId,
+        again: { ...handle.inForce.body, groupIds: [...handle.replaySelection], tree: undefined },
       }),
     };
 
@@ -341,12 +370,16 @@ export class ApplyClickQueue {
     patched: readonly PMNode[];
     groupIds: readonly string[];
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    selectionChanged(groupIds: readonly string[], tree: boolean): void;
+    selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
     ready: Promise<boolean>;
   }): UnapplyCommand {
     let finish!: (result: UnapplyClickOutcome) => void;
+    let hear!: (result: UnapplyClickOutcome) => void;
     const outcome = new Promise<UnapplyClickOutcome>((resolve) => {
       finish = resolve;
+    });
+    const heard = new Promise<UnapplyClickOutcome>((resolve) => {
+      hear = resolve;
     });
     const command: UnapplyCommand = {
       kind: "unapply",
@@ -355,8 +388,13 @@ export class ApplyClickQueue {
       sent: false,
       attempts: 0,
       stalled: false,
+      heard,
+      hear,
       outcome,
-      finish,
+      finish: (result) => {
+        hear(result);
+        finish(result);
+      },
     };
     this.commands.push(command);
     this.port.changed();
@@ -593,9 +631,16 @@ export class ApplyClickQueue {
       command.answer = answer;
       command.groupIds = new Set(answer.reversedGroupIds);
       command.patched = command.patchFor(answer.reversedGroupIds);
-      command.selectionChanged(answer.reversedGroupIds, answer.treeUndone.includes(this.port.node));
-      this.port.changed();
-      this.reconcileUnapply(command);
+      command.selectionChanged(
+        answer.reversedGroupIds,
+        answer.treeUndone.includes(this.port.node),
+        (answer.held ?? []).length > 0,
+      );
+      // The answer is acted on now (notice, history, hand-over); the room only settles it. A text
+      // half that waits for its closed draft never leaves the room, so the answer settles it.
+      command.hear(answer);
+      if (answer.draftHalfWaits) this.settle(command, answer);
+      else this.reconcileUnapply(command);
       return;
     }
     if (answer?.status === "conflict") {

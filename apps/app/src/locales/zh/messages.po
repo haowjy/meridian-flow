@@ -459,6 +459,14 @@ msgstr "{answered, plural, other {# 个已回答}}"
 #~ msgid "{applied} applied"
 #~ msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount, plural, one {# change} other {# changes}}"
+#~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount} changes"
+#~ msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr ""
@@ -550,6 +558,7 @@ msgid "{count, plural, one {# change was applied before your Discard reached it.
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
@@ -1174,6 +1183,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} discarded this document from the draft before this change could be made."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
 msgstr ""
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
@@ -4560,8 +4573,8 @@ msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to disca
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its chat is in Trash, so this stayed as it is"
-msgstr ""
+#~ msgid "Its chat is in Trash, so this stayed as it is"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Its chat is in Trash."
@@ -4588,8 +4601,8 @@ msgid "Its subagent {name} is unavailable."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its Work was closed, so this stayed as it is"
-msgstr ""
+#~ msgid "Its Work was closed, so this stayed as it is"
+#~ msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
@@ -5567,6 +5580,7 @@ msgstr ""
 msgid "Not sent: {0}"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone"
 msgstr ""
@@ -5575,6 +5589,7 @@ msgstr ""
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr ""
 
+#: src/core/project-tree/tree-left-sentence.ts
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone."
@@ -7233,6 +7248,10 @@ msgstr ""
 msgid "Taken out"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Takes back the whole Apply, all {wholeApply} changes."
+#~ msgstr ""
+
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "说出来理一理"
@@ -8525,6 +8544,7 @@ msgstr ""
 msgid "Undid change to Work {name}."
 msgstr ""
 
+#: src/core/project-tree/tree-left-sentence.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undid part of applying {name}."
 msgstr ""
@@ -8541,6 +8561,10 @@ msgstr ""
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "撤销"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undo Apply"
+msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Undo applying {name}"

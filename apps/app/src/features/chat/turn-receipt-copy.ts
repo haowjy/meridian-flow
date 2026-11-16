@@ -6,8 +6,8 @@ import {
   type ReversalOutcome,
   type TurnInverseSkip,
 } from "@meridian/contracts/protocol";
-import { treeLeftSentence, treeReturnedSentence } from "@/core/project-tree/tree-left-sentence";
-import type { TreeFact } from "@/core/project-tree/tree-undo";
+import { heldSentence, treeLeftSentence } from "@/core/project-tree/tree-left-sentence";
+import { GESTURE_DID } from "@/core/project-tree/tree-undo";
 
 type TreeSkip = Extract<TurnInverseSkip, { kind: "tree" }>;
 
@@ -74,18 +74,11 @@ function permissionDeniedCopy(denial: ReversalOutcome["denial"]): string {
   }
 }
 
-const DID: Record<TreeSkip["op"], TreeFact["did"]> = {
-  create: "created",
-  move: "moved",
-  delete: "deleted",
-  restore: "restored",
-};
-
 /** Why a tree change the card's Undo left stayed, in the review row's words. */
 export function treeSkipSentence(skip: TreeSkip, folder: boolean): string {
-  const fact = { did: DID[skip.op], folder };
+  const fact = { did: GESTURE_DID[skip.op], folder };
   return skip.cause === "returned"
-    ? treeReturnedSentence(fact, skip.why, skip.owner)
+    ? heldSentence(fact, skip.why, skip.owner)
     : treeLeftSentence(fact, skip.cause);
 }
 
@@ -103,9 +96,7 @@ export function textSkipCauseCopy(skip: Extract<TurnInverseSkip, { kind: "text" 
     case "document_discarded":
       return t`This document was discarded from the draft`;
     case "returned":
-      return skip.why === "chat_frozen"
-        ? t`Its chat is in Trash, so this stayed as it is`
-        : t`Its Work was closed, so this stayed as it is`;
+      return heldSentence({ did: null, folder: false }, skip.why, undefined);
     case "paragraph_removed":
       return t`Its paragraph was removed`;
     case "edited_since":

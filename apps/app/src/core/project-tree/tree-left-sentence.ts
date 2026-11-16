@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { ClosedOwnerWhy, LeftOutWhy } from "@meridian/contracts/commands";
-import type { TreeFact } from "./tree-undo";
+import type { Left, TreeFact } from "./tree-undo";
 
 function changeWords(fact: TreeFact): string {
   return fact.did === "moved"
@@ -45,10 +45,10 @@ export function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
 }
 
 /**
- * A tree change an Undo left because taking it back would change a closed owner's notes: the
- * owner says what to do to undo it.
+ * A change an Undo left because taking it back would change a closed owner's notes: the owner says
+ * what to do to undo it. The row, the band and the chat card say it with this sentence.
  */
-export function treeReturnedSentence(
+export function heldSentence(
   fact: TreeFact,
   why: ClosedOwnerWhy | undefined,
   owner: string | undefined,
@@ -68,4 +68,26 @@ export function treeReturnedSentence(
         ? t`${change} stayed: ${owner} is archived. Unarchive it to undo this.`
         : t`${change} stayed: its Work is archived. Unarchive it to undo this.`;
   }
+}
+
+/**
+ * Why `node`'s change stayed after an Un-Apply: for good (`treeLeft`), or held for a closed owner,
+ * its tree fact or, when only its text is held, the change to the document. Empty when it went.
+ */
+export function stayedSentence(left: Left, node: string): string {
+  const fact = left.facts.get(node) ?? { did: null, folder: false };
+  const tree = left.treeLeft.find((one) => one.node === node);
+  if (tree) return treeLeftSentence(fact, tree.why);
+  const held = left.held.find((one) => one.node === node);
+  if (!held) return "";
+  return heldSentence(held.tree ? fact : { did: null, folder: fact.folder }, held.why, held.owner);
+}
+
+/** What an Un-Apply that left something says on one line, away from its rows. */
+export function unappliedSentence(left: Left): string {
+  const { name } = left;
+  const lead = left.taken === "nothing" ? t`Not undone.` : t`Undid part of applying ${name}.`;
+  return [lead, ...new Set(left.nodes.map((node) => stayedSentence(left, node)))]
+    .filter(Boolean)
+    .join(" ");
 }
