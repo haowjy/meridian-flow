@@ -236,7 +236,7 @@ async function prepare(
           skip(part, planned.causes[i] as TurnInverseSkipCause);
         continue;
       }
-      for (const part of planned.discarded) skip(part as StoredInversePart, "discarded");
+      for (const part of planned.discarded) skip(part, "discarded");
       for (const part of planned.selection) {
         selection.set(planned.destination, [
           ...(selection.get(planned.destination) ?? []),

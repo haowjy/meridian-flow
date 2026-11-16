@@ -360,13 +360,15 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
-  // A replace whose new text is gone (discarded, deleted or typed over) has nothing to undo:
-  // restoring its deleted half would put the old text next to what the writer has now.
-  const replacementGone =
-    removingRanges.length > 0 &&
-    !clocks(removingRanges).some((original) => index.isVisible(index.effective(original)));
+  const replaced = replacedText(index, part);
   const candidates = new Set(
-    (replacementGone ? [] : returning)
+    returning
+      .filter((pair) => {
+        const text = replaced.get(pair.original);
+        // A change whose new text is gone (discarded, deleted or typed over) has nothing to undo:
+        // restoring its deleted half would put the old text next to what the writer has now.
+        return !text?.length || text.some((t) => index.isVisible(index.effective(t)));
+      })
       .map((pair) => pair.effective)
       .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
   );
@@ -425,6 +427,78 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
   };
+}
+/**
+ * For each item the part deleted, the text items the same change inserted in its place; a
+ * deleted item with no entry replaced nothing. One part holds every change of a write to a
+ * block, so a change is found from the immutable item structure: an inserted run takes the
+ * place of the deleted runs its `origin` and `rightOrigin` point at, up to restoration
+ * lineage, and consecutive deleted siblings are one run. Only text counts: attributes, containers and formats come and go with
+ * the text they belong to and never keep a replacement standing.
+ */
+function replacedText(index: Lineage, part: InversePart): Map<Key, Key[]> {
+  const out = new Map<Key, Key[]>();
+  if (!part.effect.inserted.length || !part.effect.deleted.length) return out;
+  const { doc } = index;
+  const inserted = new Set(clocks(part.effect.inserted)),
+    deleted = new Set(clocks(part.effect.deleted));
+  const originOf = (k: Key): Key | undefined => {
+    const id = parse(k),
+      item = find(doc, k);
+    if (!item) return undefined;
+    if (id.clock > item.id.clock) return key({ client: id.client, clock: id.clock - 1 });
+    return item.origin ? key(item.origin) : undefined;
+  };
+  const leftOf = (k: Key): Key | undefined => {
+    const id = parse(k),
+      item = find(doc, k);
+    if (!item) return undefined;
+    if (id.clock > item.id.clock) return key({ client: id.client, clock: id.clock - 1 });
+    return item.left ? key(item.left.lastId) : undefined;
+  };
+  const rightOriginOf = (k: Key): Key | undefined => {
+    const item = find(doc, k);
+    return item?.rightOrigin && parse(k).clock === item.id.clock
+      ? key(item.rightOrigin)
+      : undefined;
+  };
+  const top = (k: Key, set: ReadonlySet<Key>): Key => {
+    const item = find(doc, k);
+    let root = k;
+    for (const ancestor of item ? ancestorItems(item) : []) {
+      if (!set.has(key(ancestor.id))) break;
+      root = key(ancestor.id);
+    }
+    return root;
+  };
+  const runOf = (k: Key): Key => {
+    let run = top(k, deleted);
+    for (let left = leftOf(run); left && deleted.has(left); left = leftOf(run)) run = left;
+    return run;
+  };
+  // A restored copy keeps its source's lineage root, so a change still pairs after Undo and Redo
+  // gave its items new clocks.
+  const runs = new Map<Key, Key[]>(),
+    runOfRoot = new Map<Key, Key>();
+  for (const k of deleted) {
+    const run = runOf(k);
+    runs.set(run, [...(runs.get(run) ?? []), k]);
+    runOfRoot.set(index.root(k), run);
+  }
+  const texts = new Map<Key, Key[]>();
+  for (const k of inserted) {
+    const content = find(doc, k)?.content;
+    if (!(content instanceof Y.ContentString || content instanceof Y.ContentEmbed)) continue;
+    const root = top(k, inserted);
+    let origin = originOf(root);
+    while (origin && inserted.has(origin)) origin = originOf(origin);
+    for (const side of [origin, rightOriginOf(root)]) {
+      const run = side && runOfRoot.get(index.root(side));
+      if (run) texts.set(run, [...(texts.get(run) ?? []), k]);
+    }
+  }
+  for (const [run, text] of texts) for (const k of runs.get(run) ?? []) out.set(k, text);
+  return out;
 }
 const lazy = <T>(compute: () => T) => {
   let value: { v: T } | undefined;

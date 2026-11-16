@@ -90,9 +90,15 @@ never refuses it. An item that is already gone is skipped ("Stayed as you edited
 the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
 writer deleted), a heading level or other attribute the writer set after the edit. An
 element the edit created that the writer typed in stays, holding only the writer's text.
-A replacement undoes as plain Yjs does: the deleted run comes back where it was, beside whatever
-the writer put there ("One huge cat." becomes "One smallhuge cat."), and Undo never drops an
-original word. A pull or Apply writes only the insertions inside a changed run that only gained
+A replacement is judged per change: each deleted run pairs with the inserted run that took its
+place (`replacedText` in `packages/agent-edit/src/undo/forward-inverse.ts`), and the deleted run
+comes back only while some visible text of that run's replacement still stands. The old word is
+never put beside the writer's text once the new word is gone ("One huge cat." with `huge`
+overtyped stays as the writer left it), and a part with several changes decides each one alone.
+Where part of a replacement still stands, the old run returns beside it ("One smallhuge cat." when
+the writer only trimmed `huge`): two writers' letters in one place are joined, not refused. Only text counts: a
+heading level, list marker, container or format never keeps a replacement standing. A deleted run
+with no replacement always comes back. A pull or Apply writes only the insertions inside a changed run that only gained
 characters (`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change
 writes the run whole), so Undo after a pull equals Undo of the same typing on the draft when the
 writer inserted inside the AI's text. A part is `active` (Undo can act) while one item can still
