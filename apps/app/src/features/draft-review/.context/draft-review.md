@@ -111,10 +111,15 @@ room-base-to-O delta. Its acknowledgement barrier waits for the server to acknow
 local update in the cut before sending. The queue keeps its own `readDraftRoom` lease until
 terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
 sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
-draft holds on receipt. That click has no optimistic base and no room to record it
-(`frozenOn` is false), so it settles on the server's answer; its row hides until then, and the
-commands drop what it took from the cached list (`dropTaken`). Changes holds no room: its rows,
-their "N text changes" (`textChanges`, counted by the server) and Apply all read the list alone.
+draft holds on receipt. That click has no optimistic base and no room to record it (`frozenOn`
+is false), so it settles on the server's answer; its row hides until then, and the commands
+drop what it took from the cached list (`dropTaken`). An editor on the draft meanwhile leaves
+inline review (the item is `hidden`, `useReviewRoomOwner`) and its Apply waits on the pending
+command, so no frozen click can follow the whole cut onto the same changes. A draft with no
+change on receipt comes back in the answer's `skipped` (`CommandOutcome.skipped`): that item
+shows no Applied notice and joins no Undo step, and a command that applied nothing has neither.
+Changes holds no room: its rows, their "N text changes" (`textChanges`, counted by the server)
+and Apply all read the list alone.
 
 An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
 so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every document's click is

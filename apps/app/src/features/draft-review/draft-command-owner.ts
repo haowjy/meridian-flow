@@ -11,7 +11,12 @@ import {
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
-import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import {
+  type BranchId,
+  type DraftItemKey,
+  draftItemKey,
+  parseDraftItemKey,
+} from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
@@ -94,6 +99,8 @@ export type CommandOutcome =
       commandId?: string;
       /** The document had been deleted from the manuscript and this Apply brought it back. */
       restored?: true;
+      /** This item's whole cut found no change on receipt: nothing of it applied. */
+      skipped?: true;
       /** Per-item facts committed by this click. */
       applied?: {
         itemKey: string;
@@ -672,9 +679,13 @@ export class DraftCommandOwner {
           this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
       }
       if (restored || answer.applied.some((item) => item.renamed)) this.publish();
+      const skipped =
+        answer.skipped?.includes(ref.itemKey as DraftItemKey) &&
+        !answer.applied.some((item) => item.itemKey === ref.itemKey);
       return {
         kind: "done",
         commandId: answer.commandId,
+        ...(skipped ? { skipped: true as const } : {}),
         ...(restored ? { restored: true as const } : {}),
         applied: answer.applied.map((item) => ({
           itemKey: item.itemKey,

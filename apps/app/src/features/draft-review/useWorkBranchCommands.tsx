@@ -312,6 +312,12 @@ export function useWorkBranchCommands({
         return blocked();
       }
       void started.outcome.then((outcome) => {
+        // Nothing applied: no notice and no Undo step, and the list says what is left.
+        if (outcome.kind === "done" && outcome.skipped) {
+          redone?.retire();
+          refresh([draft.documentId]);
+          return;
+        }
         if (outcome.kind === "done" && item)
           dropTaken(item, { tree: Boolean(tree && item.tree), text: target.kind === "draft" });
         const step =
@@ -398,7 +404,7 @@ export function useWorkBranchCommands({
         const member = members[index];
         if (!member) return;
         void outcome.then((settled) => {
-          if (settled.kind === "done" && member.item)
+          if (settled.kind === "done" && !settled.skipped && member.item)
             dropTaken(member.item, {
               tree: member.tree !== undefined,
               text: member.target.kind === "draft",
@@ -438,11 +444,18 @@ export function useWorkBranchCommands({
         Promise.all(started.outcomes),
         started.answer,
       ]).then(([settled, _all, answer]) => {
-        const taken = [...members.map(({ draft }) => draft.documentId), ...folders];
+        const skipped = (index: number) => {
+          const outcome = settled[index];
+          return outcome?.kind === "done" && outcome.skipped === true;
+        };
+        const taken = [
+          ...members.flatMap(({ draft }, index) => (skipped(index) ? [] : [draft.documentId])),
+          ...folders,
+        ];
         const only = members.length === 1 && folders.length === 0 ? titleOf(first?.item) : null;
         const count = taken.length;
         const step =
-          answer?.status === "applied"
+          answer?.status === "applied" && answer.applied.length > 0
             ? rememberApply(
                 answer.commandId,
                 branchId,
@@ -457,7 +470,9 @@ export function useWorkBranchCommands({
           applied(
             first.draft,
             settled.flatMap((outcome, index) =>
-              outcome.kind === "done" ? [{ item: members[index]?.item, outcome }] : [],
+              outcome.kind === "done" && !skipped(index)
+                ? [{ item: members[index]?.item, outcome }]
+                : [],
             ),
             step,
           );
