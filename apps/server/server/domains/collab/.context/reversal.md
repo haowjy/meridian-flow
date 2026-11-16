@@ -83,16 +83,22 @@ cannot use a reconstruction endpoint, reversal table, or reserved client. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
 commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its
-other text parts, including applied parts. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest.
+other text parts, including applied parts. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest. A part of an open draft that no change waits on and that was not applied is skipped as `discarded` the same way, so the card offers Undo only while some of the turn's text still stands in a draft; the Discard's own notice Undo covers the rest.
 Each agent is its own peer: Undo of its edit removes the items the edit inserted and restores
 the items it deleted, item by item, and keeps everyone else's typing, so a later writer edit
 never refuses it. An item that is already gone is skipped ("Stayed as you edited it"): text
 the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
 writer deleted), a heading level or other attribute the writer set after the edit. An
 element the edit created that the writer typed in stays, holding only the writer's text.
-A replacement undoes as plain Yjs does: the deleted run comes back where it was, beside whatever
-the writer put there ("One huge cat." becomes "One smallhuge cat."), and Undo never drops an
-original word. A pull or Apply writes only the insertions inside a changed run that only gained
+A replacement is judged per change: each deleted run pairs with the inserted run that took its
+place (`replacedGone` in `packages/agent-edit/src/undo/forward-inverse.ts`), and the deleted run
+comes back only while some visible text of that run's replacement still stands. The old word is
+never put beside the writer's text once the new word is gone ("One huge cat." with `huge`
+overtyped stays as the writer left it), and a part with several changes decides each one alone.
+Where part of a replacement still stands, the old run returns beside it ("One smallhuge cat." when
+the writer only trimmed `huge`): two writers' letters in one place are joined, not refused. Only text counts: a
+heading level, list marker, container or format never keeps a replacement standing. A deleted run
+with no replacement always comes back. Any text that existed before the write and is deleted now, whenever it was deleted, is not a boundary between changes (every backspace leaves some), so a typo the writer fixed inside a replaced word still pairs; text newer than the write is a boundary. The Yjs delete set records no deletion time, so text the writer deleted after the write looks like an old backspace, and two changes separated only by such text join into one run. Known limits: that join, which can double text or lose an Undo when the writer selects across a replaced run and its neighbours and types over it (R1–R3 in the review), and a replaced word whose replacement was overtyped next to an untouched one (`redpinkblue`). The follow-up that records the pairing at write time fixes the class. A pull or Apply writes only the insertions inside a changed run that only gained
 characters (`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change
 writes the run whole), so Undo after a pull equals Undo of the same typing on the draft when the
 writer inserted inside the AI's text. A part is `active` (Undo can act) while one item can still

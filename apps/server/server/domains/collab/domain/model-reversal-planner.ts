@@ -212,7 +212,16 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const actionKind = poppableForTurn(turn).has(entry.id)
       ? ("undo" as const)
       : ("revert" as const);
-    return { destination, actionKind, selection: entry.parts };
+    // A part of an open draft that no change waits on and that was not applied was discarded:
+    // its text is not there for an Undo to take out.
+    const settled = (part: StoredInversePart) =>
+      destination.kind === "draft" && !part.waiting && part.disposition !== "applied";
+    return {
+      destination,
+      actionKind,
+      selection: entry.parts.filter((part) => !settled(part)),
+      discarded: entry.parts.filter(settled),
+    };
   }
   function poppableForTurn(turn: TurnInverseQuery) {
     const poppable = new Set<string>();
