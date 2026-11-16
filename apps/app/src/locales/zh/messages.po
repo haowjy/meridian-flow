@@ -1287,7 +1287,7 @@ msgstr ""
 msgid "Add a goal for this Work"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Add a token"
 msgstr ""
 
@@ -1341,7 +1341,7 @@ msgid "Adding {name} to {area}"
 msgstr ""
 
 #: src/features/connections/AddConnectionForm.tsx
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Address"
 msgstr ""
 
@@ -1599,7 +1599,7 @@ msgstr ""
 msgid "workReceipt.archived"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Asking the server for its tools…"
 msgstr ""
 
@@ -1760,12 +1760,12 @@ msgid "Can't be reached"
 msgstr ""
 
 #. placeholder {0}: standing.reason
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Can't be reached. {0}"
 msgstr ""
 
 #. placeholder {0}: standing.reason
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Can't be reached. {0} Tried {checked}."
 msgstr ""
 
@@ -1876,7 +1876,7 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/connections/AddConnectionForm.tsx
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 #: src/features/connections/ToolChooser.tsx
 #: src/features/creation/CreationDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -1929,7 +1929,7 @@ msgstr ""
 msgid "Change to {name} discarded."
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Change tools"
 msgstr ""
 
@@ -2104,7 +2104,7 @@ msgstr ""
 msgid "Checking links…"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Checking that it answers…"
 msgstr ""
 
@@ -2149,12 +2149,12 @@ msgstr ""
 msgid "Choose tabs"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Choose the tools the AI can use"
 msgstr ""
 
 #: src/features/connections/connection-status.ts
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Choose tools"
 msgstr ""
 
@@ -2178,7 +2178,7 @@ msgstr ""
 msgid "Choose Work for new chat, currently {name}"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Clear"
 msgstr ""
 
@@ -2342,11 +2342,11 @@ msgstr ""
 msgid "Connect"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Connected, checked {checked}."
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Connected."
 msgstr ""
 
@@ -4889,7 +4889,7 @@ msgstr ""
 msgid "New skill"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "New token"
 msgstr ""
 
@@ -5062,7 +5062,7 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/ask/permission-request.ts
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/lib/work-name.ts
@@ -5073,7 +5073,7 @@ msgstr ""
 msgid "None of your own yet. Yours show in every project."
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "None yet."
 msgstr ""
 
@@ -5089,7 +5089,7 @@ msgstr ""
 msgid "None yet. Add a research index, your notes or a story wiki, and the AI can use its tools in your chats."
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "None yet. Its tools can be chosen once it answers."
 msgstr ""
 
@@ -5194,7 +5194,7 @@ msgstr ""
 #~ msgstr ""
 
 #. placeholder {0}: shadowName ?? connection.name
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Not used in this project: this project's own {0} stands in for it."
 msgstr ""
 
@@ -5790,7 +5790,7 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Remove connection"
 msgstr ""
 
@@ -5871,7 +5871,7 @@ msgstr ""
 msgid "Reopens the documents you had open when you switch devices."
 msgstr "切换设备时，会重新打开你之前打开的文档。"
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Replace"
 msgstr ""
 
@@ -6114,7 +6114,7 @@ msgid "Running"
 msgstr "运行中"
 
 #: src/features/agents/PackageSave.tsx
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Save"
 msgstr ""
@@ -6338,7 +6338,7 @@ msgstr ""
 msgid "Services the AI can look things up in while you write."
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Set"
 msgstr ""
 
@@ -7130,7 +7130,7 @@ msgstr ""
 msgid "The server didn't answer."
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "The server didn't list its tools."
 msgstr ""
 
@@ -7742,7 +7742,7 @@ msgid "Today"
 msgstr "今天"
 
 #: src/features/connections/AddConnectionForm.tsx
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Token"
 msgstr ""
 
@@ -7762,7 +7762,7 @@ msgstr ""
 msgid "Tools that can change things"
 msgstr ""
 
-#: src/features/connections/ConnectionRow.tsx
+#: src/features/connections/ConnectionPanel.tsx
 msgid "Tools the AI can use"
 msgstr ""
 
