@@ -2645,6 +2645,10 @@ msgstr ""
 msgid "Couldn't load Trash."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't load what this chat runs."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
 msgstr ""
@@ -4372,6 +4376,7 @@ msgid "Loading Works…"
 msgstr ""
 
 #: src/features/agents/AgentFileDialog.tsx
+#: src/features/agents/AgentPicker.tsx
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
