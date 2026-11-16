@@ -20,7 +20,6 @@ export type ContextSourceOwner =
 export type ContextSource = {
   id: ContextSourceId;
   scheme: ProjectContextTreeScheme;
-  name: string;
   owner: ContextSourceOwner;
   /** What the source's addresses are qualified with (a Work's handle, a chat's or lineage's ref), for `canonicalContextUri(scheme, path, authority)`. */
   authority: CanonicalContextAuthority;

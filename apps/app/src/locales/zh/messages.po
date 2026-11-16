@@ -4498,7 +4498,6 @@ msgstr ""
 msgid "Kept while {works} have changes to it."
 msgstr ""
 
-#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge"
 msgstr ""
@@ -4744,7 +4743,6 @@ msgstr ""
 msgid "Manage Works…"
 msgstr ""
 
-#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
 msgstr ""
@@ -6509,7 +6507,6 @@ msgstr ""
 msgid "scene break"
 msgstr ""
 
-#: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
@@ -8426,7 +8423,6 @@ msgstr ""
 msgid "Undone. Back to the previous saved version, with its text merged into your files. What you changed since is kept."
 msgstr ""
 
-#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
 msgstr ""
@@ -8563,8 +8559,6 @@ msgstr ""
 msgid "Uploading in another window"
 msgstr ""
 
-#: src/features/chat/ChatFilesMenu.tsx
-#: src/features/export/ExportProjectDialog.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
 msgstr ""
@@ -8975,8 +8969,8 @@ msgid "Your unsent words from the chat you deleted are below."
 msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
-msgid "your User files"
-msgstr ""
+#~ msgid "your User files"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."

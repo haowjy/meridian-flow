@@ -110,7 +110,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: p,
         scope: "project",
         slug: "manuscript",
-        name: "Manuscript",
       });
       await seedDocument(source, "chapter", { id: chapter });
       const act = await treeSeeder(db).folder(source, "Act 1");
@@ -199,7 +198,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.insert(contextSources).values({
           id: sourceId,
           slug: scheme,
-          name: scheme,
           scope: chatThreadId ? "chat" : workId ? "work" : "project",
           projectId: workId ? null : p,
           workId,
@@ -400,7 +398,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         rootThreadId: root,
         scope: "lineage",
         slug: "scratch",
-        name: "Scratch",
       });
       await seedDocument(lineageSource, "note", { id: note });
       const rows = [
@@ -541,7 +538,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(contextSources).values({
         id: otherSource,
         projectId: otherProject,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });

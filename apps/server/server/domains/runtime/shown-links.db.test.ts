@@ -49,7 +49,6 @@ if (!RUN_DB_TESTS || !url) {
       await db.insert(schema.contextSources).values({
         id: sourceId,
         projectId,
-        name: "Knowledge",
         slug: "kb",
         scope: "project",
       });

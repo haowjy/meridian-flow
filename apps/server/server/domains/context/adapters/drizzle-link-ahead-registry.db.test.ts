@@ -82,13 +82,12 @@ if (!RUN) {
       });
       await database
         .insert(contextSources)
-        .values({ id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript" });
+        .values({ id: SOURCE, projectId: PROJECT, slug: "manuscript" });
       for (const scheme of ["scratch"] as const) {
         await database.insert(contextSources).values({
           id: SOURCES[scheme],
           workId: NO_WORK,
           scope: "work",
-          name: scheme,
           slug: scheme,
         });
       }
@@ -172,7 +171,6 @@ if (!RUN) {
           projectId: PROJECT,
           rootThreadId: root,
           scope: "lineage",
-          name: "Scratch",
           slug: "scratch",
         });
       }

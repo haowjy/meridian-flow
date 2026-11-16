@@ -67,13 +67,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });
       await db.insert(schema.contextSources).values([
-        { projectId: PROJECT_ID, name: "Knowledge Base", slug: "kb", scope: "project" },
-        { workId: WORK_ID, name: "Scratch", slug: "scratch", scope: "work" },
+        { projectId: PROJECT_ID, slug: "kb", scope: "project" },
+        { workId: WORK_ID, slug: "scratch", scope: "work" },
       ]);
       await treeSeeder(db).document(SOURCE_ID, "chapter", { id: DOC_ID });
       await db.insert(schema.threads).values({

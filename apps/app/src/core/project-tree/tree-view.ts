@@ -6,6 +6,7 @@
  */
 import {
   type CanonicalContextAuthority,
+  CONTEXT_URI_SCHEME_NAMES,
   canonicalContextUri,
   matchDocumentAddress,
 } from "@meridian/contracts";
@@ -87,16 +88,6 @@ export type TreeView = {
   descendants(id: string): readonly string[];
 };
 
-const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
-  manuscript: "Manuscript",
-  kb: "Knowledge",
-  user: "User Files",
-  unfiled: "Unfiled",
-  scratch: "Scratch",
-  uploads: "Uploads",
-  agents: ".agents",
-};
-
 function extensionOf(node: TreeNode): string {
   if (node.kind === "folder") return "";
   const dot = node.name.lastIndexOf(".");
@@ -152,7 +143,7 @@ export function buildTreeView(input: {
     kind: "dir",
     entryId: sourceId,
     parentId: null,
-    name: ROOT_NAMES[scheme],
+    name: CONTEXT_URI_SCHEME_NAMES[scheme],
     path: "/",
     uri: uriOf(""),
   };

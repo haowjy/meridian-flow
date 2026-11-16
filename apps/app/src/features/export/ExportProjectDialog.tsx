@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 
 export function ExportProjectDialog({
   accountSignal,
@@ -75,9 +76,9 @@ export function ExportProjectDialog({
     onClose();
   };
   const labels: Record<ExportOutsideArea, string> = {
-    scratch: t`Scratch`,
-    uploads: t`Uploads`,
-    user: t`your User files`,
+    scratch: schemeLabel("scratch"),
+    uploads: schemeLabel("uploads"),
+    user: schemeLabel("user"),
     deleted: t`documents that were deleted`,
   };
   const where = result

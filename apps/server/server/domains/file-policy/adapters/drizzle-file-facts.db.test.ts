@@ -46,14 +46,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: a, projectId: p, createdByUserId: u, name: "Arc A", handle: "w1" },
       ]);
       await db.insert(contextSources).values([
-        { id: manuscript, projectId: p, name: "Manuscript", slug: "manuscript" },
-        { id: scratch, workId: a, scope: "work", name: "Scratch", slug: "scratch" },
+        { id: manuscript, projectId: p, slug: "manuscript" },
+        { id: scratch, workId: a, scope: "work", slug: "scratch" },
         {
           id: lineageScratch,
           projectId: p,
           rootThreadId: rootThread,
           scope: "lineage",
-          name: "Scratch",
           slug: "scratch",
         },
       ]);

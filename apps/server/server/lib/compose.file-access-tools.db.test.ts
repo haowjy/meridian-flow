@@ -66,11 +66,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: MANUSCRIPT_ID,
           projectId: PROJECT_ID,
-          name: "Manuscript",
           slug: "manuscript",
           scope: "project",
         },
-        { id: SCRATCH_ID, workId: WORK_ID, name: "Scratch", slug: "scratch", scope: "work" },
+        { id: SCRATCH_ID, workId: WORK_ID, slug: "scratch", scope: "work" },
       ]);
       const seeds = treeSeeder(db);
       await seeds.document(MANUSCRIPT_ID, "chapter", { id: CHAPTER_ID });

@@ -110,13 +110,13 @@ work directory or the PR asset directory.
 
 ## Files dropped on a document
 
-Use a prose document in each of Manuscript and Knowledge Base, one with a heading, a list and a
+Use a prose document in each of Manuscript and Knowledge, one with a heading, a list and a
 table. A synthetic `DragEvent` carrying a `DataTransfer` with `File`s works for these: the browser's
 own file drag adds nothing to what the door reads. Read the rows from `upload_intakes` or the tree.
 
 1. Drop a PDF at a word, in a heading, in a list item and in a table cell. Each lands a chip at
    the caret reading the name, then `PDF · 2 KB` once it finalizes. The file is a row in
-   `<source>://assets/` of the document's own source (Knowledge Base: `kb://assets/`), and the chip
+   `<source>://assets/` of the document's own source (Knowledge: `kb://assets/`), and the chip
    opens it the way the tree's row does. Drop the same name again: the file lands as `name (2).pdf`
    and the chip reads `name (2).pdf` from the moment it appears; a `.zip` keeps its extension
    (`notes (2).zip`).
