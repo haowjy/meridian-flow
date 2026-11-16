@@ -2,7 +2,12 @@
  * server-has — what the server holds, as a state vector read off one socket's frames: the server's
  * SyncStep1, every document update the server sends, and every one this client writes to the open
  * socket (the socket is ordered: the server gets it, or the connection ends and the next handshake
- * starts over). Per client the server holds every item below the vector's clock.
+ * starts over). Per client the server holds every item below the vector's clock: a payload only
+ * extends a client's clock by runs that continue from it, since an update can carry structs
+ * beyond a gap (pending on the server) that the server has not integrated. Before this socket's
+ * SyncStep1 the vector is only the frames seen so far, so `lacking` claims nothing until it has
+ * arrived. The check covers inserts only: a state vector carries no deletions, so a peer's
+ * deletions released by a server frame go with the next handshake's SyncStep2.
  *
  * A document can hold items no frame carried. A local peer's update that waits on items the
  * server has not sent yet stays pending in the Y.Doc; the server update that supplies them
@@ -21,32 +26,45 @@ import { readSyncFrame } from "./handshake-difference";
 export type ServerHasTracker = {
   /** A socket opened: the server has shown nothing on it yet. */
   reset(): void;
-  /** Whether `frame`, received from the server, was a Sync frame. */
+  /** Whether `frame`, received from the server, was a Sync frame. Called before it is applied, so
+   *  the reply to a SyncStep1 continues from the server's clocks. */
   noteFrameReceived(frame: Uint8Array): boolean;
   /** A frame was written to the open socket. */
   noteFrameSent(frame: Uint8Array): void;
   readonly vector: Uint8Array;
-  /** The update of what `document` holds that the server lacks; null when it lacks no item. */
+  /** The update of what `document` holds that the server lacks; null when it lacks no item or
+   *  this socket's SyncStep1 has not arrived. */
   lacking(document: Y.Doc): Uint8Array | null;
 };
 
 export function createServerHasTracker(): ServerHasTracker {
   let clocks = new Map<number, number>();
+  let handshaken = false;
   const grow = (vector: Map<number, number>) => {
     for (const [client, clock] of vector)
       if ((clocks.get(client) ?? 0) < clock) clocks.set(client, clock);
   };
-  // An update's end clocks: `encodeStateVectorFromUpdate` counts only runs from clock 0.
-  const holds = (payload: Uint8Array) => grow(Y.parseUpdateMeta(payload).to);
+  // Structs come per client in clock order; a Skip marks a gap.
+  const holds = (payload: Uint8Array) => {
+    for (const struct of Y.decodeUpdate(payload).structs) {
+      if (struct instanceof Y.Skip) continue;
+      const { client, clock } = struct.id;
+      const held = clocks.get(client) ?? 0;
+      if (clock <= held && held < clock + struct.length) clocks.set(client, clock + struct.length);
+    }
+  };
   return {
     reset() {
       clocks = new Map();
+      handshaken = false;
     },
     noteFrameReceived(frame) {
       const sync = readSyncFrame(frame);
       if (!sync) return false;
-      if (sync.syncType === messageYjsSyncStep1) grow(Y.decodeStateVector(sync.payload));
-      else holds(sync.payload);
+      if (sync.syncType === messageYjsSyncStep1) {
+        grow(Y.decodeStateVector(sync.payload));
+        handshaken = true;
+      } else holds(sync.payload);
       return true;
     },
     noteFrameSent(frame) {
@@ -58,6 +76,7 @@ export function createServerHasTracker(): ServerHasTracker {
       return Y.encodeStateVector(clocks);
     },
     lacking(document) {
+      if (!handshaken) return null;
       for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(document)))
         if ((clocks.get(client) ?? 0) < clock)
           return Y.encodeStateAsUpdate(document, Y.encodeStateVector(clocks));

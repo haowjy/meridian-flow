@@ -195,14 +195,15 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   }
 
   override onMessage(event: MessageEvent) {
+    // Same read the base class makes: frames arrive as ArrayBuffer.
+    const frame = new Uint8Array(event.data);
+    const sync = this.serverHas.noteFrameReceived(frame);
     try {
       super.onMessage(event);
     } finally {
-      // Same read the base class makes: frames arrive as ArrayBuffer.
-      const frame = new Uint8Array(event.data);
       // Before the acknowledgement: what the frame left unsent goes out first, so the server
       // acknowledging everything still means it holds the whole document.
-      if (this.serverHas.noteFrameReceived(frame)) this.onServerFrame(frame);
+      if (sync) this.onServerFrame(frame);
       this.acknowledgement.noteFrameReceived(frame);
       if (this.acknowledgement.readOnly) this.difference.noteFrameReceived(frame);
     }

@@ -568,7 +568,10 @@ keyboard, pointer, drop, or draft-recovery answer.
   peer's pending items that a server update released in the provider's transaction, which
   Hocuspocus never uploads. After each server frame, once the provider and every transaction it
   opened (a schema repair included) are done, an editable room sends what the document holds
-  beyond the vector, so those items reach the server too.
+  beyond the vector, so those items reach the server too, once that socket's SyncStep1 has
+  arrived (before it the vector is partial). A payload grows the vector only by runs that continue
+  from it, so structs past a gap are never counted. The check covers inserts: a vector carries
+  no deletions, so a peer's deletions released by a server frame go with the next handshake.
 - **A replaced room.** The server can replace a room's document with one that lacks items a mark
   counts: a restore from a checkpoint (`CollabDomain.restore`, no caller yet) installs an older
   state as a new generation, and a document with no authority head is reseeded empty. A handshake
