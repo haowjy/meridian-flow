@@ -1,9 +1,9 @@
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
-import type { McpConnectionView } from "@meridian/contracts/mcp";
+import { type McpConnectionView, mcpAddressProblem } from "@meridian/contracts/mcp";
 
 /** What fixes a connection that isn't working, or makes one that is usable. */
-export type ConnectionAction = "try_again" | "update_token" | "choose_tools";
+export type ConnectionAction = "try_again" | "add_token" | "update_token" | "choose_tools";
 
 /**
  * How a connection stands for the writer: a problem with its fix, or a fact for the row's end.
@@ -13,7 +13,8 @@ export type ConnectionStanding =
   | { kind: "checking" }
   | { kind: "working"; tools: number }
   | { kind: "no_tools" }
-  | { kind: "problem"; status: "unreachable" | "needs_sign_in"; reason: string }
+  | { kind: "problem"; status: "unreachable"; reason: string }
+  | { kind: "problem"; status: "needs_sign_in"; reason: string; tokenSet: boolean }
   | { kind: "shadowed" };
 
 export function connectionStanding(
@@ -32,7 +33,8 @@ export function connectionStanding(
     return {
       kind: "problem",
       status: "needs_sign_in",
-      reason: connection.statusReason ?? t`The server refused the token.`,
+      reason: connection.statusReason ?? t`The server needs a valid token.`,
+      tokenSet: connection.tokenSet,
     };
   return connection.pin
     ? { kind: "working", tools: connection.pin.tools.length }
@@ -42,13 +44,16 @@ export function connectionStanding(
 export function standingAction(standing: ConnectionStanding): ConnectionAction | null {
   if (standing.kind === "no_tools") return "choose_tools";
   if (standing.kind !== "problem") return null;
-  return standing.status === "unreachable" ? "try_again" : "update_token";
+  if (standing.status === "unreachable") return "try_again";
+  return standing.tokenSet ? "update_token" : "add_token";
 }
 
 export function actionLabel(action: ConnectionAction): string {
   switch (action) {
     case "try_again":
       return t`Try again`;
+    case "add_token":
+      return t`Add a token`;
     case "update_token":
       return t`Update the token`;
     case "choose_tools":
@@ -85,4 +90,22 @@ export function suggestedName(address: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "-")
     .slice(0, 40);
+}
+
+/** Why Flow won't connect to this address, said before it is sent; null for anything the server must judge. */
+export function addressRefusal(address: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(address.trim());
+  } catch {
+    return null;
+  }
+  switch (mcpAddressProblem(url)) {
+    case "not_https":
+      return t`Flow connects only to https addresses, so the address must start with https://.`;
+    case "not_port_443":
+      return t`Flow connects only to port 443, so take the port out of the address.`;
+    case null:
+      return null;
+  }
 }

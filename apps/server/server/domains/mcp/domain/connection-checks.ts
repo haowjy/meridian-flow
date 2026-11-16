@@ -38,7 +38,7 @@ const isRefusedByFlow = (outcome: Unreachable) =>
   outcome.reason === "start_failed" && REFUSED_BY_FLOW.test(outcome.message);
 
 /** A writer's words for why a check failed. */
-export function reasonText(outcome: Unreachable): string {
+function reasonText(outcome: Unreachable): string {
   switch (outcome.reason) {
     case "start_failed":
       if (/does not follow redirects/i.test(outcome.message))
@@ -58,20 +58,26 @@ export function reasonText(outcome: Unreachable): string {
     case "forbidden":
       return "The server refused the request (HTTP 403).";
     case "unauthorized":
-      return "The server refused the token.";
+      return "The server refused the request (HTTP 401).";
     case "rate_limited":
       return "The server is limiting requests.";
   }
 }
 
-export const UNREADABLE_TOKEN_REASON = "The saved token could not be read. Enter it again.";
+/** Why a server wants sign-in, from what Flow sent it: no token, a token, or a token it could not open. */
+function signInReason(loaded: ServerLoad): string {
+  if ("problem" in loaded) return "The saved token could not be read. Enter it again.";
+  return "auth" in loaded.server.spec
+    ? "The server refused the token."
+    : "The server needs a token.";
+}
 
 export function createConnectionChecks(deps: ConnectionChecksDeps) {
   const now = deps.now ?? (() => new Date());
   const running = new Map<string, Promise<void>>();
 
-  async function learn(row: ConnectionRow, loaded: ServerLoad): Promise<Learned | "aborted"> {
-    if ("problem" in loaded) return { status: "needs_sign_in", reason: UNREADABLE_TOKEN_REASON };
+  async function learn(loaded: ServerLoad): Promise<Learned | "aborted"> {
+    if ("problem" in loaded) return { status: "needs_sign_in", reason: signInReason(loaded) };
     let outcome = await deps.client.check(loaded.server, { timeoutMs: CHECK_TIMEOUT_MS });
     if (
       outcome.kind === "unreachable" &&
@@ -87,7 +93,7 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
     if (outcome.kind === "aborted") return "aborted";
     if (outcome.kind === "reachable") return { status: "connected", reason: null };
     if (outcome.reason === "unauthorized")
-      return { status: "needs_sign_in", reason: reasonText(outcome) };
+      return { status: "needs_sign_in", reason: signInReason(loaded) };
     if (outcome.reason === "rate_limited") return "unchanged";
     return { status: "unreachable", reason: reasonText(outcome) };
   }
@@ -123,7 +129,7 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
     if (joined) return joined;
     const startedAt = now();
     const run = (async () => {
-      const learned = await learn(row, await deps.loadServer(row));
+      const learned = await learn(await deps.loadServer(row));
       if (learned !== "aborted") await store(row, startedAt, learned);
     })().finally(() => running.delete(key));
     running.set(key, run);
@@ -156,7 +162,7 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
      */
     async recordCall(
       row: ConnectionRow,
-      call: { startedAt: Date },
+      call: { startedAt: Date; loaded: ServerLoad },
       outcome: CallOutcome,
     ): Promise<void> {
       let learned: Learned = "unchanged";
@@ -167,7 +173,7 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
       )
         learned = { status: "connected", reason: null };
       else if (outcome.kind === "unreachable" && outcome.reason === "unauthorized")
-        learned = { status: "needs_sign_in", reason: reasonText(outcome) };
+        learned = { status: "needs_sign_in", reason: signInReason(call.loaded) };
       else if (
         outcome.kind === "unreachable" &&
         (outcome.reason === "start_failed" ||

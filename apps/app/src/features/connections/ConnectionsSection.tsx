@@ -28,6 +28,7 @@ import {
   levelLabel,
 } from "./AddConnectionForm";
 import { ConnectionRow, type PanelFocus, RemovedConnectionRow } from "./ConnectionRow";
+import { addressRefusal } from "./connection-status";
 
 type Adding =
   | { kind: "closed" }
@@ -56,6 +57,11 @@ export function ConnectionsSection() {
     connections.find((connection) => connection.id === id)?.name ?? null;
 
   const add = async (values: AddValues) => {
+    const refusal = addressRefusal(values.url);
+    if (refusal) {
+      setAdding({ kind: "form", values, error: { on: "address", message: refusal } });
+      return;
+    }
     setAdding({ kind: "connecting", values });
     const level: McpConnectionLevel = projectId ? values.level : "account";
     try {
@@ -238,7 +244,7 @@ export function ConnectionsSection() {
                         onAction={(action) =>
                           setOpen({
                             id: item.key,
-                            focus: action === "update_token" ? "token" : "tools",
+                            focus: action === "choose_tools" ? "tools" : "token",
                           })
                         }
                         removeFailed={removeFailed === item.key}

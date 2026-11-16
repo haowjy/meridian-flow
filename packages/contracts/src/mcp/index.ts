@@ -49,6 +49,16 @@ export type McpBakedListing =
 
 export const MCP_SESSIONS_PER_ACCOUNT = 8;
 
+/**
+ * The part of Flow's address rule that needs no lookup: https, on port 443. The app refuses these
+ * before sending; the server applies this and its own check for private addresses.
+ */
+export function mcpAddressProblem(url: URL): "not_https" | "not_port_443" | null {
+  if (url.protocol !== "https:") return "not_https";
+  if (url.port !== "" && url.port !== "443") return "not_port_443";
+  return null;
+}
+
 /** Where a connection lives: every project of the account, or one project. */
 export type McpConnectionLevel = "account" | "project";
 

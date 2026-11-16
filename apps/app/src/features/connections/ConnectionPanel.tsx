@@ -15,6 +15,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import {
   actionLabel,
+  addressRefusal,
   type ConnectionAction,
   type ConnectionStanding,
   standingAction,
@@ -22,7 +23,7 @@ import {
 } from "./connection-status";
 import { ToolChooser } from "./ToolChooser";
 
-/** What the panel opens on: the token field after Update the token, the tools after Choose tools. */
+/** What the panel opens on: the token field after Add a token or Update the token, the tools after Choose tools. */
 export type PanelFocus = "token" | "tools" | null;
 
 /** An open connection: how it stands in full, its address, its token, its tools, and Remove. */
@@ -130,12 +131,17 @@ function AddressField({ connection }: { connection: McpConnectionView }) {
   const [url, setUrl] = useState(connection.url);
   const save = useEditConnection(connection);
   const changed = url.trim() !== connection.url;
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const error = refusal ?? (save.isError ? save.error.message : null);
   return (
     <form
       className="space-y-1.5"
       onSubmit={(event) => {
         event.preventDefault();
-        if (changed) save.mutate({ url: url.trim() });
+        if (!changed) return;
+        const refused = addressRefusal(url);
+        setRefusal(refused);
+        if (!refused) save.mutate({ url: url.trim() });
       }}
     >
       <FieldLabel htmlFor={id}>
@@ -146,10 +152,13 @@ function AddressField({ connection }: { connection: McpConnectionView }) {
           id={id}
           type="url"
           value={url}
-          onChange={(event) => setUrl(event.target.value)}
+          onChange={(event) => {
+            setUrl(event.target.value);
+            setRefusal(null);
+          }}
           spellCheck={false}
           autoComplete="off"
-          aria-invalid={save.isError || undefined}
+          aria-invalid={error ? true : undefined}
         />
         {changed ? (
           <Button type="submit" size="sm" disabled={save.isPending}>
@@ -157,7 +166,7 @@ function AddressField({ connection }: { connection: McpConnectionView }) {
           </Button>
         ) : null}
       </div>
-      {save.isError ? <InlineErrorRow message={save.error.message} className="px-0" /> : null}
+      {error ? <InlineErrorRow message={error} className="px-0" /> : null}
     </form>
   );
 }
