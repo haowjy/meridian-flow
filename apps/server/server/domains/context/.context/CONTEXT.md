@@ -49,7 +49,7 @@ walks a path uses it, whatever shows a title uses `name`, and `readSegment` is t
 typed segment. Every tree lookup of a typed name asks
 `addressCandidates` (literal, then the codec's alias), and whatever holds the literal name
 answers whatever its kind: `TreeReader.resolveAddress` is the one tree walk over them,
-`matchDocumentAddress` and the client catalog's `findPath` the same order over a list. A caller
+and the client's `TreeView.findPath`/`findFolder` the same walk over its replay (`childAtSegment`). A caller
 that wants a document (`read`, a link, a document address) asks `resolveDocumentAddress` or
 `resolveDocumentAt`, which skips a folder and tries the alias. Only a link may also leave a registered extension off (`outline` for
 `outline.json`): `matchDocumentPath` adds that unique-match step after the address, and no
@@ -63,8 +63,8 @@ document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
 coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
 while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it. The model's `move` and `delete` refuse it with `source_is_folder`.
-A free name is chosen by the list's writer against its own copy of the tree
-(`@meridian/project-tree`), never by a reader. A node's `name` in `tree_nodes` is its filename as
+No writer picks a free name: a name may repeat in a folder, and replay gives every later twin a
+`~` suffix from its id (rule 14 in `@meridian/project-tree`). A node's `name` in `tree_nodes` is its filename as
 shown, extension included; readers never render a filename from a name and an extension.
 
 ## Access, source capabilities, and transactions
