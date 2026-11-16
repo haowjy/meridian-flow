@@ -159,6 +159,13 @@ Changes holds no room: its rows, their "N text changes" (`textChanges`, counted 
 draft-effect projection, which wakes the list's owner when the number moves) and Apply all read
 the list alone.
 
+The chat's strip (`useDraftDock`) holds a room for its first eight drafted rows only: they show change-level
+text and per-change commands. Every later row is a `whole` dock file (`wholeDockFile`): the list's name and
+`textChanges`, a ✓ and × of its own, and a whole-draft command (`{ kind: "draft" }`, which `withDraft` gives
+its `draftId`). Apply all stays one command over both kinds. A `whole` row's Apply takes the whole draft,
+including other chats' text in a draft several chats wrote; a room row takes only this chat's changes. A
+chat that touched hundreds of drafts therefore holds eight sockets, not one per draft.
+
 An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
 so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every document's click is
 made in the click's event turn and joins its own FIFO as a member sharing the command's id;
