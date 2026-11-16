@@ -104,5 +104,10 @@ stateDiagram-v2
   answer counts until a read of the owner that started after the press lands (`readAt`); then the
   tab's read decides, and an owner it can't tell about reads open, so a stale list costs one
   answered press. A held line never shows when the owner reopened while the press was out.
+- **A delete that hides nothing rests.** A delete's step whose records are in force but hide
+  nothing now (an Apply brought back what it took, or a create keeps its folder standing) keeps its
+  place too: a press passes over it and its rows offer no Undo (`rests`), until it hides something
+  again. A notice line away from the rows ends as it starts to rest (`rested`). Only a record no
+  longer in force (restored, undone, purged) ends it (`endWhenRestored`).
 
 A wrong edit here shows one tree in the sidebar while actions write into another.

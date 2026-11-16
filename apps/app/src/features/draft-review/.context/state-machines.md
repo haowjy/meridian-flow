@@ -66,7 +66,8 @@ The pattern:
 
 One Apply as one state machine (`AppliedCommand` in `apply-history.ts`, its `state`). Every Undo
 of it is `ask`: the sidebar's Ctrl+Z asks it, and an applied row's or a chat card's Undo and
-Ctrl+Z in each editor showing one of its documents `press` it, which says the answer on the
+Ctrl+Z in each editor showing one of its documents or the draft it came from, opened before the
+Apply or after, `press` it, which says the answer on the
 sidebar's rows too. Every Redo is that editor's. Nothing reaches the Apply except through its
 state: each surface derives what it shows from the state and keeps none (the history entries and
 `canUndo`, the sidebar's stack, the Changes row's Undo, the card's control and line, the held

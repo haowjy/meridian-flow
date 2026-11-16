@@ -18,8 +18,11 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import type { ApplyClickOutcome, ApplyCommandHandle } from "./apply-click-queue";
 import { itemOf, unappliedOf } from "./draft-notices";
 
-/** The histories of the live sessions this tab holds for the Apply's documents, read now. */
-export type LiveHistories = () => readonly (DocumentHistory | null)[];
+/**
+ * The histories this tab holds for the Apply's documents, read now: each one's live session, and
+ * the draft rooms it applied from.
+ */
+export type Histories = () => readonly (DocumentHistory | null)[];
 
 export type Answer = Unapplied | { taken: "failed" };
 
@@ -109,7 +112,7 @@ class SharedApply {
   private ended = false;
 
   constructor(
-    private readonly histories: LiveHistories,
+    private readonly histories: Histories,
     private readonly apply: AppliedCommand,
   ) {
     this.enter();
@@ -199,7 +202,7 @@ export class AppliedCommand implements ApplyStep {
   constructor(
     init: ApplyInit,
     private port: ApplyPort,
-    histories: LiveHistories,
+    histories: Histories,
     private readonly hooks: {
       closed: ClosedOwners;
       seat: Seat | null;
@@ -269,6 +272,11 @@ export class AppliedCommand implements ApplyStep {
     this.reread();
     if (!firstPassOver(this)) return;
     this.say({ from, answer: { taken: "nothing", treeLeft: [], held: this.held }, step: this });
+  }
+
+  /** A session of one of its documents opened since it was applied: in force, it shows there. */
+  rejoin(): void {
+    if (this.inForce()) this.shared.enter();
   }
 
   /** The Apply's port from now on: a band's review let go of its room. */
@@ -517,6 +525,11 @@ export class AppliedCommands {
 
   values(): AppliedCommand[] {
     return [...this.all.keys()];
+  }
+
+  /** A session opened: each Apply in force on its document enters its history, oldest first. */
+  rejoin(): void {
+    for (const command of this.all.keys()) command.rejoin();
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {

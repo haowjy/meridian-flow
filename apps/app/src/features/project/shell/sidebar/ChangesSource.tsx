@@ -45,7 +45,7 @@ import {
   groupsOf,
   landingFaultSentence,
 } from "@/features/draft-review/tree-groups";
-import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
+import { hasApply, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { escapeCssIdent } from "@/lib/css-selector";
@@ -210,9 +210,6 @@ export function ChangesSource({
       ));
   // Grouped, the list's order is the groups' order: every index below reads this one.
   const files = groups.flatMap(groupFiles);
-  // Apply needs what it would apply: a new file, a move or delete, or a draft.
-  const applicable = (file: ReviewFileTarget) =>
-    file.draft.hasDraft || file.draft.isNew || hasTreeLine(file.draft);
 
   /** What an Apply of several asks about first: the documents it deletes and those it brings back. */
   const [asking, setAsking] = useState<{
@@ -413,7 +410,7 @@ export function ChangesSource({
               }
               onApply={
                 controller.canApply &&
-                files.every(applicable) &&
+                files.every((file) => hasApply(file.draft)) &&
                 (files.length > 0 || changedFolders.length > 0)
                   ? () => startApply(files, changedFolders)
                   : undefined
@@ -507,7 +504,11 @@ export function ChangesSource({
                     controller={controller}
                     touch={touch}
                     notice={wordOf(folder.id)}
-                    canApply={controller.canApply && !folder.fault && own.every(applicable)}
+                    canApply={
+                      controller.canApply &&
+                      !folder.fault &&
+                      own.every((file) => hasApply(file.draft))
+                    }
                     onApply={(name) => startApply(own, folder.folders, name)}
                     onDiscard={(name) => {
                       hold();
@@ -530,7 +531,7 @@ export function ChangesSource({
                   depth={item.depth}
                   fault={tree?.faults.get(file.documentId) ?? null}
                   active={isOpen(file)}
-                  canApply={controller.canApply && applicable(file)}
+                  canApply={controller.canApply && hasApply(file.draft)}
                   controller={controller}
                   touch={touch}
                   notice={wordOf(file.documentId)}

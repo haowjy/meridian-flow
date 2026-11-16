@@ -9,7 +9,6 @@ import {
   type StandingNode,
   standingOf,
   startReplay,
-  type TreeProjection,
   type TreeStanding,
   withTurned,
 } from "./replay.js";
@@ -29,19 +28,33 @@ function liftedBy(tree: TreeStanding, record: TreeRecord) {
   });
 }
 
-/** Whether the delete record, or the original an Undo's copy carries, still stands in the projection. */
-const standsIn = (projection: Pick<TreeProjection, "standingDeletes">, record: TreeRecord) =>
-  projection.standingDeletes.has(record.id) ||
-  projection.standingDeletes.has(record.carries ?? record.id);
+/** Whether the delete record, or the original an Undo's copy carries, is in `deletes`. */
+const standsIn = (deletes: ReadonlySet<string>, record: TreeRecord) =>
+  deletes.has(record.id) || deletes.has(record.carries ?? record.id);
+
+/** The delete `recordId` names as `asked` has it, and the view whose Trash holds it. */
+function deleteIn(writer: TreeWriter, asked: View, recordId: string) {
+  const record = lastOfFamily(writer.doc, asked, recordId);
+  if (!record || record === "unknown" || record.type !== "delete") return null;
+  return { record, projection: writer.view(record.draft === null ? LIVE : asked) };
+}
 
 /**
- * Whether the delete `recordId` can still be undone: its Trash entry survives in the view (not
- * lifted by a restore of any of its nodes, an Undo or a purge). The fact `undoChange` reads.
+ * Whether the delete `recordId` can still be undone: it is in force in the view (not lifted by a
+ * restore of any of its nodes, an Undo or a purge). The fact `undoChange` reads.
  */
 export function deleteStands(writer: TreeWriter, asked: View, recordId: string): boolean {
-  const record = lastOfFamily(writer.doc, asked, recordId);
-  if (!record || record === "unknown" || record.type !== "delete") return false;
-  return standsIn(writer.view(record.draft === null ? LIVE : asked), record);
+  const found = deleteIn(writer, asked, recordId);
+  return found !== null && standsIn(found.projection.standingDeletes, found.record);
+}
+
+/**
+ * Whether the delete `recordId` is in force and hides something now (`hidingDeletes`): whether
+ * its Undo would bring anything back. One that hides nothing may hide again, while it stands.
+ */
+export function deleteHides(writer: TreeWriter, asked: View, recordId: string): boolean {
+  const found = deleteIn(writer, asked, recordId);
+  return found !== null && standsIn(found.projection.hidingDeletes, found.record);
 }
 
 /**
@@ -368,7 +381,7 @@ function opposite(
       return author({ type: "delete", node: named.node, cascade: [] });
     case "delete":
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.
-      if (!standsIn(tree, named)) return "already";
+      if (!standsIn(tree.standingDeletes, named)) return "already";
       return author({ type: "restore", node: named.node });
     case "restore":
       if (node.trashed) return "already";

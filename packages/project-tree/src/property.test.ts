@@ -293,6 +293,8 @@ function runSeed(seed: number): {
             restoredByApply: landed.restored.map((record) => record.id),
           });
           undone += 1;
+          // No writer path doubles a live copy (it takes a live Undo of an Un-Apply's Undo record):
+          // seed 400084 fails without this exemption. Keep it (#1610).
           const doubled = landed.copies.some((op) => inLive.has(op.carries as string));
           if (result.left.length === 0 && !doubled) {
             expect(standing(replayView(writer.doc, LIVE)), `seed ${seed} undo apply live`).toBe(

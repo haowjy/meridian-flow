@@ -254,7 +254,9 @@ export async function runDelete(
 
 /**
  * The delete's notice, with an Undo that takes back the sidebar's own Undo step for it: whichever
- * runs first, the other has nothing left (a press ends the notice).
+ * runs first, the other has nothing left (a press ends the notice). It also ends when its steps
+ * rest (an Apply or a create shows what they took again): it can't hide its Undo for now as the
+ * rows do, and the rows and Ctrl+Z keep it.
  */
 function showDeleteNotice(
   { notices }: NonNullable<EntryContext["notice"]>,
@@ -276,15 +278,17 @@ function showDeleteNotice(
     }),
     end: () => {},
   };
-  // The notice's one Undo covers every list's step: it ends with the last of them.
+  // The notice's one Undo covers every list's step: it ends when the last of them ends or rests.
   const standing = new Set(taken.map(({ step }) => step));
-  for (const { step } of taken)
-    step.ended = () => {
-      standing.delete(step);
-      if (standing.size > 0) return;
+  for (const { step } of taken) {
+    const leave = () => {
+      if (!standing.delete(step) || standing.size > 0) return;
       handle.end();
       notices.partEnded(handle);
     };
+    step.ended = leave;
+    step.rested = leave;
+  }
   const id = notices.showDiscard({
     projectId,
     ownerKey: deleteNoticeKey(projectId),

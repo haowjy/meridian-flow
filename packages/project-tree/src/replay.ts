@@ -129,14 +129,21 @@ export type TreeProjection = {
   skipped: Array<{ record: string; reason: SkipReason }>;
   /** Creates whose folder was never created in this view: put at the top of their source (rule 6). */
   rescued: string[];
-  /** Trash: the deletes still in force. Per view, like the tree. */
+  /** Trash: the deletes in force that hide something (`hidingDeletes`). Per view, like the tree. */
   trash: TrashEntry[];
   /**
-   * The root ids of the deletes Undo may still take back: each Trash entry's own, and a delete
-   * that took a restore back (its entries and cascade members are in Trash again) while one of
-   * those stands.
+   * The root ids of the deletes in force (not lifted by a restore or an Undo, not purged): each
+   * delete's own, and a delete that took a restore back while one of the deletes it put back is
+   * in force. Undo may take these back, and only these.
    */
   standingDeletes: ReadonlySet<string>;
+  /**
+   * Those of `standingDeletes` that hide something now, by the same ids: what Trash lists. A
+   * delete in force whose nodes all show (an Apply brought back what it took, or a create keeps
+   * its folder standing) is out of this set until they leave again, and in `standingDeletes`
+   * throughout.
+   */
+  hidingDeletes: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
   gone: ReadonlySet<string>;
   /** Records the server dropped at admission (from the settle log; `replayView` fills it, `replay` has no log). */
@@ -765,7 +772,7 @@ export function startReplay(
           );
         },
         changes,
-        standingDeletes: standingDeletesOf(nodes, deletes),
+        standingDeletes: rootsOf(inForce(nodes, deletes), (put) => put.size > 0),
         descendants: (id) => descendantsOf({ children: { get: kidsOf } }, id),
       };
       cached = { count, tree };
@@ -1024,16 +1031,38 @@ function stand(
   return { children, standing };
 }
 
-const deletesInTrash = (nodes: Map<string, Working>, deletes: DeleteInForce[]) =>
+const inForce = (nodes: Map<string, Working>, deletes: DeleteInForce[]) =>
   deletes.filter((entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged);
 
-/** `TreeProjection.standingDeletes`. */
-const standingDeletesOf = (nodes: Map<string, Working>, deletes: DeleteInForce[]) =>
+/**
+ * The deletes in force that still hide something: their node or a member of their cascade. An
+ * entry whose nodes all show has nothing in Trash and nothing for an Undo to bring back now, and
+ * hides them again once what keeps them standing leaves.
+ */
+const deletesInTrash = (
+  nodes: Map<string, Working>,
+  deletes: DeleteInForce[],
+  standing: ReadonlyMap<string, Standing>,
+) =>
+  inForce(nodes, deletes).filter((entry) =>
+    [entry.node, ...entry.cascade].some((id) => hidden(standing, id)),
+  );
+
+const hidden = (standing: ReadonlyMap<string, Standing>, id: string) => {
+  const state = standing.get(id);
+  return state?.deleted === true && !state.keptByChild;
+};
+
+/**
+ * The root ids an Undo reaches `entries` by (`standingDeletes`, `hidingDeletes`): each entry's
+ * own, and each restore's Undo that put it back while what it put back `counts`.
+ */
+const rootsOf = (entries: DeleteInForce[], counts: (put: ReadonlySet<string>) => boolean) =>
   new Set(
-    deletesInTrash(nodes, deletes).flatMap((entry) => [
+    entries.flatMap((entry) => [
       entry.id,
       entry.from ?? entry.id,
-      ...[...entry.putBackBy].flatMap(([root, put]) => (put.size > 0 ? [root] : [])),
+      ...[...entry.putBackBy].flatMap(([root, put]) => (counts(put) ? [root] : [])),
     ]),
   );
 
@@ -1098,7 +1127,7 @@ function derive(
   const ordered = new Map<string, TreeNode[]>();
   for (const [parent, kids] of children)
     ordered.set(parent, kids.map((kid) => out.get(kid.id) as TreeNode).sort(byRankThenId));
-  const inTrash = deletesInTrash(nodes, deletes);
+  const inTrash = deletesInTrash(nodes, deletes, standing);
   // A delete covers the nodes of its cascade whose ancestry still runs through its node: one
   // moved out since (by a move placed before the delete, whose author did not see it) is not.
   const covered = (entry: DeleteInForce) =>
@@ -1120,7 +1149,8 @@ function derive(
       node: entry.node,
       cascade: covered(entry),
     })),
-    standingDeletes: standingDeletesOf(nodes, deletes),
+    standingDeletes: rootsOf(inForce(nodes, deletes), (put) => put.size > 0),
+    hidingDeletes: rootsOf(inTrash, (put) => [...put].some((id) => hidden(standing, id))),
   };
 }
 

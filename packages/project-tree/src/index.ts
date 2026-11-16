@@ -92,6 +92,7 @@ export {
 export {
   type ClosedUndo,
   changeUndone,
+  deleteHides,
   deleteStands,
   type TakenBack,
   takeBackAll,

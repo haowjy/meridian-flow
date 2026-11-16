@@ -478,8 +478,12 @@ notice. Its press is spent once the server answers, whatever it took back, and w
 `left_out` line) is said on the rows it stayed on (`unappliedOf`). A band's Apply is on no stack
 until it holds a tree change (below).
 
-The live histories this tab holds for an Apply's documents (`registry.liveHistory`: a shown editor
-or an open tab, and for a band the reviewing editor) show it as one entry (`SharedApply`). Ctrl+Z in
+The histories this tab holds for an Apply's documents show it as one entry (`SharedApply`): each
+document's live session (`registry.history`, by the document's id: a shown editor or an open tab),
+and the draft room it was applied from (by the room's name), where an editor open on the draft stays
+after the Apply ("No changes left"); a band's reads its reviewing editor instead. A session that opens
+after the Apply gets it too: the registry says when one opens (`observeHistories`), and the owner has
+each Apply in force enter the histories it now finds (`AppliedCommands.rejoin`), oldest first. Ctrl+Z in
 one moves its entry to Redo and hides it in the others. Taken back, the entry stays in that history's
 Redo and hidden in the others, so a Redo that lands shows it everywhere again; a press from elsewhere
 leaves no Redo and ends every entry; a press that didn't reach the server or was held shows it again

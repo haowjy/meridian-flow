@@ -56,7 +56,7 @@ import {
 import {
   AppliedCommand,
   AppliedCommands,
-  type LiveHistories,
+  type Histories,
   queuePort,
   serverBandPort,
 } from "./apply-history";
@@ -192,7 +192,7 @@ export type StartedApply = {
   band?: AppliedCommand;
 };
 /** A band's Apply: the editors its Ctrl+Z goes in, and which owners are closed now. */
-export type BandHistories = { histories: LiveHistories; closed: ClosedOwners };
+export type BandHistories = { histories: Histories; closed: ClosedOwners };
 /**
  * A Discard's answer for the documents it was sent. `done` when it took something, `settled` when
  * each item was settled before it, `returned` when a closed owner changed nothing. `untaken`: the
@@ -299,6 +299,7 @@ export class DraftCommandOwner {
       closeDraftRoom(roomKey: string, cause: "closed" | "removed"): Promise<void>;
       /** A restore reopened the draft: the page may open its room again. */
       reopenDraftRoom(roomKey: string): void;
+      observeHistories(observer: () => void): () => void;
     },
     private readonly lifecycle: {
       /**
@@ -314,7 +315,11 @@ export class DraftCommandOwner {
       documentBack?(ref: DraftRef): Promise<void>;
       closeCreated?(ref: DraftRef): void;
     } = {},
-  ) {}
+  ) {
+    this.stopRejoining = registry.observeHistories(() => this.applied.rejoin());
+  }
+  /** An Apply made before a session of its documents opened joins that session's history. */
+  private readonly stopRejoining: () => void;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -1464,6 +1469,7 @@ export class DraftCommandOwner {
   }
   close() {
     this.active = false;
+    this.stopRejoining();
     this.notices.close();
     for (const item of this.items.values()) item.queue.close();
     // Their entries sit on sessions that outlive this owner.
