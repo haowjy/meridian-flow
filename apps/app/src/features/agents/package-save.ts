@@ -40,8 +40,6 @@ type Entry = {
    */
   basis: string | null;
   ref: PackageRef;
-  /** The package had no files when saved: its line stays while the word does. */
-  removed: boolean;
 };
 
 /** The package a level-relative path belongs to: an import's folder, or the level's own files. */
@@ -204,7 +202,6 @@ async function save(
       word: predicted(status),
       basis: signature(status),
       ref,
-      removed: status.state === "removed",
     };
     bases.set(keyOf(projectId, ref), entry);
     set(projectId, entry);
@@ -229,7 +226,6 @@ async function save(
       set(projectId, {
         ref,
         basis: outcome.outcome === "failed" ? (before?.basis ?? null) : null,
-        removed: before?.removed ?? false,
         word:
           outcome.outcome === "failed"
             ? { kind: "failed", outcome, settled: true }
@@ -259,11 +255,7 @@ async function save(
   });
 }
 
-/** `nothing`: a later Save of the package exists, so the Undo changed nothing. */
-export type UndoAnswer = "undone" | "nothing" | "failed";
-
-/** Each Save's Undo, by `saveId`: the one state the notice and the AI's card both show. */
-const undoStates = new Map<string, UndoAnswer | "pending">();
+const undoStates = new Map<string, "failed" | "pending">();
 
 async function undo(
   queryClient: QueryClient,
@@ -271,24 +263,22 @@ async function undo(
   projectId: string,
   ref: PackageRef,
   saveId: string,
-): Promise<UndoAnswer> {
+) {
   const key = keyOf(projectId, ref);
   const held = entries.get(key);
   const holds = held?.word.kind === "saved" && held.word.outcome.saveId === saveId ? held : null;
-  const mark = (state: UndoAnswer | "pending") => {
+  const mark = (state: "failed" | "pending") => {
     undoStates.set(saveId, state);
     publish();
   };
   mark("pending");
   try {
-    const undone = await undoAgentSave(projectId, ref.level, saveId);
-    const removed = holds?.removed ?? false;
+    const { undone } = await undoAgentSave(projectId, ref.level, saveId);
     if (undone) {
-      set(projectId, { ref, basis: null, removed, word: { kind: "undone", settled: false } });
+      set(projectId, { ref, basis: null, word: { kind: "undone", settled: false } });
     } else if (holds) {
       entries.delete(key);
     }
-    mark(undone ? "undone" : "nothing");
     await invalidateAgentReads(queryClient, projectId, accountId);
     // The word speaks of the package as Undo left it: its files may read Saved or Unsaved now.
     if (undone && entries.get(key)?.word.kind === "undone") {
@@ -297,15 +287,14 @@ async function undo(
         set(projectId, {
           ref,
           basis: signature(after),
-          removed,
           word: { kind: "undone", settled: true },
         }),
       );
     }
-    return undone ? "undone" : "nothing";
+    undoStates.delete(saveId);
+    publish();
   } catch {
     mark("failed");
-    return "failed";
   }
 }
 
@@ -328,22 +317,16 @@ export function usePackageSaves(projectId: string) {
     /** Whether `PackageSave` has anything to say of the package. */
     shows: (ref: PackageRef, status: AgentPackageStatus | undefined) => {
       const entry = entries.get(keyOf(projectId, ref));
-      return Boolean((entry && heldWord(entry, status)) || (status && status.state !== "saved"));
+      return Boolean(
+        (entry && heldWord(entry, status)) ||
+          status?.undoable ||
+          (status && status.state !== "saved"),
+      );
     },
-    /** Imports saved and removed while their word still shows, for the level's removed lines. */
-    removedWithWord: (level: AgentsLevel, packages: readonly AgentPackageStatus[] | undefined) =>
-      [...entries.entries()].flatMap(([key, entry]) =>
-        key.startsWith(`${level === "user" ? "" : projectId}|${level}|`) &&
-        entry.removed &&
-        !statusOf(packages, entry.ref) &&
-        heldWord(entry, undefined)
-          ? [entry.ref]
-          : [],
-      ),
     save: (statuses: readonly AgentPackageStatus[]) =>
       save(queryClient, accountId, projectId, statuses),
     undo: (ref: PackageRef, saveId: string) => undo(queryClient, accountId, projectId, ref, saveId),
-    /** What the Save's Undo has done: nothing yet (`undefined`), pending, or its answer. */
+    /** Only requests in flight and failed requests awaiting retry live here. */
     undoOf: (saveId: string) => undoStates.get(saveId),
   };
 }

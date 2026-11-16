@@ -9,6 +9,7 @@ import type {
   AgentFiles,
   AgentLevel,
   AgentSelection,
+  AgentsLevel,
   ResolvedAgentConfiguration,
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
@@ -33,12 +34,12 @@ import {
   isError,
 } from "./compile-package.js";
 import { agentRevisionId, canonicalizeJsonObject } from "./helpers.js";
-import { PACKAGES_DIR } from "./level-packages.js";
 import { agentPath, GRAMMAR_VERSION, skillPath } from "./mars.js";
 import {
   type AgentEntry,
   agentsOf,
   createPackageLevels,
+  folderOf,
   type PackageLevels,
   type SkillEntry,
   skillsOf,
@@ -50,6 +51,7 @@ import { type SkillListing, skillListingFromMarkdown } from "./skill-listing.js"
 export type {
   AgentCatalogItem as BoundAgentCatalogItem,
   AgentSelection,
+  AgentsLevel,
 } from "@meridian/contracts/agents";
 
 type SavedLevels = Awaited<ReturnType<PackageLevels["saved"]>>;
@@ -110,8 +112,14 @@ export interface BoundAgentCatalog extends PackageSaver {
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
   ): Promise<{ name: string; text: string; stale: boolean } | undefined>;
-  /** A built-in file's text by its built-in level path (`AgentFileStatus.path`). */
-  builtinFile(path: string): string | undefined;
+  /**
+   * A file's text as its package's latest Save holds it, by level-relative path
+   * (`AgentFileStatus.path`); a built-in's as shipped. Undefined when that version has no such file.
+   */
+  savedFile(
+    userId: string,
+    input: { projectId?: string; level: AgentLevel; path: string },
+  ): Promise<string | undefined>;
   /** The saved skills a writer can invoke with `/`: built-in, user and project, combined by name. */
   userSkills(userId: string, input: { projectId?: string }): Promise<CatalogSkill[]>;
   /**
@@ -126,6 +134,7 @@ export interface BoundAgentCatalog extends PackageSaver {
 
 export function createBoundAgentCatalog(input: {
   store: AgentRevisionStore;
+  onSaved?: (userId: string, projectId: string | undefined, level: AgentsLevel) => void;
   levelFiles: AgentLevelFiles;
   /** The built-in packages, read once at boot. */
   builtins: AgentSourceSnapshot[];
@@ -207,6 +216,7 @@ export function createBoundAgentCatalog(input: {
     store,
     levels,
     levelFiles: input.levelFiles,
+    onSaved: input.onSaved,
   });
 
   const primaryIn = async (
@@ -381,14 +391,18 @@ export function createBoundAgentCatalog(input: {
       return { files: [...agents, ...skills], packages };
     },
 
-    builtinFile(path) {
-      if (!path.startsWith(PACKAGES_DIR)) return undefined;
-      const inside = path.slice(PACKAGES_DIR.length);
-      const slash = inside.indexOf("/");
-      const pkg = builtinPackages.find((item) => item.name === inside.slice(0, slash));
-      const files = pkg?.package.files;
-      const file = inside.slice(slash + 1);
-      return files && Object.hasOwn(files, file) ? files[file] : undefined;
+    async savedFile(userId, { projectId, level, path }) {
+      const folder = /^packages\/[^/]+\//.exec(path)?.[0] ?? "";
+      const owner = level === "builtin" ? null : levels.ownerOf(level, userId, projectId);
+      const save = owner && (await store.readSaved(owner)).find((row) => row.folder === folder);
+      const pkg =
+        level === "builtin"
+          ? builtinPackages.find((item) => folderOf(item.name) === folder)?.package
+          : save?.packageRevisionId
+            ? await levels.savedPackage(save.packageRevisionId)
+            : undefined;
+      const file = path.slice(folder.length);
+      return pkg && Object.hasOwn(pkg.files, file) ? pkg.files[file] : undefined;
     },
 
     async userSkills(userId, { projectId }) {

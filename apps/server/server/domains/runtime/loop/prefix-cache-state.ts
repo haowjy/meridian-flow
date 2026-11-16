@@ -13,7 +13,7 @@ import {
   type PromptCacheDescriptor,
   type PromptCacheRetention,
   resolvePromptCacheTtlSeconds,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import {
   bakeIdAt,
   decodeMediaInclusionMetadata,

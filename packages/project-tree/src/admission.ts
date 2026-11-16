@@ -40,13 +40,7 @@ export function clientMayWrite(value: unknown): boolean {
   const fields = value as Record<string, unknown>;
   const serverKeys = [...SERVER_BASE, ...(SERVER_FIELDS.get(String(fields.type)) ?? [])];
   if (fields.type === "purge" || (fields.type === "create" && fields.kind === "file")) return false;
-  if (serverKeys.some((key) => fields[key] !== undefined)) return false;
-  const from = fields.from;
-  const places = [
-    fields.parent,
-    typeof from === "object" && from !== null ? (from as { parent?: unknown }).parent : undefined,
-  ];
-  return !places.some((place) => typeof place === "string" && place.startsWith("list:"));
+  return !serverKeys.some((key) => fields[key] !== undefined);
 }
 
 /** The part of one Yjs struct the server does not hold yet. */
@@ -251,6 +245,21 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
     return false;
   };
 
+  // Where a record puts its node, when it may move it: a move's parent, and for an Undo of any
+  // type where the replay of the list as it now stands has the node at it (`Change.parent`): an
+  // Undo sets nothing itself, and a copy that had not seen an earlier move did not know where the
+  // node goes. One the replay skipped moves nothing.
+  const after = new Map<string | null, TreeProjection>();
+  const destination = (record: TreeRecord) => {
+    if (record.undoes === undefined) return record.type === "move" ? record.parent : undefined;
+    let view = after.get(record.draft);
+    if (!view) {
+      view = replay(viewRecords(doc, { draft: record.draft }), { draft: record.draft });
+      after.set(record.draft, view);
+    }
+    return view.changes.get(record.id)?.parent;
+  };
+
   let droppedBefore: Set<string> | undefined;
   const droppedNode = (node: string) => {
     if (isSourceRoot(node)) return false;
@@ -274,17 +283,16 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
         placedIn(record.draft).set(record.node, record.parent);
         if (closed) dropped.add(record.node);
         break;
-      case "move":
+      default: {
+        const to = closing ? destination(record) : undefined;
         closed =
           draftClosed ||
           droppedNode(record.node) ||
           inClosed(record.draft, record.node) ||
-          inClosed(record.draft, record.parent);
-        if (!closed && closing && !intoItself(record.draft, record.node, record.parent))
-          placedIn(record.draft).set(record.node, record.parent);
-        break;
-      default:
-        closed = draftClosed || droppedNode(record.node) || inClosed(record.draft, record.node);
+          (to !== undefined && inClosed(record.draft, to));
+        if (!closed && to !== undefined && !intoItself(record.draft, record.node, to))
+          placedIn(record.draft).set(record.node, to);
+      }
     }
     if (closed) out.push(record.id);
   }

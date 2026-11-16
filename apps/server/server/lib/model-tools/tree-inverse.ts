@@ -12,7 +12,7 @@ import { modelResult, parseEditHandle } from "@meridian/agent-edit/integration";
 import type { BranchId, ThreadId, TurnId } from "@meridian/contracts";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
-import { reachPath, runTreeUndo } from "../../domains/context/tree/tree-commands.js";
+import { folderHolds, reachPath, runTreeUndo } from "../../domains/context/tree/tree-commands.js";
 import { runWithEditGrants } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
@@ -24,7 +24,6 @@ import {
   type ToolWiringDeps,
   writeToolError,
 } from "./tool-context.js";
-import { reverseAcrossLists } from "./tree-across-lists.js";
 
 type InverseInput = {
   command: "undo" | "revert";
@@ -111,20 +110,24 @@ export async function runTreeInverse(
   if (!parts) return null;
   const shown = await shownNamesOf(ctx);
   const threadId = ctx.threadId as ThreadId;
-  const reached = await call.context.port.readTree(parts.area, {
-    read: (scope) => reachPath(scope, parts.area, shown, parts.rest, { deleted: true }),
+  const read = await call.context.port.readTree(parts.area, {
+    read: (scope) => ({
+      reached: reachPath(scope, parts.area, shown, parts.rest, { deleted: true }),
+      holds: folderHolds(scope, shown),
+    }),
   });
   const treeHistory = deps.documentSync.treeHistory();
   let node: { id: string; kind: string } | undefined;
-  if (reached.ok && reached.value.kind === "node") node = reached.value.node;
-  else {
-    // A node gone since (deleted, or a create that was undone), named by the path the model
-    // wrote for it, is found by that receipt.
-    const written = await treeHistory.receiptsAt(threadId, `${parts.area}${parts.rest}`);
-    const gone = written.find(
-      (receipt) => receipt.op === "delete" || (receipt.op === "create" && receipt.kind === "undo"),
+  if (read.ok && read.value.reached.kind === "node") node = read.value.reached.node;
+  else if (read.ok) {
+    // A node gone since (deleted, a create that was undone, or moved away from this path),
+    // named by a path the model wrote for it, is found by that receipt.
+    const left = await treeHistory.nodeLeftAt(
+      threadId,
+      `${parts.area}${parts.rest}`,
+      read.value.holds,
     );
-    if (gone) node = { id: gone.subject, kind: parts.rest.endsWith("/") ? "folder" : "document" };
+    if (left) node = { id: left.node, kind: left.folder ? "folder" : "document" };
   }
   if (!node) return null;
   const history = await treeHistory.historyOf(threadId, node.id, node.kind !== "folder");
@@ -168,30 +171,9 @@ async function reverseReceipt(
   const parts = areaOfPath(input.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const history = deps.documentSync.treeHistory();
   const threadId = ctx.threadId as ThreadId;
-  const target = await threadContainerTarget(deps.works, call.context.resolution, input.path);
+  const target = await threadContainerTarget(call.context.resolution, input.path);
   const grant = target ? await deps.fileAccess.authorize(call.principal, target, "edit") : null;
   if (grant && "denied" in grant) return fileAccessDeniedError(input.command, grant, input.path);
-  if (receipt.across) {
-    // The other end of a move between lists: its own container, its own grant.
-    const otherTarget = await threadContainerTarget(
-      deps.works,
-      call.context.resolution,
-      receipt.across.from,
-    );
-    const other = otherTarget
-      ? await deps.fileAccess.authorize(call.principal, otherTarget, "edit")
-      : null;
-    if (other && "denied" in other)
-      return fileAccessDeniedError(input.command, other, receipt.across.from);
-    return reverseAcrossLists(
-      deps,
-      call,
-      ctx,
-      [grant, other].flatMap((granted) => (granted ? [granted] : [])),
-      input.command,
-      receipt as TreeReceipt & { across: { from: string; to: string } },
-    );
-  }
   const drafted = receipt.draftBranchId !== null;
   const port = drafted
     ? call.context.port

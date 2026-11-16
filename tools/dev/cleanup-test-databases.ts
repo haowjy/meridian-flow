@@ -33,7 +33,7 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
     ];
     // Acknowledge ownership while the parent is still alive. No credentials go in argv or logs.
     process.send?.("ready");
-    process.disconnect();
+    process.disconnect?.();
     for (const url of urls) {
       const result = await dropDatabaseForUrl(url, mainNames);
       console.log(`Dropped ${result.targetDb}.`);
@@ -41,6 +41,6 @@ process.once("message", async (message: { databaseUrl: string; workerCount: numb
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-    if (process.connected) process.disconnect();
+    if (process.connected) process.disconnect?.();
   }
 });

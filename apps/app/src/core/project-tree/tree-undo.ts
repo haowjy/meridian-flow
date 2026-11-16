@@ -3,7 +3,7 @@
  * copy, read a source at a time. A step is the record ids one gesture appended and the view it
  * was made in, or an Apply, which the server takes back whole by its command id; nothing else is
  * stored. Whether a tree step can still be taken is read from the list at the press (`undoChange`:
- * by history), and one that no longer fits is skipped for the one before it. An Apply is asked of
+ * by the changes in force), and one that no longer fits is skipped for the one before it. An Apply is asked of
  * the server, and its press is spent once the server answers, whatever it took back. A notice's Undo (`undoStep`) takes back the same step a press would. There is
  * no Redo: an Undo's own records go on no stack.
  *
@@ -63,15 +63,13 @@ export type TreeStep = {
 
 /**
  * What an Un-Apply took back of its Apply: `all` of what stood, `partly`, `nothing`, or `already`
- * (an earlier Un-Apply, here or in another tab, took it all). `textLeft` counts the text changes
- * that stayed (edited since; the answer doesn't say whose document); `treeLeft` names each node
- * whose tree change stayed, with why.
+ * (an earlier Un-Apply, here or in another tab, took it all). `treeLeft` names each node whose tree
+ * change stayed, with why.
  */
 export type Unapplied =
   | { taken: "all" | "already" }
   | {
       taken: "partly" | "nothing";
-      textLeft: number;
       treeLeft: readonly { node: string; why: LeftOutWhy }[];
     };
 

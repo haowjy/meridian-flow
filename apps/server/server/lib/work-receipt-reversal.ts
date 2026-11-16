@@ -12,7 +12,6 @@ import {
   type WorkReceipt,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
-import type { MoveBackAcrossLists } from "../domains/collab/contracts.js";
 import {
   runWorkLifecycleCommand,
   setWorkArchived,
@@ -31,8 +30,6 @@ import {
 } from "../shared/drizzle-transaction.js";
 import type { AppServices } from "./compose.js";
 import { getDb } from "./db.js";
-import { moveBackAcrossLists } from "./model-tools/tree-across-lists.js";
-import { resolveThreadContextPort } from "./thread-context-route.js";
 
 type WorkReceiptReversalDeps = {
   blocks: Pick<BlockRepository, "listByTurn">;
@@ -107,34 +104,6 @@ export async function reverseTurnCard(
     );
     return combineWorkReversalOutcome(outcome, workReceipts);
   };
-  // A move between a project's files and the account's is taken back by the model's own move.
-  const moveBack: MoveBackAcrossLists = async (receipt) => {
-    const { port } = await resolveThreadContextPort(
-      {
-        contextPorts: app.contextPorts,
-        fileAccess: app.fileAccess,
-        threads: app.threadRepos.threads,
-        threadWorks: app.threadRepos.threadWorks,
-        works: app.works,
-        workAuthorityResolver: app.workAuthorityResolver,
-      },
-      input.threadId,
-      input.userId,
-      { destination: { kind: "live" } },
-    );
-    const moved = await moveBackAcrossLists(
-      port,
-      receipt as Parameters<typeof moveBackAcrossLists>[1],
-      { type: "human", userId: input.userId, threadId: input.threadId },
-    );
-    if (moved.ok) return { ok: true, records: moved.value.records };
-    return {
-      ok: false,
-      cause: ["stale_target", "stale_source", "not_found"].includes(moved.error.code)
-        ? "superseded"
-        : "refused",
-    };
-  };
   return app.documentSync.reverseThreadContext({
     ...input,
     alongside: {
@@ -142,7 +111,6 @@ export async function reverseTurnCard(
       lockNamespaces: () => app.works.lockRestoreNamespaces(receiptWorkIds),
       run: alongsideRun,
     },
-    moveBackAcrossLists: moveBack,
   });
 }
 

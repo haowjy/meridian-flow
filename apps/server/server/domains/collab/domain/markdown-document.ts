@@ -195,7 +195,7 @@ export type MarkdownDocumentEngine = {
     base: string;
     target: string;
     origin: DocumentWriteOrigin;
-  }): Promise<Result<void, SyncError>>;
+  }): Promise<Result<{ text: string; clashes: number; changed: boolean }, SyncError>>;
   withLiveDocument<T>(
     documentId: string,
     operation: (held: HeldLiveDocument) => Promise<T>,
@@ -568,6 +568,7 @@ export function createMarkdownDocumentEngine(
     async readForExport(documentId, scope) {
       try {
         const typedDocumentId = documentId as DocumentId;
+        await ensureDocumentAuthority(typedDocumentId);
         const format = await documentFormat(typedDocumentId);
         if (!format.ok) return format;
         return Ok(
@@ -595,6 +596,7 @@ export function createMarkdownDocumentEngine(
 
     async readVersionedMarkdown(documentId) {
       try {
+        await ensureDocumentAuthority(documentId as DocumentId);
         const format = await documentFormat(documentId as DocumentId);
         if (!format.ok) return format;
         const markdown = await deps.coordinator.withDocument(documentId, async (doc) => {
@@ -663,13 +665,15 @@ export function createMarkdownDocumentEngine(
       if (format.value.schemaType !== "code") {
         return Err({ code: "corrupt_state", documentId, message: "Not a code document" });
       }
+      let result = { text: "", clashes: 0 };
       try {
         const written = await changeDocument(
           { documentId, origin },
           (draft, yjsOrigin) => {
             const block = projectBlocks(documentId, draft, (blocks) => blocks[0]);
             const live = block?.textContent ?? "";
-            const merged = mergeCodeText({ base, live, target });
+            result = mergeCodeText({ base, live, target });
+            const merged = result.text;
             // Raised before anything is staged or admitted: nothing to write, nothing to announce.
             if (merged === live) throw new MergeChangesNothing();
             const next = block
@@ -685,9 +689,9 @@ export function createMarkdownDocumentEngine(
           format.value,
           true,
         );
-        return written.ok ? Ok(undefined) : written;
+        return written.ok ? Ok({ ...result, changed: true }) : written;
       } catch (cause) {
-        if (cause instanceof MergeChangesNothing) return Ok(undefined);
+        if (cause instanceof MergeChangesNothing) return Ok({ ...result, changed: false });
         throw cause;
       }
     },

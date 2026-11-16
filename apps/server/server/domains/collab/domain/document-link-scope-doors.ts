@@ -10,6 +10,7 @@
  * spelled outside every scope are reported (`createLinkScopeObserver`).
  */
 
+import type { FileGrant } from "../../file-policy/index.js";
 import type { DraftPeerShadowAccess } from "../contracts.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
@@ -56,8 +57,22 @@ export function scopeMarkdownEngine(
 }
 
 /**
- * A model read is scoped by its grant's project, which exists even for a chapter the call is
- * creating, and read as the account it acts for; a call by the thread it reads in.
+ * The project a model edit's links read in: the request's, never the file's (a home document has
+ * none). An agent's is its thread's project; a writer's (a card's Undo) is the thread's it runs in.
+ */
+function requestScope(context: {
+  grant: FileGrant;
+  threadId?: string | undefined;
+}): { projectId: string } | { threadId: string } {
+  const projectId = context.grant.principal.agent?.projectId;
+  if (projectId) return { projectId };
+  if (context.threadId) return { threadId: context.threadId };
+  throw new Error("A model edit runs in no thread and no agent's project");
+}
+
+/**
+ * A model read is scoped by its request's project, which exists even for a chapter the call is
+ * creating; it reads as the account it acts for, in the thread it reads in.
  */
 export function scopeAgentEdit(
   router: AgentEditRouter,
@@ -69,7 +84,7 @@ export function scopeAgentEdit(
     read: (command, context) =>
       scopes.within(
         {
-          projectId: context.grant.facts.projectId,
+          ...requestScope(context),
           viewer: {
             accountId: context.grant.principal.accountId,
             ...(context.threadId ? { threadId: context.threadId } : {}),
@@ -80,7 +95,7 @@ export function scopeAgentEdit(
   };
 }
 
-/** A model edit's write is scoped by its grant's project and its thread. */
+/** A model edit's write is scoped by its request's project and its thread. */
 export function scopeModelEditWrite(
   write: ModelEdits["write"],
   scopes: DocumentLinkScopes,
@@ -88,7 +103,7 @@ export function scopeModelEditWrite(
   return (command, context) =>
     scopes.within(
       {
-        projectId: context.grant.facts.projectId,
+        ...requestScope(context),
         viewer: {
           accountId: context.grant.principal.accountId,
           ...(context.threadId ? { threadId: context.threadId } : {}),

@@ -27,6 +27,7 @@ export function testFileGrant(
       ...(destination.kind === "draft"
         ? {
             agent: {
+              projectId: "test-project" as ProjectId,
               chain: [],
               branchOwner: { owner: destination.owner, handle: destination.ownerHandle },
               writeMode: "draft" as const,
@@ -36,7 +37,7 @@ export function testFileGrant(
     },
     facts: {
       target,
-      projectId: "test-project" as ProjectId,
+      owner: { kind: "project", projectId: "test-project" },
       ownerAccountId: "test-user" as UserId,
       projectDeleted: false,
       ownerWork: null,
@@ -93,4 +94,30 @@ export function grantedJournal<J extends object>(journal: J): J {
       return (...args: unknown[]) => asGrantedWriter(() => value.apply(target, args));
     },
   });
+}
+
+/**
+ * The grant as if asked in `projectId` by `accountId`: the file is that project's, and so is the
+ * agent's thread.
+ */
+export function grantInProject<G extends FileGrant>(
+  grant: G,
+  projectId: string,
+  accountId?: string,
+): G {
+  return {
+    ...grant,
+    principal: {
+      ...grant.principal,
+      ...(accountId ? { accountId: accountId as UserId } : {}),
+      ...(grant.principal.agent
+        ? { agent: { ...grant.principal.agent, projectId: projectId as ProjectId } }
+        : {}),
+    },
+    facts: {
+      ...grant.facts,
+      owner: { kind: "project", projectId },
+      ...(accountId ? { ownerAccountId: accountId as UserId } : {}),
+    },
+  };
 }

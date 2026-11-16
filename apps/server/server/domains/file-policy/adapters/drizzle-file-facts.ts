@@ -27,11 +27,13 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "../../collab/adapters/drizzle-branches.js";
 import { createBranches } from "../../collab/domain/branches.js";
+import type { TreeList } from "../../context/ports/tree-list-store.js";
 import {
   type BranchHolder,
   branchMayHold,
   type SourceOwner,
 } from "../../context/tree/branch-ownership.js";
+import { ownerFrom, sourceOwnerProjectId } from "../../context/tree/source-owner.js";
 import { loadDocumentPlacements } from "../../context/tree/tree-addresses.js";
 import {
   createTreeReader,
@@ -39,16 +41,15 @@ import {
   type TreeView,
 } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type {
-  FileBranchOwnerFacts,
-  FileFacts,
-  FileNode,
-  FileOwnerRef,
-  FileWorkFacts,
+import {
+  type FileBranchOwnerFacts,
+  type FileFacts,
+  type FileNode,
+  type FileOwnerRef,
+  type FileWorkFacts,
+  ownerNode,
 } from "../domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
-
-const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`;
 
 type WorkRow = {
   id: WorkId;
@@ -152,7 +153,7 @@ export function createDrizzleFileFacts(
 type BaseFacts = Omit<FileFacts, "target" | "branchOwner">;
 
 function ownerOf(facts: BaseFacts): SourceOwner {
-  return { projectId: facts.projectId, accountId: facts.ownerAccountId, scheme: facts.scheme };
+  return { owner: facts.owner, accountId: facts.ownerAccountId, scheme: facts.scheme };
 }
 
 type SourceRow = {
@@ -162,7 +163,7 @@ type SourceRow = {
   scheme: string;
   sourceDeletedAt: Date | null;
   work: Pick<WorkRow, "id" | "handle" | "isNoWork" | "archivedAt" | "deletedAt"> | null;
-  projectId: ProjectId;
+  owner: TreeList;
   ownerAccountId: UserId;
   projectDeletedAt: Date | null;
 };
@@ -187,15 +188,24 @@ async function sourceRows(
         archivedAt: works.archivedAt,
         deletedAt: works.deletedAt,
       },
-      projectId: projects.id,
-      ownerAccountId: projects.userId,
+      projectId: sourceOwnerProjectId,
+      userId: contextSources.userId,
+      ownerAccountId: sql<UserId>`coalesce(${contextSources.userId}, ${projects.userId})`,
       projectDeletedAt: projects.deletedAt,
     })
     .from(contextSources)
     .leftJoin(works, eq(works.id, contextSources.workId))
-    .innerJoin(projects, eq(projects.id, effectiveProjectId))
+    .leftJoin(projects, eq(projects.id, sourceOwnerProjectId))
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
-  return new Map(rows.map((row) => [row.sourceId, row]));
+  return new Map(
+    rows
+      // A source whose project row is gone has no owner left to answer for it.
+      .filter((row) => row.ownerAccountId !== null)
+      .map(({ projectId, userId, ...row }) => [
+        row.sourceId,
+        { ...row, owner: ownerFrom({ projectId, userId }) },
+      ]),
+  );
 }
 
 type DocumentBaseRow = SourceRow & { inTrash: boolean };
@@ -209,7 +219,7 @@ function documentBase(
   if (!isContextUriScheme(row.scheme))
     throw new Error(`Document ${documentId} has an invalid source`);
   return {
-    projectId: row.projectId,
+    owner: row.owner,
     ownerAccountId: row.ownerAccountId as UserId,
     projectDeleted: row.projectDeletedAt !== null,
     ownerRootThreadId: row.rootThreadId,
@@ -220,7 +230,7 @@ function documentBase(
     self: { kind: "document", id: documentId },
     ancestors: [
       ...folders.map((folder): FileNode => ({ kind: "folder", id: folder.id })),
-      ...sourceAncestors(row.sourceId, row.work?.id ?? null, row.projectId),
+      ...sourceAncestors(row.sourceId, row.work?.id ?? null, row.owner),
     ],
   };
 }
@@ -318,6 +328,7 @@ async function loadContainer(
   scheme: ContextUriScheme,
   owner: FileOwnerRef,
 ): Promise<BaseFacts | null> {
+  if (owner.scope === "account") return loadAccountContainer(db, scheme, owner.userId);
   const work = owner.scope === "work" ? await readWork(db, owner.workId) : null;
   if (owner.scope === "work" && !work) return null;
   let ownerLive = true;
@@ -375,7 +386,7 @@ async function loadContainer(
     )
     .limit(1);
   return {
-    projectId,
+    owner: { kind: "project", projectId },
     ownerAccountId: project.ownerAccountId as UserId,
     projectDeleted: project.deletedAt !== null,
     ownerRootThreadId: owner.scope === "lineage" ? owner.rootThreadId : null,
@@ -386,19 +397,57 @@ async function loadContainer(
     scheme,
     contentScheme: scheme,
     self: null,
-    ancestors: sourceAncestors(source?.id ?? null, work?.id ?? null, projectId),
+    ancestors: sourceAncestors(source?.id ?? null, work?.id ?? null, {
+      kind: "project",
+      projectId,
+    }),
+  };
+}
+
+/** The home folder: the account's own source, made with the account. */
+async function loadAccountContainer(
+  db: Database,
+  scheme: ContextUriScheme,
+  userId: UserId,
+): Promise<BaseFacts | null> {
+  if (scheme !== "user" || !isUuid(userId)) return null;
+  const [source] = await currentDrizzleDb(db)
+    .select({ id: contextSources.id })
+    .from(contextSources)
+    .where(
+      and(
+        eq(contextSources.scope, "account"),
+        eq(contextSources.userId, userId),
+        isNull(contextSources.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!source) return null;
+  const owner: TreeList = { kind: "account", userId };
+  return {
+    owner,
+    ownerAccountId: userId,
+    projectDeleted: false,
+    ownerRootThreadId: null,
+    ownerChatThreadId: null,
+    ownerWork: null,
+    deleted: false,
+    scheme,
+    contentScheme: scheme,
+    self: null,
+    ancestors: sourceAncestors(source.id, null, owner),
   };
 }
 
 function sourceAncestors(
   sourceId: ContextSourceId | null,
   workId: WorkId | null,
-  projectId: ProjectId,
+  owner: TreeList,
 ): FileNode[] {
   return [
     ...(sourceId ? [{ kind: "source", id: sourceId } as const] : []),
     ...(workId ? [{ kind: "work", id: workId } as const] : []),
-    { kind: "project", id: projectId },
+    ownerNode(owner),
   ];
 }
 

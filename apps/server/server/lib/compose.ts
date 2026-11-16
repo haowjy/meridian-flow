@@ -8,8 +8,8 @@ import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import type { Gateway } from "@meridian-flow/gateway";
-import type { MockScriptQueue } from "@meridian-flow/gateway/mock";
+import type { Gateway } from "@meridian-flow/runtime/gateway";
+import type { MockScriptQueue } from "@meridian-flow/runtime/gateway/mock";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -649,7 +649,27 @@ export async function createProductionAppPorts(input: {
   });
   const agentCatalog = createBoundAgentCatalog({
     store: agentRevisions,
-    levelFiles: createAgentLevelFiles({ db, documentSync }),
+    levelFiles: createAgentLevelFiles({
+      db,
+      documentSync,
+      treeLists,
+      arrivals,
+      links: documentLinks,
+    }),
+    onSaved: (userId, projectId, level) =>
+      runAfterDrizzleCommit(() => {
+        if (level === "project" && projectId) {
+          projectWakeHub.publish({
+            type: "agent-files-hint",
+            projectId: projectId as import("@meridian/contracts/runtime").ProjectId,
+          });
+        } else if (level === "user") {
+          projectWakeHub.publishToUser(userId, (id) => ({
+            type: "agent-files-hint",
+            projectId: id as import("@meridian/contracts/runtime").ProjectId,
+          }));
+        }
+      }),
     builtins: await readBuiltinPackages(defaultModel),
     defaultModel: () => gateway.getDefaultModel(),
     unavailableReasons: (definition, model) =>

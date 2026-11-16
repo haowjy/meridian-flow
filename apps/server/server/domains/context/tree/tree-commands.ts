@@ -58,6 +58,8 @@ export type Refused = {
   status: "invalid_write" | "document_not_found";
   path: string;
   message: string;
+  /** A move of several that moved none: each source and why, as the message lists them. */
+  notMoved?: string[];
   delta: ShownDelta;
 };
 
@@ -212,6 +214,19 @@ function unresolved(
 
 const isFolderPath = (path: string) => path.endsWith("/");
 
+/**
+ * Whether one node's `move` goes into the folder `path` names, under its own name, or lands at
+ * `path` itself, its name included: into for a document, and for a folder only when `path` names
+ * another folder that exists. A copy between lists reads `path` by the same rule.
+ */
+export function movesInto(
+  path: string,
+  movingFolder: boolean,
+  namesAnotherFolder: () => boolean,
+): boolean {
+  return isFolderPath(path) && (!movingFolder || namesAnotherFolder());
+}
+
 type Located = { segments: string[]; folder: boolean; area: string; root: string };
 
 /** A path the model wrote, in the area and tree it names. */
@@ -239,7 +254,7 @@ function noteChanges(
   writtenUri: string,
 ) {
   const writtenLeaf = written.segments[written.segments.length - 1] ?? "";
-  const setters = projection.setters.get(node.id);
+  const history = projection.history.get(node.id);
   const nowName = node.displayName;
   const sameName =
     nowName === writtenLeaf ||
@@ -247,7 +262,7 @@ function noteChanges(
   if (!sameName)
     noteConcurrent(
       cx,
-      actorOfRecord(cx, setters?.label?.id),
+      actorOfRecord(cx, history?.label.at(-1)?.id),
       `renamed: ${writtenUri} → ${nowName}`,
     );
   const writtenParent = written.segments.slice(0, -1);
@@ -255,7 +270,7 @@ function noteChanges(
   if (writtenParent.join("/") !== nowParent.join("/"))
     noteConcurrent(
       cx,
-      actorOfRecord(cx, setters?.place?.id),
+      actorOfRecord(cx, history?.place.at(-1)?.id),
       `moved: ${writtenUri} → ${uriOf(areaOfNode(cx, node), nowParent, true)}`,
     );
 }
@@ -428,7 +443,7 @@ function noteLoopCause(
   const named = uriOf(written.area, written.segments.slice(0, along + 1), true);
   noteConcurrent(
     cx,
-    actorOfRecord(cx, projection.setters.get(inside.id)?.place?.id),
+    actorOfRecord(cx, projection.history.get(inside.id)?.place.at(-1)?.id),
     `moved: ${named} into ${nodeUri(cx, projection, node)}`,
   );
 }
@@ -637,6 +652,19 @@ export function reachPath(
 }
 
 /**
+ * Whether `folder` holds a node at `rest` (a path below it, through the names shown), in Trash
+ * included: what an undo at an old address asks of a folder that moved from above it.
+ */
+export function folderHolds(
+  scope: Pick<TreeScope, "writer" | "view">,
+  shown: NamesShown,
+): (folder: string, rest: string) => boolean {
+  const projection = scope.writer.view(scope.view);
+  return (folder, rest) =>
+    resolveShown(projection, shown, folder, splitSegments(rest)).kind === "node";
+}
+
+/**
  * What stayed standing in a folder after a delete or an Undo took only what the model saw or
  * made: the folder with what is in it, and who put that there (the last record to set its place).
  */
@@ -650,7 +678,8 @@ function keptStanding(
   const first = kept[0];
   if (!holder || first === undefined) return undefined;
   const placer =
-    actorOfRecord(cx, after.setters.get(first)?.place?.id) ?? after.nodes.get(first)?.createdBy;
+    actorOfRecord(cx, after.history.get(first)?.place.at(-1)?.id) ??
+    after.nodes.get(first)?.createdBy;
   return `${nodeUri(cx, after, holder)} with ${kept
     .map((id) => nodeUri(cx, after, after.nodes.get(id) as TreeNode))
     .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;
@@ -762,22 +791,16 @@ export function runTreeCommand(
       if (!command.many) {
         const from = command.from[0] as string;
         const fromPath = pathFrom(cx, from);
-        // A `path` that names a folder (a trailing `/`) is the folder the node goes into, under
-        // its own name: always for a document, and for a folder when that folder exists. Else
-        // `path` is where the node itself ends up, its name included.
-        const into =
-          isFolderPath(command.path) &&
-          (!fromPath.folder ||
-            (() => {
-              const there = resolveShown(projection, shown, to.root, to);
-              const self = resolveShown(projection, shown, fromPath.root, fromPath);
-              // The folder named is another folder: the same path with a position is a reorder.
-              return (
-                there.kind === "node" &&
-                there.node.kind === "folder" &&
-                !(self.kind === "node" && self.node.id === there.node.id)
-              );
-            })());
+        const into = movesInto(command.path, fromPath.folder, () => {
+          const there = resolveShown(projection, shown, to.root, to);
+          const self = resolveShown(projection, shown, fromPath.root, fromPath);
+          // The folder named is another folder: the same path with a position is a reorder.
+          return (
+            there.kind === "node" &&
+            there.node.kind === "folder" &&
+            !(self.kind === "node" && self.node.id === there.node.id)
+          );
+        });
         const leaf = fromPath.segments.at(-1) ?? "";
         const target: Located = into
           ? { ...to, segments: [...to.segments, leaf], folder: fromPath.folder }
@@ -849,11 +872,11 @@ export function runTreeCommand(
         // Everything was already there or left out: the call is done. Anything else named nothing.
         if (nothingToMake !== undefined && notMoved.length + leftOut.length === command.from.length)
           return finish(nothingDone(nothingToMake, command.path, { notMoved, leftOut }));
-        return refuse(
-          "invalid_write",
-          toUri,
-          `Nothing moved: ${[...notMoved, ...leftOut.map((left) => left.path)].join("; ")}`,
-        );
+        const none = [...notMoved, ...leftOut.map((left) => left.path)];
+        return {
+          ...refuse("invalid_write", toUri, `Nothing moved: ${none.join("; ")}`),
+          notMoved: none,
+        };
       }
       const kept = keptTrashed(cx, projection, folder.destination.trashed);
       return finish({
@@ -1072,7 +1095,8 @@ export function runTreeUndo(
     outcomes,
     made: cx.made,
     inLive,
-    landedAt: here ? nodeUri(cx, after, here) : asked,
+    // A create taken back leaves its node in Trash: the answer names the path it was asked by.
+    landedAt: here && !here.trashed ? nodeUri(cx, after, here) : asked,
     ...(standing[0] ? { kept: keptStanding(cx, after, standing[0].id, standing[0].children) } : {}),
     touched,
     delta: {

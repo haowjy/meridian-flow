@@ -32,11 +32,13 @@ function destinationOf(copy: ReadyCopy): ContextDestinationParent {
   };
 }
 
-function ownerFields(area: Pick<MoveArea, "owner">) {
+/** A source's owner as the route takes it: only a Work's own areas (Scratch) name a Work. */
+function ownerFields(area: Pick<MoveArea, "owner" | "scheme">) {
   const { owner } = area;
+  const scoped = isWorkScopedScheme(area.scheme);
   return {
-    workId: owner.workId ?? null,
-    rootThreadId: owner.rootThreadId ?? null,
+    workId: scoped ? (owner.workId ?? null) : null,
+    rootThreadId: scoped ? (owner.rootThreadId ?? null) : null,
     ...(owner.chatThreadId ? { chatRef: owner.chatRef ?? null } : {}),
   };
 }
@@ -81,7 +83,7 @@ export async function copyRows(
       scheme: row.place.scheme,
       path: withoutLeadingSlash(row.place.path),
       expected: { kind: row.entry.kind, nodeId: row.entry.id },
-      ...ownerFields({ owner: row.place.owner }),
+      ...ownerFields(row.place),
       view: row.view,
       copyId: copyIds[index],
       ...stateVectorField(row, stateVectorOf),

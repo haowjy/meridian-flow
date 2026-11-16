@@ -49,8 +49,8 @@ export type TurnTreeEntry = {
   shownAt: string | null;
   landedAt: string | null;
   /**
-   * The source document a create copied (`documents.metadata.copiedFrom.uri`), so the turn's
-   * line can say it copied rather than only naming where the document ended up. Null on
+   * The source a create copied, from its receipt or document metadata, so the turn's line can
+   * say it copied rather than only naming where it ended up. Null on
    * every other entry: a copy moved later in the same turn keeps this on its create.
    */
   copiedFrom: string | null;
@@ -254,7 +254,7 @@ function treeLineKey(
 }
 
 /**
- * Each document's net tree line, per destination: deleted when the turn left it deleted, copied
+ * Each node's net tree line, per destination: deleted when the turn left it deleted, copied
  * when the turn created it from another document, moved when it left it living somewhere other
  * than where the turn found it, or moved in place when it only changed position (`to` equals
  * `from`). A destination the entry didn't record (a restore's) leaves the location as it was.
@@ -265,7 +265,6 @@ function treeLines(entries: readonly TurnTreeEntry[]): Map<string, TurnTreeLine>
     { from: string; at: string; living: boolean; repositioned: boolean; copiedFrom: string | null }
   >();
   for (const entry of entries) {
-    if (entry.undone) continue;
     const key = treeLineKey(entry);
     const state = folded.get(key) ?? {
       from: entry.shownAt ?? "",

@@ -61,6 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const agent: Principal = {
       accountId: u,
       agent: {
+        projectId: p as never,
         chain,
         branchOwner: { owner: { kind: "work", workId: w }, handle: null },
         writeMode: "direct",

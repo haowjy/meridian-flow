@@ -1,17 +1,17 @@
 /** Writer-facing copy for a turn card's reversal outcomes: refusals and the parts that stayed. */
 import { t } from "@lingui/core/macro";
-import type {
-  ReversalOutcome,
-  TreeReversalFault,
-  TurnInverseSkip,
+import {
+  type DoneWriteStatus,
+  isDoneWriteStatus,
+  type ReversalOutcome,
+  type TreeReversalFault,
+  type TurnInverseSkip,
 } from "@meridian/contracts/protocol";
 import { documentLocationName, type OwnerNames } from "./document-display-name";
 
-type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
-
 /** An Undo the writer asked for and did not get. A tree fault keeps the location it met, when the server reported one. */
 export type ReversalRefusal = {
-  status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
+  status: Exclude<ReversalOutcome["status"], DoneWriteStatus> | "request_failed";
   at?: string | null;
   /** The file policy's reason, when the status is `permission_denied`. */
   denial?: ReversalOutcome["denial"];
@@ -21,8 +21,7 @@ export type ReversalRefusal = {
 export function refusedReversalStatus(
   status: ReversalOutcome["status"],
 ): ReversalRefusal["status"] | null {
-  if (status === "success" || status === "reversed" || status === "reconciled") return null;
-  return status;
+  return isDoneWriteStatus(status) ? null : status;
 }
 
 /** The location a tree fault met, from the skip that reported it. */

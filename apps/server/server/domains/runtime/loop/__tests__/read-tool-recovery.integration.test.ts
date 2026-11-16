@@ -6,7 +6,7 @@
 
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ToolContentPart } from "@meridian/contracts/threads";
-import type { GenerateResult } from "@meridian-flow/gateway";
+import type { GenerateResult } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it } from "vitest";
 import {
   type CoreToolHandlers,

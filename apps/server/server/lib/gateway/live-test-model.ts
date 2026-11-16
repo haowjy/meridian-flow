@@ -14,7 +14,7 @@
  * on its responses, which under the override is the routed one. A chat bound to another
  * model always reads cold (`model_changed`), so its summaries take the rolling path.
  */
-import type { Gateway, GenerateRequest, ModelInfo } from "@meridian-flow/gateway";
+import type { Gateway, GenerateRequest, ModelInfo } from "@meridian-flow/runtime/gateway";
 import { MODEL_REGISTRY } from "./registry.js";
 
 const REGISTRY_MODEL_IDS = MODEL_REGISTRY.providers.flatMap((p) =>

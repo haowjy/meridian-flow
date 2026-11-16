@@ -331,32 +331,6 @@ export interface ContextWriteOptions {
   metadata?: DocumentCreationMetadata;
 }
 
-/** A document that crossed from one list to another. */
-export type ContextMovedAcrossLists = {
-  /** Where it stands now. */
-  destinationUri: string;
-  /** The node moved. */
-  node: string;
-  /** The ids of the move in the list it left and the create in the list it entered. */
-  records: { left: string; entered: string };
-};
-
-export interface ContextMoveAcrossListsChange {
-  /** The folder it goes into, in the other list. */
-  folderUri: string;
-  /** The name the writer typed, when they did; omitted keeps the node's own name. */
-  name?: string;
-  position?: ContextSiblingPosition;
-  /** Move only while the node stands at this path of its area; else `stale_target`. */
-  onlyAt?: string;
-  origin?: WriteProvenance;
-  /**
-   * Runs inside the move's own transaction once its records are made, so a caller's receipt
-   * of the move commits or rolls back with it.
-   */
-  inTransaction?: (moved: ContextMovedAcrossLists) => Promise<void>;
-}
-
 /** What a delete took: the documents and files in it, the node itself among them. */
 export type ContextDeleted = {
   /** Where the entry stood. */
@@ -469,18 +443,6 @@ export interface ContextPort {
     uri: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
-
-  /**
-   * Move the document or file `node` names from the list of `area` (the root URI of the scheme
-   * and owner it was last seen in; it names no entry) into a folder of another list: a project's
-   * and the account's `user://` are two. One transaction on both lists, found by id under the
-   * locks. Within one list a move is a tree command.
-   */
-  moveAcrossLists(
-    node: ContextEntryRef,
-    area: string,
-    change: ContextMoveAcrossListsChange,
-  ): Promise<Result<ContextMovedAcrossLists, ContextError>>;
 
   /** Delete the node `node` names, live, found by id under the locks (`area` as in the move). */
   delete(

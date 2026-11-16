@@ -119,8 +119,8 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * Take back one Apply command: the surviving text groups of every document it applied, and
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
  * A tree fact something changed since stays (`left_out changed_since`), as does a created
- * document with text written since (`has_text`); a text group whose reversal would change a
- * word that holds writing made after the Apply stays applied and is named in `skippedGroupIds`.
+ * document with text written since (`has_text`); a text group with nothing left to reverse
+ * stays and is named in `skippedGroupIds`.
  * It took something back when `reversedGroupIds` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {

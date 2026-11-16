@@ -77,8 +77,9 @@ else
         documents: collab(),
       });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
-      const second = await repository.ensureDefaultBootstrap(USER_ID as never);
-      expect(second).toEqual(first);
+      if (!first) throw new Error("The first bootstrap made no project");
+      // A live project makes the bootstrap a no-op.
+      expect(await repository.ensureDefaultBootstrap(USER_ID as never)).toBeNull();
       expect(
         await db
           .select({ slug: schema.projects.slug })
@@ -122,12 +123,12 @@ else
         })
         .from(schema.contextSources)
         .where(eq(schema.contextSources.workId, noWorkId));
+      // The home folder is the account's, not the project's.
       expect(manuscript.map((source) => source.slug).sort()).toEqual([
         "agents",
         "kb",
         "manuscript",
         "unfiled",
-        "user",
       ]);
       expect(
         manuscript.every((source) => source.workId === null && source.scope === "project"),
@@ -185,7 +186,7 @@ else
         treeLists: createTestRemovalDeps(db).treeLists,
         documents: domain,
       }).ensureDefaultBootstrap(USER_ID as never);
-      await expect(domain.readAsMarkdown(repaired.documentId)).resolves.toEqual({
+      await expect(domain.readAsMarkdown(repaired?.documentId as never)).resolves.toEqual({
         ok: true,
         value: "# Chapter 1\n",
       });
@@ -207,12 +208,12 @@ else
           },
         },
       }).ensureDefaultBootstrap(USER_ID as never);
-      await expect(domain.readAsMarkdown(bootstrap.documentId)).resolves.toEqual({
+      await expect(domain.readAsMarkdown(bootstrap?.documentId as never)).resolves.toEqual({
         ok: true,
         value: "# Chapter 1\n",
       });
       await warmConnection?.disconnect();
-      await expect(collab().readAsMarkdown(bootstrap.documentId)).resolves.toEqual({
+      await expect(collab().readAsMarkdown(bootstrap?.documentId as never)).resolves.toEqual({
         ok: true,
         value: "# Chapter 1\n",
       });

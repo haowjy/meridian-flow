@@ -26,6 +26,7 @@ import {
   type DocumentLinkRouteDeps,
   handleDocumentLinkResolveRequest,
 } from "../../lib/document-link-route.js";
+import { accountUserSource } from "../../test-support/branch-tree-seeds.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createLinkScopeObserver } from "../collab/index.js";
@@ -45,7 +46,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("source-backed document links (postgres)", () => {
     const u = "00000000-0000-4000-8000-000000000900";
     const p = "00000000-0000-4000-8000-000000000901";
-    const personal = "00000000-0000-4000-8000-000000000902";
     const a = "00000000-0000-4000-8000-000000000903";
     const b = "00000000-0000-4000-8000-000000000904";
     const noWork = "00000000-0000-4000-8000-000000000905";
@@ -77,10 +77,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       sourceOf.clear();
       const db = database.current;
       await db.insert(users).values(conformanceUserValues(u, "canonical-links"));
-      await db.insert(projects).values([
-        { id: p, userId: u, name: "Project", slug: "project" },
-        { id: personal, userId: u, name: "Personal", slug: "personal", isPersonal: true },
-      ]);
+      await db.insert(projects).values([{ id: p, userId: u, name: "Project", slug: "project" }]);
       await db.insert(works).values([
         {
           id: noWork,
@@ -194,17 +191,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       filetype?: Filetype,
     ) {
       const db = database.current;
-      const sourceId = crypto.randomUUID();
       const documentId = crypto.randomUUID();
-      await db.insert(contextSources).values({
-        id: sourceId,
-        slug: scheme,
-        name: scheme,
-        scope: chatThreadId ? "chat" : workId ? "work" : "project",
-        projectId: workId ? null : scheme === "user" ? personal : p,
-        workId,
-        chatThreadId,
-      });
+      // The home folder is the account's, made with it.
+      const sourceId =
+        scheme === "user" ? await accountUserSource(db, u as never) : crypto.randomUUID();
+      if (scheme !== "user")
+        await db.insert(contextSources).values({
+          id: sourceId,
+          slug: scheme,
+          name: scheme,
+          scope: chatThreadId ? "chat" : workId ? "work" : "project",
+          projectId: workId ? null : p,
+          workId,
+          chatThreadId,
+        });
       return seedDocument(sourceId, name, { id: documentId, ...(filetype ? { filetype } : {}) });
     }
     it("opens all canonical schemes, explicit other Work and no-Work targets", async () => {

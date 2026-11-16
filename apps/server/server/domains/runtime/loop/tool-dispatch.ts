@@ -21,7 +21,7 @@ import type {
   Thread,
   Turn,
 } from "@meridian/contracts/threads";
-import type { ModelInfo } from "@meridian-flow/gateway";
+import type { ModelInfo } from "@meridian-flow/runtime/gateway";
 import { testHook } from "../../../shared/test-hooks.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";

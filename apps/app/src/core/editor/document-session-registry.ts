@@ -16,11 +16,33 @@ export type LiveDocumentSessionLease = Readonly<{
   documentId: DocumentId;
 }>;
 
-/** Why a room's unsent typing could not be delivered. */
-export type UnsentTypingCause = "closed" | "removed";
+/**
+ * Why a room's unsent typing could not be delivered: its draft closed, its document was removed,
+ * or the room's owner closed and the server admitted it read-only (`owner-closed`).
+ */
+export type UnsentTypingCause = "closed" | "removed" | "owner-closed";
 
-/** Typing a room ended with before the server acknowledged it, handed back once. */
-export type UnsentTyping = Readonly<{ id: string; cause: UnsentTypingCause; text: string }>;
+/**
+ * Typing a room ended with before the server acknowledged it, handed back once. `text` is null for
+ * an `owner-closed` change that has no words (a deletion, a format change). `done` says the writer
+ * is done with it (copied it, or dismissed it): until it resolves a reload offers its words again.
+ * It rejects when that can't be stored, and the next call tries again.
+ */
+export type UnsentTyping = Readonly<{
+  id: string;
+  cause: UnsentTypingCause;
+  text: string | null;
+  done: () => Promise<void>;
+}>;
+
+/**
+ * What a tab shows of the account's hand-back notices. `show` once per notice; `withdraw` when
+ * another tab's Copy or Dismiss settled one this tab still shows.
+ */
+export type UnsentTypingObserver = Readonly<{
+  show: (typing: UnsentTyping) => void;
+  withdraw: (id: string) => void;
+}>;
 
 export interface LiveDocumentSessionRegistry {
   admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease;
@@ -61,11 +83,11 @@ export interface LiveDocumentSessionRegistry {
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
   /**
-   * The words a room, live or draft, held unacknowledged when it ended or its local copy was
-   * cleared (closed, removed), once per session, read before the copy goes. A room with no
-   * session in this tab has nothing to hand back.
+   * The account's hand-back notices: words a room, live or draft, could not deliver (closed,
+   * removed, read-only), from any tab, until the writer copies or dismisses them in one. The first
+   * observer starts the account's read of the notices stored before.
    */
-  observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void;
+  observeUnsentTyping(observer: UnsentTypingObserver): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
   /** A restore reopened the draft: its room may open again under the same id. */
   reopenDraftRoom(roomKey: string): void;
@@ -75,6 +97,12 @@ export interface LiveDocumentSessionRegistry {
    */
   abandonDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
+  /**
+   * Calls `observer` with the session that replaces a room's (a live document's by its id, or a
+   * draft room's): the room's holders bind it and their editors remount. Not called for a room
+   * retired the ordinary way.
+   */
+  observeReplacement(roomKey: string, observer: (session: DocumentSession) => void): () => void;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(
     roomKey: string,

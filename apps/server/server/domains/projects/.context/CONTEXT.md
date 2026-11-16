@@ -5,14 +5,16 @@ fence][fence] and [pending count][count] rules.
 
 ## New-account bootstrap
 
-A new account's default project, its locked No Work and its first `Chapter 1`
-commit together with a durable readiness flag. Authenticated entry reads that
-flag lock-free (`ensureDefaultBootstrapReady`), and only an incomplete workspace
-re-enters the locked bootstrap: running it on every request made the warm path
-pay for work it no longer needed. A failed seed leaves the flag unset for a
-later repair and doesn't fail the request that found it. The starter chapter
-is seeded once, here; `./mf` reads the personal project from `GET /api/projects`
-and has no route that re-enters the bootstrap.
+An account with no live project gets one at sign-in: the project, its locked No Work, its
+sources and its first `Chapter 1` commit in one transaction. Authenticated entry asks
+"has a live project" lock-free (`ensureDefaultBootstrapReady`), and only an account without one
+enters the locked bootstrap: running it on every request made the warm path pay for work it no
+longer needed. So after the writer deletes their last project, the next sign-in makes another.
+No project is special: the home folder (`~`, `user://`) is the account's own source, made with
+the account by a trigger, not a source of the first project. A failed seed leaves the account
+without a project for a later attempt and doesn't fail the request that found it. `./mf
+--project default` reads the oldest live project from `GET /api/projects` and has no route that
+re-enters the bootstrap.
 
 ## Work operations
 

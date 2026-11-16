@@ -16,7 +16,6 @@ import { treeListOfSource } from "../context/adapters/tree-list-facts.js";
 import { provisionProjectSources } from "../context/context-source-provisioning.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import type { TreeListStore } from "../context/ports/tree-list-store.js";
-import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
 import { nextProjectSlug } from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
 
@@ -58,12 +57,13 @@ export type ProjectBootstrapResult = {
 
 export type ProjectBootstrapRepository = {
   /**
-   * Reads the durable completion flag and repairs an incomplete bootstrap.
-   * Seed failures leave readiness false for a later repair without failing the
-   * authenticated request that discovered them.
+   * Makes the account's first project when it has no live one: after its last project is
+   * deleted, the next sign-in makes another. A seed failure leaves it without one for a later
+   * attempt, without failing the authenticated request that found it.
    */
   ensureDefaultBootstrapReady(userId: UserId): Promise<boolean>;
-  ensureDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult>;
+  /** The project it made, or null when the account already had a live one. */
+  ensureDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult | null>;
 };
 
 export function createDrizzleProjectBootstrapRepository(deps: {
@@ -92,20 +92,20 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return lines.join("\n");
   }
 
-  async function ensureProject(
+  async function hasLiveProject(tx: BootstrapDb, userId: UserId): Promise<boolean> {
+    const [existing] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.userId, userId), isNull(projects.deletedAt)))
+      .limit(1);
+    return existing !== undefined;
+  }
+
+  async function createProject(
     tx: BootstrapDb,
     userId: UserId,
     input?: BootstrapProjectInput,
   ): Promise<ProjectId> {
-    const [existing] = await tx
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
-      )
-      .limit(1);
-    if (existing) return existing.id;
-
     const reserved = await tx
       .select({ slug: projects.slug })
       .from(projects)
@@ -119,7 +119,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
           projectName(input),
           reserved.map((row) => row.slug),
         ),
-        isPersonal: true,
         systemPrompt: projectSystemPrompt(input),
       })
       .returning({ id: projects.id });
@@ -127,17 +126,11 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return project.id;
   }
 
-  async function ensureLockedNoWork(
+  async function createNoWork(
     tx: BootstrapDb,
     projectId: ProjectId,
     userId: UserId,
   ): Promise<WorkId> {
-    const [existing] = await tx
-      .select({ id: works.id })
-      .from(works)
-      .where(and(eq(works.projectId, projectId), eq(works.isNoWork, true), isNull(works.deletedAt)))
-      .limit(1);
-    if (existing) return existing.id;
     const [row] = await tx
       .insert(works)
       .values({
@@ -153,7 +146,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return row.id;
   }
 
-  async function ensureDocument(
+  async function createChapter(
     tx: BootstrapDb,
     contextSourceId: ContextSourceId,
   ): Promise<DocumentId> {
@@ -172,20 +165,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         throw new BootstrapDocumentSeedError(cause);
       }
     }
-
-    const [existing] = await tx
-      .select({ id: liveDocuments.id })
-      .from(liveDocuments)
-      .where(
-        and(
-          eq(liveDocuments.contextSourceId, contextSourceId),
-          eq(liveDocuments.name, "Chapter 1"),
-          eq(liveDocuments.extension, ""),
-        ),
-      )
-      .limit(1);
-    // Identity and content commit together, so an existing row is whole.
-    if (existing) return existing.id;
 
     const documentId = randomUUID() as DocumentId;
     const created = await deps.documents.createDocumentAtomically({
@@ -212,47 +191,28 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return documentId;
   }
 
-  async function isDefaultBootstrapReady(userId: UserId): Promise<boolean> {
-    const [project] = await db
-      .select({ ready: projects.defaultBootstrapReady })
-      .from(projects)
-      .where(
-        and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
-      )
-      .limit(1);
-    return project?.ready === true;
-  }
-
-  async function attemptDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult> {
-    const bootstrap = await runInDrizzleTransaction(db, async () => {
+  async function attemptDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult | null> {
+    return runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
-      const projectId = await ensureProject(tx, userId);
-      const _noWorkId = await ensureLockedNoWork(tx, projectId, userId);
-      const manuscriptSourceId = await provisionProjectSources(db, projectId, { personal: true });
-      const documentId = await ensureDocument(tx, manuscriptSourceId);
-
-      const result = {
+      // A bootstrap that raced this one made it; it is one transaction, so it is whole.
+      if (await hasLiveProject(tx, userId)) return null;
+      const projectId = await createProject(tx, userId);
+      await createNoWork(tx, projectId, userId);
+      const manuscriptSourceId = await provisionProjectSources(db, projectId);
+      const documentId = await createChapter(tx, manuscriptSourceId);
+      return {
         projectId,
         documentId,
         manuscriptSourceId,
         uri: DEFAULT_BOOTSTRAP_URI,
       } satisfies ProjectBootstrapResult;
-
-      const [updated] = await tx
-        .update(projects)
-        .set({ defaultBootstrapReady: true })
-        .where(eq(projects.id, projectId))
-        .returning({ id: projects.id });
-      if (!updated) throw new Error("Failed to mark default bootstrap ready");
-      return result;
     });
-    return bootstrap;
   }
 
   return {
     async ensureDefaultBootstrapReady(userId) {
-      if (await isDefaultBootstrapReady(userId)) return true;
+      if (await hasLiveProject(db, userId)) return true;
       try {
         await attemptDefaultBootstrap(userId);
         return true;
@@ -322,5 +282,3 @@ export {
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
 export type { WorkChangeOrigin, WorkContextNotices } from "./work-context-notices.js";
-
-const liveDocuments = visibleDocuments(LIVE_TREE);

@@ -48,14 +48,13 @@ export async function resolveThreadContextPort(
  * names, or the container a write would create it in.
  */
 async function uriTarget(
-  deps: ThreadContextRouteDeps,
   context: Awaited<ReturnType<typeof resolveThreadContextPort>>,
   uri: string,
 ): Promise<FileTarget> {
   const ref = await context.port.stat(uri);
   if (ref.ok && ref.value.documentId) return documentTarget(ref.value.documentId);
   if (ref.ok || ref.error.code === "not_found") {
-    const container = await threadContainerTarget(deps.works, context.resolution, uri);
+    const container = await threadContainerTarget(context.resolution, uri);
     if (container) return container;
   }
   if (!ref.ok) contextErrorToHttp(ref.error);
@@ -99,7 +98,7 @@ export async function writeThreadContextDocument(
   const grant = await requireFileGrant(
     deps.fileAccess,
     input.userId,
-    await uriTarget(deps, context, input.uri),
+    await uriTarget(context, input.uri),
     "edit",
   );
   const result = await withEditGrants(deps.fileAccess, [grant], () =>

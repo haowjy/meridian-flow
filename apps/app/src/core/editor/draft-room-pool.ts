@@ -11,7 +11,7 @@
  * A room whose updates the server kept refusing (`updatesRefused`), or whose draft the server
  * closed (`draftClosed`: it is in Trash), is not retired on that close: it stays open, read-only,
  * so its owner can show its text, until the owner rebuilds it (a restore reopened the draft) or
- * the last owner leaves.
+ * the last owner leaves, when it retires without the grace.
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
@@ -33,10 +33,15 @@ export class DraftRoomPool {
 
   constructor(
     private readonly deps: {
-      /** A new session for the room, published to its observers with its transport attached. */
-      openSession(roomKey: string, documentId: string): DocumentSession;
-      /** The shared hold on the document's local copies, taken while a room is open. */
-      hold(documentId: string): Promise<CopyHold>;
+      /**
+       * A new session for the room, published to its observers with its transport attached, and
+       * the shared hold on its local copy, taken while the session is open.
+       */
+      open(
+        roomKey: string,
+        documentId: string,
+        replaced?: { session: DocumentSession; hold: Promise<CopyHold> | null | undefined },
+      ): { session: DocumentSession; hold: Promise<CopyHold> };
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
     },
@@ -97,9 +102,14 @@ export class DraftRoomPool {
     if (existing) return existing;
     const documentId = this.documents.get(roomKey);
     if (!documentId) throw new Error(`Draft room was never retained: ${roomKey}`);
-    this.holds.set(roomKey, this.deps.hold(documentId));
-    const session = this.deps.openSession(roomKey, documentId);
+    const { session, hold } = this.deps.open(roomKey, documentId);
+    this.holds.set(roomKey, hold);
     this.rooms.set(roomKey, session);
+    this.watch(roomKey, session);
+    return session;
+  }
+
+  private watch(roomKey: string, session: DocumentSession): void {
     session.subscribe(() => {
       if (this.rooms.get(roomKey) !== session) return;
       if (keptForOwner(session)) {
@@ -113,7 +123,24 @@ export class DraftRoomPool {
         this.retire(roomKey, session);
       }
     });
-    return session;
+  }
+
+  /**
+   * A session on the room's next incarnation takes the room, read-only like the one it replaces,
+   * which retires once its editors have gone. Null when `session` is not the room's any more.
+   */
+  replace(roomKey: string, session: DocumentSession): DocumentSession | null {
+    if (this.rooms.get(roomKey) !== session) return null;
+    const documentId = this.documents.get(roomKey);
+    if (!documentId) throw new Error(`Draft room was never retained: ${roomKey}`);
+    const { session: next, hold } = this.deps.open(roomKey, documentId, {
+      session,
+      hold: this.holds.get(roomKey),
+    });
+    this.holds.set(roomKey, hold);
+    this.rooms.set(roomKey, next);
+    this.watch(roomKey, next);
+    return next;
   }
 
   /** An authoritative close can arrive by metadata before the socket's terminal frame. */
@@ -160,6 +187,10 @@ export class DraftRoomPool {
 
   private scheduleTeardown(roomKey: string): void {
     if (this.teardownTimers.has(roomKey) || this.draining.has(roomKey)) return;
+    const kept = this.rooms.get(roomKey);
+    // A room kept only for its owner never reopens, and its retirement hands back the typing
+    // that just left the screen, so it waits only for a host remounting in the same commit.
+    const graceMs = kept && keptForOwner(kept) ? 0 : this.deps.teardownGraceMs;
     const timer = setTimeout(() => {
       this.teardownTimers.delete(roomKey);
       const session = this.rooms.get(roomKey);
@@ -169,7 +200,7 @@ export class DraftRoomPool {
         return;
       }
       this.retire(roomKey, session);
-    }, this.deps.teardownGraceMs);
+    }, graceMs);
     this.teardownTimers.set(roomKey, timer);
   }
 

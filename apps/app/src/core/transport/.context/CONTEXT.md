@@ -42,11 +42,20 @@ that catalog when a named scope disagrees with `readOnly`. Its own changes to
 
 A 4409 `access-changed` close never resets the room, whatever is unacknowledged. It marks
 the room read-only at once, the transport reconnects, and the new admission decides: a
-read admission (an archived Work, a trashed chat's draft) holds the unsent edits on
-screen and in the IndexedDB copy, and an edit admission (an Unarchive) delivers them in
-the handshake. A room no editor holds is retired at the read-only mark, before the
+read admission (an archived Work, a trashed chat's draft) sends no Update frame (the socket
+drops them; the server would answer each `false`), and each of its handshakes says what the
+document holds that the server lacks: the server's SyncStep1 and SyncStep2 pair, read by
+`handshake-difference.ts` (the document equals the server when the server's snapshot, state
+vector and delete set, contains `encodeStateAsUpdate(document, serverStateVector)`). The session
+decides what that means (`DocumentSession`, "Undeliverable edits" in the editor context): a room
+holding the writer's edits is replaced by one loaded from the server and the typing is handed
+back, so an Unarchive delivers nothing late. A local change the session does not count (not a
+display write) asks for one `forceSync`, whose handshake decides. Acknowledgement on a read
+admission is that verdict, not `SyncStatus`. An edit admission (an Unarchive) delivers what the
+room holds in the handshake. A room no editor holds is retired at the read-only mark, before the
 reconnect: its edits stay in the IndexedDB copy and are delivered the next time the
-document opens. Writer text is never dropped for an access change, live room or draft. The
+document opens (an open while the Work is still closed hands them back). Writer text is never
+dropped for an access change, live room or draft. The
 server sends 4409 only when the scope it admitted no longer holds (an archive, an
 Unarchive, a lifecycle change under a draft write), so the reconnect's admission matches
 what the write path accepts. A close because a Work or chat closed carries the cause,

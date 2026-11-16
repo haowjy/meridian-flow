@@ -36,14 +36,12 @@ export const projects = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
-    isPersonal: boolean("is_personal").notNull().default(false),
     /** The id of this project's tree list, its own and never a node's or document's id. */
     treeListId: uuid("tree_list_id")
       .$type<DocumentId>()
       .notNull()
       .unique()
       .default(sql`gen_random_uuid()`),
-    defaultBootstrapReady: boolean("default_bootstrap_ready").notNull().default(false),
     systemPrompt: text("system_prompt"),
     settings: jsonbDefault("settings").$type<ProjectSettings>(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
@@ -56,9 +54,6 @@ export const projects = pgTable(
     index("projects_user_last_activity_active")
       .on(table.userId, table.lastActivityAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("projects_user_personal")
-      .on(table.userId)
-      .where(sql`${table.isPersonal} = true AND ${table.deletedAt} IS NULL`),
   ],
 );
 
@@ -129,7 +124,10 @@ export const works = pgTable(
   ],
 );
 
-// work_id FK for work-scoped context sources
+/**
+ * A source is owned by a project (its own, a Work's, a lineage's or a chat's) or by an account:
+ * the home folder (`user`, scope `account`) is the account's, made with it by a trigger.
+ */
 export const contextSources = pgTable(
   "context_sources",
   {
@@ -137,6 +135,9 @@ export const contextSources = pgTable(
     projectId: uuid("project_id")
       .$type<ProjectId>()
       .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "cascade" }),
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
@@ -168,21 +169,29 @@ export const contextSources = pgTable(
     uniqueIndex("context_sources_chat_slug")
       .on(table.chatThreadId, table.slug)
       .where(sql`${table.chatThreadId} IS NOT NULL`),
+    uniqueIndex("context_sources_account_slug")
+      .on(table.userId, table.slug)
+      .where(sql`${table.scope} = 'account' AND ${table.deletedAt} IS NULL`),
     index("context_sources_project_sort")
       .on(table.projectId, table.sortOrder)
       .where(sql`${table.deletedAt} IS NULL`),
     check(
       "context_sources_exactly_one_scope",
-      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'scratch') OR (${table.scope} = 'chat' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.slug} = 'uploads')`,
+      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.userId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.userId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.userId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'scratch') OR (${table.scope} = 'chat' AND ${table.projectId} IS NOT NULL AND ${table.userId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NOT NULL AND ${table.slug} = 'uploads') OR (${table.scope} = 'account' AND ${table.userId} IS NOT NULL AND ${table.projectId} IS NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.chatThreadId} IS NULL AND ${table.slug} = 'user')`,
     ),
     // An uploads source belongs to a chat; the other scopes never carry that slug.
     check(
       "context_sources_uploads_chat_only",
       sql`${table.slug} <> 'uploads' OR ${table.scope} = 'chat'`,
     ),
+    // The home folder belongs to the account; no project holds one.
+    check(
+      "context_sources_user_account_only",
+      sql`${table.slug} <> 'user' OR ${table.scope} = 'account'`,
+    ),
     check(
       "context_sources_scope_valid",
-      sql`${table.scope} IN ('project', 'work', 'lineage', 'chat')`,
+      sql`${table.scope} IN ('project', 'work', 'lineage', 'chat', 'account')`,
     ),
     check(
       "context_sources_scope_work_fk",
@@ -196,8 +205,8 @@ export const contextSources = pgTable(
 );
 
 /**
- * What a document is apart from its name and place: its stored bytes and facts, and the project
- * that owns it. Its name, type and place are `tree_nodes` / `branch_tree_nodes` rows, written only
+ * What a document is apart from its name and place: its stored bytes and facts, and its owner: a
+ * project, or the account for a home document (the owner of the list its create is in). Its name, type and place are `tree_nodes` / `branch_tree_nodes` rows, written only
  * by the replay of the project's tree list; a document in no view has a row here and none there.
  * Written only by the transaction that admits the document's `create`.
  */
@@ -207,8 +216,10 @@ export const documents = pgTable(
     id: idColumn<DocumentId>(),
     projectId: uuid("project_id")
       .$type<ProjectId>()
-      .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "cascade" }),
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
@@ -235,7 +246,9 @@ export const documents = pgTable(
       "documents_size_bytes_nonneg",
       sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} >= 0`,
     ),
+    check("documents_one_owner", sql`num_nonnulls(${table.projectId}, ${table.userId}) = 1`),
     index("documents_project").on(table.projectId),
+    index("documents_user").on(table.userId),
     index("documents_in_no_view")
       .on(table.inNoViewSince)
       .where(sql`${table.inNoViewSince} IS NOT NULL AND ${table.contentPurgedAt} IS NULL`),
@@ -356,10 +369,13 @@ export const linkAheadRefs = pgTable(
   "link_ahead_refs",
   {
     aheadId: uuid("ahead_id").primaryKey(),
+    /** The holder: a project, or the account for a `user://` link ahead. */
     projectId: uuid("project_id")
       .$type<ProjectId>()
-      .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "cascade" }),
     scheme: text("scheme").notNull(),
     workId: uuid("work_id")
       .$type<WorkId>()
@@ -381,6 +397,7 @@ export const linkAheadRefs = pgTable(
     index("link_ahead_refs_owner_unsettled")
       .on(
         table.projectId,
+        table.userId,
         table.scheme,
         table.workId,
         table.rootThreadId,
@@ -389,5 +406,6 @@ export const linkAheadRefs = pgTable(
       )
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
+    check("link_ahead_refs_one_holder", sql`num_nonnulls(${table.projectId}, ${table.userId}) = 1`),
   ],
 );

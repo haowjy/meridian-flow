@@ -143,8 +143,7 @@ the answer is `already { unapplied }`, and so is a second Un-Apply of a delete. 
 the Apply are gone (`treeHalfLostWithBranch`, read from the stored answer's `applied`), the document
 it moved or deleted is `left_out purged`; the route answers 404 for a purged Work before the command
 runs, so that path is reached only when a chat's lineage branch goes while its Work lives on. A text
-group whose reversal would change a word holding writing made after the Apply (the word rule,
-`reversal.md`) stays applied and is named in `skippedGroupIds`; when every group stays
+group with nothing left to reverse stays and is named in `skippedGroupIds`; when every group stays
 and the tree half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created (and of the
 drafts the Apply closed, below).

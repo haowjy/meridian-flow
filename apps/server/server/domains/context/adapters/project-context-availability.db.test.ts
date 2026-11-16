@@ -9,6 +9,7 @@
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, projects, users, works } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
+import { accountUserSource } from "../../../test-support/branch-tree-seeds.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../../test-support/tree-seed.js";
 import {
@@ -25,9 +26,7 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
   const me = id(),
     other = id(),
     myProject = id(),
-    myAccount = id(),
-    theirProject = id(),
-    theirAccount = id();
+    theirProject = id();
   const mine = { doc: id(), folder: "", userDoc: id(), workDoc: id() };
   const theirs = { doc: id(), folder: "", userDoc: id(), workDoc: id() };
 
@@ -41,9 +40,7 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
       ]);
     await db.insert(projects).values([
       { id: myProject, userId: me, name: "Mine", slug: "mine" },
-      { id: myAccount, userId: me, name: "Personal", slug: "personal", isPersonal: true },
       { id: theirProject, userId: other, name: "Theirs", slug: "theirs" },
-      { id: theirAccount, userId: other, name: "Personal", slug: "personal", isPersonal: true },
     ]);
     const seed = treeSeeder(db);
     const myWork = id(),
@@ -54,21 +51,24 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
     ]);
     const sources = [
       { owner: myProject, slug: "manuscript", held: mine, key: "doc" },
-      { owner: myAccount, slug: "user", held: mine, key: "userDoc" },
+      { account: me, slug: "user", held: mine, key: "userDoc" },
       { owner: theirProject, slug: "manuscript", held: theirs, key: "doc" },
-      { owner: theirAccount, slug: "user", held: theirs, key: "userDoc" },
+      { account: other, slug: "user", held: theirs, key: "userDoc" },
       { work: myWork, slug: "scratch", held: mine, key: "workDoc" },
       { work: theirWork, slug: "scratch", held: theirs, key: "workDoc" },
     ] as const;
     for (const { slug, held, key, ...ownership } of sources) {
-      const source = id();
-      await db
-        .insert(contextSources)
-        .values(
-          "work" in ownership
-            ? { id: source, workId: ownership.work, scope: "work", slug, name: slug }
-            : { id: source, projectId: ownership.owner, scope: "project", slug, name: slug },
-        );
+      // The account's home folder is made with the account; the others are inserted here.
+      const source =
+        "account" in ownership ? await accountUserSource(db, ownership.account as never) : id();
+      if (!("account" in ownership))
+        await db
+          .insert(contextSources)
+          .values(
+            "work" in ownership
+              ? { id: source, workId: ownership.work, scope: "work", slug, name: slug }
+              : { id: source, projectId: ownership.owner, scope: "project", slug, name: slug },
+          );
       await seed.document(source, "note.md", { id: held[key] });
       if (key === "doc") held.folder = await seed.folder(source, "Act 1");
     }

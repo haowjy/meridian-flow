@@ -8,7 +8,6 @@ import type { Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, commands, documentDrafts } from "@meridian/database/schema";
 import {
-  type ListEnd,
   listRecords,
   pendingRecords,
   recordsAdmittedAfter,
@@ -18,7 +17,7 @@ import {
 } from "@meridian/project-tree";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
+import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { TreeCut } from "../domain/apply-click.js";
 
 export type Settled =
@@ -36,7 +35,7 @@ export type ItemSettlement = {
 };
 
 /** The vector of `cut` for the list `end` copies; none when the cut names another list. */
-export function cutOf(cut: TreeCut | undefined, scope: TreeList["kind"], end: ListEnd) {
+export function cutOf(cut: TreeCut | undefined, scope: TreeList["kind"], end: ListWriter) {
   const one = cut?.[scope];
   return one && one.list === end.list ? one.vector : undefined;
 }
@@ -116,7 +115,7 @@ const sameList = (a: TreeList, b: TreeList) =>
  * one settled latest answers. With none, the node's own records win: they are the ones the press
  * certainly saw.
  */
-function treeHalf(end: ListEnd, branchId: BranchId, saw: Uint8Array | undefined) {
+function treeHalf(end: ListWriter, branchId: BranchId, saw: Uint8Array | undefined) {
   const { writer } = end;
   const draft = writer.view({ draft: branchId });
   const pending = pendingRecords(writer.doc, branchId);

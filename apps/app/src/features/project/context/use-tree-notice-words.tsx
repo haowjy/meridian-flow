@@ -1,4 +1,4 @@
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { LeftOutWhy } from "@meridian/contracts/commands";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
@@ -331,31 +331,18 @@ function SaidWord({
     case "left": {
       const fact = factOf(said, node);
       const tree = said.treeLeft.find((one) => one.node === node);
-      const text = textOn(said, node);
-      const stayed = [
-        text > 0
-          ? plural(text, {
-              one: "# text change stayed: it was edited since.",
-              other: "# text changes stayed: they were edited since.",
-            })
-          : null,
-        tree ? treeLeftSentence(fact, tree.why) : null,
-      ].filter(Boolean);
-      if (said.taken === "nothing")
-        return (
-          <RowWord
-            tone="warning"
-            word={<Trans>Not undone</Trans>}
-            sentence={
-              tree ? [t`Not undone.`, ...stayed].join(" ") : t`Not undone: it was edited since.`
-            }
-          />
-        );
-      return (
+      const stayed = tree ? treeLeftSentence(fact, tree.why) : "";
+      return said.taken === "nothing" ? (
+        <RowWord
+          tone="warning"
+          word={<Trans>Not undone</Trans>}
+          sentence={`${t`Not undone.`} ${stayed}`}
+        />
+      ) : (
         <RowWord
           tone="warning"
           word={<Trans>Partly undone</Trans>}
-          sentence={[t`Undid part of applying ${name}.`, ...stayed].join(" ")}
+          sentence={`${t`Undid part of applying ${name}.`} ${stayed}`}
         />
       );
     }
@@ -398,10 +385,6 @@ function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
 const factOf = (said: Extract<Said, { kind: "left" }>, node: string): TreeFact =>
   said.facts.get(node) ?? { did: null, folder: false };
 
-/** The answer doesn't say whose text stayed: every document row of the Apply says it. */
-const textOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
-  factOf(said, node).folder ? 0 : said.textLeft;
-
 /** Whether anything of `node`'s change stayed: a row taken back whole says nothing. */
 const leftOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
-  textOn(said, node) > 0 || said.treeLeft.some((one) => one.node === node);
+  said.treeLeft.some((one) => one.node === node);

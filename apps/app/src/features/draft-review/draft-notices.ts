@@ -139,22 +139,20 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
 
 /**
  * What an Un-Apply took back, the one reading every surface says: something taken back with
- * nothing left is `all`; with text skipped or a tree fact left out, `partly`; nothing taken back
+ * nothing left is `all`; with a tree fact left out, `partly`; nothing taken back
  * but something left, `nothing`; neither, `already` (the server's `already unapplied`). Each node
  * a `left_out` line names keeps that line's reason, so its row can say why it stayed; the lines
  * are read here, not through `settledOf`, whose views drop the nodes they name.
  */
 export function unappliedOf(answer: UnapplyClickResult): Unapplied {
   const took = answer.reversedGroupIds.length > 0 || answer.treeUndone.length > 0;
-  const textLeft = answer.skippedGroupIds.length;
   const treeLeft = new Map<string, LeftOutWhy>();
   for (const one of answer.settled ?? [])
     if (one.rule === "left_out")
       for (const node of one.items) if (!treeLeft.has(node)) treeLeft.set(node, one.why);
-  if (textLeft === 0 && treeLeft.size === 0) return { taken: took ? "all" : "already" };
+  if (treeLeft.size === 0) return { taken: took ? "all" : "already" };
   return {
     taken: took ? "partly" : "nothing",
-    textLeft,
     treeLeft: [...treeLeft].map(([node, why]) => ({ node, why })),
   };
 }
