@@ -297,16 +297,20 @@ function undoAlone(
 
 /**
  * Whether an edit since the step (`after`: the state vector right after it) deleted text it
- * inserted, wrote into or beside text it inserted or deleted, or deleted a block holding either.
+ * inserted, wrote beside text it inserted or deleted, or deleted a block holding either.
  */
 function touchedSince(doc: Y.Doc, stackItem: StackItem, after: Map<number, number>): boolean {
   const { insertions, deletions } = stackItem;
   const ours = (id: Y.ID | null) =>
     id !== null && (Y.isDeleted(insertions, id) || Y.isDeleted(deletions, id));
   const later = (struct: Y.Item) => struct.id.clock >= (after.get(struct.id.client) ?? 0);
+  // Beside: only older deleted text in between. An insert skips past every deleted item at its
+  // place, so after an earlier Discard was undone its origin is that Discard's text, not this one's.
   const besideLater = (start: Y.Item | null, side: "left" | "right") => {
-    for (let next = start; next && !ours(next.id) && later(next); next = next[side])
-      if (ours(next.origin) || ours(next.rightOrigin)) return true;
+    for (let next = start; next && !ours(next.id); next = next[side]) {
+      if (later(next)) return true;
+      if (!next.deleted) return false;
+    }
     return false;
   };
   const touched = (struct: Y.Item | Y.AbstractStruct, inserted: boolean) => {
