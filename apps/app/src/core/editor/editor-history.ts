@@ -235,10 +235,14 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (!this.active) return false;
     const source = direction === "undo" ? this.undo : this.redo;
     const entry = direction === "undo" ? source.findLast((each) => !passedOver(each)) : source[0];
-    if (direction === "undo")
-      for (const over of source.slice(entry ? source.indexOf(entry) + 1 : 0))
-        if (over.kind === "apply") over.action.passed?.();
-    if (!entry) return false;
+    const over = direction === "undo" ? source.slice(entry ? source.indexOf(entry) + 1 : 0) : [];
+    const passed = () => {
+      for (const each of over) if (each.kind === "apply") each.action.passed?.();
+    };
+    if (!entry) {
+      passed();
+      return false;
+    }
     if (entry.kind === "apply") {
       source.splice(source.indexOf(entry), 1);
       insert(direction === "undo" ? this.redo : this.undo, entry);
@@ -248,9 +252,8 @@ export class DocumentHistory implements EditorHistoryHandle {
         void entry.action.undo().then((happened) => {
           if (!happened && entry.presses === press) this.reinstate(entry);
         });
-    } else {
-      this.runNative(direction, source, editor);
-    }
+      passed();
+    } else if (this.runNative(direction, source, editor)) passed();
     this.changed();
     return true;
   }
@@ -289,7 +292,7 @@ export class DocumentHistory implements EditorHistoryHandle {
    * guarded step: that one runs alone, once its guard says it still can. An undo passes over an
    * Apply that waits for a closed owner, as a press does.
    */
-  private runNative(direction: "undo" | "redo", source: Entry[], editor: Editor): void {
+  private runNative(direction: "undo" | "redo", source: Entry[], editor: Editor): boolean {
     const segment: Extract<Entry, { kind: "yjs" }>[] = [];
     if (direction === "undo") {
       for (let index = source.length - 1; index >= 0; index--) {
@@ -303,7 +306,7 @@ export class DocumentHistory implements EditorHistoryHandle {
         if (!touchedSince(this.manager.doc, entry.item)) break;
         this.take(entry.item);
         guard.dropped();
-        return;
+        return false;
       }
     } else {
       for (const entry of source) {
@@ -345,6 +348,7 @@ export class DocumentHistory implements EditorHistoryHandle {
       generated.meta.set(HISTORY_META, moved);
       insert(direction === "undo" ? this.redo : this.undo, moved);
     }
+    return true;
   }
 
   /**

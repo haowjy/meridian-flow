@@ -545,13 +545,12 @@ export class DraftNotices {
           ...(part.count !== undefined ? { count: covers.length } : {}),
         };
       const appliedFirst = [...new Set([...notice.appliedFirst, ...took.appliedFirst])];
-      if (parts.length === 0) {
+      // Expired shares are still discarded: they keep the notice and its sentence.
+      const standing = [...parts, ...this.expiredParts(id)];
+      if (standing.length === 0) {
         const surface = this.bounceTo.get(id) ?? notice.surface;
-        this.parts.delete(id);
-        this.bounceTo.delete(id);
-        this.pressed.delete(id);
-        if (appliedFirst.length === 0) this.notices.delete(notice.ownerKey);
-        else
+        this.forget(notice);
+        if (appliedFirst.length > 0)
           this.bounce({
             id,
             projectId: notice.projectId,
@@ -561,8 +560,10 @@ export class DraftNotices {
             appliedFirst,
             returned: null,
           });
-      } else
-        this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(parts) });
+      } else {
+        this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(standing) });
+        this.settle(notice.ownerKey, id);
+      }
       this.publish();
       return;
     }
