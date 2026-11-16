@@ -111,8 +111,10 @@ export async function openHarness(
   const persistence = createDrizzleCollabPersistence(db);
   /** Every committed append's sequence-point timing, in commit order. */
   const appends: AppendCommitted[] = [];
+  const removalDeps = createTestRemovalDeps(db);
   const store = createDrizzleDraftStore(db, {
-    close: createTestRemovalDeps(db).draftClose,
+    close: removalDeps.draftClose,
+    treeLists: removalDeps.treeLists,
     workProjection: projection,
     branches,
     live: persistence,

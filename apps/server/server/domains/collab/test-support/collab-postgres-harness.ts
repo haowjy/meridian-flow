@@ -267,6 +267,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const draftStore = createFixtureDraftStore(db, {
     close: draftClose,
     workProjection: createTestWorkProjectionMutation(db),
+    treeLists,
     live: {
       journal: persistence.journal,
     },
