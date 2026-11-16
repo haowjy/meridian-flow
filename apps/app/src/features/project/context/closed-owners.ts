@@ -100,9 +100,10 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
             void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
           // A lineage's list may have no reader on screen: fetch it, so `frozen` is known here.
           else if (parsed?.kind === "lineage")
-            void queryClient
-              .fetchQuery({ ...ownerDraftsQueryOptions(projectId, ownerKey), staleTime: 0 })
-              .catch(() => undefined);
+            void queryClient.prefetchQuery({
+              ...ownerDraftsQueryOptions(projectId, ownerKey),
+              staleTime: 0,
+            });
         }
       },
       subscribe: (listener) => {

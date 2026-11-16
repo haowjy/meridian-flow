@@ -526,11 +526,14 @@ export function serverBandPort(
     reapply: async (answer) => {
       if (!takenBack(await answer)) return CANCELLED;
       const body = { ...again, commandId: crypto.randomUUID() };
+      let landed: boolean;
       try {
-        if ((await port.send(body)).status !== "applied") return LOST;
+        landed = (await port.send(body)).status === "applied";
       } catch {
         // Lost on the way: the next Un-Apply asks the server, which answers for one never applied.
+        landed = true;
       }
+      if (!landed) return LOST;
       applyCommandId = body.commandId;
       return { kind: "landed" };
     },
