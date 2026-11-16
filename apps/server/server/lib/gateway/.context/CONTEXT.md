@@ -37,6 +37,16 @@ Each provider's key goes in `ProviderConfig.auth` as `{ apiKey }`; Flow sets no 
 Model facts come from models.dev through the snapshot; a provider's API docs are only for what models.dev lacks, which
 the provider rows hold. Nothing fetches models.dev at run time.
 
+**Refreshing.** `pnpm models:refresh` (`apps/server/scripts/models-refresh.ts`, network, outside `pnpm check`) fetches
+models.dev, rewrites the snapshot, and prints the report: new and removed models, every price change as old → new,
+limit, modality, reasoning and cache changes, the derived long-TTL cache-write prices, and a "Not from models.dev"
+section listing each provider-row fact with its source and checked date (marked **re-check** after 90 days). It
+refuses to write when the new snapshot would not build, for example when it lacks the default model. A person runs it
+on a branch, reads the report, and opens a PR; a charge changes only when that PR merges. `--dry-run` leaves the
+snapshot alone. The daily `.github/workflows/models-refresh.yml` runs it with `--dry-run` and keeps one open issue,
+"models.dev changes", whose body is the report; it closes the issue when the snapshot matches models.dev. It uses
+the built-in `GITHUB_TOKEN` and commits and opens nothing.
+
 The model-request debug capture (`domains/runtime/model-request-debug/build-record.ts`) copies named
 request fields, so `GenerateRequest.auth` and any field the package adds later stay out of it.
 
