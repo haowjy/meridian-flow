@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import type { WriterText } from "@meridian/thread-client";
-import { Loader2, X } from "lucide-react";
+import { Loader2, Pencil, X } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { AnchoredCards } from "./ChatCards";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
 import { useReferenceAvailability } from "./reference-availability";
 import type { TurnQueueControls } from "./TurnList";
+import { TURN_ACTION_TOOLTIP_SIDE } from "./turn-action-tooltip";
 
 export type UserTurnProps = {
   turn: Turn;
@@ -28,6 +29,8 @@ export type UserTurnProps = {
   queuedCount?: number;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
+  /** Edit after the writer stopped this message's reply: its words back in the message box. */
+  onEdit?: ((turnId: string) => void) | null;
 };
 
 function UserTurnComponent({
@@ -38,6 +41,7 @@ function UserTurnComponent({
   queueControls = null,
   lastQueued = false,
   queuedCount = 0,
+  onEdit = null,
 }: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
@@ -160,14 +164,25 @@ function UserTurnComponent({
           wrapClassName="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end"
         />
       ) : null}
-      {handoff ? (
+      {handoff || onEdit ? (
         // A row under the bubble on its right edge, like a reply's actions; revealed
         // on hover or focus with a mouse, always shown on touch (globals.css).
         <div
           className="user-turn-actions mt-[var(--chat-space-inline)] flex min-h-6 items-center justify-end gap-[var(--chat-space-inline)] transition-opacity"
           data-user-turn-actions
         >
-          <HandoffTurnAction turnId={turn.id} />
+          {onEdit ? (
+            <IconButton
+              type="button"
+              label={t`Edit in the message box`}
+              tooltipSide={TURN_ACTION_TOOLTIP_SIDE}
+              data-user-turn-action="edit"
+              onClick={() => onEdit(turn.id)}
+            >
+              <Pencil aria-hidden />
+            </IconButton>
+          ) : null}
+          {handoff ? <HandoffTurnAction turnId={turn.id} /> : null}
         </div>
       ) : null}
     </article>

@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
       repos: app.threadRepos,
       modelRequestDebug: app.modelRequestDebug,
       agentRevisions: app.agentRevisions,
+      agentCatalog: app.agentCatalog,
       toolRegistry: app.toolRegistry,
       toolExecutor: app.toolExecutor,
       workContext: app.workContext,

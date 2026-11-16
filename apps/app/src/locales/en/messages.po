@@ -3501,6 +3501,10 @@ msgstr "Edit display text"
 msgid "Edit goal"
 msgstr "Edit goal"
 
+#: src/features/chat/UserTurn.tsx
+msgid "Edit in the message box"
+msgstr "Edit in the message box"
+
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
 msgstr "Edit link"

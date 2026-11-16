@@ -220,8 +220,16 @@ Open a draft with two separated changes and a move.
    settle in order, typing remains enabled, and the review does not flash back
    before its authoritative room update.
 6. Refuse Un-Apply. The restored change shows the error and Retry with the same
-   command id. Chat-side, tree-only, and delete-short-circuit Apply do not enter
-   editor history.
+   command id, and the next Ctrl+Z tries the Un-Apply again rather than undoing
+   the typing under it. Tree-only and delete-short-circuit Apply do not enter
+   editor history; a chat or sidebar Apply does (see `draft-review.md`).
+7. Apply a chat's change, block `**/unapply` and press Ctrl+Z: the next Ctrl+Z
+   sends the Un-Apply again. Apply all over two open tabs, Ctrl+Z and
+   Ctrl+Shift+Z in one, then Ctrl+Z in the other: it takes the re-applied Apply
+   back.
+8. Apply all over two open tabs, type in the second, then make the Un-Apply fail
+   from the first. Ctrl+Z in the second undoes the typing first, then sends the
+   Un-Apply. Undo typing in the second before the failure: its Redo stays.
 
 After each case, inspect the draft room and live document with `./mf`. Reversed
 Apply records are absent, skipped records remain, and replaying either command
