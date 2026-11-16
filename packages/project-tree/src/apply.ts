@@ -554,23 +554,6 @@ export function appliedNodes(
   return [...new Set([...restored, ...copies].map((record) => record.node))];
 }
 
-/**
- * The restores an Apply wrote for `node` that are still in force in live (`ApplyResult.restored`):
- * an Undo of a change the Apply landed on the node takes them back with it, as `undoApply` does.
- */
-export function appliedRestores(doc: Y.Doc, node: string): string[] {
-  const standing = replayView(doc, LIVE).inForce;
-  return listRecords(doc).flatMap((record) =>
-    record.type === "restore" &&
-    record.node === node &&
-    record.fromDraft !== undefined &&
-    record.undoes === undefined &&
-    standing.has(record.id)
-      ? [record.id]
-      : [],
-  );
-}
-
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
 export function appliedCreates(writer: TreeWriter, applied: string): string[] {
   return appliedBy(writer.doc, applied).copies.flatMap((copy) =>

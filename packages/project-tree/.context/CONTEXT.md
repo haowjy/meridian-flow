@@ -159,7 +159,9 @@ the replay uses them (package `AGENTS.md`).
   and `appliedNodes(doc, command, restoredByApply)` is the one reader of what of an Apply still
   stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
   ids `undoApply` takes back) is in force. An Apply that only brought a document back from Trash
-  lists it until Un-Apply or a card's Undo takes the restore back. A tab can tell the Apply's tree
+  lists it until Un-Apply takes the restore back. A card's Undo takes back no restores: it
+  undoes only the copies it names, so a node an Apply restored stays live under its earlier name
+  (B9 part 3 makes the card's Undo of an applied change the whole Apply's Un-Apply). A tab can tell the Apply's tree
   half has ended (a card's Undo of the drafted change took the copy back). `appliedBy` keeps
   copies not in force, so `undoApply` reports them `already`. One Undo takes out every copy of a
   record: when a record applied, Un-Applied and applied again has its first copy back in force (an

@@ -791,7 +791,7 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
     expect(undoApply(t.w, command, WRITER, cmd()).undone).toEqual([]);
   });
 
-  it("an Apply that only restores lists the node until Un-Apply or a card's Undo takes the restore back", () => {
+  it("an Apply that only restores lists the node until Un-Apply or an Undo of the restore takes it back", () => {
     for (const how of ["unapply", "undo"] as const) {
       const t = start();
       const n = t.chapter("Hall");
