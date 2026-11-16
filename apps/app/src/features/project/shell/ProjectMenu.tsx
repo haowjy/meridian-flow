@@ -2,14 +2,13 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, MoreHorizontal, Settings, Upload } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Pencil, Settings, Upload } from "lucide-react";
 import { useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
   useMenuActionDispatch,
 } from "@/components/ui/dropdown-menu";
@@ -40,6 +39,7 @@ export function ProjectMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" onCloseAutoFocus={onCloseAutoFocus}>
           <DropdownMenuItem onSelect={() => dispatch(onRename)}>
+            <Pencil aria-hidden className="size-3.5" />
             <Trans>Rename project</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => dispatch(() => setExporting(true))}>
@@ -47,10 +47,9 @@ export function ProjectMenu({
             <Trans>Export project…</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => dispatch(() => settings.open())}>
+          <DropdownMenuItem onSelect={() => dispatch(() => settings.open())} note="Ctrl ,">
             <Settings aria-hidden className="size-3.5" />
             <Trans>Settings</Trans>
-            <DropdownMenuShortcut>Ctrl ,</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link to="/">

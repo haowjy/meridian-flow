@@ -57,6 +57,7 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
             <div className={cn("px-2 pt-2 pb-1", role.groupLabel)}>{groupLabels[item.group]}</div>
           ) : undefined,
         content: <SlashRow item={item} />,
+        note: item.hint,
       }))}
     />
   );
@@ -68,9 +69,6 @@ function SlashRow({ item }: { item: SlashCommandItem }) {
     <>
       <Icon aria-hidden />
       <span>{item.label}</span>
-      {item.hint ? (
-        <span className="ml-auto pl-4 text-muted-foreground text-xs">{item.hint}</span>
-      ) : null}
     </>
   );
 }

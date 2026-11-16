@@ -5,6 +5,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Ref } from "react";
+import { LabelNote } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 import { type TitleEditHandle, TitleEditSlot } from "./TitleEditSlot";
 
@@ -48,9 +49,7 @@ export function InlineProjectTitle({
             className={className}
           >
             <span className="min-w-0 flex-1 cursor-text truncate">{title}</span>
-            {showRenameHint ? (
-              <span className="text-xs font-normal text-muted-foreground">{t`Rename`}</span>
-            ) : null}
+            {showRenameHint ? <LabelNote className="font-normal">{t`Rename`}</LabelNote> : null}
           </button>
         )}
       </TitleEditSlot>

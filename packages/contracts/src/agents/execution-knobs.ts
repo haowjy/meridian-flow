@@ -6,42 +6,18 @@
  */
 import { z } from "zod";
 
-/** Canonical reasoning-effort values carried on a resolved configuration. */
-export const AGENT_EFFORT_VALUES = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "none",
-  "disabled",
-  "adaptive",
-] as const;
-export type AgentEffort = (typeof AGENT_EFFORT_VALUES)[number];
-export const agentEffortSchema = z.enum(AGENT_EFFORT_VALUES);
-
-/** The levels a model can reason at, lowest first: the gateway's `ReasoningEffort`. */
-export const REASONING_LEVELS = ["low", "medium", "high", "max"] as const;
-export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
-
 /**
- * A reasoning setting as the wire carries it, in the gateway's vocabulary: a level, `disabled`
- * (off where the model can switch off, else its lowest level) or `adaptive` (the model's own).
- * An Agent file's `effort` reads as one through `AGENT_EFFORT_CHOICE`, so a chat's override and
- * the Agent's own level compare directly.
+ * A reasoning level: a name on Mars's ladder (`effortLevels()` in `@meridian-flow/mars-schema`:
+ * none, minimal, low, medium, high, xhigh, max). Every surface carries it unchanged: an Agent
+ * file's `effort`, a chat's override, a spawn's override, a model's own list and the gateway's
+ * request. `none` is "off" on a model that can switch off. An Agent with no `effort` (or `auto`)
+ * and a chat with no override carry no level, the model's own default. Mars's browser build
+ * starts asynchronously, so this schema cannot read the ladder; the Agent file is checked where
+ * Mars reads it (`compile-package.ts`), and a level a model does not list runs at the nearest
+ * one it does (`resolveReasoning` in the gateway).
  */
-export const REASONING_CHOICES = [...REASONING_LEVELS, "disabled", "adaptive"] as const;
-export type ReasoningChoice = (typeof REASONING_CHOICES)[number];
-export const reasoningChoiceSchema = z.enum(REASONING_CHOICES);
-
-export const AGENT_EFFORT_CHOICE: Record<AgentEffort, ReasoningChoice> = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-  xhigh: "max",
-  none: "disabled",
-  disabled: "disabled",
-  adaptive: "adaptive",
-};
+export const reasoningLevelSchema = z.string().min(1);
+export type ReasoningLevel = string;
 
 /**
  * What an agent may change (file-access §8). `read` agents still edit their own
@@ -75,7 +51,7 @@ export const resolvedAgentConfigurationSchema = z.object({
   /** Allow-list of real tool names; absent means the full catalog. */
   tools: z.array(z.string()).optional(),
   "disallowed-tools": z.array(z.string()).optional(),
-  effort: agentEffortSchema.optional(),
+  effort: reasoningLevelSchema.optional(),
   permission: agentPermissionSchema,
 });
 export type ResolvedAgentConfiguration = z.infer<typeof resolvedAgentConfigurationSchema>;
@@ -84,7 +60,7 @@ export type ResolvedAgentConfiguration = z.infer<typeof resolvedAgentConfigurati
 export const invocationPatchSchema = z
   .object({
     model: z.string().optional(),
-    effort: agentEffortSchema.optional(),
+    effort: reasoningLevelSchema.optional(),
     permission: agentPermissionSchema.optional(),
     "disallowed-tools": z.array(z.string()).optional(),
     subagents: z.array(z.string()).optional(),

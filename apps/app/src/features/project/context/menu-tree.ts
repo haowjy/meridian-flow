@@ -49,11 +49,31 @@ export function areaNode(area: MenuArea): DrillNode {
   return { id: area.id, name: area.name, title: area.title, folder: true, icon: area.icon };
 }
 
+function earlierNode(area: MenuArea): DrillNode {
+  return { id: earlierId(area), name: t`Earlier notes`, folder: true, icon: Folder };
+}
+
 function areaTop(area: MenuArea): DrillNode[] {
   const own = area.tree ? listChildren(area.tree, null) : [];
-  return earlierHasNotes(area)
-    ? [{ id: earlierId(area), name: t`Earlier notes`, folder: true, icon: Folder }, ...own]
-    : own;
+  return earlierHasNotes(area) ? [earlierNode(area), ...own] : own;
+}
+
+/** The folder nodes down `folders` (names from the tree root), as far as the tree has them. */
+function folderNodes(tree: TreeView, folders: readonly string[]): DrillNode[] {
+  return folders.flatMap((_, index) => {
+    const folder = tree.findFolder(folders.slice(0, index + 1).join("/"));
+    return folder
+      ? [
+          {
+            id: folder.entryId,
+            name: folder.name,
+            ...(folder.suffix ? { suffix: folder.suffix } : {}),
+            folder: true,
+            icon: Folder,
+          },
+        ]
+      : [];
+  });
 }
 
 export function buildMenuTree({
@@ -79,6 +99,23 @@ export function buildMenuTree({
       }
       return [];
     },
+    trailInside: (folderId) => {
+      for (const area of areas) {
+        if (folderId === area.id) return [areaNode(area)];
+        if (folderId === earlierId(area) && earlierHasNotes(area))
+          return [areaNode(area), earlierNode(area)];
+        const own = area.tree ? menuEntryFor(area.tree, folderId) : null;
+        if (area.tree && own?.kind === "dir") return trailAlong(area, pathSegments(own.path));
+        const old = area.earlier?.tree ? menuEntryFor(area.earlier.tree, folderId) : null;
+        if (area.earlier?.tree && old?.kind === "dir")
+          return [
+            areaNode(area),
+            earlierNode(area),
+            ...folderNodes(area.earlier.tree, pathSegments(old.path)),
+          ];
+      }
+      return null;
+    },
   };
 }
 
@@ -100,24 +137,7 @@ export function menuTabFor(areas: readonly MenuArea[], rowId: string): ServerOpe
  * opens along a path builds its trail here; callers choose how far down.
  */
 export function trailAlong(area: MenuArea, folders: readonly string[]): DrillNode[] {
-  const { tree } = area;
-  const nodes = tree
-    ? folders.flatMap((_, index) => {
-        const folder = tree.findFolder(folders.slice(0, index + 1).join("/"));
-        return folder
-          ? [
-              {
-                id: folder.entryId,
-                name: folder.name,
-                ...(folder.suffix ? { suffix: folder.suffix } : {}),
-                folder: true,
-                icon: Folder,
-              },
-            ]
-          : [];
-      })
-    : [];
-  return [areaNode(area), ...nodes];
+  return [areaNode(area), ...(area.tree ? folderNodes(area.tree, folders) : [])];
 }
 
 /** The segments of a tree path, from the area root. */

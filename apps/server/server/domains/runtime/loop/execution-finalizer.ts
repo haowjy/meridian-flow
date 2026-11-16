@@ -262,7 +262,10 @@ export async function finalizeExecution(
         const openedAt = new Date();
         const opened = await deps.repos.asks.openPending(askedCause.askId, input.turnId, {
           openedAt,
-          deadline: liveAsk.kind === "question" ? askDeadline(openedAt, openedAt) : null,
+          deadline:
+            liveAsk.kind === "question"
+              ? askDeadline(openedAt, openedAt, liveAsk.hardLimitSeconds)
+              : null,
         });
         if (!opened)
           throw new Error(`Pending ask disappeared before settlement: ${askedCause.askId}`);

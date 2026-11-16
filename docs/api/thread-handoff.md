@@ -18,8 +18,8 @@
 revision it showed. The destination binds that revision, and keeps the source's bake when it is the
 revision the source runs. `overrides` (optional; omitted means none) is what the destination runs on instead of its Agent's:
 `model` is a model id, stored as given (a model the gateway does not list falls back to the Agent's
-at turn time), and `effort` is one of `low`, `medium`, `high`, `max`, `disabled`, `adaptive`, which the
-gateway clamps to what the model accepts. Each is `null` to run the Agent's own. A fork copies its source's overrides.
+at turn time), and `effort` is a level on Mars's ladder (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), which the
+gateway runs at the nearest level the model lists. Each is `null` to run the Agent's own. A fork copies its source's overrides.
 
 The body is strict: `summary`, missing/null cutoff and extra fields return 400.
 The selected turn is the cutoff. Every effective transcript turn through it must

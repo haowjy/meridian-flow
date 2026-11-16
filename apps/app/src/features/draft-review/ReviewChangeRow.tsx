@@ -5,6 +5,7 @@
  * to its floor ("You", a few letters of the first chat, "+N"), and then the excerpt truncates.
  */
 import { Trans } from "@lingui/react/macro";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ReviewActions } from "./ReviewActions";
 import { ChangeAuthor, ChangeDot } from "./ReviewChangeParts";
@@ -26,6 +27,8 @@ export type ReviewChangeRowProps = {
   showAttribution?: boolean;
   wholeDocument?: boolean;
   documentName?: string;
+  /** The file's header word (`RowWord`), when this row stands in for the header. */
+  notice?: ReactNode;
 };
 
 export function ReviewChangeRow({
@@ -41,6 +44,7 @@ export function ReviewChangeRow({
   showAttribution = false,
   wholeDocument = false,
   documentName,
+  notice,
 }: ReviewChangeRowProps) {
   // A move or delete says what it does to the file, in the row's ink rather than diff colours.
   const sentence = change.tree ? treeLineSentence(change.tree) : documentName;
@@ -113,6 +117,7 @@ export function ReviewChangeRow({
             <ChangeAuthor fit="first" change={change} touch={touch} className="justify-end" />
           ) : null}
         </div>
+        {notice}
         {!disabled ? (
           <ReviewActions
             scope="change"

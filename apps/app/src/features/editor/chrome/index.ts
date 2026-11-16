@@ -27,7 +27,6 @@ export {
   EditorMenuRadioGroup,
   EditorMenuRadioItem,
   EditorMenuSeparator,
-  EditorMenuShortcut,
   EditorMenuSub,
   EditorMenuSubContent,
   EditorMenuSubTrigger,

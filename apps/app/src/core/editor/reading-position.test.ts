@@ -149,20 +149,17 @@ it("keeps the same text after a peer inserts above and safely falls back when th
     reopened.editor.state.doc.content.size,
   );
 });
-it("lets pending Changes, heading/position and review targets win over mount memory", () => {
+it("lets pending targets and arrivals win over mount memory, not the address", () => {
   const doc = new Y.Doc();
   doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).insert(0, [paragraph("target passage")]);
   const { editor } = view(doc);
-  const address = "https://app.localhost/projects/p/editor";
-  expect(mayRestoreReadingPosition(editor, "chapter", false, address)).toBe(true);
+  expect(mayRestoreReadingPosition(editor, "chapter")).toBe(true);
   const release = claimDocumentTarget("chapter");
-  expect(mayRestoreReadingPosition(editor, "chapter", false, address)).toBe(false);
+  expect(mayRestoreReadingPosition(editor, "chapter")).toBe(false);
   release();
-  expect(mayRestoreReadingPosition(editor, "chapter", false, `${address}#heading`)).toBe(false);
-  expect(mayRestoreReadingPosition(editor, "chapter", false, `${address}?item=d`)).toBe(false);
-  expect(mayRestoreReadingPosition(editor, "chapter", true, address)).toBe(false);
+  expect(mayRestoreReadingPosition(editor, "chapter")).toBe(true);
   editor.commands.showPassageMatches([{ from: 1, to: 3 }]);
-  expect(mayRestoreReadingPosition(editor, "chapter", false, address)).toBe(false);
+  expect(mayRestoreReadingPosition(editor, "chapter")).toBe(false);
 });
 it("bounds device memory, rejects foreign/malformed accounts, and preserves the last pane's gesture", () => {
   const doc = new Y.Doc();
@@ -195,7 +192,7 @@ it("bounds device memory, rejects foreign/malformed accounts, and preserves the 
     JSON.stringify({
       version: 1,
       accountId: "a",
-      payload: [{ documentId: "new", place: { viewport: 42, selection: [] } }],
+      payload: [{ roomKey: "new", place: { viewport: 42, selection: [] } }],
     }),
   ]) {
     localStorage.setItem(`${READING_POSITION_STORAGE_KEY}:a`, raw);

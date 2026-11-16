@@ -116,23 +116,25 @@ export function restoreReadingPosition(
     } else pane.scrollTop = 0;
     scrolled = true;
 
-    const from = resolve(runtime, place.selection.anchor) ?? 0;
-    const to = resolve(runtime, place.selection.head) ?? from;
-    const selectedNode = doc.nodeAt(from);
-    const saved =
-      place.selection.node && selectedNode && NodeSelection.isSelectable(selectedNode)
-        ? NodeSelection.create(doc, from)
-        : doc.resolve(from).parent.inlineContent && doc.resolve(to).parent.inlineContent
-          ? TextSelection.create(doc, from, to)
-          : Selection.near(doc.resolve(from));
-    const shown = pane.getBoundingClientRect();
-    const head = editor.view.coordsAtPos(saved.head);
     const reading = text ?? block;
-    const selection =
-      (head.bottom > shown.top && head.top < shown.bottom) || reading === null
-        ? saved
-        : Selection.near(doc.resolve(reading));
-    editor.view.dispatch(editor.state.tr.setSelection(selection).setMeta("addToHistory", false));
+    const from = resolve(runtime, place.selection.anchor);
+    const to = resolve(runtime, place.selection.head) ?? from;
+    // Text deleted since leaves no caret to restore: the reading line takes it, never the top.
+    let selection = reading === null ? null : Selection.near(doc.resolve(reading));
+    if (from !== null && to !== null) {
+      const selectedNode = doc.nodeAt(from);
+      const saved =
+        place.selection.node && selectedNode && NodeSelection.isSelectable(selectedNode)
+          ? NodeSelection.create(doc, from)
+          : doc.resolve(from).parent.inlineContent && doc.resolve(to).parent.inlineContent
+            ? TextSelection.create(doc, from, to)
+            : Selection.near(doc.resolve(from));
+      const shown = pane.getBoundingClientRect();
+      const head = editor.view.coordsAtPos(saved.head);
+      if ((head.bottom > shown.top && head.top < shown.bottom) || !selection) selection = saved;
+    }
+    if (selection)
+      editor.view.dispatch(editor.state.tr.setSelection(selection).setMeta("addToHistory", false));
     return true;
   } catch {
     // Deleted types, replaced content, and unavailable layout are convenience loss, never a broken editor.

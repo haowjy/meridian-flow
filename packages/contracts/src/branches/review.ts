@@ -358,7 +358,12 @@ export interface ThreadDraftListItem {
   } | null;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
-  /** The text draft's last committed write (content-free folds keep it). Meaningless when `hasDraft` is false. */
+  /** The draft holds a change no chat is known to have written: the writer's own typing, or evidence in doubt. Like another chat in `actorThreads`, it makes the draft shared. */
+  unattributed: boolean;
+  /**
+   * The text draft's last committed write (content-free folds keep it), which a whole-item
+   * Discard sends back as `draftSeenAt`. Meaningless when `hasDraft` is false.
+   */
   updatedAt: string;
 }
 

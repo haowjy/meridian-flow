@@ -180,7 +180,7 @@ async function fixture(
     reviewItems: createBranchReviewItems({
       tree: branchTree,
       drafts: pending.listBranchDraftMetadata,
-      pendingThreadIds: pending.pendingThreadIds,
+      pendingWriters: pending.pendingWriters,
       treeActors: createDrizzleBranchTreeActors(h.db, treeLists),
     }),
   });

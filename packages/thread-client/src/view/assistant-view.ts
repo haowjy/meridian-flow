@@ -62,6 +62,8 @@ export type AssistantView = {
   /** Tool calls the writer sees elsewhere (a card, or the per-tool policy), so they have no row. */
   hiddenToolCallIds: string[];
   workReceipts: WorkReceipt[];
+  /** Whether the turn called `write`: only then can it have edited documents a receipt would list. */
+  wroteDocuments: boolean;
   /** What the turn's `save_agents` calls did, one outcome per package, in call order. */
   agentsSaved: SaveOutcome[];
 };
@@ -91,6 +93,7 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks" | "status">): Assist
       const receipt = workReceipt(tool);
       return receipt ? [receipt] : [];
     }),
+    wroteDocuments: tools.some((tool) => tool.toolName === "write"),
     agentsSaved: tools.flatMap(agentsSaved),
   };
   cache.set(turn.blocks, { status: turn.status, view });

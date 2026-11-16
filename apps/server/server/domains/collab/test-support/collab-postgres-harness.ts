@@ -457,7 +457,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     tree: createDrizzleBranchTreeState(db, createTreeReader(db)),
     drafts: (branchId, documentIds) =>
       durableWorkBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
-    pendingThreadIds: durableWorkBranchPendingStore.pendingThreadIds,
+    pendingWriters: durableWorkBranchPendingStore.pendingWriters,
     treeActors: createDrizzleBranchTreeActors(db, treeLists),
   });
   // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and

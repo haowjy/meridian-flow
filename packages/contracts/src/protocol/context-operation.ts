@@ -11,13 +11,9 @@ import type {
 /**
  * Why an operation can't run, when a caller words it: a rename
  * whose extension would change how the document is stored (a binary file to a text one or
- * back), or which kind of text document it is, or a Copy of a Work's draft of a document that
- * Work holds no draft of.
+ * back), or which kind of text document it is.
  */
-export type InvalidOperationReason =
-  | "file_type_conversion"
-  | "document_type_conversion"
-  | "no_draft";
+export type InvalidOperationReason = "file_type_conversion" | "document_type_conversion";
 
 export type ContextError =
   | { code: "command_conflict"; uri: string }

@@ -1,7 +1,7 @@
 import type { ModelOption } from "@meridian/contracts/protocol";
 
 // Single-colour marks from models.dev `/logos/<maker>.svg`, drawn in the text colour.
-const PATHS: Record<NonNullable<ModelOption["maker"]>, string> = {
+const PATHS: Record<string, string> = {
   anthropic:
     "M26.9568 9.88184H22.1265L30.7753 31.7848H35.4917L26.9568 9.88184ZM13.028 9.88184L4.4917 31.7848H9.32203L11.2305 27.1793H20.2166L22.0126 31.6724H26.8444L18.0832 9.88184H13.028ZM12.5783 23.1361L15.4987 15.3853L18.5315 23.1361H12.5783Z",
   openai:
@@ -12,11 +12,11 @@ const PATHS: Record<NonNullable<ModelOption["maker"]>, string> = {
     "M37 20.034C27.8809 20.5837 20.5808 27.8809 20.0326 37H19.966C19.4163 27.8809 12.1177 20.5837 3 20.034V19.9674C12.1191 19.4163 19.4163 12.1191 19.966 3H20.0326C20.5822 12.1191 27.8809 19.4163 37 19.9674V20.034Z",
 };
 
-/** The mark of the model's maker; an empty slot for a model of no known maker, so names line up. */
+/** The mark of the model's maker; an empty slot for a maker with no art here, so names line up. */
 export function ModelMark({ maker }: { maker: ModelOption["maker"] }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 40 40" className="size-4 shrink-0" fill="currentColor">
-      {maker ? <path d={PATHS[maker]} /> : null}
+      {maker && PATHS[maker] ? <path d={PATHS[maker]} /> : null}
     </svg>
   );
 }

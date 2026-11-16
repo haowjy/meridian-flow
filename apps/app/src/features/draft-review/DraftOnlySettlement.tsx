@@ -9,11 +9,7 @@ import {
   useDocumentViews,
 } from "@/client/project-shell/document-views";
 import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
-import {
-  cachedOwnerDrafts,
-  ownerDraftsQueryOptions,
-  useOwnerDrafts,
-} from "@/client/query/useOwnerDrafts";
+import { ownerDraftsQueryOptions, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import {
   useAccountId,

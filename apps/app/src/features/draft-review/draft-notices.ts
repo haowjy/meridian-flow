@@ -310,6 +310,12 @@ export class DraftNotices {
   /** A Discard notice's shares still holding an Undo. */
   private readonly parts = new Map<number, DiscardPart[]>();
   /**
+   * A Discard notice's shares whose Discard stands but whose Undo can't take it back (its text was
+   * edited since, its room closed), with how many changes that leaves out: the notice still names
+   * them, and says they couldn't come back.
+   */
+  private readonly expired = new Map<number, { part: DiscardPart; leftOut: number }[]>();
+  /**
    * The notice's own Undo: in flight, or a room's share that failed. A server share's progress is
    * `DiscardRestores`'.
    */
@@ -604,21 +610,28 @@ export class DraftNotices {
     else this.endIf(ownerKey, id);
   }
 
-  /** A room's Undo ended on its own: the room closed, its text moved on, or Ctrl+Z took it back. */
-  partEnded(handle: DiscardUndo) {
+  /**
+   * A share's Undo ended on its own. `leftOut`: its Discard is still written (its text was edited,
+   * its room closed), so the notice keeps naming it and says how many changes couldn't come back.
+   * Otherwise it was never written or was taken back (refused, Ctrl+Z), and the notice stops
+   * naming it.
+   */
+  partEnded(handle: DiscardUndo, leftOut?: number) {
     for (const [id, parts] of this.parts) {
       const index = parts.findIndex((part) => part.handle === handle);
       if (index < 0) continue;
-      parts.splice(index, 1);
+      const [part] = parts.splice(index, 1);
+      if (part && leftOut !== undefined) this.expire(id, part, leftOut);
       const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
       if (notice?.kind !== "discarded" || notice.status === "undoing") return;
-      if (parts.length === 0) {
-        this.notices.delete(notice.ownerKey);
-        this.parts.delete(id);
-        this.bounceTo.delete(id);
-        this.pressed.delete(id);
-      } else this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
-      this.publish();
+      if (leftOut === undefined) {
+        this.notices.set(notice.ownerKey, {
+          ...notice,
+          ...this.subjectOf([...parts, ...this.expiredParts(id)]),
+        });
+        this.publish();
+      }
+      this.settle(notice.ownerKey, id);
       return;
     }
   }
@@ -653,6 +666,9 @@ export class DraftNotices {
       answer !== "ok" ? [] : [part.undone ? part.undone(landed) : landed.then(() => true)],
     );
     const roomFailed = answers.some(({ part, answer }) => !part.restore && answer === "failed");
+    // A room's share answering `gone` stays written: the notice counts what it couldn't bring back.
+    for (const { part, answer, leftOut } of answers)
+      if (!part.restore && answer === "gone" && leftOut) this.expire(id, part, leftOut);
     if (this.parts.has(id)) {
       this.parts.set(
         id,
@@ -696,7 +712,7 @@ export class DraftNotices {
     const returned = restores.find((state) => state?.kind === "returned");
     const leftOut = restores.reduce(
       (sum, state) => sum + (state?.kind === "restored" ? state.leftOut : 0),
-      0,
+      (this.expired.get(id) ?? []).reduce((sum, { leftOut }) => sum + leftOut, 0),
     );
     const out = this.outstanding(parts);
     const status: Discarded["status"] | null =
@@ -712,10 +728,7 @@ export class DraftNotices {
                 ? "partial"
                 : null;
     if (status === null) {
-      this.notices.delete(ownerKey);
-      this.parts.delete(id);
-      this.bounceTo.delete(id);
-      this.pressed.delete(id);
+      this.forget(notice);
       this.publish();
       return;
     }
@@ -735,6 +748,14 @@ export class DraftNotices {
       return;
     this.notices.set(ownerKey, next);
     this.publish();
+  }
+
+  private expire(id: number, part: DiscardPart, leftOut: number) {
+    this.expired.set(id, [...(this.expired.get(id) ?? []), { part, leftOut }]);
+  }
+
+  private expiredParts(id: number) {
+    return (this.expired.get(id) ?? []).map(({ part }) => part);
   }
 
   private subjectOf(parts: readonly DiscardPart[]) {
@@ -776,14 +797,19 @@ export class DraftNotices {
   }
 
   private drop(notice: DraftNotice) {
-    this.notices.delete(notice.ownerKey);
     const parts = this.parts.get(notice.id) ?? [];
+    this.forget(notice);
+    for (const part of parts) part.handle.end();
+  }
+
+  private forget(notice: DraftNotice) {
+    this.notices.delete(notice.ownerKey);
     this.parts.delete(notice.id);
+    this.expired.delete(notice.id);
     this.pressed.delete(notice.id);
     clearTimeout(this.bounceTimers.get(notice.id));
     this.bounceTimers.delete(notice.id);
     this.bounceTo.delete(notice.id);
-    for (const part of parts) part.handle.end();
   }
 
   private publish() {
