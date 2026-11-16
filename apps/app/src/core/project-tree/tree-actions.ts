@@ -14,6 +14,7 @@ import {
   childrenOf,
   isSourceRoot,
   type NodeKind,
+  pathOf,
   sourceIdOf,
   sourceRoot,
   type TreeProjection,
@@ -124,7 +125,7 @@ export class TreeActions {
     provisional?: true;
     kind: Exclude<NodeKind, "file">;
     filetype?: string;
-  }): { node: string; name: string } {
+  }): { node: string; name: string; path: string } {
     const made = this.writable();
     const before = made.replay();
     const parent = this.parentOf(before, input.parentId);
@@ -139,7 +140,15 @@ export class TreeActions {
         : { kind: "document" as const, filetype: input.filetype ?? "markdown" }),
     });
     this.remember(made, "create", before, [record]);
-    return { node: record.node, name: record.name };
+    // Where it landed: a twin of a name already there takes a `~` suffix, so the typed name may
+    // reach the other one.
+    const after = made.replay();
+    const landed = after.nodes.get(record.node);
+    return {
+      node: record.node,
+      name: record.name,
+      path: landed ? pathOf(after, landed) : `/${record.name}`,
+    };
   }
 
   rename(node: string, name: string, filetype?: string): { name: string } {

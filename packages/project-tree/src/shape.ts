@@ -31,6 +31,16 @@ export function segmentOf(node: Pick<TreeNode, "name" | "suffix">): string {
   return entrySegment(node.name, node.suffix);
 }
 
+/** A node's path in its source (`/Arc/Kael~460c`), from its segments and its folders'. */
+export function pathOf(projection: TreeProjection, node: TreeNode): string {
+  const segments: string[] = [];
+  for (let at: TreeNode | undefined = node; at; ) {
+    segments.unshift(segmentOf(at));
+    at = isSourceRoot(at.parent) ? undefined : projection.nodes.get(at.parent);
+  }
+  return `/${segments.join("/")}`;
+}
+
 /**
  * The shown child a path segment reaches. With a `~` suffix, the one whose id's hex digits begin
  * with it (the lowest id, should a suffix shortened by hand fit two), whatever name is in front;

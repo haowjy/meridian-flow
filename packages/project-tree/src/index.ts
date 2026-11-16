@@ -67,6 +67,7 @@ export {
   childrenOf,
   descendantsOf,
   fingerprint,
+  pathOf,
   rankAt,
   segmentOf,
   treeViolations,

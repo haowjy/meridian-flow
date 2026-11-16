@@ -522,7 +522,7 @@ function NewLevelFileRow({
         made.node,
         [...file.folders, file.leaf].join("/"),
       );
-      tree.openWhenListed(made.path);
+      tree.openWhenListed(made.node);
       onDone();
     },
     onCancel: onDone,
@@ -541,20 +541,20 @@ function makeLevelFile(
   view: TreeView,
   rootPath: string,
   at: { folders: string[]; leaf: string },
-): { node: string; path: string } {
+): { node: string } {
   let parentId = view.root.entryId;
-  let path = "";
+  let path: string | null = "";
   for (const folder of [...rootPath.split("/").filter(Boolean), ...at.folders]) {
-    const found = view.findPath(`${path}/${folder}`);
+    // Below a folder made here, nothing exists yet to find.
+    const found: TreeFile | TreeDirectory | null =
+      path === null ? null : view.findPath(`${path}/${folder}`);
     if (found?.kind === "dir") {
       parentId = found.entryId;
       path = found.path;
       continue;
     }
-    const made = list.create({ parentId, kind: "folder", name: folder });
-    parentId = made.node;
-    path = `${path}/${made.name}`;
+    parentId = list.create({ parentId, kind: "folder", name: folder }).node;
+    path = null;
   }
-  const made = list.create({ parentId, kind: "document", name: at.leaf, filetype: "source" });
-  return { node: made.node, path: `${path}/${made.name}` };
+  return list.create({ parentId, kind: "document", name: at.leaf, filetype: "source" });
 }

@@ -117,7 +117,7 @@ export function useContextTree({
   const changed = shell?.showing === "live" && shell.offered ? shell.changed : null;
   const activeLocationPath =
     (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
-  const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
+  const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
   // Where the header's New file and New folder go: the folder the writer last opened or closed
   // into, else the open document's folder, else the top.
@@ -197,10 +197,10 @@ export function useContextTree({
   // A created file opens once its row shows in the tree, in the version it was made in.
   const openCreated = useOpenCreatedDocument();
   useEffect(() => {
-    if (!pendingOpenPath || !tree) return;
-    const entry = tree.findPath(pendingOpenPath);
+    if (!pendingOpenId || !tree) return;
+    const entry = tree.entry(pendingOpenId);
     if (entry?.kind !== "file") return;
-    setPendingOpenPath(null);
+    setPendingOpenId(null);
     void openCreated(
       {
         documentId: entry.documentId,
@@ -210,7 +210,7 @@ export function useContextTree({
       async () => onSelectFile(scheme, entry, { focus: true }),
       onPicked,
     );
-  }, [pendingOpenPath, tree, onSelectFile, onPicked, scheme, openCreated]);
+  }, [pendingOpenId, tree, onSelectFile, onPicked, scheme, openCreated]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);
@@ -239,7 +239,7 @@ export function useContextTree({
                   creating,
                   request: requestCreate,
                   done: onCreateDone,
-                  createdFile: setPendingOpenPath,
+                  createdFile: setPendingOpenId,
                   createdFolder,
                   setCreatedFolder,
                   placeAt: (folderPath) => setPlace({ folderPath, activePath: activeLocationPath }),
@@ -330,8 +330,8 @@ export function useContextTree({
     pickImport,
     openFolder,
     notices,
-    /** Opens the file made at this path once its row shows. */
-    openWhenListed: setPendingOpenPath,
+    /** Opens the file made with this id once its row shows. */
+    openWhenListed: setPendingOpenId,
   };
 }
 

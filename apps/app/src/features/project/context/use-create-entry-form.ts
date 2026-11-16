@@ -37,8 +37,8 @@ export type UseCreateEntryFormOptions = {
   onDone: () => void;
   /** Called on cancel instead of `onDone`. */
   onCancel?: () => void;
-  /** Called after a successful create, with the new entry's path. */
-  onCreated?: (path: string) => void;
+  /** Called after a successful create, with the new entry's id. */
+  onCreated?: (node: string) => void;
 };
 
 export type CreateEntryForm = InlineEdit & {
@@ -80,7 +80,7 @@ export function useCreateEntryForm({
       const path = joinContextEntryPath(parent, made.name);
       const location = kind === "file" ? agentsLocationOf(scheme, path.slice(1)) : null;
       if (location) void writeFirstAgentText(registry, projectId, made.node, location.path);
-      onCreated?.(path);
+      onCreated?.(made.node);
     },
     [actions, registry, projectId, scheme, kind, parentId, parent, onCreated],
   );

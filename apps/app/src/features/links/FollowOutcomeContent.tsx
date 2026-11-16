@@ -180,13 +180,13 @@ export function FollowOutcomeContent({
             type="button"
             size="sm"
             onClick={async () => {
-              const documentId = create(creation);
-              if (!documentId) return;
+              const made = create(creation);
+              if (!made) return;
               onClose();
-              const path = [creation.folderPath, creation.name].filter(Boolean).join("/");
+              const documentId = made.node;
               const document = {
                 documentId,
-                contextLocation: { scheme: creation.scheme, path: `/${path}` },
+                contextLocation: { scheme: creation.scheme, path: made.path },
               };
               await openCreated(document, async () => {
                 await onOpen({ documentId, focus: true });

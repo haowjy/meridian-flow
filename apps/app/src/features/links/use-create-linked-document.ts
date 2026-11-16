@@ -58,8 +58,8 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
 }
 
 export type CreateLinkedDocument = {
-  /** The new document's id, or null when it could not be created. */
-  create(target: LinkCreationTarget): string | null;
+  /** The new document's id and the path it landed at, or null when it could not be created. */
+  create(target: LinkCreationTarget): { node: string; path: string } | null;
   failed: boolean;
 };
 
@@ -77,9 +77,9 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
     (target: LinkCreationTarget) => {
       const tree = trees[target.scheme].tree;
       const actions = target.scheme === "user" ? accountActions : projectActions;
-      const documentId = tree ? createAt(tree, actions, target) : null;
-      setFailed(documentId === null);
-      return documentId;
+      const made = tree ? createAt(tree, actions, target) : null;
+      setFailed(made === null);
+      return made;
     },
     [accountActions, projectActions, trees],
   );
@@ -88,7 +88,11 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
 }
 
 /** The deepest folder of the address that exists holds the missing ones, then the document. */
-function createAt(tree: TreeView, actions: TreeActions, target: LinkCreationTarget): string {
+function createAt(
+  tree: TreeView,
+  actions: TreeActions,
+  target: LinkCreationTarget,
+): { node: string; path: string } {
   const folders = target.folderPath.split("/").filter(Boolean);
   const missing: string[] = [];
   let parentId = tree.root.entryId;
@@ -103,5 +107,5 @@ function createAt(tree: TreeView, actions: TreeActions, target: LinkCreationTarg
   for (const name of missing) {
     parentId = actions.create({ parentId, name, kind: "folder" }).node;
   }
-  return actions.create({ parentId, name: target.name, kind: "document" }).node;
+  return actions.create({ parentId, name: target.name, kind: "document" });
 }
