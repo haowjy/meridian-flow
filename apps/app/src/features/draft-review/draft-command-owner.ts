@@ -11,7 +11,12 @@ import {
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
-import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import {
+  type BranchId,
+  type DraftItemKey,
+  draftItemKey,
+  parseDraftItemKey,
+} from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
@@ -37,7 +42,12 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
-import { type ApplyClickOutcome, ApplyClickQueue, type FrozenApply } from "./apply-click-queue";
+import {
+  type ApplyClickOutcome,
+  ApplyClickQueue,
+  type FrozenApply,
+  frozenOn,
+} from "./apply-click-queue";
 import { BandApply, type LiveHistories } from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
@@ -90,6 +100,8 @@ export type CommandOutcome =
       commandId?: string;
       /** The document had been live deleted and this Apply brought it back. */
       restored?: true;
+      /** This item's whole cut found no change on receipt: nothing of it applied. */
+      skipped?: true;
       /** Per-item facts committed by this click. */
       applied?: {
         itemKey: string;
@@ -127,8 +139,15 @@ type Entry = {
   lease: DraftRoomRead | null;
   unwatchLease(): void;
 };
-/** A click that is one member of a several-item Apply: it takes the group's id and send. */
-type Joint = { commandId: string; send(body: ApplyClick): Promise<ApplyClickAnswer> };
+/**
+ * A click that is one member of a several-item Apply: it takes the group's id and send, and
+ * hands back whatever answer its queue settles on, however it came (`GroupApply.answered`).
+ */
+type Joint = {
+  commandId: string;
+  send(body: ApplyClick): Promise<ApplyClickAnswer>;
+  answered(answer: ApplyClickOutcome): void;
+};
 export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
 /**
  * A refusal the screen already explains reverts silently (offer only what
@@ -323,7 +342,7 @@ export class DraftCommandOwner {
 
   /** The clicks a draft's room records and its optimistic base folds, in FIFO order. */
   private textClicks(entry: Entry) {
-    return entry.item.queue.clicks.filter((click) => click.body.draftId === entry.draftId);
+    return entry.item.queue.clicks.filter((click) => frozenOn(click, entry.draftId));
   }
 
   /** A draft with clicks outstanding keeps its room read, surface or not, to observe their record. */
@@ -673,9 +692,13 @@ export class DraftCommandOwner {
           this.renamedDocuments.set(JSON.stringify([ref.projectId, documentId]), item.renamed.path);
       }
       if (restored || answer.applied.some((item) => item.renamed)) this.publish();
+      const skipped =
+        answer.skipped?.includes(ref.itemKey as DraftItemKey) &&
+        !answer.applied.some((item) => item.itemKey === ref.itemKey);
       return {
         kind: "done",
         commandId: answer.commandId,
+        ...(skipped ? { skipped: true as const } : {}),
         ...(restored ? { restored: true as const } : {}),
         applied: answer.applied.map((item) => ({
           itemKey: item.itemKey,
@@ -714,35 +737,46 @@ export class DraftCommandOwner {
     const tree = this.items.get(ref.itemKey)?.queue.clicks.some((click) => click.body.tree)
       ? undefined
       : requested;
-    const entry = this.byItem.get(ref.itemKey);
-    // No text to apply with it (no room open, or no change in it): the tree cut alone.
+    const binding = this.byItem.get(ref.itemKey)?.binding;
+    const room = binding?.runtime.state().ready ? binding : null;
+    // No room open here: the server cuts the whole draft on receipt.
+    const whole = target.kind === "draft" && !room ? target.draftId : undefined;
+    // The tree cut alone: no text asked for, or none to apply (no draft, or a room with no change).
     const textless =
       target.kind === "tree" ||
       (target.kind === "draft" &&
         requested !== undefined &&
-        !(
-          entry?.binding?.runtime.state().ready && entry.binding.runtime.projectNow()?.groups.length
-        ));
-    if (textless) return tree ? this.captureTree(ref, tree, restore, joint) : null;
+        !room?.runtime.projectNow()?.groups.length);
+    if (whole || textless)
+      return whole || tree
+        ? this.captureOnReceipt(ref, { draftId: whole, tree }, restore, joint)
+        : null;
     return this.captureText(ref, target, restore, tree, histories, joint);
   }
 
-  /** A tree cut alone (design-v2 §4): no room, no snapshot, its applied answer settles it. */
-  private captureTree(
+  /**
+   * A click the server resolves on receipt, so it needs no room: a tree cut alone (design-v2
+   * §4), or every change of `draftId` as the server holds it then, with the item's tree cut when
+   * given. Text an agent writes before the server receives it is included. The row hides until
+   * the answer.
+   */
+  private captureOnReceipt(
     ref: DraftRef,
-    tree: { revision: string | null },
+    cut: { draftId?: string; tree?: { revision: string | null } },
     restore: boolean,
     joint?: Joint,
-  ): StartedApply {
+  ): StartedApply | null {
+    if (cut.draftId && this.records.get(cut.draftId)?.ended) return null;
     const id = this.generation(ref.itemKey);
     const frozen: FrozenApply = {
       ...(joint ? { send: joint.send } : {}),
       body: {
         commandId: joint?.commandId ?? crypto.randomUUID(),
+        ...(cut.draftId ? { draftId: cut.draftId, whole: true as const } : {}),
         groupIds: [],
         baseViewDelta: [],
         // The cut is the revision alone: the list item's `tree` also says what it does.
-        tree: { revision: tree.revision },
+        ...(cut.tree ? { tree: { revision: cut.tree.revision } } : {}),
         ...(restore ? { restore: true as const } : {}),
       },
       optimistic: [],
@@ -753,6 +787,7 @@ export class DraftCommandOwner {
     const outcome = this.item(ref)
       .queue.enqueue(frozen)
       .then((answer) => {
+        joint?.answered(answer);
         this.setState(ref.itemKey, { hidden: false }, id);
         return this.settled(ref, id, answer, restore);
       });
@@ -844,9 +879,10 @@ export class DraftCommandOwner {
       this.bandApplies.add(band);
     }
     binding.runtime.projectNow();
-    const outcome = scheduled.outcome.then((answer) =>
-      this.settled(ref, entry.draftId, answer, restore),
-    );
+    const outcome = scheduled.outcome.then((answer) => {
+      joint?.answered(answer);
+      return this.settled(ref, entry.draftId, answer, restore);
+    });
     return { sent: true, outcome };
   }
 
@@ -893,10 +929,7 @@ export class DraftCommandOwner {
     const outcomes = input.members.map(({ ref, target, restore, tree }) => {
       const member = group.member(ref.documentId);
       return joined(
-        this.apply(ref, target, restore, tree, null, {
-          commandId: group.commandId,
-          send: member.send,
-        }),
+        this.apply(ref, target, restore, tree, null, { commandId: group.commandId, ...member }),
         member,
       );
     });
@@ -914,9 +947,9 @@ export class DraftCommandOwner {
         joined(
           busy
             ? null
-            : this.captureTree(ref, { revision: null }, false, {
+            : this.captureOnReceipt(ref, { tree: { revision: null } }, false, {
                 commandId: group.commandId,
-                send: member.send,
+                ...member,
               }),
           member,
         ),

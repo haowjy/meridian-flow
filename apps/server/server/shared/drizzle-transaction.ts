@@ -326,6 +326,17 @@ export function isRetryableTransactionError(error: unknown): boolean {
   return false;
 }
 
+/** The PostgreSQL SQLSTATE of `cause` or of an error it wraps (Drizzle wraps in `cause`). */
+export function sqlState(cause: unknown): string | null {
+  let current: unknown = cause;
+  while (current) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
 export function isInDrizzleTransaction(): boolean {
   return activeTransaction() !== undefined;
 }

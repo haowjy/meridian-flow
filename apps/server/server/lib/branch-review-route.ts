@@ -17,6 +17,7 @@ import type {
   ApplyClickAnswer,
   ApplyClickResult,
   ApplyItemsClick,
+  ApplySpanPatch,
   ApplyTextCut,
   BranchDiscardRequest,
   DiscardCommandResult,
@@ -34,6 +35,7 @@ import {
   COMMAND_CONFLICT_CODE,
   CommandIdSchema,
   type CommandKind,
+  type CommandRunning,
 } from "@meridian/contracts/commands";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
@@ -181,6 +183,7 @@ const ApplyClickBody = z
     draftId: z.string().min(1).max(128).optional(),
     commandId: CommandIdSchema,
     snapshot: z.string().min(1).optional(),
+    whole: z.literal(true).optional(),
     baseViewDelta: BaseViewDeltaBody,
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
     restore: z.literal(true).optional(),
@@ -193,21 +196,31 @@ const ApplyClickBody = z
       })
       .optional(),
   })
-  .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
+  .refine((body) =>
+    body.whole
+      ? Boolean(body.draftId) &&
+        !body.snapshot &&
+        body.groupIds.length === 0 &&
+        body.baseViewDelta.length === 0
+      : Boolean(body.snapshot) === Boolean(body.draftId),
+  );
 type ApplyClickRequest = z.infer<typeof ApplyClickBody>;
 const UnapplyClickBody = z.strictObject({
   commandId: CommandIdSchema,
   applyCommandId: CommandIdSchema,
 });
-const ApplyTextBody = z.strictObject({
-  draftId: z.string().min(1).max(128),
-  snapshot: z.string().min(1),
-  baseViewDelta: BaseViewDeltaBody,
-  groupIds: z
-    .array(z.string().min(1))
-    .min(1)
-    .refine((ids) => new Set(ids).size === ids.length),
-});
+const ApplyTextBody = z.union([
+  z.strictObject({
+    draftId: z.string().min(1).max(128),
+    snapshot: z.string().min(1),
+    baseViewDelta: BaseViewDeltaBody,
+    groupIds: z
+      .array(z.string().min(1))
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length),
+  }),
+  z.strictObject({ draftId: z.string().min(1).max(128), whole: z.literal(true) }),
+]);
 const ApplyItemsBody = z.strictObject({
   commandId: CommandIdSchema,
   items: z
@@ -619,30 +632,32 @@ function denialReason(grant: FileAccessDenied) {
 }
 
 /**
- * The per-document click as the one-item Apply it is; null when its cuts are malformed: a text
- * cut needs its room (`draftId`, `snapshot`) and a click needs a text cut or a tree cut.
+ * The per-document click as the one-item Apply it is; null when its cuts are malformed: a frozen
+ * text cut needs its room (`draftId`, `snapshot`), a whole cut its `draftId` (the body schema
+ * holds it), and a click needs a text cut or a tree cut.
  */
 function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyItemsClick | null {
-  const textCut =
+  const frozen =
     click.snapshot !== undefined || click.groupIds.length > 0 || click.baseViewDelta.length > 0;
-  if (!textCut && !click.tree) return null;
-  if (textCut && (!click.draftId || !click.snapshot || click.groupIds.length === 0)) return null;
+  if (!frozen && !click.whole && !click.tree) return null;
+  if (frozen && (!click.draftId || !click.snapshot || click.groupIds.length === 0)) return null;
+  const text: ApplyTextCut | null = click.whole
+    ? { draftId: click.draftId as string, whole: true }
+    : frozen
+      ? {
+          draftId: click.draftId as string,
+          snapshot: click.snapshot as string,
+          baseViewDelta: click.baseViewDelta as ApplySpanPatch[],
+          groupIds: click.groupIds,
+        }
+      : null;
   return {
     commandId: click.commandId as CommandId,
     items: [
       {
         node: documentId,
         ...(click.tree ? { tree: click.tree } : {}),
-        ...(textCut
-          ? {
-              text: {
-                draftId: click.draftId as string,
-                snapshot: click.snapshot as string,
-                baseViewDelta: click.baseViewDelta as ApplyTextCut["baseViewDelta"],
-                groupIds: click.groupIds,
-              },
-            }
-          : {}),
+        ...(text ? { text } : {}),
       },
     ],
     ...(click.restore ? { restore: true as const } : {}),
@@ -663,7 +678,7 @@ async function applyItems(
   envelope: CommandEnvelope,
   /** Set on the one re-run after a live delete overtook this click's admission. */
   overtaken = false,
-): Promise<ApplyClickAnswer> {
+): Promise<ApplyClickAnswer | CommandRunning> {
   const access = await requireBranchIdentity(deps, input);
   const { commandId } = envelope;
   const lookup = async (): Promise<ApplyClickAnswer | null> =>
@@ -671,7 +686,10 @@ async function applyItems(
       await deps.documentSync.draftReview.lookupCommand(envelope),
       commandId,
     );
-  const recorded = await lookup();
+  // A resend of a large Apply still committing waits on it here, before anything is compiled.
+  const first = await deps.documentSync.draftReview.awaitCommand(envelope);
+  if (first.kind === "running") return { status: "running", commandId };
+  const recorded = replay<ApplyClickResult>(first, commandId);
   if (recorded) return recorded;
   const refuse = async (
     reason: import("@meridian/contracts/branches").ApplyClickRefusalReason,
@@ -756,7 +774,7 @@ async function applyItems(
 export async function handleApplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
-): Promise<ApplyClickAnswer> {
+): Promise<ApplyClickAnswer | CommandRunning> {
   const parsedId = CommandIdSchema.safeParse(
     input.request && typeof input.request === "object" && "commandId" in input.request
       ? input.request.commandId
@@ -810,7 +828,7 @@ async function branchCommand<Request extends { commandId: string }, Answer, Acce
 export function handleApplyItemsRequest(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
-): Promise<ApplyClickAnswer> {
+): Promise<ApplyClickAnswer | CommandRunning> {
   const request = parseBody(ApplyItemsBody, input.request, "Apply") as ApplyItemsClick;
   return applyItems(
     deps,
@@ -873,40 +891,50 @@ const unseen = (grant: FileGrant<"edit"> | FileAccessDenied) =>
 export function handleUnapplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
-): Promise<UnapplyClickAnswer> {
-  return branchCommand(deps, input, {
-    kind: "unapply",
-    what: "Un-Apply",
-    schema: UnapplyClickBody,
-    run: async ({ request, envelope }) => {
-      const lookup = async () =>
-        replay<UnapplyClickResult>(
-          await deps.documentSync.draftReview.lookupCommand(envelope),
-          request.commandId,
+): Promise<UnapplyClickAnswer | CommandRunning> {
+  return branchCommand<z.infer<typeof UnapplyClickBody>, UnapplyClickAnswer | CommandRunning>(
+    deps,
+    input,
+    {
+      kind: "unapply",
+      what: "Un-Apply",
+      schema: UnapplyClickBody,
+      run: async ({ request, envelope }) => {
+        const lookup = async () =>
+          replay<UnapplyClickResult>(
+            await deps.documentSync.draftReview.lookupCommand(envelope),
+            request.commandId,
+          );
+        const first = await deps.documentSync.draftReview.awaitCommand(envelope);
+        if (first.kind === "running") return { status: "running", commandId: request.commandId };
+        const recorded = replay<UnapplyClickResult>(first, request.commandId as CommandId);
+        if (recorded) return recorded;
+        const refused = async (): Promise<UnapplyClickAnswer> =>
+          (await lookup()) ?? {
+            status: "refused",
+            commandId: request.commandId as CommandId,
+          };
+        const grants: FileGrant<"edit">[] = [];
+        for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofApply({
+          applyCommandId: request.applyCommandId as CommandId,
+          accountId: input.userId,
+          branchId: input.branchId,
+        })) {
+          const grant = await documentGrant(deps, input, documentId, null);
+          if (isFileAccessDenied(grant)) return refused();
+          grants.push(grant);
+        }
+        const result = await runWithEditGrants(deps.fileAccess, grants, () =>
+          deps.documentSync.draftReview.unapplyClick({
+            branchId: input.branchId,
+            request,
+            envelope,
+          }),
         );
-      const recorded = await lookup();
-      if (recorded) return recorded;
-      const refused = async (): Promise<UnapplyClickAnswer> =>
-        (await lookup()) ?? {
-          status: "refused",
-          commandId: request.commandId as CommandId,
-        };
-      const grants: FileGrant<"edit">[] = [];
-      for (const documentId of await deps.documentSync.draftReview.commandDocuments.ofApply({
-        applyCommandId: request.applyCommandId as CommandId,
-        accountId: input.userId,
-        branchId: input.branchId,
-      })) {
-        const grant = await documentGrant(deps, input, documentId, null);
-        if (isFileAccessDenied(grant)) return refused();
-        grants.push(grant);
-      }
-      const result = await runWithEditGrants(deps.fileAccess, grants, () =>
-        deps.documentSync.draftReview.unapplyClick({ branchId: input.branchId, request, envelope }),
-      );
-      return result.ok ? result.value : refused();
+        return result.ok ? result.value : refused();
+      },
     },
-  });
+  );
 }
 
 /** Take back a Discard: the Work gets fresh pending copies of what it settled and closed. */
@@ -1084,6 +1112,7 @@ export function toWireItem(
     documentId: item.documentId,
     draftId: item.draftId,
     hasDraft: item.hasDraft,
+    textChanges: item.textChanges,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,

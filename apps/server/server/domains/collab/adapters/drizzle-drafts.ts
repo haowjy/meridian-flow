@@ -40,6 +40,7 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
+  sqlState,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
@@ -445,7 +446,7 @@ export function createDrizzleDraftStore(
         if (!finalized) throw new Error(`Draft ${input.draftId} append was not finalized`);
         await recordAppendReceipts(tx, input, finalized, committed.rowIds);
         if (await chatJoinedDraft(tx, input.draftId, finalized.rows, committed.rowIds))
-          workProjection.draftAuthorJoined(input.draftId);
+          workProjection.draftRowChanged(input.draftId);
         await testHook("draft.append.beforeCommit");
         if (onAppendSequenced) {
           const { lockedAt, rowIds } = committed;
@@ -486,6 +487,7 @@ export function createDrizzleDraftStore(
     draftId: string;
     revision: number;
     hasEffect: boolean;
+    textChanges: number;
     workId: WorkId | null;
     rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended"> {
@@ -495,9 +497,11 @@ export function createDrizzleDraftStore(
         revision: input.revision,
         hasEffect: input.hasEffect,
         hasEffectRevision: input.revision,
+        textChanges: input.textChanges,
       });
       // The judgement no longer holds: the Work is not touched for it.
       if (!written) throw new DraftWriteRollback({ status: "moved" });
+      if (written.textChangesMoved) workProjection.draftRowChanged(input.draftId);
     };
     const { workId, rootThreadId } = input;
     try {
@@ -752,17 +756,6 @@ class NoPrimaryWorkError extends Error {
 
 function isRewriteOutcome(outcome: DraftWriteRollback["outcome"]): outcome is RewriteOutcome {
   return !["contained", "prefixMissing", "refused"].includes(outcome.status);
-}
-
-/** The PostgreSQL SQLSTATE of `cause` or of an error it wraps (Drizzle wraps in `cause`). */
-function sqlState(cause: unknown): string | null {
-  let current: unknown = cause;
-  while (current) {
-    const code = (current as { code?: unknown }).code;
-    if (typeof code === "string") return code;
-    current = (current as { cause?: unknown }).cause;
-  }
-  return null;
 }
 
 /** Whether a chat's row in this append is its first in the draft: the draft's chats changed. */

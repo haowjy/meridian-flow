@@ -11,7 +11,8 @@ import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
  * since its last write, counts as holding it) only for a document live does not show (rule 7),
  * so only then, and only when the answer differs from what the rows may hold, is it a resync.
  * `revision` pins the write to the revision that was judged; false when the draft moved past it.
- * The caller holds the draft's Work. It holds no document key unless it passes `listsHeld`: it
+ * `textChanges`, when given, is stored beside the answer; the result says whether it moved, which
+ * the list's rows can't show. The caller holds the draft's Work. It holds no document key unless it passes `listsHeld`: it
  * then holds the list's key already (a key taken after a document key can deadlock) and a
  * document trashed since it read the lists throws from `resync`.
  */
@@ -23,9 +24,10 @@ export async function writeTextAnswer(
     revision?: number;
     hasEffect: boolean;
     hasEffectRevision: number;
+    textChanges?: number;
     listsHeld?: boolean;
   },
-): Promise<boolean> {
+): Promise<false | { textChangesMoved: boolean }> {
   const tx = currentDrizzleDb(db);
   const draft = and(
     eq(documentDrafts.id, input.draftId),
@@ -37,6 +39,7 @@ export async function writeTextAnswer(
       hasEffect: documentDrafts.hasEffect,
       stale: documentDrafts.hasEffectRevision,
       revision: documentDrafts.revision,
+      textChanges: documentDrafts.textChanges,
       trashed: isNotNull(treeNodes.trashRecord),
     })
     .from(documentDrafts)
@@ -51,10 +54,16 @@ export async function writeTextAnswer(
   if (list && !input.listsHeld) await treeLists.lock([list]);
   const written = await tx
     .update(documentDrafts)
-    .set({ hasEffect: input.hasEffect, hasEffectRevision: input.hasEffectRevision })
+    .set({
+      hasEffect: input.hasEffect,
+      hasEffectRevision: input.hasEffectRevision,
+      ...(input.textChanges === undefined ? {} : { textChanges: input.textChanges }),
+    })
     .where(draft)
     .returning({ id: documentDrafts.id });
   if (written.length === 0) return false;
   if (list) await treeLists.resync([list]);
-  return true;
+  return {
+    textChangesMoved: input.textChanges !== undefined && before.textChanges !== input.textChanges,
+  };
 }

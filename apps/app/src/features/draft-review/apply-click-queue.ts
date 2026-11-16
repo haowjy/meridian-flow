@@ -25,6 +25,11 @@ function isFinalApplyRefusal(
   return ["closed", "refused", "needs_restore", "changed"].includes(answer.status);
 }
 
+/** A click frozen on `draftId`'s room: the room folds it into its base until it records it. */
+export function frozenOn(command: { body: ApplyClick }, draftId: string): boolean {
+  return command.body.snapshot !== undefined && command.body.draftId === draftId;
+}
+
 export type ApplyClickLanded = { status: "landed"; commandId: string };
 export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
 export type UnapplyClickOutcome = UnapplyClickResult | { status: "cancelled" };
@@ -227,7 +232,7 @@ export class ApplyClickQueue {
     let projected = base;
     for (const command of this.commands) {
       if (command.kind === "apply") {
-        if (command.body.draftId === draftId && !this.isRecorded(command))
+        if (frozenOn(command, draftId) && !this.isRecorded(command))
           projected = fold(projected, command.optimistic, command.patched);
       } else if (command.draftId === draftId) {
         projected = fold(projected, command.patched, command.optimistic);
@@ -328,7 +333,7 @@ export class ApplyClickQueue {
   }
 
   refuseUnsent(draftId: string): void {
-    for (const command of this.clicks.filter((click) => click.body.draftId === draftId))
+    for (const command of this.clicks.filter((click) => frozenOn(click, draftId)))
       this.refuse(command);
   }
 
@@ -428,7 +433,8 @@ export class ApplyClickQueue {
       return;
     }
     if (answer?.status === "applied") {
-      if (!command.body.draftId || command.closed || this.isRecorded(command))
+      // A frozen click settles once its room records it; one cut on receipt has no room to.
+      if (!command.body.snapshot || command.closed || this.isRecorded(command))
         this.settle(command, answer);
       return;
     }

@@ -224,7 +224,7 @@ export type DraftStore = {
    */
   appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome>;
   /**
-   * The projection's write: `has_effect` and its watermark at exactly `revision`, touching the
+   * The projection's write: `has_effect`, `text_changes` and their watermark at exactly `revision`, touching the
    * branch's Work. `moved` when the draft moved past `revision`; `contended` when a lock it
    * needs was not free within the bound (100 ms per lock acquisition). Never bumps `revision`.
    */
@@ -232,6 +232,7 @@ export type DraftStore = {
     draftId: string;
     revision: number;
     hasEffect: boolean;
+    textChanges: number;
     workId: WorkId | null;
     rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended">;

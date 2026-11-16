@@ -73,6 +73,8 @@ export const documentDrafts = pgTable(
     seedLivePosition: bigint("seed_live_position", { mode: "number" }),
     /** Current visible effect against the review base in the retained text. */
     hasEffect: boolean("has_effect").notNull().default(true),
+    /** The review groups of that effect, judged with it: the text changes a Work's Changes counts. */
+    textChanges: integer("text_changes").notNull().default(0),
     /**
      * The `revision` `has_effect` was judged at: equal is fresh, lower is stale and re-judged by
      * the projection sweep. `-1` (the default) is stale whatever the revision.
