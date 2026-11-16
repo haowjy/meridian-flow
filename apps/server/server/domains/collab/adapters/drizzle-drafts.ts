@@ -709,7 +709,6 @@ function sqlState(cause: unknown): string | null {
   return null;
 }
 
-/** The receipts finalization captured, written with the row ids the append allocated. */
 /** Whether a chat's row in this append is its first in the draft: the draft's chats changed. */
 async function chatJoinedDraft(
   db: Pick<Database, "select">,
@@ -738,6 +737,7 @@ async function chatJoinedDraft(
   return false;
 }
 
+/** The receipts finalization captured, written with the row ids the append allocated. */
 async function recordAppendReceipts(
   db: Pick<Database, "select" | "insert" | "update">,
   input: Pick<AppendRowsInput, "draftId" | "documentId">,
