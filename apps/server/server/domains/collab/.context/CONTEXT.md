@@ -229,13 +229,20 @@ An undo or revert records in the room its inverse committed into
 (`DocumentEditResult.room`). `format: "edits"` reads record none.
 A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
-A write to a Work draft that closed after the model last read it is returned by the
-closed-draft rule in `model-edit-write.ts` (`closedDraftSeen`), before a branch or draft opens:
-a `done` row with `settled: returned`, and the document as that chat reads it now, its evidence
-stored in the row so the model's next write plans on it. The same answer covers an archived or
-deleted Work's draft, a removed document and a block the writer deleted, merged or moved
-(`block_gone`, from the write core). An insert whose anchor block the writer deleted lands where
-the anchor was: it is new words, and the anchor's tombstone still places them.
+A write to a Work draft that a Discard or a restore closed after the model last read it lands in
+a new draft (`closedDraftSeen` in `model-edit-write.ts`), seeded from the document as it stands,
+and the result says the earlier draft closed and this edit opened a new one. The core resolves the write's selectors in the model's view of the closed draft
+(`supersededWorkDraftId`) and carries the result onto the new draft by block hash
+(`resolver/carry.ts`): blocks it lacks get their words after the nearest block both hold, and a
+remove of them changes nothing; the Discard's restored text is never in scope. The day-30 purge
+rewrites the draft's frontier rows to `superseded:<documentId>` with the cut dropped, so a write
+planned on a purged draft still finds it superseded, has no view, and lands its words at the end
+with nothing deleted. A removed document, an archived or deleted Work's draft
+return the write instead: a `done` row with `settled: returned`, and the document as that chat
+reads it now, its evidence stored in the row so the model's next write plans on it. A block the
+writer deleted, merged or moved in a draft that is still open is returned too (`block_gone`, from
+the write core). An insert whose anchor block the writer deleted lands where the anchor was: it is
+new words, and the anchor's tombstone still places them.
 
 Replay treats ordinary concurrent chat edits and writer deletions as Yjs peers. A
 planning-visible item disappearing is not by itself evidence against a write. Only
