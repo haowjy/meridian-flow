@@ -97,7 +97,8 @@ function OpenPicker({
     [scheme, owner, scopeScratch],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
-  const openAt = own ? source.own.openAt(entry.path) : [];
+  // Opens at the row's own folder, except in an area that takes no changes: the root then.
+  const openAt = own && source.own.writable ? source.own.openAt(entry.path) : [];
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
   const several = picked !== undefined && picked.length > 1;
