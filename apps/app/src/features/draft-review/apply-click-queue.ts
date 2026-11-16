@@ -15,8 +15,8 @@ export type FrozenApply = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   /**
-   * Resolves when the click may be sent. Rejects when it has nothing left to do: a Redo whose
-   * Un-Apply did not land, so the Apply still stands.
+   * Settles once the room can deliver no more of the typing in the click's cut: resolved when the
+   * server has it, rejected when the room ended first. Either way the click is then sent.
    */
   acknowledged: Promise<void>;
   /** The same click as the server's whole cut of its draft, sent instead if its room ends first. */
@@ -46,6 +46,8 @@ type ApplyCommand = FrozenApply & {
   attempts: number;
   stalled: boolean;
   closed: boolean;
+  /** Its `acknowledged` settled: it may be sent once it is the head. */
+  released: boolean;
   /** Its room ended: no record of it will show, so its applied answer settles it. */
   roomEnded: boolean;
   answer?: ApplyClickResult;
@@ -193,10 +195,6 @@ export class ApplyClickQueue {
       },
       redo: () => {
         input.intent();
-        const ready = handle.reversal.then((answer) => {
-          if (answer.status !== "cancelled" && answer.status !== "unapplied")
-            throw new Error("Un-Apply did not land");
-        });
         handle.current = this.queueApply({
           body: {
             ...handle.current.body,
@@ -206,8 +204,14 @@ export class ApplyClickQueue {
           },
           optimistic: handle.current.optimistic,
           patched: input.patchFor(handle.replaySelection),
-          acknowledged: ready,
+          // Waits for the Un-Apply: one that did not land leaves the Apply standing, so the Redo
+          // has nothing to do and is cancelled before it is sent.
+          acknowledged: handle.reversal.then((answer) => {
+            if (answer.status !== "cancelled" && answer.status !== "unapplied")
+              this.cancel(replay.body.commandId);
+          }),
         });
+        const replay = handle.current;
         handle.pendingReplay = handle.current;
         this.startFeedback();
         this.port.changed();
@@ -261,19 +265,19 @@ export class ApplyClickQueue {
       attempts: 0,
       stalled: false,
       closed: false,
+      released: false,
       roomEnded: false,
       outcome,
       finish,
     };
     this.commands.push(command);
-    void frozen.acknowledged.then(
-      () => {
-        if (!this.commands.includes(command)) return;
-        command.acknowledged = Promise.resolve();
-        if (this.commands[0] === command) void this.dispatch(command);
-      },
-      () => this.cancel(command.body.commandId),
-    );
+    // A room that ended delivers nothing more: the click goes anyway (`roomEnded`).
+    const go = () => {
+      if (!this.commands.includes(command)) return;
+      command.released = true;
+      if (this.commands[0] === command) void this.dispatch(command);
+    };
+    void frozen.acknowledged.then(go, go);
     return command;
   }
 
@@ -423,13 +427,7 @@ export class ApplyClickQueue {
   }
 
   private async dispatchApply(command: ApplyCommand): Promise<void> {
-    try {
-      await command.acknowledged;
-    } catch {
-      // `queueApply` cancelled it.
-      return;
-    }
-    if (this.request || this.commands[0] !== command) return;
+    if (!command.released) return;
     this.request = command;
     command.sent = true;
     command.inFlight = true;
