@@ -216,7 +216,6 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
                 outcome: "answered",
                 ms: outcome.ms,
                 reply,
-                arguments: request.arguments,
               },
             };
       }

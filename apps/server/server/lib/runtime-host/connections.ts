@@ -126,7 +126,7 @@ export function createConnections(deps: {
       });
       // A bake other than the thread's first is a compaction's: this read is the one the new prompt
       // asks for again. The response that issued it is the round trip it adds
-      // (`model_responses.latency_ms` on `modelResponseId`), so a query can sum both.
+      // (`model_responses.latency_ms` on the event's `responseId`), so a query can sum both.
       if (bake && bake.id !== thread.initialPromptBakeId)
         emitEvent(deps.eventSink, {
           level: "info",
@@ -135,8 +135,7 @@ export function createConnections(deps: {
           name: "McpDescribeAfterCompaction",
           correlation: { threadId: thread.id, turnId: caller.turnId },
           payload: {
-            bakeId: bake.id,
-            modelResponseId: caller.modelResponseId,
+            responseId: caller.modelResponseId,
             names: input.names.length,
             ms: Date.now() - startedAt,
           },
