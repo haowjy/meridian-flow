@@ -26,6 +26,7 @@ import {
   invalidateWorkThreads,
   invalidateWriteModeReads,
 } from "@/client/query/project-invalidation";
+import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
@@ -225,7 +226,16 @@ export class ChatSubmissionOwner {
     this.driver = new ChatSubmissionDriver({
       accountId,
       deleted: (_entry, reason) =>
-        cleanDeletedChat(accountId, threadId, projectId, reason, undefined, true),
+        cleanDeletedChat(
+          accountId,
+          threadId,
+          projectId,
+          reason,
+          undefined,
+          true,
+          undefined,
+          cachedChatTitle(queryClient, threadId),
+        ),
       signal,
       isCurrent: current,
       session: this.session,
@@ -606,7 +616,16 @@ export class ChatSubmissionOwner {
         if (!current()) return;
         const availability = threadAvailability(error, accountId);
         if (availability === "deleted" || availability === "project-deleted") {
-          await cleanDeletedChat(accountId, threadId, projectId, availability);
+          await cleanDeletedChat(
+            accountId,
+            threadId,
+            projectId,
+            availability,
+            undefined,
+            false,
+            undefined,
+            cachedChatTitle(queryClient, threadId),
+          );
           return;
         }
         if (!(error instanceof HttpResponseError && error.status === 404)) return;

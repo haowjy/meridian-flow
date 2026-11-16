@@ -263,8 +263,8 @@ A chat delete belongs to the project, not the list (`shell/sidebar/chat-deletes.
 the phone's drawer and remounting the sidebar, and ends on the next delete, Dismiss, leaving the
 project, signing out or a reload. The delete takes main to `/chats` and forgets it as the current
 chat at once; the chat's unsent words move into New chat at once (`cleanDeletedChat` with `own-delete`), and Undo
-moves them back into the chat's box (`restoreOwnDeletedChatWords`), out of New chat unless the
-writer has typed there since. Undo returns main to
+moves them back into the chat's box (`restoreOwnDeletedChatWords`) and out of New chat, but only if the
+writer has not typed in New chat since: then the one copy stays in New chat with its note. Undo returns main to
 the chat only if main is still on `/chats`, and the chat slot only if nothing has replaced it since. A
 chat with a reply running asks first: the server stops the run in the delete and Undo can't
 restart it. Every restore goes through `ChatDeletes` (Undo, and `restore` for a trashed chat's

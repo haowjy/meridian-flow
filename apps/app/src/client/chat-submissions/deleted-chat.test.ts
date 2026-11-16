@@ -85,6 +85,7 @@ function fixture() {
   source.prependSnapshots([snapshot("And quieter")]);
   target.prependSnapshots([snapshot("Existing writing")]);
   let visible = true;
+  let verdict: "deleted" | "present" = "deleted";
   const waiting: (() => void)[] = [];
   let left: boolean | undefined;
   let forgotten = 0;
@@ -106,20 +107,22 @@ function fixture() {
     surfaces: () => [
       {
         visible: () => visible,
-        title: () => "Arc 2 notes",
         leave: (moved) => {
           left = moved;
         },
       },
     ],
-    visible: () => true,
-    whenVisible: (run) => {
+    attended: (run) => {
       waiting.push(run);
     },
+    probe: async () => verdict,
     lock: new MemorySubmissionLock(),
   };
   return {
     waiting,
+    verdict: (next: "deleted" | "present") => {
+      verdict = next;
+    },
     ports,
     source,
     target,
@@ -135,7 +138,16 @@ function fixture() {
 }
 it("moves the shown failed row and box ahead of New chat with a reload-safe note", async () => {
   const f = fixture();
-  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  await cleanDeletedChat(
+    "owner",
+    "chat",
+    "project",
+    "deleted",
+    f.ports,
+    false,
+    undefined,
+    "Arc 2 notes",
+  );
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
     "Make the elder colder\n\nAnd quieter\n\nExisting writing",
   );
@@ -171,7 +183,16 @@ it("off-screen, own-delete and deleted-project cleanups move the words too", asy
   for (const reason of ["deleted", "own-delete", "project-deleted"] as const) {
     const f = fixture();
     f.hide();
-    await cleanDeletedChat("owner", "chat", "project", reason, f.ports);
+    await cleanDeletedChat(
+      "owner",
+      "chat",
+      "project",
+      reason,
+      f.ports,
+      false,
+      undefined,
+      "Arc 2 notes",
+    );
     expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
       "Make the elder colder\n\nAnd quieter\n\nExisting writing",
     );
@@ -344,7 +365,7 @@ it("bind skips URL and remembered dock chats before panes mount, and rechecks th
   queuedAddressed = true;
   resume();
   await sweep;
-  expect(probe.mock.calls.map(([, id]) => id)).toEqual(["queued"]);
+  expect(probe.mock.calls.map(([, id]) => id).sort()).toEqual(["dock", "queued", "queued", "url"]);
   expect(
     readChatSubmissionSnapshot(account)
       ?.map((row) => row.recordId)
@@ -354,18 +375,20 @@ it("bind skips URL and remembered dock chats before panes mount, and rechecks th
   probe.mockClear();
 });
 
-it("a hidden tab with no surface takes the shared messages once it is visible", async () => {
+it("a tab with no surface claims only after it is attended and the chat is still deleted", async () => {
   const f = fixture();
   f.ports.surfaces = () => [];
-  f.ports.visible = () => false;
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
-  expect(f.records()).toHaveLength(1);
-  expect(f.source.initialDraft).toBeNull();
-  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "And quieter\n\nExisting writing",
-  );
   expect(f.waiting).toHaveLength(1);
-  f.ports.visible = () => true;
+  expect(f.records()).toHaveLength(1);
+  expect(f.source.initialDraft).not.toBeNull();
+  // Undone before the tab was looked at: nothing moves.
+  f.verdict("present");
+  f.waiting[0]?.();
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(f.records()).toHaveLength(1);
+  expect(f.source.initialDraft).not.toBeNull();
+  f.verdict("deleted");
   f.waiting[0]?.();
   await vi.waitFor(() => expect(f.records()).toEqual([]));
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
@@ -412,4 +435,9 @@ it("Undo of an own delete moves the words back, unless New chat was typed in sin
   g.target.updateDraft({ text: "More", snapshot: { ...moved, revision: moved.revision + 1 } });
   restoreOwnDeletedChatWords("owner", "chat", g.ports.draft);
   expect(g.target.notices).toHaveLength(1);
+  expect(g.source.initialDraft).toBeNull();
+  // A failed Undo moves again: nothing is left to move, so New chat is not doubled.
+  const kept = g.target.initialDraft;
+  await cleanDeletedChat("owner", "chat", "project", "own-delete", g.ports);
+  expect(g.target.initialDraft).toEqual(kept);
 });

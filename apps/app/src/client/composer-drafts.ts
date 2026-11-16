@@ -195,16 +195,11 @@ export class ComposerSessionDraft {
   }
 
   /**
-   * Takes back what a deleted chat's move put in (its Undo). The box returns to what it held
-   * before only while it still holds exactly what the move left; a box the writer has typed in
-   * since keeps its words and its note.
+   * Takes back what a deleted chat's move put in (its Undo): the box returns to what it held
+   * before, and the chat's note goes. The caller has checked with `holds` that the box still holds
+   * exactly what the move left.
    */
-  withdraw(
-    threadId: string,
-    before: ComposerDraftSnapshot | null,
-    after: ComposerDraftSnapshot | null,
-  ): void {
-    if (!after || !this.matches(after)) return;
+  withdraw(threadId: string, before: ComposerDraftSnapshot | null): void {
     this.commit(before, {
       received: this.received,
       notices: this.notices.filter((notice) => notice.threadId !== threadId),
@@ -344,10 +339,11 @@ export class ComposerSessionDraft {
 
   /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
-    if (this.matches(snapshot)) this.handoff();
+    if (this.holds(snapshot)) this.handoff();
   };
 
-  private matches(snapshot: ComposerDraftSnapshot): boolean {
+  holds(snapshot: ComposerDraftSnapshot | null): boolean {
+    if (!snapshot) return false;
     // Selection movement is not editing. Normalize both sides so storage parsing
     // and object property order cannot change a structured document's identity.
     return (
