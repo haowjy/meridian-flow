@@ -25,6 +25,7 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "failureCode",
   "failureReason",
   "commandId",
+  "connectionId",
   "cutoffTurnId",
   "deletedNodeTypes",
   "documentId",

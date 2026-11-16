@@ -285,7 +285,7 @@ import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
 import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
-import { createProcessMcpClient, sessionKey } from "./mcp-client.js";
+import { createProcessMcpClient, parseSessionKey, sessionKey } from "./mcp-client.js";
 import { resolveMcpTokenKey } from "./mcp-token-key.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
@@ -554,7 +554,19 @@ export async function createProductionAppPorts(input: {
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
-  const mcpClient = createProcessMcpClient();
+  const mcpClient = createProcessMcpClient((event) => {
+    // A child's stderr is a program's own text; only the session's life goes to the log.
+    if (event.type !== "stderr")
+      emitEvent(eventSink, {
+        level: "info",
+        source: "mcp.session",
+        sensitivity: "safe",
+        name: event.type === "session_started" ? "McpSessionStarted" : "McpSessionEnded",
+        payload: (({ connectionId, version }) => ({ connectionId, settingsVersion: version }))(
+          parseSessionKey(event.key),
+        ),
+      });
+  });
   const mcpConnections = createMcpConnections({
     store: createDrizzleConnectionStore({ db }),
     client: mcpClient,

@@ -6,7 +6,7 @@
  * the least recently used idle one closes, a session an edit left behind first.
  */
 import { MCP_SESSIONS_PER_ACCOUNT } from "@meridian/contracts/mcp";
-import { createMcpClient, type McpClient } from "@meridian-flow/runtime/mcp";
+import { createMcpClient, type McpClient, type McpEvent } from "@meridian-flow/runtime/mcp";
 import { fetch as undiciFetch } from "undici";
 import { publicAddressDispatcher } from "./public-address-dispatcher.js";
 
@@ -28,12 +28,12 @@ const publicFetch = ((input: string | URL | Request, init?: RequestInit) => {
 export const sessionKey = (accountId: string, connectionId: string, settingsVersion: number) =>
   `${accountId}/${connectionId}/${settingsVersion}`;
 
-const parseKey = (key: string) => {
+export const parseSessionKey = (key: string) => {
   const [accountId = "", connectionId = "", version = "0"] = key.split("/");
   return { accountId, connectionId, version: Number(version) };
 };
 
-export function createProcessMcpClient(): McpClient {
+export function createProcessMcpClient(onEvent?: (event: McpEvent) => void): McpClient {
   const lastUse = new Map<string, number>();
   const busy = new Map<string, number>();
   let tick = 0;
@@ -42,15 +42,15 @@ export function createProcessMcpClient(): McpClient {
   const touchIfOpen = (key: string) => lastUse.has(key) && touch(key);
 
   function enforceLimit(startedKey: string) {
-    const { accountId } = parseKey(startedKey);
-    const own = [...lastUse.keys()].filter((key) => parseKey(key).accountId === accountId);
+    const { accountId } = parseSessionKey(startedKey);
+    const own = [...lastUse.keys()].filter((key) => parseSessionKey(key).accountId === accountId);
     const newest = new Map<string, number>();
     for (const key of own) {
-      const { connectionId, version } = parseKey(key);
+      const { connectionId, version } = parseSessionKey(key);
       newest.set(connectionId, Math.max(newest.get(connectionId) ?? 0, version));
     }
     const superseded = (key: string) => {
-      const { connectionId, version } = parseKey(key);
+      const { connectionId, version } = parseSessionKey(key);
       return version < (newest.get(connectionId) ?? 0);
     };
     const idle = own
@@ -72,6 +72,7 @@ export function createProcessMcpClient(): McpClient {
     clientInfo: { name: "meridian-flow", version: "1" },
     fetch: publicFetch,
     onEvent(event) {
+      onEvent?.(event);
       if (event.type === "session_started") {
         touch(event.key);
         enforceLimit(event.key);
