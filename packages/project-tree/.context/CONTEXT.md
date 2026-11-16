@@ -130,10 +130,19 @@ the replay uses them (package `AGENTS.md`).
   also set a name stays (`kept`), for `undoApply`'s `left`.
   Every Undo asks `closed(source)` of the sources its record's replay reports
   (`Change.sources`): a record into a closed source is not written and answers
-  `{ closed: source }`. The record is judged from the replay the writer makes anyway (appended, read,
-  and taken out again in the same transaction when closed), so a judged Undo costs no replay of its
-  own. `undoReports` is the estimate: what each record's Undo would do and the sources it would change,
-  from one replay with every opposite record in it, for the owners to lock and the chip.
+  `{ closed: source }`. The record is judged on `writer.preview` (a replay of the view with the
+  record appended, the list untouched) and written only when it lands, with that replay kept as the
+  writer's view (`append(record, { view, projection })`): one replay per record either way, and a
+  held Undo leaves no trace in the list, which has no deletions and no server writes but real
+  records. Never append and take back: the Yjs delete set it leaves is journaled and broadcast, and
+  admission refuses a copy that has one.
+  `undoReports` is the estimate: what each record's Undo would do and the sources it would change,
+  for the owners to lock and the chip, from one replay with every opposite record in it, given in
+  the order the Undo takes them. With `closed`, the first record to hit a closed source is held
+  and the rest are replayed without it, until none hits one: the first hit's sources come only from
+  records that land, so it is exact, and a held parent folder's return does not hold an independent
+  child rename (two records on one node are read from one list state, and the press asks again,
+  record by record).
 - **Creates, deletes and restores** follow the same in-force rule, but Trash keeps its own
   record-order account: it counts each delete of a node, and a restore lifts deletes outside any
   Undo chain (a plain restore, rule 9). `undoChange` on them takes back the record in force

@@ -25,16 +25,20 @@ export class TreeOwnersMoved extends Error {
   }
 }
 
+const MAX_UNNAMED_RESTARTS = 4;
+
 /** What the commands that ran before have found they need. */
 export type Learned = { sources: ReadonlySet<string>; owners: OwnerLocks };
 
 /**
  * Runs `run` again, from its transaction's start, while it throws `TreeOwnersMoved`, with all it
- * has learned. Each restart adds a source or an owner and a project has finitely many, so it
- * ends; one that names only what is known already is a bug in what it asked, and escapes.
+ * has learned. Each restart that names something adds a source or an owner and a project has
+ * finitely many, so it ends; one that names only what is known already is a bug in what it
+ * asked, and escapes. A restart that names nothing learns nothing, so only a few are allowed.
  */
 export async function untilOwnersHold<T>(run: (learned: Learned) => Promise<T>): Promise<T> {
   let learned: Learned = { sources: new Set(), owners: mergeOwnerLocks() };
+  let unnamed = 0;
   for (;;) {
     try {
       return await run(learned);
@@ -48,7 +52,7 @@ export async function untilOwnersHold<T>(run: (learned: Learned) => Promise<T>):
         sources.size > learned.sources.size ||
         owners.workIds.length > learned.owners.workIds.length ||
         owners.lineageRootIds.length > learned.owners.lineageRootIds.length;
-      if (named && !grew) throw cause;
+      if ((named && !grew) || (!named && ++unnamed > MAX_UNNAMED_RESTARTS)) throw cause;
       learned = { sources, owners };
     }
   }

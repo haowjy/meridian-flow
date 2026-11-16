@@ -1,16 +1,9 @@
-import {
-  type Actor,
-  isSourceRoot,
-  recordsOf,
-  type TreeRecord,
-  type TreeRecordInput,
-} from "./record.js";
+import { type Actor, isSourceRoot, type TreeRecord, type TreeRecordInput } from "./record.js";
 import {
   type Change,
   labelOf,
   type NodeHistory,
   placeIn,
-  replay,
   type Sets,
   standingOf,
   type TreeNode,
@@ -19,7 +12,7 @@ import {
   wouldLoop,
 } from "./replay.js";
 import { descendantsOf } from "./shape.js";
-import { LIVE, lastOfFamily, type View, viewRecords } from "./view.js";
+import { LIVE, lastOfFamily, type View } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /**
@@ -178,9 +171,9 @@ export function undoChange(
 
 /**
  * Appends the opposite record unless it would change a closed source, telling which fact of a
- * move that set a name stays (`kept`), when one does. The record is judged from the replay the
- * next Undo reads anyway (the writer replays once per version of the list); one that lands in a
- * closed source is taken out again in the same transaction, so nothing of it is written.
+ * move that set a name stays (`kept`), when one does. The record is judged on a replay of the
+ * view with it appended (`preview`), and only a record that lands is written, with that replay
+ * kept as the writer's view of the list: a held one leaves no trace in the list.
  */
 export function takeBack(
   writer: TreeWriter,
@@ -191,44 +184,53 @@ export function takeBack(
 ): { record: TreeRecord; kept?: Kept } | NotUndone | ClosedUndo {
   const done = opposite(writer, asked, actor, recordId);
   if (typeof done === "string") return done;
-  let source: string | undefined;
-  writer.transact(() => {
-    writer.append(done.record);
-    source = writer
-      .view(viewOfRecord(done.record, asked))
-      .changes.get(done.record.id)
-      ?.sources.find(closed);
-    if (source !== undefined) {
-      const records = recordsOf(writer.doc);
-      records.delete(records.length - 1, 1);
-    }
-  });
-  return source === undefined ? done : { closed: source };
+  const view = viewOfRecord(done.record, asked);
+  const projection = writer.preview(view, [done.record]);
+  const source = projection.changes.get(done.record.id)?.sources.find(closed);
+  if (source !== undefined) return { closed: source };
+  writer.append(done.record, { view, projection });
+  return done;
 }
 
 /** What the Undo of one record would do now: `undoes`, or why it would not, and the sources it would change. */
 export type UndoReport = { answer: "undoes" | NotUndone; sources: readonly string[] };
 
 /**
- * What the Undo of each record would do now, writing nothing: each record's opposite is made
- * against the list as it stands, and one replay of the list with all of them in it reports the
- * sources each would change. The reports estimate what a press does (the owners to lock, the
- * chip's answer); the press asks again, record by record (`undoChange`).
+ * What the Undo of each record would do now, writing nothing. `recordIds` is the order the Undo
+ * takes them in. Each record's opposite is made against the list as it stands, and one replay
+ * of the view with all of them appended reports the sources each would change.
+ *
+ * A record that would change a closed source is held, and the ones after it are judged again
+ * without it, since a held record does not land: a parent folder's return to a closed Work does
+ * not move the child renamed inside it. Only the first record to hit a closed source is held in
+ * a round, because its sources came from records that all land (what comes after it may have
+ * been read through a held one), and each round is one replay. So a record is held only for a
+ * source it changes itself, and one held record does not change the fate of an independent one.
+ * Records that depend on each other (a node moved twice) are read here from one list state;
+ * the Undo itself asks again, record by record (`undoChange`), each after the ones before it.
  */
 export function undoReports(
   writer: TreeWriter,
   asked: View,
   recordIds: readonly string[],
+  closed: (source: string) => boolean = () => false,
 ): Map<string, UndoReport> {
   const made = recordIds.map((id) => ({ id, made: opposite(writer, asked, "system", id) }));
   const sources = new Map<string, readonly string[]>();
-  for (const view of [LIVE, asked]) {
-    const records = made.flatMap(({ made }) =>
-      typeof made !== "string" && viewOfRecord(made.record, asked) === view ? [made.record] : [],
+  for (const view of new Map([LIVE, asked].map((each) => [each.draft, each])).values()) {
+    const all = made.flatMap(({ made }) =>
+      typeof made !== "string" && viewOfRecord(made.record, asked).draft === view.draft
+        ? [made.record]
+        : [],
     );
-    if (records.length === 0) continue;
-    const { changes } = replay([...viewRecords(writer.doc, view), ...records]);
-    for (const record of records) sources.set(record.id, changes.get(record.id)?.sources ?? []);
+    for (let held = new Set<string>(); all.length > held.size; ) {
+      const records = all.filter((record) => !held.has(record.id));
+      const { changes } = writer.preview(view, records);
+      for (const record of records) sources.set(record.id, changes.get(record.id)?.sources ?? []);
+      const first = records.find((record) => sources.get(record.id)?.some(closed));
+      if (!first) break;
+      held.add(first.id);
+    }
   }
   return new Map(
     made.map(({ id, made }): [string, UndoReport] => [

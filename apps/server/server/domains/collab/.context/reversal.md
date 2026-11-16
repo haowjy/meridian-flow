@@ -39,7 +39,8 @@ rows only. The set includes the owners of the sources the tree steps would chang
 would lock with that set before taking any lock; a Work outside it throws `TreeOwnersMoved`
 (`shared/tree-owners.ts`), which rolls back past the claim and reruns the command with the larger
 set and every source the attempt met unlocked (`untilOwnersHold`, the same restart Apply and
-Un-Apply use; it has no cap, and one that names nothing new escapes as 503 with `Retry-After`,
+Un-Apply use; a restart that names nothing new escapes as 503 with `Retry-After`, and one that names
+nothing at all (only a fresh read) escapes after four,
 storing nothing). Exhausting the inverse's attempts is
 `ReversalConflictError` and stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
@@ -259,7 +260,10 @@ Each tree receipt's fate is decided once, from `undoChange`'s own answers for it
 (`changeUndone` in `@meridian/project-tree`), and the planner, the reversal's status, the chip
 and the model's `undo` all read it. The card's planner (`drizzle-turn-tree-inverse.ts` `plan`)
 asks with `undoReports`, which writes nothing, inside its one read of each list (one replay with
-every opposite record in it), then judges the sources they name (`answerOf`):
+every opposite record in it), then judges the sources they name (`answerOf`). When an owner is
+closed it reads the lists again with `judge.closed`, so a held record is out of the replay its
+neighbours are read from (a parent's return to an archived Work does not hold an independent
+child rename), and it judges the sources that read names, until they hold:
 - `acts`: some record would be taken back. Only these are steps the chip offers Undo for.
 - `taken`: every record's opposite already stands (the writer restored what the model
   deleted, or deleted what it created). It counts as taken back: the Undo records an empty

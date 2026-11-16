@@ -250,8 +250,8 @@ wait for an owner that cannot reopen. To the package both `gone` and `closed` ar
 `closed(source) === true`; the server turns the `left` record into the right line by asking the judge
 again. A source the estimate did not read is answered `gone` and remembered. At the end of the tree
 half the attempt throws `TreeOwnersMoved` with the whole set of them, the transaction rolls back, and
-the command runs again with all of them added: every missed owner at once, no cap, and each restart
-adds a source, so it ends. Because the package asks about every source a committing record changes,
+the command runs again with all of them added: every missed owner at once, and each restart
+adds a source, so it ends (one that names nothing is allowed four). Because the package asks about every source a committing record changes,
 a missed owner can never commit.
 
 `applyDraft` and `undoApply` take that predicate: a record whose effect would change a closed

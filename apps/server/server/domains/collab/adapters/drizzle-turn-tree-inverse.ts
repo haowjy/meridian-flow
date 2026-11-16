@@ -230,9 +230,8 @@ export function createTurnTreeInverse(deps: {
       ).map((row) => [row.id as string, row.trashRecord]),
     );
     const listOf = await treeListsOfNodes(deps.db, [...new Set(ids)]);
-    // Each record's report, one read of each list; the sources they name say whose notes the
-    // Undo changes, and those owners judge what stays.
-    const reports = new Map<string, UndoReport>();
+    // Each record's report, one read of each list, in the order the Undo takes the records; the
+    // sources they name say whose notes the Undo changes, and those owners judge what stays.
     const byList = new Map<string, { list: TreeList; receipts: TreeReceipt[] }>();
     for (const step of open) {
       const list = listOf.get(step.subject);
@@ -243,19 +242,35 @@ export function createTurnTreeInverse(deps: {
       entry.receipts.push(step);
       byList.set(key, entry);
     }
-    for (const { list, receipts } of byList.values()) {
-      const read = await deps.treeLists.read({
-        lists: [list],
-        view: ([end]) => (end ? reportsOf(end.writer, receipts) : new Map<string, UndoReport>()),
-      });
-      for (const [record, report] of read) reports.set(record, report);
-    }
-    const owners = await treeOwners(
-      deps.db,
-      new Set([...(learned?.sources ?? []), ...[...reports.values()].flatMap((r) => r.sources)]),
-      learned?.owners,
-    );
-    const judge = await owners.judge();
+    const reportsUnder = async (closed?: (source: string) => boolean) => {
+      const reports = new Map<string, UndoReport>();
+      for (const { list, receipts } of byList.values()) {
+        const read = await deps.treeLists.read({
+          lists: [list],
+          view: ([end]) =>
+            end ? reportsOf(end.writer, receipts, closed) : new Map<string, UndoReport>(),
+        });
+        for (const [record, report] of read) reports.set(record, report);
+      }
+      return reports;
+    };
+    const sourcesOf = (reports: ReadonlyMap<string, UndoReport>) =>
+      [...reports.values()].flatMap((report) => report.sources);
+    let reports = await reportsUnder();
+    const sources = new Set([...(learned?.sources ?? []), ...sourcesOf(reports)]);
+    // Which records an owner holds decides what the others read, so once an owner is closed
+    // they are read again without the held ones, and what that names is judged in turn.
+    let owners = await treeOwners(deps.db, sources, learned?.owners);
+    let judge = await owners.judge();
+    if (sourcesOf(reports).some(judge.closed))
+      for (;;) {
+        reports = await reportsUnder(judge.closed);
+        const grown = sourcesOf(reports).filter((source) => !sources.has(source));
+        if (grown.length === 0) break;
+        for (const source of grown) sources.add(source);
+        owners = await treeOwners(deps.db, sources, learned?.owners);
+        judge = await owners.judge();
+      }
     const answers = new Map<string, UndoAnswer>(
       [...reports].map(([record, report]) => [record, answerOf(report, judge)]),
     );
@@ -447,8 +462,15 @@ export function createTurnTreeInverse(deps: {
   return { plan, run, draftStates };
 }
 
-/** What `undoChange` would do with each of the receipts' records, in each receipt's own view, writing nothing. */
-function reportsOf(writer: TreeWriter, receipts: readonly TreeReceipt[]) {
+/**
+ * What `undoChange` would do with each of the receipts' records, in each receipt's own view,
+ * writing nothing: the records in the order the Undo takes them (a receipt's newest first).
+ */
+function reportsOf(
+  writer: TreeWriter,
+  receipts: readonly TreeReceipt[],
+  closed?: (source: string) => boolean,
+) {
   const byView = new Map<string | null, TreeReceipt[]>();
   for (const step of receipts)
     byView.set(step.draftBranchId, [...(byView.get(step.draftBranchId) ?? []), step]);
@@ -457,7 +479,8 @@ function reportsOf(writer: TreeWriter, receipts: readonly TreeReceipt[]) {
     for (const [record, report] of undoReports(
       writer,
       viewOf(steps[0] as TreeReceipt),
-      steps.flatMap((step) => step.records.map((entry) => entry.record)),
+      steps.flatMap((step) => step.records.toReversed().map((entry) => entry.record)),
+      closed,
     ))
       reports.set(record, report);
   return reports;
