@@ -5,6 +5,7 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextSourceFacts, useProjectContextSources } from "@/client/query/useContextSources";
+import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
 import type { ClosedOwner, ClosedOwners } from "@/core/project-tree/tree-undo";
 
@@ -16,16 +17,22 @@ type Read = {
   facts: { ended: ReadonlySet<string> } | null;
 };
 
-type Shared = { read: Read | null; tell: () => void; reader: ClosedOwners };
+type Shared = {
+  read: Read | null;
+  /** The tab's read changed: each Work whose lifecycle it reads differently now is read as of now. */
+  tell: () => void;
+  reader: ClosedOwners;
+};
 
 const projects = new WeakMap<QueryClient, Map<string, Shared>>();
 
 /**
  * Which owners this tab reads as closed, read at each press from what it holds now: the Works
  * list as this tab's own archive and unarchive left it, each lineage's draft list (`frozen`: every
- * chat in Trash), and the sources that ended. One object per project for the tab's life, kept
- * current by every component that calls this: an Apply holds it long after the component that
- * applied it is gone.
+ * chat in Trash), and the sources that ended. `readAt` is when the tab last learned an owner's
+ * state: the list's fetch, or this tab's own change to that Work. One object per project for the
+ * tab's life, kept current by every component that calls this: an Apply holds it long after the
+ * component that applied it is gone.
  */
 export function useClosedOwners(projectId: string): ClosedOwners {
   const queryClient = useQueryClient();
@@ -48,9 +55,17 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
   const found = byProject.get(projectId);
   if (found) return found;
   const listeners = new Set<() => void>();
+  // Each Work's lifecycle as last read, and when the read last changed.
+  const lifecycles = new Map<string, { state: string; at: number }>();
   const shared: Shared = {
     read: null,
     tell: () => {
+      const { works, deleted } = shared.read ?? {};
+      for (const work of [...(works ?? []), ...(deleted ?? [])]) {
+        const state = workLifecycleState(work);
+        if (lifecycles.get(work.id)?.state !== state)
+          lifecycles.set(work.id, { state, at: Date.now() });
+      }
       for (const listener of [...listeners]) listener();
     },
     reader: {
@@ -64,6 +79,31 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
         const parsed = parseDraftOwnerKey(ownerKey);
         if (!parsed) return false;
         return parsed.kind === "work" ? workClosed(parsed.id) !== null : lineageClosed(parsed.id);
+      },
+      readAt: (ownerKey) => {
+        const parsed = parseDraftOwnerKey(ownerKey);
+        if (!parsed) return 0;
+        const fetched =
+          queryClient.getQueryState(
+            parsed.kind === "work"
+              ? projectQueryKeys.works(projectId)
+              : projectQueryKeys.ownerDrafts(projectId, ownerKey),
+          )?.dataUpdatedAt ?? 0;
+        return parsed.kind === "work"
+          ? Math.max(fetched, lifecycles.get(parsed.id)?.at ?? 0)
+          : fetched;
+      },
+      refresh: (ownerKeys) => {
+        for (const ownerKey of ownerKeys) {
+          const parsed = parseDraftOwnerKey(ownerKey);
+          if (parsed?.kind === "work")
+            void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+          // A lineage's list may have no reader on screen: fetch it, so `frozen` is known here.
+          else if (parsed?.kind === "lineage")
+            void queryClient
+              .fetchQuery({ ...ownerDraftsQueryOptions(projectId, ownerKey), staleTime: 0 })
+              .catch(() => undefined);
+        }
       },
       subscribe: (listener) => {
         listeners.add(listener);

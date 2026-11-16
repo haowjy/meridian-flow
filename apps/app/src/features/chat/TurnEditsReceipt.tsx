@@ -27,6 +27,7 @@ import { unappliedSentence } from "@/core/project-tree/tree-left-sentence";
 import type { Unapplied } from "@/core/project-tree/tree-undo";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
+import { useAppliedCommands } from "@/features/draft-review/CommandNotice";
 import { useCardUnapply } from "@/features/draft-review/card-unapply";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -93,8 +94,9 @@ export function TurnEditsReceipt({
   const turnMutation = useReverseTurnMutation(threadId);
   const projectId = useProjectDocumentNavigationProjectId();
   const unapply = useCardUnapply(projectId);
-  // What the card's last Undo of its applied changes answered.
-  const [unapplied, setUnapplied] = useState<Unapplied | null>(null);
+  const appliedCommands = useAppliedCommands();
+  // What the card's last Undo of its applied changes left standing for good, said where pressed.
+  const [left, setLeft] = useState<(Unapplied & { count: number }) | null>(null);
 
   const drafts = receipt?.drafts;
   const trees = receipt?.trees;
@@ -117,14 +119,33 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  // The Applies in force that took this reply's changes: the Undo takes each back whole.
-  const applies = receipt?.applied ?? [];
+  // The Applies in force that took this reply's changes, as the server listed them and as this
+  // tab's owner of each (`AppliedCommand`) has them now: the Undo takes each back whole. One that
+  // waits for a closed owner says so, on every card that lists it, until the owner reopens.
+  const listed = (receipt?.applied ?? []).map((apply) => ({
+    apply,
+    command: appliedCommands.find(apply.commandId),
+  }));
+  const waiting = listed.flatMap(({ command }) => (command?.waits() ? [command] : []));
+  const applies = listed.flatMap(({ apply, command }) =>
+    !command || command.offersUndo() ? [apply] : [],
+  );
+  const asking = listed.some(
+    ({ command }) => command?.state.kind === "unapplying" || command?.state.kind === "reapplying",
+  );
   const reverses = receipt?.control === "undo";
   const reversible = reverses || applies.length > 0;
   const appliedCount = applies.reduce((sum, apply) => sum + apply.count, 0);
   const wholeApply = applies.length > 1 || (applies[0] !== undefined && !applies[0].onlyThisTurn);
-  // An Un-Apply that took what it could says so in the Undo's place, as the Changes row does.
-  const unappliedWord = unapplied && applies.length === 0 ? unapplied.taken : null;
+  const heldParts = waiting.flatMap((command) => command.held);
+  const said = heldParts.length
+    ? {
+        taken: "nothing" as const,
+        treeLeft: left?.treeLeft ?? [],
+        held: heldParts,
+        count: listed.reduce((sum, { apply }) => sum + apply.count, 0),
+      }
+    : left;
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
@@ -133,7 +154,7 @@ export function TurnEditsReceipt({
   if (!hasTurnEditsReceiptContent(documents, workReceipts)) return null;
 
   /** What the reversal of the reply's changes no Apply took answered, said on the card. */
-  function said(outcome: ReversalOutcome) {
+  function answered(outcome: ReversalOutcome) {
     setActionSkips(outcome.skips ?? []);
     const restored = successfulWorkReversals(outcome);
     const status =
@@ -164,22 +185,21 @@ export function TurnEditsReceipt({
   }
 
   async function reverseTurn() {
-    if (pending || !reversible) return;
+    if (pending || asking || !reversible) return;
     setPending(true);
-    setUnapplied(null);
+    setLeft(null);
     try {
-      // One press: each Apply's Un-Apply, and the reversal of what no Apply took.
-      const [taken, outcome] = await Promise.all([
-        applies.length ? unapply(applies) : null,
-        reverses ? turnMutation.mutateAsync({ turnId: turn.id }) : null,
-      ]);
-      if (outcome) said(outcome);
+      // One press: the reversal of what no Apply took, then each Apply's Un-Apply. In this order
+      // the reversal never sees a part the Un-Apply drafted again, so the draft keeps it.
+      const outcome = reverses ? await turnMutation.mutateAsync({ turnId: turn.id }) : null;
+      const taken = applies.length ? await unapply(applies) : null;
+      if (outcome) answered(outcome);
       if (taken?.taken === "failed") {
         setCommandRefusal({ status: "request_failed" });
         setExpanded(true);
-      } else if (taken) {
-        setUnapplied(taken);
-        if (taken.taken === "partly" || taken.taken === "nothing") setExpanded(true);
+      } else if (taken && (taken.taken === "partly" || taken.taken === "nothing")) {
+        setLeft(taken.treeLeft.length ? { ...taken, held: [], count: appliedCount } : null);
+        setExpanded(true);
       }
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
@@ -222,14 +242,16 @@ export function TurnEditsReceipt({
               : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
-        {unappliedWord ? (
-          <UnappliedWord taken={unappliedWord} />
-        ) : reversible ? (
+        {reversible ? (
           <UndoButton
-            pending={pending}
+            pending={pending || asking}
             wholeApply={wholeApply ? appliedCount : null}
             onUndo={() => void reverseTurn()}
           />
+        ) : waiting.length ? (
+          <span className="ml-auto shrink-0 text-muted-foreground" role="status">
+            <Trans>Not undone</Trans>
+          </span>
         ) : (
           <UndoneWord state={receipt?.state} />
         )}
@@ -264,22 +286,22 @@ export function TurnEditsReceipt({
               </ul>
             </div>
           ) : null}
-          {unapplied && (unapplied.taken === "partly" || unapplied.taken === "nothing") ? (
+          {said ? (
             <p
               className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
               data-unapply-outcome
               role="status"
             >
               {unappliedSentence({
-                ...unapplied,
+                ...said,
                 name:
                   documents.length === 1 && documents[0]
                     ? documentDisplayName(documents[0].uri)
-                    : plural(appliedCount, { one: "# change", other: "# changes" }),
+                    : changeCount(said.count),
                 nodes: [
                   ...new Set([
-                    ...unapplied.treeLeft.map((one) => one.node),
-                    ...unapplied.held.map((one) => one.node),
+                    ...said.treeLeft.map((one) => one.node),
+                    ...said.held.map((one) => one.node),
                   ]),
                 ],
                 facts: new Map(),
@@ -715,19 +737,7 @@ function UndoButton({
 }
 
 /** What the card's Un-Apply of its applied changes did, in the Undo's place. */
-function UnappliedWord({ taken }: { taken: Unapplied["taken"] }) {
-  return (
-    <span className="ml-auto shrink-0 text-muted-foreground" role="status">
-      {taken === "partly" ? (
-        <Trans>Partly undone</Trans>
-      ) : taken === "nothing" ? (
-        <Trans>Not undone</Trans>
-      ) : (
-        <Trans>Undone</Trans>
-      )}
-    </span>
-  );
-}
+const changeCount = (count: number) => plural(count, { one: "# change", other: "# changes" });
 
 /** Where Undo sat once the writer's Undo ran; an expired card has no word. */
 function UndoneWord({ state }: { state: TurnReceiptChip["state"] | undefined }) {

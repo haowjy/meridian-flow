@@ -54,7 +54,8 @@ export type UnapplyCommand = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   patchFor(groupIds: readonly string[]): readonly PMNode[];
-  selectionChanged(groupIds: readonly string[], tree: boolean): void;
+  /** What the answer took back (`held`: it left something for a closed owner). */
+  selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
   ready: Promise<boolean>;
   groupIds: Set<string>;
   sent: boolean;
@@ -76,7 +77,8 @@ export type ApplyCommandHandle = {
    * sent.
    */
   undo(): Promise<UnapplyClickOutcome>;
-  redo(): void;
+  /** Queues the Redo at once; resolves with what became of it. */
+  redo(): Promise<ApplyClickOutcome>;
   /**
    * Once nothing is outstanding: the Apply an Un-Apply takes back, and the click a Redo sends
    * again (a new command id to fill).
@@ -195,13 +197,13 @@ export class ApplyClickQueue {
             return landed(answer);
           }),
           // A Redo pressed before the answer brings back only what the Un-Apply took back, and
-          // nothing when it took nothing.
-          selectionChanged: (groupIds, tree) => {
+          // nothing when it took nothing or held something: a held Apply stays in force whole.
+          selectionChanged: (groupIds, tree, held) => {
             handle.replaySelection = [...groupIds];
             handle.replayTree = tree;
             const replay = handle.pendingReplay;
             if (!replay || replay.sent) return;
-            if (groupIds.length === 0 && !tree) {
+            if (held || (groupIds.length === 0 && !tree)) {
               handle.pendingReplay = null;
               this.cancel(replay.body.commandId);
               return;
@@ -222,7 +224,8 @@ export class ApplyClickQueue {
           if (answer.status !== "cancelled" && answer.status !== "unapplied")
             throw new Error("Un-Apply did not land");
         });
-        handle.current = this.queueApply({
+        const before = handle.current;
+        const replay = this.queueApply({
           body: {
             ...handle.current.body,
             commandId: crypto.randomUUID(),
@@ -233,11 +236,20 @@ export class ApplyClickQueue {
           patched: input.patchFor(handle.replaySelection),
           acknowledged: ready,
         });
-        handle.pendingReplay = handle.current;
+        handle.current = replay;
+        handle.pendingReplay = replay;
         this.startFeedback();
         this.port.changed();
-        void handle.current.outcome.then((answer) => {
+        return replay.outcome.then((answer) => {
+          // A replay that never reached the server leaves the Apply it would have replaced as the
+          // one in force, the one the next Un-Apply names.
+          if (
+            (answer.status === "cancelled" || answer.status === "unsent") &&
+            handle.current === replay
+          )
+            handle.current = before;
           if (answer.status !== "cancelled") input.replayed(answer);
+          return answer;
         });
       },
       replay: () => ({
@@ -308,7 +320,7 @@ export class ApplyClickQueue {
     patched: readonly PMNode[];
     groupIds: readonly string[];
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    selectionChanged(groupIds: readonly string[], tree: boolean): void;
+    selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
     ready: Promise<boolean>;
   }): UnapplyCommand {
     let finish!: (result: UnapplyClickOutcome) => void;
@@ -526,7 +538,11 @@ export class ApplyClickQueue {
       command.answer = answer;
       command.groupIds = new Set(answer.reversedGroupIds);
       command.patched = command.patchFor(answer.reversedGroupIds);
-      command.selectionChanged(answer.reversedGroupIds, answer.treeUndone.includes(this.port.node));
+      command.selectionChanged(
+        answer.reversedGroupIds,
+        answer.treeUndone.includes(this.port.node),
+        (answer.held ?? []).length > 0,
+      );
       // The answer is acted on now (notice, history, hand-over); the room only settles it. A text
       // half that waits for its closed draft never leaves the room, so the answer settles it.
       command.hear(answer);

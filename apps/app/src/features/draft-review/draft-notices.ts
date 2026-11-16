@@ -19,6 +19,7 @@ import {
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ApplyStep, Left, TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
+import type { AppliedCommand } from "./apply-history";
 import type { DiscardRestores } from "./discard-restores";
 
 export type NoticeSurface =
@@ -275,8 +276,11 @@ export type DraftNotice =
       dismiss(): void;
     });
 
-/** An Apply's Undo: its step on the sidebar's Undo stack (`undoApply`), over `count` changes. */
-export type AppliedUndo = { undo: () => void; count: number };
+/**
+ * An Apply's Undo: the Apply (`AppliedCommand`), whose state says whether its Undo is offered, over
+ * `count` changes.
+ */
+export type AppliedUndo = { command: AppliedCommand; count: number };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which

@@ -129,11 +129,11 @@ export interface TurnInverseStore {
   ): Promise<{ acting: number; taken: number; stayed: TurnInverseSkip[] }>;
   /**
    * What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`),
-   * and the Apply that took each applied one.
+   * and every Apply that took one of each node's changes.
    */
   treeDraftStates(query: TurnInverseQuery): Promise<{
     states: Record<string, TurnTreeState>;
-    appliedBy: Record<string, string>;
+    appliedBy: Record<string, readonly string[]>;
   }>;
   /**
    * Each Apply command's branch, the nodes it landed on, and how many changes it made (text groups
@@ -405,9 +405,9 @@ async function appliedCommandsOf(
   store: TurnInverseStore,
   documents: readonly InverseDocument[],
   query: TurnInverseQuery,
-  treeAppliedBy: Record<string, string>,
+  treeAppliedBy: Record<string, readonly string[]>,
 ): Promise<TurnAppliedCommand[]> {
-  const ours = new Set<string>(Object.values(treeAppliedBy));
+  const ours = new Set<string>(Object.values(treeAppliedBy).flat());
   const others = new Set<string>();
   for (const document of documents)
     for (const part of document.history)
@@ -441,13 +441,21 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
-        // A reply that only changed the tree has no text to capture, and its card still takes it back.
+        // A reply that only changed the tree has no text to capture, and its card still takes it
+        // back: by its own Undo, or by the Un-Apply of each Apply that took one of its changes.
         const tree = await store.treeSteps(query);
-        if (!documents.length && !tree.acting && !tree.taken && !tree.stayed.length) return null;
+        const { states: treeStates, appliedBy: treeAppliedBy } = await store.treeDraftStates(query);
+        if (
+          !documents.length &&
+          !tree.acting &&
+          !tree.taken &&
+          !tree.stayed.length &&
+          Object.keys(treeAppliedBy).length === 0
+        )
+          return null;
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
         );
-        const { states: treeStates, appliedBy: treeAppliedBy } = await store.treeDraftStates(query);
         const trees = Object.keys(treeStates).length ? treeStates : undefined;
         const applied = await appliedCommandsOf(store, documents, query, treeAppliedBy);
         const { plans: undo, undoneByWriter } = await prepare(

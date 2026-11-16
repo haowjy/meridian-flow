@@ -53,7 +53,13 @@ import {
   type FrozenApply,
   frozenOn,
 } from "./apply-click-queue";
-import { AppliedCommand, type LiveHistories, queuePort, serverBandPort } from "./apply-history";
+import {
+  AppliedCommand,
+  AppliedCommands,
+  type LiveHistories,
+  queuePort,
+  serverBandPort,
+} from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import {
@@ -256,7 +262,7 @@ export class DraftCommandOwner {
    * Every Apply this tab can still take back or apply again: the one each Undo of it presses, a
    * chat card's included (`AppliedCommand`).
    */
-  readonly applied = new Set<AppliedCommand>();
+  readonly applied = new AppliedCommands();
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
@@ -952,7 +958,7 @@ export class DraftCommandOwner {
           nodes: [ref.documentId],
           facts: new Map(),
         },
-        queuePort(handle),
+        queuePort(handle, ref.documentId),
         histories.histories,
         {
           closed: histories.closed,
@@ -1274,7 +1280,7 @@ export class DraftCommandOwner {
     this.notices.close();
     for (const item of this.items.values()) item.queue.close();
     // Their entries sit on sessions that outlive this owner.
-    for (const applied of [...this.applied]) applied.end();
+    for (const applied of this.applied.values()) applied.end();
   }
 }
 

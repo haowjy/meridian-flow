@@ -460,8 +460,8 @@ msgstr "{answered, plural, one {# answered} other {# answered}}"
 #~ msgstr "{applied} applied"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{appliedCount, plural, one {# change} other {# changes}}"
-msgstr "{appliedCount, plural, one {# change} other {# changes}}"
+#~ msgid "{appliedCount, plural, one {# change} other {# changes}}"
+#~ msgstr "{appliedCount, plural, one {# change} other {# changes}}"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #~ msgid "{appliedCount} changes"
@@ -558,6 +558,7 @@ msgid "{count, plural, one {# change was applied before your Discard reached it.
 msgstr "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr "{count, plural, one {# change} other {# changes}}"
 

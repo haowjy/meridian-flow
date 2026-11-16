@@ -128,7 +128,7 @@ export function createTurnTreeInverse(deps: {
   async function draftStates(
     threadId: ThreadId,
     turnId: TurnId,
-  ): Promise<{ states: Record<string, TurnTreeState>; appliedBy: Record<string, string> }> {
+  ): Promise<{ states: Record<string, TurnTreeState>; appliedBy: Record<string, string[]> }> {
     const receipts = await db()
       .select({ records: treeEditReceipts.records })
       .from(treeEditReceipts)
@@ -155,7 +155,8 @@ export function createTurnTreeInverse(deps: {
       byList.set(key, known);
     }
     const states: Record<string, TurnTreeState> = {};
-    const commands: Record<string, string> = {};
+    // Every Apply that took one of a node's records: two Applies on one node are both in force.
+    const commands: Record<string, string[]> = {};
     const rank = { discarded: 0, replaced: 1, applied: 2, pending: 3 } as const;
     for (const { list, records } of byList.values()) {
       const ids = records.map((entry) => entry.record);
@@ -174,7 +175,8 @@ export function createTurnTreeInverse(deps: {
         const was = states[node];
         if (!was || rank[fate] > rank[was]) states[node] = fate;
         const command = read.by.get(record);
-        if (command) commands[node] = command;
+        if (command && !commands[node]?.includes(command))
+          commands[node] = [...(commands[node] ?? []), command];
       }
     }
     return { states, appliedBy: commands };

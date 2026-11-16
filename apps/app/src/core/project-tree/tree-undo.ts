@@ -75,13 +75,18 @@ export type ClosedOwner = { why: ClosedOwnerWhy; owner?: string };
 /**
  * Which owners this tab reads as closed now, from the Works and chats it holds. A step something
  * of which is held waits for them: a press passes over it while they are all closed. An owner the
- * tab can't tell about reads open, so a wrong guess costs one answered press.
+ * tab can't tell about reads open; a held answer is newer evidence until the tab reads the owner
+ * again (`readAt`), so a stale read costs one answered press.
  */
 export type ClosedOwners = {
   /** The closed owner of a source's notes; null when it is open or the tab can't tell. */
   source(sourceId: string): ClosedOwner | null;
   /** Whether the owner a key names (`work:<id>`, `lineage:<root>`) is closed. */
   owner(ownerKey: string): boolean;
+  /** When the tab last read the owner's state (ms since epoch); 0 when it never has. */
+  readAt(ownerKey: string): number;
+  /** The server said these owners are closed: read them again. */
+  refresh(ownerKeys: readonly string[]): void;
   /** Hears what the tab knows of its owners change (one reopened, one closed). */
   subscribe(listener: () => void): () => void;
 };
@@ -89,6 +94,8 @@ export type ClosedOwners = {
 export const NOTHING_CLOSED: ClosedOwners = {
   source: () => null,
   owner: () => false,
+  readAt: () => Number.POSITIVE_INFINITY,
+  refresh: () => {},
   subscribe: () => () => {},
 };
 
@@ -151,8 +158,13 @@ export type ApplyStep = {
   nodes: readonly string[];
   /** What its tree half did to each node it landed on. */
   facts: ReadonlyMap<string, TreeFact>;
-  /** What its last Un-Apply left for closed owners: a press passes over it while they are all closed. */
+  /** What its last Un-Apply left for closed owners, while it waits in force. */
   readonly held: readonly Held[];
+  /** Something is held and every owner it waits for is closed: a press passes over it. */
+  waits(): boolean;
+  /** Every Undo of it: its own state decides whether it asks the server (`undoApply` when it does). */
+  press(from: null): Promise<Unapplied | { taken: "failed" }>;
+  /** The server's Un-Apply, asked by `undoApply`. */
   unapply(): Promise<Unapplied | { taken: "failed" }>;
 };
 
@@ -251,7 +263,8 @@ function show(session: TreeListSession, notice: TreeNotice | null) {
 
 /**
  * Shows `notice`, which says who each of `waiting` waits for, and ends it once one of them would
- * be taken by a press again: "Unarchive it to undo this" is stale after the unarchive.
+ * be taken by a press again: "Unarchive it to undo this" is stale after the unarchive, and never
+ * shows when the owner reopened while the press was out.
  */
 function showWaiting(
   session: TreeListSession,
@@ -259,11 +272,16 @@ function showWaiting(
   closed: ClosedOwners,
   waiting: readonly UndoStep[],
 ) {
+  const stale = () =>
+    notices.get(session) !== notice || !waiting.every((step) => waitsForClosed(step, closed));
   show(session, notice);
   if (!notice || waiting.length === 0) return;
+  if (stale()) {
+    if (notices.get(session) === notice) show(session, null);
+    return;
+  }
   const stop = closed.subscribe(() => {
-    if (notices.get(session) === notice && waiting.every((step) => waitsForClosed(step, closed)))
-      return;
+    if (!stale()) return;
     stop();
     if (notices.get(session) === notice) show(session, null);
   });
@@ -331,8 +349,7 @@ export function pushUndoStep(session: TreeListSession, step: UndoStep): void {
  * a press passes over it. Its place is kept, and the press after the owners reopen takes it.
  */
 export function waitsForClosed(step: UndoStep, closed: ClosedOwners): boolean {
-  if (step.kind === "apply")
-    return step.held.length > 0 && step.held.every((part) => closed.owner(part.ownerKey));
+  if (step.kind === "apply") return step.waits();
   const waits = step.waits ?? [];
   return waits.length > 0 && waits.every((source) => closed.source(source) !== null);
 }
@@ -496,7 +513,7 @@ export async function undoStep(
   closed: ClosedOwners,
   pendingText?: ReadonlySet<string>,
 ): Promise<boolean> {
-  if (step.kind === "apply") return (await undoApply(session, step, closed))?.taken !== "failed";
+  if (step.kind === "apply") return (await step.press(null)).taken !== "failed";
   const stack = stackOf(session);
   const at = stack.indexOf(step);
   if (at < 0) return false;
@@ -528,18 +545,19 @@ export async function undoStep(
 }
 
 /**
- * The Un-Apply of `step` when it is still on the stack, as Ctrl+Z would take it, said on its rows
- * as a press says it: an applied row's Undo, an editor's Ctrl+Z, a chat card's Undo. Its answer,
- * or null when a press took it first.
+ * The Un-Apply of `step`, as Ctrl+Z would take it, said on its rows as a press says it: an applied
+ * row's Undo, an editor's Ctrl+Z, a chat card's Undo. The step's own state decides whether it is
+ * pressed; here it leaves the stack while asked and comes back at its place if it stays in force.
  */
 export async function undoApply(
   session: TreeListSession,
   step: ApplyStep,
   closed: ClosedOwners,
-): Promise<Unapplied | { taken: "failed" } | null> {
-  const at = stackOf(session).indexOf(step);
-  if (at < 0) return null;
-  stackOf(session).splice(at, 1);
+): Promise<Unapplied | { taken: "failed" }> {
+  const stack = stackOf(session);
+  const found = stack.indexOf(step);
+  const at = found < 0 ? stack.length : found;
+  if (found >= 0) stack.splice(found, 1);
   show(session, null);
   const outcome = await answerApply(session, step, at, []);
   const held = outcome.kind !== "failed" && (outcome.left?.held.length ?? 0) > 0;

@@ -88,8 +88,11 @@ command the writer pressed. A refused command
 never leaves the card unchanged.
 
 Undo reverses the turn's remaining edits where they are now: pending in the
-Work's document drafts or already applied to live. Draft and live writes remain one atomic
-command. The receipt immediately shows Undoing while the command runs;
+Work's document drafts, or live. Draft and live writes remain one atomic command. A change an
+Apply took is that Apply's: the card lists each Apply in force (`applied`, text and tree alike)
+and its Undo sends their Un-Applies after the reversal, through the tab's one owner of each Apply
+(`AppliedCommand`, [draft review](../../draft-review/.context/draft-review.md)), whose state every
+card listing the Apply reads. The receipt immediately shows Undoing while the command runs;
 Yjs publishes the edit after durable commit and failures stay on the card.
 Inverse eligibility comes from the inverse kernel's identity classification.
 The derived applied/pending/discarded disposition chooses a skipped part's copy,

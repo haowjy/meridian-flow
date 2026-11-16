@@ -39,6 +39,17 @@ export type CommandQuestion = {
   disabled?: boolean;
 };
 
+/** Reads again whenever an Apply this tab holds changes state. */
+export function useAppliedCommands() {
+  const { applied } = useDraftCommandOwner();
+  useSyncExternalStore(
+    applied.subscribe,
+    () => applied.revision,
+    () => 0,
+  );
+  return applied;
+}
+
 /** The owner's notice, wherever it was made; the caller shows it if it was made there. */
 export function useDraftNotice(ownerKey: string): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
@@ -371,10 +382,14 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   useLingui();
   const undo = useNoticeUndo();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
+  useAppliedCommands();
   // What Ctrl+Z in an editor said is that document's identity row's alone.
   if (!notice || notice.kind === "unapplied") return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
-    const factsOf = (id: string) => notice.facts.filter((fact) => fact.documentId === id);
+    // While the Apply waits for a closed owner its rows say so (the sidebar's notice), and its
+    // Undo comes back once the owner reopens: the facts read its state.
+    const factsOf = (id: string) =>
+      notice.facts.filter((fact) => fact.documentId === id && !fact.step?.command.waits());
     return {
       held: (id) => factsOf(id).length > 0,
       word: (id) => {
@@ -389,7 +404,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
             : facts.map((fact) => factSentence(factNow(fact, now))).join(" ");
         const step = facts.find((fact) => fact.step)?.step;
         if (step) {
-          const count = step.count;
+          const { command, count } = step;
           return (
             <RowWord
               label={t`Undo applying ${name}`}
@@ -399,7 +414,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
                   ? t`Undo takes back the whole Apply, all ${count} changes.`
                   : t`Undo takes back the Apply.`
               }`}
-              onAction={step.undo}
+              onAction={() => void command.press(null)}
               // The pressed ✓ or Apply all left with its row: the first row the Apply took has
               // the focus, as a delete's Undo does.
               focus={{ take: () => takeOnce(notice.id) }}

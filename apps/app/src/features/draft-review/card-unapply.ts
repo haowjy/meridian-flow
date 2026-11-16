@@ -6,55 +6,73 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import type { Unapplied } from "@/core/project-tree/tree-undo";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { useClosedOwners } from "@/features/project/context/closed-owners";
+import { type Answer, AppliedCommand, type ApplyPort } from "./apply-history";
 import { unappliedOf } from "./draft-notices";
 
 /**
  * A chat card's Undo of its applied changes: each Apply that took them, taken back whole, as
- * Ctrl+Z and the sidebar take it. An Apply this tab holds goes through its one owner
- * (`AppliedCommand`), so its editors and sidebar step follow; any other is sent by its id. Each
- * answer as `unappliedOf` reads it, or `failed` when one didn't reach the server.
+ * Ctrl+Z and the sidebar take it, through its one owner (`AppliedCommand`). An Apply this tab
+ * doesn't hold yet (made in another tab, or before a reload) gets an owner of its own here, with
+ * no editor or sidebar step, so every card listing it reads what became of it. Resolves once the
+ * cards have read the server again, with each answer joined.
  */
 export function useCardUnapply(projectId: string | null) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
+  const closed = useClosedOwners(projectId ?? "");
   return useCallback(
-    async (applies: readonly TurnAppliedCommand[]): Promise<Unapplied | { taken: "failed" }> => {
-      const answers = await Promise.all(
-        applies.map(async (apply): Promise<Unapplied | { taken: "failed" }> => {
-          // A band's Apply and the tree fact it handed the sidebar share an id: the later holds it.
-          const held = [...owner.applied].findLast((one) => one.commandId === apply.commandId);
-          // Every owner it waits for is still closed: the press would be held again, so the card
-          // says who it waits for without asking.
-          if (held?.passedOver()) return { taken: "nothing", treeLeft: [], held: held.held };
-          if (held) return (await held.press(null)) ?? { taken: "already", treeLeft: [], held: [] };
-          if (!projectId) return { taken: "failed" };
-          try {
-            const answer = await unapplyCommand(projectId, apply.branchId, {
-              commandId: crypto.randomUUID(),
-              applyCommandId: apply.commandId,
-            });
-            return answer.status === "unapplied" ? unappliedOf(answer) : { taken: "failed" };
-          } catch {
-            return { taken: "failed" };
-          }
-        }),
-      );
-      refreshTurnCards(queryClient);
-      if (projectId)
-        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.ownerDraftsOf(projectId) });
+    async (applies: readonly TurnAppliedCommand[]): Promise<Answer> => {
+      if (!projectId) return { taken: "failed" };
+      const commandOf = (apply: TurnAppliedCommand) => {
+        const held = owner.applied.find(apply.commandId);
+        if (held) return held;
+        const made: AppliedCommand = new AppliedCommand(
+          { text: true, tree: null, sources: [], name: "", nodes: [], facts: new Map() },
+          serverUnapply(projectId, apply),
+          () => [],
+          { closed, stack: null, over: () => owner.applied.delete(made) },
+        );
+        owner.applied.add(made);
+        return made;
+      };
+      const answers = await Promise.all(applies.map((apply) => commandOf(apply).press(null)));
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.ownerDraftsOf(projectId) });
+      await refreshTurnCards(queryClient);
       return joined(answers);
     },
-    [owner, queryClient, projectId],
+    [owner, queryClient, projectId, closed],
   );
+}
+
+/** The server's Un-Apply of an Apply no surface here can Redo. */
+function serverUnapply(projectId: string, apply: TurnAppliedCommand): ApplyPort {
+  // A press after a lost answer resends the same Un-Apply: the server answers it once.
+  let unapplyId: string | null = null;
+  return {
+    commandId: () => apply.commandId,
+    unapply: async () => {
+      unapplyId ??= crypto.randomUUID();
+      try {
+        const answer = await unapplyCommand(projectId, apply.branchId, {
+          commandId: unapplyId,
+          applyCommandId: apply.commandId,
+        });
+        unapplyId = null;
+        return answer.status === "unapplied" ? unappliedOf(answer) : { taken: "failed" };
+      } catch {
+        return { taken: "failed" };
+      }
+    },
+    reapply: async () => ({ kind: "lost" }),
+  };
 }
 
 /**
  * Several Un-Applies read as one press: what each took and left, together. One that didn't reach
  * the server makes the press a failure, which a retry sends again.
  */
-function joined(
-  answers: readonly (Unapplied | { taken: "failed" })[],
-): Unapplied | { taken: "failed" } {
+function joined(answers: readonly Answer[]): Answer {
   const read = answers.filter((answer): answer is Unapplied => answer.taken !== "failed");
   if (read.length < answers.length) return { taken: "failed" };
   const took = read.some((answer) => answer.taken === "all" || answer.taken === "partly");

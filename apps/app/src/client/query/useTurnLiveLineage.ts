@@ -17,8 +17,8 @@ import { threadQueryKeys } from "./thread-query-keys";
  * every Apply or Discard (the writer's, a peer's, per change or whole) calls this. A read already
  * in flight is the one the writer waits on, so it is not restarted.
  */
-export function refreshTurnCards(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries(
+export function refreshTurnCards(queryClient: QueryClient): Promise<void> {
+  return queryClient.invalidateQueries(
     {
       predicate: ({ queryKey }) =>
         queryKey[0] === threadQueryKeys.all[0] && queryKey[2] === "live-lineage",

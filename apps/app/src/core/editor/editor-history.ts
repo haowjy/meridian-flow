@@ -186,9 +186,12 @@ export class DocumentHistory implements EditorHistoryHandle {
     };
   }
 
-  /** Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. */
+  /**
+   * Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. An
+   * Apply passed over for a closed owner counts: Undo takes it once the owner reopens.
+   */
   hasEntries(): boolean {
-    return this.canUndo() || this.canRedo();
+    return this.active && (this.undo.length > 0 || this.redo.length > 0);
   }
 
   /** Calls `listener` after the stacks change. Returns the unsubscribe. */

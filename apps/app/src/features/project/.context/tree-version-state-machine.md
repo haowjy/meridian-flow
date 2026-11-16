@@ -99,7 +99,8 @@ stateDiagram-v2
   change such an owner's notes, goes back where it was, and its rows say who it waits for ("The
   move stayed: Notes is archived. Unarchive it to undo this."). A press passes over it while every
   owner it waits for is closed (`waitsForClosed`) and takes the step before it; once one reopens,
-  the next press takes it. Closed is read in the tab (`useClosedOwners`); a wrong guess costs one
-  answered press.
+  the next press takes it. Closed is read in the tab (`useClosedOwners`), and for an Apply the held
+  answer counts until the tab reads the owner again (`readAt`), so a stale list costs one answered
+  press. A held line never shows when the owner reopened while the press was out.
 
 A wrong edit here shows one tree in the sidebar while actions write into another.
