@@ -71,7 +71,7 @@ export class AccountFeatureLifetime {
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signOutChannel: BroadcastChannel | null;
-  private cancelClosedDraftSweep: () => void = () => {};
+  private cancelDraftCopySweep: () => void = () => {};
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
@@ -161,7 +161,7 @@ export class AccountFeatureLifetime {
     this.registry.observeUnsentTyping(unsentTypingToasts);
     // Typing a draft never took, left in a copy no draft owner will close or open: found once, after load.
     if (typeof window !== "undefined")
-      this.cancelClosedDraftSweep = afterFirstPaint(() =>
+      this.cancelDraftCopySweep = afterFirstPaint(() =>
         this.registry.sweepDraftCopies(listDraftStates).catch(reportError),
       );
     dropRetiredTabSession(accountId);
@@ -203,7 +203,7 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
-    this.cancelClosedDraftSweep();
+    this.cancelDraftCopySweep();
     this.stopTreeListDebugHook();
     this.treeLists.close();
     this.draftCommands.close();

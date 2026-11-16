@@ -222,9 +222,10 @@ export class DraftRoomPool {
     this.teardownTimers.delete(roomKey);
   }
 
-  private isRetained(roomKey: string): boolean {
-    for (const retained of this.retainedByOwner.values()) {
-      if (retained.has(roomKey)) return true;
+  /** Whether an owner other than `except` retains the room. */
+  isRetained(roomKey: string, except?: string): boolean {
+    for (const [owner, retained] of this.retainedByOwner) {
+      if (owner !== except && retained.has(roomKey)) return true;
     }
     return false;
   }

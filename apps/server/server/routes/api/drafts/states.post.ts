@@ -12,7 +12,7 @@ export default defineEventHandler(async (event): Promise<DraftStatesResponse> =>
   const { app, user } = await requireAppUser(event);
   const parsed = request.safeParse(await readBody(event));
   if (!parsed.success)
-    throw createError({ statusCode: 400, message: "Invalid closed-drafts request" });
+    throw createError({ statusCode: 400, message: "Invalid draft states request" });
   return {
     states: await app.documentSync.draftStates(user.userId, parsed.data.draftIds),
   };

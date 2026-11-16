@@ -73,7 +73,7 @@ export function draftRoomPersistenceKey(
 }
 
 const POINTER_PREFIX = "meridian:copy-incarnation:";
-/** Set once the start sweep has handed a closed draft's copy back; a session opening the copy clears it. */
+/** Set once the start sweep has settled a draft's copy; a session opening the copy clears it. */
 const SWEPT_PREFIX = "meridian:copy-swept:";
 /** Opens the database `name` if it exists; null when it does not, and none is created. */
 function openExisting(idb: IDBFactory, name: string): Promise<IDBDatabase | null> {

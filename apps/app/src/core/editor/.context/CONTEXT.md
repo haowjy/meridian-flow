@@ -751,7 +751,9 @@ from the wire alone, with nothing stored between handshakes.
   beyond its mark (an Apply left the draft with no changes, so nothing lists it and nothing
   reopens its room) has its room opened through the draft pool under a `sweep:` owner until the
   server acknowledges, then released, so the typing is delivered and shows as a change by the
-  writer; a copy another tab has open is left to that tab. At most four copies are handled at a time. A swept copy is recorded (`meridian:copy-swept:<name>` in local storage) and
+  writer. An older copy version's words come back as an `owner-closed` notice instead (a notice
+  that can't be stored is retried at the next open). A copy another tab has open is left to that
+  tab, and a copy a page in this tab opened during the sweep stays unswept. At most four copies are handled at a time. A swept copy is recorded (`meridian:copy-swept:<name>` in local storage) and
   skipped without loading at later starts until a session opens it (`hold`, a restore). A copy
   with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server what each close means (fresh
   metadata, Trash, the document's standing) and handles a metadata `gone` the same way,

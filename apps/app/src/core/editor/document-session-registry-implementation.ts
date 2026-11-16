@@ -42,7 +42,7 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
-/** Closed-draft copies the start sweep loads at once. */
+/** Draft copies the start sweep handles at once. */
 const SWEEP_LOADS = 4;
 /** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
 const KEPT_FOR_UNDO_CAP = 8;
@@ -388,9 +388,11 @@ export class DocumentSessionRegistry {
    * Opens the room of an open draft whose copies (every incarnation) hold typing beyond their
    * mark, and releases it once acknowledged. The session delivers like any other (the older
    * incarnations are read against its first handshake); a page that opens the room meanwhile
-   * shares this session, so nothing is sent twice. Not acknowledged within `SWEEP_DELIVERY_MS`
-   * (offline), the room is released anyway: the pool keeps draining it, and the copy is swept again
-   * at the next start.
+   * shares this session, so nothing is sent twice, and the copy is left unswept. A copy version
+   * older than the current one is read, not delivered: its words come back as an `owner-closed`
+   * notice, and a notice that can't be stored is retried at the next open. Not acknowledged within
+   * `SWEEP_DELIVERY_MS` (offline), the room is released anyway: the pool keeps draining it, and the
+   * copy is swept again at the next start.
    */
   private async deliverOpenDraftCopy(
     roomKey: string,
@@ -406,6 +408,9 @@ export class DocumentSessionRegistry {
       this.draftRooms.retain(owner, [{ roomKey, documentId }]);
       try {
         if (!(await acknowledged(this.draftRooms.get(roomKey)))) return;
+        // A page that shares this session keeps the copy's mark clear: its `hold` cleared it, and
+        // typing offline there must not be hidden by a mark set now.
+        if (this.draftRooms.isRetained(roomKey, owner)) return;
       } finally {
         this.draftRooms.release(owner);
       }
