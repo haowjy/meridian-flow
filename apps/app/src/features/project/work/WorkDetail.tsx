@@ -9,6 +9,7 @@ import { useEffect } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-mutations";
+import { WorkName } from "@/components/app/WorkName";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -67,7 +68,11 @@ export function WorkDetail({
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <WorkTitleLine
-              title={<WorkHeading projectId={projectId} work={work} />}
+              title={
+                <WorkName work={work} className="gap-2">
+                  <WorkHeading projectId={projectId} work={work} />
+                </WorkName>
+              }
               status={work.status}
               size="heading"
             />

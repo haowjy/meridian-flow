@@ -91,9 +91,14 @@ function truncatePattern(pattern: string): string {
   return pattern.length <= 60 ? pattern : `${pattern.slice(0, 59).trimEnd()}…`;
 }
 
-function workTenses(tool: ToolView, active: string, complete: string): ToolActivityVocabulary {
+function workTenses(
+  tool: ToolView,
+  names: OwnerNames | undefined,
+  active: string,
+  complete: string,
+): ToolActivityVocabulary {
   const receipt = workReceipt(tool);
-  const line = receipt ? workReceiptLine(receipt) : null;
+  const line = receipt ? workReceiptLine(receipt, names) : null;
   return { active: { verb: active }, complete: { verb: line || complete } };
 }
 
@@ -232,28 +237,28 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
   "work-create": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Creating a Work…`, t`Created a Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Creating a Work…`, t`Created a Work`),
     failureVerb: () => t`Couldn't create a Work`,
     pathlessTitle: null,
     expand: "renderer",
   },
   "work-update": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Updating a Work…`, t`Updated a Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Updating a Work…`, t`Updated a Work`),
     failureVerb: () => t`Couldn't update that Work`,
     pathlessTitle: null,
     expand: "renderer",
   },
   "work-delete": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Deleting a Work…`, t`Deleted a Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Deleting a Work…`, t`Deleted a Work`),
     failureVerb: () => t`Couldn't delete that Work`,
     pathlessTitle: null,
     expand: "renderer",
   },
   "work-switch": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Switching Work…`, t`Switched Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Switching Work…`, t`Switched Work`),
     failureVerb: () => t`Couldn't switch Work`,
     pathlessTitle: null,
     expand: "renderer",

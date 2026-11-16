@@ -1115,6 +1115,9 @@ export function toWireItem(
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
     deletedLive: item.deletedLive,
+    ...(item.deletedFrom
+      ? { deletedFrom: reviewContextLocation(item.deletedFrom) ?? undefined }
+      : {}),
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,
       title: threadTitles.get(threadId) ?? null,

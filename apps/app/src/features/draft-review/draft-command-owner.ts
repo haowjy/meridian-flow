@@ -97,7 +97,7 @@ export type CommandOutcome =
       kind: "done";
       /** The Apply command that landed it, which an Un-Apply names. */
       commandId?: string;
-      /** The document had been deleted from the manuscript and this Apply brought it back. */
+      /** The document had been live deleted and this Apply brought it back. */
       restored?: true;
       /** This item's whole cut found no change on receipt: nothing of it applied. */
       skipped?: true;
@@ -702,7 +702,7 @@ export class DraftCommandOwner {
 
   /**
    * No await before snapshot, group validation, O, P and acknowledgement barrier are frozen.
-   * `restore` says the writer saw the document deleted from the manuscript and chose to bring
+   * `restore` says the writer saw the document live deleted and chose to bring
    * it back; without it, a deleted document answers `needs-restore` and nothing changes.
    * Every click joins the item's one FIFO, so a tree cut waits behind the text clicks before it.
    */

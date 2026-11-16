@@ -40,6 +40,8 @@ export type DraftReviewItem = {
    * branch's draft on it and its final location (F9, §13.3), and Apply restores it.
    */
   deletedLive: boolean;
+  /** For `deletedLive`: where live last had it (`path` is where the branch puts it). */
+  deletedFrom: string | null;
   /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
   /**
@@ -149,6 +151,7 @@ function toItem(
     documentName: documentTitleFromUri(path),
     path,
     deletedLive: node.deletedLive,
+    deletedFrom: node.deletedLive ? node.deletedFromUri : null,
     actorThreadIds: [...treeActorThreadIds],
     updatedAt: evidence?.updatedAt ?? new Date(),
   };

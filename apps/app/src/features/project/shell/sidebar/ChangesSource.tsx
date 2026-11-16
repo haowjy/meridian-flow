@@ -11,6 +11,7 @@ import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { type GoneRow, withGone } from "@/components/app/RowWord";
+import { WorkName } from "@/components/app/WorkName";
 import { contentInset, ICON_SLOT_PX, ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
 import { AgentFileSave } from "@/features/agents/PackageSave";
@@ -23,12 +24,9 @@ import {
   useDraftNoticeWords,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
-import {
-  DeletedFromManuscriptTag,
-  DraftCommandStatus,
-} from "@/features/draft-review/DraftCommandStatus";
+import { DeletedLiveTag, DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
-import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
@@ -82,7 +80,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   const lineageCount = useOwnerDrafts(projectId, picked ? "" : ownerKey, {
     enabled: !picked,
   }).drafts?.length;
-  const { works } = useWorks(projectId);
+  const { works, nameOf } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
   // The shell's count is the Changes list's: the Work's changed documents and folders, from its
   // open list. The Works list's stored count is the same count for a Work whose list is not open.
@@ -100,7 +98,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
     // Under No Work the chat on screen's Work, when it has one, is followed like a pick.
     const named = picked ?? (work && !work.isNoWork ? work : null);
     if (named) {
-      const name = named.name;
+      const name = nameOf(named);
       return {
         work,
         ownerKey,
@@ -120,7 +118,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       offered: Boolean(ownerKey) && count > 0,
       elsewhere,
     };
-  }, [picked, work, ownerKey, lineageCount, works, chatWorkId, changed, shell]);
+  }, [picked, work, ownerKey, lineageCount, works, nameOf, chatWorkId, changed, shell]);
 }
 
 /**
@@ -243,7 +241,7 @@ export function ChangesSource({
     folders: readonly string[],
     name?: string,
   ) => {
-    const restoring = targets.filter((file) => isDeletedFromManuscript(file.draft));
+    const restoring = targets.filter((file) => isDeletedLive(file.draft));
     const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
     if (restoring.length > 0 || deleting.length > 0)
       setAsking({ targets, folders, deleting, restoring, name });
@@ -256,7 +254,13 @@ export function ChangesSource({
     ? {
         kind: "apply-all",
         sentence: (
-          <ApplyAllQuestion deleting={names(asking.deleting)} restoring={names(asking.restoring)} />
+          <ApplyAllQuestion
+            deleting={names(asking.deleting)}
+            restoring={asking.restoring.map((file) => ({
+              name: reviewFileTargetName(file, untitled),
+              scheme: file.draft.deletedFrom?.scheme,
+            }))}
+          />
         ),
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply all</Trans>,
@@ -619,14 +623,9 @@ function ChangeRow({
         disabled={!opens}
         controlProps={drag}
         icon={fileKindIcon(file.contextLocation?.path ?? name)}
-        title={
-          <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className={cn("truncate", deleted && "line-through")}>{name}</span>
-            <DeletedFromManuscriptTag item={file.draft} />
-          </span>
-        }
+        title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file)}
-        notice={notice}
+        notice={notice ?? <DeletedLiveTag item={file.draft} />}
         revealActions={!touch}
         actions={
           <ReviewActions
@@ -831,7 +830,7 @@ function ElsewhereLink({
     <ListRow
       icon={Layers}
       onOpen={() => setWorkId(work.id)}
-      title={work.name}
+      title={<WorkName work={work} />}
       detail={<Plural value={count} one="# document to review" other="# documents to review" />}
     />
   );

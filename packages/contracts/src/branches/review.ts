@@ -320,10 +320,13 @@ export interface ThreadDraftListItem {
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   /**
-   * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
-   * Apply brings it back at its prior or next free leaf name before merging.
+   * Live has the document in Trash while the branch keeps it (a move, a rename or text the
+   * branch has in it), in any area: Apply brings it back, at its name or the next free leaf
+   * name, before merging. A document the branch deletes is never `deletedLive`.
    */
   deletedLive: boolean;
+  /** For `deletedLive`: where live last had it, the area it was deleted from. */
+  deletedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
   /**
    * The branch's move, delete or creation of the document, when it has one: what a tree cut
    * applies (`revision`, frozen into the click) and what the row says. `movedFrom` is where

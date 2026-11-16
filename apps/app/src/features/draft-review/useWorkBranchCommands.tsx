@@ -36,7 +36,7 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { AppliedEntry, sharedHistory } from "./apply-history";
-import { isDeletedFromManuscript } from "./deleted-drafts";
+import { isDeletedLive } from "./deleted-drafts";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import type {
   AppliedFact,
@@ -170,11 +170,18 @@ export function useWorkBranchCommands({
           done.flatMap(({ outcome }) => outcome.applied ?? []).map((fact) => [fact.itemKey, fact]),
         ).values(),
       ];
-      const fresh: AppliedFact[] = [
+      let fresh: AppliedFact[] = [
         ...done.flatMap(({ item, outcome }) => {
           const name = titleOf(item);
           return outcome.restored && name && item
-            ? [{ documentId: item.documentId, kind: "restored" as const, name }]
+            ? [
+                {
+                  documentId: item.documentId,
+                  kind: "restored" as const,
+                  name,
+                  scheme: item.contextLocation?.scheme ?? null,
+                },
+              ]
             : [];
         }),
         ...said.flatMap((fact): AppliedFact[] => {
@@ -204,6 +211,11 @@ export function useWorkBranchCommands({
           return from && to ? [{ documentId, kind: "also", from, to }] : [];
         }),
       ];
+      // A document brought back somewhere new says only where it is now.
+      const landedIds = new Set(
+        fresh.flatMap((fact) => (fact.kind === "landed" ? [fact.documentId] : [])),
+      );
+      fresh = fresh.filter((fact) => fact.kind !== "restored" || !landedIds.has(fact.documentId));
       // Every document the writer applied says so on its row, a plain Apply as much as one that
       // moved it.
       const told = new Set(fresh.map((fact) => fact.documentId));
@@ -211,7 +223,12 @@ export function useWorkBranchCommands({
         const name = titleOf(item);
         if (item && name && !told.has(item.documentId)) {
           told.add(item.documentId);
-          fresh.push({ documentId: item.documentId, kind: "applied", name });
+          fresh.push({
+            documentId: item.documentId,
+            kind: "applied",
+            name,
+            scheme: item.contextLocation?.scheme ?? null,
+          });
         }
       }
       const facts = [...held, ...fresh.map((fact) => (step ? { ...fact, step } : fact))];
@@ -298,7 +315,7 @@ export function useWorkBranchCommands({
         : owner.apply(
             ref(draft),
             withDraft(target, item),
-            isDeletedFromManuscript(item),
+            isDeletedLive(item),
             (tree && item?.tree) || undefined,
             surface === "band"
               ? sharedHistory(() => [
@@ -431,9 +448,7 @@ export function useWorkBranchCommands({
           });
           return settled.map((outcome, index): CommandOutcome => {
             const member = members[index];
-            return outcome.kind === "needs-restore" &&
-              member &&
-              isDeletedFromManuscript(row(member.draft))
+            return outcome.kind === "needs-restore" && member && isDeletedLive(row(member.draft))
               ? { kind: "needs-restore", deleted: true }
               : outcome;
           });

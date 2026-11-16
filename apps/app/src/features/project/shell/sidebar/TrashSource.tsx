@@ -216,7 +216,7 @@ function deletedFrom(entry: TrashEntry, location: string): string {
 function useTrashDiscardRows(projectId: string) {
   const query = useTrashDiscards(projectId);
   const trees = useProjectTrees(projectId);
-  const { works, deleted } = useWorks(projectId);
+  const { works, deleted, nameOf } = useWorks(projectId);
   const { states, restore } = useRestoreDiscard(projectId);
   const queryClient = useQueryClient();
   const owner = useDraftCommandOwner();
@@ -263,7 +263,7 @@ function useTrashDiscardRows(projectId: string) {
         created.get(documentId) ?? trees.find(documentId)?.file.name ?? t`Untitled document`,
     );
     const work = [...(works ?? []), ...deleted].find(({ id }) => id === entry.workId);
-    return { entry, names, workName: work?.name ?? null };
+    return { entry, names, workName: work ? nameOf(work) : null };
   });
   return {
     rows,

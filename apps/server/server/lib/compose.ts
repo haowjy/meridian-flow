@@ -128,9 +128,12 @@ import {
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
+  createCachedPackageFetcher,
   createDrizzleAgentRevisionStore,
+  createGithubPackageFetcher,
   createInMemoryAgentRevisionStore,
   noLevelFiles,
+  type PackageFetcher,
   readBuiltinPackages,
 } from "../domains/packages/index.js";
 import {
@@ -329,6 +332,7 @@ export type AppServices = {
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
@@ -429,6 +433,7 @@ export type ProductionAppPorts = {
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -582,6 +587,7 @@ export async function createProductionAppPorts(input: {
     // Collab is composed below, before anything can submit or admit a record.
     draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
+    liveChangedUnder: (branchIds) => workProjectionMutation.liveChangedUnder(branchIds),
   });
   const draftClose = createDraftClose({ treeLists });
   const documentLinks = createDrizzleDocumentLinkScopes({
@@ -770,6 +776,9 @@ export async function createProductionAppPorts(input: {
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createCachedPackageFetcher(
+      createGithubPackageFetcher({ token: environment.FLOW_GITHUB_TOKEN }),
+    ),
     accountSettings,
     workingSet,
     recentDocuments,
@@ -1289,6 +1298,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: ports.agentCatalog,
+    packageFetcher: ports.packageFetcher,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
@@ -1340,7 +1350,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
 }
 
-export function createInMemoryAppServices(): AppServices {
+/** `packageFetcher` is the live-network opt-in: without one, fetching a package throws. */
+export function createInMemoryAppServices(
+  options: { packageFetcher?: PackageFetcher } = {},
+): AppServices {
   const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
@@ -1858,6 +1871,13 @@ export function createInMemoryAppServices(): AppServices {
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createCachedPackageFetcher(
+      options.packageFetcher ?? {
+        async fetchTree() {
+          throw new Error("Package fetching is unavailable in memory");
+        },
+      },
+    ),
     eventSink: createNoopEventSink(),
     accountSettings,
     workingSet,

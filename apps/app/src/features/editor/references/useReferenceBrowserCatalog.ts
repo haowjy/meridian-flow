@@ -25,10 +25,10 @@ export function useReferenceBrowserCatalog(
   const accountId = useAccountId();
   const projectPending = useIsProjectPendingCreation(projectId);
   const trees = useProjectTrees(projectId ?? "");
-  const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
+  const { works, nameOf } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const workNames = useMemo(
-    () => new Map<string, string>(works?.map((work) => [work.id, work.name])),
-    [works],
+    () => new Map<string, string>(works?.map((work) => [work.id, nameOf(work)])),
+    [works, nameOf],
   );
 
   const warmSources = useMemo(
@@ -47,10 +47,10 @@ export function useReferenceBrowserCatalog(
       (works ?? []).flatMap((work) => {
         const source = sourceFor(trees.sources, "scratch", { workId: work.id });
         return source && work.handle
-          ? [{ sourceId: source.id, name: work.name, handle: work.handle }]
+          ? [{ sourceId: source.id, name: nameOf(work), handle: work.handle }]
           : [];
       }),
-    [works, trees.sources],
+    [works, nameOf, trees.sources],
   );
 
   const latest = useRef({ trees, workNames, warmSources, workRows });

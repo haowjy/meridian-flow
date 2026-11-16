@@ -131,22 +131,31 @@ export function removalSentence(documents: readonly Removal[]): string {
  * A draft that outlived its document's delete, in the draft's own editor: who deleted it,
  * in the removal notice's voice, and what Apply does about it.
  */
-export function deletedFromManuscriptSentence(
+export function deletedLiveSentence(
   title: string,
+  area: string | null,
   record: DocumentRemovalRecord | null,
 ): string {
   const voice = removalVoice(record);
   if (voice.kind === "person") {
     const { name } = voice;
-    return t`${name} deleted ${title} from the manuscript. Applying brings it back.`;
+    return area
+      ? t`${name} deleted ${title} from ${area}. Applying brings it back.`
+      : t`${name} deleted ${title}. Applying brings it back.`;
   }
   if (voice.kind === "agent") {
     const { chat } = voice;
-    return chat
-      ? t`The AI in ${chat} deleted ${title} from the manuscript. Applying brings it back.`
-      : t`The AI in a chat deleted ${title} from the manuscript. Applying brings it back.`;
+    if (chat)
+      return area
+        ? t`The AI in ${chat} deleted ${title} from ${area}. Applying brings it back.`
+        : t`The AI in ${chat} deleted ${title}. Applying brings it back.`;
+    return area
+      ? t`The AI in a chat deleted ${title} from ${area}. Applying brings it back.`
+      : t`The AI in a chat deleted ${title}. Applying brings it back.`;
   }
-  return t`${title} was deleted from the manuscript. Applying brings it back.`;
+  return area
+    ? t`${title} was deleted from ${area}. Applying brings it back.`
+    : t`${title} was deleted. Applying brings it back.`;
 }
 
 /** What a chip says when only a short sentence fits: the count and what happened. */

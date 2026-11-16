@@ -15,7 +15,7 @@ export type ReviewFileTarget = {
   draft: ThreadDraftListItem;
   /**
    * Absent from the live project until Apply: a document the draft created, or one deleted
-   * from the manuscript that this draft still has (`deletedLive`).
+   * live that this draft still has (`deletedLive`).
    */
   draftOnly: boolean;
 };
