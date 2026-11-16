@@ -71,6 +71,7 @@ export {
   rankAt,
   segmentOf,
   treeViolations,
+  type Walkable,
 } from "./shape.js";
 export {
   compareCatalogSiblings,

@@ -41,6 +41,9 @@ export function pathOf(projection: TreeProjection, node: TreeNode): string {
   return `/${segments.join("/")}`;
 }
 
+/** What a path walk reads of a node: a replay's node, or any catalog shaped like one. */
+export type Walkable = Pick<TreeNode, "id" | "kind" | "name" | "suffix" | "trashed">;
+
 /**
  * The shown child a path segment reaches. With a `~` suffix, the one whose id's hex digits begin
  * with it (the lowest id, should a suffix shortened by hand fit two), whatever name is in front;
@@ -51,15 +54,15 @@ export function pathOf(projection: TreeProjection, node: TreeNode): string {
  * name is a document, the folder of that name with the lowest id does (`Arc/x` reaches the folder
  * `Arc~922e` beside a document `Arc`). The SQL walk (`nodesAt`) reads the same.
  */
-export function childAtSegment(
-  children: readonly TreeNode[],
+export function childAtSegment<N extends Walkable>(
+  children: readonly N[],
   segment: string,
   level?: "folder",
-): TreeNode | undefined {
+): N | undefined {
   const { name, suffix } = readSegment(segment);
-  let byId: TreeNode | undefined;
-  let plain: TreeNode | undefined;
-  let named: TreeNode | undefined;
+  let byId: N | undefined;
+  let plain: N | undefined;
+  let named: N | undefined;
   for (const child of children) {
     if (child.trashed || (level === "folder" && child.kind !== "folder")) continue;
     if (suffix !== undefined && idHex(child.id).startsWith(suffix)) {

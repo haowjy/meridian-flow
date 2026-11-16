@@ -6,11 +6,12 @@
 import {
   type CatalogDocument,
   type CatalogFolder,
-  matchDocumentPath,
+  matchOmittedExtension,
   parseContextUri,
   parseLinkRef,
   splitDocumentHrefSuffix,
 } from "@meridian/contracts";
+import { addressCandidates, readSegment } from "@meridian/contracts/protocol";
 import {
   type AssetAddress,
   createHolderLinkScope,
@@ -19,6 +20,7 @@ import {
   writtenAddresses,
 } from "@meridian/markup/links";
 import { storedLinkKeys } from "@meridian/markup/stored-links";
+import { childAtSegment, type Walkable } from "@meridian/project-tree";
 import * as Y from "yjs";
 import type { DocumentLinksPort } from "./document-links.js";
 
@@ -125,7 +127,7 @@ export function createStaticDocumentLinks(
       }
       // A row an address load found is known by id too, as the server remembers it.
       for (const entry of catalog.documents) {
-        if ([...loaded.addresses].some((uri) => matchDocumentPath([entry], uri, (doc) => doc.uri)))
+        if ([...loaded.addresses].some((uri) => documentAtLink([entry], catalog.folders, uri)))
           loaded.ids.add(entry.documentId);
       }
       for (const folder of catalog.folders ?? []) {
@@ -166,7 +168,7 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
       ifLoaded("addresses", uri, () => present().find((entry) => entry.uri === uri) ?? null),
     documentFor: (uri) =>
       ifLoaded("addresses", uri, () =>
-        matchDocumentPath(present().filter(reachable), uri, (entry) => entry.uri),
+        documentAtLink(present().filter(reachable), catalog.folders, uri),
       ),
     assetAddress: (id) =>
       ifLoaded("ids", id, (): AssetAddress | null | undefined => {
@@ -192,6 +194,95 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
             ?.documentId ?? null,
       ),
   };
+}
+
+type CatalogNode = Walkable & { entry?: StaticCatalogDocument };
+
+/**
+ * The document a link's address reaches among `documents`, read as the tree reads it: folders are
+ * walked by segment (a document `Kael` beside a folder `Kael~f051` leaves `Kael/Note` in the
+ * folder), the leaf is the exact name or its alias, else the one document that differs only by a
+ * left-off extension. The catalog has addresses, not parents, so its tree is rebuilt from them:
+ * a folder of the catalog keeps its id, and a directory it does not list stands in as a folder.
+ */
+function documentAtLink(
+  documents: readonly StaticCatalogDocument[],
+  folders: readonly CatalogFolder[] | undefined,
+  uri: string,
+): StaticCatalogDocument | null {
+  const wanted = parseContextUri(uri);
+  if (!wanted.ok) return null;
+  const sameSource = (parsed: ReturnType<typeof parseContextUri>) =>
+    parsed.ok &&
+    parsed.value.scheme === wanted.value.scheme &&
+    JSON.stringify(parsed.value.authority) === JSON.stringify(wanted.value.authority);
+  const children = new Map<string, CatalogNode[]>();
+  const dirs = new Map<string, string>([["", ""]]);
+  const add = (parent: string, node: CatalogNode) =>
+    children.set(parent, [...(children.get(parent) ?? []), node]);
+  const dirAt = (path: string): string => {
+    const known = dirs.get(path);
+    if (known !== undefined) return known;
+    const slash = path.lastIndexOf("/");
+    const { name, suffix } = readSegment(path.slice(slash + 1));
+    const id = `dir:${path}`;
+    dirs.set(path, id);
+    add(dirAt(path.slice(0, Math.max(slash, 0))), {
+      id,
+      kind: "folder",
+      name,
+      suffix,
+      trashed: false,
+    });
+    return id;
+  };
+  for (const folder of folders ?? []) {
+    const parsed = parseContextUri(folder.uri);
+    if (!sameSource(parsed) || !parsed.ok) continue;
+    const path = parsed.value.path;
+    const slash = path.lastIndexOf("/");
+    const { name, suffix } = readSegment(path.slice(slash + 1));
+    dirs.set(path, folder.folderId);
+    add(dirAt(path.slice(0, Math.max(slash, 0))), {
+      id: folder.folderId,
+      kind: "folder",
+      name,
+      suffix,
+      trashed: false,
+    });
+  }
+  for (const entry of documents) {
+    const parsed = parseContextUri(entry.uri);
+    if (!sameSource(parsed) || !parsed.ok) continue;
+    const slash = parsed.value.path.lastIndexOf("/");
+    const { name, suffix } = readSegment(parsed.value.path.slice(slash + 1));
+    add(dirAt(parsed.value.path.slice(0, Math.max(slash, 0))), {
+      id: entry.documentId,
+      kind: "document",
+      name,
+      suffix,
+      trashed: false,
+      entry,
+    });
+  }
+  const segments = wanted.value.path.split("/");
+  const leaf = segments.pop() as string;
+  let at = "";
+  for (const segment of segments) {
+    const folder = childAtSegment(children.get(at) ?? [], segment, "folder");
+    if (!folder) return null;
+    at = folder.id;
+  }
+  const siblings = (children.get(at) ?? []).filter((node) => node.kind === "document");
+  for (const candidate of addressCandidates(leaf)) {
+    const found = childAtSegment(children.get(at) ?? [], candidate);
+    if (found?.entry) return found.entry;
+  }
+  return (
+    matchOmittedExtension(siblings, leaf, (node) =>
+      node.suffix === undefined ? node.name : `${node.name}~${node.suffix}`,
+    )?.entry ?? null
+  );
 }
 
 /**

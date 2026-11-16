@@ -833,6 +833,9 @@ importers:
       '@meridian/markup':
         specifier: workspace:*
         version: link:../markup
+      '@meridian/project-tree':
+        specifier: workspace:*
+        version: link:../project-tree
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../prosemirror-schema
