@@ -354,6 +354,7 @@ function createInMemoryBranchStub(): CollabBranches {
           restored: 0,
           swapped: 0,
           leftOut: 0,
+          brought: { text: [], tree: [] },
           settled: [{ rule: "left_out", items: [], why: "purged" }],
         };
       },

@@ -232,7 +232,29 @@ clock; a restore that brings nothing back is `done` with `restored: 0` and says 
 `settled`: `already restored` (the tree took its records, another Work holds them, or a stored restore
 named this command), `left_out purged` (no command of kind `discard`, `undo_discard` or `unapply`
 is stored under the id: the day-30 purge took it, or it never was; or what the entry held was
-purged), with `leftOut` counting purged nodes beside a partial restore. A purged Work's branch is a 404
+purged), with `leftOut` counting purged nodes beside a partial restore. A restore reopens a draft only if
+Live's text has not overtaken it: `reopen` with `leaveOutEdited` compares, on the base the draft reopens with
+(its waiting Un-Applies replayed on a copy, since the check runs before the draft is open), the token ranges
+Live changed since that base with the ranges the draft changed, both uncleaned (a long paragraph's
+edits stay small hunks, `boundedDiff`, up to 1,000 edit operations; past that its hunks are `approx` and
+count for nothing, so the draft reopens). Live's edit that overlaps the change, or is a pure insertion at its edge
+or inside it, leaves the whole draft out (a neighbouring word's replacement sharing an endpoint does not, even
+when the change is itself an insertion): the room Discard's rule
+(`touchedSince`: an edit that deletes, or writes into or beside, what the change wrote or deleted ends that
+document's whole share), on stored rows and a journal instead of Yjs structs. An edit to the next or the
+previous word, to its marks, or a split of the block does not count. A join into the block before, or a new
+block type, does: Yjs's Undo cannot follow the text out of the removed block, so both paths leave it out. The
+paths differ in two cases. The writer types over the changed word and types the original back: the text is as
+the Discard left it, so the server restores; the room leaves it out, since its Undo would double the text. And
+any edits to both words neighbouring an AI insertion: one token hunk spans the insertion point, so the
+server leaves it out where the room, which sees separate character insertions, restores. It
+counts as its review changes in `leftOut` and as `left_out changed_since` in `settled`, naming the documents.
+A left-out draft stays closed under its Discard (`closed_by` kept, so the day-30 purge still deletes it) with
+`closed_cause = left_out`: a restore that answered takes it out of Trash's entry and `closedBy()`, so no entry
+leaves the same thing out on every Restore. Every other reader (the model's write path, receipts, the purge)
+reads it as the Discard's draft. `brought` names the documents whose text came back and whose tree changes did;
+Trash's Undo of the restore discards exactly those halves. An Un-Apply's reopen does not ask
+(its own Apply wrote that text). A purged Work's branch is a 404
 at the route. A branch of another project is a 404 too. A Work or
 chat that cannot take the restore (archived, deleted, a chat in Trash) bounces: stored `done`, nothing
 changed, `restored: 0`, `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.

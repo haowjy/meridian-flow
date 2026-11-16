@@ -977,7 +977,7 @@ CREATE TABLE "document_drafts" (
 	CONSTRAINT "document_drafts_kind_valid" CHECK ("document_drafts"."kind" = 'work_draft'),
 	CONSTRAINT "document_drafts_closed_cause_presence" CHECK (("document_drafts"."status" = 'closed') = ("document_drafts"."closed_cause" IS NOT NULL)),
 	CONSTRAINT "document_drafts_closed_by_closed" CHECK ("document_drafts"."closed_by" IS NULL OR "document_drafts"."status" = 'closed'),
-	CONSTRAINT "document_drafts_closed_cause_valid" CHECK ("document_drafts"."closed_cause" IN ('discarded', 'document_removed')),
+	CONSTRAINT "document_drafts_closed_cause_valid" CHECK ("document_drafts"."closed_cause" IN ('discarded', 'document_removed', 'left_out')),
 	CONSTRAINT "document_drafts_status_valid" CHECK ("document_drafts"."status" IN ('active', 'closed')),
 	CONSTRAINT "document_drafts_seed_record_shape" CHECK ((("document_drafts"."seed_origins" IS NULL AND "document_drafts"."seed_live_room" IS NULL AND "document_drafts"."seed_live_snapshot" IS NULL AND "document_drafts"."seed_draft_snapshot" IS NULL) OR ("document_drafts"."kind" = 'work_draft' AND "document_drafts"."seed_origins" IS NOT NULL AND "document_drafts"."seed_live_room" IS NOT NULL AND "document_drafts"."seed_live_snapshot" IS NOT NULL AND "document_drafts"."seed_draft_snapshot" IS NOT NULL)) AND (("document_drafts"."seed_live_state" IS NULL AND "document_drafts"."seed_live_position" IS NULL) OR ("document_drafts"."seed_live_state" IS NOT NULL AND "document_drafts"."seed_live_position" IS NOT NULL)))
 );

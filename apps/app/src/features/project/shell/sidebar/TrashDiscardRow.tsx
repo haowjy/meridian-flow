@@ -7,6 +7,7 @@ import { RowWord } from "@/components/app/RowWord";
 import { ListRow } from "@/components/ui/list-row";
 import { restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
 import type { DiscardRestoreState } from "@/features/draft-review/discard-restores";
+import { leftOutSentence } from "@/features/draft-review/ReviewMessageText";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { relativeTime } from "../../relative-time";
 
@@ -45,7 +46,27 @@ export function TrashDiscardRow({
       : t`Changes`;
   const icon = fileKindIcon(names[0] ?? "");
   const detail = <span className="truncate">{discardedFrom(entry, names.length, workName)}</span>;
-  if (state?.kind === "restored")
+  // Answered with nothing back: the entry has left Trash, and the row says why until it goes.
+  if (state?.kind === "left_out")
+    return (
+      <ListRow
+        gone
+        icon={icon}
+        title={title}
+        detail={detail}
+        notice={
+          <RowWord
+            tone="warning"
+            word={<Trans>Not restored</Trans>}
+            sentence={leftOutSentence(state.leftOut)}
+          />
+        }
+      />
+    );
+  if (state?.kind === "restored") {
+    // What stayed out is said beside what came back.
+    const said = (sentence: string) =>
+      state.leftOut > 0 ? `${sentence} ${leftOutSentence(state.leftOut)}` : sentence;
     return (
       <ListRow
         gone
@@ -63,16 +84,20 @@ export function TrashDiscardRow({
             />
           ) : !onUndo ? (
             // Restored elsewhere first: nothing here can put it back.
-            <RowWord tone="done" word={<Trans>Restored</Trans>} sentence={t`Restored just now.`} />
+            <RowWord
+              tone="done"
+              word={<Trans>Restored</Trans>}
+              sentence={said(t`Restored just now.`)}
+            />
           ) : (
             <RowWord
               word={<Trans>Undo</Trans>}
               label={t`Undo restore of ${title}`}
-              sentence={
+              sentence={said(
                 workName
                   ? t`Restored just now: the drafts are back in ${workName}. Undo puts them back in Trash.`
-                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`
-              }
+                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`,
+              )}
               pending={undo === "sending"}
               onAction={onUndo}
             />
@@ -80,6 +105,7 @@ export function TrashDiscardRow({
         }
       />
     );
+  }
   return (
     <ListRow
       icon={icon}

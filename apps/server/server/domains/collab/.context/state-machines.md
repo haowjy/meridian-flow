@@ -39,7 +39,7 @@ stateDiagram-v2
   stamps each draft it closes with `closed_by`, its command id. Restoring that Discard
   (`undo_discard`, from the notice or Trash) sets the same row `active` again in the Work's
   current branch (moving it there when the Discard closed another) and clears `closed_by` and
-  `closed_cause`; a newer draft of the document closes under the restore's own id, so restoring
+  `closed_cause`, unless Live's text has overtaken the draft: then it stays closed under the Discard with `closed_cause = left_out` and leaves Trash's entry; a newer draft of the document closes under the restore's own id, so restoring
   that entry swaps back. An Apply closes only the drafts of its own items that a delete copy it appended covers in
   live afterwards, under its id. An Un-Apply of that Apply reopens such a draft when its tree
   half takes back the delete that covered it (a folder's included), the same way, under the Un-Apply's id, and replays the Un-Applies the draft waited on. A retirement acts on a command-closed draft only while `closed_by`

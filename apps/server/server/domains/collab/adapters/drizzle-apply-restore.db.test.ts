@@ -117,6 +117,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       close: draftClose,
       treeLists,
       workProjection: projection,
+      live: persistence.journal,
       scheduleLivePull: () => {},
     });
     const applyService = createApplyClickService({

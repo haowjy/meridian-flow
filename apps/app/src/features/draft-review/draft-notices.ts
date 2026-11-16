@@ -254,6 +254,8 @@ export type DraftNotice =
        */
       status: "ready" | "undoing" | "failed" | "partial" | "returned" | "bounced";
       leftOut: number;
+      /** With `partial`: not one share came back, so the line reads "not restored". */
+      nothingBack: boolean;
       returned: RestoreReturned | null;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
@@ -316,6 +318,8 @@ export class DraftNotices {
    * them, and says they couldn't come back.
    */
   private readonly expired = new Map<number, { part: DiscardPart; leftOut: number }[]>();
+  /** Notices where a room's share undid and left `parts`: something came back, whatever else stayed out. */
+  private readonly roomBack = new Set<number>();
   /**
    * The notice's own Undo: in flight, or a room's share that failed. A server share's progress is
    * `DiscardRestores`'.
@@ -485,6 +489,7 @@ export class DraftNotices {
       left: null,
       status: "ready",
       leftOut: 0,
+      nothingBack: false,
       returned: null,
       appliedFirst: [],
       ...this.subjectOf(input.parts),
@@ -592,6 +597,7 @@ export class DraftNotices {
       left: null,
       status: "bounced",
       leftOut: 0,
+      nothingBack: false,
       returned: input.returned,
       undo: async () => "failed",
       dismiss: () => this.endIf(ownerKey, id),
@@ -670,6 +676,7 @@ export class DraftNotices {
     // A room's share answering `gone` stays written: the notice counts what it couldn't bring back.
     for (const { part, answer, leftOut } of answers)
       if (!part.restore && answer === "gone" && leftOut) this.expire(id, part, leftOut);
+    if (answers.some(({ part, answer }) => !part.restore && answer === "ok")) this.roomBack.add(id);
     if (this.parts.has(id)) {
       this.parts.set(
         id,
@@ -694,7 +701,8 @@ export class DraftNotices {
   private outstanding(parts: readonly DiscardPart[]) {
     return parts.filter((part) => {
       const state = part.restore ? this.restores.state(part.restore) : undefined;
-      return state?.kind !== "restored" && state?.kind !== "returned";
+      // A fully left-out restore is as settled as a restored one: its entry has left Trash.
+      return state?.kind !== "restored" && state?.kind !== "left_out" && state?.kind !== "returned";
     });
   }
 
@@ -712,10 +720,19 @@ export class DraftNotices {
     const pressed = this.pressed.get(id);
     const returned = restores.find((state) => state?.kind === "returned");
     const leftOut = restores.reduce(
-      (sum, state) => sum + (state?.kind === "restored" ? state.leftOut : 0),
+      (sum, state) =>
+        sum + (state?.kind === "restored" || state?.kind === "left_out" ? state.leftOut : 0),
       (this.expired.get(id) ?? []).reduce((sum, { leftOut }) => sum + leftOut, 0),
     );
     const out = this.outstanding(parts);
+    const expired = this.expiredParts(id);
+    const nothingBack =
+      !this.roomBack.has(id) &&
+      parts.every(
+        (part) =>
+          expired.includes(part) ||
+          (part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out"),
+      );
     const status: Discarded["status"] | null =
       pressed === "undoing" || restores.some((state) => state?.kind === "restoring")
         ? "undoing"
@@ -737,12 +754,14 @@ export class DraftNotices {
       ...notice,
       status,
       leftOut,
+      nothingBack,
       returned: returned?.kind === "returned" ? returned.why : null,
       ...(status === "failed" ? this.subjectOf(out) : {}),
     };
     if (
       next.status === notice.status &&
       next.leftOut === notice.leftOut &&
+      next.nothingBack === notice.nothingBack &&
       next.returned === notice.returned &&
       next.subject === notice.subject
     )
@@ -807,6 +826,7 @@ export class DraftNotices {
     this.notices.delete(notice.ownerKey);
     this.parts.delete(notice.id);
     this.expired.delete(notice.id);
+    this.roomBack.delete(notice.id);
     this.pressed.delete(notice.id);
     clearTimeout(this.bounceTimers.get(notice.id));
     this.bounceTimers.delete(notice.id);

@@ -645,7 +645,7 @@ export function createDrizzleDraftStore(
       const states: Record<string, DraftState> = {};
       for (const row of rows) {
         if (row.status === "active") states[row.id] = "open";
-        else if (row.cause) states[row.id] = row.cause;
+        else if (row.cause) states[row.id] = row.cause === "left_out" ? "discarded" : row.cause;
       }
       return states;
     },
@@ -750,9 +750,10 @@ export function createDrizzleDraftStore(
         closedAs:
           cause === null
             ? null
-            : cause === "discarded" && closedBy === "discard"
+            : cause !== "document_removed" && closedBy === "discard"
               ? ("discarded" as const)
-              : cause === "discarded" && (closedBy === "undo_discard" || closedBy === "unapply")
+              : cause !== "document_removed" &&
+                  (closedBy === "undo_discard" || closedBy === "unapply")
                 ? ("replaced" as const)
                 : ("document_removed" as const),
       }));
