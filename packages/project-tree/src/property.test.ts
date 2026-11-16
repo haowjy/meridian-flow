@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { admit, changedSources, clientMayWrite } from "./admission.js";
 import {
   applyDraft,
   childrenOf,
@@ -152,6 +153,8 @@ function runSeed(seed: number): {
     );
     const folders = [
       ROOT,
+      sourceRoot("notes-a"),
+      sourceRoot("notes-b"),
       ...shown.filter((node) => node.kind === "folder").map((node) => node.id),
     ];
     const action = random();
@@ -342,6 +345,63 @@ function runSeed(seed: number): {
       expect(viewProblems(replica.writer.doc, view), `seed ${seed}`).toEqual([]);
   }
   const doc = replicas[0]?.writer.doc as Y.Doc;
+  for (const view of VIEWS) {
+    const records = viewRecords(doc, view);
+    if (records.length === 0) continue;
+    const inserted = pick(records);
+    const withRecord = replay(records, { draft: view.draft });
+    const without = replay(
+      records.filter((record) => record.id !== inserted.id),
+      { draft: view.draft },
+    );
+    const sources = changedSources(without, withRecord);
+    const shown = (p: TreeProjection, id: string) => {
+      const n = p.nodes.get(id);
+      return (
+        n && [
+          n.name,
+          n.displayName,
+          n.parent,
+          n.source,
+          n.rank,
+          n.trashed,
+          n.keptByChild,
+          n.keptByPending,
+          n.purged,
+          n.filetype,
+        ]
+      );
+    };
+    for (const id of new Set([...withRecord.nodes.keys(), ...without.nodes.keys()])) {
+      if (JSON.stringify(shown(withRecord, id)) === JSON.stringify(shown(without, id))) continue;
+      for (const node of [withRecord.nodes.get(id), without.nodes.get(id)])
+        if (node)
+          expect(
+            sources.has(node.source),
+            `seed ${seed} record ${JSON.stringify(inserted)} change ${JSON.stringify([...sources])} node ${id} before ${JSON.stringify(shown(without, id))} after ${JSON.stringify(shown(withRecord, id))} records ${JSON.stringify(records.filter((r) => r.node === id || r.node === inserted.node))}`,
+          ).toBe(true);
+    }
+    if (clientMayWrite(inserted) && inserted.draft === view.draft) {
+      const closed = [...sources][0] ?? "not-a-source";
+      const server = new Y.Doc({ gc: false });
+      server.clientID = 7;
+      server.getArray("ops").push(records.filter((r) => r.id !== inserted.id));
+      const copy = new Y.Doc({ gc: false });
+      copy.clientID = 2000;
+      Y.applyUpdate(copy, Y.encodeStateAsUpdate(server));
+      const vector = Y.encodeStateVector(copy);
+      copy.getArray("ops").insert(records.indexOf(inserted), [inserted]);
+      const result = admit(new TreeWriter(server), Y.encodeStateAsUpdate(copy, vector), {
+        drafts: new Set(["w1", "w2"]),
+        closed: (source) => source === closed,
+      });
+      expect(result.dropped.includes(inserted.id), `seed ${seed} closed ${closed}`).toBe(
+        sources.has(closed),
+      );
+      copy.destroy();
+      server.destroy();
+    }
+  }
   const views = VIEWS.map((view) => replayView(doc, view));
   return {
     ops: viewRecords(doc, LIVE).length,

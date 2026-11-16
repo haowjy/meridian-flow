@@ -107,13 +107,17 @@ export async function readConnection(
           WHERE user_id = ${list.userId}::uuid AND is_personal AND deleted_at IS NULL`,
   );
   if (!project || project.owner !== accountId) return null;
-  const closed = await tx.execute<{ id: string }>(sql`
-    SELECT s.id::text AS id FROM context_sources s
-    JOIN works w ON w.id = s.work_id
-    WHERE s.scope = 'work' AND w.project_id = ${project.id}::uuid
-      AND (w.archived_at IS NOT NULL OR w.deleted_at IS NOT NULL)`);
+  const sources = await tx.execute<{ id: string; closed: boolean }>(sql`
+    SELECT s.id::text AS id,
+      (s.deleted_at IS NOT NULL OR (s.scope = 'work' AND (w.id IS NULL OR w.archived_at IS NOT NULL OR w.deleted_at IS NOT NULL))) AS closed
+    FROM context_sources s
+    LEFT JOIN works w ON w.id = s.work_id
+    WHERE COALESCE(s.project_id, w.project_id) = ${project.id}::uuid`);
+  const openSources = new Set(
+    sources.filter((source) => !source.closed).map((source) => source.id),
+  );
   return {
     drafts: await openBranches(tx, list),
-    closedSources: new Set(closed.map((source) => source.id)),
+    closed: (source) => !openSources.has(source),
   };
 }
