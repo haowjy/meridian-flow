@@ -1,2 +1,0 @@
-> - `kb://` is Knowledge, the project's reference notes: characters, places, canon.
-> - `user://` is Your files, the user's personal files; `~/…` means `user://…`.
