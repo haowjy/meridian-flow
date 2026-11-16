@@ -91,14 +91,14 @@ the writer deleted, a deleted paragraph's words (Undo never re-creates an ancest
 writer deleted), a heading level or other attribute the writer set after the edit. An
 element the edit created that the writer typed in stays, holding only the writer's text.
 A replacement is judged per change: each deleted run pairs with the inserted run that took its
-place (`replacedText` in `packages/agent-edit/src/undo/forward-inverse.ts`), and the deleted run
+place (`replacedGone` in `packages/agent-edit/src/undo/forward-inverse.ts`), and the deleted run
 comes back only while some visible text of that run's replacement still stands. The old word is
 never put beside the writer's text once the new word is gone ("One huge cat." with `huge`
 overtyped stays as the writer left it), and a part with several changes decides each one alone.
 Where part of a replacement still stands, the old run returns beside it ("One smallhuge cat." when
 the writer only trimmed `huge`): two writers' letters in one place are joined, not refused. Only text counts: a
 heading level, list marker, container or format never keeps a replacement standing. A deleted run
-with no replacement always comes back. A pull or Apply writes only the insertions inside a changed run that only gained
+with no replacement always comes back. Text deleted before the write (every backspace leaves some) is not a boundary between changes, so a typo the writer fixed inside a replaced word still pairs; text the part didn't delete and that is newer than the write is. A pull or Apply writes only the insertions inside a changed run that only gained
 characters (`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change
 writes the run whole), so Undo after a pull equals Undo of the same typing on the draft when the
 writer inserted inside the AI's text. A part is `active` (Undo can act) while one item can still

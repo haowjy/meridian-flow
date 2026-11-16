@@ -360,15 +360,11 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
-  const replaced = replacedText(index, part);
+  const gone = replacedGone(index, part);
   const candidates = new Set(
     returning
-      .filter((pair) => {
-        const text = replaced.get(pair.original);
-        // A change whose new text is gone (discarded, deleted or typed over) has nothing to undo:
-        // restoring its deleted half would put the old text next to what the writer has now.
-        return !text?.length || text.some((t) => index.isVisible(index.effective(t)));
-      })
+      // A change whose new text is gone has nothing to undo.
+      .filter((pair) => !gone(pair.original))
       .map((pair) => pair.effective)
       .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
   );
@@ -429,41 +425,58 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
   };
 }
 /**
- * For each item the part deleted, the text items the same change inserted in its place; a
- * deleted item with no entry replaced nothing. One part holds every change of a write to a
- * block, so a change is found from the immutable item structure: an inserted run takes the
- * place of the deleted runs its `origin` and `rightOrigin` point at, up to restoration
- * lineage, and consecutive deleted siblings are one run. Only text counts: attributes, containers and formats come and go with
- * the text they belong to and never keep a replacement standing.
+ * Whether a deleted item belongs to a change whose new text is gone (discarded, deleted or typed
+ * over), so restoring it would put the old text next to what the writer has now. One part holds
+ * every change of a write to a block, so a change is found from the immutable item structure: an
+ * inserted run takes the place of the deleted run its `origin` or `rightOrigin` reaches, up to
+ * restoration lineage, and deleted siblings are one run. A tombstone that already existed at the
+ * part's frontier is not a boundary, since every backspace leaves one. Only text counts:
+ * attributes, containers and formats come and go with the text they belong to and never keep a
+ * replacement standing. A deleted item with no inserted text beside it replaced nothing.
+ * Every step is memoized so the work is linear in the part's items.
  */
-function replacedText(index: Lineage, part: InversePart): Map<Key, Key[]> {
-  const out = new Map<Key, Key[]>();
-  if (!part.effect.inserted.length || !part.effect.deleted.length) return out;
+function replacedGone(index: Lineage, part: InversePart): (deleted: Key) => boolean {
+  const never = () => false;
+  if (!part.effect.inserted.length || !part.effect.deleted.length) return never;
   const { doc } = index;
   const inserted = new Set(clocks(part.effect.inserted)),
     deleted = new Set(clocks(part.effect.deleted));
-  const originOf = (k: Key): Key | undefined => {
-    const id = parse(k),
-      item = find(doc, k);
-    if (!item) return undefined;
+  const itemAt = (k: Key) => find(doc, k);
+  const stepBack = (k: Key, item: Y.Item): Key | undefined => {
+    const id = parse(k);
     if (id.clock > item.id.clock) return key({ client: id.client, clock: id.clock - 1 });
-    return item.origin ? key(item.origin) : undefined;
+    return undefined;
+  };
+  const originOf = (k: Key): Key | undefined => {
+    const item = itemAt(k);
+    return item && (stepBack(k, item) ?? (item.origin ? key(item.origin) : undefined));
   };
   const leftOf = (k: Key): Key | undefined => {
-    const id = parse(k),
-      item = find(doc, k);
+    const item = itemAt(k);
+    return item && (stepBack(k, item) ?? (item.left ? key(item.left.lastId) : undefined));
+  };
+  const rightOf = (k: Key): Key | undefined => {
+    const item = itemAt(k),
+      id = parse(k);
     if (!item) return undefined;
-    if (id.clock > item.id.clock) return key({ client: id.client, clock: id.clock - 1 });
-    return item.left ? key(item.left.lastId) : undefined;
+    if (id.clock < item.id.clock + item.length - 1)
+      return key({ client: id.client, clock: id.clock + 1 });
+    return item.right ? key(item.right.id) : undefined;
   };
   const rightOriginOf = (k: Key): Key | undefined => {
-    const item = find(doc, k);
+    const item = itemAt(k);
     return item?.rightOrigin && parse(k).clock === item.id.clock
       ? key(item.rightOrigin)
       : undefined;
   };
+  // Deleted before this write, so the writer's backspaces and earlier edits are not boundaries.
+  // Anything newer is: an item the writer deletes after the write still separates two changes.
+  const transparent = (k: Key) => {
+    const id = parse(k);
+    return !!itemAt(k)?.deleted && !deleted.has(k) && id.clock < (part.frontier[id.client] ?? 0);
+  };
   const top = (k: Key, set: ReadonlySet<Key>): Key => {
-    const item = find(doc, k);
+    const item = itemAt(k);
     let root = k;
     for (const ancestor of item ? ancestorItems(item) : []) {
       if (!set.has(key(ancestor.id))) break;
@@ -471,34 +484,80 @@ function replacedText(index: Lineage, part: InversePart): Map<Key, Key[]> {
     }
     return root;
   };
-  const runOf = (k: Key): Key => {
-    let run = top(k, deleted);
-    for (let left = leftOf(run); left && deleted.has(left); left = leftOf(run)) run = left;
-    return run;
+  /** The first item reached from `from` that `through` doesn't pass. Each key is walked once. */
+  const reach = (
+    from: Key | undefined,
+    next: (k: Key) => Key | undefined,
+    through: (k: Key) => boolean,
+    seen: Map<Key, Key | undefined>,
+  ): Key | undefined => {
+    const path: Key[] = [];
+    let cur = from,
+      found: Key | undefined;
+    while (cur) {
+      if (seen.has(cur)) {
+        found = seen.get(cur);
+        break;
+      }
+      if (!through(cur)) {
+        found = cur;
+        break;
+      }
+      path.push(cur);
+      cur = next(cur);
+    }
+    for (const k of path) seen.set(k, found);
+    return found;
+  };
+  // A deleted run is named by the item to its left that it doesn't pass; a run that starts its
+  // parent has no such item and is named by the parent.
+  const leftBoundary = new Map<Key, Key | undefined>();
+  const runOfElement = (element: Key): Key => {
+    const found = reach(
+      leftOf(element),
+      leftOf,
+      (k) => deleted.has(k) || transparent(k),
+      leftBoundary,
+    );
+    if (found) return found;
+    const parent = itemAt(element)?.parent as Y.AbstractType<unknown> | undefined;
+    return `^${parent?._item ? key(parent._item.id) : ""}`;
   };
   // A restored copy keeps its source's lineage root, so a change still pairs after Undo and Redo
   // gave its items new clocks.
-  const runs = new Map<Key, Key[]>(),
-    runOfRoot = new Map<Key, Key>();
-  for (const k of deleted) {
-    const run = runOf(k);
-    runs.set(run, [...(runs.get(run) ?? []), k]);
-    runOfRoot.set(index.root(k), run);
-  }
-  const texts = new Map<Key, Key[]>();
+  const runOfRoot = new Map<Key, Key>();
+  for (const k of deleted) runOfRoot.set(index.root(k), runOfElement(top(k, deleted)));
+  const paired = new Set<Key>(),
+    standing = new Set<Key>();
+  const originBoundary = new Map<Key, Key | undefined>(),
+    rightBoundary = new Map<Key, Key | undefined>();
   for (const k of inserted) {
-    const content = find(doc, k)?.content;
+    const content = itemAt(k)?.content;
     if (!(content instanceof Y.ContentString || content instanceof Y.ContentEmbed)) continue;
     const root = top(k, inserted);
-    let origin = originOf(root);
-    while (origin && inserted.has(origin)) origin = originOf(origin);
-    for (const side of [origin, rightOriginOf(root)]) {
+    const sides = [
+      reach(
+        originOf(root),
+        (n) => (inserted.has(n) ? originOf(n) : leftOf(n)),
+        (n) => inserted.has(n) || transparent(n),
+        originBoundary,
+      ),
+      reach(rightOriginOf(root), rightOf, transparent, rightBoundary),
+    ];
+    let shown: boolean | undefined;
+    for (const side of sides) {
       const run = side && runOfRoot.get(index.root(side));
-      if (run) texts.set(run, [...(texts.get(run) ?? []), k]);
+      if (!run) continue;
+      paired.add(run);
+      if (standing.has(run)) continue;
+      shown ??= index.isVisible(index.effective(k));
+      if (shown) standing.add(run);
     }
   }
-  for (const [run, text] of texts) for (const k of runs.get(run) ?? []) out.set(k, text);
-  return out;
+  return (k) => {
+    const run = runOfRoot.get(index.root(k));
+    return !!run && paired.has(run) && !standing.has(run);
+  };
 }
 const lazy = <T>(compute: () => T) => {
   let value: { v: T } | undefined;
