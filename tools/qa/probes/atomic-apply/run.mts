@@ -7,6 +7,7 @@ import type {
   ApplyClickAnswer,
   UnapplyClickAnswer,
 } from "@meridian/contracts/branches";
+import type { CommandRunning } from "@meridian/contracts/commands";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { projects, works } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -207,6 +208,7 @@ async function fixture(
         resolveItemInBranch: identity.resolveReviewItemInBranch,
         branchOwner: (branchId: BranchId) => h.branches.ownerOf(branchId),
         lookupCommand: (key: CommandLookupKey) => commands.lookup(key),
+        awaitCommand: (envelope: Parameters<typeof commands.await>[0]) => commands.await(envelope),
       },
       roomRemoval: async ({ documentId }: { documentId: string }) => {
         const removal = (await removals.lookup([documentId as DocumentId])).get(
@@ -289,7 +291,7 @@ async function fixture(
         ),
       };
     },
-    send(click: FrozenClick, changedDigest?: string): Promise<ApplyClickAnswer> {
+    send(click: FrozenClick, changedDigest?: string): Promise<ApplyClickAnswer | CommandRunning> {
       return handleApplyClickRequest(routeServices, {
         userId: h.ids.user,
         projectId: h.ids.project,
@@ -298,7 +300,10 @@ async function fixture(
         request: changedDigest ? { ...click.request, groupIds: ["changed-digest"] } : click.request,
       });
     },
-    unapply(click: FrozenClick, commandId = randomUUID()): Promise<UnapplyClickAnswer> {
+    unapply(
+      click: FrozenClick,
+      commandId = randomUUID(),
+    ): Promise<UnapplyClickAnswer | CommandRunning> {
       return handleUnapplyClickRequest(routeServices, {
         userId: h.ids.user,
         projectId: h.ids.project,
@@ -835,7 +840,10 @@ try {
       ?.living === true;
   const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
     (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
-  const restoredNote = (result: ApplyClickAnswer, f: Awaited<ReturnType<typeof fixture>>) =>
+  const restoredNote = (
+    result: ApplyClickAnswer | CommandRunning,
+    f: Awaited<ReturnType<typeof fixture>>,
+  ) =>
     result.status === "applied" &&
     result.items.some(
       (item) =>

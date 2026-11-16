@@ -10,6 +10,9 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { MockScriptQueue } from "@meridian-flow/runtime/gateway/mock";
+import type { McpClient } from "@meridian-flow/runtime/mcp";
+import type { ScriptRunner } from "@meridian-flow/runtime/script";
+import { createQuickJsRunner } from "@meridian-flow/runtime/script/quickjs";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -116,6 +119,14 @@ import {
   listOpenImports,
   type OrganizeWakeHub,
 } from "../domains/import/index.js";
+import {
+  type ConnectionStore,
+  createDrizzleCallStore,
+  createDrizzleConnectionStore,
+  createMcpConnections,
+  createTokenCipher,
+  type McpConnections,
+} from "../domains/mcp/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -128,9 +139,12 @@ import {
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
+  createCachedPackageFetcher,
   createDrizzleAgentRevisionStore,
+  createGithubPackageFetcher,
   createInMemoryAgentRevisionStore,
   noLevelFiles,
+  type PackageFetcher,
   readBuiltinPackages,
 } from "../domains/packages/index.js";
 import {
@@ -175,6 +189,7 @@ import {
 } from "../domains/runtime/handoff/brief-service.js";
 import {
   type CommandResolver,
+  type ConnectionsPort,
   createChildRunCoordinator,
   createChildRunDriver,
   createCommandRecovery,
@@ -192,6 +207,7 @@ import {
   createInMemoryThreadLock,
   createInspectionToolRegistrations,
   createLineageCancellation,
+  createMcpToolRegistrations,
   createOrchestrator,
   createOrphanReportRepair,
   createPrefixCacheStateService,
@@ -228,6 +244,7 @@ import {
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
 import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
+import { threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
@@ -270,18 +287,30 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
-import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
+import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+  processDetachedWork,
+} from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
-import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
+import { MODEL_REGISTRY, modelFor, registryTokenRateSource } from "./gateway/registry.js";
+import {
+  addressRefusal,
+  createProcessMcpClient,
+  parseSessionKey,
+  sessionKey,
+} from "./mcp-client.js";
+import { resolveMcpTokenKey } from "./mcp-token-key.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { createChatMedia } from "./runtime-host/chat-media.js";
+import { createConnections } from "./runtime-host/connections.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -324,9 +353,14 @@ export type AppServices = {
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
+  /** The writer's MCP connections, over the process's one MCP client. */
+  mcpConnections: McpConnections;
+  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
+  connections: ConnectionsPort;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
@@ -425,7 +459,16 @@ export type ProductionAppPorts = {
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   accountSettings: AccountSettingsRepository;
+  mcpConnections: McpConnections;
+  mcpStore: ConnectionStore;
+  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
+  connections: ConnectionsPort;
+  /** The one MCP client, closed with the app. */
+  mcpClient: McpClient;
+  /** The one script runner behind `mcp_run`, closed with the app. */
+  scriptRunner: ScriptRunner;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -454,7 +497,6 @@ const WAKE_SWEEP_LIMIT = 100;
 
 export async function createProductionAppPorts(input: {
   db: Database;
-  backgroundTasks?: DetachedWorkTracker;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
@@ -500,7 +542,7 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
+  const backgroundTasks = processDetachedWork;
   const projectWakeHub = createProjectWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
   const contextSources = createDrizzleContextSources(db);
@@ -541,6 +583,52 @@ export async function createProductionAppPorts(input: {
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
+  const mcpClient = createProcessMcpClient((event) => {
+    // A child's stderr is a program's own text; only the session's life goes to the log.
+    if (event.type !== "stderr")
+      emitEvent(eventSink, {
+        level: "info",
+        source: "mcp.session",
+        sensitivity: "safe",
+        name: event.type === "session_started" ? "McpSessionStarted" : "McpSessionEnded",
+        payload: (({ connectionId, version }) => ({ connectionId, settingsVersion: version }))(
+          parseSessionKey(event.key),
+        ),
+      });
+  });
+  // Throws here when the bundle lost the runner's worker or .wasm, so a broken build fails at boot.
+  const scriptRunner = createQuickJsRunner();
+  const mcpStore = createDrizzleConnectionStore({ db });
+  const mcpConnections = createMcpConnections({
+    store: mcpStore,
+    client: mcpClient,
+    addressRefusal,
+    cipher: createTokenCipher(resolveMcpTokenKey(environment)),
+    sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
+    // A hint, then the app asks again; one hint per open project of the account.
+    statusChanged: (row) =>
+      projectWakeHub.publishToUser(row.accountId, (projectId) => ({
+        type: "mcp-connections-hint",
+        projectId: projectId as import("@meridian/contracts/runtime").ProjectId,
+      })),
+    failed: (cause, row) =>
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "mcp.connection-check",
+        name: "McpConnectionCheckFailed",
+        payload: { connectionId: row.id, ...unknownToEventPayload(cause) },
+      }),
+  });
+  const connections = createConnections({
+    service: mcpConnections,
+    store: mcpStore,
+    calls: createDrizzleCallStore({ db }),
+    client: mcpClient,
+    runner: scriptRunner,
+    objectStore,
+    repos: threadRepos,
+    eventSink,
+  });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const agentRevisions = createDrizzleAgentRevisionStore(db);
@@ -579,6 +667,7 @@ export async function createProductionAppPorts(input: {
     // Collab is composed below, before anything can submit or admit a record.
     draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
+    liveChangedUnder: (branchIds) => workProjectionMutation.liveChangedUnder(branchIds),
   });
   const draftClose = createDraftClose({ treeLists });
   const documentLinks = createDrizzleDocumentLinkScopes({
@@ -589,7 +678,6 @@ export async function createProductionAppPorts(input: {
   });
   const documentSync = createCollabDomain({
     db,
-    backgroundTasks,
     arrivals,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
@@ -671,9 +759,10 @@ export async function createProductionAppPorts(input: {
         }
       }),
     builtins: await readBuiltinPackages(defaultModel),
-    defaultModel: () => gateway.getDefaultModel(),
+    modelFor: modelFor(gateway),
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons(gateway, model),
   });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
@@ -767,7 +856,15 @@ export async function createProductionAppPorts(input: {
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createCachedPackageFetcher(
+      createGithubPackageFetcher({ token: environment.FLOW_GITHUB_TOKEN }),
+    ),
     accountSettings,
+    mcpConnections,
+    mcpStore,
+    connections,
+    mcpClient,
+    scriptRunner,
     workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
@@ -959,8 +1056,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     registry: toolRegistry,
     chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
-      const binding = await ports.agentRevisions.readThreadBinding(caller.id);
-      const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
+      const [binding, thread] = await Promise.all([
+        ports.agentRevisions.readThreadBinding(caller.id),
+        ports.threadRepos.threads.findById(caller.id),
+      ]);
+      const modelId =
+        (thread
+          ? threadModelId(ports.gateway, thread.overrides, binding?.configuration.model)
+          : binding?.configuration.model) ?? ports.gateway.getDefaultModel();
       const model = ports.gateway.listModels().find((model) => model.id === modelId);
       if (!model)
         return {
@@ -972,6 +1075,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }))
     toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations()) {
+    toolRegistry.register(registration);
+  }
+  for (const registration of createMcpToolRegistrations(ports.connections)) {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry, commandResolver);
@@ -1114,7 +1220,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
-    defaultModel: () => ports.gateway.getDefaultModel(),
+    modelFor: modelFor(ports.gateway),
     repos: {
       threads: ports.threadRepos.threads,
       turns: ports.threadRepos.turns,
@@ -1147,6 +1253,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       gateway: ports.gateway,
       eventSink: ports.eventSink,
       agentRevisions: ports.agentRevisions,
+      threads: ports.threadRepos.threads,
       prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
         .prefixCacheStateFor,
       modelRequestDebug: ports.modelRequestDebug,
@@ -1191,6 +1298,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentCatalog: ports.agentCatalog,
     toolRegistry,
     workContext,
+    connections: ports.connections,
     childRunCoordinator,
     billingUsage: ports.billingUsage,
     rateSource: ports.rateSource,
@@ -1280,9 +1388,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: ports.agentCatalog,
+    packageFetcher: ports.packageFetcher,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
+    mcpConnections: ports.mcpConnections,
+    connections: ports.connections,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
     orchestrator,
@@ -1312,6 +1423,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
+      await ports.scriptRunner.close();
+      await ports.mcpClient.close();
       await ports.documentSync.dispose();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
@@ -1331,7 +1444,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   };
 }
 
-export function createInMemoryAppServices(): AppServices {
+/** `packageFetcher` is the live-network opt-in: without one, fetching a package throws. */
+export function createInMemoryAppServices(
+  options: { packageFetcher?: PackageFetcher } = {},
+): AppServices {
   const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
@@ -1519,9 +1635,10 @@ export function createInMemoryAppServices(): AppServices {
     store: agentRevisions,
     levelFiles: noLevelFiles,
     builtins: [],
-    defaultModel: () => "mock-model",
+    modelFor: (name) => name ?? "mock-model",
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons({ listModels: () => [] }, model),
   });
   return {
     gateway: {
@@ -1851,8 +1968,25 @@ export function createInMemoryAppServices(): AppServices {
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createCachedPackageFetcher(
+      options.packageFetcher ?? {
+        async fetchTree() {
+          throw new Error("Package fetching is unavailable in memory");
+        },
+      },
+    ),
     eventSink: createNoopEventSink(),
     accountSettings,
+    mcpConnections: new Proxy({} as McpConnections, {
+      get() {
+        throw new Error("MCP connections require Postgres");
+      },
+    }),
+    connections: new Proxy({} as ConnectionsPort, {
+      get() {
+        throw new Error("MCP connections require Postgres");
+      },
+    }),
     workingSet,
     recentDocuments,
     orchestrator: {

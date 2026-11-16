@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { agentCatalogSchema } from "@meridian/contracts/agents";
 import { API_THREADS_PATH, type CreateThreadRequest } from "@meridian/contracts/protocol";
-import { type Thread, threadSchema } from "@meridian/contracts/threads";
+import { NO_OVERRIDES, type Thread, threadSchema } from "@meridian/contracts/threads";
 import { CliError } from "../../core/cli-error";
 import { type CommandSpec, stringOption } from "../../core/command";
 import type { Session } from "../../core/session";
@@ -47,6 +47,7 @@ export async function createThread(
       input.agent ?? DEFAULT_AGENT_SLUG,
     ),
     workId: await resolveWorkId(session, projectId, input.work),
+    overrides: NO_OVERRIDES,
     ...(input.title ? { title: input.title } : {}),
   };
   return session.request("POST", API_THREADS_PATH, body, { decode: jsonResponse(threadSchema) });

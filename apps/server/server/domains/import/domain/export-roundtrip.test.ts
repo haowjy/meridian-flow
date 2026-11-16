@@ -21,9 +21,9 @@ const note = (id: string, path: string, uri: string): ImportLinkCandidate => ({
 const holder = note(HOLDER, "Manuscript/Holder.md", "manuscript://Holder");
 // Literal `%20`, a literal space, and a bare `%`: three distinct names. URIs are literal.
 const targets = [
-  note(ENCODED, "Knowledge Base/a%20b.md", "kb://a%20b"),
-  note(SPACED, "Knowledge Base/a b.md", "kb://a b"),
-  note(PERCENT, "Knowledge Base/100%.md", "kb://100%"),
+  note(ENCODED, "Knowledge/a%20b.md", "kb://a%20b"),
+  note(SPACED, "Knowledge/a b.md", "kb://a b"),
+  note(PERCENT, "Knowledge/100%.md", "kb://100%"),
 ];
 
 function exported(target: ImportLinkCandidate): string {

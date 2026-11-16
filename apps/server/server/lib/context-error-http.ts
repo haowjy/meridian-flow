@@ -90,16 +90,16 @@ export function contextErrorToHttp(error: ContextError): never {
   }
 }
 
-/** Locator resolution cannot distinguish a deleted Work from an unknown ID. */
+const WORK_UNAVAILABLE = {
+  work_archived: { message: "This Work is archived and read-only.", status: 403 },
+  work_deleted: { message: "This Work was deleted.", status: 404 },
+  work_missing: { message: "Work not found.", status: 404 },
+} as const;
+
+/** A write into a Work that takes no changes: archived, deleted, or one that names no Work. */
 export function throwContextWorkUnavailableHttpError(
   reason: Extract<ContextError, { code: "context_unavailable" }>["reason"],
 ): never {
-  return throwHttpInterrupt(
-    meridianErrorFromSystem(
-      reason,
-      reason === "work_archived" ? "This Work is archived and read-only." : "Work not found.",
-      false,
-    ),
-    reason === "work_archived" ? 403 : 404,
-  );
+  const { message, status } = WORK_UNAVAILABLE[reason];
+  return throwHttpInterrupt(meridianErrorFromSystem(reason, message, false), status);
 }

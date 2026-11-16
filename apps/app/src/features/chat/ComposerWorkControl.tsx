@@ -4,6 +4,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useRef } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
@@ -13,7 +14,6 @@ import {
   deriveWorkPickerViewModel,
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
-import { workDisplayName } from "@/lib/work-name";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
 
 export function useComposerWorkToolbarControl({
@@ -34,7 +34,7 @@ export function useComposerWorkToolbarControl({
   const view = deriveWorkPickerViewModel(controller.catalog, query, controller.busy);
   const pageId = view.status;
   const noneSelected = work.isNoWork;
-  const name = workDisplayName(work);
+  const name = useWorks(projectId).nameOf(work);
   return {
     kind: "panel",
     id: "work",

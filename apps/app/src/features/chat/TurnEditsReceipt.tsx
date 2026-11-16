@@ -145,7 +145,7 @@ export function TurnEditsReceipt({
       );
       const notices = [
         ...(outcome.landings ?? []).map((landing) => treeLandingLine(landing, names)),
-        ...restored.map(reversedWorkLine),
+        ...restored.map((work) => reversedWorkLine(work, names)),
       ];
       setOutcomeNotices(notices.length ? [...new Set(notices)] : null);
       if (refusal || notices.length > 0 || outcome.skips?.length) setExpanded(true);
@@ -276,7 +276,7 @@ export function TurnEditsReceipt({
               {reversibleWorkReceipts.map((workRow, index) => (
                 <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
                   <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
-                    {workReceiptLine(workRow)}
+                    {workReceiptLine(workRow, names)}
                   </span>
                 </li>
               ))}
@@ -656,8 +656,9 @@ function workCountLabel(count: number) {
 
 /** One receipt-style line per restored Work. The server names the Work when it
  * can; without a name the sentence stays factual instead of guessing one. */
-function reversedWorkLine(work: { name: string }): string {
-  return t`Undid change to Work ${work.name}.`;
+function reversedWorkLine(work: { workId: string; name: string }, names: OwnerNames): string {
+  const name = names({ kind: "work-id", workId: work.workId }) ?? work.name;
+  return t`Undid change to Work ${name}.`;
 }
 
 /** Where a tree inverse actually committed when its recorded name was no longer free. */

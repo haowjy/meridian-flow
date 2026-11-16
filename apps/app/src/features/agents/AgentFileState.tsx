@@ -117,7 +117,13 @@ function LevelFileState({
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1" data-agent-file-state>
       {file && trouble ? <TroubleChip file={file} trouble={trouble} touch={touch} /> : null}
-      <PackageSave projectId={projectId} pkg={pkg} status={status} look="file" />
+      <PackageSave
+        projectId={projectId}
+        pkg={pkg}
+        status={status}
+        look="file"
+        shownFile={trouble ? file?.path : undefined}
+      />
     </span>
   );
 }

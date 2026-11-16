@@ -8,6 +8,7 @@ import { apiGroup } from "./commands/api";
 import { docGroup } from "./commands/doc";
 import { logGroup } from "./commands/log";
 import { mockGroup } from "./commands/mock";
+import { packageGroup } from "./commands/package";
 import { projectGroup } from "./commands/project";
 import { seedGroup } from "./commands/seed";
 import { threadGroup } from "./commands/thread";
@@ -31,6 +32,7 @@ export const GROUPS: readonly CommandGroup[] = [
   logGroup,
   seedGroup,
   apiGroup,
+  packageGroup,
 ];
 
 export const COMMANDS: readonly CommandSpec[] = GROUPS.flatMap((group) => group.commands);

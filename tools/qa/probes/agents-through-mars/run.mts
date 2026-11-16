@@ -83,8 +83,9 @@ const catalog = createBoundAgentCatalog({
   store,
   levelFiles: levels,
   builtins,
-  defaultModel: () => "fixture-model",
+  modelFor: (name) => name ?? "fixture-model",
   unavailableReasons: () => [],
+  modelUnavailable: () => [],
 });
 
 const failures: string[] = [];
@@ -189,7 +190,7 @@ try {
         const configuration = await resolveAgentConfiguration({
           revision,
           store,
-          defaultModel: "fixture-model",
+          modelFor: (name) => name ?? "fixture-model",
         });
         if (["continuity-checker", "reader-sim", "critic"].includes(target.name)) {
           assert.equal(configuration.permission, "read", `${target.name} is not read-only`);

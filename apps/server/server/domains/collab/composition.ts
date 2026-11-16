@@ -65,6 +65,7 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
+import { createDrizzleCreatedDrafts } from "./adapters/drizzle-created-drafts.js";
 import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
 import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
@@ -147,10 +148,7 @@ import { createThreadCores } from "./thread-cores.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-import type { DetachedWorkTracker } from "../../shared/detached-work.js";
-
 type CollabDomainDeps = {
-  backgroundTasks?: DetachedWorkTracker;
   db: Database;
   /** How links and image sources spell, loaded per document operation (contract §4.4). */
   links: DocumentLinkScopes;
@@ -215,6 +213,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       journal: persistence.journal,
     },
     workProjection: deps.workProjectionMutation,
+    treeLists: deps.treeLists,
     branches: workBranches,
     ...(deps.eventSink
       ? {
@@ -418,7 +417,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
-    backgroundTasks: deps.backgroundTasks,
     journal: persistence.journal,
     draftStore: drafts,
     draftCoordinator,
@@ -615,6 +613,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     deps.links,
+    createDrizzleCreatedDrafts(deps.db, { documents: runtime.markdownDocuments, drafts }),
   );
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
@@ -653,6 +652,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       dispose: async () => {
         await Promise.all([draftAheads.shutdown(), draftPulls.shutdown(), draftEffects.dispose()]);
         deps.liveTextHints?.stop();
+        liveCoordinator.stop();
       },
     },
     transport: {

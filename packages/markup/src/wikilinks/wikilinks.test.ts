@@ -122,15 +122,15 @@ describe("syntax boundaries", () => {
     expect(source.slice(link?.from, link?.to)).toBe("[[A]]");
   });
 
-  it.each([
-    "%% secret %%",
-    "<!-- secret -->",
-  ])("keeps prose following inline comment %s", (comment) => {
-    const { findings } = scanWikilinks(`${comment} [[Visible]]`);
-    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
-      { linkpath: "Visible" },
-    ]);
-  });
+  it.each(["%% secret %%", "<!-- secret -->"])(
+    "keeps prose following inline comment %s",
+    (comment) => {
+      const { findings } = scanWikilinks(`${comment} [[Visible]]`);
+      expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+        { linkpath: "Visible" },
+      ]);
+    },
+  );
 
   it("does not let a fence inside a comment hide later comment delimiters", () => {
     const { findings } = scanWikilinks("%%\n```\n%%\n\n%% [[hidden]] %%\n\n[[real]]");

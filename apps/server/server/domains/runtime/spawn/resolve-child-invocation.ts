@@ -26,12 +26,18 @@ import {
 } from "../tools/invalid-arguments.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
+/** Naming a model: a given name always resolves, no name gives the default. */
+export interface ModelFor {
+  (named: string): string;
+  (named?: string): string | undefined;
+}
+
 export interface ResolveChildInvocationDeps {
   agentRevisions: Pick<
     AgentRevisionStore,
     "readRevision" | "readSource" | "readPackageDefinitions"
   >;
-  defaultModel(): string | undefined;
+  modelFor: ModelFor;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   modelUnavailable(model: string): string[];
 }
@@ -102,7 +108,7 @@ export async function resolveChildInvocation(
     configuration = await resolveAgentConfiguration({
       revision: childAgent,
       store: deps.agentRevisions,
-      defaultModel: deps.defaultModel(),
+      modelFor: deps.modelFor,
     });
     resolvedSlug = requestedSlug;
     defaultTitle = `${requestedSlug} subagent`;
@@ -135,7 +141,11 @@ export async function resolveChildInvocation(
       }
       throw error;
     }
-    configuration = patched;
+    // A patched `model` is a name like an Agent file's, so it resolves the same way.
+    configuration =
+      input.overrides.model === undefined
+        ? patched
+        : { ...patched, model: deps.modelFor(patched.model) };
   }
 
   const extra = toolsBeyond(parentAgent.configuration, configuration);

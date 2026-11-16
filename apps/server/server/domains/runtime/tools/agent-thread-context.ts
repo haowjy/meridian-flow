@@ -1,15 +1,16 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
 import {
-  type AgentEffort,
+  AGENT_EFFORT_CHOICE,
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
   projectToolPolicy,
+  type ReasoningChoice,
   type ResolvedAgentConfiguration,
   type ToolPolicy,
 } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import type { GenerateRequest, Tool } from "@meridian-flow/runtime/gateway";
-import type { AgentRevisionStore } from "../../packages/index.js";
+import type { AgentRevisionStore, BoundAgentCatalog } from "../../packages/index.js";
 import type { ThreadRepository } from "../../threads/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import { bindingNamesSkills } from "../loop/available-skills.js";
@@ -32,6 +33,8 @@ export interface AgentThreadTurnContext {
 export interface ResolveAgentThreadTurnContextInput {
   thread: Thread;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
+  /** The one place a turn reads the binding also moves a chat off a model that left. */
+  agentCatalog: Pick<BoundAgentCatalog, "followRemovedModel">;
   /** Walks the spawn lineage for the chain's permission. */
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   toolRegistry: ToolRegistry;
@@ -46,24 +49,9 @@ export const SUBAGENT_GUIDANCE =
 const READ_PERMISSION_GUIDANCE =
   "Your permission is read: you can read every file, and edit only scratch://.";
 
-/**
- * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
- * record makes a new canonical effort value demand an explicit provider mapping.
- */
-const EFFORT_TO_REASONING: Record<AgentEffort, GenerateRequest["reasoning"]> = {
-  low: { effort: "low" },
-  medium: { effort: "medium" },
-  high: { effort: "high" },
-  xhigh: { effort: "max" },
-  none: "disabled",
-  disabled: "disabled",
-  adaptive: "adaptive",
-};
-
-export function mapAgentEffortToReasoning(
-  effort: AgentEffort | undefined,
-): GenerateRequest["reasoning"] {
-  return effort === undefined ? undefined : EFFORT_TO_REASONING[effort];
+/** The gateway's form of a wire reasoning setting; `AGENT_EFFORT_CHOICE` maps an Agent file's effort onto it. */
+export function reasoningOfChoice(choice: ReasoningChoice): GenerateRequest["reasoning"] {
+  return choice === "disabled" || choice === "adaptive" ? choice : { effort: choice };
 }
 
 /** Translate canonical Mars effort names into the gateway's provider-neutral contract. */
@@ -72,16 +60,21 @@ export function agentGatewayMetaToGenerateParams(
 ): Pick<GenerateRequest, "model" | "reasoning"> {
   const params: Pick<GenerateRequest, "model" | "reasoning"> = {};
   if (meta.model) params.model = meta.model;
-  const reasoning = mapAgentEffortToReasoning(meta.effort);
-  if (reasoning !== undefined) params.reasoning = reasoning;
+  if (meta.effort) params.reasoning = reasoningOfChoice(AGENT_EFFORT_CHOICE[meta.effort]);
   return params;
 }
 
 export async function resolveAgentThreadTurnContext(
   input: ResolveAgentThreadTurnContextInput,
 ): Promise<AgentThreadTurnContext> {
-  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
-  if (!binding) throw new Error("Conversation has no retained Agent binding");
+  const stored = await input.agentRevisions.readThreadBinding(input.thread.id);
+  if (!stored) throw new Error("Conversation has no retained Agent binding");
+  const binding = await input.agentCatalog.followRemovedModel(
+    input.thread.userId,
+    input.thread.projectId,
+    input.thread,
+    stored,
+  );
   if (binding.revision) {
     const reasons = agentDefinitionUnsupportedReasons(binding.revision.definition);
     if (reasons.length) throw new Error(reasons.join(" "));

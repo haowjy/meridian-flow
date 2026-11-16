@@ -28,6 +28,7 @@ export function thread(): Thread {
     initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: "General",
+    overrides: { model: null, effort: null },
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: THREAD_ID,

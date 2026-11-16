@@ -96,14 +96,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });
       await db.insert(schema.contextSources).values({
         id: SCRATCH_SOURCE,
         workId: OTHER_WORK_ID,
-        name: "Scratch",
         slug: "scratch",
         scope: "work",
       });
@@ -571,7 +569,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .set({ deletedAt: new Date() })
           .where(eq(schema.works.id, OTHER_WORK_ID));
         const undone = await cardUndo();
-        expect(undone).toMatchObject({ status: "permission_denied", denial: "not_found" });
+        expect(undone).toMatchObject({ status: "permission_denied", denial: "work_deleted" });
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {

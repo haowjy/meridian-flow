@@ -1,4 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { devAuthIdentity } from "@meridian/contracts/dev-auth";
 import { deserializeTransport } from "@meridian/contracts/protocol";
 import type { APIRequestContext } from "@playwright/test";
@@ -8,6 +11,8 @@ import { applyDevEnvToProcess } from "../../../../tools/dev/lib/dev-env";
 // Every DB-using spec imports this module before it reads `DATABASE_URL`, so a
 // run from a bare shell finds the checkout's database instead of skipping.
 applyDevEnvToProcess();
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 export type Db = ReturnType<typeof postgres>;
 
@@ -40,7 +45,6 @@ export type ProjectFixture = {
   projectId: string;
   workId: string;
   threadId: string;
-  contextSourceId: string;
   documentIds: string[];
   title: string;
 };
@@ -53,11 +57,10 @@ export async function seedProjectFixture(
   const projectId = randomUUID();
   const workId = randomUUID();
   const threadId = randomUUID();
-  const contextSourceId = randomUUID();
   const title = `${input.titlePrefix} ${projectId.slice(0, 8)}`;
 
   // The product's own routes provision the project (with its No Work row), the Work and the
-  // thread; only the knowledge-base source below has no route.
+  // thread; its sources come with the project.
   await postJson(request, "/api/projects", { commandId: randomUUID(), id: projectId, title });
   await postJson(request, `/api/projects/${projectId}/works`, {
     commandId: randomUUID(),
@@ -83,19 +86,12 @@ export async function seedProjectFixture(
     agentSelection: general.selection,
   });
 
-  await db.begin(async (tx) => {
-    await tx`
-      INSERT INTO context_sources (id, project_id, name, slug, scope, sort_order)
-      VALUES (${contextSourceId}, ${projectId}, 'Knowledge Base', 'kb', 'project', 1)
-    `;
-  });
-
   try {
-    const alphaId = await createFixtureDocument(request, projectId, {
+    const alphaId = createFixtureDocument(projectId, {
       path: "/alpha.md",
       content: "# Alpha\n\nSeed context.",
     });
-    const betaId = await createFixtureDocument(request, projectId, {
+    const betaId = createFixtureDocument(projectId, {
       path: "/beta.md",
       content: "# Beta\n\nSeed context.",
     });
@@ -104,7 +100,6 @@ export async function seedProjectFixture(
       projectId,
       workId,
       threadId,
-      contextSourceId,
       documentIds: [alphaId, betaId],
       title,
     };
@@ -113,7 +108,6 @@ export async function seedProjectFixture(
       projectId,
       workId,
       threadId,
-      contextSourceId,
       documentIds: [],
       title,
     });
@@ -128,25 +122,26 @@ async function postJson(request: APIRequestContext, path: string, data: unknown)
   }
 }
 
-async function createFixtureDocument(
-  request: APIRequestContext,
+// Documents are created through the project's tree list on the Yjs socket, which `./mf doc put`
+// drives; no HTTP route makes one.
+function createFixtureDocument(
   projectId: string,
   input: { path: string; content: string },
-): Promise<string> {
-  const response = await request.post(`/api/projects/${projectId}/context/kb/create`, {
-    data: { type: "file", ...input },
-  });
-  if (!response.ok()) {
-    throw new Error(
-      `Failed to create fixture document ${input.path}: ${response.status()} ${await response.text()}`,
-    );
-  }
-
-  const body: unknown = await response.json();
-  const documentId =
-    body && typeof body === "object" && "documentId" in body ? body.documentId : undefined;
+): string {
+  const uri = `kb://${input.path.replace(/^\//, "").replace(/\.md$/, "")}`;
+  const output = execFileSync(
+    "./mf",
+    ["doc", "put", uri, "--project", projectId, "--text", input.content, "--json"],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      // Playwright's FORCE_COLOR puts ANSI codes in the portless list mf reads its routes from.
+      env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+    },
+  );
+  const { documentId } = JSON.parse(output) as { documentId?: unknown };
   if (typeof documentId !== "string") {
-    throw new Error(`Fixture document ${input.path} response did not include a document ID`);
+    throw new Error(`Fixture document ${input.path}: mf returned no document ID`);
   }
   return documentId;
 }

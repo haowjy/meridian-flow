@@ -300,39 +300,39 @@ describe("writer frames racing rewrites (postgres)", () => {
     );
   });
 
-  it.each([
-    "pull",
-    "frame",
-  ] as const)("a frame and a rebase append (%s first) land the frame exactly once, as serialized", async (first) => {
-    const draftId = await draftBehindLive();
-    const frame = await writerFrame(draftId, appendParagraph("Extra."));
-    const pull = () => fixture.view.draftPulls.flushLivePull(ALPHA_ID);
-    try {
-      const run =
-        first === "pull"
-          ? // The rebase holds the draft row between its append and COMMIT.
-            await interleave(db, pull, "draft.append.beforeCommit", frame.send)
-          : await interleave(db, frame.send, "draft.append.afterCommit", pull);
-      const sent = (first === "pull" ? run.b : run.a) as Settled<{ admitted: boolean }>;
-      expect(sent).toEqual({ ok: true, value: { admitted: true } });
-      expect(first === "pull" ? run.a : run.b).toMatchObject({ ok: true });
-      // The frame's append waited on the rebase's row lock, then judged against the result.
-      if (first === "pull") expect(run.bWaited).toBe(true);
-    } finally {
-      frame.destroy();
-    }
-    expect(await fixture.view.draftMarkdown(draftId)).toBe(
-      "Live Alpha Gamma.\n\nBlue.\n\nExtra.\n",
-    );
-    const rows = await writerRows(draftId);
-    expect(rows).toHaveLength(1);
-    const read = await readDraftAt(db, draftId);
-    const [row] = rows;
-    if (!read || !row) throw new Error("the draft or its frame row is missing");
-    // Rebase and writer are both tail appends; neither rewrites the checkpoint.
-    expect(read.documentDraft.checkpointSeq).toBeLessThan(row.id);
-    expect(read.tail.map((tail) => tail.id)).toContain(row.id);
-  });
+  it.each(["pull", "frame"] as const)(
+    "a frame and a rebase append (%s first) land the frame exactly once, as serialized",
+    async (first) => {
+      const draftId = await draftBehindLive();
+      const frame = await writerFrame(draftId, appendParagraph("Extra."));
+      const pull = () => fixture.view.draftPulls.flushLivePull(ALPHA_ID);
+      try {
+        const run =
+          first === "pull"
+            ? // The rebase holds the draft row between its append and COMMIT.
+              await interleave(db, pull, "draft.append.beforeCommit", frame.send)
+            : await interleave(db, frame.send, "draft.append.afterCommit", pull);
+        const sent = (first === "pull" ? run.b : run.a) as Settled<{ admitted: boolean }>;
+        expect(sent).toEqual({ ok: true, value: { admitted: true } });
+        expect(first === "pull" ? run.a : run.b).toMatchObject({ ok: true });
+        // The frame's append waited on the rebase's row lock, then judged against the result.
+        if (first === "pull") expect(run.bWaited).toBe(true);
+      } finally {
+        frame.destroy();
+      }
+      expect(await fixture.view.draftMarkdown(draftId)).toBe(
+        "Live Alpha Gamma.\n\nBlue.\n\nExtra.\n",
+      );
+      const rows = await writerRows(draftId);
+      expect(rows).toHaveLength(1);
+      const read = await readDraftAt(db, draftId);
+      const [row] = rows;
+      if (!read || !row) throw new Error("the draft or its frame row is missing");
+      // Rebase and writer are both tail appends; neither rewrites the checkpoint.
+      expect(read.documentDraft.checkpointSeq).toBeLessThan(row.id);
+      expect(read.tail.map((tail) => tail.id)).toContain(row.id);
+    },
+  );
 
   /** Novel clocks, no visible effect: a character typed and erased in one frame. */
   const typedAndErased = (fragment: Y.XmlFragment) => {
@@ -377,25 +377,27 @@ describe("writer frames racing rewrites (postgres)", () => {
       actor: { type: "user", userId: USER_ID },
     });
 
-  it.each([
-    "model",
-    "card",
-  ] as const)("an inverse (%s) whose four attempts all miss while its part still applies is a conflict, never a refusal", async (door) => {
-    const draftId = await draftWithChange();
-    const frames = await framesBeforeEveryCommit(draftId, typedAndErased);
-    try {
-      if (door === "model") {
-        const undone = await modelUndo();
-        expect(undone).toMatchObject({ status: "internal_error" });
-        expect(JSON.stringify(undone)).toContain("the document changed while reversing; try again");
-      } else {
-        await expect(cardUndo()).rejects.toBeInstanceOf(ReversalConflictError);
+  it.each(["model", "card"] as const)(
+    "an inverse (%s) whose four attempts all miss while its part still applies is a conflict, never a refusal",
+    async (door) => {
+      const draftId = await draftWithChange();
+      const frames = await framesBeforeEveryCommit(draftId, typedAndErased);
+      try {
+        if (door === "model") {
+          const undone = await modelUndo();
+          expect(undone).toMatchObject({ status: "internal_error" });
+          expect(JSON.stringify(undone)).toContain(
+            "the document changed while reversing; try again",
+          );
+        } else {
+          await expect(cardUndo()).rejects.toBeInstanceOf(ReversalConflictError);
+        }
+      } finally {
+        frames.remove();
       }
-    } finally {
-      frames.remove();
-    }
-    // Four commits, each unwound; the classification pass never writes.
-    expect(frames.commits()).toBe(4);
-    expect(await fixture.view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
-  });
+      // Four commits, each unwound; the classification pass never writes.
+      expect(frames.commits()).toBe(4);
+      expect(await fixture.view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
+    },
+  );
 });

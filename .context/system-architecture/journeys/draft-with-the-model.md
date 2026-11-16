@@ -36,7 +36,7 @@ Sees: the chat opens at once with the message. The send does not wait for the se
 
 Does: reads the reply as it streams.
 
-Sees: tool and helper (subagent) cards appear where the turn started them. A reply that only wrote drafts ends with "Drafted 1 document" (or "Drafted N documents").
+Sees: tool and helper (subagent) cards appear where the turn started them. A reply that only wrote drafts ends with "Drafted 1 document" (or "Drafted N documents"). Stop in the message box ends the reply; the message above a stopped reply then has Edit, which puts its words and chips back in the box, above anything typed there, to fix and send again.
 
 - Map: [server](../system.md#server), [threads](../server-conversation.md#threads), [runtime](../server-conversation.md#runtime), [thread-client](../code.md#thread-client)
 - Machines: [Turn status](../../../apps/server/server/domains/runtime/.context/state-machines.md), [Thread socket](../../../packages/thread-client/.context/state-machines.md)

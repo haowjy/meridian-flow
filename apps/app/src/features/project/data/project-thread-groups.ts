@@ -53,6 +53,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export function groupProjectThreads(
   realThreads: ThreadListItem[] | null,
   works: Work[] | null,
+  /** A Work's name with its handle where it repeats (`useWorks().nameOf`). */
+  nameOf: (work: Work) => string,
 ): ProjectThreadGroups {
   const baseThreads: ThreadListItem[] = realThreads ?? [];
 
@@ -73,7 +75,7 @@ export function groupProjectThreads(
       for (const t of slice) grouped.add(t.id);
       workItems.push({
         id: work.id,
-        name: work.name.trim() || "Untitled Work",
+        name: work.name.trim() ? nameOf(work) : "Untitled Work",
         threadIds: slice.map((t) => t.id),
       });
     }
@@ -93,9 +95,12 @@ export function groupProjectThreads(
 
 export function useProjectThreadGroups(projectId: string): ProjectThreadGroups {
   const { threads: realThreads } = useProjectThreads(projectId);
-  const { works } = useWorks(projectId);
+  const { works, nameOf } = useWorks(projectId);
 
-  return useMemo(() => groupProjectThreads(realThreads, works), [realThreads, works]);
+  return useMemo(
+    () => groupProjectThreads(realThreads, works, nameOf),
+    [realThreads, works, nameOf],
+  );
 }
 
 /**

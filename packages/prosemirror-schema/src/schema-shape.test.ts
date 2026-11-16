@@ -255,9 +255,10 @@ describe("collaboration schema shape", () => {
 describe("collab schema subprotocol offers", () => {
   const sentinel = { major: 0, minor: 0, patch: 0 };
 
-  it.each([
-    ["meridian.collab.0.1.0, meridian.collab.0.2.0", "multiple matches"],
-  ])("maps an %s header (%s) to the sentinel", (header, _case) => {
-    expect(clientSchemaVersionFromSubprotocolHeader(header)).toEqual(sentinel);
-  });
+  it.each([["meridian.collab.0.1.0, meridian.collab.0.2.0", "multiple matches"]])(
+    "maps an %s header (%s) to the sentinel",
+    (header, _case) => {
+      expect(clientSchemaVersionFromSubprotocolHeader(header)).toEqual(sentinel);
+    },
+  );
 });

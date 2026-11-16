@@ -11,6 +11,7 @@ import { createThreadForProject } from "../../../../../lib/thread-creation.js";
 
 import {
   parseCreationAiWriteMode,
+  parseCreationOverrides,
   parseCreationTitle,
   throwThreadCreationError,
 } from "../../../../../lib/thread-creation-http.js";
@@ -42,6 +43,7 @@ export default defineEventHandler(async (event) => {
         agentSelection: requireAgentSelection(body.agentSelection),
         workId: body.workId == null ? null : parseOptionalRequestId(body.workId, "workId"),
         aiWriteMode: parseCreationAiWriteMode(body.aiWriteMode),
+        overrides: parseCreationOverrides(body.overrides),
       },
     );
 

@@ -3,10 +3,16 @@ import type {
   AgentFilesHint,
   ContextSourcesHint,
   DraftOwnerHint,
+  McpConnectionsHint,
   ProjectChatsHint,
 } from "@meridian/contracts/protocol";
 
-export type ProjectHint = DraftOwnerHint | ProjectChatsHint | ContextSourcesHint | AgentFilesHint;
+export type ProjectHint =
+  | DraftOwnerHint
+  | ProjectChatsHint
+  | ContextSourcesHint
+  | AgentFilesHint
+  | McpConnectionsHint;
 
 export interface ProjectWakePort {
   publish(hint: ProjectHint): void | Promise<void>;

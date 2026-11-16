@@ -58,34 +58,32 @@ const isSourceBehind = (error: unknown) =>
   "reason" in error.details &&
   error.details.reason === "source_behind";
 
-/** What a Copy made, and what it settled instead (nothing made for a closed Work, a source left out). */
-export type CopiedRows = { rows: readonly EntryRef[]; settled: readonly Settlement[] };
-
 /** A document's open session's vector, in the live room or the draft room, when this tab holds one. */
 export type StateVectorOf = (documentId: string, view: "live" | "draft") => Uint8Array | null;
 
 /**
- * Sends one Copy of the plan's rows. Returns the copies' identities and what the Copy left
- * undone; an error throws the route's error. `stateVectorOf` gives a document's open session's
- * vector, when this tab holds one.
+ * Sends one Copy of the plan's rows. The copies' identities are the browser's, so they come back
+ * at once, before the server answers; `answered` resolves with what the Copy left undone (nothing
+ * made for a closed Work, a source left out) and rejects with the route's error on a refusal.
+ * `stateVectorOf` gives a document's open session's vector, when this tab holds one.
  */
-export async function copyRows(
+export function copyRows(
   projectId: string,
   copy: ReadyCopy,
   stateVectorOf: StateVectorOf,
-): Promise<CopiedRows> {
-  const copyIds: string[] = copy.copies.map(() => crypto.randomUUID());
+): { copies: readonly EntryRef[]; answered: Promise<readonly Settlement[]> } {
+  const minted = copy.copies.map((row) => ({ row, copyId: crypto.randomUUID() }));
   const destination = destinationOf(copy);
   const folder = copy.into === copy.area.tree.root.entryId ? null : copy.area.tree.entry(copy.into);
   const body: CopyContextEntriesRequest = {
     operationId: crypto.randomUUID(),
-    sources: copy.copies.map((row, index) => ({
+    sources: minted.map(({ row, copyId }) => ({
       scheme: row.place.scheme,
       path: withoutLeadingSlash(row.place.path),
       expected: { kind: row.entry.kind, nodeId: row.entry.id },
       ...ownerFields(row.place),
       view: row.view,
-      copyId: copyIds[index],
+      copyId,
       ...stateVectorField(row, stateVectorOf),
     })),
     destinationScheme: copy.scheme,
@@ -98,20 +96,20 @@ export async function copyRows(
     ...(copy.area.view?.kind === "draft" ? { destinationView: copy.area.view } : {}),
     ...(copy.position ? { position: copy.position } : {}),
   };
-  for (let wait = RESEND_FIRST_MS; ; wait = Math.min(wait * 2, RESEND_LAST_MS)) {
-    try {
-      const { entries, settled } = await copyContextEntries(projectId, body);
-      return {
-        rows: entries
-          .filter((entry) => copyIds.includes(entry.id))
-          .map((entry) => ({ kind: entry.kind, id: entry.id })),
-        settled: settled ?? [],
-      };
-    } catch (error) {
-      if (!isSourceBehind(error)) throw error;
+  const send = async (): Promise<readonly Settlement[]> => {
+    for (let wait = RESEND_FIRST_MS; ; wait = Math.min(wait * 2, RESEND_LAST_MS)) {
+      try {
+        return (await copyContextEntries(projectId, body)).settled ?? [];
+      } catch (error) {
+        if (!isSourceBehind(error)) throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, wait));
     }
-    await new Promise((resolve) => setTimeout(resolve, wait));
-  }
+  };
+  return {
+    copies: minted.map(({ row, copyId }) => ({ kind: row.entry.kind, id: copyId })),
+    answered: send(),
+  };
 }
 
 /** The open session of the view's room says what this tab holds of the document; a folder has no room. */

@@ -36,6 +36,7 @@ export function linguiMacroBabelPlugin(): Plugin {
         map: result.map
           ? {
               ...result.map,
+              ignoreList: result.map.ignoreList ? [...result.map.ignoreList] : undefined,
               names: [...result.map.names],
               sources: [...result.map.sources],
               sourcesContent: result.map.sourcesContent

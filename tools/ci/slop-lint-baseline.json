@@ -178,11 +178,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/features/draft-review/room-attribution.ts",
-        "line": "void postJson<DraftProvenanceResponse>(",
-        "count": 1
-      },
-      {
         "path": "apps/app/src/features/editor/clipboard.ts",
         "line": "} catch {",
         "count": 1

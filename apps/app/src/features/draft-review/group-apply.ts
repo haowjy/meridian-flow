@@ -5,7 +5,8 @@
  * document's earlier clicks, so its text cut is cut against what they left; the command goes
  * once every member has reached its queue's head and handed over its click. A member that ends
  * without sending (its draft closed, its room never read) is left out. Every member's queue gets
- * the one answer.
+ * the one answer, and the command's answer is the first a sent member settles on: the post's, a
+ * Retry's, or a lookup's after its draft closed.
  */
 import type {
   ApplyClick,
@@ -13,6 +14,7 @@ import type {
   ApplyItemsClick,
   TreeSaw,
 } from "@meridian/contracts/branches";
+import type { ApplyClickOutcome } from "./apply-click-queue";
 
 type Item = ApplyItemsClick["items"][number];
 
@@ -51,6 +53,7 @@ export class GroupApply {
   ): {
     send(body: ApplyClick): Promise<ApplyClickAnswer>;
     drop(): void;
+    answered(answer: ApplyClickOutcome): void;
   } {
     const index = this.members++;
     return {
@@ -65,6 +68,17 @@ export class GroupApply {
         this.dropped.add(index);
         this.check();
       },
+      answered: (answer) => {
+        // Only a sent click's answer came from the server: a queue also refuses an unsent click
+        // itself, under the group's id.
+        if (!this.handed.has(index)) return;
+        if (
+          answer.status !== "landed" &&
+          answer.status !== "cancelled" &&
+          answer.status !== "unsent"
+        )
+          this.heard(answer);
+      },
     };
   }
 
@@ -78,6 +92,11 @@ export class GroupApply {
     if (!this.sealedAll || this.handed.size + this.dropped.size < this.members) return;
     this.ready();
     if (this.handed.size === 0) this.settle(null);
+  }
+
+  private heard(answer: ApplyClickAnswer) {
+    this.answered ??= answer;
+    this.settle(this.answered);
   }
 
   /** One request at a time; a member's queue retries a failed delivery, with the same id. */
@@ -95,8 +114,7 @@ export class GroupApply {
       })
       .then(
         (answer) => {
-          this.answered = answer;
-          this.settle(answer);
+          this.heard(answer);
           this.request = null;
           return answer;
         },
@@ -113,15 +131,17 @@ function itemOf(documentId: string, body: ApplyClick): Item {
   return {
     node: documentId,
     ...(body.tree ? { tree: true as const } : {}),
-    ...(body.draftId && body.snapshot
-      ? {
-          text: {
-            draftId: body.draftId,
-            snapshot: body.snapshot,
-            baseViewDelta: body.baseViewDelta,
-            groupIds: body.groupIds,
-          },
-        }
-      : {}),
+    ...(body.draftId && body.whole
+      ? { text: { draftId: body.draftId, whole: true as const } }
+      : body.draftId && body.snapshot
+        ? {
+            text: {
+              draftId: body.draftId,
+              snapshot: body.snapshot,
+              baseViewDelta: body.baseViewDelta,
+              groupIds: body.groupIds,
+            },
+          }
+        : {}),
   };
 }

@@ -26,6 +26,7 @@ import {
   invalidateWorkThreads,
   invalidateWriteModeReads,
 } from "@/client/query/project-invalidation";
+import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
@@ -128,6 +129,7 @@ export function recordAndProjectSubmission(
           timestamp: entry.createdAt,
           workId: entry.creation.workId,
           aiWriteMode: entry.creation.aiWriteMode ?? entry.creation.workAiWriteMode,
+          overrides: entry.creation.overrides,
           agent: {
             name: entry.creation.agentName,
             slug: entry.creation.agentSlug,
@@ -224,7 +226,16 @@ export class ChatSubmissionOwner {
     this.driver = new ChatSubmissionDriver({
       accountId,
       deleted: (_entry, reason) =>
-        cleanDeletedChat(accountId, threadId, projectId, reason, undefined, true),
+        cleanDeletedChat(
+          accountId,
+          threadId,
+          projectId,
+          reason,
+          undefined,
+          true,
+          undefined,
+          cachedChatTitle(queryClient, threadId),
+        ),
       signal,
       isCurrent: current,
       session: this.session,
@@ -252,6 +263,7 @@ export class ChatSubmissionOwner {
             title: entry.creation.title,
             workId: entry.creation.workId,
             ...(entry.creation.aiWriteMode ? { aiWriteMode: entry.creation.aiWriteMode } : {}),
+            overrides: entry.creation.overrides,
             agentSelection: entry.creation.agentSelection,
           },
           { signal: requestSignal },
@@ -443,9 +455,6 @@ export class ChatSubmissionOwner {
       if (binding.options.current()) binding.publishPresentation();
   }
 
-  shownRecordIds = () =>
-    new Set([...this.model.rows.keys()].map((id) => id.slice(this.options.accountId.length + 1)));
-
   private entries() {
     return this.options.current()
       ? readChatSubmissions(this.options.accountId).filter(
@@ -607,7 +616,16 @@ export class ChatSubmissionOwner {
         if (!current()) return;
         const availability = threadAvailability(error, accountId);
         if (availability === "deleted" || availability === "project-deleted") {
-          await cleanDeletedChat(accountId, threadId, projectId, availability);
+          await cleanDeletedChat(
+            accountId,
+            threadId,
+            projectId,
+            availability,
+            undefined,
+            false,
+            undefined,
+            cachedChatTitle(queryClient, threadId),
+          );
           return;
         }
         if (!(error instanceof HttpResponseError && error.status === 404)) return;

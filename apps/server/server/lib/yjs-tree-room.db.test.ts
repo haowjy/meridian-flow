@@ -219,11 +219,10 @@ describe("a tree list's room (postgres)", () => {
       {
         id: MANUSCRIPT,
         projectId: PROJECT,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       },
-      { id: UNFILED, projectId: PROJECT, name: "Unfiled", slug: "unfiled", scope: "project" },
+      { id: UNFILED, projectId: PROJECT, slug: "unfiled", scope: "project" },
     ]);
   });
   afterEach(async () => {

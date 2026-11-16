@@ -315,30 +315,31 @@ describe("tables and Layout round-trip corpus", () => {
     expect(codec.serializeBlock(firstParsedBlock(codec, html), UNSCOPED_DOCUMENT_LINKS)).toBe(html);
   });
 
-  it.each([
-    "</meridian-block junk>",
-  ])("rejects the malformed delegated-block closer %s", (closer) => {
-    const activeCodec = markdownCodec({
-      schema,
-    });
-    const input = [
-      "<table>",
-      "  <tbody>",
-      "    <tr>",
-      "      <td>",
-      '        <meridian-block kind="table">',
-      "<table><tbody><tr><td><p>Inner</p></td></tr></tbody></table>",
-      `        ${closer}`,
-      "      </td>",
-      "    </tr>",
-      "  </tbody>",
-      "</table>",
-    ].join("\n");
-    const parsed = firstParsedBlock(activeCodec, input);
+  it.each(["</meridian-block junk>"])(
+    "rejects the malformed delegated-block closer %s",
+    (closer) => {
+      const activeCodec = markdownCodec({
+        schema,
+      });
+      const input = [
+        "<table>",
+        "  <tbody>",
+        "    <tr>",
+        "      <td>",
+        '        <meridian-block kind="table">',
+        "<table><tbody><tr><td><p>Inner</p></td></tr></tbody></table>",
+        `        ${closer}`,
+        "      </td>",
+        "    </tr>",
+        "  </tbody>",
+        "</table>",
+      ].join("\n");
+      const parsed = firstParsedBlock(activeCodec, input);
 
-    expect(parsed.type.name).toBe("paragraph");
-    expect(parsed.textContent).toContain(closer);
-  });
+      expect(parsed.type.name).toBe("paragraph");
+      expect(parsed.textContent).toContain(closer);
+    },
+  );
 
   it.each([
     {

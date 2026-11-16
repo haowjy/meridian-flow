@@ -544,18 +544,17 @@ it("carries what a copied link names across the clipboard", async () => {
   }
 });
 
-it.each([
-  "javascript:alert(1)",
-  "../forged.md",
-  "manuscript://v/./forged.md",
-])("a forged clipboard address %s cannot inject an href", (address) => {
-  expect(
-    paste(
-      `<a data-meridian-link="original.md" data-meridian-address="${address}">x</a>`,
-      "manuscript://base.md",
-    ),
-  ).toBe('<a data-meridian-link="original.md">x</a>');
-});
+it.each(["javascript:alert(1)", "../forged.md", "manuscript://v/./forged.md"])(
+  "a forged clipboard address %s cannot inject an href",
+  (address) => {
+    expect(
+      paste(
+        `<a data-meridian-link="original.md" data-meridian-address="${address}">x</a>`,
+        "manuscript://base.md",
+      ),
+    ).toBe('<a data-meridian-link="original.md">x</a>');
+  },
+);
 
 it("copies contextual links through the plugin's plain-text scope by applicable owner", () => {
   const rows = [

@@ -33,11 +33,10 @@ export function agentCatalogQueryOptions(
 export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalogStatus {
   const accountId = useAccountId();
   const accountSignal = useAccountEpochSignal();
-  const result = unwrapListQuery(
-    useQuery({
-      ...agentCatalogQueryOptions(accountId, accountSignal, projectId),
-      enabled: projectReadEnabled(enabled),
-    }),
-  );
+  const query = useQuery({
+    ...agentCatalogQueryOptions(accountId, accountSignal, projectId),
+    enabled: projectReadEnabled(enabled),
+  });
+  const result = unwrapListQuery({ ...query, data: query.data?.agents });
   return { ...result, agents: result.data };
 }

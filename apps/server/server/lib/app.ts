@@ -39,13 +39,11 @@ async function createAppServices(): Promise<AppServices> {
     environment: process.env,
   });
   const app = composeAppServices(ports);
-  await listenForThreadEvents({
-    db,
-    eventHub: app.threadEventHub,
-    eventSink,
-  });
-  await ports.fileAccessChanges.listen();
-  await ports.treeLists.listen();
+  const listeners = await Promise.all([
+    listenForThreadEvents({ db, eventHub: app.threadEventHub, eventSink }),
+    ports.fileAccessChanges.listen(),
+    ports.treeLists.listen(),
+  ]);
   const scheduler = startRecoveryScheduler(
     [
       {
@@ -66,6 +64,11 @@ async function createAppServices(): Promise<AppServices> {
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       { name: "ask-expiry", delayMs: ASK_EXPIRY_SWEEP_MS, run: app.recovery.expireAsks },
+      {
+        name: "mcp-removed-purge",
+        delayMs: RETENTION_PURGE_INTERVAL_MS,
+        run: () => app.mcpConnections.purgeRemoved(),
+      },
       { name: "work-purge", delayMs: RETENTION_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },
       {
         name: "document-purge",
@@ -102,7 +105,13 @@ async function createAppServices(): Promise<AppServices> {
   );
   app.organizeWake.bind(() => scheduler.wake("import-organize"));
   registerProcessShutdownCallback(async () => {
-    await Promise.all([scheduler.stop(), app.shutdown()]);
+    // postgres.js drops the listener before unlisten's first await, so the drain below cannot be
+    // joined by a notification even when the DB stalls and these promises never settle.
+    await Promise.all([
+      ...listeners.map((listener) => listener.unlisten()),
+      scheduler.stop(),
+      app.shutdown(),
+    ]);
   });
   return app;
 }

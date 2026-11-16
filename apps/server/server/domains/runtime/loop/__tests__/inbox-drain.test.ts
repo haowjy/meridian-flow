@@ -157,6 +157,14 @@ async function setup(
     async refreshBinding() {
       return undefined;
     },
+    async followRemovedModel<T>(
+      _userId: string,
+      _projectId: string | undefined,
+      _thread: unknown,
+      bound: T,
+    ) {
+      return bound;
+    },
   };
   const gateway = scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 }, ...options });
   const { requests } = gateway;
@@ -450,204 +458,204 @@ describe("inbox drain", () => {
     ).toBe(true);
   });
 
-  it.each([
-    "drain start",
-    "mid-run",
-  ] as const)("retries preparation when a second writer send arrives during %s", async (boundary) => {
-    const entered = deferred();
-    const release = deferred();
-    let blockFirstResolution = true;
-    let rig: Awaited<ReturnType<typeof setup>>;
-    rig = await setup({
-      mediaResolver: {
-        async resolve(_context, { ref: reference }) {
-          if (blockFirstResolution) {
-            blockFirstResolution = false;
-            entered.resolve();
-            await release.promise;
-          }
-          return bytesMedia({ data: reference.uri, sizeBytes: 5 });
+  it.each(["drain start", "mid-run"] as const)(
+    "retries preparation when a second writer send arrives during %s",
+    async (boundary) => {
+      const entered = deferred();
+      const release = deferred();
+      let blockFirstResolution = true;
+      let rig: Awaited<ReturnType<typeof setup>>;
+      rig = await setup({
+        mediaResolver: {
+          async resolve(_context, { ref: reference }) {
+            if (blockFirstResolution) {
+              blockFirstResolution = false;
+              entered.resolve();
+              await release.promise;
+            }
+            return bytesMedia({ data: reference.uri, sizeBytes: 5 });
+          },
         },
-      },
-      onStream: async (call) => {
-        if (boundary === "mid-run" && call === 1) {
-          await rig.send(rig.thread.id, "first steer", {
+        onStream: async (call) => {
+          if (boundary === "mid-run" && call === 1) {
+            await rig.send(rig.thread.id, "first steer", {
+              blocks: [
+                { type: "text", text: "first steer" },
+                imageReference("uploads://@c1/first.png"),
+              ],
+            });
+          }
+        },
+      });
+
+      let execution: Promise<import("../run-turn-port.js").RunOutcome>;
+      if (boundary === "drain start") {
+        await rig.send(rig.thread.id, "first writer message", {
+          blocks: [
+            { type: "text", text: "first writer message" },
+            imageReference("uploads://@c1/first.png"),
+          ],
+        });
+        const preparing = rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+        await entered.promise;
+        await rig.send(rig.thread.id, "second writer message");
+        release.resolve();
+        execution = preparing.then((run) => run.execute());
+      } else {
+        const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+        execution = run.execute();
+        await entered.promise;
+        await rig.send(rig.thread.id, "second steer");
+        release.resolve();
+      }
+
+      await expect(execution).resolves.toMatchObject({ status: "complete" });
+      const newestRequest = required(rig.requests.at(-1));
+      if (boundary === "mid-run") {
+        expect(messageTexts(newestRequest.messages)).toContain("first steer");
+        expect(messageTexts(newestRequest.messages)).toContain("second steer");
+      } else {
+        expect(messageTexts(newestRequest.messages)).toContain("second writer message");
+        expect(messageTexts(newestRequest.messages)).toContain("first writer message");
+      }
+      expect(await messageTurnTexts(rig.repos, rig.thread.id)).toEqual(
+        boundary === "drain start"
+          ? ["first writer message", "second writer message"]
+          : ["begin", "first steer", "second steer"],
+      );
+      expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+    },
+  );
+
+  it.each(["drain start", "mid-run"] as const)(
+    "fails the newest writer action and preserves NoticePort rows after %s preparation failure",
+    async (boundary) => {
+      const notices = createTestNoticePort();
+      let rig: Awaited<ReturnType<typeof setup>>;
+      let steerTurnId: string | undefined;
+      rig = await setup({
+        notices,
+        mediaResolver: {
+          async resolve() {
+            throw new MediaResolutionError("temporary object-store timeout");
+          },
+        },
+        onStream: async (call) => {
+          if (boundary !== "mid-run" || call !== 1) return;
+          await recordNotice(notices, rig.thread.id);
+          const sent = await rig.send(rig.thread.id, "steer with image", {
             blocks: [
-              { type: "text", text: "first steer" },
-              imageReference("uploads://@c1/first.png"),
+              { type: "text", text: "steer with image" },
+              imageReference("uploads://@c1/steer-failure.png"),
             ],
           });
-        }
-      },
-    });
-
-    let execution: Promise<import("../run-turn-port.js").RunOutcome>;
-    if (boundary === "drain start") {
-      await rig.send(rig.thread.id, "first writer message", {
-        blocks: [
-          { type: "text", text: "first writer message" },
-          imageReference("uploads://@c1/first.png"),
-        ],
-      });
-      const preparing = rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
-      await entered.promise;
-      await rig.send(rig.thread.id, "second writer message");
-      release.resolve();
-      execution = preparing.then((run) => run.execute());
-    } else {
-      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
-      execution = run.execute();
-      await entered.promise;
-      await rig.send(rig.thread.id, "second steer");
-      release.resolve();
-    }
-
-    await expect(execution).resolves.toMatchObject({ status: "complete" });
-    const newestRequest = required(rig.requests.at(-1));
-    if (boundary === "mid-run") {
-      expect(messageTexts(newestRequest.messages)).toContain("first steer");
-      expect(messageTexts(newestRequest.messages)).toContain("second steer");
-    } else {
-      expect(messageTexts(newestRequest.messages)).toContain("second writer message");
-      expect(messageTexts(newestRequest.messages)).toContain("first writer message");
-    }
-    expect(await messageTurnTexts(rig.repos, rig.thread.id)).toEqual(
-      boundary === "drain start"
-        ? ["first writer message", "second writer message"]
-        : ["begin", "first steer", "second steer"],
-    );
-    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
-  });
-
-  it.each([
-    "drain start",
-    "mid-run",
-  ] as const)("fails the newest writer action and preserves NoticePort rows after %s preparation failure", async (boundary) => {
-    const notices = createTestNoticePort();
-    let rig: Awaited<ReturnType<typeof setup>>;
-    let steerTurnId: string | undefined;
-    rig = await setup({
-      notices,
-      mediaResolver: {
-        async resolve() {
-          throw new MediaResolutionError("temporary object-store timeout");
+          steerTurnId = sent.userTurnId;
         },
-      },
-      onStream: async (call) => {
-        if (boundary !== "mid-run" || call !== 1) return;
+      });
+
+      if (boundary === "drain start") {
         await recordNotice(notices, rig.thread.id);
-        const sent = await rig.send(rig.thread.id, "steer with image", {
+        await rig.send(rig.thread.id, "writer message with image", {
           blocks: [
-            { type: "text", text: "steer with image" },
-            imageReference("uploads://@c1/steer-failure.png"),
+            { type: "text", text: "writer message with image" },
+            imageReference("uploads://@c1/start-failure.png"),
           ],
         });
-        steerTurnId = sent.userTurnId;
-      },
-    });
-
-    if (boundary === "drain start") {
-      await recordNotice(notices, rig.thread.id);
-      await rig.send(rig.thread.id, "writer message with image", {
-        blocks: [
-          { type: "text", text: "writer message with image" },
-          imageReference("uploads://@c1/start-failure.png"),
-        ],
-      });
-      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
-      await expect(run.execute()).resolves.toMatchObject({
-        status: "error",
-        turn: {
+        const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+        await expect(run.execute()).resolves.toMatchObject({
           status: "error",
-          error: "This response failed.",
-        },
-      });
-    } else {
-      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
-      await expect(run.execute()).resolves.toMatchObject({
-        status: "error",
-        turn: {
+          turn: {
+            status: "error",
+            error: "This response failed.",
+          },
+        });
+      } else {
+        const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+        await expect(run.execute()).resolves.toMatchObject({
           status: "error",
-          error: "This response failed.",
+          turn: {
+            status: "error",
+            error: "This response failed.",
+          },
+        });
+        const turns = await rig.repos.turns.listByThread(rig.thread.id);
+        const failedReply = turns.filter((turn) => turn.role === "assistant").at(-1);
+        expect(failedReply?.prevTurnId).toBe(steerTurnId);
+      }
+
+      expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+      expect(await notices.peek(rig.thread.id)).toHaveLength(1);
+    },
+  );
+
+  it.each(["drain start", "mid-run"] as const)(
+    "discards preparation without consuming notices or pending messages when cancelled at %s",
+    async (boundary) => {
+      const notices = createTestNoticePort();
+      const entered = deferred();
+      const release = deferred();
+      const controller = new AbortController();
+      let blockFirstResolution = true;
+      let rig: Awaited<ReturnType<typeof setup>>;
+      rig = await setup({
+        notices,
+        mediaResolver: {
+          async resolve(_context, { ref: reference }) {
+            if (blockFirstResolution) {
+              blockFirstResolution = false;
+              entered.resolve();
+              await release.promise;
+            }
+            return bytesMedia({ data: reference.uri, sizeBytes: 5 });
+          },
+        },
+        onStream: async (call) => {
+          if (boundary !== "mid-run" || call !== 1) return;
+          await recordNotice(notices, rig.thread.id);
+          await rig.send(rig.thread.id, "steer survives cancellation", {
+            blocks: [
+              { type: "text", text: "steer survives cancellation" },
+              imageReference("uploads://@c1/cancel.png"),
+            ],
+          });
         },
       });
-      const turns = await rig.repos.turns.listByThread(rig.thread.id);
-      const failedReply = turns.filter((turn) => turn.role === "assistant").at(-1);
-      expect(failedReply?.prevTurnId).toBe(steerTurnId);
-    }
 
-    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
-    expect(await notices.peek(rig.thread.id)).toHaveLength(1);
-  });
-
-  it.each([
-    "drain start",
-    "mid-run",
-  ] as const)("discards preparation without consuming notices or pending messages when cancelled at %s", async (boundary) => {
-    const notices = createTestNoticePort();
-    const entered = deferred();
-    const release = deferred();
-    const controller = new AbortController();
-    let blockFirstResolution = true;
-    let rig: Awaited<ReturnType<typeof setup>>;
-    rig = await setup({
-      notices,
-      mediaResolver: {
-        async resolve(_context, { ref: reference }) {
-          if (blockFirstResolution) {
-            blockFirstResolution = false;
-            entered.resolve();
-            await release.promise;
-          }
-          return bytesMedia({ data: reference.uri, sizeBytes: 5 });
-        },
-      },
-      onStream: async (call) => {
-        if (boundary !== "mid-run" || call !== 1) return;
+      if (boundary === "drain start") {
         await recordNotice(notices, rig.thread.id);
-        await rig.send(rig.thread.id, "steer survives cancellation", {
+        await rig.send(rig.thread.id, "writer message survives cancellation", {
           blocks: [
-            { type: "text", text: "steer survives cancellation" },
-            imageReference("uploads://@c1/cancel.png"),
+            { type: "text", text: "writer message survives cancellation" },
+            imageReference("uploads://@c1/cancel-start.png"),
           ],
         });
-      },
-    });
-
-    if (boundary === "drain start") {
-      await recordNotice(notices, rig.thread.id);
-      await rig.send(rig.thread.id, "writer message survives cancellation", {
-        blocks: [
-          { type: "text", text: "writer message survives cancellation" },
-          imageReference("uploads://@c1/cancel-start.png"),
-        ],
-      });
-      const preparing = rig.orchestrator.prepare({
-        threadId: rig.thread.id,
-        drain: true,
-        signal: controller.signal,
-      });
-      await entered.promise;
-      controller.abort();
-      release.resolve();
-      await expect(preparing).rejects.toMatchObject({ name: "AbortError" });
-    } else {
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.thread.id,
-        userText: "begin",
-        signal: controller.signal,
-      });
-      const execution = run.execute();
-      await entered.promise;
-      controller.abort();
-      release.resolve();
-      await expect(execution).resolves.toMatchObject({ status: "cancelled" });
-    }
-    expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(1);
-    expect(await notices.peek(rig.thread.id)).toHaveLength(1);
-    if (boundary !== "mid-run")
-      expect((await rig.repos.threads.findById(rig.thread.id))?.initialPromptBakeId).toBeNull();
-  });
+        const preparing = rig.orchestrator.prepare({
+          threadId: rig.thread.id,
+          drain: true,
+          signal: controller.signal,
+        });
+        await entered.promise;
+        controller.abort();
+        release.resolve();
+        await expect(preparing).rejects.toMatchObject({ name: "AbortError" });
+      } else {
+        const run = await rig.orchestrator.prepare({
+          threadId: rig.thread.id,
+          userText: "begin",
+          signal: controller.signal,
+        });
+        const execution = run.execute();
+        await entered.promise;
+        controller.abort();
+        release.resolve();
+        await expect(execution).resolves.toMatchObject({ status: "cancelled" });
+      }
+      expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(1);
+      expect(await notices.peek(rig.thread.id)).toHaveLength(1);
+      if (boundary !== "mid-run")
+        expect((await rig.repos.threads.findById(rig.thread.id))?.initialPromptBakeId).toBeNull();
+    },
+  );
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({

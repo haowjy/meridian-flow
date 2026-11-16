@@ -229,7 +229,7 @@ describe("write tool dispatch", () => {
   it("finds the writer's text and the escaped form a read showed", async () => {
     const ctx = harness({ "chapter.md": "Cast LIVE\\_ONLY at \\*dawn\\*.\n\nOmega." });
     const read = await ctx.core.read({ file: "chapter.md" }, context);
-    expect(outcomeText(read)).toContain("Cast LIVE\\_ONLY at \\*dawn\\*.");
+    expect(outcomeText(read)).toContain("Cast LIVE_ONLY at \\*dawn\\*.");
 
     const plain = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "DRAFT_ONLY", find: "LIVE_ONLY" },

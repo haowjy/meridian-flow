@@ -13,8 +13,9 @@ stay chat resources, not documents main opens.
   tree's notice words (`use-tree-notice-words.tsx`). Shells own geometry, creation entry points,
   navigation and the notice surface.
 - A row changes folders only through `moveRows` (`entry-drag/execute-move.ts`), for Move…
-  and drops alike, with the one refusal `moveRefusal` in `move-plan.ts`. Order sends an index
-  among the destination's children, never a rank. Don't place entries anywhere else. A move
+  and drops alike, with the one refusal `moveRefusal` in `move-plan.ts`. Order sends a position
+  beside a sibling (by id) or at the top or bottom, never an index or a rank: the writer lands
+  the rows together, the first at the position and each next right after the one before it. Don't place entries anywhere else. A move
   stays in one list: Move… and the filing chip offer only the row's own list (the project's
   files, or Your files), and a drop on the other list offers Copy and Cancel. The one server
   route is Copy (`execute-copy.ts`).

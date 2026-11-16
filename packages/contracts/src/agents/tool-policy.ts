@@ -19,6 +19,9 @@ export const TOOL_CATALOG = [
   "thread_ls",
   "thread_history",
   "return_result",
+  "mcp_describe",
+  "mcp_call",
+  "mcp_run",
 ] as const;
 
 /**

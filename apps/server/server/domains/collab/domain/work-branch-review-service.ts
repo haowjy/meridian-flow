@@ -125,6 +125,7 @@ export function createWorkBranchReviewService(input: {
       resolveItemInBranch: (command) => input.identity.resolveReviewItemInBranch(command),
       resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),
       lookupCommand: (envelope) => input.commands.lookup(envelope),
+      awaitCommand: (envelope) => input.commands.await(envelope),
       async discardItem(command) {
         const { envelope, item } = command;
         const first = await known(envelope);

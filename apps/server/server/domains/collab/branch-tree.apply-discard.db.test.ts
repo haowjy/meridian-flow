@@ -98,6 +98,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     });
     const coordinator = createTestDraftCoordinator(db, {
       close: draftClose,
+      treeLists,
       workProjection,
       branches: branchStore,
     });
@@ -179,7 +180,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await db.insert(contextSources).values({
         id: SOURCE,
         projectId: PROJECT,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });

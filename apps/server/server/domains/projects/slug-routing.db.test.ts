@@ -61,9 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const sources = await createDrizzleContextSources(db).inProject(project.id);
 
       expect(sources).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ scheme: "manuscript", name: "Manuscript" }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ scheme: "manuscript" })]),
       );
       expect(await workRepository().findNoWork(project.id)).toMatchObject({
         projectId: project.id,

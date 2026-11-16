@@ -84,6 +84,7 @@ const forkInput = {
   aiWriteMode: "direct" as const,
   agent: null,
   agentName: "General",
+  overrides: { model: null, effort: null },
 };
 
 beforeEach(() => {

@@ -86,7 +86,6 @@ export function createWorkBranchFixture(db: Database) {
     await db.insert(contextSources).values({
       id: SOURCE_ID,
       projectId: PROJECT_ID,
-      name: "Manuscript",
       slug: "manuscript",
       scope: "project",
     });

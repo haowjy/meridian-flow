@@ -65,6 +65,8 @@ function permissionDeniedCopy(denial: ReversalOutcome["denial"]): string {
       return t`This document's Work is archived. Unarchive the Work to reverse this change.`;
     case "chat_frozen":
       return t`This document's chat was deleted. Restore the chat to reverse this change.`;
+    case "work_deleted":
+      return t`This document's Work was deleted, so this change can't be reversed.`;
     case "not_found":
       return t`This document, or the Work it belongs to, was deleted or isn't available to you, so this change can't be reversed.`;
     default:
@@ -88,7 +90,7 @@ export function treeSkipSentence(skip: TreeSkip, folder: boolean): string {
 export function textSkipCauseCopy(skip: Extract<TurnInverseSkip, { kind: "text" }>): string {
   switch (skip.cause) {
     case "applied":
-      return t`Applied to the manuscript`;
+      return t`Already applied`;
     case "discarded":
       return t`Discarded`;
     case "already_undone":

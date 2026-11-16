@@ -192,16 +192,14 @@ export function DraftReviewBand({
           finished the draft. */}
       <BounceChip notice={bounce} />
       {finished ? null : (
-        <>
-          <ReviewActions
-            scope="document"
-            disabled={locked}
-            applyDisabled={!header.canApply}
-            applying={header.completing === "apply"}
-            onDiscard={() => header.discardDraft(focusInControls())}
-            onApply={() => header.applyDraft(focusInControls())}
-          />
-        </>
+        <ReviewActions
+          scope="document"
+          disabled={locked}
+          applyDisabled={!header.canApply}
+          applying={header.completing === "apply"}
+          onDiscard={() => header.discardDraft(focusInControls())}
+          onApply={() => header.applyDraft(focusInControls())}
+        />
       )}
     </span>
   );

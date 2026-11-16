@@ -9,7 +9,9 @@
  * Placement follows `features/project/.context/pane-state-machine.md`: change that page's rules and
  * diagrams with any change here.
  */
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
 import { useDropGoneChatTabs } from "@/client/project-shell/gone-chat-tabs";
 import {
   arriveMainTab,
@@ -18,6 +20,7 @@ import {
   useMainTabs,
 } from "@/client/project-shell/main-tabs";
 import { writeLastShownChat, writeLastShownDocument } from "@/client/project-shell/store";
+import { cachedChatTitle } from "@/client/query/project-thread-cache";
 import type { OpenDocument } from "@/client/stores";
 import { useChatNavigation } from "./routing/chat-navigation";
 import type { MainForSide } from "./side/side-item";
@@ -36,10 +39,22 @@ export function useMainArrival({
   document: OpenDocument | null;
   locationKey: string | undefined;
 }) {
-  // A chat deleted elsewhere goes as one deleted here does: its tab and slot, and main to a new chat.
+  // A chat deleted elsewhere goes as one deleted here does: its unsent words to New chat, its tab
+  // and slot, and main to a new chat.
   const navigation = useChatNavigation();
+  const queryClient = useQueryClient();
   useDropGoneChatTabs(accountId, projectId, (chatId) => {
     const { display } = navigation;
+    void cleanDeletedChat(
+      accountId,
+      chatId,
+      projectId,
+      "deleted",
+      undefined,
+      false,
+      undefined,
+      cachedChatTitle(queryClient, chatId),
+    ).catch(reportError);
     navigation.forgetChat(chatId);
     if (display?.kind === "thread" && display.threadId === chatId)
       void navigation.openNewChat({ replace: true, focus: false });

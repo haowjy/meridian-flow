@@ -108,20 +108,24 @@ export function ComposerToolbar({
       ? inlineOwners.current.get(currentView.controlId)
       : overflowTrigger.current;
   };
+  const coversBox = useRef(false);
+  coversBox.current = panel?.size === "split";
   const virtualRef = useMemo(
     () => ({
       current: {
         get contextElement() {
           return resolveAnchorHost();
         },
-        // Lined up with the trigger, but standing on the composer box's top edge: a panel
-        // opening upward from the trigger itself covers the box and reads as under it.
+        // Lined up with the trigger, standing on the composer box's top edge: a compact panel
+        // opening from the trigger itself would half-cover the box and read as under it. A
+        // `split` panel is too tall for the room above, so it opens from the trigger and covers
+        // the box whole.
         getBoundingClientRect: () => {
           const host = resolveAnchorHost();
           if (!host) return new DOMRect();
           const trigger = host.getBoundingClientRect();
           const box = host.closest("[data-composer]")?.getBoundingClientRect();
-          return box
+          return box && !coversBox.current
             ? new DOMRect(trigger.x, box.top, trigger.width, trigger.bottom - box.top)
             : trigger;
         },
