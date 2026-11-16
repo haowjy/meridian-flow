@@ -22,3 +22,11 @@ export type DraftProvenanceResponse = {
     deleted: readonly DraftItemRange[];
   }[];
 };
+
+/** One request for the evidence of an owner's drafts: each draft a room on screen holds. */
+export type DraftsProvenanceRequest = {
+  owner: string;
+  drafts: readonly { draftId: string; documentId: string }[];
+};
+/** Evidence by draft id; a draft that is not the owner's active draft of its document is absent. */
+export type DraftsProvenanceResponse = { drafts: Record<string, DraftProvenanceResponse> };

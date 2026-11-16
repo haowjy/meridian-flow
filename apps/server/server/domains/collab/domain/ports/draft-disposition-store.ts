@@ -46,4 +46,6 @@ export interface DraftDispositionStore {
     draftId: string,
     options?: { writerRanges?: readonly ItemRange[] },
   ): Promise<DraftDispositionCapture | null>;
+  /** `capture` for many drafts from one snapshot, one query per kind of fact; a missing draft is absent. */
+  captureAll(draftIds: readonly string[]): Promise<Map<string, DraftDispositionCapture>>;
 }

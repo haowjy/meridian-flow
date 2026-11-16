@@ -1,15 +1,60 @@
 /** One evidence reader per retained room, shared by editor, dock and Work surfaces. */
 import { APPLY_RECORD_ROOT, type ItemRange, RESTORED_ROOT } from "@meridian/agent-edit/diff";
 import type { DraftProvenanceResponse } from "@meridian/contracts/branches";
-import { apiProjectBranchDocumentDraftPath } from "@meridian/contracts/protocol";
+import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
-import { branchOf } from "@/client/api/branches-api";
-import { postJson } from "@/client/api/http-client";
+import { readDraftsProvenance } from "@/client/api/branches-api";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { classifyRoom } from "./review-attribution";
 import type { DraftRef } from "./review-command-types";
 import type { ReviewFrame } from "./review-frame";
 import type { ReviewRuntime } from "./review-runtime";
+
+type Ask = { documentId: string; answers: ((answer: DraftProvenanceResponse | null) => void)[] };
+/**
+ * One evidence read in flight per owner. The rooms that ask while it is out go together in the
+ * next read, so a review of many drafts sends a few reads, not one per room.
+ */
+const owners = new Map<string, { asks: Map<string, Ask>; sending: boolean }>();
+function askEvidence(draft: DraftRef, draftId: string): Promise<DraftProvenanceResponse | null> {
+  const key = JSON.stringify([draft.projectId, draft.ownerKey]);
+  let owner = owners.get(key);
+  if (!owner) {
+    owner = { asks: new Map(), sending: false };
+    owners.set(key, owner);
+  }
+  const queue = owner;
+  return new Promise((resolve) => {
+    const ask = queue.asks.get(draftId) ?? { documentId: draft.documentId, answers: [] };
+    ask.answers.push(resolve);
+    queue.asks.set(draftId, ask);
+    if (!queue.sending) {
+      queue.sending = true;
+      queueMicrotask(send);
+    }
+  });
+  function send() {
+    const asks = queue.asks;
+    queue.asks = new Map();
+    void readDraftsProvenance(draft.projectId, {
+      owner: draft.ownerKey,
+      drafts: [...asks].map(([id, ask]) => ({ draftId: id, documentId: ask.documentId })),
+    })
+      .then(
+        (answer) => answer.drafts,
+        // Unknown evidence never removes text or guesses a byline. Reconnect/root changes retry.
+        () => ({}) as Record<string, DraftProvenanceResponse>,
+      )
+      .then((drafts) => {
+        for (const [id, ask] of asks) for (const answer of ask.answers) answer(drafts[id] ?? null);
+        if (queue.asks.size > 0) send();
+        else {
+          queue.sending = false;
+          owners.delete(key);
+        }
+      });
+  }
+}
 
 const readers = new WeakMap<DocumentSession, { holds: number; dispose(): void }>();
 export function retainRoomAttribution(
@@ -42,7 +87,7 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
   let requested = "";
   let disposed = false;
   let queued = false;
-  let request: AbortController | null = null;
+  let asked = 0;
   let hasUnresolved = false;
   const refresh = () => {
     if (queued || disposed) return;
@@ -63,46 +108,33 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
     hasUnresolved = ranges.length > 0;
     const key = JSON.stringify([roots, ranges]);
     if (data && !hasUnresolved && coveredRoots === roots) requested = key;
-    if (key !== requested && room.getSnapshot().status === "synced") {
+    const roomName = parseYjsRoomName(room.getSnapshot().roomKey);
+    if (key !== requested && room.getSnapshot().status === "synced" && roomName?.kind === "draft") {
       requested = key;
-      request?.abort();
       const revision = roots;
-      const controller = new AbortController();
-      request = controller;
-      const url = `${apiProjectBranchDocumentDraftPath(draft.projectId, branchOf(draft.itemKey), draft.documentId)}/provenance`;
-      void postJson<DraftProvenanceResponse>(
-        url,
-        {
-          roomName: room.getSnapshot().roomKey,
-          writerRanges: ranges,
-        },
-        { signal: controller.signal },
-      )
-        .then((next) => {
-          if (disposed || request !== controller) return;
-          data = next;
-          coveredRoots = revision;
-          const covered = Y.decodeSnapshot(Uint8Array.from(next.snapshot)).ds;
-          // Keep only unacknowledged local witnesses; acknowledged deletion history lives in the cut.
-          for (const [client, ranges] of localDeletions.clients) {
-            const known = covered.clients.get(client) ?? [];
-            let at = 0;
-            const pending = ranges.filter((range) => {
-              while (at < known.length && known[at].clock + known[at].len <= range.clock) at++;
-              return (
-                !known[at] ||
-                known[at].clock > range.clock ||
-                known[at].clock + known[at].len < range.clock + range.len
-              );
-            });
-            if (pending.length) localDeletions.clients.set(client, pending);
-            else localDeletions.clients.delete(client);
-          }
-          refresh();
-        })
-        .catch(() => {
-          // Unknown evidence never removes text or guesses a byline. Reconnect/root changes retry.
-        });
+      const ask = ++asked;
+      void askEvidence(draft, roomName.draftId).then((next) => {
+        if (disposed || ask !== asked || !next) return;
+        data = next;
+        coveredRoots = revision;
+        const covered = Y.decodeSnapshot(Uint8Array.from(next.snapshot)).ds;
+        // Keep only unacknowledged local witnesses; acknowledged deletion history lives in the cut.
+        for (const [client, ranges] of localDeletions.clients) {
+          const known = covered.clients.get(client) ?? [];
+          let at = 0;
+          const pending = ranges.filter((range) => {
+            while (at < known.length && known[at].clock + known[at].len <= range.clock) at++;
+            return (
+              !known[at] ||
+              known[at].clock > range.clock ||
+              known[at].clock + known[at].len < range.clock + range.len
+            );
+          });
+          if (pending.length) localDeletions.clients.set(client, pending);
+          else localDeletions.clients.delete(client);
+        }
+        refresh();
+      });
     }
     return result;
   };
@@ -133,7 +165,6 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
   runtime.setAttributionProvider(classify);
   return () => {
     disposed = true;
-    request?.abort();
     unsubscribe();
     applied.unobserveDeep(onRoot);
     restored.unobserveDeep(onRoot);

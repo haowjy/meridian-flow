@@ -8,39 +8,46 @@ import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { assertReadableDraft, materializeDraftRead } from "./draft-store.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
+/**
+ * Each named draft's evidence, by draft id, from one capture. A draft that is not the owner's
+ * active draft of the named document is absent.
+ */
 export function createDraftProvenanceReader(store: DraftDispositionStore) {
   return async (input: {
-    draftId: string;
     owner: DraftOwner;
-    documentId: DocumentId;
-    writerRanges: readonly (readonly [number, number, number])[];
-  }): Promise<DraftProvenanceResponse | null> => {
-    const cut = await store.capture(input.draftId, { writerRanges: input.writerRanges });
-    if (
-      !cut ||
-      ownerKeyOfColumns(cut.draft.documentDraft) !== draftOwnerKey(input.owner) ||
-      cut.draft.documentDraft.documentId !== input.documentId ||
-      cut.draft.documentDraft.status !== "active"
-    )
-      return null;
-    assertReadableDraft(cut.draft.documentDraft);
-    const doc = materializeDraftRead(cut.draft);
-    try {
-      return {
-        userId: cut.userId,
-        snapshot: Array.from(Y.encodeSnapshot(Y.snapshot(doc))),
-        parts: cut.parts.map(({ threadId, turnId, toolCallId, inserted, deleted, owner }) => ({
-          threadId,
-          turnId,
-          ...(toolCallId ? { toolCallId } : {}),
-          inserted,
-          deleted,
-          owner,
-        })),
-        ...(cut.writers ? { writers: cut.writers } : {}),
-      };
-    } finally {
-      doc.destroy();
+    drafts: readonly { draftId: string; documentId: DocumentId }[];
+  }): Promise<Map<string, DraftProvenanceResponse>> => {
+    const cuts = await store.captureAll(input.drafts.map((draft) => draft.draftId));
+    const out = new Map<string, DraftProvenanceResponse>();
+    for (const { draftId, documentId } of input.drafts) {
+      const cut = cuts.get(draftId);
+      if (
+        !cut ||
+        ownerKeyOfColumns(cut.draft.documentDraft) !== draftOwnerKey(input.owner) ||
+        cut.draft.documentDraft.documentId !== documentId ||
+        cut.draft.documentDraft.status !== "active"
+      )
+        continue;
+      assertReadableDraft(cut.draft.documentDraft);
+      const doc = materializeDraftRead(cut.draft);
+      try {
+        out.set(draftId, {
+          userId: cut.userId,
+          snapshot: Array.from(Y.encodeSnapshot(Y.snapshot(doc))),
+          parts: cut.parts.map(({ threadId, turnId, toolCallId, inserted, deleted, owner }) => ({
+            threadId,
+            turnId,
+            ...(toolCallId ? { toolCallId } : {}),
+            inserted,
+            deleted,
+            owner,
+          })),
+          ...(cut.writers ? { writers: cut.writers } : {}),
+        });
+      } finally {
+        doc.destroy();
+      }
     }
+    return out;
   };
 }

@@ -9,9 +9,7 @@
  * sidebar's Changes tab (`ChangesSource`), not here.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -121,22 +119,7 @@ export function useReviewHeader({
     documentId,
     null,
   );
-  // Warm the next addressed room lookup without fetching a server text preview.
-  const queryClient = useQueryClient();
-  const nextDocumentId = next?.documentId;
-  const nextItemKey = next?.draft.itemKey;
   const ready = view.status === "ready";
-  useEffect(() => {
-    if (!ready || !nextDocumentId || !nextItemKey) return;
-    void queryClient.prefetchQuery(
-      draftMetadataQueryOptions({
-        projectId: controller.projectId,
-        ownerKey: controller.ownerKey,
-        documentId: nextDocumentId,
-        itemKey: nextItemKey,
-      }),
-    );
-  }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.ownerKey, queryClient]);
   const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });

@@ -159,10 +159,12 @@ command (`POST …/branches/:branchId/apply`) once every member is its queue's h
 ## Attribution and provenance
 
 Use a mock-model write to an existing manuscript draft and open it from Work
-Files. Capture the `draft/provenance` request: its body is exactly `roomName`
-and `writerRanges`; the response supplies the snapshot and writers needed to
-cover the visible write. A wrong Work or file cannot return evidence, and a
-malformed room or clock range returns 400.
+Files. Capture the `drafts/provenance` request: its body is the `owner` and
+the `drafts` (`draftId`, `documentId`) whose rooms asked; the response supplies,
+by draft id, the snapshot and writers needed to cover the visible write. A draft
+of another owner or document is left out of the answer, and a malformed body
+returns 400. A review of many drafts sends a few of these requests, not one per
+row.
 
 Type locally inside and beside a change: “You” appears without one provenance
 request per keystroke. A new unresolved remote range requests evidence; an
