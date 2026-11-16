@@ -31,8 +31,8 @@ report repair. `createCommandRecovery` (`loop/command-recovery.ts`) takes each
 alone: adapters number calls per response) is not stored, in call order, resolves its command (`resolve` joins the finalizer's transaction: a connection of
 its own would wait on the thread lock the first holds) and stores the result block under
 `modelEditIds(key).blockId` (the outcome's result, or "did not run" for `never`). Other
-tools' open calls keep the request-time stub; for `mcp_call` and `mcp_run` the stub also lists the call's
-`mcp_calls` record, so the model sees what was sent and that it may have run.
+tools' open calls keep the request-time stub; for `mcp_call` and `mcp_run` the stub opens with the connection tools' "do not repeat" text and lists the call's
+`mcp_calls` records (each as `<connection>/<tool>`), so the model sees what was sent and that it may have run.
 
 Every write a running run makes to the transcript (a model response, a tool
 result block, a spawn's invocation card) goes through `storeUnderLease` or `ackWithResponse`: thread lock,
