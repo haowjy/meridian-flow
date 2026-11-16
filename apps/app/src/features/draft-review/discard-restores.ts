@@ -15,6 +15,8 @@ export type DiscardRestoreState =
   | { kind: "restoring" }
   /** `branchId` absent: it was already back. */
   | { kind: "restored"; branchId?: string; leftOut: number }
+  /** Nothing came back: Live's text was edited over every change. The entry stays in Trash. */
+  | { kind: "left_out"; leftOut: number }
   | { kind: "returned"; why: RestoreReturned }
   | { kind: "failed" };
 
@@ -62,12 +64,14 @@ export class DiscardRestores {
 }
 
 const stateOf = (answer: RestoreAnswer): DiscardRestoreState =>
-  answer.answer === "ok" || answer.answer === "gone"
-    ? {
-        kind: "restored",
-        leftOut: answer.leftOut ?? 0,
-        ...(answer.branchId ? { branchId: answer.branchId } : {}),
-      }
-    : answer.answer === "returned" && answer.why
-      ? { kind: "returned", why: answer.why }
-      : { kind: "failed" };
+  answer.answer === "gone" && answer.leftOut
+    ? { kind: "left_out", leftOut: answer.leftOut }
+    : answer.answer === "ok" || answer.answer === "gone"
+      ? {
+          kind: "restored",
+          leftOut: answer.leftOut ?? 0,
+          ...(answer.branchId ? { branchId: answer.branchId } : {}),
+        }
+      : answer.answer === "returned" && answer.why
+        ? { kind: "returned", why: answer.why }
+        : { kind: "failed" };

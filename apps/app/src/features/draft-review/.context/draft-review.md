@@ -371,8 +371,7 @@ the Work's current branch), the one command Trash's Restore and the editor's Res
 Each Discard's restore has one progress, whatever sent it (`DiscardRestores` on the command
 owner): the notice, Trash's row and the editor's pill all read it, so a restore from Trash ends
 the notice, and a notice's refused Undo clears once a later restore lands. `leftOut` stays on the
-notice as what couldn't come back (a purged node, or a draft whose Live text was edited since: Trash's row says
-"Partly restored" and the same sentence when nothing came back), and a restore answered with nothing done says why ("Work was
+notice as what couldn't come back (a purged node, or a draft whose Live text was edited since: nothing came back is its own restore state, `left_out`: Trash's row says "Not restored" with the same sentence and stays restorable, the editor pill shows the sentence), and a restore answered with nothing done says why ("Work was
 closed.", "Its chat is in Trash.", "Gone from Trash."). No Discard asks first. A Discard row Trash shows restored has Undo, a new Discard of everything
 the entry took: its drafts' documents and every node its tree half settled (`tree.nodes`), so
 one that only moved, renamed or deleted goes back too. A Discard of a

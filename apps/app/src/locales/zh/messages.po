@@ -5919,7 +5919,6 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Partly restored"
 msgstr ""
 

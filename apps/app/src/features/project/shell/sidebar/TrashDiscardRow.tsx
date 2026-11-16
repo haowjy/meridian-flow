@@ -61,12 +61,6 @@ export function TrashDiscardRow({
               sentence={t`Undo didn't go through. Try again.`}
               onAction={onUndo}
             />
-          ) : !onUndo && state.leftOut > 0 ? (
-            <RowWord
-              tone="warning"
-              word={<Trans>Partly restored</Trans>}
-              sentence={leftOutSentence(state.leftOut)}
-            />
           ) : !onUndo ? (
             // Restored elsewhere first: nothing here can put it back.
             <RowWord tone="done" word={<Trans>Restored</Trans>} sentence={t`Restored just now.`} />
@@ -115,6 +109,12 @@ export function TrashDiscardRow({
             tone="warning"
             word={<Trans>Not restored</Trans>}
             sentence={restoreReturnedSentence(state.why)}
+          />
+        ) : state?.kind === "left_out" ? (
+          <RowWord
+            tone="warning"
+            word={<Trans>Not restored</Trans>}
+            sentence={leftOutSentence(state.leftOut)}
           />
         ) : null
       }

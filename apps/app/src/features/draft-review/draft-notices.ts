@@ -695,7 +695,8 @@ export class DraftNotices {
     const pressed = this.pressed.get(id);
     const returned = restores.find((state) => state?.kind === "returned");
     const leftOut = restores.reduce(
-      (sum, state) => sum + (state?.kind === "restored" ? state.leftOut : 0),
+      (sum, state) =>
+        sum + (state?.kind === "restored" || state?.kind === "left_out" ? state.leftOut : 0),
       0,
     );
     const out = this.outstanding(parts);

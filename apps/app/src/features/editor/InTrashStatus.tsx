@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useState } from "react";
 import { useTrashDiscards } from "@/client/query/useDocumentTrash";
 import { Button } from "@/components/ui/button";
-import { restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
+import { leftOutSentence, restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
 import { useDocumentTrashRestore } from "@/features/project/context/DocumentTrashRestoreProvider";
 import { useRestoreDiscard } from "@/features/project/context/use-restore-discard";
 
@@ -67,6 +67,7 @@ function DraftInTrash({
       </Pill>
     );
   if (state?.kind === "returned") return <Pill>{restoreReturnedSentence(state.why)}</Pill>;
+  if (state?.kind === "left_out") return <Pill>{leftOutSentence(state.leftOut)}</Pill>;
   return (
     <Pill
       action={{
