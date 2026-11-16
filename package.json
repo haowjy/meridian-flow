@@ -71,7 +71,7 @@
     "tsx": "^4.23.15",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "ws": "^8.21.0",
+    "ws": "^8.23.0",
     "yjs": "13.6.33"
   }
 }
