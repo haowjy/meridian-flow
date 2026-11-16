@@ -7,7 +7,9 @@
  * same request and lands on the same thread. A failure stays on the
  * destination with Retry; the writer is never sent back to the source.
  */
+
 import { t } from "@lingui/core/macro";
+import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
@@ -38,6 +40,8 @@ export type DerivationIntent = {
   agentName: string | null;
   /** The model the destination runs on instead of its Agent's: the writer's pick for a handoff, the source's for a fork (the server copies it). */
   modelOverride: string | null;
+  /** The reasoning setting it runs at instead of its Agent's, with the same owner as `modelOverride`. */
+  effortOverride: ReasoningChoice | null;
   createdAt: string;
 };
 
@@ -146,6 +150,7 @@ function optimisticThread(intent: DerivationIntent, source: Thread | null): Thre
     workId: intent.workId,
     aiWriteMode: intent.aiWriteMode,
     modelOverride: intent.modelOverride,
+    effortOverride: intent.effortOverride,
     ...(intent.agent ? { agent: intent.agent } : {}),
   });
   return {
@@ -172,6 +177,7 @@ function request(intent: DerivationIntent): Promise<Thread> {
     originTurnId: intent.originTurnId,
     agentSelection: intent.agent.selection,
     modelOverride: intent.modelOverride,
+    effortOverride: intent.effortOverride,
   });
 }
 

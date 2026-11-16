@@ -14,7 +14,7 @@ import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { projectDomain } from "@/client/query/project-commands";
-import { threadModelDomain } from "@/client/query/thread-model-command";
+import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
 import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
 import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
@@ -143,7 +143,7 @@ function AuthenticatedAccountProviderTree({
     <AccountFeatureComposition accountId={user.userId}>
       <CommandDriverProvider
         domains={(client) =>
-          combineDomains(workDomain(client), projectDomain(client), threadModelDomain(client))
+          combineDomains(workDomain(client), projectDomain(client), threadOverridesDomain(client))
         }
       >
         <AccountSettingsProvider

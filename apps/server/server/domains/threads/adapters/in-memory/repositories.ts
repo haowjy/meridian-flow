@@ -129,6 +129,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     agentDefinitionRevisionId: null,
     agentName: null,
     modelOverride: input.modelOverride ?? null,
+    effortOverride: input.effortOverride ?? null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: normalized.parentThreadId,
@@ -484,10 +485,14 @@ export function createInMemoryRepositories(
     async lastStartedAgentSlug() {
       return null;
     },
-    async setModelOverride(id, model) {
+    async setOverrides(id, overrides) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      const updated = { ...thread, modelOverride: model };
+      const updated = {
+        ...thread,
+        modelOverride: overrides.model,
+        effortOverride: overrides.effort,
+      };
       threads.set(id, updated);
       return projectThread(updated);
     },

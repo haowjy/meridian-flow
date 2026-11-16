@@ -43,6 +43,7 @@ export default defineEventHandler(async (event) => {
         userId: user.userId,
         agentSelection: body.agentSelection,
         modelOverride: body.modelOverride ?? null,
+        effortOverride: body.effortOverride ?? null,
       },
     );
     event.res.status = result.created ? 201 : 200;

@@ -1,4 +1,5 @@
 /** GET /api/models: the models the Agent picker offers, and which of them this deployment can run. */
+import { REASONING_LEVELS } from "@meridian/contracts/agents";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler } from "nitro/h3";
 import { requireAppUser } from "../../lib/auth-gate.js";
@@ -6,20 +7,25 @@ import { MODEL_REGISTRY } from "../../lib/gateway/registry.js";
 
 export default defineEventHandler(async (event) => {
   const { app } = await requireAppUser(event);
-  const usable = new Map(app.gateway.listModels().map((model) => [model.id, model.displayName]));
+  const gatewayModels = app.gateway.listModels();
+  const usable = new Set(gatewayModels.map((model) => model.id));
+  // The registry's own name and levels first: under LIVE_TEST_MODEL the gateway reports every id
+  // as the redirect target. A model the gateway lists but the registry lacks (a mock) falls back
+  // to the gateway's.
   const known = new Map(
-    MODEL_REGISTRY.providers.flatMap((provider) =>
-      provider.offerings.map(
-        (offering) => [offering.model.id, offering.model.displayName] as const,
+    [
+      ...gatewayModels,
+      ...MODEL_REGISTRY.providers.flatMap((provider) =>
+        provider.offerings.map((offering) => offering.model),
       ),
-    ),
+    ].map((model) => [model.id, model] as const),
   );
-  const models = [...new Set([...usable.keys(), ...known.keys()])].map((id) => ({
+  const models = [...known.values()].map(({ id, displayName, reasoning }) => ({
     id,
-    // The registry's own name first: under LIVE_TEST_MODEL the gateway reports every id under
-    // the redirect target's name.
-    name: known.get(id) ?? usable.get(id) ?? id,
+    name: displayName,
     available: usable.has(id),
+    efforts: REASONING_LEVELS.filter((level) => reasoning.efforts.includes(level)),
+    canDisable: reasoning.canDisable === true,
   }));
   return serializeTransport({ models });
 });

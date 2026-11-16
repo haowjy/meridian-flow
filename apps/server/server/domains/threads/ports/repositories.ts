@@ -4,6 +4,7 @@
  * transactional ThreadRepositories aggregate. The boundary both adapter sets implement.
  */
 
+import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { Project } from "@meridian/contracts/projects";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
@@ -40,6 +41,7 @@ import type {
   ThreadKind,
   ThreadLeaseState,
   ThreadListItem,
+  ThreadOverrides,
   ThreadStatus,
   Turn,
   TurnDelivery,
@@ -254,6 +256,7 @@ export interface CreateThreadInput {
   /** No default: every creation path chooses the chat's mode. */
   aiWriteMode: AiWriteMode;
   modelOverride?: string | null;
+  effortOverride?: ReasoningChoice | null;
   kind?: ThreadKind;
   title?: string | null;
   parentThreadId?: ThreadId | null;
@@ -332,8 +335,8 @@ export interface ThreadRepository {
   ): Promise<WorkThreadSummary[]>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
-  /** Sets or clears the model this chat runs on instead of its Agent's. Not activity: `updatedAt` stays. */
-  setModelOverride(id: ThreadId, model: string | null): Promise<Thread>;
+  /** Sets or clears the model and reasoning setting this chat runs on instead of its Agent's. Not activity: `updatedAt` stays. */
+  setOverrides(id: ThreadId, overrides: ThreadOverrides): Promise<Thread>;
   /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
   setAiWriteMode(id: ThreadId, mode: AiWriteMode): Promise<void>;
   /** Locks, inserts, and points at the first bake; contenders receive the winner. */

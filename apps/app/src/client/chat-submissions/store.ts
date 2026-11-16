@@ -9,7 +9,11 @@
  * Canonical history stays in the server admission/turn records.
  */
 
-import type { AgentSelection } from "@meridian/contracts/agents";
+import {
+  type AgentSelection,
+  type ReasoningChoice,
+  reasoningChoiceSchema,
+} from "@meridian/contracts/agents";
 import {
   readRunState,
   type SubmittedReference,
@@ -96,6 +100,8 @@ export type ChatSubmission = {
     aiWriteMode?: AiWriteMode;
     /** Sent with the creation request: the model the chat runs on instead of its Agent's. */
     modelOverride?: string;
+    /** Sent with the creation request: the reasoning setting the chat runs at instead of its Agent's. */
+    effortOverride?: ReasoningChoice;
     agentSelection: AgentSelection;
     agentName: string;
     agentSlug: string;
@@ -184,6 +190,8 @@ function parseSubmission(value: unknown): ChatSubmission | null {
       !isAiWriteMode(creation.workAiWriteMode) ||
       (creation.aiWriteMode !== undefined && !isAiWriteMode(creation.aiWriteMode)) ||
       (creation.modelOverride !== undefined && typeof creation.modelOverride !== "string") ||
+      (creation.effortOverride !== undefined &&
+        !reasoningChoiceSchema.safeParse(creation.effortOverride).success) ||
       !isAgentSelection(creation.agentSelection) ||
       typeof creation.agentName !== "string" ||
       typeof creation.agentSlug !== "string")

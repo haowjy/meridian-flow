@@ -85,6 +85,7 @@ const forkInput = {
   agent: null,
   agentName: "General",
   modelOverride: null,
+  effortOverride: null,
 };
 
 beforeEach(() => {

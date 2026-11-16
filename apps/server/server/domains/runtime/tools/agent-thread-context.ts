@@ -1,9 +1,10 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
 import {
-  type AgentEffort,
+  AGENT_EFFORT_CHOICE,
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
   projectToolPolicy,
+  type ReasoningChoice,
   type ResolvedAgentConfiguration,
   type ToolPolicy,
 } from "@meridian/contracts/agents";
@@ -46,24 +47,9 @@ export const SUBAGENT_GUIDANCE =
 const READ_PERMISSION_GUIDANCE =
   "Your permission is read: you can read every file, and edit only scratch://.";
 
-/**
- * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
- * record makes a new canonical effort value demand an explicit provider mapping.
- */
-const EFFORT_TO_REASONING: Record<AgentEffort, GenerateRequest["reasoning"]> = {
-  low: { effort: "low" },
-  medium: { effort: "medium" },
-  high: { effort: "high" },
-  xhigh: { effort: "max" },
-  none: "disabled",
-  disabled: "disabled",
-  adaptive: "adaptive",
-};
-
-export function mapAgentEffortToReasoning(
-  effort: AgentEffort | undefined,
-): GenerateRequest["reasoning"] {
-  return effort === undefined ? undefined : EFFORT_TO_REASONING[effort];
+/** The gateway's form of a wire reasoning setting; `AGENT_EFFORT_CHOICE` maps an Agent file's effort onto it. */
+export function reasoningOfChoice(choice: ReasoningChoice): GenerateRequest["reasoning"] {
+  return choice === "disabled" || choice === "adaptive" ? choice : { effort: choice };
 }
 
 /** Translate canonical Mars effort names into the gateway's provider-neutral contract. */
@@ -72,8 +58,7 @@ export function agentGatewayMetaToGenerateParams(
 ): Pick<GenerateRequest, "model" | "reasoning"> {
   const params: Pick<GenerateRequest, "model" | "reasoning"> = {};
   if (meta.model) params.model = meta.model;
-  const reasoning = mapAgentEffortToReasoning(meta.effort);
-  if (reasoning !== undefined) params.reasoning = reasoning;
+  if (meta.effort) params.reasoning = reasoningOfChoice(AGENT_EFFORT_CHOICE[meta.effort]);
   return params;
 }
 

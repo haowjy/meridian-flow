@@ -10,7 +10,8 @@
     "slug": "critic",
     "definitionRevisionId": "agent-revision-uuid"
   },
-  "modelOverride": "model-id"
+  "modelOverride": "model-id",
+  "effortOverride": "high"
 }
 ```
 
@@ -18,7 +19,9 @@
 revision it showed. The destination binds that revision, and keeps the source's bake when it is the
 revision the source runs. `modelOverride` (optional, null for none) is the model the destination runs
 on instead of its Agent's; it is stored as given, and a model the gateway does not list falls back to
-the Agent's at turn time. A fork copies its source's override.
+the Agent's at turn time. `effortOverride` (optional, null for none) is the reasoning setting it runs at,
+one of `low`, `medium`, `high`, `max`, `disabled`, `adaptive`; a setting the model does not accept falls
+back to the Agent's at turn time. A fork copies its source's overrides.
 
 The body is strict: `summary`, missing/null cutoff and extra fields return 400.
 The selected turn is the cutoff. Every effective transcript turn through it must

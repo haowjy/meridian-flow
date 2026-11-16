@@ -1,5 +1,5 @@
 /** Domain operations for explicit agent handoff/fork into a new primary thread. */
-import type { AgentSelection } from "@meridian/contracts/agents";
+import type { AgentSelection, ReasoningChoice } from "@meridian/contracts/agents";
 import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
@@ -109,8 +109,9 @@ export async function handoffThreadAgent(
     userId: string;
     originTurnId: string;
     agentSelection: AgentSelection;
-    /** The writer's model pick for the new chat; null runs the Agent's own. */
+    /** The writer's model and reasoning picks for the new chat; null runs the Agent's own. */
     modelOverride?: string | null;
+    effortOverride?: ReasoningChoice | null;
   },
 ): Promise<{ thread: Thread; created: boolean }> {
   const existing = await findExistingDerivationBeforeSourceLoad(deps, input, "handoff");
@@ -158,6 +159,7 @@ export async function handoffThreadAgent(
         initialPromptBakeId: inheritedBake?.id ?? null,
         originType: "handoff",
         modelOverride: input.modelOverride,
+        effortOverride: input.effortOverride,
         originTurnId: cutoff.turn.id as TurnId,
         title: `Handoff from ${lockedSource.title ?? "thread"}`,
       });
@@ -241,6 +243,7 @@ export async function forkThreadAgent(
       source: lockedSource,
       originType: "fork",
       modelOverride: lockedSource.modelOverride,
+      effortOverride: lockedSource.effortOverride,
       originTurnId: cutoff.turn.id as TurnId,
       title: `Fork from ${lockedSource.title ?? "thread"}`,
       initialPromptBakeId: inheritedBake?.id ?? null,

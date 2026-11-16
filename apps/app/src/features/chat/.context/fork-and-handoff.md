@@ -25,8 +25,9 @@ turn to hand off from.
 
 Hand off opens the shared `AgentPickerPanel` with the source's Agent focused, by
 revision then by name, so Enter hands off to the same Agent. A model picked in the panel's
-"Runs on" goes with the handoff (`DerivationIntent.modelOverride`); otherwise the new chat runs
-its Agent's own model. A fork copies the source chat's model override, as the writer last set it.
+"Runs on" goes with the handoff (`DerivationIntent.modelOverride`, and `effortOverride` for its
+reasoning setting); otherwise the new chat runs its Agent's own. A fork copies the source chat's
+overrides, as the writer last set them.
 
 ## Navigate first
 

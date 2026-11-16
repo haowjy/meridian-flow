@@ -9,13 +9,18 @@ cache warmth.
 
 ## Bound Agent and prompt
 
-A chat can run on another model than its Agent's: `threads.model_override`, set by the
-`thread_set_model` command and never part of the binding, so a compaction's binding refresh keeps it.
+A chat can run on another model and at another reasoning setting than its Agent's:
+`threads.model_override` and `threads.effort_override`, set together by the `thread_set_overrides`
+command and never part of the binding, so a compaction's binding refresh keeps them.
 `turnGatewayParams` (turn-context-assembly) resolves it per request: the override while the gateway
 lists it, else the Agent's model, else the default. An id the gateway no longer lists runs on the
 Agent's model, and `turns.model` records what ran; a client tells "fell back" from "chosen" by
 comparing the override with the newest turn's model, or with `GET /api/models` (`available`) for the
-turn about to run. The Agent's effort carries over; the gateway clamps it to the resolved model.
+turn about to run. The effort override replaces the Agent's effort while the resolved model accepts it
+(a listed level, `disabled` only where the model can switch off, `adaptive` always); one it doesn't
+accept runs the Agent's, as an unlisted model does. The gateway then clamps whichever runs to the
+resolved model. The wire vocabulary is the gateway's (`low|medium|high|max` plus `disabled` and
+`adaptive`); an Agent file's `xhigh`/`none` read as `max`/`disabled` (`AGENT_EFFORT_CHOICE`).
 `LIVE_TEST_MODEL` redirects at the gateway, so an override cannot bypass it. A change costs a
 cache rebuild, already predicted as `model_changed`.
 

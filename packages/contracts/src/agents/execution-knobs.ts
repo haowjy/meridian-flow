@@ -19,6 +19,30 @@ export const AGENT_EFFORT_VALUES = [
 export type AgentEffort = (typeof AGENT_EFFORT_VALUES)[number];
 export const agentEffortSchema = z.enum(AGENT_EFFORT_VALUES);
 
+/** The levels a model can reason at, lowest first: the gateway's `ReasoningEffort`. */
+export const REASONING_LEVELS = ["low", "medium", "high", "max"] as const;
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+
+/**
+ * A reasoning setting as the wire carries it, in the gateway's vocabulary: a level, `disabled`
+ * (off where the model can switch off, else its lowest level) or `adaptive` (the model's own).
+ * An Agent file's `effort` reads as one through `AGENT_EFFORT_CHOICE`, so a chat's override and
+ * the Agent's own level compare directly.
+ */
+export const REASONING_CHOICES = [...REASONING_LEVELS, "disabled", "adaptive"] as const;
+export type ReasoningChoice = (typeof REASONING_CHOICES)[number];
+export const reasoningChoiceSchema = z.enum(REASONING_CHOICES);
+
+export const AGENT_EFFORT_CHOICE: Record<AgentEffort, ReasoningChoice> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "max",
+  none: "disabled",
+  disabled: "disabled",
+  adaptive: "adaptive",
+};
+
 /**
  * What an agent may change (file-access §8). `read` agents still edit their own
  * Work's `scratch://`; delegation applies the minimum over the agent chain.
