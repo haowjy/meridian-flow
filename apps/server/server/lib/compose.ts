@@ -600,7 +600,7 @@ export async function createProductionAppPorts(input: {
     draftClose,
     treeLists,
     removals: createTrashRemovals(db),
-    onLiveTextChanged: createAgentFilesHints({ db, wake: projectWakeHub, eventSink }),
+    liveTextHints: createAgentFilesHints({ db, backgroundTasks, wake: projectWakeHub, eventSink }),
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(

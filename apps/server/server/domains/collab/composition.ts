@@ -177,7 +177,11 @@ type CollabDomainDeps = {
   /** What took a document out of live (its Trash entry), for a pin or a room that lost it. */
   removals: DocumentRemovals;
   /** A live document's text changed, through its room or a direct write (the AI, Apply). */
-  onLiveTextChanged?(documentId: DocumentId): void;
+  liveTextHints?: {
+    hint(documentId: DocumentId): void;
+    /** Cancels what is pending; the composition's `dispose` calls it. */
+    stop(): void;
+  };
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -296,7 +300,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     derivations.derive,
   );
   const documentWriteHook: typeof projectionHook = async (event) => {
-    deps.onLiveTextChanged?.(event.documentId);
+    deps.liveTextHints?.hint(event.documentId);
     await projectionHook(event);
   };
   const runDocumentWriteHook = createDocumentWriteHookRunner({
@@ -425,7 +429,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onLiveUpdatePersisted: (documentId) => {
       draftPulls.scheduleLivePull(documentId);
       derivations.schedule(documentId);
-      deps.onLiveTextChanged?.(documentId);
+      deps.liveTextHints?.hint(documentId);
     },
     onDraftWriterUpdateAdmitted: (draftId) => draftAheads.schedule(draftId),
   });
@@ -619,6 +623,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     lifecycle: {
       dispose: async () => {
         await Promise.all([draftAheads.shutdown(), draftPulls.shutdown(), draftEffects.dispose()]);
+        deps.liveTextHints?.stop();
       },
     },
     transport: {

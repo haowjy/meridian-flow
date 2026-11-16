@@ -7,6 +7,7 @@
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import type { DetachedWorkTracker } from "../../shared/detached-work.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { ProjectWakeHub } from "./project-wake-hub.js";
 import { loadDocumentAddresses } from "./tree/tree-addresses.js";
@@ -19,11 +20,20 @@ const PLACES = 5000;
 
 type Place = { project: ProjectId } | { user: string } | null;
 
+export interface AgentFilesHints {
+  /** Schedules a wake for the document's clients. Ignored once stopped. */
+  hint(documentId: string): void;
+  /** Cancels pending wakes; the ones already reading are tracked in `backgroundTasks`. */
+  stop(): void;
+}
+
 export function createAgentFilesHints(deps: {
   db: Database;
+  backgroundTasks: DetachedWorkTracker;
   wake: Pick<ProjectWakeHub, "publish" | "publishToUser">;
   eventSink?: EventSink;
-}): (documentId: string) => void {
+}): AgentFilesHints {
+  let stopped = false;
   const timers = new Map<string, NodeJS.Timeout>();
   const places = new Map<string, { place: Place; at: number }>();
 
@@ -57,23 +67,31 @@ export function createAgentFilesHints(deps: {
     }
   }
 
-  return (documentId) => {
-    clearTimeout(timers.get(documentId));
-    const timer = setTimeout(() => {
-      timers.delete(documentId);
-      // Lossy: a missed hint leaves a verdict stale until the next read.
-      void wake(documentId).catch((cause) => {
-        if (deps.eventSink)
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: "context.agent-files-hint",
-            name: "AgentFilesHintFailed",
-            correlation: { documentId },
-            payload: unknownToEventPayload(cause),
-          });
-      });
-    }, SETTLE_MS);
-    timer.unref();
-    timers.set(documentId, timer);
+  return {
+    hint(documentId) {
+      if (stopped) return;
+      clearTimeout(timers.get(documentId));
+      const timer = setTimeout(() => {
+        timers.delete(documentId);
+        // Lossy: a missed hint leaves a verdict stale until the next read.
+        void deps.backgroundTasks.track(wake(documentId), "agent-files-hint").catch((cause) => {
+          if (deps.eventSink)
+            emitEvent(deps.eventSink, {
+              level: "warn",
+              source: "context.agent-files-hint",
+              name: "AgentFilesHintFailed",
+              correlation: { documentId },
+              payload: unknownToEventPayload(cause),
+            });
+        });
+      }, SETTLE_MS);
+      timer.unref();
+      timers.set(documentId, timer);
+    },
+    stop() {
+      stopped = true;
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    },
   };
 }
