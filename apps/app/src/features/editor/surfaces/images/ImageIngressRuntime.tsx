@@ -67,14 +67,12 @@ function pictureUploadPort(projectId: string, scheme: "user" | "manuscript"): Im
 /**
  * The bytes behind an address the clipboard carried.
  *
- * A cross-origin image served without CORS headers is the ordinary answer, not
- * a failure worth explaining away: most of the web declines. The link the paste
- * landed is what the writer keeps in that case, which is why nothing here
- * throws.
+ * Only a `data:` image reaches this: a web picture pastes as a remote picture and is never
+ * fetched. A failure leaves the link the paste landed, which is why nothing here throws.
  */
 const fetchImageBytes: ImageBytesPort = async ({ url, filename, signal }) => {
   try {
-    const response = await fetch(url, { mode: "cors", credentials: "omit", signal });
+    const response = await fetch(url, { signal });
     if (!response.ok) return null;
     const blob = await response.blob();
     if (!blob.type.startsWith("image/")) return null;

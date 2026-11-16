@@ -282,6 +282,7 @@
     "apps/server/server/lib/model-tools/skills.db.test.ts": 1,
     "apps/server/server/lib/model-tools/skills.test.ts": 3,
     "apps/server/server/lib/observability.test.ts": 3,
+    "apps/server/server/lib/public-address-dispatcher.test.ts": 44,
     "apps/server/server/lib/recovery-scheduler.test.ts": 2,
     "apps/server/server/lib/routes/context-thread-existing-document.db.test.ts": 2,
     "apps/server/server/lib/routes/context-thread-manifest-lock.db.test.ts": 1,
