@@ -33,7 +33,9 @@ revisions.
 - A file made at an Agent or skill path (`agentsFileOf`), from New Agent, New skill or a plain
   New file, starts with `agentFileTemplate`, written into its local copy as typing would be
   (`writeFirstAgentText`). The name goes through Mars's own emitter (`rewriteBlock`, the browser
-  build), so `123` and `[critic]` are quoted. The template must read with no Mars finding.
+  build), so `123` and `[critic]` are quoted. The template must read with no Mars finding. A new
+  Agent's template says `mode: primary`: only a primary Agent starts a chat, and an Agent with no
+  `mode` is a subagent.
 - The picker marks a level (Project, Yours, Built-in) only on a name that hides another.
 - Copy spells the levels `.agents/` and `~/.agents/`; `agents://` and `user://.agents` never
   reach the screen. `areaOf` (`context-schemes.ts`) names a path of the writer's level

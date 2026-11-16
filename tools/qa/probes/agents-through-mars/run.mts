@@ -44,8 +44,11 @@ const THREAD = "00000000-0000-4000-8000-000000000a73";
 const MANIFEST = '[package]\nname = "probe"\nversion = "0.1.0"\nschema = 1\n';
 const OLD_READER = "mars-0.0.0+flow-0";
 
+// A probe Agent is primary unless its frontmatter says otherwise: only `mode: primary` starts a chat.
+const primary = (frontmatter: string) =>
+  /^mode:/m.test(frontmatter) ? frontmatter : `mode: primary\n${frontmatter}`;
 const agent = (name: string, frontmatter = "") =>
-  `---\nname: ${name}\n${frontmatter}---\n\nYou are ${name}.\n`;
+  `---\nname: ${name}\n${primary(frontmatter)}---\n\nYou are ${name}.\n`;
 const skill = (slug: string, frontmatter = "") =>
   `---\nname: ${slug}\ndescription: A skill.\n${frontmatter}---\n\n${slug} body.\n`;
 
@@ -202,7 +205,8 @@ try {
       "mars.toml": MANIFEST,
       [`agents/${slug}.md`]: content(slug),
     });
-  const fm = (frontmatter: string) => alone(() => `---\nname: A\n${frontmatter}---\n\nBody.\n`);
+  const fm = (frontmatter: string) =>
+    alone(() => `---\nname: A\n${primary(frontmatter)}---\n\nBody.\n`);
   const unavailable: Unavailable[] = [
     { name: "unparseable YAML", files: alone(() => "---\nname: [x\n---\n") },
     { name: "duplicate key", files: alone(() => "---\nname: A\nname: A\n---\n") },
