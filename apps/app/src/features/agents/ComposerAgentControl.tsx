@@ -63,8 +63,6 @@ export function useComposerAgentToolbarControl(
   const model = overrides.model;
   const models = useModelOptions(props.mode !== "readonly" || model !== null);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const selectedRef = useRef<HTMLButtonElement | null>(null);
-  const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const agents = catalog.status === "ready" ? (catalog.agents ?? []) : [];
   const selectable = pickableAgents(agents);
@@ -81,7 +79,8 @@ export function useComposerAgentToolbarControl(
         ? (props.bound.name ?? DEFAULT_AGENT_NAME)
         : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
   const modelLabel = model ? modelName(models, model) : null;
-  // An override the deployment can't run: replies fall back to the Agent's own model.
+  // An override the deployment can't run: replies fall back to the Agent's own model. A reasoning
+  // override is always one its model has: the picker settles it when the model changes.
   const fallsBack = Boolean(model && models && !runsAvailable(models, model));
   const effortLabel = overrides.effort ? reasoningName(overrides.effort) : null;
   const runsAt = [modelLabel, effortLabel && t`${effortLabel} reasoning`]
@@ -144,7 +143,6 @@ export function useComposerAgentToolbarControl(
         </ComposerCurrentValueStatus>
       ),
     };
-  const focusableIds = selectable.map((agent) => agent.selection.slug);
   const pageId =
     catalog.status === "error"
       ? "error"
@@ -153,19 +151,6 @@ export function useComposerAgentToolbarControl(
         : catalog.status === "empty" || catalog.status === "ready"
           ? "empty"
           : "loading";
-  /** True when the choice hands off, which leaves this chat; any other choice keeps the picker open. */
-  const choose = (next: AgentChoice): boolean => {
-    const same = next.agent.selection.slug === selectedAgent?.selection.slug;
-    if (same && next.overrides.model === model && next.overrides.effort === overrides.effort)
-      return false;
-    if (props.mode === "interactive") props.onChoose(next);
-    else if (same) props.onOverridesChange(next.overrides);
-    else {
-      props.onHandoff?.(next);
-      return true;
-    }
-    return false;
-  };
   return {
     kind: "panel",
     id: "agent",
@@ -186,17 +171,10 @@ export function useComposerAgentToolbarControl(
       size: "split",
       focus: {
         pageId,
-        repairRevision: focusableIds.join("\0"),
+        repairRevision: selectable.map((agent) => agent.selection.slug).join("\0"),
         candidates:
           pageId === "ready"
-            ? [
-                { key: "search", ref: searchRef },
-                {
-                  key: `selected:${selectedAgent?.selection.slug ?? "none"}`,
-                  ref: selectedRef,
-                },
-                { key: `first:${focusableIds[0] ?? "none"}`, ref: firstRef },
-              ]
+            ? [{ key: "search", ref: searchRef }]
             : pageId === "error"
               ? [{ key: "retry", ref: retryRef }]
               : [],
@@ -204,20 +182,20 @@ export function useComposerAgentToolbarControl(
       },
       render: ({ terminalClose }) => (
         <AgentPickerPanel
-          focusRefs={{
-            search: searchRef,
-            selected: selectedRef,
-            first: firstRef,
-            retry: retryRef,
-          }}
+          focusRefs={{ search: searchRef, retry: retryRef }}
           status={catalog}
-          agents={agents}
           current={{ slug: selectedAgent?.selection.slug ?? null, overrides }}
-          started={props.mode === "handoff" ? { threadId: props.threadId } : undefined}
+          mode={
+            props.mode === "interactive"
+              ? { kind: "new", onChoose: props.onChoose }
+              : {
+                  kind: "chat",
+                  threadId: props.threadId,
+                  onChoose: (next) => props.onOverridesChange(next.overrides),
+                  onHandoff: (next) => props.onHandoff?.(next),
+                }
+          }
           models={models}
-          onChoose={(next) => {
-            if (choose(next)) terminalClose();
-          }}
           projectId={props.projectId ?? ""}
           onClose={terminalClose}
         />

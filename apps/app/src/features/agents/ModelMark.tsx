@@ -1,4 +1,6 @@
-import type { ModelOption } from "./AgentPicker";
+import type { ModelList } from "@meridian/contracts/protocol";
+
+type ModelOption = ModelList["models"][number];
 
 // Single-colour marks from models.dev `/logos/<maker>.svg`, drawn in the text colour.
 const PATHS: Record<NonNullable<ModelOption["maker"]>, string> = {

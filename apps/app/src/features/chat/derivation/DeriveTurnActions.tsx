@@ -16,10 +16,7 @@ import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useModelOptions } from "@/client/query/useModelOptions";
-import {
-  dropdownGroupLabelClass,
-  dropdownSurfaceVariants,
-} from "@/components/ui/dropdown-presentation";
+import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { type AgentChoice, AgentPickerPanel, NO_OVERRIDES } from "@/features/agents/AgentPicker";
@@ -103,8 +100,6 @@ function HandoffPicker({
   const [open, setOpen] = useState(false);
   const catalog = useAgentCatalog(open, derivation.projectId);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const selectedRef = useRef<HTMLButtonElement | null>(null);
-  const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const models = useModelOptions(open);
@@ -141,23 +136,12 @@ function HandoffPicker({
           contentRef.current?.focus();
         }}
       >
-        <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
         <AgentPickerPanel
           status={catalog}
-          agents={agents}
           current={{ slug: selected?.selection.slug ?? null, overrides: NO_OVERRIDES }}
-          handsOff
+          mode={{ kind: "turn", onHandoff: (choice) => derivation.handoff(turnId, choice) }}
           models={models}
-          focusRefs={{
-            search: searchRef,
-            selected: selectedRef,
-            first: firstRef,
-            retry: retryRef,
-          }}
-          onChoose={(choice) => {
-            setOpen(false);
-            derivation.handoff(turnId, choice);
-          }}
+          focusRefs={{ search: searchRef, retry: retryRef }}
           projectId={derivation.projectId}
           onClose={() => setOpen(false)}
         />

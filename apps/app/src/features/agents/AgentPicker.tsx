@@ -1,11 +1,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AgentCatalogItem, ReasoningChoice } from "@meridian/contracts/agents";
-import { agentsRootOf } from "@meridian/contracts/agents";
+import type { AgentCatalogItem, ReasoningChoice, ReasoningLevel } from "@meridian/contracts/agents";
+import { agentsRootOf, REASONING_LEVELS } from "@meridian/contracts/agents";
 import type { ModelList } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
-import { ChevronRight, Settings2 } from "lucide-react";
-import { type CSSProperties, type Ref, type RefObject, useRef, useState } from "react";
+import { Settings2 } from "lucide-react";
+import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-st
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
 import { useOpenAgentFile } from "./agent-file-document";
-import type { CreationAgent } from "./creation-agent";
+import { type CreationAgent, creationAgentOf, isPickable as pickable } from "./creation-agent";
 import { ModelMark } from "./ModelMark";
 import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
 
@@ -39,30 +39,35 @@ const MIN_ROWS = 5;
 const SEARCH_PX = 44;
 const POINT_DELAY_MS = 120;
 
+/**
+ * Where the picker opens, and what a pick does there. A new chat's pick stays in the picker; a
+ * started chat's own Agent changes its model and reasoning there, and any other Agent hands off;
+ * under a turn every Agent hands off. A handoff closes the picker.
+ */
+export type AgentPickerMode =
+  | { kind: "new"; onChoose: (choice: AgentChoice) => void }
+  | {
+      kind: "chat";
+      threadId: string;
+      onChoose: (choice: AgentChoice) => void;
+      onHandoff: (choice: AgentChoice) => void;
+    }
+  | { kind: "turn"; onHandoff: (choice: AgentChoice) => void };
+
 type AgentPickerPanelProps = {
+  /** The catalog. Agents that can't be used keep their place; ones only other Agents call are left out. */
   status: AgentCatalogStatus;
-  /**
-   * The catalog. Agents that can't be used keep their place; ones only other Agents call are left
-   * out.
-   */
-  agents: AgentCatalogItem[];
-  /** The chosen Agent's slug and model override (for a started chat, the bound ones). */
+  /** The chosen Agent's slug and overrides (for a started chat, the bound ones). */
   current: { slug: string | null; overrides: ThreadOverrides };
-  /** A started chat: its Agent is pinned under "This chat", and the rest hand off. */
-  started?: { threadId: string };
-  /** Picking hands off from a turn (the picker under a turn), the current Agent included. */
-  handsOff?: boolean;
+  mode: AgentPickerMode;
   models: ModelOption[] | null;
-  onChoose: (choice: AgentChoice) => void;
   /** The project whose Agent files "Open" and "Manage Agents" reach. */
   projectId: string;
-  /** Closes the picker's popover, before it opens a file or the Agents tab. */
+  /** Closes the picker's popover: after a handoff, and before it opens a file or the Agents tab. */
   onClose: () => void;
   focusRefs: {
     /** Where focus lands on open, as in every searchable picker. */
     search: RefObject<HTMLInputElement | null>;
-    selected: RefObject<HTMLButtonElement | null>;
-    first: RefObject<HTMLButtonElement | null>;
     retry: RefObject<HTMLButtonElement | null>;
   };
 };
@@ -74,12 +79,9 @@ type AgentPickerPanelProps = {
  */
 export function AgentPickerPanel({
   status,
-  agents: catalog,
   current,
-  started,
-  handsOff = false,
+  mode,
   models,
-  onChoose,
   projectId,
   onClose,
   focusRefs,
@@ -98,7 +100,7 @@ export function AgentPickerPanel({
   const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
-  const agents = catalog.filter((agent) => agent.primary);
+  const agents = (status.agents ?? []).filter((agent) => agent.primary);
   if (status.status !== "ready" || agents.length === 0)
     return (
       <Picker>
@@ -120,7 +122,8 @@ export function AgentPickerPanel({
       </Picker>
     );
 
-  const own = started ? agents.find((agent) => agent.slug === current.slug) : undefined;
+  const own =
+    mode.kind === "chat" ? agents.find((agent) => agent.slug === current.slug) : undefined;
   const needle = query.trim().toLowerCase();
   const listed = agents.filter(
     (agent) =>
@@ -134,19 +137,29 @@ export function AgentPickerPanel({
     own ??
     listed[0] ??
     agents[0];
-  // The current Agent runs at the overrides chosen here; any other starts on its own.
-  const overrides = shown.slug === current.slug && !handsOff ? current.overrides : NO_OVERRIDES;
   const sameName = new Set(
     agents.map((agent) => agent.name).filter((name, index, names) => names.indexOf(name) !== index),
   );
-  const firstPickable = listed.find(pickable)?.slug;
-  const handsOffFrom = (agent: AgentCatalogItem) => handsOff || Boolean(started && agent !== own);
+  const handsOff = (agent: AgentCatalogItem) =>
+    mode.kind === "turn" || (mode.kind === "chat" && agent !== own);
   const rows = Math.min(Math.max(agents.length, MIN_ROWS), VISIBLE_ROWS);
+  const headings = (own ? 1 : 0) + (mode.kind === "new" ? 0 : 1);
   // The search, the rows and the footer: the one height, whatever is pointed at.
-  const height = SEARCH_PX + rows * ROW_PX + (own ? 2 * LINE_PX : 0) + LINE_PX + 24;
+  const height = SEARCH_PX + rows * ROW_PX + headings * LINE_PX + LINE_PX + 24;
 
-  const choose = (agent: AgentCatalogItem, next: ThreadOverrides) => {
-    if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), overrides: next });
+  /** The current Agent runs at the overrides chosen here; any other starts on its own. */
+  const overridesFor = (agent: AgentCatalogItem) =>
+    agent.slug === current.slug ? current.overrides : NO_OVERRIDES;
+  const pick = (agent: AgentCatalogItem, next = overridesFor(agent)) => {
+    if (!pickable(agent)) return;
+    const choice = { agent: creationAgentOf(agent), overrides: next };
+    if (handsOff(agent)) {
+      if (mode.kind !== "new") mode.onHandoff(choice);
+      onClose();
+      return;
+    }
+    if (agent.slug === current.slug && sameOverrides(next, current.overrides)) return;
+    if (mode.kind !== "turn") mode.onChoose(choice);
   };
   const row = (agent: AgentCatalogItem) => {
     const isCurrent = agent.slug === current.slug;
@@ -156,7 +169,7 @@ export function AgentPickerPanel({
         data-agent={agent.slug}
         onPointerDown={(event) => {
           tapPicks.current =
-            event.pointerType !== "touch" || !handsOffFrom(agent) || agent.slug === shown.slug;
+            event.pointerType !== "touch" || !handsOff(agent) || agent.slug === shown.slug;
         }}
         onPointerEnter={(event) => {
           if (event.pointerType === "touch") return;
@@ -174,20 +187,12 @@ export function AgentPickerPanel({
           current={isCurrent}
           pointed={agent.slug === shown.slug}
           crossedOut={!pickable(agent)}
-          ref={
-            isCurrent
-              ? focusRefs.selected
-              : agent.slug === firstPickable
-                ? focusRefs.first
-                : undefined
-          }
           onOpen={() => {
             if (!tapPicks.current) {
               tapPicks.current = true;
               return setPointed(agent.slug);
             }
-            // The current Agent keeps the model and reasoning it runs at here.
-            choose(agent, isCurrent ? current.overrides : NO_OVERRIDES);
+            pick(agent);
           }}
           title={agent.name}
           detail={agent.description || undefined}
@@ -197,9 +202,13 @@ export function AgentPickerPanel({
       </li>
     );
   };
+  const overrides = overridesFor(shown);
   const runsOn = overrides.model ?? shown.model;
-  const thinksAt = overrides.effort ?? shown.effort;
-  const runsOnOption = runsOn ? models?.find((option) => option.id === runsOn) : undefined;
+  const option = (id: string | null) => (id ? models?.find((model) => model.id === id) : undefined);
+  const runsOnOption = option(runsOn);
+  // Reasoning as the gateway settles it on the model: the Agent's own level, and the one it runs at.
+  const ownLevel = settledReasoning(shown.effort, runsOnOption);
+  const thinksAt = overrides.effort ? settledReasoning(overrides.effort, runsOnOption) : ownLevel;
 
   return (
     <Picker>
@@ -234,7 +243,7 @@ export function AgentPickerPanel({
                 onSubmit={() => {
                   // Only a search picks on Enter: an empty one would hand off to the first row.
                   const first = needle ? listed.find(pickable) : undefined;
-                  if (first) choose(first, NO_OVERRIDES);
+                  if (first) pick(first);
                 }}
                 label={t`Search Agents`}
               />
@@ -248,10 +257,10 @@ export function AgentPickerPanel({
               </section>
             ) : null}
             <section
-              aria-label={own ? t`Hand off to` : t`Agents`}
+              aria-label={mode.kind === "new" ? t`Agents` : t`Hand off to`}
               className="app-scroll flex min-h-0 flex-1 flex-col"
             >
-              {own ? (
+              {mode.kind !== "new" ? (
                 <h3 className={dropdownGroupLabelClass}>
                   <Trans>Hand off to</Trans>
                 </h3>
@@ -296,15 +305,15 @@ export function AgentPickerPanel({
               <AgentCard
                 key={shown.slug}
                 agent={shown}
-                thisChat={started && shown === own ? started.threadId : null}
+                thisChat={mode.kind === "chat" && shown === own ? mode.threadId : null}
                 useLabel={
-                  handsOffFrom(shown)
+                  handsOff(shown)
                     ? t`Hand off to ${shown.name}`
                     : shown.slug === current.slug
                       ? null
                       : t`Use ${shown.name}`
                 }
-                onUse={() => choose(shown, NO_OVERRIDES)}
+                onUse={() => pick(shown)}
               />
             </div>
             {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the choices' arrow keys; its rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
@@ -312,7 +321,9 @@ export function AgentPickerPanel({
               ref={choicesRef}
               onPointerEnter={() => window.clearTimeout(pointTimer.current)}
               onKeyDown={(event) => {
-                if (event.key === "ArrowLeft") {
+                handleListKeys(event);
+                // Left past the reasoning row's first level, or from a model, goes back to the Agent.
+                if (event.key === "ArrowLeft" && !event.defaultPrevented) {
                   event.preventDefault();
                   listRef.current
                     ?.querySelector<HTMLElement>(
@@ -321,7 +332,6 @@ export function AgentPickerPanel({
                     ?.focus();
                   return;
                 }
-                handleListKeys(event);
                 // Up and Down stay in the choices even with no rows to move between.
                 if (event.key === "ArrowUp" || event.key === "ArrowDown") event.preventDefault();
               }}
@@ -333,17 +343,23 @@ export function AgentPickerPanel({
                     agent={shown}
                     runsOn={runsOn}
                     models={models}
-                    rebuildsCache={Boolean(started && shown === own)}
-                    onChoose={(id) =>
-                      choose(shown, { ...overrides, model: id === shown.model ? null : id })
-                    }
+                    onChoose={(id) => {
+                      // A reasoning override follows the model: settled on it, and dropped once
+                      // it is the new model's own level.
+                      const next = option(id);
+                      const effort = overrides.effort && settledReasoning(overrides.effort, next);
+                      pick(shown, {
+                        model: id === shown.model ? null : id,
+                        effort: effort === settledReasoning(shown.effort, next) ? null : effort,
+                      });
+                    }}
                   />
                   <ReasoningChoices
-                    agent={shown}
                     model={runsOnOption}
+                    own={ownLevel}
                     thinksAt={thinksAt}
                     onChoose={(level) =>
-                      choose(shown, { ...overrides, effort: level === shown.effort ? null : level })
+                      pick(shown, { ...overrides, effort: level === ownLevel ? null : level })
                     }
                   />
                 </>
@@ -389,15 +405,14 @@ function AgentCard({
   onUse: () => void;
 }) {
   return (
-    // Sized for a name and three lines of description, so the models under it hold still for
-    // nearly every Agent; the file shows on hover.
+    // One height for every Agent, so the models under it hold still; the file shows on hover.
     <div
-      className="flex min-h-28 flex-col gap-1 rounded-lg border border-border-subtle p-3"
+      className="flex h-32 flex-col gap-1 overflow-hidden rounded-lg border border-border-subtle p-3"
       title={agent.path && agent.level !== "builtin" ? fileAddress(agent) : undefined}
     >
       <p className="text-sm font-medium">{agent.name}</p>
       {agent.description ? (
-        <p className="line-clamp-3 text-sm text-foreground" title={agent.description}>
+        <p className="line-clamp-2 text-sm text-foreground" title={agent.description}>
           {agent.description}
         </p>
       ) : null}
@@ -442,15 +457,21 @@ function ModelChoices({
   agent,
   runsOn,
   models,
-  rebuildsCache,
   onChoose,
 }: {
   agent: AgentCatalogItem;
   runsOn: string | null;
   models: ModelOption[] | null;
-  rebuildsCache: boolean;
   onChoose: (id: string) => void;
 }) {
+  const listRef = useRef<HTMLElement | null>(null);
+  // Each Agent's models open on the one it runs on, not where the last Agent's were scrolled.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    list.scrollTop = 0;
+    list.querySelector("[aria-current]")?.scrollIntoView({ block: "nearest" });
+  }, [agent.slug, models === null]);
   if (!models)
     return (
       <div className="app-scroll">
@@ -460,15 +481,14 @@ function ModelChoices({
       </div>
     );
   return (
-    <section aria-label={t`Model for ${agent.name}`} className="app-scroll flex flex-col">
+    <section
+      ref={listRef}
+      aria-label={t`Model for ${agent.name}`}
+      className="app-scroll flex flex-col"
+    >
       {runsOn && !runsAvailable(models, runsOn) ? (
         <p className="px-2 pb-1 text-xs text-muted-foreground">
           {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
-        </p>
-      ) : null}
-      {rebuildsCache ? (
-        <p className="px-2 pb-1 text-xs text-muted-foreground">
-          <Trans>Changing it rebuilds the chat's cache.</Trans>
         </p>
       ) : null}
       <ul className="flex flex-col">
@@ -494,32 +514,36 @@ function ModelChoices({
 }
 
 function ReasoningChoices({
-  agent,
   model,
+  own,
   thinksAt,
   onChoose,
 }: {
-  agent: AgentCatalogItem;
   model: ModelOption | undefined;
+  /** The Agent's own level on this model; null when it leaves reasoning to the model. */
+  own: ReasoningChoice | null;
   thinksAt: ReasoningChoice | null;
-  onChoose: (level: ReasoningChoice) => void;
+  onChoose: (level: ReasoningChoice | null) => void;
 }) {
-  const levels: ReasoningChoice[] = model
-    ? [...(model.canDisable ? (["disabled"] as const) : []), ...model.efforts]
-    : [];
-
   // A model with no levels to choose leaves the models the whole column.
-  if (levels.length === 0) return null;
+  if (!model || (model.efforts.length === 0 && !model.canDisable)) return null;
+  // The Agent's own level is marked Default; an Agent that names none gets a Default of its own.
+  const levels: (ReasoningChoice | null)[] = [
+    ...(own === null ? [null] : []),
+    ...(model.canDisable ? (["disabled"] as const) : []),
+    ...model.efforts,
+  ];
   return (
-    <section aria-label={model ? t`Reasoning on ${model.name}` : t`Reasoning`} className="shrink-0">
+    <section aria-label={t`Reasoning on ${model.name}`} className="shrink-0">
       <div aria-hidden className={dropdownMenuSeparatorClass} />
-      {/* One line of levels, so the models above keep the column's height. */}
-      <ul className="flex flex-wrap gap-1">
+      {/* One line of levels, so the models above keep the column's height. Up and Down reach the
+          row at the level in effect; Left and Right move along it. */}
+      <ul data-list-row className="flex flex-wrap gap-1">
         {levels.map((level) => (
-          <li key={level}>
+          <li key={level ?? "default"}>
             <button
               type="button"
-              data-list-item
+              data-list-item={level === thinksAt || undefined}
               aria-current={level === thinksAt || undefined}
               className={cn(
                 dropdownRowVariants({ selected: level === thinksAt }),
@@ -527,8 +551,8 @@ function ReasoningChoices({
               )}
               onClick={() => onChoose(level)}
             >
-              {reasoningName(level)}
-              {level === agent.effort ? (
+              {level ? reasoningName(level) : t`Default`}
+              {level && level === own ? (
                 <span className="text-xs text-muted-foreground">{t`Default`}</span>
               ) : null}
             </button>
@@ -537,6 +561,36 @@ function ReasoningChoices({
       </ul>
     </section>
   );
+}
+
+/**
+ * The level a model runs a reasoning choice at, settled as the gateway's `resolveReasoning` does:
+ * the nearest level it offers (a tie goes higher), Off as its lowest level where it can't turn
+ * reasoning off, and null (the model's own default) for adaptive or no choice.
+ */
+function settledReasoning(
+  choice: ReasoningChoice | null,
+  model: ModelOption | undefined,
+): ReasoningChoice | null {
+  if (!choice || choice === "adaptive") return null;
+  if (!model) return choice;
+  if (choice === "disabled" && model.canDisable) return "disabled";
+  const rank = (level: ReasoningLevel) => REASONING_LEVELS.indexOf(level);
+  const wanted = rank(choice === "disabled" ? "low" : choice);
+  const distance = (level: ReasoningLevel) => Math.abs(rank(level) - wanted);
+  return model.efforts.reduce<ReasoningLevel | null>(
+    (best, level) =>
+      best === null ||
+      distance(level) < distance(best) ||
+      (distance(level) === distance(best) && rank(level) > rank(best))
+        ? level
+        : best,
+    null,
+  );
+}
+
+function sameOverrides(a: ThreadOverrides, b: ThreadOverrides): boolean {
+  return a.model === b.model && a.effort === b.effort;
 }
 
 /** Whether this deployment can run the model; an id it has never heard of can't run either. */
@@ -563,15 +617,6 @@ export function reasoningName(choice: ReasoningChoice): string {
 
 export function modelName(models: readonly ModelOption[] | null, id: string): string {
   return models?.find((option) => option.id === id)?.name ?? id;
-}
-
-function pickable(agent: AgentCatalogItem): boolean {
-  return agent.selection !== null && agent.unavailableReasons.length === 0;
-}
-
-function creationAgentOf(agent: AgentCatalogItem): CreationAgent {
-  if (!agent.selection) throw new Error(`Agent ${agent.slug} has nothing to pick`);
-  return { selection: agent.selection, slug: agent.slug, name: agent.name };
 }
 
 function fileName(agent: AgentCatalogItem): string {

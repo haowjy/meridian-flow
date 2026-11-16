@@ -15,11 +15,12 @@ export type CreationChoices = {
   aiWriteMode?: AiWriteMode;
 };
 
+export function isPickable(agent: AgentCatalogItem): agent is PickableAgent {
+  return agent.selection !== null && agent.unavailableReasons.length === 0;
+}
+
 export function pickableAgents(agents: readonly AgentCatalogItem[]): PickableAgent[] {
-  return agents.filter(
-    (agent): agent is PickableAgent =>
-      agent.selection !== null && agent.unavailableReasons.length === 0,
-  );
+  return agents.filter(isPickable);
 }
 
 /** The Agent a started chat is bound to: its revision when known, else only its name. */
@@ -36,5 +37,9 @@ export function boundAgentRow(
         bound.definitionRevisionId !== null &&
         agent.selection.definitionRevisionId === bound.definitionRevisionId,
     ) ?? agents.find((agent) => bound.name !== null && agent.name === bound.name);
-  return row ? { selection: row.selection, slug: row.slug, name: row.name } : null;
+  return row ? creationAgentOf(row) : null;
+}
+
+export function creationAgentOf(agent: PickableAgent): CreationAgent {
+  return { selection: agent.selection, slug: agent.slug, name: agent.name };
 }

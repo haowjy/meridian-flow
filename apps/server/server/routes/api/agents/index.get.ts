@@ -10,9 +10,5 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event);
   const projectId = parseOptionalRequestId(query.projectId, "projectId");
   if (projectId) await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-  const [catalog, lastStartedSlug] = await Promise.all([
-    app.agentCatalog.list(user.userId, { projectId }),
-    projectId ? app.threadRepos.threads.lastStartedAgentSlug(user.userId, projectId) : null,
-  ]);
-  return serializeTransport({ ...catalog, lastStartedSlug });
+  return serializeTransport(await app.agentCatalog.list(user.userId, { projectId }));
 });
