@@ -7,6 +7,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -19,6 +20,10 @@ import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.
 export { createScratchDatabase, openHarness };
 
 const CHILD_SOURCE = join(dirname(fileURLToPath(import.meta.url)), "child.mts");
+const INVERSE_WORKER_SOURCE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../../apps/server/server/domains/collab/domain/inverse-worker-entry.ts",
+);
 
 let bundled: Promise<string> | undefined;
 
@@ -29,16 +34,32 @@ let bundled: Promise<string> | undefined;
  */
 function childBundle(): Promise<string> {
   bundled ??= (async () => {
-    const outfile = join(tmpdir(), `model-edit-child-${process.pid}.mjs`);
-    process.once("exit", () => rmSync(outfile, { force: true }));
+    const outdir = join(tmpdir(), `model-edit-child-${process.pid}`);
+    process.once("exit", () => rmSync(outdir, { recursive: true, force: true }));
     await build({
-      entryPoints: [CHILD_SOURCE],
+      // The inverse worker is a second entry beside the child: the server's pool starts it by a
+      // `new URL("./inverse-worker-entry.ts", import.meta.url)` that the plugin below points at
+      // the bundled `.mjs`, as Nitro's build does.
+      entryPoints: { child: CHILD_SOURCE, "inverse-worker-entry": INVERSE_WORKER_SOURCE },
       bundle: true,
       platform: "node",
       format: "esm",
-      outfile,
+      outdir,
+      outExtension: { ".js": ".mjs" },
       logLevel: "warning",
       plugins: [
+        {
+          name: "inverse-worker-url",
+          setup(b) {
+            b.onLoad({ filter: /collab\/domain\/inverse-worker\.ts$/ }, async (args) => ({
+              contents: (await readFile(args.path, "utf8")).replace(
+                "./inverse-worker-entry.ts",
+                "./inverse-worker-entry.mjs",
+              ),
+              loader: "ts",
+            }));
+          },
+        },
         {
           name: "external-packages",
           setup(b) {
@@ -59,7 +80,7 @@ function childBundle(): Promise<string> {
         },
       ],
     });
-    return outfile;
+    return join(outdir, "child.mjs");
   })();
   return bundled;
 }
