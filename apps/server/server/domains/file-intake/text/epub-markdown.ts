@@ -68,9 +68,16 @@ function xmlText(data: Uint8Array): string {
 }
 
 function parseXml(text: string): Document {
-  const document = new DOMParser({ errorHandler: () => {} }).parseFromString(text, "text/xml");
-  if (!document?.documentElement)
-    throw new ConversionRefused("unreadable", "The EPUB's package file is not valid XML.");
+  const notXml = () =>
+    new ConversionRefused("unreadable", "The EPUB's package file is not valid XML.");
+  // xmldom 0.9 throws a ParseError on not-well-formed input, whatever the error handler does.
+  let document: ReturnType<DOMParser["parseFromString"]> | undefined;
+  try {
+    document = new DOMParser({ errorHandler: () => {} }).parseFromString(text, "text/xml");
+  } catch {
+    throw notXml();
+  }
+  if (!document?.documentElement) throw notXml();
   return document as unknown as Document;
 }
 

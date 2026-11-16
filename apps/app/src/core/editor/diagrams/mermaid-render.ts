@@ -16,6 +16,9 @@ let appliedTheme: string | null = null;
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
   securityLevel: "strict",
+  // Mermaid 12 defaults to ELK, which lays diagrams out differently and ships a
+  // large extra chunk; dagre keeps existing diagrams as authored.
+  layout: "dagre",
   suppressErrorRendering: true,
   // Labels as SVG text rather than HTML in a `<foreignObject>`, which mermaid
   // does by default. Two reasons, one boundary each: the rendering boundary's
