@@ -51,8 +51,16 @@ export function selectedObject(state: EditorState): ObjectAt | null {
   return null;
 }
 
-/** The object the caret would walk onto next. */
-export function objectBeside(state: EditorState, direction: 1 | -1): ObjectAt | null {
+/**
+ * The object the caret would walk onto next. `atEdge` says whether the caret stands at its
+ * block's edge: by default its first or last character, but for an up or down arrow its first
+ * or last line, which only the view can tell.
+ */
+export function objectBeside(
+  state: EditorState,
+  direction: 1 | -1,
+  atEdge?: boolean,
+): ObjectAt | null {
   const { selection } = state;
   if (!selection.empty) return null;
   const $pos = selection.$head;
@@ -62,9 +70,10 @@ export function objectBeside(state: EditorState, direction: 1 | -1): ObjectAt | 
     return { node: inline, pos: direction === 1 ? $pos.pos : $pos.pos - inline.nodeSize };
   }
 
-  const atEdge =
-    direction === 1 ? $pos.parentOffset === $pos.parent.content.size : $pos.parentOffset === 0;
-  if (!atEdge) return null;
+  const edge =
+    atEdge ??
+    (direction === 1 ? $pos.parentOffset === $pos.parent.content.size : $pos.parentOffset === 0);
+  if (!edge) return null;
 
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
     const parent = $pos.node(depth - 1);

@@ -222,10 +222,10 @@ export const ObjectPhysicsExtension = Extension.create({
               id: "object-walk",
               scope: "block",
               bindings: {
-                ArrowRight: walkForward,
-                ArrowDown: walkForward,
-                ArrowLeft: walkBackward,
-                ArrowUp: walkBackward,
+                ArrowRight: (state, dispatch) => walk(state, dispatch, 1),
+                ArrowDown: (state, dispatch, view) => walk(state, dispatch, 1, view),
+                ArrowLeft: (state, dispatch) => walk(state, dispatch, -1),
+                ArrowUp: (state, dispatch, view) => walk(state, dispatch, -1, view),
               },
             }),
             chrome?.registerKeymap({
@@ -338,15 +338,17 @@ export const ObjectPhysicsExtension = Extension.create({
                 event.isComposing ||
                 view.composing ||
                 /[\r\n]/.test(event.data) ||
-                !selectedObject(view.state)
+                view.state.selection instanceof TextSelection
               )
                 return false;
 
               // Native text input can have no keypress, which is where PM normally
-              // routes a non-text selection through the text-input handlers.
+              // routes a non-text selection through the text-input handlers. Left to
+              // the browser, the text goes to its own caret, which for a gap cursor
+              // a click made is still inside the table above it.
               const { from, to } = view.state.selection;
               const text = event.data;
-              const insert = () => view.state.tr.insertText(text, from, to).scrollIntoView();
+              const insert = () => view.state.tr.insertText(text).scrollIntoView();
               if (
                 !view.someProp("handleTextInput", (handler) =>
                   handler(view, from, to, text, insert),
@@ -494,13 +496,12 @@ function dispatchIfAny(
   return true;
 }
 
-const walkForward: KeymapBinding = (state, dispatch) => walk(state, dispatch, 1);
-const walkBackward: KeymapBinding = (state, dispatch) => walk(state, dispatch, -1);
-
+/** `lines` is passed for the up and down arrows, which leave a block from its first or last line rather than its first or last character. */
 function walk(
   state: Parameters<KeymapBinding>[0],
   dispatch: Parameters<KeymapBinding>[1],
   direction: 1 | -1,
+  lines?: EditorView,
 ): boolean {
   // Second press: pass beyond the object the first press selected.
   const selected = selectedObject(state);
@@ -516,7 +517,12 @@ function walk(
   }
 
   // First press: the caret is beside an object, so walk onto it.
-  const beside = objectBeside(state, direction);
+  const inText = state.selection.$head.parent.isTextblock;
+  const beside = objectBeside(
+    state,
+    direction,
+    lines && inText ? lines.endOfTextblock(direction === 1 ? "down" : "up", state) : undefined,
+  );
   if (!beside) return false;
   return dispatchIfAny(selectObjectTransaction(state, beside.pos), dispatch);
 }

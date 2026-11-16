@@ -45,7 +45,9 @@ which line a caret is on).
    removes the line. Click below it again: no second blank line. A figure or a
    horizontal rule at the end gets a gap cursor and no paragraph. In each
    document, Ctrl/Cmd+End from the top and ArrowDown off the last block land in
-   the same place as the click. Do not expect the same below a diagram that ends
+   the same place as the click, and typing there (keys, and text inserted with
+   no keypress) lands in the same place too. ArrowDown from the middle of the
+   paragraph above a diagram selects the diagram. Do not expect the same below a diagram that ends
    a cell.
 7. **Read-only.** Repeat 1 in a read-only view: no caret appears and nothing
    changes. Click a task box there: it does not change.

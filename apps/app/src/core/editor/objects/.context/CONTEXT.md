@@ -27,7 +27,10 @@ The movement helpers in [object-selection.ts](../object-selection.ts) check each
 landing against object registration. Schema-aware `Selection.near` alone cannot
 distinguish hidden diagram source from visible prose.
 
-An arrow asks for the adjacent object and may stop at a dead end. Escape searches
+An arrow asks for the adjacent object and may stop at a dead end. Left and
+right walk onto it from the block's first or last character; up and down from
+its first or last line (`endOfTextblock`), since the browser's own vertical
+move cannot enter an opaque object and, with nothing after it, does nothing. Escape searches
 forward for writable prose, skipping opaque objects; a gap after a trailing object
 is a valid destination. It looks behind only when nothing is ahead, and can create
 a paragraph when the object is the whole document. These searches stay inside the
@@ -56,7 +59,13 @@ transaction. This is also the policy for a fully selected table: type after the
 table, preserving its cells.
 
 Physical keypresses and the extension's cancelable, non-composing `beforeinput`
-`insertText` handler use the same ProseMirror `handleTextInput` chain. The
+`insertText` handler use the same ProseMirror `handleTextInput` chain, for every
+selection that is not a text caret (a selected object, a gap cursor, a cell
+selection). Text input with no keypress (IME commits, dictation, mobile keyboards,
+CDP `insertText`) otherwise goes to the browser's own caret, which can disagree
+with the model: after a click below a final table, Chrome's caret stays inside
+the table's wrapper, which ProseMirror counts as the gap cursor's position, and
+the text went into the last cell. The
 `compositionstart` handler prepares the destination, then leaves provisional text
 and commit to the browser. It must run before ProseMirror's own compositionstart
 handler, which calls `endComposition` with `restarting` set for a nonempty
