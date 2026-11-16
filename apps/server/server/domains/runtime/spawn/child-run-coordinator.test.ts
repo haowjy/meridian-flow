@@ -179,7 +179,7 @@ async function fixture(
     files: {
       "mars.toml": '[package]\nname = "test-parent"\nversion = "0.1.0"\nschema = 1\n',
       "agents/parent.md":
-        "---\nname: Parent\nmodel: parent-model\neffort: high\ntools:\n  ask_user: deny\n---\n",
+        "---\nname: Parent\nmode: primary\nmodel: parent-model\neffort: high\ntools:\n  ask_user: deny\n---\n",
     },
   });
   const parentRevision = parentInstalled.definitions[0];

@@ -1,3 +1,4 @@
+import type { CopySourceView } from "./ports/context-port.js";
 /**
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
  * Work-scoped (scratch) ContextFS adapters, and chat-scoped (uploads) ones into one router per scope.
@@ -243,7 +244,7 @@ function buildUnifiedContextPort(input: {
   treeLists: AdapterAssembly["treeLists"];
   db: Database;
   arrivals?: DocumentArrivals;
-  resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
+  resolveDestinationFolder?: (folderId: string, view?: CopySourceView) => Promise<string | null>;
   copyCommands?: CopyCommands;
   copy?: ContextCopyCommandDeps;
 }): ContextPort {
@@ -480,7 +481,14 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         links: options.links,
         documentCreation: options.documentSync,
-        resolveDestinationFolder: (id) => resolveHeldFolderUri(options.db, projectId, userId, id),
+        resolveDestinationFolder: async (id, view) =>
+          resolveHeldFolderUri(
+            options.db,
+            projectId,
+            userId,
+            id,
+            view?.kind === "draft" ? await options.branches.viewForOwner(view.owner) : undefined,
+          ),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,
@@ -497,7 +505,14 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         links: options.links,
         documentCreation: options.documentSync,
-        resolveDestinationFolder: (id) => resolveHeldFolderUri(options.db, projectId, userId, id),
+        resolveDestinationFolder: async (id, view) =>
+          resolveHeldFolderUri(
+            options.db,
+            projectId,
+            userId,
+            id,
+            view?.kind === "draft" ? await options.branches.viewForOwner(view.owner) : undefined,
+          ),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,

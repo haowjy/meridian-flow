@@ -1,3 +1,4 @@
+import type { DraftOwnerKey } from "@meridian/contracts";
 /**
  * Row-anchored folder placement using the same project tree as document paths. One picker for
  * Move… and Copy to…. Move… offers the places in the row's own list (the project's files, or the
@@ -25,6 +26,7 @@ import { useTreeActions } from "@/client/query/useTreeActions";
 import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
+import { useShellTreeVersion } from "../tree-version";
 import { useOptionalLiveDocumentSessionRegistry } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
@@ -76,6 +78,7 @@ function OpenPicker({
   onOpenChange,
   rowRef,
 }: Omit<EntryDestinationPickerProps, "children"> & { rowRef: RefObject<HTMLDivElement | null> }) {
+  const shell = useShellTreeVersion();
   const projectActions = useTreeActions({ kind: "project", projectId });
   const accountActions = useTreeActions({ kind: "account" });
   const selection = useOptionalEntrySelection();
@@ -103,7 +106,19 @@ function OpenPicker({
   const subjects = useMemo(() => {
     const rows: { ref: EntryRef; name: string; view: DragEntry["view"] }[] = several
       ? picked.map((row) => ({ ref: row.ref, name: row.name, view: row.view }))
-      : [{ ref: { kind: entry.kind, id: entry.id }, name: entry.name, view: LIVE_VIEW }];
+      : [
+          {
+            ref: { kind: entry.kind, id: entry.id },
+            name: entry.name,
+            view:
+              shell?.showing === "draft"
+                ? {
+                    kind: "draft",
+                    owner: shell.ownerKey as DraftOwnerKey,
+                  }
+                : LIVE_VIEW,
+          },
+        ];
     const inside = new Set(
       rows.flatMap((row) => {
         const found = row.ref.kind === "folder" ? source.locate(row.ref.id) : null;
@@ -111,7 +126,7 @@ function OpenPicker({
       }),
     );
     return rows.filter((row) => !inside.has(row.ref.id));
-  }, [several, picked, entry.kind, entry.id, entry.name, source]);
+  }, [several, picked, entry.kind, entry.id, entry.name, source, shell]);
   const placed = subjects.map((row) => ({ row, at: source.locate(row.ref.id) }));
 
   /** Why a destination is no place for the subjects, if it is not. */
@@ -263,6 +278,14 @@ function OpenPicker({
         owner: destination.owner,
         tree: destination.tree,
         writable: true,
+        ...(shell?.showing === "draft"
+          ? {
+              view: {
+                kind: "draft" as const,
+                owner: shell.ownerKey as DraftOwnerKey,
+              },
+            }
+          : {}),
       },
       into: destination.entryId,
       copies,

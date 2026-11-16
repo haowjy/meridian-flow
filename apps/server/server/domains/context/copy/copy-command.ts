@@ -1,3 +1,6 @@
+import type { BranchId } from "@meridian/contracts";
+import type { Branches } from "../../collab/domain/branches.js";
+import type { ContextCommandBranch } from "../ports/context-command-transaction.js";
 /**
  * Copy: one atomic command per drop, for a selection of roots into one destination.
  *
@@ -114,10 +117,13 @@ export interface CopyDestinationHandoff {
   workScopeId: string | null;
   /** The folder the writer named by id, and the folders to make under it; `dir` spells where it stands. */
   parent?: { folderId: string; createFolders: readonly string[] };
+  /** The Work's draft this copy lands in, when the destination is a drafted scheme's draft view. */
+  branch: ContextCommandBranch | null;
 }
 
 export interface ContextCopyCommandDeps {
   documentSync: Pick<CollabDomain, "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed">;
+  branches: Pick<Branches, "viewForOwner">;
   objectStore: ObjectStorePort;
   release: Pick<ObjectRelease, "keys">;
 }
@@ -207,9 +213,12 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
             try {
               return await commandTransaction.run(
-                () => write(selected, prepared.value),
+                (command) => write(selected, prepared.value, command.branch?.id ?? null),
                 [scopeOf(input.destination)],
-                { sourceIds: prepared.value.sourceIds },
+                {
+                  sourceIds: prepared.value.sourceIds,
+                  ...(input.destination.branch ? { branch: input.destination.branch } : {}),
+                },
               );
             } catch (cause) {
               // The Work lock found the destination's Work closed before anything was written. This
@@ -243,9 +252,14 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         looping.push(source.uri);
         continue;
       }
+      const view =
+        source.view.kind === "draft"
+          ? await deps.branches.viewForOwner(source.view.owner)
+          : { kind: "live" as const };
       const snapshot = await source.copy.snapshotSource({
         id: source.expected.nodeId,
         path: source.path,
+        view,
       });
       if (!snapshot.ok) {
         if (snapshot.error.code !== "not_found")
@@ -297,7 +311,9 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     roots: readonly CopySourceEntry[],
     documents: ReadonlyMap<string, PreparedDocument>,
   ): Promise<Result<PlannedCopy, ContextError>> {
-    const planned = await destination.copy.planCopy({ dir: destination.dir, roots });
+    const owner = destination.branch;
+    const view = owner ? await deps.branches.viewForOwner(owner.owner) : { kind: "live" as const };
+    const planned = await destination.copy.planCopy({ dir: destination.dir, roots, view });
     if (!planned.ok) return Err(adapterFaultToContextError(planned.error, destination.uri));
     return Ok(await bind(planned.value, documents));
   }
@@ -306,21 +322,20 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     return bindTree(plan, ({ source: file, uri }) => {
       const read = documents.get(file.documentId);
       if (!read) throw new Error(`No content was read for ${file.path}`);
+      const content =
+        read.blocks.length === 0
+          ? null
+          : deps.documentSync.bindCopiedBlocks({
+              uri,
+              filetype: file.filetype,
+              sourceHolderUri: read.holderUri,
+              blocks: read.blocks,
+              aheadSettlements: read.aheadSettlements,
+              map: plan.map,
+            });
       return {
-        state:
-          read.blocks.length === 0
-            ? null
-            : deps.documentSync.encodeSeed(
-                deps.documentSync.bindCopiedBlocks({
-                  uri,
-                  filetype: file.filetype,
-                  sourceHolderUri: read.holderUri,
-                  blocks: read.blocks,
-                  aheadSettlements: read.aheadSettlements,
-                  map: plan.map,
-                }),
-                { type: "system" },
-              ),
+        content,
+        state: content ? deps.documentSync.encodeSeed(content, { type: "system" }) : null,
         copiedFrom: { uri: read.uri, version: read.version, revision: read.revision },
       };
     });
@@ -373,13 +388,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       }
       return Ok(documents);
     }
-    if (source.view.kind === "draft") {
-      return Err({
-        code: "invalid_operation",
-        uri: source.uri,
-        message: "A folder copies the live documents in it; open a document to copy its draft",
-      });
-    }
     for (const file of filesOf(snapshot)) {
       if (file.fileType !== null) continue;
       const prepared = await prepareDocument(source, file);
@@ -399,7 +407,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     file: CopySourceFile,
     clientVector?: Uint8Array,
   ): Promise<Result<PreparedDocument, ContextError>> {
-    let draft = source.view.kind === "draft" ? source.view : null;
+    const draft = source.view.kind === "draft" ? source.view : null;
     const documentId = file.documentId as DocumentId;
     const client = clientVector ? decodeStateVector(clientVector) : null;
     const deadline = Date.now() + SOURCE_CATCH_UP_MS;
@@ -413,10 +421,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         switch (read.error.code) {
           case "not_found":
             return Err({ code: "not_found", uri: source.uri });
-          case "draft_not_found":
-            // The owner never drafted it, so the draft view showed the live document.
-            draft = null;
-            continue;
           default:
             return Err({ code: "io_error", uri: source.uri, message: read.error.code });
         }
@@ -443,7 +447,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         blocks: read.value.content,
         aheadSettlements: read.value.aheadSettlements,
         revision: read.value.revision,
-        version: draft ? "draft" : "live",
+        version: read.value.version,
       });
     }
   }
@@ -452,6 +456,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
+    branchId: BranchId | null,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const destination = await resolvedDestination(input);
     if (!destination.ok) return destination;
@@ -473,6 +478,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         ...(dest.parent ? { parent: dest.parent } : {}),
         plan: planned.value.plan,
         contents: planned.value.contents,
+        branchId,
         ...(input.request.position ? { position: input.request.position } : {}),
       });
       if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
@@ -578,7 +584,7 @@ function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
 export function receiptCommand(
   sources: readonly Pick<CopySourceHandoff, "uri" | "view" | "expected" | "copyId">[],
   destinationUri: string,
-  request: Pick<ContextCopyRequest, "destinationParent" | "position">,
+  request: Pick<ContextCopyRequest, "destinationParent" | "destinationBranch" | "position">,
 ): ContextOperationCommand {
   return {
     kind: "copy",
@@ -594,6 +600,14 @@ export function receiptCommand(
       }),
     ),
     destinationUri,
+    ...(request.destinationBranch
+      ? {
+          destinationView: {
+            kind: "draft" as const,
+            owner: draftOwnerKey(request.destinationBranch.owner),
+          },
+        }
+      : {}),
     ...(request.destinationParent ? { destinationParent: request.destinationParent } : {}),
     ...(request.position ? { position: request.position } : {}),
   };

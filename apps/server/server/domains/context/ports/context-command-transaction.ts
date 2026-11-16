@@ -11,7 +11,7 @@ export type ContextCommandScope = { scheme: ContextScheme; workId: string | null
 export type ContextCommandBranch = {
   mode: "ensure" | "existing";
   owner: DraftOwner;
-  threadId: ThreadId;
+  threadId: ThreadId | null;
   userId: UserId;
 };
 

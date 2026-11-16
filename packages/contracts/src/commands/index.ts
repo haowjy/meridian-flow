@@ -70,6 +70,7 @@ export type LeftOutWhy =
   | "needs"
   | "changed_since"
   | "has_text"
+  | "closed"
   | "already";
 
 /**

@@ -267,6 +267,7 @@ function createInMemoryDraftPeerStub(
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
         return Ok({
           content: model.projectBlocks(toDocHandle(doc)).map((block) => block.node),
+          version: "live" as const,
           revision: versioned(doc, scope, () => null).revision,
           holderUri: scope.holder.uri,
           stateVector: Y.encodeStateVector(doc),
@@ -280,6 +281,9 @@ function createInMemoryDraftPeerStub(
         const verbatim = await isCodeDocument(resolveFiletype, input.documentId);
         return Ok(readHashlines(doc, scope, model, codec, verbatim));
       }),
+    async writeCreatedDraftContent() {
+      throw new Error("Drafts are not supported in memory");
+    },
     async draftCreatedDocuments() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
     },

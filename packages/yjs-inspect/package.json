@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "lib0": "^0.2.120",
-    "yjs": "13.6.31"
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "typescript": "catalog:",

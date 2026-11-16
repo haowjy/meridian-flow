@@ -521,6 +521,7 @@ export async function resolveHeldFolderUri(
   projectId: string,
   userId: string,
   folderId: string,
+  view: TreeView = LIVE_TREE,
 ): Promise<string | null> {
   const held = await resolveHeldContextNode({
     db,
@@ -528,6 +529,7 @@ export async function resolveHeldFolderUri(
     userId,
     node: { kind: "folder", id: folderId },
     inTrash: true,
+    view,
   });
   return held?.kind === "held" ? held.address.uri : null;
 }
@@ -545,10 +547,13 @@ async function resolveHeldContextNode(input: {
   node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
   /** A node in Trash answers its last address (`inTrash`) instead of `unreachable`. */
   inTrash?: boolean;
+  /** The tree the node is placed in: live, or a Work's draft tree. */
+  view?: TreeView;
 }): Promise<HeldContextNode | null> {
+  const view = input.view ?? LIVE_TREE;
   if (!isUuid(input.node.id)) return null;
   const tx = currentDrizzleDb(input.db) as Database;
-  const placed = await loadPlacedRows(tx, LIVE_TREE, [input.node.id]);
+  const placed = await loadPlacedRows(tx, view, [input.node.id]);
   const found =
     input.node.kind === "document"
       ? placed.documents.map((row) => ({
@@ -565,7 +570,7 @@ async function resolveHeldContextNode(input: {
         }))[0];
   if (!found) return null;
   const foldersById = new Map(
-    (await loadIdentityFolderClosure(tx, LIVE_TREE, found.parentId ? [found.parentId] : [])).map(
+    (await loadIdentityFolderClosure(tx, view, found.parentId ? [found.parentId] : [])).map(
       (folder) => [folder.id, folder],
     ),
   );

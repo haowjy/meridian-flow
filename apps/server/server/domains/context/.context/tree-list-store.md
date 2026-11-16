@@ -42,8 +42,7 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    with every row it lacks still in the journal, reads only the rows after it; a copy behind
    the head's `retired_through_seq` (rows folded into a checkpoint) is reloaded from the
    checkpoint;
-2. for `admit`: read `Connection` (`tree-list-facts.ts`: the open branches and the sources of
-   closed Works) and run the package's `admit`: the guard, which throws `CopyFault` on a copy
+2. for `admit`: read `Connection` (`tree-list-facts.ts`: the open branches and the list’s sources, including closed Works; a source with no row is gone) and run the package's `admit`: the guard, which throws `CopyFault` on a copy
    that does something an honest client's never does (nothing is stored, the copy reloads, the
    room closes the connection with `COPY_BROKEN`), then the update is applied to the copy and
    each record that changes a closed Work (a create, rename, move, delete or restore in its draft

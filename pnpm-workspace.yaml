@@ -10,7 +10,7 @@ allowBuilds:
   protobufjs: false
 
 catalog:
-  '@meridian-flow/runtime': ^0.1.0
+  '@meridian-flow/runtime': ^0.2.0
   '@types/node': ^26
   '@types/react': ^19.2.17
   '@types/react-dom': ^19.2.3
@@ -31,13 +31,13 @@ minimumReleaseAgeExclude:
 
 # Use the upstream traversal-delta fix plus the scoped stale-POP/go(0) patch below.
 overrides:
-  "@tanstack/history": 1.162.3
+  "@tanstack/history": 1.162.5
 patchedDependencies:
-  '@hocuspocus/provider@4.3.0': patches/@hocuspocus__provider@4.3.0.patch
-  '@tanstack/history@1.162.3': patches/@tanstack__history@1.162.3.patch
-  '@tiptap/core@3.27.1': patches/@tiptap__core@3.27.1.patch
-  '@tiptap/y-tiptap@3.0.5': patches/@tiptap__y-tiptap@3.0.5.patch
+  '@hocuspocus/provider@4.8.0': patches/@hocuspocus__provider@4.8.0.patch
+  '@tanstack/history@1.162.5': patches/@tanstack__history@1.162.5.patch
+  '@tiptap/core@3.34.0': patches/@tiptap__core@3.34.0.patch
+  '@tiptap/y-tiptap@3.3.0': patches/@tiptap__y-tiptap@3.3.0.patch
   'decode-named-character-reference@1.3.0': patches/decode-named-character-reference@1.3.0.patch
-  micromark@4.0.2: patches/micromark@4.0.2.patch
-  prosemirror-view@1.41.9: patches/prosemirror-view@1.41.9.patch
-  yjs@13.6.31: patches/yjs@13.6.31.patch
+  micromark@4.0.3: patches/micromark@4.0.3.patch
+  prosemirror-view@1.42.9: patches/prosemirror-view@1.42.9.patch
+  yjs@13.6.33: patches/yjs@13.6.33.patch

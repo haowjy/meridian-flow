@@ -1,4 +1,5 @@
 /** Effective document reads for non-tool callers: the same room copy a model call would read. */
+import { writeBlocks } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -7,9 +8,15 @@ import {
   unwrapDoc,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import type { DraftOwner, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { settledAheads } from "@meridian/markup/links";
+import {
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+  withBlockIds,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -38,7 +45,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
-  draftCoordinator: Pick<DraftCoordinator, "copyDraft">;
+  draftCoordinator: Pick<DraftCoordinator, "copyDraft" | "loadBase" | "prepareAppend">;
   blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: AgentEditRouter;
@@ -93,7 +100,8 @@ export function createEffectiveDocumentReader(input: {
   /**
    * A Work's draft room as the Work holds it: found by the Work and the document alone, with
    * no reading chat and no reply's staged writes. A draft a Discard closed is read from its
-   * retained bytes. A Work that never drafted the document is `draft_not_found`.
+   * retained bytes. A Work that never drafted the document is `draft_not_found`; callers decide
+   * whether to fall back to live.
    */
   async function readWorkDraft<T>(
     command: { documentId: DocumentId; owner: DraftOwner },
@@ -161,22 +169,30 @@ export function createEffectiveDocumentReader(input: {
         ),
       );
     },
-    readEffectiveBlocks(command) {
-      const project = async (handle: DocHandle): Promise<EffectiveBlocksRead> => {
-        const doc = unwrapDoc(handle);
-        const scope = await spelling(command, doc);
-        const blocks = input.model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
-        return {
-          content: blocks,
-          revision: documentRevision(doc, scope),
-          holderUri: scope.holder.uri,
-          stateVector: Y.encodeStateVector(doc),
-          aheadSettlements: settledAheads(blocks, scope),
+    async readEffectiveBlocks(command) {
+      const project =
+        (version: "live" | "draft") =>
+        async (handle: DocHandle): Promise<EffectiveBlocksRead> => {
+          const doc = unwrapDoc(handle);
+          const scope = await spelling(command, doc);
+          const blocks = input.model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
+          return {
+            content: blocks,
+            version,
+            revision: documentRevision(doc, scope),
+            holderUri: scope.holder.uri,
+            stateVector: Y.encodeStateVector(doc),
+            aheadSettlements: settledAheads(blocks, scope),
+          };
         };
-      };
-      return command.destination === "draft"
-        ? readWorkDraft(command, project)
-        : readEffective(command, project);
+      if (command.destination === "draft") {
+        const draft = await readWorkDraft(command, project("draft"));
+        if (draft.ok) return draft;
+      }
+      return readEffective(
+        { documentId: command.documentId, destination: "live" },
+        project("live"),
+      );
     },
     readEffectiveHashlines(command) {
       return readEffective(command, async (handle): Promise<HashlineRead> => {
@@ -187,6 +203,34 @@ export function createEffectiveDocumentReader(input: {
         ]);
         return readHashlines(doc, scope, input.model, input.codec, verbatim);
       });
+    },
+    async writeCreatedDraftContent(created) {
+      const schema = buildDocumentSchema();
+      for (const { documentId, branchId, content } of created) {
+        const draft = await input.drafts.findBranchDraft(documentId, branchId);
+        if (!draft) throw new Error(`No created draft for ${documentId}`);
+        const base = await input.draftCoordinator.loadBase(draft.draftId);
+        const write = input.draftCoordinator.prepareAppend(base, [], {
+          async authorServerRows(doc) {
+            return captureMutationUpdates(doc, () =>
+              doc.transact(() => {
+                writeBlocks(
+                  doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+                  schema,
+                  content.blocks.map(withBlockIds),
+                );
+              }),
+            );
+          },
+        });
+        try {
+          if (!(await write.persist()))
+            throw new Error(`Created draft content was contained for ${documentId}`);
+          await write.transfer();
+        } finally {
+          write.dispose();
+        }
+      }
     },
     async draftCreatedDocuments(created) {
       for (const { documentId, branchId } of created) {

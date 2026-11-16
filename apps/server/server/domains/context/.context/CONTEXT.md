@@ -227,9 +227,10 @@ addresses to adapters, `copy/copy-command.ts` reads, duplicates and orchestrates
 `adapters/context-fs/copy-adapter.ts` (source read) with `copy-tree.ts` (insertion) is what
 one source's tree contributes.
 
-- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, by node id) and each
+- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, by node id, in the source view) and each
   tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
-  document, or the draft a tab shows when the source names that view). The listing is a
+  document, or the Work's draft where it has one). A Draft view reads live content for
+  documents without a Work draft, while spelling links in the Draft tree. The listing is a
   series of committed reads, not one database snapshot; a folder moved while it runs lands
   on one side of it. A selection collapses to its outermost roots first: a root inside
   another selected folder, or selected twice, is already in that copy. Everything slow
@@ -260,7 +261,7 @@ one source's tree contributes.
   no entries and `settled: [{ rule: "returned", why }]`, releasing the duplicated objects since
   that transaction commits.
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
-  against live occupants and the rest of the batch, from a lock-free read of the destination
+  against occupants in the destination view and the rest of the batch, from a lock-free read of the destination
   parent ([naming conflicts never
   block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)).
   Only the roots meet existing occupants.
@@ -284,7 +285,9 @@ one source's tree contributes.
   run: the first there, each next one after the previous.
 - Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
   so it lands only in an empty document) and encoded to its first Yjs state
-  (`encodeSeed`) outside the lock. The insert is one `submit` of `create` records
+  (`encodeSeed`) outside the lock. A copy into a Work's draft view creates an empty live
+  authority and draft through admission, then appends the bound blocks to that draft through
+  the draft coordinator (`writeCreatedDraftContent`); it is not a live arrival. The live insert is one `submit` of `create` records
   (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
   (`createDocumentsAtomically`) persists the identities, `InitialDocumentSeeds` writes the heads and
   seed checkpoints, and every arrival settles once, so ahead refs pointing at a copy's new address
@@ -303,14 +306,16 @@ one source's tree contributes.
   the rest and `settled` carries `left_out` with `purged` or `would_loop` and the roots' addresses.
   A destination folder the project no longer holds copies nothing (`left_out`, every source).
   Nothing is `stale_source`, `stale_target` or `destination_missing` now.
-  What is still an error and stores nothing: `invalid_operation` for a draft view of a folder, the
-  source root, or a draft placement destination; `permission_denied` for a destination the
+  What is still an error and stores nothing: `invalid_operation` for the source root or a
+  placement destination that cannot take a copy; `permission_denied` for a destination the
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
   path or state vector, and a vector sent for a folder, which the route refuses before the domain
   runs. A draft view names its Work and no chat: the server reads that Work's active draft of
   the document, else the latest one a Discard or a delete closed (its bytes are retained), else
   the live document (the Work never drafted it, so the draft view showed live); a Work outside
-  the project is refused as `work_missing`. The one name outcome left to the address-model
+  the project is refused as `work_missing`. A draft source reads the Work's tree by id, so a
+  folder copies with the documents the Work places in it, and a node the Work does not place
+  is left out as purged. The one name outcome left to the address-model
   research is `conflict` (a copy id another row holds).
 - A client-held source sends its Yjs state vector with a document source (a folder source
   with a vector is a 400). The vector is compared with the room of the view being read, live
