@@ -174,10 +174,9 @@ export async function cleanDeletedChat(
     return true;
   };
   const claimUnderLock = () =>
-    underSubmissionLock
-      ? claim()
-      : ports.lock.run(accountId, threadId, new AbortController().signal, claim);
-  if (own || ports.surfaces().length) return claimUnderLock();
+    ports.lock.run(accountId, threadId, new AbortController().signal, claim);
+  // The caller's lock covers only an immediate claim; a deferred one runs after it was released.
+  if (own || ports.surfaces().length) return underSubmissionLock ? claim() : claimUnderLock();
   ports.attended(
     () =>
       void (async () => {
