@@ -7264,8 +7264,8 @@ msgid "That Work isn't available."
 msgstr "That Work isn't available."
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "That Work no longer has a draft of it."
-msgstr "That Work no longer has a draft of it."
+#~ msgid "That Work no longer has a draft of it."
+#~ msgstr "That Work no longer has a draft of it."
 
 #: src/features/import/selection-limits.ts
 msgid "That's {count} files. Import up to {limit} at a time."

@@ -74,7 +74,6 @@ function refusalOf(error: unknown): CopyRefusal {
   const { details } = error;
   const reason = details && typeof details === "object" && "reason" in details && details.reason;
   if (reason === "source_behind") return retry(t`The latest edits hadn't reached the server.`);
-  if (reason === "no_draft") return retry(t`That Work no longer has a draft of it.`);
   switch (error.code) {
     case "not_found":
     case "stale_source":

@@ -169,7 +169,7 @@ export type CopyContextEntryView =
   | { kind: "live" }
   /**
    * The owner's draft of the document, the one its active branch holds. An owner with no draft
-   * of it refuses the Copy; it never reads the live document instead.
+   * of it copies the live document, as its view shows it.
    */
   | { kind: "draft"; owner: DraftOwnerKey };
 

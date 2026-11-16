@@ -293,13 +293,15 @@ one source's tree contributes.
   `destination_missing` for a destination that no longer exists, `stale_target` for one that
   moved, `permission_denied` for an identity destination the writer cannot edit,
   `invalid_operation`
-  for a folder into its own subtree ("Can't go inside itself", the drag hint's words), an
-  unsupported source (a draft view of a folder, or of a document its Work holds no draft of:
-  reason `no_draft`), the source root, or a draft placement destination. Uploads as the
+  for a folder into its own subtree ("Can't go inside itself", the drag hint's words), the
+  source root, or a draft placement destination. Uploads as the
   destination (by path or by folder identity), a malformed path or state vector, and a vector
   sent for a folder are refused by the route before the domain runs, typed and unrecorded. A
   draft view names its Work and no chat: the server reads that Work's active branch's draft of
-  the document, and a Work outside the project is refused as `work_missing`.
+  each document, and a Work outside the project is refused as `work_missing`. A draft view
+  never refuses for lack of a draft: a document the Work holds no draft of copies its live text
+  (`copiedFrom.version` `live`), so a folder copies each document as the Work shows it. The
+  copy is what the writer saw: Draft view shows a document with no draft as its live text.
 - A client-held source sends its Yjs state vector with a document source (a folder source
   with a vector is a 400). The vector is compared with the room of the view being read, live
   or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
