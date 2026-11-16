@@ -27,8 +27,7 @@ export type StoredAsk = {
   /** Set when the ask opens; null while pending. */
   openedAt: Date | null;
   deadlineAt: Date | null;
-  /** The ask's clock lengths, fixed when it was requested: see `askClock`. */
-  idleSeconds: number;
+  /** The most a question waits from the moment it opens, fixed when it was requested: see `askHardLimitSeconds`. */
   hardLimitSeconds: number;
   draftAnswers: DraftAnswers | null;
   status: AskStatus;

@@ -35,7 +35,7 @@ import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
 import { jsonContent } from "../tools/tool-content.js";
-import { askClock, askDeadline } from "./ask-deadline.js";
+import { askDeadline, askHardLimitSeconds } from "./ask-deadline.js";
 
 export type AskAnswerResult =
   | { ok: true; ask: ThreadAsk }
@@ -374,7 +374,7 @@ export function createAskService(deps: {
         payload: input.request.payload,
         permissionCommand: input.request.kind === "permission" ? input.request.command : null,
         deadlineAt: null,
-        ...askClock(input.promptCache),
+        hardLimitSeconds: askHardLimitSeconds(input.promptCache),
         status: "pending",
         resolution: null,
         submissionId: null,
@@ -429,7 +429,7 @@ export function createAskService(deps: {
             (input.answers.length > questions.length || firstMisfit(questions, input.answers) >= 0)
           )
             return "draft_misfit";
-          const deadline = askDeadline(now, stored.openedAt, stored);
+          const deadline = askDeadline(now, stored.openedAt, stored.hardLimitSeconds);
           const updated = await deps.repos.asks.recordPresence({
             id: stored.id,
             deadline,

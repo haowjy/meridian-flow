@@ -113,7 +113,6 @@ else
           },
           permissionCommand: null,
           deadlineAt: new Date(0),
-          idleSeconds: 240,
           hardLimitSeconds: 3300,
           status: "open",
           resolution: null,
@@ -178,7 +177,6 @@ else
         },
         permissionCommand: null,
         deadlineAt: now,
-        idleSeconds: 240,
         hardLimitSeconds: 3300,
         status: "open",
         resolution: null,
@@ -217,7 +215,6 @@ else
         expect(stranger).toBe("not_owner");
         expect(await repos.asks.findById(ask.id)).toMatchObject({
           deadlineAt: now,
-          idleSeconds: 240,
           hardLimitSeconds: 3300,
           draftAnswers: null,
         });
@@ -284,7 +281,6 @@ else
         payload: { questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }] },
         permissionCommand: null,
         deadlineAt: null,
-        idleSeconds: 240,
         hardLimitSeconds: 3300,
         status: "answered",
         resolution: { kind: "answers", answers: [{ kind: "option", label: "A" }] },
@@ -320,7 +316,6 @@ else
         payload: { questions: [{ question: "Which?", options: [{ label: "A" }, { label: "B" }] }] },
         permissionCommand: null,
         deadlineAt: null,
-        idleSeconds: 240,
         hardLimitSeconds: 3300,
         status: "pending",
         resolution: null,

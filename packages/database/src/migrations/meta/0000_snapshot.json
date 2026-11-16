@@ -7675,12 +7675,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "idle_seconds": {
-          "name": "idle_seconds",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
         "hard_limit_seconds": {
           "name": "hard_limit_seconds",
           "type": "integer",

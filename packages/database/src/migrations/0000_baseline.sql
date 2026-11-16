@@ -758,7 +758,6 @@ CREATE TABLE "asks" (
 	"permission_command" jsonb,
 	"opened_at" timestamp with time zone,
 	"deadline_at" timestamp with time zone,
-	"idle_seconds" integer NOT NULL,
 	"hard_limit_seconds" integer NOT NULL,
 	"draft_answers" jsonb,
 	"status" text DEFAULT 'pending' NOT NULL,
