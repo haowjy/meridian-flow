@@ -193,6 +193,7 @@ async function fixture(
         resolveItemInBranch: identity.resolveReviewItemInBranch,
         branchOwner: (branchId: BranchId) => h.branches.ownerOf(branchId),
         lookupCommand: (key: CommandLookupKey) => commands.lookup(key),
+        awaitCommand: (envelope: Parameters<typeof commands.await>[0]) => commands.await(envelope),
       },
       roomRemoval: async ({ documentId }: { documentId: string }) => {
         const removal = (await removals.lookup([documentId as DocumentId])).get(
