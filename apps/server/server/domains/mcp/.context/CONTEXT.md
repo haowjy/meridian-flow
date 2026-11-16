@@ -70,7 +70,7 @@ connections are prompt text, not tool definitions.
   limit, does not make an old failure look fresh), is one line with the reason and no tool lines. `mcp_describe` with its
   name lists its tools from the pin, and `mcp_call` goes out whatever the status.
 - **`callConnectionTool`** (`domain/connection-tools.ts`) is the one function that calls a
-  connection's tool, and a script's call will use it too. It reads the pin through the bake, writes
+  connection's tool, and each call of an `mcp_run` script goes through it too. It reads the pin through the bake, writes
   the `mcp_calls` row on the plain `db` (never the ambient transaction) before the client is
   called, completes it after, keeps the full reply in the chat's storage prefix
   (`chat-media/<thread>/mcp/`, which the Work purge clears), and feeds the connection's status
