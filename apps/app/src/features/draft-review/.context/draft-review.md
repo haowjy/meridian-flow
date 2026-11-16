@@ -337,7 +337,7 @@ handful whatever the row count, and the server captures every named draft with o
 kind of fact. A failed read leaves every room in it without evidence (text stays, no byline);
 each asks again on its next change or reconnect. The old one-room route
 (`…/documents/:documentId/draft/provenance`) answers protocol-3 tabs until they reload; it goes
-in the release after this one.
+in the release after this one (#1677).
 
 ## Tree lines
 
