@@ -239,8 +239,8 @@ export function createTurnTreeInverse(deps: {
 
   /**
    * Takes the receipts back in the order given (the caller holds the lists' keys, the Works and
-   * the documents). A receipt something later changed (`superseded`) is skipped, and a partly
-   * superseded one reports as skipped too; the rest is reversed. Returns how many receipts
+   * the documents). A receipt something later changed (`changed_since`) or whose node is gone
+   * (`purged`) is skipped, and one partly taken back reports as skipped too; the rest is reversed. Returns how many receipts
    * reversed something. The receipts one list holds go back in one update of it: every browser
    * showing the list redraws its tree once for the whole Undo, not once a receipt.
    */
@@ -255,11 +255,12 @@ export function createTurnTreeInverse(deps: {
     const actor = input.userId ? `user:${input.userId}` : "system";
     const skips: TurnInverseSkip[] = [];
     let reversed = 0;
-    const skip = (receipt: TreeReceipt, cause: "superseded" | "refused"): TurnInverseSkip => ({
+    const skip = (receipt: TreeReceipt, cause: "changed_since" | "purged"): TurnInverseSkip => ({
       kind: "tree",
       documentId: receipt.subject,
       uri: receipt.shownAt ?? receipt.subject,
       at: receipt.shownAt,
+      op: receipt.op,
       cause,
     });
     const record = (
@@ -277,7 +278,7 @@ export function createTurnTreeInverse(deps: {
         ...fields,
       });
 
-    for (const receipt of plan.gone) skips.push(skip(receipt, "superseded"));
+    for (const receipt of plan.gone) skips.push(skip(receipt, "changed_since"));
 
     // Consecutive receipts in one list, taken back together.
     let batch: { list: TreeList; receipts: TreeReceipt[] } | null = null;
@@ -291,21 +292,24 @@ export function createTurnTreeInverse(deps: {
           receipts.map((receipt) => {
             const view: View = receipt.draftBranchId ? { draft: receipt.draftBranchId } : LIVE;
             const made: { record: string; node: string }[] = [];
-            let failed = 0;
+            let stayed: "changed_since" | "purged" | null = null;
             let inLive = receipt.draftBranchId === null;
             for (const entry of [...receipt.records].reverse()) {
               const back = undoChange(writer, view, actor, entry.record);
-              if (typeof back === "string") failed++;
+              // `already`: its opposite stands, so it is taken back as asked.
+              if (back === "already") continue;
+              if (back === "changed_since") stayed = back;
+              else if (typeof back === "string") stayed ??= "purged";
               else {
                 if (back.draft === null) inLive = true;
                 made.push({ record: back.id, node: entry.node });
               }
             }
-            return { receipt, made, failed, inLive };
+            return { receipt, made, stayed, inLive };
           }),
       });
-      for (const { receipt, made, failed, inLive } of result) {
-        if (failed > 0) skips.push(skip(receipt, "superseded"));
+      for (const { receipt, made, stayed, inLive } of result) {
+        if (stayed) skips.push(skip(receipt, stayed));
         if (made.length === 0) continue;
         reversed++;
         await record(receipt, {
@@ -321,7 +325,7 @@ export function createTurnTreeInverse(deps: {
     for (const receipt of plan.steps) {
       const list = await treeListOfNode(deps.db, receipt.subject);
       if (!list) {
-        skips.push(skip(receipt, "superseded"));
+        skips.push(skip(receipt, "purged"));
         continue;
       }
       if (batch && JSON.stringify(batch.list) === JSON.stringify(list))

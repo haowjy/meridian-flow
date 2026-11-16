@@ -1,9 +1,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { LeftOutWhy } from "@meridian/contracts/commands";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { type GoneRow, RowWord } from "@/components/app/RowWord";
+import { treeLeftSentence } from "@/core/project-tree/tree-left-sentence";
 import {
   type Bounce,
   endTreeNotice,
@@ -357,29 +357,6 @@ function SaidWord({
         />
       );
   }
-}
-
-/** Why the tree change an Un-Apply left on a row stayed, named as the writer saw it land. */
-function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
-  const change =
-    fact.did === "moved"
-      ? t`The move`
-      : fact.did === "renamed"
-        ? t`The rename`
-        : fact.did === "restored"
-          ? t`The restore from Trash`
-          : fact.did === "deleted"
-            ? t`The delete`
-            : fact.did === "created"
-              ? fact.folder
-                ? t`The new folder`
-                : t`The new document`
-              : fact.folder
-                ? t`The change to this folder`
-                : t`The change to this document`;
-  if (why === "purged") return t`${change} can no longer be taken back.`;
-  if (why === "has_text") return t`${change} stayed: it has writing in it since.`;
-  return t`${change} stayed: it was changed since.`;
 }
 
 const factOf = (said: Extract<Said, { kind: "left" }>, node: string): TreeFact =>

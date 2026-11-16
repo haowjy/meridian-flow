@@ -417,16 +417,16 @@ export function createTurnInverseService(store: TurnInverseStore) {
             0,
           );
         const skips = [...plans.flatMap((plan) => plan.skips), ...committed.skips];
-        // A reply of tree changes alone, each since changed again: the fault is the answer.
-        const onlySuperseded =
-          !plans.length && skips.length > 0 && skips.every((skip) => skip.cause === "superseded");
+        // A reply of tree changes alone, each of which stayed: the skips say why.
+        const treeStayed =
+          !plans.length && skips.length > 0 && skips.every((skip) => skip.kind === "tree");
         return {
           status: accepted
             ? skips.length
               ? "partial"
               : "reversed"
-            : onlySuperseded
-              ? "superseded"
+            : treeStayed
+              ? "not_undone"
               : "expired",
           // One row per destination a document's steps reversed in, or one for its refusal; a
           // document with no text to reverse (it left, or comes back, with its node) has none.
