@@ -494,8 +494,12 @@ msgid "{count, plural, one {# call} other {# calls}}"
 msgstr "{count, plural, one {# call} other {# calls}}"
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
-msgstr "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
+#~ msgid "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
+#~ msgstr "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
+msgstr "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
 
 #: src/features/chat/DraftDock.tsx
 msgid "{count, plural, one {# change} other {# changes}}"

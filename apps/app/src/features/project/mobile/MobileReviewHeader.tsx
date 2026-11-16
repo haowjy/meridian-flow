@@ -75,6 +75,7 @@ export function MobileReviewHeader({
         <ManuscriptStateSlot state={manuscriptState} touch />
         <ReviewStateInline
           touch
+          itemKey={view.itemKey ?? ""}
           finished={finished}
           completing={header.completing}
           next={header.next}

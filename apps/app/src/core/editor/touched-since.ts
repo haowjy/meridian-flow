@@ -2,15 +2,20 @@ import * as Y from "yjs";
 
 type StackItem = Y.UndoManager["undoStack"][number];
 
+/** On a stack item: the document's state vector right after its change was done (or redone). */
+const AFTER_META = "meridian-step-after";
+
+/** Records the document's state now as the point `touchedSince` measures `stackItem` from. */
+export function markStepDone(doc: Y.Doc, stackItem: StackItem): void {
+  stackItem.meta.set(AFTER_META, Y.decodeStateVector(Y.encodeStateVector(doc)));
+}
+
 /**
- * Whether an edit since the step (`after`: the state vector right after it) deleted text it
- * inserted, wrote beside text it inserted or deleted, or deleted a block holding either.
+ * Whether an edit since the step was marked done deleted text it inserted, wrote beside text it
+ * inserted or deleted, or deleted a block holding either.
  */
-export function touchedSince(
-  doc: Y.Doc,
-  stackItem: StackItem,
-  after: Map<number, number>,
-): boolean {
+export function touchedSince(doc: Y.Doc, stackItem: StackItem): boolean {
+  const after = stackItem.meta.get(AFTER_META) as Map<number, number>;
   const { insertions, deletions } = stackItem;
   const ours = (id: Y.ID | null) =>
     id !== null && (Y.isDeleted(insertions, id) || Y.isDeleted(deletions, id));
@@ -28,6 +33,9 @@ export function touchedSince(
     // A collected struct went with a deleted block.
     if (!(struct instanceof Y.Item)) return true;
     if (inserted && struct.deleted && !Y.isDeleted(deletions, struct.id)) return true;
+    // The same client typing right after it merges into this struct, so its start stays older.
+    if (inserted && struct.id.clock + struct.length > (after.get(struct.id.client) ?? 0))
+      return true;
     for (let parent = struct.parent; parent instanceof Y.AbstractType && parent._item; ) {
       const holder: Y.Item = parent._item;
       if (holder.deleted && !Y.isDeleted(deletions, holder.id)) return true;

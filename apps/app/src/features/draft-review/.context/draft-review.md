@@ -283,7 +283,13 @@ short-lived manager, so it can never pop another step. Ctrl+Z in the reviewing e
 same check: the step is guarded (`DocumentHistory.guard`, which carries the guard through Redo),
 so when it is next and was touched it is dropped unrun. A dropped step ends its notice share and
 says "N changes couldn't come back" on the draft's failure line (`undo-left-out`), where Ctrl+Z's
-other results show, so the press is never spent silently when the notice is already gone. A share that can't come back (touched, the room closing, resetting or turning read-only
+other results show, so the press is never spent silently when the notice is already gone. When the
+document has no change left, no card or strip row is there to carry that line, so the review's
+status line (`ReviewStateInline`) shows the draft's failure in place of "No changes left", and
+`useReviewFailures` leaves it out of the notices under the row so it shows once. Touched means an
+edit since deleted the step's text, wrote beside it, or deleted its block; the writer's own typing
+right after it counts too, though Yjs merges it into the Discard's struct (`touchedSince` checks the
+struct's end, not its start). A share that can't come back (touched, the room closing, resetting or turning read-only
 through `binding.notices`, or a `gone` answer) stays in the notice's sentence, which names the
 whole action the writer took, and the notice says how many of its changes couldn't come back
 (`partEnded(handle, leftOut)`, counted in changes, not documents). A share whose Discard was

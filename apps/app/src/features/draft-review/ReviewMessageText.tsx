@@ -78,8 +78,8 @@ function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
 /** What an Undo of a Discard couldn't bring back, wherever it says so. */
 export const leftOutSentence = (count: number) =>
   plural(count, {
-    one: "# change couldn't come back: it was drafted again or is gone.",
-    other: "# changes couldn't come back: they were drafted again or are gone.",
+    one: "# change couldn't come back: the text changed after it was discarded.",
+    other: "# changes couldn't come back: the text changed after they were discarded.",
   });
 
 export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }) {

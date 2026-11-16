@@ -11,7 +11,7 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
 import { endUndoStep } from "@/core/editor/editor-history";
-import { touchedSince } from "@/core/editor/touched-since";
+import { markStepDone, touchedSince } from "@/core/editor/touched-since";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
 import type { DiscardUndo } from "./draft-notices";
 import { readChosen } from "./review-frame";
@@ -73,8 +73,6 @@ export function startDraftDiscardSession(input: {
   recordRestorations(history);
   history.stopCapturing();
   let item: StackItem | null = null;
-  /** The document's state right after the write: anything past it is a later edit. */
-  let after = new Map<number, number>();
   let changes = 0;
   const write = (): CommandOutcome => {
     if (!input.active() || entry.binding !== binding || input.state().ended)
@@ -113,10 +111,10 @@ export function startDraftDiscardSession(input: {
       });
     history.stopCapturing();
     item = history.undoStack.length > before ? (history.undoStack.at(-1) ?? null) : null;
-    after = Y.decodeStateVector(Y.encodeStateVector(doc));
     changes = ids.length;
     binding.runtime.projectNow();
     if (item) {
+      markStepDone(doc, item);
       // Ctrl+Z follows the notice's rule: a step whose text was edited since is dropped, not run.
       // Its line shows where Ctrl+Z's results do, so it is said even with the notice gone.
       steps?.guard(item, () => {
@@ -209,7 +207,7 @@ export function startDraftDiscardSession(input: {
         entry.binding !== binding ||
         input.state().ended ||
         binding.session.getSnapshot().access === "read" ||
-        touchedSince(doc, item, after)
+        touchedSince(doc, item)
       ) {
         if (item) take(item);
         end();

@@ -16,7 +16,7 @@ import {
 } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
-import { touchedSince } from "./touched-since";
+import { markStepDone, touchedSince } from "./touched-since";
 
 type StackItem = Y.UndoManager["undoStack"][number];
 
@@ -52,8 +52,7 @@ const RANGE_META = "meridian-editor-range";
 /** On a stack item: its `Guard`. */
 const GUARD_META = "meridian-editor-guard";
 
-/** `after`: the document's state right after the guarded step was done (or redone). */
-type Guard = { dropped(): void; after: Map<number, number> };
+type Guard = { dropped(): void };
 
 type RelativeSelection = ReturnType<typeof getRelativeSelection>;
 
@@ -247,14 +246,11 @@ export class DocumentHistory implements EditorHistoryHandle {
 
   /**
    * Undo may take the step back only while what it wrote stands as it left it (a Discard): Ctrl+Z
-   * drops it unrun once a later edit touched that text, and calls `dropped`. Its Redo is guarded
-   * the same way, from the state the Redo left.
+   * drops it unrun once a later edit touched that text (`touchedSince`, from `markStepDone`), and
+   * calls `dropped`. Its Redo is guarded the same way, from the state the Redo left.
    */
   guard(item: StackItem, dropped: () => void): void {
-    item.meta.set(GUARD_META, {
-      dropped,
-      after: Y.decodeStateVector(Y.encodeStateVector(this.manager.doc)),
-    } satisfies Guard);
+    item.meta.set(GUARD_META, { dropped } satisfies Guard);
   }
 
   /** Takes a step out of the history: its owner undid it some other way. */
@@ -282,7 +278,7 @@ export class DocumentHistory implements EditorHistoryHandle {
         if (guard && segment.length) break;
         segment.push(entry);
         if (!guard) continue;
-        if (!touchedSince(this.manager.doc, entry.item, guard.after)) break;
+        if (!touchedSince(this.manager.doc, entry.item)) break;
         this.take(entry.item);
         guard.dropped();
         return;
@@ -314,7 +310,10 @@ export class DocumentHistory implements EditorHistoryHandle {
       const range = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
       if (range) generated.meta.set(RANGE_META, range);
       const guard = popped.meta.get(GUARD_META) as Guard | undefined;
-      if (guard) this.guard(generated, guard.dropped);
+      if (guard) {
+        markStepDone(this.manager.doc, generated);
+        this.guard(generated, guard.dropped);
+      }
       const known = popped.meta.get(HISTORY_META) as Entry | undefined;
       const moved: Entry = {
         kind: "yjs",
