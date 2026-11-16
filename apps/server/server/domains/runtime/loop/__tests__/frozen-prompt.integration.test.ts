@@ -410,7 +410,7 @@ describe("frozen prompt provider requests", () => {
     expect(
       gateway.requests
         .at(-1)
-        ?.messages.flatMap((message): ContentPart[] => message.content)
+        ?.messages.flatMap((message): readonly ContentPart[] => message.content)
         .some((part) => part.type === "media"),
     ).toBe(true);
 
@@ -423,12 +423,12 @@ describe("frozen prompt provider requests", () => {
     const firstForkRequest = gateway.requests.at(-1);
     expect(
       firstForkRequest?.messages
-        .flatMap((message): ContentPart[] => message.content)
+        .flatMap((message): readonly ContentPart[] => message.content)
         .some((part) => part.type === "media"),
     ).toBe(true);
     expect(
       firstForkRequest?.messages
-        .flatMap((message): ContentPart[] => message.content)
+        .flatMap((message): readonly ContentPart[] => message.content)
         .flatMap((part) => (part.type === "text" ? [part.text] : []))
         .join("\n"),
     ).not.toContain("Image context changed.");

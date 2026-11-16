@@ -465,7 +465,7 @@ describe("inbox drain", () => {
     expect(requests).toHaveLength(1);
     expect(
       required(requests[0])
-        .messages.flatMap((message): ContentPart[] => message.content)
+        .messages.flatMap((message): readonly ContentPart[] => message.content)
         .some((part) => part.type === "media"),
     ).toBe(true);
     const imageBlock = (await repos.blocks.listByThread(thread.id)).find(

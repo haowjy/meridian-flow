@@ -151,7 +151,7 @@ describe("document command recovery through the runtime loop", () => {
       { type: "text", text: expect.stringContaining("Invalid arguments for write:") },
     ]);
     const retryMessage = requests[1]?.messages
-      .flatMap((message): ContentPart[] => message.content)
+      .flatMap((message): readonly ContentPart[] => message.content)
       .find((part) => part.type === "tool_result" && part.toolCallId === "retired-read");
     expect(retryMessage).toMatchObject({
       content: persistedContent,
