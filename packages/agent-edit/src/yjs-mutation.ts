@@ -1,5 +1,5 @@
 /**
- * Pinned Yjs 13.6.31 mutation adapter. Owns retained-struct lookup, root/nested
+ * Pinned Yjs 13.6.33 mutation adapter. Owns retained-struct lookup, root/nested
  * parent resolution, fresh-item integration and tombstone splitting/transfer.
  * Browser-safe: no undo policy, host lifecycle or attribution policy. Recovery
  * and forward-inverse hosts supply identity mapping and choose mutation targets.
