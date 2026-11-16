@@ -75,14 +75,16 @@ the replay uses them (package `AGENTS.md`).
   connection with the one terminal code. Names, sources, drafts and types are not its business.
 - **`admit` stamps `dropped`** on a record in a closed draft, on a record of a dropped node or
   a create inside a dropped folder, and on a record whose addition changes a closed source. The
-  server decides: its arrival order is the one shared by all clients. For each view in an update,
-  admission compares the held tree with the tree after the whole update. If neither the diff nor
-  the records touch a closed draft, source or dropped node, it admits the update. A move out of a
-  closed source and back in the same update has no net diff and is admitted; the tree is unchanged.
-  Otherwise admission walks the records in list order, comparing each full projection with and
-  without the record, including held records after it. The diff counts both sources of a move and
-  changes to name, place, kind and shown state. In an in-process 300-record update against 25,000
-  held records, the fast path took 514 ms and the per-record path took 49.9 s (one dropped).
+  server decides: its arrival order is the one shared by all clients. Admission compares the held
+  tree with the tree after the whole update and checks the added records' reported sources. If
+  that gate fails, it doubles prefixes and bisects to find the next record to judge, leaving each
+  dropped record out of later projections. A reported source can be a no-op, so the candidate is
+  checked against its own full projection before it is dropped. The diff counts both sources of a
+  move and changes to name, place, kind and shown state. In an in-process 300-record update against
+  25,000 held records, no drop took 1.53 s and two replays; one closed-draft drop took 12.29 s
+  and 24 replays. These single runs shared the machine with other workloads. Fallback replay cost
+  grows with the number and positions of rejected or conservatively flagged records, with roughly
+  logarithmically many gate checks per candidate, each replaying the touched views twice.
   A source with no database row is closed. The
   server's own records are never admitted. `viewValues` leaves dropped records out;
   `droppedRecords` reads their reason from the settle log for the browser.

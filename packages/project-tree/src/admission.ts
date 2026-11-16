@@ -211,67 +211,68 @@ export function changedSources(before: TreeProjection, after: TreeProjection): S
   return sources;
 }
 
-/** Judge each added record against the held list and the records already admitted. */
+/** Judge segments against the records kept so far. */
 function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): string[] {
   const out: string[] = [];
-  const remaining = new Set(added.map((record) => record.id));
-  const dropped = new Set<string>();
-  const projections = new Map<string | null, TreeProjection>();
+  const excluded = new Set(added.map((record) => record.id));
   const droppedNodes = new Set(
     droppedRecords(doc).flatMap(({ record }) => (record.type === "create" ? [record.node] : [])),
   );
-  const needsWalk = added.some(
-    (record) =>
-      (record.draft !== null && !connection.drafts.has(record.draft)) ||
-      droppedNodes.has(record.node) ||
-      (record.type === "create" && droppedNodes.has(record.parent)),
-  );
-  if (!needsWalk) {
-    const views = new Set(added.map((record) => record.draft));
-    let closed = false;
-    for (const draft of views) {
+  const gate = (start: number, end: number, exactOne = false): boolean => {
+    const segment = added.slice(start, end);
+    if (
+      segment.some(
+        (record) =>
+          (record.draft !== null && !connection.drafts.has(record.draft)) ||
+          droppedNodes.has(record.node) ||
+          (record.type === "create" && droppedNodes.has(record.parent)),
+      )
+    )
+      return false;
+    const ids = new Set(segment.map((record) => record.id));
+    for (const draft of new Set(segment.map((record) => record.draft))) {
       const view = { draft };
-      const records = viewRecords(doc, view);
+      const records = viewRecords(doc, view).filter(
+        (record) => !excluded.has(record.id) || ids.has(record.id),
+      );
       const before = replay(
-        records.filter((record) => !remaining.has(record.id)),
+        records.filter((record) => !ids.has(record.id)),
         view,
       );
       const after = replay(records, view);
-      if ([...changedSources(before, after)].some(connection.closed)) {
-        closed = true;
-        break;
-      }
+      if (
+        [...changedSources(before, after)].some(connection.closed) ||
+        (!exactOne &&
+          segment.some((record) => after.changes.get(record.id)?.sources.some(connection.closed)))
+      )
+        return false;
     }
-    if (!closed) return out;
-  }
-  for (const record of added) {
-    remaining.delete(record.id);
-    if (record.type === "purge") continue;
-    const view = { draft: record.draft };
-    const records = viewRecords(doc, view).filter(
-      (r) => !remaining.has(r.id) && !dropped.has(r.id),
-    );
-    const before =
-      projections.get(record.draft) ??
-      replay(
-        records.filter((r) => r.id !== record.id),
-        view,
-      );
-    const after = replay(records, view);
-    const closed =
-      (record.draft !== null && !connection.drafts.has(record.draft)) ||
-      droppedNodes.has(record.node) ||
-      (record.type === "create" && droppedNodes.has(record.parent)) ||
-      [...changedSources(before, after)].some(connection.closed);
-    if (closed) {
+    return true;
+  };
+  let start = 0;
+  while (start < added.length) {
+    // Try the whole remainder first, preserving the one-gate common case.
+    if (gate(start, added.length)) break;
+    let low = start;
+    let high = Math.min(start + 1, added.length);
+    while (high < added.length && gate(start, high)) {
+      low = high;
+      high = Math.min(start + (high - start) * 2, added.length);
+    }
+    while (high - low > 1) {
+      const mid = Math.floor((low + high) / 2);
+      if (gate(start, mid)) low = mid;
+      else high = mid;
+    }
+    for (const record of added.slice(start, high - 1)) excluded.delete(record.id);
+    const record = added[high - 1] as Added;
+    // A reported source can belong to a no-op; only the projection diff drops one record.
+    if (gate(high - 1, high, true)) excluded.delete(record.id);
+    else {
       out.push(record.id);
-      dropped.add(record.id);
       if (record.type === "create") droppedNodes.add(record.node);
-      projections.set(record.draft, before);
-    } else {
-      if (record.draft === null) projections.clear();
-      projections.set(record.draft, after);
     }
+    start = high;
   }
   return out;
 }
