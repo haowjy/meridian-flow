@@ -89,17 +89,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.insert(contextSources).values([
-        { id: MANUSCRIPT, projectId: PROJECT, name: "Manuscript", slug: "manuscript" },
-        { id: WORK_SCRATCH, workId: WORK, scope: "work", name: "Work scratch", slug: "scratch" },
+        { id: MANUSCRIPT, projectId: PROJECT, slug: "manuscript" },
+        { id: WORK_SCRATCH, workId: WORK, scope: "work", slug: "scratch" },
         {
           id: NO_WORK_SCRATCH,
           projectId: PROJECT,
           chatThreadId: "00000000-0000-4000-8000-000000000bb9",
           scope: "chat",
-          name: "Uploads",
           slug: "uploads",
         },
-        { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, name: "Foreign", slug: "manuscript" },
+        { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, slug: "manuscript" },
       ]);
       const seed = treeSeeder(db);
       await seed.document(MANUSCRIPT, "chapter", { id: OWNED });

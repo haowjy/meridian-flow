@@ -3,7 +3,6 @@
  * sources a thread owns: its lineage's Scratch and its own chat's uploads.
  */
 import { draftOwnerKey } from "@meridian/contracts/branches";
-import { CONTEXT_URI_SCHEME_NAMES } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
@@ -71,7 +70,6 @@ export function createDrizzleLineageScratchLifecycle(
             projectId,
             rootThreadId,
             scope: "lineage",
-            name: CONTEXT_URI_SCHEME_NAMES.scratch,
             slug: "scratch",
           })
           .onConflictDoNothing()

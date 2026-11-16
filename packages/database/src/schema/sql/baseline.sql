@@ -265,7 +265,7 @@ CREATE FUNCTION public.create_account_source() RETURNS trigger
     AS $$
 BEGIN
   -- An account's home folder has its source from the moment the account exists.
-  INSERT INTO context_sources (user_id, name, slug, scope) VALUES (NEW.id, 'User Files', 'user', 'account');
+  INSERT INTO context_sources (user_id, slug, scope) VALUES (NEW.id, 'user', 'account');
   RETURN NEW;
 END;
 $$;

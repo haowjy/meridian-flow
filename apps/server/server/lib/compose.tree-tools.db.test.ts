@@ -96,14 +96,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });
       await db.insert(schema.contextSources).values({
         id: SCRATCH_SOURCE,
         workId: OTHER_WORK_ID,
-        name: "Scratch",
         slug: "scratch",
         scope: "work",
       });

@@ -8,7 +8,7 @@
  */
 
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts";
-import { CONTEXT_URI_SCHEME_NAMES, contextRootUri } from "@meridian/contracts/context-uri";
+import { contextRootUri } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { contextSources, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -53,7 +53,6 @@ export async function provisionProjectSources(db: Database, projectId: string): 
     .values(
       PROJECT_SOURCE_SCHEMES.map((scheme) => ({
         projectId,
-        name: CONTEXT_URI_SCHEME_NAMES[scheme],
         slug: scheme,
         scope: "project" as const,
       })),
@@ -67,7 +66,6 @@ export async function provisionProjectSources(db: Database, projectId: string): 
 export async function provisionWorkScratch(db: Database, workId: string): Promise<void> {
   await currentDrizzleDb(db).insert(contextSources).values({
     workId,
-    name: CONTEXT_URI_SCHEME_NAMES.scratch,
     slug: "scratch",
     scope: "work",
   });
@@ -341,7 +339,6 @@ async function ensureChatContextSource(
     .values({
       projectId: projectId as ProjectId,
       chatThreadId: chatId as ThreadId,
-      name: CONTEXT_URI_SCHEME_NAMES[scheme],
       slug: scheme,
       scope: "chat",
     })

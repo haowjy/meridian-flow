@@ -192,7 +192,7 @@ export async function seedWorkWithChats(
   chats = 1,
 ) {
   const seeded = await h.seedWork(label);
-  await h.raw`insert into context_sources(work_id,name,slug,scope) values (${seeded.workId},'Scratch','scratch','work')`;
+  await h.raw`insert into context_sources(work_id,slug,scope) values (${seeded.workId},'scratch','work')`;
   // seedWork's own chat already has a finished turn; drop it so the chat starts empty.
   await h.raw`delete from thread_works where thread_id=${seeded.threadId}`;
   await h.raw`delete from turns where thread_id=${seeded.threadId}`;

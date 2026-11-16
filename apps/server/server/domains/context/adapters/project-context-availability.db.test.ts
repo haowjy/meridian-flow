@@ -66,8 +66,8 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
           .insert(contextSources)
           .values(
             "work" in ownership
-              ? { id: source, workId: ownership.work, scope: "work", slug, name: slug }
-              : { id: source, projectId: ownership.owner, scope: "project", slug, name: slug },
+              ? { id: source, workId: ownership.work, scope: "work", slug }
+              : { id: source, projectId: ownership.owner, scope: "project", slug },
           );
       await seed.document(source, "note.md", { id: held[key] });
       if (key === "doc") held.folder = await seed.folder(source, "Act 1");

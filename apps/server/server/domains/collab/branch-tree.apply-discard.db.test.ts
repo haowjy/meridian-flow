@@ -165,7 +165,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await db.insert(contextSources).values({
         id: SOURCE,
         projectId: PROJECT,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });
