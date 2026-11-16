@@ -195,7 +195,8 @@ export class TreeWriter {
    * lands at `place`, each later one right after the one before it. An index counts the parent's
    * children without the node being placed; a sibling `place` names gone from the parent means
    * the end. A name taken there is numbered and carried by the move itself, so the number stays
-   * when the other node is renamed; two nodes moved under one name are numbered in turn.
+   * when the other node is renamed; two nodes moved under one name are numbered in turn. Callers
+   * pass distinct nodes, none inside another, and no anchor among them.
    */
   moveAll(
     view: View,

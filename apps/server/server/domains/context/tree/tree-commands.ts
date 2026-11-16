@@ -413,6 +413,19 @@ function placeFor(
   return { place: { kind: position.kind, siblingId: anchor.id } };
 }
 
+/** The nearest folder above `node` that is in `named`. */
+function carrierOf<T>(
+  projection: TreeProjection,
+  node: string,
+  named: ReadonlyMap<string, T>,
+): T | undefined {
+  for (let at = projection.nodes.get(node)?.parent; at; at = projection.nodes.get(at)?.parent) {
+    const carrier = named.get(at);
+    if (carrier) return carrier;
+  }
+  return undefined;
+}
+
 /** Whether `parent` is `node` or inside it: a move there would put a folder inside itself. */
 function loops(projection: TreeProjection, node: TreeNode, parent: string): boolean {
   return (
@@ -893,7 +906,9 @@ export function runTreeCommand(
       if (folder.kind === "refused") return folder.refused;
       const notMoved: string[] = [];
       const leftOut: LeftOut[] = [];
-      const decided: Decided[] = [];
+      const going: Decided[] = [];
+      /** Each node named, first naming first, and whether it moves: what a folder carries goes with it. */
+      const named = new Map<string, { from: string; goes: boolean }>();
       let nothingToMake: string | undefined;
       for (const from of command.from) {
         const fromPath = pathFrom(cx, from);
@@ -916,12 +931,27 @@ export function runTreeCommand(
           if (result.skip.notMoved) notMoved.push(result.skip.notMoved);
           if (result.skip.leftOut) leftOut.push(result.skip.leftOut);
           nothingToMake ??= result.skip.node;
+          if (result.skip.node && !named.has(result.skip.node))
+            named.set(result.skip.node, { from, goes: false });
         } else if (result.go) {
-          if (!decided.some((other) => other.node.id === result.go.node.id))
-            decided.push(result.go);
+          going.push(result.go);
+          if (!named.has(result.go.node.id)) named.set(result.go.node.id, { from, goes: true });
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
-      const made = decided.length;
+      // As the sidebar's `outermost`: a node named twice, or inside a folder also named, moves once,
+      // with that folder; it counts as moved when the folder does.
+      const decided: Decided[] = [];
+      let made = 0;
+      for (const item of going) {
+        const carrier = carrierOf(projection, item.node.id, named);
+        if (carrier && !carrier.goes) {
+          notMoved.push(`${uriOfPath(cx, item.shownAt)} (inside ${uriOfPath(cx, carrier.from)})`);
+          continue;
+        }
+        made += 1;
+        if (!carrier && !decided.some((other) => other.node.id === item.node.id))
+          decided.push(item);
+      }
       // Every item shares the destination and the anchor: one placement, so they land in order.
       const into = decided[0]?.folder;
       let placedAtEnd: string | undefined;
