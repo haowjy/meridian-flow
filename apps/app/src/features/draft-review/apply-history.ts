@@ -612,12 +612,12 @@ export function serverBandPort(
     again: async (answer) => {
       if (answer.reversedGroupIds.length) again = { ...again, groupIds: answer.reversedGroupIds };
       const body = { ...again, commandId: crypto.randomUUID() };
-      try {
-        if ((await port.send(body)).status !== "applied") return null;
-      } catch {
-        // Lost on the way: the next Un-Apply asks the server, which answers for one never applied.
-      }
-      return { commandId: body.commandId };
+      // Lost on the way (null): the next Un-Apply asks the server, which answers for one never applied.
+      const sent = await port.send(body).then(
+        (answer) => answer.status,
+        () => null,
+      );
+      return sent === null || sent === "applied" ? { commandId: body.commandId } : null;
     },
   });
 }
