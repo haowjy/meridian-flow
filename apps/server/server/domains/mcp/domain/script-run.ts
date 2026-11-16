@@ -80,13 +80,12 @@ function scriptValue(reply: JsonObject): Json {
   const structured = reply.structuredContent;
   if (structured && typeof structured === "object") return structured as Json;
   const text = textOf(reply);
-  if (/^\s*[[{]/.test(text))
-    try {
-      return JSON.parse(text) as Json;
-    } catch {
-      // Not JSON after all: the script gets the text.
-    }
-  return text;
+  if (!/^\s*[[{]/.test(text)) return text;
+  try {
+    return JSON.parse(text) as Json;
+  } catch {
+    return text;
+  }
 }
 
 export function createScriptRuns(deps: {
