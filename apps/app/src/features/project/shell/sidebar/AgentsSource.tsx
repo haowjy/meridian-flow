@@ -37,7 +37,7 @@ import {
 import { ListSectionHeader } from "@/components/ui/list-section";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useInlineEdit } from "@/components/ui/use-inline-edit";
-import type { TreeActions } from "@/core/project-tree/tree-actions";
+import { makeFolders, type TreeActions } from "@/core/project-tree/tree-actions";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { agentFileAt } from "@/features/agents/AgentFileState";
 import { writeFirstAgentText } from "@/features/agents/agent-file-template";
@@ -522,7 +522,7 @@ function NewLevelFileRow({
         made.node,
         [...file.folders, file.leaf].join("/"),
       );
-      tree.openWhenListed(made.path);
+      tree.openWhenListed(made.node);
       onDone();
     },
     onCancel: onDone,
@@ -541,20 +541,7 @@ function makeLevelFile(
   view: TreeView,
   rootPath: string,
   at: { folders: string[]; leaf: string },
-): { node: string; path: string } {
-  let parentId = view.root.entryId;
-  let path = "";
-  for (const folder of [...rootPath.split("/").filter(Boolean), ...at.folders]) {
-    const found = view.findPath(`${path}/${folder}`);
-    if (found?.kind === "dir") {
-      parentId = found.entryId;
-      path = found.path;
-      continue;
-    }
-    const made = list.create({ parentId, kind: "folder", name: folder });
-    parentId = made.node;
-    path = `${path}/${made.name}`;
-  }
-  const made = list.create({ parentId, kind: "document", name: at.leaf, filetype: "source" });
-  return { node: made.node, path: `${path}/${made.name}` };
+): { node: string } {
+  const parentId = makeFolders(view, list, [rootPath, ...at.folders].join("/"));
+  return list.create({ parentId, kind: "document", name: at.leaf, filetype: "source" });
 }

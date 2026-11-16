@@ -60,10 +60,10 @@ export type TreeEnv = {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
     done: () => void;
-    createdFile: (path: string) => void;
-    /** The folder creation just made, until its row takes focus. */
+    createdFile: (node: string) => void;
+    /** The id of the folder creation just made, until its row takes focus. */
     createdFolder: string | null;
-    setCreatedFolder: (path: string | null) => void;
+    setCreatedFolder: (node: string | null) => void;
     /** The writer opened or closed a folder: the header's New file and New folder go there. */
     placeAt: (folderPath: string) => void;
   };
@@ -203,7 +203,7 @@ function DirRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
-    arriving: env.creation?.createdFolder === dir.path,
+    arriving: env.creation?.createdFolder === dir.entryId,
     onArrived: () => env.creation?.setCreatedFolder(null),
     importHere: env.importHere
       ? {
@@ -239,6 +239,7 @@ function DirRow({
           // The open or closed folder is the twistie: rows need no chevron column.
           icon={isOpen ? FolderOpen : Folder}
           title={dir.name}
+          suffix={dir.suffix}
           onOpen={() => {
             if (env.creation?.creating) env.creation.done();
             env.creation?.placeAt(isOpen ? parentContextEntryPath(dir.path) : dir.path);
@@ -330,6 +331,7 @@ function FileRow({
         depth={depth}
         icon={fileKindIcon(file)}
         title={file.name}
+        suffix={file.suffix}
         meta={env.meta?.(file)}
         crossedOut={env.crossedOut?.(file)}
         onOpen={() => env.onSelectFile(env.scheme, file)}

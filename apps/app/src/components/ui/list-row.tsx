@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import type { HTMLAttributes, MouseEvent, ReactElement, ReactNode, Ref } from "react";
 
 import { cn } from "@/lib/utils";
+import { EntryName } from "./entry-name";
 import { role } from "./roles";
 import { RowContextMenu, type RowMenu, RowMenuButton } from "./row-menu";
 
@@ -78,6 +79,8 @@ type ListRowProps = {
   icon?: LucideIcon;
   /** A mark before the title that is not the row's kind: a picker's glyph, a status. */
   leading?: ReactNode;
+  /** A twin's `~id`, faint after the title (`EntryName`). */
+  suffix?: string;
   /** The second line. */
   detail?: ReactNode;
   /** Right of the title: an age, a count, a model name. */
@@ -130,6 +133,7 @@ export function ListRow({
   icon: Icon,
   leading,
   title,
+  suffix,
   detail,
   meta,
   trailing,
@@ -162,7 +166,7 @@ export function ListRow({
           <span
             className={cn("truncate", (gone || crossedOut) && "text-muted-foreground line-through")}
           >
-            {title}
+            <EntryName name={title} suffix={suffix} truncate />
             {/* A link can't be pressed or selected; its name says it joined the selection. */}
             {selected && href ? <span className="sr-only">{t`, selected`}</span> : null}
           </span>
@@ -200,7 +204,7 @@ export function ListRow({
       </button>
     );
   // A row with a menu has a string title (the props' type).
-  const name = String(title);
+  const name = suffix ? `${String(title)}~${suffix}` : String(title);
   const frame = (
     <div
       {...frameProps}

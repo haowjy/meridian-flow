@@ -49,7 +49,14 @@ nothing), each Work's authority, Trash times and retention, and a chat's uploads
 
 A record carries the name the writer typed, whatever the siblings are called: a create or rename
 beside a sibling of that name, and a move into a folder that shows it, make a twin (the replay's
-rule 14; the later's path carries `~id`). A move carries no name.
+rule 14; the later's path carries `~id`). A move carries no name. So whatever opens or focuses
+what a write made goes by the node's id, or by `TreeActions.pathOf` (where it landed, read from
+the replay; `create` returns it): the typed name's path reaches the plain twin. A walk down
+folders reads every segment at folder level with `TreeView.findFolder` (`makeFolders` makes the
+ones missing), as a link and the server read it: `findPath`'s last segment is a leaf, so a
+document `Kael` answers there before the folder `Kael~dc40`. Every row naming a tree entry (the
+sidebar, pickers, the @ menu, recents) and a chip show a twin's `~id` faintly after the name
+(`EntryName`, with `twinSuffix` where only the address is at hand); tabs don't.
 
 The only verdict the server writes is `dropped` on a change to a Work that was closed (a create,
 rename, move or delete in its draft or its Scratch): it comes back as a settlement on the record,

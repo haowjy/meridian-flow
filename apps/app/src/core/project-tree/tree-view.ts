@@ -13,12 +13,13 @@ import {
   documentFileTypeFor,
   type Filetype,
   type ProjectContextTreeScheme,
+  readSegment,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import {
   childAtSegment,
   isSourceRoot,
-  segmentOf,
+  pathOf,
   sourceIdOf,
   sourceRoot,
   type TreeNode,
@@ -42,6 +43,8 @@ type TreeFileBase = {
   /** The stored extension, which `name`'s suffix cannot tell from part of the name (`Vol. 2`). */
   extension: string;
   aliases?: readonly string[];
+  /** A later twin's `~` suffix, when another entry here shares the name (its path segment's end). */
+  suffix?: string;
   path: string;
   uri: string;
   /** The name was given, not chosen ("Untitled"); it ends at the first rename by a person. */
@@ -65,6 +68,8 @@ export type TreeDirectory = {
   entryId: string;
   parentId: string | null;
   name: string;
+  /** As a file's. */
+  suffix?: string;
   path: string;
   uri: string;
 };
@@ -78,12 +83,23 @@ export type TreeView = {
   children(parentId: string): readonly TreeEntry[];
   files(): readonly TreeFile[];
   findPath(path: string): TreeFile | TreeDirectory | null;
+  /**
+   * The folder a path names, every segment read at folder level as a link and the server read
+   * it: `/Kael` is the folder `Kael~dc40` when the plain `Kael` is a document. `/` is the root.
+   */
+  findFolder(path: string): TreeDirectory | null;
   findDocument(documentId: string): TreeFile | null;
   /** A folder or file of this source, shown (not in Trash). */
   entry(id: string): TreeEntry | null;
   /** The ids of the folders and files below `id`. */
   descendants(id: string): readonly string[];
 };
+
+/** The `~id` that ends a path's last segment: a twin's, which its name doesn't carry (`EntryName`). */
+export function twinSuffix(path: string): string | undefined {
+  const leaf = path.split("/").at(-1);
+  return leaf ? readSegment(leaf).suffix : undefined;
+}
 
 const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   manuscript: "Manuscript",
@@ -157,15 +173,6 @@ export function buildTreeView(input: {
 
   const shown = (node: TreeNode | undefined): node is TreeNode =>
     node !== undefined && node.source === sourceId && !node.trashed && !node.purged;
-  const pathCache = new Map<string, string>();
-  const pathOf = (node: TreeNode): string => {
-    const cached = pathCache.get(node.id);
-    if (cached !== undefined) return cached;
-    const parent = isSourceRoot(node.parent) ? undefined : projection.nodes.get(node.parent);
-    const path = `${parent ? pathOf(parent) : ""}/${segmentOf(node)}`;
-    pathCache.set(node.id, path);
-    return path;
-  };
   const parentIdOf = (node: TreeNode) =>
     isSourceRoot(node.parent) ? sourceIdOf(node.parent) : node.parent;
 
@@ -173,7 +180,7 @@ export function buildTreeView(input: {
   const entryOf = (node: TreeNode): TreeEntry => {
     const cached = entryCache.get(node.id);
     if (cached) return cached;
-    const path = pathOf(node);
+    const path = pathOf(projection, node);
     const built: TreeEntry =
       node.kind === "folder"
         ? {
@@ -181,6 +188,7 @@ export function buildTreeView(input: {
             entryId: node.id,
             parentId: parentIdOf(node),
             name: node.name,
+            ...(node.suffix ? { suffix: node.suffix } : {}),
             path,
             uri: uriOf(path),
           }
@@ -192,6 +200,7 @@ export function buildTreeView(input: {
             name: node.name,
             extension: extensionOf(node),
             ...(node.aliases ? { aliases: node.aliases } : {}),
+            ...(node.suffix ? { suffix: node.suffix } : {}),
             path,
             uri: uriOf(path),
             provisionalName: node.provisional,
@@ -206,6 +215,16 @@ export function buildTreeView(input: {
     (projection.children.get(parentId === sourceId ? sourceRoot(sourceId) : parentId) ?? []).filter(
       shown,
     );
+  // Walked by segment, so a twin's `~id` keeps reaching it after the plain twin is renamed.
+  const folderAt = (segments: readonly string[]): string | null => {
+    let at = sourceId;
+    for (const segment of segments) {
+      const folder = childAtSegment(childrenOfParent(at), segment, "folder");
+      if (!folder) return null;
+      at = folder.id;
+    }
+    return at;
+  };
   const everyShown = (): TreeNode[] => [...projection.nodes.values()].filter(shown);
 
   const files = () =>
@@ -235,26 +254,21 @@ export function buildTreeView(input: {
       return out;
     },
     findPath: (path) => {
-      // Walked by segment, so a twin's `~id` keeps reaching it after the plain twin is renamed.
       const segments = path.split("/").filter(Boolean);
-      let parentId = sourceId;
-      for (const [at, segment] of segments.entries()) {
-        const kids = childrenOfParent(parentId);
-        const last = at === segments.length - 1;
-        // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
-        // A folder level reads folders only (`childAtSegment`'s folder level, as the server does).
-        if (!last) {
-          const folder = childAtSegment(kids, segment, "folder");
-          if (!folder) return null;
-          parentId = folder.id;
-          continue;
-        }
-        const alias = childAtSegment(kids, canonicalLeaf(segment));
-        const found =
-          childAtSegment(kids, segment) ?? (alias?.kind === "folder" ? undefined : alias);
-        return found ? (entryOf(found) as TreeFile | TreeDirectory) : null;
-      }
-      return null;
+      const leaf = segments.pop();
+      if (leaf === undefined) return null;
+      const parentId = folderAt(segments);
+      if (parentId === null) return null;
+      // A folder answers only to its own name; a document also to its alias (`ch1.md` is `ch1`).
+      const kids = childrenOfParent(parentId);
+      const alias = childAtSegment(kids, canonicalLeaf(leaf));
+      const found = childAtSegment(kids, leaf) ?? (alias?.kind === "folder" ? undefined : alias);
+      return found ? (entryOf(found) as TreeFile | TreeDirectory) : null;
+    },
+    findFolder: (path) => {
+      const id = folderAt(path.split("/").filter(Boolean));
+      const node = id === null ? undefined : projection.nodes.get(id);
+      return id === sourceId ? root : node ? (entryOf(node) as TreeDirectory) : null;
     },
     findDocument,
   };
