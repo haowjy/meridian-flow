@@ -50,7 +50,7 @@ Per-account preferences.
 
 A writer's connections to remote MCP servers.
 
-Account- and project-level connections, their pinned tools, encrypted tokens and a stored status that a check keeps current. A chat's prompt lists its connections' tools, and `mcp_describe` and `mcp_call` reach them; every call leaves a record. One MCP client per process, on the public-address dispatcher.
+Account- and project-level connections, their pinned tools, encrypted tokens and a stored status that a check keeps current. A chat's prompt lists its connections' tools, and `mcp_describe`, `mcp_call` and `mcp_run` (a script on the QuickJS runner) reach them; every call leaves a record. One MCP client per process, on the public-address dispatcher.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/mcp`
