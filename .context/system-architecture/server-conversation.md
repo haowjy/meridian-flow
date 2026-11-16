@@ -125,7 +125,7 @@ The group of `projects`, `working-set` and `recent-documents`.
 
 Credits, settings and safe logging.
 
-The group of `billing`, `preferences` and `observability`.
+The group of `billing`, `preferences`, `mcp` and `observability`.
 
 - Kind: context
 - See: [account](server.md#account)

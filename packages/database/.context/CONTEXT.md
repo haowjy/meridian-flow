@@ -115,6 +115,12 @@ the greatest `recorded_seq` among the block ids a lookup names, read through the
 `(room_key, recorded_seq DESC NULLS LAST)` index
 ([runtime document text](../../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)).
 
+`mcp_connections` holds a writer's connections at one level (the account, or one project) with a
+settings version that a status is learned under; `mcp_pins` is insert-only like `prompt_bakes`
+(a re-pin is a new row, and only a connection's delete removes one); `mcp_connection_tokens` holds
+AES-256-GCM ciphertext. [The mcp domain](../../../apps/server/server/domains/mcp/.context/CONTEXT.md)
+owns their rules.
+
 Billing stores Stripe customer identity on `users.stripe_customer_id`; credit
 lots represent grants and purchases. The partial free-tier uniqueness guard
 prevents duplicate grants without requiring a subscription table.

@@ -10,6 +10,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { MockScriptQueue } from "@meridian-flow/runtime/gateway/mock";
+import type { McpClient } from "@meridian-flow/runtime/mcp";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -116,6 +117,12 @@ import {
   listOpenImports,
   type OrganizeWakeHub,
 } from "../domains/import/index.js";
+import {
+  createDrizzleConnectionStore,
+  createMcpConnections,
+  createTokenCipher,
+  type McpConnections,
+} from "../domains/mcp/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -278,6 +285,8 @@ import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
 import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
+import { createProcessMcpClient, parseSessionKey, sessionKey } from "./mcp-client.js";
+import { resolveMcpTokenKey } from "./mcp-token-key.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -327,6 +336,8 @@ export type AppServices = {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
+  /** The writer's MCP connections, over the process's one MCP client. */
+  mcpConnections: McpConnections;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
@@ -425,6 +436,9 @@ export type ProductionAppPorts = {
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
   accountSettings: AccountSettingsRepository;
+  mcpConnections: McpConnections;
+  /** The one MCP client, closed with the app. */
+  mcpClient: McpClient;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -540,6 +554,38 @@ export async function createProductionAppPorts(input: {
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
+  const mcpClient = createProcessMcpClient((event) => {
+    // A child's stderr is a program's own text; only the session's life goes to the log.
+    if (event.type !== "stderr")
+      emitEvent(eventSink, {
+        level: "info",
+        source: "mcp.session",
+        sensitivity: "safe",
+        name: event.type === "session_started" ? "McpSessionStarted" : "McpSessionEnded",
+        payload: (({ connectionId, version }) => ({ connectionId, settingsVersion: version }))(
+          parseSessionKey(event.key),
+        ),
+      });
+  });
+  const mcpConnections = createMcpConnections({
+    store: createDrizzleConnectionStore({ db }),
+    client: mcpClient,
+    cipher: createTokenCipher(resolveMcpTokenKey(environment)),
+    sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
+    // A hint, then the app asks again; one hint per open project of the account.
+    statusChanged: (row) =>
+      projectWakeHub.publishToUser(row.accountId, (projectId) => ({
+        type: "mcp-connections-hint",
+        projectId: projectId as import("@meridian/contracts/runtime").ProjectId,
+      })),
+    failed: (cause, row) =>
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "mcp.connection-check",
+        name: "McpConnectionCheckFailed",
+        payload: { connectionId: row.id, ...unknownToEventPayload(cause) },
+      }),
+  });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const agentRevisions = createDrizzleAgentRevisionStore(db);
@@ -767,6 +813,8 @@ export async function createProductionAppPorts(input: {
     agentRevisions,
     agentCatalog,
     accountSettings,
+    mcpConnections,
+    mcpClient,
     workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
@@ -1281,6 +1329,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
+    mcpConnections: ports.mcpConnections,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
     orchestrator,
@@ -1310,6 +1359,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
+      await ports.mcpClient.close();
       await ports.documentSync.dispose();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
@@ -1848,6 +1898,11 @@ export function createInMemoryAppServices(): AppServices {
     agentCatalog,
     eventSink: createNoopEventSink(),
     accountSettings,
+    mcpConnections: new Proxy({} as McpConnections, {
+      get() {
+        throw new Error("MCP connections require Postgres");
+      },
+    }),
     workingSet,
     recentDocuments,
     orchestrator: {

@@ -206,7 +206,8 @@ export class ThreadSocketClient implements ThreadTransport {
       message.type === "draft-owner-hint" ||
       message.type === "project-chats-hint" ||
       message.type === "context-sources-hint" ||
-      message.type === "agent-files-hint"
+      message.type === "agent-files-hint" ||
+      message.type === "mcp-connections-hint"
     ) {
       for (const listener of this.catalogSubscriptions.get(message.projectId) ?? [])
         listener(message);

@@ -34,6 +34,8 @@ const PROD_BOOT_ENV: NodeJS.ProcessEnv = {
   WORKOS_CLIENT_ID: "client_prod_boot_smoke_not_real",
   WORKOS_COOKIE_PASSWORD: "prod-boot-smoke-cookie-password-000000000000",
   WORKOS_REDIRECT_URI: "https://app.prod-boot.invalid/api/auth/callback",
+  // 32 bytes of base64 that no real deploy uses.
+  MCP_TOKEN_KEY: Buffer.alloc(32, "prod-boot-smoke-mcp-token-key").toString("base64"),
   NO_COLOR: "1",
   // Production refuses it, and agent shells set it.
   LIVE_TEST_MODEL: undefined,
