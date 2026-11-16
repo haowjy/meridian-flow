@@ -52,7 +52,11 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   coverage logic. `allow` and `ask` names become `tools` when the file has an allow-list
   (`*: deny`), `[]` included; `deny` becomes `disallowed-tools`. A rule Mars calls `unknown` or
   `unscopable` makes the Agent unavailable with Mars's note; `absent` is met; `ask` runs as
-  `allow` with a warning.
+  `allow` with a warning. Flow's connection tools (`mcp_describe`, `mcp_call`) are one set for
+  every connection, so an `mcp(...)` deny of any scope disallows both, and an `mcp(...)` allow or
+  ask under an allow-list is `known` with no tools and Mars's note, shown as a warning: the Agent
+  stays available with no connection tool. Names in Mars's lists that Flow does not publish
+  (`mcp_run` until it ships) are dropped from `tools`.
 - A revision's key includes `GRAMMAR_VERSION` (the Mars version and Flow's
   `flow-N`). Whoever changes the availability table or the tool projection bumps
   `flow-N`. A revision an older reader compiled is read again with the running reader

@@ -984,6 +984,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "baked_connections": {
+          "name": "baked_connections",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
         "content_hash": {
           "name": "content_hash",
           "type": "text",

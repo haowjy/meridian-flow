@@ -48,6 +48,7 @@ export function defineThreadHistoryContract(
       composedSystemPrompt: "INITIAL PROMPT",
       bakedTools: [],
       bakedSkillSlugs: [],
+      bakedConnections: [],
       contentHash: "initial-hash",
     });
     const registry = createToolRegistry();
@@ -266,6 +267,7 @@ export function defineThreadHistoryContract(
         composedSystemPrompt: "NEW PROMPT",
         bakedTools: [],
         bakedSkillSlugs: [],
+        bakedConnections: [],
         contentHash: "new-hash",
       });
       const c = await f.repos.turns.create({

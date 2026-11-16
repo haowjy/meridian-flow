@@ -59,6 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const initial = await repos.threads.bakeInitialPrompt(threadId, {
         composedSystemPrompt: "initial prompt",
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
         contentHash: "manual-control-initial",
       });
@@ -98,6 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ownerThreadId: threadId,
         composedSystemPrompt: "manual compaction prompt",
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
         contentHash: "manual-control-complete",
       });

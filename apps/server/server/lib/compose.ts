@@ -118,6 +118,8 @@ import {
   type OrganizeWakeHub,
 } from "../domains/import/index.js";
 import {
+  type ConnectionStore,
+  createDrizzleCallStore,
   createDrizzleConnectionStore,
   createMcpConnections,
   createTokenCipher,
@@ -182,6 +184,7 @@ import {
 } from "../domains/runtime/handoff/brief-service.js";
 import {
   type CommandResolver,
+  type ConnectionsPort,
   createChildRunCoordinator,
   createChildRunDriver,
   createCommandRecovery,
@@ -199,6 +202,7 @@ import {
   createInMemoryThreadLock,
   createInspectionToolRegistrations,
   createLineageCancellation,
+  createMcpToolRegistrations,
   createOrchestrator,
   createOrphanReportRepair,
   createPrefixCacheStateService,
@@ -291,6 +295,7 @@ import { createModelToolRegistrations, createReferenceReader } from "./model-too
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { createChatMedia } from "./runtime-host/chat-media.js";
+import { createConnections } from "./runtime-host/connections.js";
 import { createContextMediaResolver } from "./runtime-host/media-resolver.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
@@ -338,6 +343,8 @@ export type AppServices = {
   accountSettings: AccountSettingsRepository;
   /** The writer's MCP connections, over the process's one MCP client. */
   mcpConnections: McpConnections;
+  /** The connections as the runtime reads them: the prompt's catalogue and the two tools. */
+  connections: ConnectionsPort;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
@@ -437,6 +444,9 @@ export type ProductionAppPorts = {
   agentCatalog: BoundAgentCatalog;
   accountSettings: AccountSettingsRepository;
   mcpConnections: McpConnections;
+  mcpStore: ConnectionStore;
+  /** The connections as the runtime reads them: the prompt's catalogue and the two tools. */
+  connections: ConnectionsPort;
   /** The one MCP client, closed with the app. */
   mcpClient: McpClient;
   workingSet: WorkingSetRepository;
@@ -567,8 +577,9 @@ export async function createProductionAppPorts(input: {
         ),
       });
   });
+  const mcpStore = createDrizzleConnectionStore({ db });
   const mcpConnections = createMcpConnections({
-    store: createDrizzleConnectionStore({ db }),
+    store: mcpStore,
     client: mcpClient,
     cipher: createTokenCipher(resolveMcpTokenKey(environment)),
     sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
@@ -585,6 +596,15 @@ export async function createProductionAppPorts(input: {
         name: "McpConnectionCheckFailed",
         payload: { connectionId: row.id, ...unknownToEventPayload(cause) },
       }),
+  });
+  const connections = createConnections({
+    service: mcpConnections,
+    store: mcpStore,
+    calls: createDrizzleCallStore({ db }),
+    client: mcpClient,
+    objectStore,
+    repos: threadRepos,
+    eventSink,
   });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
@@ -814,6 +834,8 @@ export async function createProductionAppPorts(input: {
     agentCatalog,
     accountSettings,
     mcpConnections,
+    mcpStore,
+    connections,
     mcpClient,
     workingSet,
     recentDocuments,
@@ -1019,6 +1041,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }))
     toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations()) {
+    toolRegistry.register(registration);
+  }
+  for (const registration of createMcpToolRegistrations(ports.connections)) {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry, commandResolver);
@@ -1237,6 +1262,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentCatalog: ports.agentCatalog,
     toolRegistry,
     workContext,
+    connections: ports.connections,
     childRunCoordinator,
     billingUsage: ports.billingUsage,
     rateSource: ports.rateSource,
@@ -1330,6 +1356,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
     mcpConnections: ports.mcpConnections,
+    connections: ports.connections,
     workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
     orchestrator,
@@ -1899,6 +1926,11 @@ export function createInMemoryAppServices(): AppServices {
     eventSink: createNoopEventSink(),
     accountSettings,
     mcpConnections: new Proxy({} as McpConnections, {
+      get() {
+        throw new Error("MCP connections require Postgres");
+      },
+    }),
+    connections: new Proxy({} as ConnectionsPort, {
       get() {
         throw new Error("MCP connections require Postgres");
       },
