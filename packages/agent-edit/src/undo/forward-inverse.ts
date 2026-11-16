@@ -360,8 +360,13 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
+  // A replace whose new text is gone (discarded, deleted or typed over) has nothing to undo:
+  // restoring its deleted half would put the old text next to what the writer has now.
+  const replacementGone =
+    removingRanges.length > 0 &&
+    !clocks(removingRanges).some((original) => index.isVisible(index.effective(original)));
   const candidates = new Set(
-    returning
+    (replacementGone ? [] : returning)
       .map((pair) => pair.effective)
       .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
   );

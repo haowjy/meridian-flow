@@ -236,6 +236,7 @@ async function prepare(
           skip(part, planned.causes[i] as TurnInverseSkipCause);
         continue;
       }
+      for (const part of planned.discarded) skip(part as StoredInversePart, "discarded");
       for (const part of planned.selection) {
         selection.set(planned.destination, [
           ...(selection.get(planned.destination) ?? []),
@@ -399,13 +400,9 @@ export function createTurnInverseService(store: TurnInverseStore) {
             preview: true,
           },
         );
-        // Text the writer discarded is gone: an Undo has nothing to take out.
-        const allDiscarded =
-          drafts !== undefined &&
-          documents.every(({ documentId }) => drafts[documentId] === "discarded");
         // A part an Undo took out has no skip, so the skips are the parts that stay.
         const skips = [...undo.flatMap((plan) => plan.skips), ...tree.stayed];
-        if ((hasSteps(undo) && !allDiscarded) || tree.acting)
+        if (hasSteps(undo) || tree.acting)
           return { state: "live-active", control: "undo", drafts, trees, skips };
         const state =
           tree.taken || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
