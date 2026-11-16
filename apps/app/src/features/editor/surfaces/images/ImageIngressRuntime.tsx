@@ -11,7 +11,6 @@
  */
 
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { apiImageProxyPath } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
@@ -20,7 +19,6 @@ import {
   type ImageBytesPort,
   type ImageUploadPort,
   registerImageIngressHost,
-  remotePictureSource,
 } from "@/core/editor/images";
 
 export function ImageIngressRuntime({
@@ -69,17 +67,12 @@ function pictureUploadPort(projectId: string, scheme: "user" | "manuscript"): Im
 /**
  * The bytes behind an address the clipboard carried.
  *
- * The proxy answers for hosts that decline cross-origin reads, but it still refuses
- * non-image, oversize and non-public answers. The link the paste landed is what the
- * writer keeps then, which is why nothing here throws.
+ * Only a `data:` image reaches this: a web picture pastes as a remote picture and is never
+ * fetched. A failure leaves the link the paste landed, which is why nothing here throws.
  */
 const fetchImageBytes: ImageBytesPort = async ({ url, filename, signal }) => {
   try {
-    // A web address is fetched by Flow's image proxy, never by this page; a `data:` image is local.
-    const remote = remotePictureSource(url);
-    const response = await (remote
-      ? fetch(apiImageProxyPath(remote), { signal })
-      : fetch(url, { signal }));
+    const response = await fetch(url, { signal });
     if (!response.ok) return null;
     const blob = await response.blob();
     if (!blob.type.startsWith("image/")) return null;

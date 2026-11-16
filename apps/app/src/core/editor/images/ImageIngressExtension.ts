@@ -53,7 +53,6 @@ import {
   pendingImageDecorations,
   uploadTokensIn,
 } from "./pending-images";
-import { flowRemotePictureAddresses } from "./remote-image";
 
 /**
  * What every settled document state has to answer for the pictures in flight:
@@ -121,8 +120,6 @@ export const ImageIngressExtension = Extension.create({
     const editor = this.editor;
     /** Imports a paste asked for, between the transform and its transaction. */
     let pasted: readonly PastedImageImport[] | null = null;
-    /** Remote pictures the pasted HTML names the way Flow's own copy does. */
-    let flowRemotePictures: ReadonlySet<string> = new Set();
     let settleScheduled = false;
 
     return [
@@ -191,17 +188,13 @@ export const ImageIngressExtension = Extension.create({
             wikilinkPasteParsePlugins(editor),
           ),
           clipboardTextSerializer: markdownClipboardSerializer,
-          transformPastedHTML: (html) => {
-            flowRemotePictures = flowRemotePictureAddresses(html);
-            return html;
-          },
           transformPasted: (slice, view) => {
             // A drag moves pictures the editor already holds, as stored.
             if (view.dragging) {
               pasted = null;
               return slice;
             }
-            const linked = linkExternalPastedImages(slice, view.state.schema, flowRemotePictures);
+            const linked = linkExternalPastedImages(slice, view.state.schema);
             pasted = linked.imports.length > 0 ? linked.imports : null;
             return linked.slice;
           },

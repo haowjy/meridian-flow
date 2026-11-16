@@ -48,19 +48,6 @@ export type RemoteImageStatus =
   /** `null` when the proxy never answered (offline, signed out). */
   | { kind: "failed"; reason: ImageProxyReason | null };
 
-/** The remote pictures in pasted HTML that carry Flow's `data-remote-src`. */
-export function flowRemotePictureAddresses(html: string): ReadonlySet<string> {
-  const addresses = new Set<string>();
-  if (!html.includes(REMOTE_SRC_ATTRIBUTE)) return addresses;
-  const container = document.createElement("template");
-  container.innerHTML = html;
-  for (const img of container.content.querySelectorAll(`img[${REMOTE_SRC_ATTRIBUTE}]`)) {
-    const address = clipboardRemoteSource(img.getAttribute(REMOTE_SRC_ATTRIBUTE));
-    if (address) addresses.add(address);
-  }
-  return addresses;
-}
-
 const statuses = new Map<string, RemoteImageStatus>();
 const listeners = new Set<() => void>();
 
