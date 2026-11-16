@@ -3423,8 +3423,8 @@ msgid "Draft review"
 msgstr "Draft review"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Draft view"
-msgstr "Draft view"
+#~ msgid "Draft view"
+#~ msgstr "Draft view"
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft: {owner}"
@@ -6084,6 +6084,7 @@ msgstr "scene break"
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch"
 msgstr "Scratch"
 
@@ -6096,6 +6097,7 @@ msgid "Scratch for {chatTitle}"
 msgstr "Scratch for {chatTitle}"
 
 #: src/features/chat/document-display-name.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch for {name}"
 msgstr "Scratch for {name}"
 
@@ -6287,16 +6289,20 @@ msgid "Show Work"
 msgstr "Show Work"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing draft"
-msgstr "Showing draft"
+#~ msgid "Showing draft"
+#~ msgstr "Showing draft"
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing live"
-msgstr "Showing live"
+#~ msgid "Showing live"
+#~ msgstr "Showing live"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Shows token counts and the model on each reply and compaction"
 msgstr "Shows token counts and the model on each reply and compaction"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Sidebar version"
+msgstr "Sidebar version"
 
 #: src/features/account/AccountMenu.tsx
 msgid "Signed in"
@@ -7182,6 +7188,10 @@ msgstr "This changed after you pressed Apply, so it wasn't applied. Check it, th
 #: src/features/editor/SessionEditor.tsx
 msgid "This chapter is temporarily unavailable"
 msgstr "This chapter is temporarily unavailable"
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "This chat"
+msgstr "This chat"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
