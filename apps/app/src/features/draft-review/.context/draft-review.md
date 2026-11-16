@@ -102,13 +102,21 @@ waits behind the text clicks before it. Draft rooms are resources the item attac
 `bind(ref, session)` installs a replaceable session binding on that draft's room. A text
 click names its draft (`body.draftId`), and only that room records it, folds it, holds a
 reader for it (following replacement sessions even without a surface) and cancels it on
-close, so a newer draft under the same key can't inherit an old click. Retiring a
-session refuses only its draft's unsent clicks.
+close, so a newer draft under the same key can't inherit an old click. The client never
+refuses a click: when its draft's room ends (reset, terminal, access ended, destroyed) before
+the click is sent, the click goes anyway (`roomEnded`), and the server's answer is the truth
+about the draft (closed, archived, applied).
+
 
 `apply` with the draft's room ready in this tab synchronously freezes the `draftId`, Yjs
 snapshot, reviewed base blocks, selected ids, the result of applying those groups and one
 room-base-to-O delta. Its acknowledgement barrier waits for the server to acknowledge every
-local update in the cut before sending. The queue keeps its own `readDraftRoom` lease until
+local update in the cut before sending; a room that ends releases it, since it will deliver
+nothing more. A whole-draft target then goes as the whole cut below (`wholeCut`), the draft
+as the server holds it, and typing the room never delivered comes back through the hand-back.
+A click on some changes goes frozen: it lands when the server holds its snapshot, and the
+server answers `unsynced` only when the chosen change holds typing the server never got, the
+one Apply no cut can carry. Either way a click whose room ended settles on its answer. The queue keeps its own `readDraftRoom` lease until
 terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
 sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
 draft holds on receipt. That click has no optimistic base and no room to record it (`frozenOn`
@@ -134,8 +142,8 @@ and unknown-delivery states, shown on the folder row with Retry, as a document's
 list response's `folders[].revision`, read once when the command first goes, so a resend
 carries the same body; folders lead the items. Every member's queue settles from the one answer,
 `conflict` included, and the group's answer, which makes the Undo step and the notice, is the
-first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (a queue
-refuses an unsent click itself, under the group's id, and that refusal is not the command's); groups are enqueued in item order in one turn, so two groups never wait on
+first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (an unsent
+member ends cancelled, and that is not the command's answer); groups are enqueued in item order in one turn, so two groups never wait on
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
 

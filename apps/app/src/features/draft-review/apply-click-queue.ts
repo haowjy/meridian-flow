@@ -14,7 +14,13 @@ export type FrozenApply = {
   body: ApplyClick;
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
+  /**
+   * Resolves when the click may be sent. Rejects when it has nothing left to do: a Redo whose
+   * Un-Apply did not land, so the Apply still stands.
+   */
   acknowledged: Promise<void>;
+  /** The same click as the server's whole cut of its draft, sent instead if its room ends first. */
+  wholeCut?: ApplyClick;
   /** A member of a several-item Apply sends through its group (`GroupApply`), not on its own. */
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
@@ -40,6 +46,8 @@ type ApplyCommand = FrozenApply & {
   attempts: number;
   stalled: boolean;
   closed: boolean;
+  /** Its room ended: no record of it will show, so its applied answer settles it. */
+  roomEnded: boolean;
   answer?: ApplyClickResult;
   inFlight?: boolean;
   reading?: boolean;
@@ -253,6 +261,7 @@ export class ApplyClickQueue {
       attempts: 0,
       stalled: false,
       closed: false,
+      roomEnded: false,
       outcome,
       finish,
     };
@@ -263,7 +272,7 @@ export class ApplyClickQueue {
         command.acknowledged = Promise.resolve();
         if (this.commands[0] === command) void this.dispatch(command);
       },
-      () => this.refuse(command),
+      () => this.cancel(command.body.commandId),
     );
     return command;
   }
@@ -332,9 +341,26 @@ export class ApplyClickQueue {
     return true;
   }
 
-  refuseUnsent(draftId: string): void {
-    for (const command of this.clicks.filter((click) => frozenOn(click, draftId)))
-      this.refuse(command);
+  /**
+   * The draft's room ended, so it delivers and records nothing more. Its clicks still go: one not
+   * yet sent goes as its whole cut when it has one (the draft as the server holds it; typing the
+   * room never delivered comes back through the hand-back), else as frozen. An applied answer
+   * settles without the record.
+   */
+  roomEnded(draftId: string): void {
+    for (const command of this.clicks) {
+      if (!frozenOn(command, draftId)) continue;
+      command.roomEnded = true;
+      if (!command.sent && command.wholeCut) {
+        command.body = command.wholeCut;
+        command.optimistic = [];
+        command.patched = [];
+      }
+    }
+    const head = this.commands[0];
+    if (head?.kind === "apply" && head.roomEnded && head.answer?.status === "applied")
+      this.settle(head, head.answer);
+    else this.port.changed();
   }
 
   close(draftId?: string): void {
@@ -383,14 +409,6 @@ export class ApplyClickQueue {
     return draftId !== undefined && (this.recorded.get(draftId)?.has(commandId) ?? false);
   }
 
-  private refuse(command: ApplyCommand): void {
-    const index = this.commands.indexOf(command);
-    if (command.sent || index < 0) return;
-    this.commands.splice(index, 1);
-    command.finish({ status: "refused", commandId: command.body.commandId, reason: "unsynced" });
-    this.moveOn();
-  }
-
   private moveOn(): void {
     this.clearFeedbackIfIdle();
     this.port.changed();
@@ -408,7 +426,7 @@ export class ApplyClickQueue {
     try {
       await command.acknowledged;
     } catch {
-      this.refuse(command);
+      // `queueApply` cancelled it.
       return;
     }
     if (this.request || this.commands[0] !== command) return;
@@ -434,7 +452,7 @@ export class ApplyClickQueue {
     }
     if (answer?.status === "applied") {
       // A frozen click settles once its room records it; one cut on receipt has no room to.
-      if (!command.body.snapshot || command.closed || this.isRecorded(command))
+      if (!command.body.snapshot || command.closed || command.roomEnded || this.isRecorded(command))
         this.settle(command, answer);
       return;
     }

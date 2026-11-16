@@ -70,8 +70,7 @@ export class GroupApply {
         this.check();
       },
       answered: (answer) => {
-        // Only a sent click's answer came from the server: a queue also refuses an unsent click
-        // itself, under the group's id.
+        // Only a sent click's answer came from the server: an unsent one ends cancelled.
         if (!this.handed.has(index)) return;
         if (answer.status !== "landed" && answer.status !== "cancelled") this.heard(answer);
       },
