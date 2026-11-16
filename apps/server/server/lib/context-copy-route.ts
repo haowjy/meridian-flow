@@ -323,8 +323,11 @@ export async function handleContextCopyRequest(
   const sources: ResolvedSource[] = [];
   const workIds = new Set<string>();
   const destinationView = copyView(copy.destinationView, input.projectId as ProjectId);
+  // The port's own Work is the destination's: a copy reads its sources and writes only there,
+  // so a source Work that has ended must not make the destination unavailable.
+  let destinationWorkId: string | null = null;
   if (destinationView.kind === "draft" && destinationView.owner.kind === "work")
-    workIds.add(destinationView.owner.workId);
+    destinationWorkId = destinationView.owner.workId;
   for (const source of copy.sources) {
     if (source.locator.scope === "chat") {
       const chat = await deps.contextPorts.chats.byRef(input.projectId, source.locator.chatRef);
@@ -380,8 +383,10 @@ export async function handleContextCopyRequest(
     createFolders = copy.destination.createFolders ?? [];
   } else {
     destinationLocator = await resolveLocator(copy.destination, { destination: true });
-    if (destinationLocator.scope === "work") workIds.add(destinationLocator.authority.workId);
+    if (destinationLocator.scope === "work")
+      destinationWorkId = destinationLocator.authority.workId;
   }
+  if (destinationWorkId) workIds.add(destinationWorkId);
 
   const port = await contextPortForProjectAuthorities({
     deps: {
@@ -391,7 +396,7 @@ export async function handleContextCopyRequest(
     projectId: input.projectId,
     userId: input.userId,
     workIds,
-    primaryWorkId: [...workIds][0] ?? null,
+    primaryWorkId: destinationWorkId,
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
 
