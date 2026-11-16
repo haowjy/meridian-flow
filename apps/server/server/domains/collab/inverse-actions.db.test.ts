@@ -30,7 +30,7 @@ beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
 it.each(["live", "draft"] as const)(
-  "Undo after the writer replaced the model's text restores the original beside the writer's text (%s)",
+  "Undo after the writer replaced the model's text leaves the writer's text without a second copy of the original (%s)",
   async (destination) => {
     const { harness, view, context, responseId } = await fixture();
     try {
@@ -131,10 +131,10 @@ it.each(["live", "draft"] as const)(
           turnId: currentTurn,
           actor: { type: "user", userId: USER_ID },
         }),
-      ).toMatchObject({ status: "reversed", acceptedParts: 2 });
-      expect(await text()).toBe("gold\n\nbluepink\n\nblack\n");
+      ).toMatchObject({ status: "partial", acceptedParts: 1 });
+      expect(await text()).toBe("gold\n\npink\n\nblack\n");
       expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, currentTurn)).toMatchObject({
-        state: "undone",
+        state: "partly",
         control: "view_change",
       });
     } finally {
