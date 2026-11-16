@@ -128,41 +128,55 @@ async function workReceiptWorkIds(
   return context ? [...new Set(context.receipts.map(({ workId }) => workId))] : [];
 }
 
+/** The documents' answers that settled the press, as parts that were reversed, stayed or failed. */
+const DOCUMENT_PARTS: Partial<
+  Record<ReversalOutcome["status"], { reversed?: true; stayed?: true; failed?: true }>
+> = {
+  nothing_to_undo: {},
+  reversed: { reversed: true },
+  reconciled: { reversed: true },
+  partial: { reversed: true, stayed: true },
+  expired: { stayed: true },
+  not_undone: { stayed: true },
+  partial_failure: { failed: true },
+};
+
 /**
- * The click's answer with its Work part: a Work taken back counts as reversed, one that stayed
- * is a part the Undo left, and only a Work step that threw is a failure.
+ * The click's answer with its Work part, from how many parts were reversed, stayed and failed
+ * across the documents, the tree and the Works: a Work taken back counts as reversed, one that
+ * stayed is a part the Undo left, and only a step that threw is a failure. A documents' answer
+ * that isn't one of these (a refusal) stands unless a Work failed.
  */
 export function combineWorkReversalOutcome(
   outcome: ReversalOutcome,
   workReceipts: WorkReceiptReversal[],
 ): ReversalOutcome {
   if (workReceipts.length === 0) return outcome;
-  const reversed = workReceipts.filter((result) => result.status === "reversed").length;
-  const stayed = workReceipts.some((result) => result.status === "unavailable");
-  const documentsDidNothing = outcome.status === "nothing_to_undo" || outcome.status === "expired";
-  const status = workReceipts.some((result) => result.status === "failed")
-    ? "partial_failure"
-    : !stayed
-      ? documentsDidNothing
-        ? "reversed"
-        : outcome.status === "not_undone"
-          ? "partial"
-          : outcome.status
-      : documentsDidNothing || outcome.status === "not_undone"
-        ? reversed
-          ? "partial"
-          : documentsDidNothing
-            ? "expired"
-            : "not_undone"
-        : outcome.status === "reversed" || outcome.status === "reconciled"
-          ? "partial"
-          : outcome.status;
+  const works = (status: WorkReceiptReversal["status"]) =>
+    workReceipts.filter((result) => result.status === status).length;
+  const documents = DOCUMENT_PARTS[outcome.status];
+  const reversed = works("reversed") + (documents?.reversed ? 1 : 0);
+  const stayed = works("unavailable") + (documents?.stayed || outcome.skips?.length ? 1 : 0);
+  const failed = works("failed") + (documents?.failed ? 1 : 0);
   return {
     ...outcome,
-    status,
-    acceptedParts: (outcome.acceptedParts ?? 0) + reversed,
+    status: turnStatus(outcome.status, documents !== undefined, { reversed, stayed, failed }),
+    acceptedParts: (outcome.acceptedParts ?? 0) + works("reversed"),
     workReceipts,
   };
+}
+
+function turnStatus(
+  documents: ReversalOutcome["status"],
+  settled: boolean,
+  parts: { reversed: number; stayed: number; failed: number },
+): ReversalOutcome["status"] {
+  if (parts.failed) return "partial_failure";
+  if (!settled) return documents;
+  if (parts.reversed && parts.stayed) return "partial";
+  if (parts.reversed) return documents === "reconciled" ? "reconciled" : "reversed";
+  // Nothing reversed: a tree change that stayed keeps its own answer.
+  return documents === "not_undone" ? "not_undone" : "expired";
 }
 
 export async function reverseWorkReceipts(
@@ -207,12 +221,12 @@ export async function reverseWorkReceipts(
  */
 export async function getTurnReceiptChip(
   deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works" | "threads"> & {
-    documentSync: Pick<AppServices["documentSync"], "getTurnReceiptChip">;
+    documentSync: Pick<AppServices["documentSync"], "getDocumentAndTreeChip">;
   },
   input: { threadId: ThreadId; turnId: TurnId },
 ): Promise<TurnReceiptChip | null> {
   const [chip, context] = await Promise.all([
-    deps.documentSync.getTurnReceiptChip(input.threadId, input.turnId),
+    deps.documentSync.getDocumentAndTreeChip(input.threadId, input.turnId),
     reversalContext(deps, input),
   ]);
   if (!context?.receipts.length) return chip;

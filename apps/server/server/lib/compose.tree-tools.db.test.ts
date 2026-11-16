@@ -554,7 +554,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placement(CH1))?.parentId).toBeNull();
         expect(await placementsNamed("fresh")).toEqual([]);
         expect(
-          await composed.ports.documentSync.getTurnReceiptChip(
+          await composed.ports.documentSync.getDocumentAndTreeChip(
             OTHER.threadId as never,
             OTHER.turnId as never,
           ),
@@ -783,7 +783,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(listed.map((document) => document.documentId)).toEqual(
           expect.arrayContaining([CH2] as never[]),
         );
-        const chip = await sync.getTurnReceiptChip(
+        const chip = await sync.getDocumentAndTreeChip(
           THREAD.threadId as never,
           THREAD.turnId as never,
         );
@@ -816,7 +816,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ls(after, "manuscript://")).not.toContain("fresh");
         expect(await ls(after, "user://")).not.toContain("mine");
         expect(
-          await sync.getTurnReceiptChip(THREAD.threadId as never, THREAD.turnId as never),
+          await sync.getDocumentAndTreeChip(THREAD.threadId as never, THREAD.turnId as never),
         ).toMatchObject({ state: "undone", control: "view_change" });
       });
 

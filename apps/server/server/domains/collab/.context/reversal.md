@@ -62,7 +62,7 @@ its chip choose from one selection (`prepare`): a taken part is neither a step n
 model's `undo` and `revert` list a taken part as `already removed`, and `read(format: "edits")`
 offers neither for it, because the listing asks the same planner. A model's forward revert is its
 own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
-(`getTurnReceiptChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
+(`getDocumentAndTreeChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
 the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
 card's undo receipts, whatever has happened to the nodes since), `partly` when parts stayed, else
 `expired` (the same rule as for tree receipts below). Effective action state is indexed per
@@ -272,7 +272,10 @@ deleted the Work the model made, or an earlier Undo did), `acts` when it stands 
 it, and `stayed` anywhere else (the writer renamed it since). A taken Work counts as reversed, so
 a second Undo answers `reversed`; a stayed one is a part the Undo left (`partial`, or `expired`
 when nothing else was taken back); only a Work step that throws is `partial_failure`. It runs
-after every document outcome. The reply's chip is composed once (`getTurnReceiptChip` there):
+after every document outcome, and the press's status comes from one count of the parts reversed,
+stayed and failed across documents, tree and Works (`combineWorkReversalOutcome`). The reply's
+chip is composed once (`getTurnReceiptChip` there; the collab port's `getDocumentAndTreeChip`
+knows nothing of Works, so nothing else answers the card with it):
 Undo while any part acts, Undone when every part is taken, `partly` when some stayed, with the
 documents' and tree's skips; a Work has no skip kind of its own.
 

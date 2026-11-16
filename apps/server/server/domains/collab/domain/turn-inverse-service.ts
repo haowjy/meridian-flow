@@ -343,7 +343,10 @@ function draftStates(
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
-    async getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
+    async getDocumentAndTreeChip(
+      threadId: ThreadId,
+      turnId: TurnId,
+    ): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
         // A reply that only changed the tree has no text to capture, and its card still takes it back.
