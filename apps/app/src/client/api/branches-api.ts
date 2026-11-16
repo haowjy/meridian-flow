@@ -8,13 +8,13 @@ import type {
   ApplyItemsClick,
   BranchDiscardRequest,
   BranchDiscardResponse,
-  ClosedDraftCause,
-  ClosedDraftsRequest,
-  ClosedDraftsResponse,
   DocumentDraftHintsResponse,
   DraftDiscardRequest,
   DraftDiscardResponse,
   DraftMetadataResponse,
+  DraftState,
+  DraftStatesRequest,
+  DraftStatesResponse,
   DraftsProvenanceRequest,
   DraftsProvenanceResponse,
   ThreadDraftListResponse,
@@ -23,11 +23,11 @@ import type {
   UndoDiscardAnswer,
   UndoDiscardClick,
 } from "@meridian/contracts/branches";
-import { CLOSED_DRAFTS_MAX } from "@meridian/contracts/branches";
+import { DRAFT_STATES_MAX } from "@meridian/contracts/branches";
 import type { CommandLookupResponse, CommandRunning } from "@meridian/contracts/commands";
 import {
-  apiClosedDraftsPath,
   apiCommandPath,
+  apiDraftStatesPath,
   apiProjectBranchApplyPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
@@ -55,16 +55,16 @@ export async function listOwnerDrafts(projectId: string, owner: string): Promise
   };
 }
 
-/** Which of these draft ids the server has closed, and why, asked in as many requests as the limit needs. */
-export async function listClosedDrafts(draftIds: string[]): Promise<Map<string, ClosedDraftCause>> {
-  const closed = new Map<string, ClosedDraftCause>();
-  for (let at = 0; at < draftIds.length; at += CLOSED_DRAFTS_MAX) {
-    const answer = await postJson<ClosedDraftsResponse>(apiClosedDraftsPath(), {
-      draftIds: draftIds.slice(at, at + CLOSED_DRAFTS_MAX),
-    } satisfies ClosedDraftsRequest);
-    for (const [id, cause] of Object.entries(answer.closed)) closed.set(id, cause);
+/** The state of each of these draft ids the account has (open, or why it closed), asked in as many requests as the limit needs. */
+export async function listDraftStates(draftIds: string[]): Promise<Map<string, DraftState>> {
+  const states = new Map<string, DraftState>();
+  for (let at = 0; at < draftIds.length; at += DRAFT_STATES_MAX) {
+    const answer = await postJson<DraftStatesResponse>(apiDraftStatesPath(), {
+      draftIds: draftIds.slice(at, at + DRAFT_STATES_MAX),
+    } satisfies DraftStatesRequest);
+    for (const [id, state] of Object.entries(answer.states)) states.set(id, state);
   }
-  return closed;
+  return states;
 }
 
 /** The authorship evidence of an owner's drafts, many in one request. */

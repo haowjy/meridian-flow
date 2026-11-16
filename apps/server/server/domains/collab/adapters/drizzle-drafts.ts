@@ -12,6 +12,7 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { type BranchId, createdDraftId, type DraftOwner } from "@meridian/contracts";
+import type { DraftState } from "@meridian/contracts/branches";
 import { contextRootUri, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -611,21 +612,24 @@ export function createDrizzleDraftStore(
       return row ? mapDraft(row) : null;
     },
 
-    async closedDrafts(userId, draftIds) {
+    async draftStates(userId, draftIds) {
       if (draftIds.length === 0) return {};
       const rows = await currentDrizzleDb(db)
-        .select({ id: documentDrafts.id, cause: documentDrafts.closedCause })
+        .select({
+          id: documentDrafts.id,
+          status: documentDrafts.status,
+          cause: documentDrafts.closedCause,
+        })
         .from(documentDrafts)
         .innerJoin(branchRows, eq(branchRows.id, documentDrafts.branchId))
         .innerJoin(projects, eq(projects.id, branchRows.projectId))
-        .where(
-          and(
-            inArray(documentDrafts.id, [...draftIds]),
-            eq(documentDrafts.status, "closed"),
-            eq(projects.userId, userId),
-          ),
-        );
-      return Object.fromEntries(rows.flatMap((row) => (row.cause ? [[row.id, row.cause]] : [])));
+        .where(and(inArray(documentDrafts.id, [...draftIds]), eq(projects.userId, userId)));
+      const states: Record<string, DraftState> = {};
+      for (const row of rows) {
+        if (row.status === "active") states[row.id] = "open";
+        else if (row.cause) states[row.id] = row.cause;
+      }
+      return states;
     },
 
     readDraftAt(draftId, since) {

@@ -1,5 +1,5 @@
 /** Structural, lease-qualified session-registry surfaces. */
-import type { ClosedDraftCause } from "@meridian/contracts/branches";
+import type { DraftState } from "@meridian/contracts/branches";
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
@@ -90,9 +90,9 @@ export interface LiveDocumentSessionRegistry {
    */
   observeUnsentTyping(observer: UnsentTypingObserver): () => void;
   closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void>;
-  /** Hands back the copies of the draft ids `closedOf` says the server closed, once each; see the implementation. */
-  handBackClosedDraftCopies(
-    closedOf: (draftIds: string[]) => Promise<ReadonlyMap<string, ClosedDraftCause>>,
+  /** Settles the draft copies no room here owns, once each, by the state `statesOf` reports for their drafts; see the implementation. */
+  sweepDraftCopies(
+    statesOf: (draftIds: string[]) => Promise<ReadonlyMap<string, DraftState>>,
   ): Promise<void>;
   /** A restore reopened the draft: its room may open again under the same id. */
   reopenDraftRoom(roomKey: string): void;

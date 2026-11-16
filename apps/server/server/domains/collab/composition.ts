@@ -632,7 +632,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       headSchemaVersion: persistence.journal.headSchemaVersion,
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
-      closedDrafts: hocuspocusPersistence.closedDrafts,
+      draftStates: hocuspocusPersistence.draftStates,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,

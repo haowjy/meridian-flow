@@ -2,7 +2,7 @@
  * Account-scoped owner of live document sessions and stable-id draft rooms.
  * Live acquisition is lease-required; draft rooms retain their stable room identity.
  */
-import type { ClosedDraftCause } from "@meridian/contracts/branches";
+import type { DraftState } from "@meridian/contracts/branches";
 import { type AccountId, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
@@ -42,10 +42,11 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
-/** Closed-draft copies the start sweep loads at once. */
+/** Draft copies the start sweep handles at once. */
 const SWEEP_LOADS = 4;
 /** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
 const KEPT_FOR_UNDO_CAP = 8;
+const SWEEP_DELIVERY_MS = 30_000;
 
 /**
  * The resets that end a room for good: its unsent typing is handed back when the session retires,
@@ -331,42 +332,90 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * Hands back, as `closed`, what the copies of drafts the server has closed hold beyond their
-   * mark. This covers a draft that closed while no page was open: no draft owner ran
-   * `closeDraftRoom` for it. The copies stay (see `closeDraftRoom`) and go with the document's
-   * purge. Each is swept once: it is then recorded as swept, and a later start skips it without
-   * loading it until a session opens the copy again (a restore). A room open in this tab is left
-   * to its own close, and a copy with no mark proves nothing undelivered. At most
-   * `SWEEP_LOADS` copies load at once.
+   * Settles the draft copies no room of this tab owns, found at start, by their draft's state.
+   * A closed draft's copy is handed back as `closed` (a Discard) or `removed` (its document went)
+   * for what it holds beyond its mark; it covers a draft that closed while no page was open, so no
+   * draft owner ran `closeDraftRoom`, and the copy stays (see `closeDraftRoom`). An open draft's
+   * copy that holds typing beyond its mark has its room opened through the pool, as if the writer
+   * had reopened the draft, and released once the server acknowledges: the typing is delivered to
+   * the draft. A copy another tab has open is left to that tab. Each copy is swept once: it is
+   * then recorded as swept, and a later start skips it without loading it until a session opens
+   * the copy again (a restore). A copy with no mark proves nothing undelivered. At most
+   * `SWEEP_LOADS` copies are handled at once.
    */
-  async handBackClosedDraftCopies(
-    closedOf: (draftIds: string[]) => Promise<ReadonlyMap<string, ClosedDraftCause>>,
+  async sweepDraftCopies(
+    statesOf: (draftIds: string[]) => Promise<ReadonlyMap<string, DraftState>>,
   ): Promise<void> {
-    const copies = (await this.copies.unsweptDraftCopies()).flatMap(({ name, roomKey }) => {
-      const room = parseYjsRoomName(roomKey);
-      return room?.kind === "draft" && !this.draftRooms.peek(roomKey)
-        ? [{ name, draftId: room.draftId }]
+    const copies = (await this.copies.unsweptDraftCopies()).flatMap((copy) => {
+      const room = parseYjsRoomName(copy.roomKey);
+      return room?.kind === "draft" && !this.draftRooms.peek(copy.roomKey)
+        ? [{ ...copy, draftId: room.draftId }]
         : [];
     });
     if (copies.length === 0) return;
-    const closed = await closedOf([...new Set(copies.map(({ draftId }) => draftId))]);
-    const todo = copies.flatMap(({ name, draftId }) => {
-      const why = closed.get(draftId);
-      return why
-        ? [{ name, cause: why === "discarded" ? ("closed" as const) : ("removed" as const) }]
-        : [];
-    });
+    const states = await statesOf([...new Set(copies.map(({ draftId }) => draftId))]);
+    const openRooms = new Map<string, { documentId: DocumentId; names: string[] }>();
+    const todo: (() => Promise<void>)[] = [];
+    for (const { name, roomKey, documentId, draftId } of copies) {
+      const state = states.get(draftId);
+      if (state === "open") {
+        const room = openRooms.get(roomKey) ?? { documentId, names: [] };
+        room.names.push(name);
+        openRooms.set(roomKey, room);
+      } else if (state) {
+        const cause = state === "discarded" ? ("closed" as const) : ("removed" as const);
+        todo.push(async () => {
+          await this.handBackCopy(name, cause, true);
+          this.copies.markSwept(name);
+        });
+      }
+    }
+    for (const [roomKey, { documentId, names }] of openRooms)
+      todo.push(() => this.deliverOpenDraftCopy(roomKey, documentId, names));
     const sweepOne = async () => {
       for (let next = todo.shift(); next; next = todo.shift()) {
         try {
-          await this.handBackCopy(next.name, next.cause, true);
-          this.copies.markSwept(next.name);
+          await next();
         } catch (error) {
           reportError(error);
         }
       }
     };
     await Promise.all(Array.from({ length: SWEEP_LOADS }, sweepOne));
+  }
+
+  /**
+   * Opens the room of an open draft whose copies (every incarnation) hold typing beyond their
+   * mark, and releases it once acknowledged. The session delivers like any other (the older
+   * incarnations are read against its first handshake); a page that opens the room meanwhile
+   * shares this session, so nothing is sent twice, and the copy is left unswept. A copy version
+   * older than the current one is read, not delivered: its words come back as an `owner-closed`
+   * notice, and a notice that can't be stored is retried at the next open. Not acknowledged within
+   * `SWEEP_DELIVERY_MS` (offline), the room is released anyway: the pool keeps draining it, and the
+   * copy is swept again at the next start.
+   */
+  private async deliverOpenDraftCopy(
+    roomKey: string,
+    documentId: DocumentId,
+    names: readonly string[],
+  ): Promise<void> {
+    const key = draftRoomPersistenceKey(this.accountId, documentId, roomKey);
+    if (await this.copies.heldByAnotherTab(incarnationName(key, this.copies.current(key)))) return;
+    let typed = false;
+    for (const name of names) typed ||= (await this.copies.beyondMark(name, true)) !== null;
+    if (typed) {
+      const owner = `sweep:${roomKey}`;
+      this.draftRooms.retain(owner, [{ roomKey, documentId }]);
+      try {
+        if (!(await acknowledged(this.draftRooms.get(roomKey)))) return;
+        // A page that shares this session keeps the copy's mark clear: its `hold` cleared it, and
+        // typing offline there must not be hidden by a mark set now.
+        if (this.draftRooms.isRetained(roomKey, owner)) return;
+      } finally {
+        this.draftRooms.release(owner);
+      }
+    }
+    for (const name of names) this.copies.markSwept(name);
   }
 
   reopenDraftRoom(roomKey: string): void {
@@ -1005,4 +1054,26 @@ export class DocumentSessionRegistry {
       `[document-session-registry] live document session count (${liveCount}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
     );
   }
+}
+
+/** Whether the server acknowledges everything the session holds: false when the room cannot, or at the wait's end. */
+function acknowledged(session: DocumentSession): Promise<boolean> {
+  return new Promise((resolve) => {
+    let stop = () => {};
+    let settled = false;
+    const done = (delivered: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stop();
+      resolve(delivered);
+    };
+    const timer = setTimeout(() => done(false), SWEEP_DELIVERY_MS);
+    // `subscribe` calls back at once, before `stop` exists.
+    stop = session.subscribe((snapshot) => {
+      if (snapshot.serverHasLocalChanges) done(true);
+      else if (!session.canDeliverUnsentEdits()) done(false);
+    });
+    if (settled) stop();
+  });
 }

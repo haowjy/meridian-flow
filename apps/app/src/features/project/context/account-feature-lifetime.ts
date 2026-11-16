@@ -4,7 +4,7 @@ import { plural } from "@lingui/core/macro";
 import { createdDraftId } from "@meridian/contracts";
 import { type AccountId, draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { getDraftMetadata, listClosedDrafts } from "@/client/api/branches-api";
+import { getDraftMetadata, listDraftStates } from "@/client/api/branches-api";
 import { getTrashDiscards } from "@/client/api/projects-api";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
@@ -71,7 +71,7 @@ export class AccountFeatureLifetime {
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signOutChannel: BroadcastChannel | null;
-  private cancelClosedDraftSweep: () => void = () => {};
+  private cancelDraftCopySweep: () => void = () => {};
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
@@ -159,10 +159,10 @@ export class AccountFeatureLifetime {
       },
     });
     this.registry.observeUnsentTyping(unsentTypingToasts);
-    // Typing a draft never took, left in a copy no draft owner will close: found once, after load.
+    // Typing a draft never took, left in a copy no draft owner will close or open: found once, after load.
     if (typeof window !== "undefined")
-      this.cancelClosedDraftSweep = afterFirstPaint(() =>
-        this.registry.handBackClosedDraftCopies(listClosedDrafts).catch(reportError),
+      this.cancelDraftCopySweep = afterFirstPaint(() =>
+        this.registry.sweepDraftCopies(listDraftStates).catch(reportError),
       );
     dropRetiredTabSession(accountId);
     // The browser last held someone else's documents: nothing of theirs stays for this account.
@@ -203,7 +203,7 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
-    this.cancelClosedDraftSweep();
+    this.cancelDraftCopySweep();
     this.stopTreeListDebugHook();
     this.treeLists.close();
     this.draftCommands.close();
