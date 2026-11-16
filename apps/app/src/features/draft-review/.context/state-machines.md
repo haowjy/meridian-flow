@@ -27,9 +27,11 @@ stateDiagram-v2
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
   the head where it is. A stalled head holds every later command behind it, because sending
   them around it would apply changes out of order.
-- **An Apply settles when the server's record shows it**, not on the answer. The server keeps
-  a row for each applied command, and the command settles once its id is among them. An Undo
-  settles when the rows it reversed are gone.
+- **A frozen Apply settles when the server's record shows it**, not on the answer. The server
+  keeps a row for each applied command in the draft's room, and the command settles once its id
+  is among them. A click with no frozen cut (a tree cut alone, or a whole-draft cut sent with
+  no room open) settles on the answer: no room here records it. An Undo settles when the rows it
+  reversed are gone.
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
   queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.

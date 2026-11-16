@@ -26,7 +26,7 @@ import {
 import type { InversePart, JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
+import { type DocumentId, type DraftItemKey, draftItemKey, type UserId } from "@meridian/contracts";
 import type { ApplyClickResult, UnapplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
@@ -608,8 +608,13 @@ export function createDrizzleApplyClick(
                   let ordinal = 0;
                   let overrode = 0;
                   let textEffect = false;
+                  const skipped: DraftItemKey[] = [];
                   for (const item of [...items].sort((a, b) => a.node.localeCompare(b.node))) {
                     if (!item.text || reviewItems.get(item.node)?.change === "deleting") continue;
+                    if (item.text.click.groups.length === 0) {
+                      skipped.push(draftItemKey(branchId, item.node as DocumentId));
+                      continue;
+                    }
                     const wrote = await applyText(
                       command,
                       item.node as DocumentId,
@@ -628,6 +633,7 @@ export function createDrizzleApplyClick(
                     commandId,
                     applied,
                     ...(textEffect ? { textEffect: true as const } : {}),
+                    ...(skipped.length ? { skipped } : {}),
                     ...(overrode ? { overrode } : {}),
                     ...(outcome.restored ? { restored: true as const } : {}),
                   };

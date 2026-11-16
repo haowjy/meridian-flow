@@ -27,8 +27,13 @@ export type ApplyClick = {
   commandId: CommandId;
   /** Stable room identity; omitted only for a no-room creation reveal. */
   draftId?: string;
-  /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted only for a no-room creation reveal. */
+  /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted for a tree cut alone and a whole cut. */
   snapshot?: string;
+  /**
+   * Apply every group the server's replica of `draftId` holds on receipt (`ApplyTextCut`'s whole
+   * cut), with no snapshot and empty `groupIds` and `baseViewDelta`.
+   */
+  whole?: true;
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
   /**
@@ -85,6 +90,8 @@ export type ApplyClickResult =
       restored?: true;
       /** A frozen text cut committed, including a cut whose live update was already contained. */
       textEffect?: true;
+      /** Items whose whole cut found no text change on receipt: nothing of their text applied. */
+      skipped?: DraftItemKey[];
     }
   /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
   | { status: "changed"; commandId: CommandId }
@@ -125,14 +132,21 @@ export type UnapplyClickResult =
   | { status: "refused"; commandId: CommandId; reason?: "gone" | "superseded" };
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 
-/** The text cut of one document in an Apply: the writer's frozen click on its review room. */
-export type ApplyTextCut = {
-  draftId: string;
-  /** Base64 of Y.encodeSnapshotV2(room snapshot). */
-  snapshot: string;
-  baseViewDelta: ApplySpanPatch[];
-  groupIds: string[];
-};
+/**
+ * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
+ * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
+ * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
+ * is skipped, not refused.
+ */
+export type ApplyTextCut =
+  | {
+      draftId: string;
+      /** Base64 of Y.encodeSnapshotV2(room snapshot). */
+      snapshot: string;
+      baseViewDelta: ApplySpanPatch[];
+      groupIds: string[];
+    }
+  | { draftId: string; whole: true };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
@@ -291,6 +305,11 @@ export interface ThreadDraftListItem {
   draftId: string | null;
   /** Whether the item has a text draft (an empty create or image may not). */
   hasDraft: boolean;
+  /**
+   * The text draft's changes against its review base, as the review groups them, counted by the
+   * server shortly after each write; 0 with no text draft.
+   */
+  textChanges: number;
   origin: "created" | "edited";
   /** Created and still hidden from the manuscript. */
   isNew: boolean;

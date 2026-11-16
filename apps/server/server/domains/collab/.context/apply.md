@@ -1,7 +1,20 @@
-# Frozen text Apply
+# Text Apply
 
-[Frozen Apply clicks][frozen] and [later action wins][later] hold the click contract.
+[What a click carries][frozen] and [later action wins][later] hold the click contract.
 `adapters/drizzle-apply-click.ts` owns the atomic storage operation.
+
+A text cut (`ApplyTextCut`) is frozen or whole. A frozen cut is the writer's click on an open
+room: snapshot, `baseViewDelta`, `groupIds`; the server refuses `unsynced` when its replica
+lacks the snapshot, and `malformed` for a group the cut's projection doesn't have. A whole cut
+(`{draftId, whole: true}`) is what a tab with no room open sends (Changes rows, folders, Apply
+all): `compileClick` cuts at the replica `loadBase` returned, with an empty `baseViewDelta`, and
+takes every group of that projection. A whole cut with no group compiles to an empty click; the
+adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
+the Un-Apply records are the same for both.
+
+The projection job (`domain/draft-projection.ts`) stores `text_changes`, the review groups of
+the draft against its base, with `has_effect`; the owner draft list carries it as the row's
+count, so Changes needs no room to say "N text changes".
 
 `domain/apply-click.ts` keeps the schema with the frozen optimistic base and patched
 blocks: independently built schemas have distinct node and mark types, which the merge

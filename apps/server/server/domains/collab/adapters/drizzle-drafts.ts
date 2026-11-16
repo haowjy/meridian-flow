@@ -482,13 +482,18 @@ export function createDrizzleDraftStore(
     draftId: string;
     revision: number;
     hasEffect: boolean;
+    textChanges: number;
     workId: WorkId | null;
     rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended"> {
     const write = async () => {
       const [row] = await currentDrizzleDb(db)
         .update(documentDrafts)
-        .set({ hasEffect: input.hasEffect, hasEffectRevision: input.revision })
+        .set({
+          hasEffect: input.hasEffect,
+          textChanges: input.textChanges,
+          hasEffectRevision: input.revision,
+        })
         .where(
           and(eq(documentDrafts.id, input.draftId), eq(documentDrafts.revision, input.revision)),
         )

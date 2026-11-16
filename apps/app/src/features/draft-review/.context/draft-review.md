@@ -105,14 +105,20 @@ reader for it (following replacement sessions even without a surface) and cancel
 close, so a newer draft under the same key can't inherit an old click. Retiring a
 session refuses only its draft's unsent clicks.
 
-`apply` synchronously freezes the `draftId`, Yjs snapshot, reviewed base blocks,
-selected ids, the result of applying those groups and one room-base-to-O delta. Its
-acknowledgement barrier waits for the server to acknowledge every local update in the
-cut before sending. The queue keeps its own `readDraftRoom` lease until terminal.
+`apply` with the draft's room ready in this tab synchronously freezes the `draftId`, Yjs
+snapshot, reviewed base blocks, selected ids, the result of applying those groups and one
+room-base-to-O delta. Its acknowledgement barrier waits for the server to acknowledge every
+local update in the cut before sending. The queue keeps its own `readDraftRoom` lease until
+terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
+sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
+draft holds on receipt. That click has no optimistic base and no room to record it
+(`frozenOn` is false), so it settles on the server's answer; its row hides until then, and the
+commands drop what it took from the cached list (`dropTaken`). Changes holds no room: its rows,
+their "N text changes" (`textChanges`, counted by the server) and Apply all read the list alone.
 
 An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
 so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every document's click is
-frozen in the click's event turn and joins its own FIFO as a member sharing the command's id;
+made in the click's event turn and joins its own FIFO as a member sharing the command's id;
 the member's send hands its click to the group, and the group posts `ApplyItemsClick` once
 every member reached its queue's head, so each text cut lands after that document's earlier
 clicks. A member that ends unsent (closed draft, unread room) is left out; a drop before the

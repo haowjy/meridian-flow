@@ -901,6 +901,7 @@ CREATE TABLE "document_drafts" (
 	"seed_live_state" "bytea",
 	"seed_live_position" bigint,
 	"has_effect" boolean DEFAULT true NOT NULL,
+	"text_changes" integer DEFAULT 0 NOT NULL,
 	"has_effect_revision" bigint DEFAULT -1 NOT NULL,
 	"schema_version" integer DEFAULT 3001000 NOT NULL,
 	"revision" bigint DEFAULT 0 NOT NULL,

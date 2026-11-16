@@ -40,7 +40,6 @@ import {
   landingFaultSentence,
 } from "@/features/draft-review/tree-groups";
 import { hasTreeLine, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
-import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { escapeCssIdent } from "@/lib/css-selector";
@@ -164,31 +163,10 @@ export function ChangesSource({
   );
   const touch = useCoarsePointer();
   const drafts = useOwnerDrafts(projectId, ownerKey);
-  const listed = drafts.files ?? [];
-  const textRows = listed.filter((file) => file.draft.hasDraft);
-  const held = useRoomReviews(
-    textRows.map((file) => ({
-      projectId,
-      ownerKey,
-      documentId: file.documentId,
-      itemKey: file.draft.itemKey,
-    })),
-  );
-  const readOf = (file: ReviewFileTarget) =>
-    held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)];
-  const listedFiles = listed.filter((file) => {
+  // A command in flight hides its row, until its delivery needs the writer's Retry.
+  const listedFiles = (drafts.files ?? []).filter((file) => {
     const state = controller.owner.state(file.draft.itemKey);
-    // A command in flight hides its row, until its delivery needs the writer's Retry.
-    if (state.hidden && !state.stalled) return false;
-    const read = readOf(file);
-    return (
-      file.draft.wholeItem ||
-      hasTreeLine(file.draft) ||
-      read?.status !== "ready" ||
-      read.listedChanges.length > 0 ||
-      state.pending ||
-      state.failure
-    );
+    return !state.hidden || state.stalled;
   });
   const shell = useShellTreeVersion();
   const tree = shell?.ownerKey === ownerKey ? shell.tree : null;
@@ -204,11 +182,9 @@ export function ChangesSource({
     : [{ folder: null, files: listedFiles, inner: [] }];
   // Grouped, the list's order is the groups' order: every index below reads this one.
   const files = groups.flatMap(groupFiles);
-  // Apply needs what it would apply: a new file, a move or delete, or a read draft's changes.
+  // Apply needs what it would apply: a new file, a move or delete, or a draft.
   const applicable = (file: ReviewFileTarget) =>
-    (!file.draft.hasDraft && file.draft.isNew) ||
-    hasTreeLine(file.draft) ||
-    (file.draft.hasDraft && (readOf(file)?.frame?.groups.length ?? 0) > 0);
+    file.draft.hasDraft || file.draft.isNew || hasTreeLine(file.draft);
 
   /** What an Apply of several asks about first: the documents it deletes and those it brings back. */
   const [asking, setAsking] = useState<{
@@ -340,10 +316,7 @@ export function ChangesSource({
             kind: "file" as const,
             file,
             name: file.documentName || file.contextLocation?.path || t`Untitled document`,
-            detail: changeSummary(
-              file,
-              readOf(file)?.status === "ready" ? readOf(file)?.listedChanges.length : undefined,
-            ),
+            detail: changeSummary(file),
             depth: group.folder ? depth + 1 : 0,
           })),
           ...group.inner.flatMap((inner) => itemsOf(inner, depth + 1)),
@@ -421,7 +394,6 @@ export function ChangesSource({
                   ? () => startApply(files, changedFolders)
                   : undefined
               }
-              applyDisabled={held.some((read) => read.status !== "ready")}
             />
           ) : goneRows ? (
             // The rows a command took still show: the bar stays, greyed, so they don't move.
@@ -528,11 +500,6 @@ export function ChangesSource({
                   file={file}
                   depth={item.depth}
                   fault={tree?.faults.get(file.documentId) ?? null}
-                  textChanges={
-                    readOf(file)?.status === "ready"
-                      ? readOf(file)?.listedChanges.length
-                      : undefined
-                  }
                   active={isOpen(file)}
                   canApply={controller.canApply && applicable(file)}
                   controller={controller}
@@ -594,7 +561,6 @@ function ChangeRow({
   file,
   depth,
   fault,
-  textChanges,
   active,
   canApply,
   controller,
@@ -614,8 +580,6 @@ function ChangeRow({
   depth: number;
   /** Why its tree change cannot land, which stays after Apply as the change stays pending. */
   fault: LandingFault | null;
-  /** The draft's text changes once its room is read. */
-  textChanges: number | undefined;
   active: boolean;
   canApply: boolean;
   controller: WorkBranchCommands;
@@ -661,7 +625,7 @@ function ChangeRow({
             <DeletedFromManuscriptTag item={file.draft} />
           </span>
         }
-        detail={changeSummary(file, textChanges)}
+        detail={changeSummary(file)}
         notice={notice}
         revealActions={!touch}
         actions={
@@ -704,7 +668,7 @@ function ChangeRow({
  * What the draft does to the document, in a quiet line under its name; nothing to say, no line.
  * The row's name is already the draft's, so a rename says what it was.
  */
-function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) {
+function changeSummary(file: ReviewFileTarget) {
   const line = treeLineOf(file.draft);
   const place = file.contextLocation ? folderPlace(file.contextLocation) : null;
   const tree = file.draft.isNew
@@ -721,6 +685,7 @@ function changeSummary(file: ReviewFileTarget, textChanges: number | undefined) 
             ? t`Changing position`
             : null;
   // A new or deleted document is the whole change: its text needs no count.
+  const { textChanges } = file.draft;
   const count = !file.draft.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
   if (!tree && count === null) return null;
   return (

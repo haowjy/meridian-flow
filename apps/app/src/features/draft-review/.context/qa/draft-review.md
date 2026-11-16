@@ -117,8 +117,10 @@ binding removes it and shows a live repair notice with the recovered prose.
 ## Frozen Apply FIFO
 
 Each document has one FIFO and one in-flight command; documents are independent.
-Work Apply all freezes one click per text draft, each in its own FIFO, and sends them as one
-command (`POST …/branches/:branchId/apply`) once every member is its queue's head.
+Work Apply all makes one click per text draft, each in its own FIFO, and sends them as one
+command (`POST …/branches/:branchId/apply`) once every member is its queue's head. A draft with
+its room open (an editor on it) sends a frozen cut; every other draft sends a whole cut the
+server resolves on receipt.
 
 | Controlled schedule | Required result |
 |---|---|

@@ -1,5 +1,5 @@
 /**
- * The projection job (design §3.2): a work draft's `has_effect`, its watermark and its Work's
+ * The projection job (design §3.2): a work draft's `has_effect` and `text_changes`, its watermark and its Work's
  * touch, derived from the committed replica after an append commits, never on the keystroke.
  * Marked dirty by every committed append, coalesced per draft, run at most `maxRuns` at a time,
  * retried on backoff, and repaired by a finite sweep over the persisted stale set. Process-local:
@@ -9,7 +9,13 @@
  *: a write guarded by the revision it judged misses whenever a key commits during the run,
  * so a `moved` write re-judges at once rather than on the debounce. Only errors back off.
  */
-import { blocksEqual, REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
+import {
+  blocksEqual,
+  diffBlocks,
+  projectReview,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+} from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import { DraftMissingError, type DraftStore, type StaleEffectCursor } from "./draft-store.js";
@@ -181,15 +187,16 @@ export function createDraftProjection(input: {
         // A thread peer carries no effect; a closed draft is not a review member.
         if (snapshot.kind !== "work_draft" || snapshot.status !== "active")
           return { kind: "done" as const };
+        const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+        const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+        const hasEffect = !blocksEqual(base, draft);
         return {
           kind: "judged" as const,
           write: {
             draftId,
             revision: snapshot.revision,
-            hasEffect: !blocksEqual(
-              readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
-              readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-            ),
+            hasEffect,
+            textChanges: hasEffect ? projectReview(diffBlocks(base, draft)).groups.length : 0,
             workId: snapshot.workId,
             rootThreadId: snapshot.rootThreadId,
           },

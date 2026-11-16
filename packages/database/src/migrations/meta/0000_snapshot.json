@@ -9027,6 +9027,13 @@
           "notNull": true,
           "default": true
         },
+        "text_changes": {
+          "name": "text_changes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "has_effect_revision": {
           "name": "has_effect_revision",
           "type": "bigint",

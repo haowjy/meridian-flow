@@ -123,15 +123,17 @@ function itemOf(documentId: string, body: ApplyClick): Item {
   return {
     node: documentId,
     ...(body.tree ? { tree: body.tree } : {}),
-    ...(body.draftId && body.snapshot
-      ? {
-          text: {
-            draftId: body.draftId,
-            snapshot: body.snapshot,
-            baseViewDelta: body.baseViewDelta,
-            groupIds: body.groupIds,
-          },
-        }
-      : {}),
+    ...(body.draftId && body.whole
+      ? { text: { draftId: body.draftId, whole: true as const } }
+      : body.draftId && body.snapshot
+        ? {
+            text: {
+              draftId: body.draftId,
+              snapshot: body.snapshot,
+              baseViewDelta: body.baseViewDelta,
+              groupIds: body.groupIds,
+            },
+          }
+        : {}),
   };
 }

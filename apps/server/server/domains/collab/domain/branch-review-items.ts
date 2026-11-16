@@ -24,6 +24,8 @@ export type DraftReviewItem = {
   draftId: string | null;
   /** Whether this item has a text draft. */
   hasDraft: boolean;
+  /** The text draft's review groups, as the projection job last counted them; 0 without one. */
+  textChanges: number;
   /** created: the branch has a `created` row; edited: draft rows only. */
   origin: "created" | "edited";
   /** A creation only the Work shows: derived on read, nothing rewrites it. */
@@ -143,6 +145,7 @@ function toItem(
         }
       : null,
     hasDraft: !!evidence,
+    textChanges: evidence?.textChanges ?? 0,
     documentName: documentTitleFromUri(path),
     path,
     deletedLive: node.deletedLive,

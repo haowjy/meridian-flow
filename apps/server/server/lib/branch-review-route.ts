@@ -17,6 +17,7 @@ import type {
   ApplyClickAnswer,
   ApplyClickResult,
   ApplyItemsClick,
+  ApplySpanPatch,
   ApplyTextCut,
   BranchDiscardRequest,
   DiscardCommandResult,
@@ -181,6 +182,7 @@ const ApplyClickBody = z
     draftId: z.string().min(1).max(128).optional(),
     commandId: CommandIdSchema,
     snapshot: z.string().min(1).optional(),
+    whole: z.literal(true).optional(),
     baseViewDelta: BaseViewDeltaBody,
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
     restore: z.literal(true).optional(),
@@ -193,21 +195,31 @@ const ApplyClickBody = z
       })
       .optional(),
   })
-  .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
+  .refine((body) =>
+    body.whole
+      ? Boolean(body.draftId) &&
+        !body.snapshot &&
+        body.groupIds.length === 0 &&
+        body.baseViewDelta.length === 0
+      : Boolean(body.snapshot) === Boolean(body.draftId),
+  );
 type ApplyClickRequest = z.infer<typeof ApplyClickBody>;
 const UnapplyClickBody = z.strictObject({
   commandId: CommandIdSchema,
   applyCommandId: CommandIdSchema,
 });
-const ApplyTextBody = z.strictObject({
-  draftId: z.string().min(1).max(128),
-  snapshot: z.string().min(1),
-  baseViewDelta: BaseViewDeltaBody,
-  groupIds: z
-    .array(z.string().min(1))
-    .min(1)
-    .refine((ids) => new Set(ids).size === ids.length),
-});
+const ApplyTextBody = z.union([
+  z.strictObject({
+    draftId: z.string().min(1).max(128),
+    snapshot: z.string().min(1),
+    baseViewDelta: BaseViewDeltaBody,
+    groupIds: z
+      .array(z.string().min(1))
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length),
+  }),
+  z.strictObject({ draftId: z.string().min(1).max(128), whole: z.literal(true) }),
+]);
 const ApplyItemsBody = z.strictObject({
   commandId: CommandIdSchema,
   items: z
@@ -619,30 +631,32 @@ function denialReason(grant: FileAccessDenied) {
 }
 
 /**
- * The per-document click as the one-item Apply it is; null when its cuts are malformed: a text
- * cut needs its room (`draftId`, `snapshot`) and a click needs a text cut or a tree cut.
+ * The per-document click as the one-item Apply it is; null when its cuts are malformed: a frozen
+ * text cut needs its room (`draftId`, `snapshot`), a whole cut its `draftId` (the body schema
+ * holds it), and a click needs a text cut or a tree cut.
  */
 function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyItemsClick | null {
-  const textCut =
+  const frozen =
     click.snapshot !== undefined || click.groupIds.length > 0 || click.baseViewDelta.length > 0;
-  if (!textCut && !click.tree) return null;
-  if (textCut && (!click.draftId || !click.snapshot || click.groupIds.length === 0)) return null;
+  if (!frozen && !click.whole && !click.tree) return null;
+  if (frozen && (!click.draftId || !click.snapshot || click.groupIds.length === 0)) return null;
+  const text: ApplyTextCut | null = click.whole
+    ? { draftId: click.draftId as string, whole: true }
+    : frozen
+      ? {
+          draftId: click.draftId as string,
+          snapshot: click.snapshot as string,
+          baseViewDelta: click.baseViewDelta as ApplySpanPatch[],
+          groupIds: click.groupIds,
+        }
+      : null;
   return {
     commandId: click.commandId as CommandId,
     items: [
       {
         node: documentId,
         ...(click.tree ? { tree: click.tree } : {}),
-        ...(textCut
-          ? {
-              text: {
-                draftId: click.draftId as string,
-                snapshot: click.snapshot as string,
-                baseViewDelta: click.baseViewDelta as ApplyTextCut["baseViewDelta"],
-                groupIds: click.groupIds,
-              },
-            }
-          : {}),
+        ...(text ? { text } : {}),
       },
     ],
     ...(click.restore ? { restore: true as const } : {}),
@@ -1084,6 +1098,7 @@ export function toWireItem(
     documentId: item.documentId,
     draftId: item.draftId,
     hasDraft: item.hasDraft,
+    textChanges: item.textChanges,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,

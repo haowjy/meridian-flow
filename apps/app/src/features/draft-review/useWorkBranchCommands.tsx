@@ -116,13 +116,28 @@ export function useWorkBranchCommands({
         });
       }
     };
-    /** The list without the item's move or delete, until the refetch confirms it. */
-    const dropTreeLine = (item: ThreadDraftListItem) =>
+    /**
+     * The list without what a command took from the item, until the refetch confirms it: its
+     * move or delete (`tree`), its text changes (`text`), and the row once nothing is left.
+     */
+    const dropTaken = (item: ThreadDraftListItem, took: { tree: boolean; text: boolean }) =>
       patchOwnerDrafts(queryClient, projectId, ownerKey, (rows) =>
-        rows.flatMap((row) =>
-          row.itemKey !== item.itemKey ? [row] : row.hasDraft ? [{ ...row, tree: null }] : [],
-        ),
+        rows.flatMap((row) => {
+          if (row.itemKey !== item.itemKey) return [row];
+          const left = {
+            ...row,
+            ...(took.tree ? { tree: null } : {}),
+            ...(took.text ? { textChanges: 0 } : {}),
+          };
+          return left.tree || (left.hasDraft && !took.text) ? [left] : [];
+        }),
       );
+    /** The list item's draft, which an Apply of the whole draft names when no room is open. */
+    const withDraft = (
+      target: ChangeTarget,
+      item: ThreadDraftListItem | undefined,
+    ): ChangeTarget =>
+      target.kind === "draft" && item?.draftId ? { kind: "draft", draftId: item.draftId } : target;
     const blocked = (): CommandStart => ({
       sent: false,
       outcome: Promise.resolve({ kind: "blocked" }),
@@ -282,7 +297,7 @@ export function useWorkBranchCommands({
         ? null
         : owner.apply(
             ref(draft),
-            target,
+            withDraft(target, item),
             isDeletedFromManuscript(item),
             (tree && item?.tree) || undefined,
             surface === "band"
@@ -297,7 +312,8 @@ export function useWorkBranchCommands({
         return blocked();
       }
       void started.outcome.then((outcome) => {
-        if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
+        if (outcome.kind === "done" && item)
+          dropTaken(item, { tree: Boolean(tree && item.tree), text: target.kind === "draft" });
         const step =
           outcome.kind === "done" && outcome.commandId && item
             ? rememberApply(
@@ -345,7 +361,12 @@ export function useWorkBranchCommands({
       const members = items.map(({ draft, target }) => {
         const item = row(draft);
         const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
-        return { draft, item, target, tree: (tree && item?.tree) || undefined };
+        return {
+          draft,
+          item,
+          target: withDraft(target, item),
+          tree: (tree && item?.tree) || undefined,
+        };
       });
       // A folder changed alone lists no item, so the cached list may predate it: read it again.
       const revisions = async () => {
@@ -377,10 +398,21 @@ export function useWorkBranchCommands({
         const member = members[index];
         if (!member) return;
         void outcome.then((settled) => {
-          if (settled.kind === "done" && member.tree && member.item) dropTreeLine(member.item);
-          if (settled.kind === "needs-restore" || !owner.state(member.draft.itemKey).pending)
-            refresh([member.draft.documentId]);
+          if (settled.kind === "done" && member.item)
+            dropTaken(member.item, {
+              tree: member.tree !== undefined,
+              text: member.target.kind === "draft",
+            });
         });
+      });
+      // One refresh for the command: a refresh per member refetched the list once per member.
+      void Promise.all(started.outcomes.slice(0, members.length)).then((settled) => {
+        const documentIds = members.flatMap(({ draft }, index) =>
+          settled[index]?.kind === "needs-restore" || !owner.state(draft.itemKey).pending
+            ? [draft.documentId]
+            : [],
+        );
+        if (documentIds.length) refresh(documentIds);
       });
       const [first] = members;
       // A delete the writer wasn't shown holds the whole command back: the list read again says
@@ -586,7 +618,7 @@ export function useWorkBranchCommands({
         const discarded = owner.discardItem(ref(draft), item, target, history, commandId);
         if (!discarded) return none(blocked());
         // The line goes at once; the refetch after the answer restores it if the server refused.
-        dropTreeLine(item);
+        dropTaken(item, { tree: true, text: false });
         const outcome = discarded.outcome.then((answer) => {
           refresh([draft.documentId]);
           return answer;
