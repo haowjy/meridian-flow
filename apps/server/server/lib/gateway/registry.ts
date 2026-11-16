@@ -189,12 +189,24 @@ export function unservableReason(model: Partial<SnapshotModel>): string | undefi
   return typeof tier === "string" ? tier : undefined;
 }
 
+/** A fact keyed to a model id no snapshot row has: a typo or a retired model, whose facts would fall back to the provider's `"*"` row without a sound. */
+function strayFactKeys(snapshot: ModelsSnapshot): string[] {
+  return PROVIDERS.flatMap((row) =>
+    Object.keys(row.models)
+      .filter((id) => id !== "*" && !snapshot.providers[row.id]?.[id])
+      .map(
+        (id) =>
+          `- \`${row.id}/${id}\` has facts in \`model-data.json\`, but the model is not in the snapshot. Delete them.`,
+      ),
+  );
+}
+
 /**
  * Where a provider's price overrides stop short: a model in a family that overrides another of
  * its models but has no override itself, and a rate models.dev lists that an override leaves
  * unset. Either would bill that rate at models.dev's number, not the one Flow pays.
  */
-export function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
+function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
   return PROVIDERS.flatMap((row) => {
     const rows = snapshot.providers[row.id] ?? {};
     const overrides = Object.fromEntries(
@@ -229,9 +241,13 @@ export function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
   });
 }
 
-/** The registry refuses a snapshot with a gap; the refresh report lists the gaps and builds anyway. */
-export function assertNoPriceOverrideGaps(snapshot: ModelsSnapshot): void {
-  const gaps = priceOverrideGaps(snapshot);
+/** Where `model-data.json` and the snapshot disagree. The registry refuses a snapshot with one; the refresh report lists them and builds anyway. */
+export function modelDataGaps(snapshot: ModelsSnapshot): string[] {
+  return [...strayFactKeys(snapshot), ...priceOverrideGaps(snapshot)];
+}
+
+function assertNoModelDataGaps(snapshot: ModelsSnapshot): void {
+  const gaps = modelDataGaps(snapshot);
   if (gaps.length > 0) throw new Error(gaps.join("\n"));
 }
 
@@ -386,7 +402,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
   };
 }
 
-assertNoPriceOverrideGaps(snapshotJson as ModelsSnapshot);
+assertNoModelDataGaps(snapshotJson as ModelsSnapshot);
 export const MODEL_REGISTRY: ModelRegistry = buildModelRegistry(snapshotJson as ModelsSnapshot);
 
 /**

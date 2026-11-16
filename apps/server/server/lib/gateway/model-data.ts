@@ -55,7 +55,7 @@ const modelFacts = z.strictObject({
   /**
    * What Flow charges where models.dev lists another: a rate models.dev has not updated yet, or
    * one that is not the rate Flow pays. It replaces every rate models.dev lists for the model, and
-   * is not for a model with context tiers. See `priceOverrideGaps` in `registry.ts` for what the
+   * is not for a model with context tiers. See `modelDataGaps` in `registry.ts` for what the
    * registry refuses.
    */
   price: fact(price).optional(),

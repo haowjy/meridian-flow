@@ -38,8 +38,10 @@ when the registry is built, not in the deployment that holds that provider's key
   days, prints models.dev's number beside the billed one for a price, and says "models.dev now agrees: delete the
   override" once they match. Because a family can admit a model its override was not written for, loading the
   registry fails when a family has an override for any model and another model it admits has none, or when models.dev
-  lists a cache rate the override leaves unset; the refresh report shows each as "Price overrides that do not cover
-  the snapshot", naming the family and the rates. The report mode (`--dry-run`) lists the gaps and builds the new
+  lists a cache rate the override leaves unset. It also fails when an exact model id under `models` (any fact, not only
+  price) names no snapshot row, since a misspelled or retired id would silently fall back to the `"*"` facts. The
+  refresh report shows each as "model-data.json that does not fit the snapshot", naming the model or the family and
+  rates. The report mode (`--dry-run`) lists the gaps and builds the new
   registry anyway, so the daily issue still shows every other change; write mode refuses. The check covers families that
   hold an override, not a provider's new family. To offer a model from a new provider, add the provider, its facts and
   a family; no code names a model or a provider.

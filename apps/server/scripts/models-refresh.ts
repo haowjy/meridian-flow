@@ -16,11 +16,10 @@ import { parseArgs } from "node:util";
 import { findFamily } from "../server/lib/gateway/families.js";
 import { factsOf, PROVIDERS, type ProviderData } from "../server/lib/gateway/model-data.js";
 import {
-  assertNoPriceOverrideGaps,
   buildModelRegistry,
   type ModelRegistry,
   type ModelsSnapshot,
-  priceOverrideGaps,
+  modelDataGaps,
   type SnapshotModel,
   unservableReason,
 } from "../server/lib/gateway/registry.js";
@@ -204,7 +203,7 @@ function buildReport(input: {
   unservable: readonly string[];
   buildError: string | undefined;
   /** Where price overrides leave a model or a rate at models.dev's price. */
-  overrideGaps: readonly string[];
+  dataGaps: readonly string[];
   /** The snapshot differs from models.dev, or something can't be served. */
   changed: boolean;
 }): string {
@@ -216,7 +215,7 @@ function buildReport(input: {
     today,
     unservable,
     buildError,
-    overrideGaps,
+    dataGaps,
     changed,
   } = input;
   const [was, now] = [offeringFields(oldRegistry), offeringFields(newRegistry)];
@@ -259,7 +258,7 @@ function buildReport(input: {
         "Flow charges the committed snapshot, so nothing here is billed yet. To apply it, run",
         "`pnpm models:refresh` on a branch, review the diff to `apps/server/server/lib/gateway/models-snapshot.json`,",
         "and open a PR. This issue closes itself once the snapshot matches models.dev.",
-        ...(unservable.length > 0 || buildError || overrideGaps.length > 0
+        ...(unservable.length > 0 || buildError || dataGaps.length > 0
           ? ["", "`pnpm models:refresh` refuses to write until the problems below are fixed."]
           : []),
         "",
@@ -268,7 +267,7 @@ function buildReport(input: {
   return [
     ...header,
     ...section("Matched a family but can't be served", unservable),
-    ...section("Price overrides that do not cover the snapshot", overrideGaps),
+    ...section("model-data.json that does not fit the snapshot", dataGaps),
     ...section("The new snapshot would not build", buildError ? [buildError] : []),
     ...section("New models", added),
     ...section("Removed models", removed),
@@ -300,8 +299,8 @@ const after: ModelsSnapshot = { takenAt: snapshotChanged ? today : before.takenA
 const oldRegistry = buildModelRegistry(before);
 let newRegistry = oldRegistry;
 let buildError: string | undefined;
-const overrideGaps = priceOverrideGaps(after);
-if (!dryRun) assertNoPriceOverrideGaps(after);
+const dataGaps = modelDataGaps(after);
+if (!dryRun && dataGaps.length > 0) throw new Error(`Nothing written.\n${dataGaps.join("\n")}`);
 try {
   newRegistry = buildModelRegistry(after);
 } catch (error) {
@@ -309,7 +308,7 @@ try {
   buildError = (error as Error).message;
 }
 const changed =
-  snapshotChanged || unservable.length > 0 || buildError !== undefined || overrideGaps.length > 0;
+  snapshotChanged || unservable.length > 0 || buildError !== undefined || dataGaps.length > 0;
 const report = buildReport({
   before,
   after,
@@ -318,7 +317,7 @@ const report = buildReport({
   today,
   unservable,
   buildError,
-  overrideGaps,
+  dataGaps,
   changed,
 });
 
