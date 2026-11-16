@@ -1,6 +1,11 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
-import { isToolNotRunResult, type JsonValue } from "@meridian/contracts/protocol";
+import { asUserId } from "@meridian/contracts";
+import {
+  type DocumentRemovalRecord,
+  isToolNotRunResult,
+  type JsonValue,
+} from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
@@ -14,8 +19,14 @@ import {
 } from "@meridian/thread-client";
 import { FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import { Chip } from "@/components/ui/chip";
 import { FoldToggle } from "@/components/ui/fold-toggle";
+import {
+  type ChatTitles,
+  removalVoice,
+  removedBeforeChangeSentence,
+} from "@/features/project/context/RemovedDocumentNotice";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -263,7 +274,7 @@ export function toolRowFailed(tool: ToolView): boolean {
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
-export function documentToolFailureCopy(tool: ToolView): string {
+export function documentToolFailureCopy(tool: ToolView, chats: ChatTitles): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
@@ -313,7 +324,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "returned":
-      return returnedWriteCopy(documentFailureReturned(tool).why, name, tool);
+      return returnedWriteCopy(documentFailureReturned(tool).why, name, tool, chats);
     case "invalid_write":
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
     default:
@@ -337,35 +348,40 @@ function documentFailureReturned(tool: ToolView): {
 }
 
 /**
- * Who removed a returned write's document and how, when the host sent the record with it. A
- * named person is named; anyone else reads passively.
+ * The removal record a returned write carried, read from the stored tool result (an older build's
+ * may lack fields); null when it has none.
  */
-function documentFailureRemoval(tool: ToolView): {
-  by: { kind: "person"; name: string } | { kind: "agent"; chat: string | null } | null;
-  reason: "deleted" | "discarded";
-} {
+function documentFailureRemoval(tool: ToolView): DocumentRemovalRecord | null {
   const { removal } = documentFailureReturned(tool);
-  if (!removal || typeof removal !== "object" || Array.isArray(removal))
-    return { by: null, reason: "deleted" };
+  if (!removal || typeof removal !== "object" || Array.isArray(removal)) return null;
   const actor = removal.actor;
   const record = actor && typeof actor === "object" && !Array.isArray(actor) ? actor : null;
-  const name = (value: unknown) => (typeof value === "string" && value ? value : null);
-  const person = record?.kind === "user" ? name(record.displayName) : null;
+  const text = (value: JsonValue | undefined) =>
+    typeof value === "string" && value ? value : null;
+  const chatId = text(record?.chatId);
+  const userId = text(record?.userId);
   return {
-    by: person
-      ? { kind: "person", name: person }
-      : record?.kind === "agent"
-        ? { kind: "agent", chat: name(record.chatTitle) }
-        : null,
     reason: removal.reason === "discarded" ? "discarded" : "deleted",
+    actor:
+      record?.kind === "user" && userId
+        ? { kind: "user", userId: asUserId(userId), displayName: text(record.displayName) }
+        : record?.kind === "agent"
+          ? { kind: "agent", chatTitle: text(record.chatTitle), ...(chatId ? { chatId } : {}) }
+          : null,
+    time: "",
   };
 }
 
 /** An edit the document's state returned: nothing was kept, and the AI was shown the document as it stands. */
-function returnedWriteCopy(why: string | null, name: string | null, tool: ToolView): string {
+function returnedWriteCopy(
+  why: string | null,
+  name: string | null,
+  tool: ToolView,
+  chats: ChatTitles,
+): string {
   switch (why) {
     case "document_removed":
-      return removedWriteCopy(name, documentFailureRemoval(tool));
+      return removedBeforeChangeSentence(name, removalVoice(documentFailureRemoval(tool), chats));
     case "work_archived":
       return t`This Work is archived, so its drafts take no new text and the change wasn't kept.`;
     case "work_deleted":
@@ -375,41 +391,6 @@ function returnedWriteCopy(why: string | null, name: string | null, tool: ToolVi
     default:
       return name ? t`That change wasn't kept in ${name}.` : t`That change wasn't kept.`;
   }
-}
-
-/** A write refused because its document was removed before the write ran. */
-function removedWriteCopy(
-  name: string | null,
-  removal: ReturnType<typeof documentFailureRemoval>,
-): string {
-  const { by } = removal;
-  if (by?.kind === "person") {
-    const who = by.name;
-    return removal.reason === "discarded"
-      ? name
-        ? t`${who} discarded ${name} from the draft before this change could be made.`
-        : t`${who} discarded this document from the draft before this change could be made.`
-      : name
-        ? t`${who} deleted ${name} before this change could be made.`
-        : t`${who} deleted this document before this change could be made.`;
-  }
-  if (by?.kind === "agent") {
-    const chat = by.chat;
-    return chat
-      ? name
-        ? t`The AI in ${chat} deleted ${name} before this change could be made.`
-        : t`The AI in ${chat} deleted this document before this change could be made.`
-      : name
-        ? t`The AI in a chat deleted ${name} before this change could be made.`
-        : t`The AI in a chat deleted this document before this change could be made.`;
-  }
-  return removal.reason === "discarded"
-    ? name
-      ? t`${name} was discarded from the draft before this change could be made.`
-      : t`This document was discarded from the draft before this change could be made.`
-    : name
-      ? t`${name} was deleted before this change could be made.`
-      : t`This document was deleted before this change could be made.`;
 }
 
 /**
@@ -504,6 +485,7 @@ function fileGivenLine(file: ReadFile): string {
 }
 
 function DocumentFailureText({ tool }: { tool: ToolView }) {
+  const chats = useCachedChatTitles();
   return (
     <div
       className={
@@ -512,7 +494,7 @@ function DocumentFailureText({ tool }: { tool: ToolView }) {
           : "text-compact text-destructive"
       }
     >
-      {documentToolFailureCopy(tool)}
+      {documentToolFailureCopy(tool, chats)}
     </div>
   );
 }

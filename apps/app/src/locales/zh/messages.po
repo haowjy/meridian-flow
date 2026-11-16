@@ -945,7 +945,7 @@ msgstr ""
 msgid "{name} source"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} was deleted before this change could be made."
 msgstr ""
 
@@ -957,7 +957,7 @@ msgstr ""
 #~ msgid "{name} was deleted with the Work {work} before this change could be made."
 #~ msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} was discarded from the draft before this change could be made."
 msgstr ""
 
@@ -1173,19 +1173,19 @@ msgstr ""
 #~ msgid "{waiting} still a draft"
 #~ msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} deleted {name} before this change could be made."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} deleted this document before this change could be made."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} discarded {name} from the draft before this change could be made."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} discarded this document from the draft before this change could be made."
 msgstr ""
 
@@ -7493,7 +7493,7 @@ msgstr ""
 msgid "The AI in {chat} deleted {count} documents ({names})."
 msgstr "{chat} 中的 AI 删除了 {count} 份文档（{names}）。"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {name} before this change could be made."
 msgstr ""
 
@@ -7513,7 +7513,7 @@ msgstr "{chat} 中的 AI 删除了{title}。"
 msgid "The AI in {chat} deleted {title}. Applying brings it back."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted this document before this change could be made."
 msgstr ""
 
@@ -7525,7 +7525,7 @@ msgstr "{chat} 中的 AI 删除了这份文档。"
 msgid "The AI in a chat deleted {count} documents ({names})."
 msgstr "某个对话中的 AI 删除了 {count} 份文档（{names}）。"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {name} before this change could be made."
 msgstr ""
 
@@ -7545,7 +7545,7 @@ msgstr "某个对话中的 AI 删除了{title}。"
 msgid "The AI in a chat deleted {title}. Applying brings it back."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted this document before this change could be made."
 msgstr ""
 
@@ -8067,7 +8067,7 @@ msgstr ""
 msgid "This document was deleted before its changes could be applied."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted before this change could be made."
 msgstr ""
 
@@ -8091,7 +8091,7 @@ msgstr ""
 msgid "This document was discarded from the draft"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft before this change could be made."
 msgstr ""
 

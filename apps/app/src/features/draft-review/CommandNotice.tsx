@@ -23,7 +23,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { type Removal, removalSentence } from "@/features/project/context/RemovedDocumentNotice";
+import { type Removal, useRemovalSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
@@ -153,6 +153,7 @@ export function DraftNoticeLine({
   className?: string;
 }) {
   useLingui();
+  const sayRemoval = useRemovalSentence();
   const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
   const whereabouts = useWhereabouts(notice.projectId);
@@ -204,7 +205,7 @@ export function DraftNoticeLine({
     const sentence = [
       ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
       appliedSentence(restored, also),
-      removalSentence([...removed.values()]),
+      sayRemoval([...removed.values()]),
     ]
       .filter(Boolean)
       .join(" ");
@@ -379,6 +380,7 @@ const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
 
 export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWords {
   useLingui();
+  const sayRemoval = useRemovalSentence();
   const undo = useNoticeUndo();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
   useAppliedCommands();
@@ -399,7 +401,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         const name = now.kind === "placed" ? documentDisplayName(now.uri) : factName(first);
         const said =
           now.kind === "removed"
-            ? removalSentence([now.removal])
+            ? sayRemoval([now.removal])
             : facts.map((fact) => factSentence(factNow(fact, now))).join(" ");
         const step = facts.find((fact) => fact.step)?.step;
         if (step) {

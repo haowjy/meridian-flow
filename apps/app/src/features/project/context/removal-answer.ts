@@ -12,15 +12,22 @@ export type RemovalAnswer =
 
 /**
  * The removing record's actor (`user:<id>`, `agent:<chat>/<turn>`) as the editor's notice reads
- * it: the replay names no account or chat title, so only a chat's AI is told apart. A Discard is
- * said as one even when the list doesn't name who made it.
+ * it: the replay names no account or chat title, so a chat's AI keeps its chat's id and the
+ * sentence names the chat from the chat list (`removalSentence`). A Discard is said as one even
+ * when the list doesn't name who made it.
  */
 export function removalRecordOf(
   actor: string | null,
   reason: DocumentRemovalRecord["reason"] = "deleted",
 ): DocumentRemovalRecord | null {
-  if (actor?.startsWith("agent:"))
-    return { reason, actor: { kind: "agent", chatTitle: null }, time: "" };
+  if (actor?.startsWith("agent:")) {
+    const chatId = actor.slice("agent:".length).split("/")[0];
+    return {
+      reason,
+      actor: { kind: "agent", chatTitle: null, ...(chatId ? { chatId } : {}) },
+      time: "",
+    };
+  }
   return actor || reason === "discarded" ? { reason, actor: null, time: "" } : null;
 }
 

@@ -203,7 +203,8 @@ export type DiscardUndo = {
    * Takes the share back now. `ok` once the prose is back in the room (or the server made its
    * copies), with `landed` settling when the server holds it; `gone`: nothing is left to take
    * back (the room ended or turned read-only, the write never landed, or it was taken back).
-   * A room's answer is known at once; the server's comes back.
+   * A room's answer comes once the server has pulled Live's typing into the room; the server's
+   * share answers with its restore.
    */
   undo(): DiscardUndoAnswer | Promise<DiscardUndoAnswer>;
   end(): void;
@@ -658,8 +659,7 @@ export class DraftNotices {
     this.pressed.set(id, "undoing");
     this.settle(ownerKey, id);
     // Retry takes back only the shares still out: a room's share that undid leaves the list, and a
-    // server's is done once its restore is. Every room's share is taken back in this event turn;
-    // the server's answers come back.
+    // server's is done once its restore is.
     const answers = await Promise.all(
       this.outstanding(parts).map(async (part) => ({ part, ...(await part.handle.undo()) })),
     );

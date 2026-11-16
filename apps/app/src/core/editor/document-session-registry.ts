@@ -69,6 +69,11 @@ export interface LiveDocumentSessionRegistry {
    */
   openStateVector(documentId: DocumentId, view?: "live" | "draft"): Uint8Array | null;
   /**
+   * Settles once the server holds the typing in this tab's live session of the document; at once
+   * when the tab holds none or it is not connected.
+   */
+  whenLiveHeld(documentId: DocumentId): Promise<void>;
+  /**
    * The writer's Undo of a room's session in this tab, shown or kept for its undo: a document's
    * live room by its id, a draft room by its name. Null when the tab holds none.
    */
