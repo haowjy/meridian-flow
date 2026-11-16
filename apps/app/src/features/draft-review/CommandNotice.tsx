@@ -317,7 +317,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
               sentence={`${said} ${
                 count > 1
                   ? t`Undo takes back the whole Apply, all ${count} changes.`
-                  : t`Undo takes them back out.`
+                  : t`Undo takes back the Apply.`
               }`}
               onAction={step.undo}
               // The pressed ✓ or Apply all left with its row: the first row the Apply took has

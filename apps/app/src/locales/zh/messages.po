@@ -7616,12 +7616,16 @@ msgid "Undo switch to draft mode"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the Apply."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Undo takes back the whole Apply, all {count} changes."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Undo takes them back out."
-msgstr ""
+#~ msgid "Undo takes them back out."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undoing Apply"
