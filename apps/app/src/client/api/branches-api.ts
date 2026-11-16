@@ -8,6 +8,7 @@ import type {
   ApplyItemsClick,
   BranchDiscardRequest,
   BranchDiscardResponse,
+  ClosedDraftCause,
   ClosedDraftsRequest,
   ClosedDraftsResponse,
   DocumentDraftHintsResponse,
@@ -54,14 +55,14 @@ export async function listOwnerDrafts(projectId: string, owner: string): Promise
   };
 }
 
-/** Which of these draft ids the server has closed, asked in as many requests as the limit needs. */
-export async function listClosedDrafts(draftIds: string[]): Promise<Set<string>> {
-  const closed = new Set<string>();
+/** Which of these draft ids the server has closed, and why, asked in as many requests as the limit needs. */
+export async function listClosedDrafts(draftIds: string[]): Promise<Map<string, ClosedDraftCause>> {
+  const closed = new Map<string, ClosedDraftCause>();
   for (let at = 0; at < draftIds.length; at += CLOSED_DRAFTS_MAX) {
     const answer = await postJson<ClosedDraftsResponse>(apiClosedDraftsPath(), {
       draftIds: draftIds.slice(at, at + CLOSED_DRAFTS_MAX),
     } satisfies ClosedDraftsRequest);
-    for (const id of answer.closed) closed.add(id);
+    for (const [id, cause] of Object.entries(answer.closed)) closed.set(id, cause);
   }
   return closed;
 }

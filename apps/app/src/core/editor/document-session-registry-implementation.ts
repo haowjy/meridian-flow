@@ -2,6 +2,7 @@
  * Account-scoped owner of live document sessions and stable-id draft rooms.
  * Live acquisition is lease-required; draft rooms retain their stable room identity.
  */
+import type { ClosedDraftCause } from "@meridian/contracts/branches";
 import { type AccountId, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
@@ -21,7 +22,7 @@ import type {
   UnsentTypingObserver,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import { type DraftCloseCause, DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
 import type { DocumentHistory } from "./editor-history";
 import {
   createHandBackNotices,
@@ -41,6 +42,8 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
+/** Closed-draft copies the start sweep loads at once. */
+const SWEEP_LOADS = 4;
 
 /**
  * The resets that end a room for good: its unsent typing is handed back when the session retires,
@@ -82,10 +85,10 @@ export class DocumentSessionRegistry {
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
     (session) => {
-      // A draft the server closed hands back as `closed` whatever ended the session's socket first.
-      const cause = this.draftRooms.isClosed(session.roomKey)
-        ? "closed"
-        : UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
+      // A draft the server closed hands back with that close's cause whatever ended the session's socket first.
+      const cause =
+        this.draftRooms.closedCause(session.roomKey) ??
+        UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
       if (cause) void this.handBackUnsent(session, cause).catch(reportError);
     },
   );
@@ -306,18 +309,19 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * The server closed the draft. A session the pool holds retires with the `closed` cause, which
-   * hands its copy back at the right time: when nothing shows its text any more. With no session
+   * The server closed the draft, as `closed` (a Discard) or `removed` (its document went). A
+   * session the pool holds retires with that cause, which hands its copy back at the right time:
+   * when nothing shows its text any more. With no session
    * (the room ended earlier, by a schema reset or a terminal close, or never opened here) the copy
    * is handed back now. The copy stays either way: Undo Discard reopens the same draft.
    */
-  async closeDraftRoom(roomKey: string): Promise<void> {
+  async closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void> {
     const documentId = this.draftRooms.documentOf(roomKey);
     const held = this.draftRooms.peek(roomKey);
-    await this.draftRooms.close(roomKey);
+    await this.draftRooms.close(roomKey, cause);
     if (documentId && !held) {
       const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
-      await this.handBackCopy(incarnationName(key, this.copies.current(key)), "closed");
+      await this.handBackCopy(incarnationName(key, this.copies.current(key)), cause);
     }
   }
 
@@ -325,13 +329,15 @@ export class DocumentSessionRegistry {
    * Hands back, as `closed`, what the copies of drafts the server has closed hold beyond their
    * mark. This covers a draft that closed while no page was open: no draft owner ran
    * `closeDraftRoom` for it. The copies stay (see `closeDraftRoom`) and go with the document's
-   * purge; a notice is stored once per item, so a later start offers nothing twice. A room open in
-   * this tab is left to its own close, and a copy with no mark proves nothing undelivered.
+   * purge. Each is swept once: it is then recorded as swept, and a later start skips it without
+   * loading it until a session opens the copy again (a restore). A room open in this tab is left
+   * to its own close, and a copy with no mark proves nothing undelivered. At most
+   * `SWEEP_LOADS` copies load at once.
    */
   async handBackClosedDraftCopies(
-    closedOf: (draftIds: string[]) => Promise<ReadonlySet<string>>,
+    closedOf: (draftIds: string[]) => Promise<ReadonlyMap<string, ClosedDraftCause>>,
   ): Promise<void> {
-    const copies = (await this.copies.draftCopies()).flatMap(({ name, roomKey }) => {
+    const copies = (await this.copies.unsweptDraftCopies()).flatMap(({ name, roomKey }) => {
       const room = parseYjsRoomName(roomKey);
       return room?.kind === "draft" && !this.draftRooms.peek(roomKey)
         ? [{ name, draftId: room.draftId }]
@@ -339,11 +345,23 @@ export class DocumentSessionRegistry {
     });
     if (copies.length === 0) return;
     const closed = await closedOf([...new Set(copies.map(({ draftId }) => draftId))]);
-    await Promise.all(
-      copies
-        .filter(({ draftId }) => closed.has(draftId))
-        .map(({ name }) => this.handBackCopy(name, "closed", true).catch(reportError)),
-    );
+    const todo = copies.flatMap(({ name, draftId }) => {
+      const why = closed.get(draftId);
+      return why
+        ? [{ name, cause: why === "discarded" ? ("closed" as const) : ("removed" as const) }]
+        : [];
+    });
+    const sweepOne = async () => {
+      for (let next = todo.shift(); next; next = todo.shift()) {
+        try {
+          await this.handBackCopy(next.name, next.cause, true);
+          this.copies.markSwept(next.name);
+        } catch (error) {
+          reportError(error);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: SWEEP_LOADS }, sweepOne));
   }
 
   reopenDraftRoom(roomKey: string): void {

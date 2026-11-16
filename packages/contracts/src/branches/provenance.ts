@@ -37,5 +37,7 @@ export type DraftsProvenanceResponse = { drafts: Record<string, DraftProvenanceR
 export const CLOSED_DRAFTS_MAX = 200;
 /** The drafts a browser holds copies of. */
 export type ClosedDraftsRequest = { draftIds: readonly string[] };
-/** The named drafts of the account that are closed; one the account doesn't have is absent. */
-export type ClosedDraftsResponse = { closed: string[] };
+/** Why a draft closed: a Discard (a restore from Trash reopens it), or its document went (a restore may not). */
+export type ClosedDraftCause = "discarded" | "document_removed";
+/** The named drafts of the account that are closed, each with why; one the account doesn't have is absent. */
+export type ClosedDraftsResponse = { closed: Record<string, ClosedDraftCause> };

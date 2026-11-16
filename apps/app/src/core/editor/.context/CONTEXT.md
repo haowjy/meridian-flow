@@ -724,12 +724,15 @@ from the wire alone, with nothing stored between handshakes.
   deletes the copy: Undo Discard reopens the same draft row, and the restarted session replays the
   copy into it, so the writer may see a Copy notice and also get the words back; losing them is the
   failure. The copy goes with the document's purge. `closeDraftRoom` lets the session the pool
-  holds retire with cause `closed` (the pool's `closed` set overrides whatever ended its socket)
+  holds retire with the close's cause (`closed` or `removed`) (the pool's `closed` set overrides whatever ended its socket)
   and, with no session, hands the copy back itself. A draft that closed while no page was open is
   found at start: once at idle after the account lifetime opens (cancelled if the lifetime
-  closes), `handBackClosedDraftCopies` lists the draft copies, asks `POST /api/drafts/closed` which
-  of those drafts are closed, and hands back each closed copy's words beyond the server's mark as
-  `closed`. A copy with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server what each close means (fresh
+  closes), `handBackClosedDraftCopies` lists the draft copies not yet swept, asks `POST /api/drafts/closed`
+  which of those drafts are closed and why, and hands back each closed copy's words beyond the
+  server's mark (`closed` for a Discard, `removed` when the document went), loading at most four
+  copies at a time. A swept copy is recorded (`meridian:copy-swept:<name>` in local storage) and
+  skipped without loading at later starts until a session opens it (`hold`, a restore). A copy
+  with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server what each close means (fresh
   metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
   whichever arrives first; see Draft end and reopen in the
   [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the

@@ -7,7 +7,7 @@
  * A closed room keeps its local copy: a Discard can be undone (Undo Discard reopens the same draft
  * row, and the restarted session replays the copy into it), so the copy goes with its document
  * (`LocalDocumentCopies`), never with the room. Its session retires with the `closed` cause
- * (`isClosed`), which hands the copy's unsent words back as a notice and keeps the copy. It stays
+ * (`closedCause`), which hands the copy's unsent words back as a notice and keeps the copy. It stays
  * closed until a restore reopens it; a
  * reader that comes to it meanwhile reads the session an owner still shows, if one does.
  *
@@ -23,10 +23,13 @@ import type { DocumentSessionTeardownOwner } from "./document-session-teardown-o
 import type { CopyHold } from "./local-document-copies";
 
 /** A draft room and the document it drafts: the room's copy is kept under the document, and goes with it. */
+/** How the server ended a draft: `closed` is a Discard (Restore from Trash reopens it), `removed` is its document going. */
+export type DraftCloseCause = "closed" | "removed";
+
 export type DraftRoomRef = { roomKey: string; documentId: string };
 
 export class DraftRoomPool {
-  private readonly closed = new Set<string>();
+  private readonly closed = new Map<string, DraftCloseCause>();
   private readonly draining = new Set<string>();
   private readonly rooms = new Map<string, DocumentSession>();
   private readonly documents = new Map<string, string>();
@@ -63,9 +66,9 @@ export class DraftRoomPool {
     return this.documents.get(roomKey);
   }
 
-  /** The server closed this room's draft, and no restore has reopened it. */
-  isClosed(roomKey: string): boolean {
-    return this.closed.has(roomKey);
+  /** Why the server closed this room's draft, until a restore reopens it. */
+  closedCause(roomKey: string): DraftCloseCause | undefined {
+    return this.closed.get(roomKey);
   }
 
   retain(ownerId: string, rooms: readonly DraftRoomRef[]): void {
@@ -151,8 +154,8 @@ export class DraftRoomPool {
   }
 
   /** An authoritative close can arrive by metadata before the socket's terminal frame. */
-  async close(roomKey: string): Promise<void> {
-    this.closed.add(roomKey);
+  async close(roomKey: string, cause: DraftCloseCause = "closed"): Promise<void> {
+    this.closed.set(roomKey, cause);
     const session = this.rooms.get(roomKey);
     // An owner still showing it keeps it, read-only, as the socket's own close would.
     if (session && this.isRetained(roomKey)) session.endClosed();

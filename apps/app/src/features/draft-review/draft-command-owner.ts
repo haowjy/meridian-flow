@@ -203,7 +203,7 @@ export class DraftCommandOwner {
   readonly notices = new DraftNotices(this.restores);
   constructor(
     private readonly registry: DraftRoomRegistry & {
-      closeDraftRoom(roomKey: string): Promise<void>;
+      closeDraftRoom(roomKey: string, cause: "closed" | "removed"): Promise<void>;
       /** A restore reopened the draft: the page may open its room again. */
       reopenDraftRoom(roomKey: string): void;
     },
@@ -632,7 +632,9 @@ export class DraftCommandOwner {
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);
     if (id !== ref.itemKey)
-      void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
+      void this.registry
+        .closeDraftRoom(draftRoomName(id), end === "document" ? "removed" : "closed")
+        .catch(reportError);
   }
 
   private releaseIdle(entry: Entry) {

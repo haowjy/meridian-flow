@@ -9,6 +9,10 @@
  * arrived. The check covers inserts only: a state vector carries no deletions, so a peer's
  * deletions released by a server frame go with the next handshake's SyncStep2.
  *
+ * `shown` is the same bookkeeping over the server's own frames only (its SyncStep1 and updates).
+ * The copy's mark takes it as each server frame arrives, so it does not wait for this client's own
+ * typing to be acknowledged and then offer the server's words back as unsent.
+ *
  * A document can hold items no frame carried. A local peer's update that waits on items the
  * server has not sent yet stays pending in the Y.Doc; the server update that supplies them
  * integrates both in the provider's transaction, and Hocuspocus never uploads a provider-origin

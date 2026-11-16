@@ -611,10 +611,10 @@ export function createDrizzleDraftStore(
       return row ? mapDraft(row) : null;
     },
 
-    async closedDraftIds(userId, draftIds) {
-      if (draftIds.length === 0) return [];
+    async closedDrafts(userId, draftIds) {
+      if (draftIds.length === 0) return {};
       const rows = await currentDrizzleDb(db)
-        .select({ id: documentDrafts.id })
+        .select({ id: documentDrafts.id, cause: documentDrafts.closedCause })
         .from(documentDrafts)
         .innerJoin(branchRows, eq(branchRows.id, documentDrafts.branchId))
         .innerJoin(projects, eq(projects.id, branchRows.projectId))
@@ -625,7 +625,7 @@ export function createDrizzleDraftStore(
             eq(projects.userId, userId),
           ),
         );
-      return rows.map((row) => row.id);
+      return Object.fromEntries(rows.flatMap((row) => (row.cause ? [[row.id, row.cause]] : [])));
     },
 
     readDraftAt(draftId, since) {

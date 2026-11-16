@@ -1,7 +1,7 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type { BranchId, CommandId, DraftOwner, LinkView } from "@meridian/contracts";
-import type { DiscardCommandResult } from "@meridian/contracts/branches";
+import type { ClosedDraftCause, DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
@@ -122,8 +122,11 @@ export type CollabTransport = {
   } | null>;
   /** Whether the draft was ever made, closed or not: a created document's draft is named before it is. */
   draftExists(draftId: string): Promise<boolean>;
-  /** Which of these draft ids are closed drafts in the user's projects; any other id is left out. */
-  closedDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
+  /** Which of these draft ids are closed drafts in the user's projects, and why; any other id is left out. */
+  closedDrafts(
+    userId: UserId,
+    draftIds: readonly string[],
+  ): Promise<Record<string, ClosedDraftCause>>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
