@@ -6,6 +6,7 @@ import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
   documentToolReturned,
+  mcpCallFailed,
   sourcePath,
   stringInput,
   toolCommand,
@@ -31,6 +32,7 @@ import {
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
+import { MCP_CALL_RENDERER, MCP_DESCRIBE_RENDERER } from "./mcp-renderers";
 import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
 import {
@@ -252,7 +254,7 @@ function documentFailureDocumentName(tool: ToolView): string | null {
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  return documentToolFailed(tool);
+  return tool.toolName === "mcp_call" ? mcpCallFailed(tool) : documentToolFailed(tool);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
@@ -667,6 +669,8 @@ const RENDERERS: Record<string, ToolRenderer> = {
   },
   thread_message: THREAD_MESSAGE_RENDERER,
   thread_report: THREAD_REPORT_RENDERER,
+  mcp_call: MCP_CALL_RENDERER,
+  mcp_describe: MCP_DESCRIBE_RENDERER,
 };
 
 export function rendererFor(toolName: string): ToolRenderer {
