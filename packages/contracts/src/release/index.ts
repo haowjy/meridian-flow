@@ -19,14 +19,13 @@ export const PROTOCOL_HEADER = "x-meridian-protocol";
 
 /**
  * The wire contract this code speaks. Bump on a contract change an older tab would misread.
- * 2: a move between a project and the account's files became a Copy (#1598). 3: Redo is gone from
- * the chat card and from the AI's commands, and each document command answers with what happened to
- * its items (PR B); a tab built at 2 still sends Redo and expects its statuses. 4 on `main`: the
- * Changes list reads its rows' facts from the owner list (#1675). 4 on this branch: the home folder
- * belongs to the account, so a source's owner has a new shape (#1599), and a chat card's Undo that
- * left every tree change answers `not_undone`, each tree part saying why it stayed (`changed_since`,
- * `purged`) where it said `superseded` (#1636). 5: both, merged: a tab built from `main` at 4 meets
- * this server's wire changes and must reload.
+ * 2: a move between a project and the account's files became a Copy (#1598). 3: the home folder
+ * belongs to the account, so a source's owner has a new shape (#1599). 4: the Changes list reads
+ * its rows' facts from the owner list (#1675). 5: Redo is gone from the chat card and from the AI's
+ * commands, each document command answers with what happened to its items (PR B), and a chat
+ * card's Undo that left every tree change answers `not_undone`, each tree part saying why it stayed
+ * (`changed_since`, `purged`) where it said `superseded` (#1636); a tab built at 4 still sends Redo
+ * and expects the old statuses.
  */
 export const PROTOCOL_VERSION = 5;
 

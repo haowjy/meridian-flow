@@ -25,6 +25,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/runtime/gateway";
@@ -537,10 +538,12 @@ export async function readTrackedDocument(
     address.uri,
   );
   // Only a draft that outlived a live delete reads a deleted document.
+  const parsedUri = parseContextUri(address.uri);
   const surviving =
-    grant.destination.kind === "draft" && grant.facts.deleted
+    parsedUri.ok && grant.destination.kind === "draft" && grant.facts.deleted
       ? survivingDraftNotice(
           (await deps.documentRemovals.lookup([address.documentId])).get(address.documentId),
+          parsedUri.value.scheme,
         )
       : null;
   const notice = [owner && "notice" in owner ? owner.notice : null, surviving]

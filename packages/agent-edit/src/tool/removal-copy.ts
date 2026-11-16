@@ -1,5 +1,6 @@
 // The model's words for a removed document, from its removal record. One phrase serves every
 // reader, so a call that names the file and an undo that reached it say the same fact. Writer-facing copy is the app's own.
+import { CONTEXT_URI_SCHEME_NAMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 
 /**
@@ -32,11 +33,14 @@ export function removerName(actor: DocumentRemovalRecord["actor"]): string | nul
 
 /**
  * A read through a draft that outlived its document's live delete: the draft is ordinary
- * and writable, and only the writer's Apply brings the document back to the manuscript.
+ * and writable, and only the writer's Apply brings the document back to its area.
  */
-export function survivingDraftNotice(removal: DocumentRemovalRecord | null | undefined): string {
+export function survivingDraftNotice(
+  removal: DocumentRemovalRecord | null | undefined,
+  scheme: ContextUriScheme,
+): string {
   const name = removerName(removal?.actor ?? null);
-  return `Deleted from the manuscript${name ? ` by ${name}` : ""}. Your draft still has it; Apply brings it back.`;
+  return `Deleted from ${CONTEXT_URI_SCHEME_NAMES[scheme]}${name ? ` by ${name}` : ""}. Your draft still has it; Apply brings it back.`;
 }
 
 /** A call that named a removed file: `document_not_found`, "File not found. This file was deleted by Ana." */
