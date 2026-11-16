@@ -128,7 +128,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
 
       return rows.map((row) => ({ ...row, branchId }));
     },
-    async pendingThreadIds(draftId) {
+    async pendingWriters(draftId) {
       const view = await readDisposition(draftId);
       const members = new Set<number>();
       for (const classification of view?.classifications.values() ?? [])
@@ -137,7 +137,10 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       // Receipt order is newest first; classification member order need not be.
       for (const [index, part] of (view?.parts ?? []).entries())
         if (members.has(index) && part.owner) agentThreadIds.add(part.owner.threadId);
-      return [...agentThreadIds];
+      const unattributed = (view?.projection?.groups ?? []).some(
+        (group) => !view?.classifications.get(group.id)?.members.length,
+      );
+      return { threadIds: [...agentThreadIds], unattributed };
     },
   };
 }

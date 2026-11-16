@@ -34,8 +34,6 @@ export type ApplyClick = {
    * cut), with no snapshot and empty `groupIds` and `baseViewDelta`.
    */
   whole?: true;
-  /** With `whole`: only the groups this chat wrote, not the draft's others. */
-  threadId?: string;
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
   /**
@@ -129,8 +127,7 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
- * is skipped, not refused. With `threadId`, only the groups that chat wrote and those no chat
- * owns, as a room's strip row takes them.
+ * is skipped, not refused.
  */
 export type ApplyTextCut =
   | {
@@ -140,7 +137,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true; threadId?: string };
+  | { draftId: string; whole: true };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
@@ -333,6 +330,8 @@ export interface ThreadDraftListItem {
   } | null;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
+  /** The draft holds a change no chat is known to have written: the writer's own typing, or evidence in doubt. Like another chat in `actorThreads`, it makes the draft shared. */
+  unattributed: boolean;
   /**
    * The text draft's last committed write (content-free folds keep it), which a whole-item
    * Discard sends back as `draftSeenAt`. Meaningless when `hasDraft` is false.

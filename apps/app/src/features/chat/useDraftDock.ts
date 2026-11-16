@@ -26,14 +26,17 @@ import {
   type DockFile,
   dockFile,
   isOnStrip,
+  isSharedDraft,
   totalChanges,
   wholeDockFile,
 } from "./draft-dock-files";
 
 /**
- * Rows that hold a review room, for their change-level detail and per-change commands. A room is
- * a WebSocket, and a chat that touched hundreds of drafts must not open them all (#1688): the
- * rest read the owner list and take whole-draft commands, as Changes does.
+ * Rows that hold a review room, for their change-level detail and per-change commands: the first
+ * eight, and every row whose draft is shared (see `isSharedDraft`). A room is a WebSocket, and a
+ * chat that touched hundreds of drafts must not open them all (#1688): the rest read the owner
+ * list and take whole-draft commands, as Changes does, which is exactly this chat's changes
+ * because nobody else wrote in them.
  */
 const ROOM_ROWS = 8;
 
@@ -103,18 +106,18 @@ export function useDraftDock({
     [candidates, projectId, ownerKey],
   );
   // The open review keeps its own refresh; the strip refreshes the rest.
-  // A shared listed row's Discard needs its room: the groups this chat wrote are cut there. Those
-  // rows wait in `discardQueue`, up to ROOM_ROWS holding a room at a time, and release it once
-  // discarded, unless they sit in the first eight.
-  const [discardQueue, setDiscardQueue] = useState<readonly string[]>([]);
-  const batch = useMemo(() => discardQueue.slice(0, ROOM_ROWS), [discardQueue]);
-  const roomed = useMemo(() => {
-    const first = targets.slice(0, ROOM_ROWS);
-    const extra = targets.filter(
-      (target) => batch.includes(target.itemKey) && !first.includes(target),
-    );
-    return [...first, ...extra];
-  }, [targets, batch]);
+  const roomed = useMemo(
+    () =>
+      targets.filter(
+        (target, index) =>
+          index < ROOM_ROWS ||
+          isSharedDraft(
+            candidates.find((row) => row.draft.itemKey === target.itemKey)?.draft,
+            threadId,
+          ),
+      ),
+    [targets, candidates, threadId],
+  );
   const reads = useRoomReviews(roomed);
   const untitled = t`Document`;
   const roomIndex = (itemKey: string) => roomed.findIndex((target) => target.itemKey === itemKey);
@@ -122,7 +125,7 @@ export function useDraftDock({
     const isWhole =
       row.draft.hasDraft && row.draft.tree?.deleted !== true && roomIndex(row.draft.itemKey) < 0;
     if (isWhole) {
-      const file = wholeDockFile(row, reviewFileTargetName(row, untitled), threadId);
+      const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
       return controller.owner.state(row.draft.itemKey).discarding
         ? { ...file, count: 0, actionable: [] }
         : file;
@@ -167,25 +170,8 @@ export function useDraftDock({
       ? 0
       : Math.max(0, workCount - drafted.filter((file) => file.alone).length);
 
-  // The queued batch discards as one command once every room has read and told which chat wrote
-  // each group: until then a change of no known author counts as this chat's.
-  useEffect(() => {
-    if (batch.length === 0) return;
-    const queued = batch.map((key) => drafted.find((file) => file.row.draft.itemKey === key));
-    const settled = (file: DockFile) =>
-      !file.whole &&
-      file.status !== "loading" &&
-      file.changes.every((change) => !change.frame || change.attributed);
-    if (!queued.every((file) => !file || settled(file))) return;
-    const items = discardItems(
-      queued.filter((file): file is DockFile => !!file && file.actionable.length > 0),
-    );
-    setDiscardQueue((queue) => queue.filter((key) => !batch.includes(key)));
-    if (items.length > 0) void runner.discardMany(items);
-  });
-
   const actionableFiles = files.filter((file) =>
-    file.whole ? file.count !== 0 : file.actionable.length > 0,
+    file.whole ? file.count > 0 : file.actionable.length > 0,
   );
 
   const review = useCallback(
@@ -218,37 +204,25 @@ export function useDraftDock({
       target: whole || file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
     }));
   };
-  /** A shared listed row cuts this chat's groups in a room; the rest end as the server does. */
-  const discard = (files: readonly DockFile[]) => {
-    const sharedKeys = controller.frozen
-      ? []
-      : files.filter((file) => file.shared).map((file) => file.row.draft.itemKey);
-    if (sharedKeys.length > 0)
-      setDiscardQueue((queue) => [...queue, ...sharedKeys.filter((key) => !queue.includes(key))]);
-    const items = discardItems(
-      files.filter((file) => !sharedKeys.includes(file.row.draft.itemKey)),
-    );
-    return items.length === 0 ? Promise.resolve([]) : runner.discardMany(items);
-  };
   /**
-   * Sends the strip's Apply. It brings back only the deleted documents in `restore`; it resolves
-   * to the files a delete the strip hadn't shown yet held the command back for (`needs-restore`).
+   * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
+   * it resolves to the files a delete the strip hadn't shown yet held the command back for
+   * (`needs-restore`).
    */
-  const apply = useCallback(
-    (restore: ReadonlySet<string> = new Set(), only?: DockFile) => {
-      const files = only ? [only] : applicable;
-      const items = files.map((file) => ({
-        draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-        target: file.whole
-          ? ({
-              kind: "draft",
-              ...(file.row.draft.wholeItem ? {} : { threadId }),
-            } as const)
-          : targetOfChanges(file.actionable),
-      }));
+  const send = useCallback(
+    (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set(), only?: DockFile) => {
+      const files = only ? [only] : mode === "apply" ? applicable : actionableFiles;
+      const items =
+        mode === "discard"
+          ? discardItems(files)
+          : files.map((file) => ({
+              draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+              target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
+            }));
       if (items.length === 0) return Promise.resolve([]);
-      // An Apply is one command over every file.
-      return runner.applyMany(items, restore).then(
+      // An Apply is one command over every file; a Discard is one notice with one Undo.
+      const sent = mode === "apply" ? runner.applyMany(items, restore) : runner.discardMany(items);
+      return sent.then(
         (outcomes) =>
           files.filter((_file, index) => {
             const outcome = outcomes[index];
@@ -257,7 +231,7 @@ export function useDraftDock({
         () => [],
       );
     },
-    [applicable, runner, threadId],
+    [actionableFiles, applicable, runner, controller.frozen],
   );
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
@@ -304,10 +278,10 @@ export function useDraftDock({
     deletedToApply: applicable.filter((file) => isDeletedLive(file.row.draft)),
     /** The files Apply would delete; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
-    apply: (restore: ReadonlySet<string>) => apply(restore),
-    discard: () => void discard(actionableFiles),
-    /** A listed (`whole`) row's own commands: this chat's changes, which the server picks, as the row has none to pick. */
-    applyFile: (file: DockFile) => void apply(new Set(), file),
-    discardFile: (file: DockFile) => void discard([file]),
+    apply: (restore: ReadonlySet<string>) => send("apply", restore),
+    discard: () => void send("discard"),
+    /** A listed (`whole`) row's own commands: its whole draft, as the row has no changes to pick. */
+    applyFile: (file: DockFile) => void send("apply", new Set(), file),
+    discardFile: (file: DockFile) => void send("discard", new Set(), file),
   };
 }

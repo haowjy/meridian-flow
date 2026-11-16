@@ -466,7 +466,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     tree: branchTreeState,
     drafts: (branchId, documentIds) =>
       workBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
-    pendingThreadIds: workBranchPendingStore.pendingThreadIds,
+    pendingWriters: workBranchPendingStore.pendingWriters,
     treeActors: createDrizzleBranchTreeActors(deps.db, deps.treeLists),
   });
   // Exactly what each committed transaction ended: its closed drafts' rooms.

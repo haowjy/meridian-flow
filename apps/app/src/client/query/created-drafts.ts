@@ -72,6 +72,7 @@ export function useCreatedDrafts(
         deletedLive: false,
         tree: null,
         actorThreads: [],
+        unattributed: false,
         updatedAt: new Date(0).toISOString(),
       };
     });

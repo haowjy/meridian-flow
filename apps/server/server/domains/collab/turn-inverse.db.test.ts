@@ -106,7 +106,7 @@ it("Redo after the writer typed inside restored text deletes only the model's le
         ),
       );
     const pending = createDrizzleWorkBranchPendingStore(db);
-    expect(await pending.pendingThreadIds(documentDraft.id)).toEqual([]);
+    expect((await pending.pendingWriters(documentDraft.id)).threadIds).toEqual([]);
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,
@@ -115,7 +115,7 @@ it("Redo after the writer typed inside restored text deletes only the model's le
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "reversed" });
-    expect(await pending.pendingThreadIds(documentDraft.id)).toEqual([THREAD_ID]);
+    expect((await pending.pendingWriters(documentDraft.id)).threadIds).toEqual([THREAD_ID]);
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,

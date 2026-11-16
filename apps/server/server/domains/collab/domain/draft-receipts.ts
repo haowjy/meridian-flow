@@ -156,7 +156,7 @@ export async function finalizeAppend(
       });
     }
     /** Typing a frame's deletion removed unseen counts only when a writer or an earlier recovery wrote it. */
-    async function writerTyped(edits: LostEdit[]): Promise<LostEdit[]> {
+    async function unattributed(edits: LostEdit[]): Promise<LostEdit[]> {
       const removed = edits.filter((edit) => edit.removed);
       if (!removed.length || !input.recovery) return edits;
       const ids: Y.ID[] = removed.flatMap((edit) =>
@@ -202,7 +202,7 @@ export async function finalizeAppend(
           : findLostEdits(doc, row.updateData, row.source === "writer");
       const refused = admit(row);
       if (refused) return done(refused);
-      const lost = { ...found, typed: await writerTyped(found.typed) };
+      const lost = { ...found, typed: await unattributed(found.typed) };
       if (input.recovery && (lost.typed.length || lost.deleted.length)) {
         // Without typing the helper only advances deletion memory; no clone or server row.
         const authoring = lost.typed.length ? createCollabYDoc({ gc: false }) : doc;

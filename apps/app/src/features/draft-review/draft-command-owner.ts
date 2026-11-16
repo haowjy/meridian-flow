@@ -735,10 +735,7 @@ export class DraftCommandOwner {
     const binding = this.byItem.get(ref.itemKey)?.binding;
     const room = binding?.runtime.state().ready ? binding : null;
     // No room open here: the server cuts the whole draft on receipt.
-    const whole =
-      target.kind === "draft" && !room && target.draftId
-        ? { draftId: target.draftId, threadId: target.threadId }
-        : undefined;
+    const whole = target.kind === "draft" && !room ? target.draftId : undefined;
     // The tree cut alone: no text asked for, or none to apply (no draft, or a room with no change).
     const textless =
       target.kind === "tree" ||
@@ -746,7 +743,9 @@ export class DraftCommandOwner {
         requested !== undefined &&
         !room?.runtime.projectNow()?.groups.length);
     if (whole || textless)
-      return whole || tree ? this.captureOnReceipt(ref, { ...whole, tree }, restore, joint) : null;
+      return whole || tree
+        ? this.captureOnReceipt(ref, { draftId: whole, tree }, restore, joint)
+        : null;
     if (target.kind === "groups" && !room)
       return this.captureEnded(ref, target, restore, tree, joint);
     return this.captureText(ref, target, restore, tree, histories, joint);
@@ -760,7 +759,7 @@ export class DraftCommandOwner {
    */
   private captureOnReceipt(
     ref: DraftRef,
-    cut: { draftId?: string; threadId?: string; tree?: { revision: string | null } },
+    cut: { draftId?: string; tree?: { revision: string | null } },
     restore: boolean,
     joint?: Joint,
   ): StartedApply | null {
@@ -771,7 +770,6 @@ export class DraftCommandOwner {
       body: {
         commandId: joint?.commandId ?? crypto.randomUUID(),
         ...(cut.draftId ? { draftId: cut.draftId, whole: true as const } : {}),
-        ...(cut.threadId ? { threadId: cut.threadId } : {}),
         groupIds: [],
         baseViewDelta: [],
         // The cut is the revision alone: the list item's `tree` also says what it does.

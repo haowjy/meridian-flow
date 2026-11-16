@@ -253,11 +253,9 @@ function DockFileLine({
           >
             <span className="min-w-0 truncate">{fileLabel(file)}</span>
             <DeletedLiveTag item={file.row.draft} />
-            {file.count === null ? null : (
-              <span className="ml-auto shrink-0 text-muted-foreground">
-                <ChangeCount count={file.count} />
-              </span>
-            )}
+            <span className="ml-auto shrink-0 text-muted-foreground">
+              <ChangeCount count={file.count} />
+            </span>
           </button>
           <ReviewActions
             scope="change"

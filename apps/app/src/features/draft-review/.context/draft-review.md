@@ -159,18 +159,15 @@ Changes holds no room: its rows, their "N text changes" (`textChanges`, counted 
 draft-effect projection, which wakes the list's owner when the number moves) and Apply all read
 the list alone.
 
-The chat's strip (`useDraftDock`) holds a room for its first eight drafted rows only: they show change-level
-text and per-change commands. Every later row is a `whole` dock file (`wholeDockFile`): the list's name, a ✓
-and a ×, and a whole-draft command (`{ kind: "draft", threadId }`, which `withDraft` gives its `draftId`).
-The strip is chat-scoped whether or not a row has a room: the server cuts a `whole` text cut that names
-`threadId` to the groups that chat wrote and those no chat owns (`compileClick`), as a room row does with
-`members`. The list holds only the draft's whole `textChanges`, so a row other chats wrote in too
-(`shared`) shows no count. Its × promotes it to a room row, for the same pending look a room row has
-while it reads (`discardQueue`), then runs the room Discard of this chat's changes and lets the room go
-(the server's Discard ends the whole draft, and a chat's share can only be written back in a room).
-Discard all queues every shared listed row this way, eight rooms at a time, one command per batch, and
-sends the other rows at once. Apply all stays one command over both kinds. A chat that touched
-hundreds of drafts therefore holds eight sockets, not one per draft.
+The chat's strip (`useDraftDock`) holds a room for a drafted row in the first eight, and for every row
+whose draft is shared (`isSharedDraft`): another chat wrote in it, or the writer typed in it
+(`actorThreads`, `unattributed` on the list item). Those rows show change-level text and per-change
+commands, which cut this chat's changes from the others'. Every other row is a `whole` dock file
+(`wholeDockFile`): the list's name and `textChanges`, a ✓ and × of its own, and a whole-draft command
+(`{ kind: "draft" }`, which `withDraft` gives its `draftId`). Nobody else wrote in it, so the whole draft
+is exactly this chat's changes and its count is exact. Apply all and Discard all are one command over
+both kinds. A chat that touched hundreds of drafts holds eight sockets plus one per shared draft; that
+last number is unbounded.
 
 An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
 so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every document's click is
