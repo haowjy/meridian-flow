@@ -134,14 +134,20 @@ export const savedAgentFileQuerySchema = z.object({ level: agentLevelSchema, pat
 export const savedAgentFileSchema = z.object({ text: z.string() });
 
 /** The Agent file a chat is bound to, as saved; `stale` when a newer save exists. */
+/**
+ * The Agent a started chat runs, as its next turn runs it: the chat's own row in the picker comes
+ * from this alone, since the catalog's newest save takes over only at a compaction.
+ */
 export const threadAgentSchema = z.object({
+  selection: agentSelectionSchema,
   name: z.string(),
+  description: z.string(),
   text: z.string(),
   stale: z.boolean(),
-  /** The model and reasoning the binding runs the Agent at, until the chat's next compaction. */
+  /** The model and reasoning the next turn runs with no per-chat override. */
   model: z.string(),
   effort: reasoningChoiceSchema.nullable(),
-  /** Why the bound Agent can't run on its bound model now; empty when it can. */
+  /** Why the Agent can't run on that model now; empty when it can. */
   unavailableReasons: z.array(z.string()),
 });
 export type ThreadAgent = z.infer<typeof threadAgentSchema>;

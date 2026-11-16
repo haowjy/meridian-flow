@@ -104,21 +104,32 @@ export function AgentPickerPanel({
   const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
-  // A started chat runs its Agent as bound until it compacts, so its row shows the bound model,
-  // level and availability, not the newest save's: the same binding the stale mark compares.
+  // A started chat runs its Agent as bound until it compacts, so its own row is the binding's,
+  // whatever the catalog's newest save now says (another model, renamed, not primary, clashing).
   const bound = useThreadAgent(mode.kind === "chat" ? mode.threadId : null);
-  const agents = (status.agents ?? [])
-    .filter((agent) => agent.primary)
-    .map((agent) =>
-      mode.kind === "chat" && agent.slug === current.slug && bound.data
+  const currentSlug =
+    mode.kind === "chat" ? (bound.data?.selection.slug ?? current.slug) : current.slug;
+  const catalogOwn = status.agents?.find((agent) => agent.slug === currentSlug);
+  const own: AgentCatalogItem | undefined =
+    mode.kind !== "chat"
+      ? undefined
+      : bound.data
         ? {
-            ...agent,
+            ...(catalogOwn ?? { path: null, level: "builtin", shadows: [] }),
+            selection: bound.data.selection,
+            slug: bound.data.selection.slug,
+            name: bound.data.name,
+            description: bound.data.description,
             model: bound.data.model,
             effort: bound.data.effort,
+            primary: true,
             unavailableReasons: bound.data.unavailableReasons,
           }
-        : agent,
-    );
+        : catalogOwn;
+  const agents = [
+    ...(own ? [own] : []),
+    ...(status.agents ?? []).filter((agent) => agent.primary && agent.slug !== own?.slug),
+  ];
   if (status.status !== "ready" || agents.length === 0)
     return (
       <Picker>
@@ -140,8 +151,6 @@ export function AgentPickerPanel({
       </Picker>
     );
 
-  const own =
-    mode.kind === "chat" ? agents.find((agent) => agent.slug === current.slug) : undefined;
   const needle = query.trim().toLowerCase();
   const listed = agents.filter(
     (agent) =>
@@ -151,7 +160,7 @@ export function AgentPickerPanel({
         agent.description.toLowerCase().includes(needle)),
   );
   const shown =
-    [...(own ? [own] : []), ...listed].find((agent) => agent.slug === (pointed ?? current.slug)) ??
+    [...(own ? [own] : []), ...listed].find((agent) => agent.slug === (pointed ?? currentSlug)) ??
     own ??
     listed[0] ??
     agents[0];
@@ -174,7 +183,7 @@ export function AgentPickerPanel({
       ? handoffDraft?.slug === agent.slug
         ? handoffDraft.overrides
         : NO_OVERRIDES
-      : agent.slug === current.slug
+      : agent.slug === currentSlug
         ? current.overrides
         : NO_OVERRIDES;
   const pick = (agent: AgentCatalogItem, next = overridesFor(agent)) => {
@@ -185,14 +194,14 @@ export function AgentPickerPanel({
       onClose();
       return;
     }
-    if (agent.slug === current.slug && sameOverrides(next, current.overrides)) return;
+    if (agent.slug === currentSlug && sameOverrides(next, current.overrides)) return;
     if (mode.kind !== "turn") mode.onChoose(choice);
   };
   /** A model or level: picked at once, except for a handoff, which it only sets up. */
   const adjust = (agent: AgentCatalogItem, next: ThreadOverrides) =>
     handsOff(agent) ? setHandoffDraft({ slug: agent.slug, overrides: next }) : pick(agent, next);
   const row = (agent: AgentCatalogItem) => {
-    const isCurrent = agent.slug === current.slug;
+    const isCurrent = agent.slug === currentSlug;
     return (
       <li
         key={agent.slug}
@@ -237,6 +246,7 @@ export function AgentPickerPanel({
   const option = (id: string | null) => (id ? models?.find((model) => model.id === id) : undefined);
   const runsOnOption = option(runsOn);
   const awaitsBinding = shown === own && bound.isPending;
+  const bindingFailed = shown === own && bound.isError;
   // Reasoning as the gateway settles it on the model: the Agent's own level, and the one it runs at.
   const ownLevel = settledReasoning(shown.effort, runsOnOption);
   const thinksAt = overrides.effort ? settledReasoning(overrides.effort, runsOnOption) : ownLevel;
@@ -340,7 +350,7 @@ export function AgentPickerPanel({
                 action={
                   handsOff(shown)
                     ? { label: t`Hand off to ${shown.name}`, touchOnly: false }
-                    : shown.slug === current.slug
+                    : shown.slug === currentSlug
                       ? null
                       : { label: t`Use ${shown.name}`, touchOnly: true }
                 }
@@ -368,12 +378,21 @@ export function AgentPickerPanel({
               }}
               className="flex min-h-0 min-w-0 flex-1 flex-col"
             >
-              {pickable(shown) ? (
+              {bindingFailed ? (
+                <InlineErrorRow
+                  message={t`Couldn't load what this chat runs.`}
+                  onRetry={() => void bound.refetch()}
+                />
+              ) : awaitsBinding ? (
+                <ListLine density="menu" status>
+                  <Trans>Loading models…</Trans>
+                </ListLine>
+              ) : pickable(shown) ? (
                 <>
                   <ModelChoices
                     agent={shown}
                     runsOn={runsOn}
-                    models={awaitsBinding ? null : models}
+                    models={models}
                     onChoose={(id) => {
                       // A reasoning override follows the model: settled on it, and dropped once
                       // it is the new model's own level.
@@ -386,7 +405,7 @@ export function AgentPickerPanel({
                     }}
                   />
                   <ReasoningChoices
-                    model={awaitsBinding ? undefined : runsOnOption}
+                    model={runsOnOption}
                     own={ownLevel}
                     thinksAt={thinksAt}
                     onChoose={(level) =>

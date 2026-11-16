@@ -448,9 +448,12 @@ export function createBoundAgentCatalog(input: {
       if (text === undefined) return undefined;
       // A binding that only moves to another model is not a newer saved version.
       const refreshed = await catalog.refreshBinding(userId, projectId, thread);
-      const runs = await effectiveBinding(userId, projectId, thread, bound);
+      const runs = await effectiveBinding(userId, projectId, thread, bound, { refreshed });
+      const agent = runs.revision ?? revision;
       return {
-        name: revision.definition.metadata.name ?? revision.slug,
+        selection: { slug: agent.slug, definitionRevisionId: agent.id },
+        name: agent.definition.metadata.name ?? agent.slug,
+        description: agent.definition.metadata.description ?? "",
         text,
         stale:
           refreshed !== undefined &&
@@ -460,10 +463,7 @@ export function createBoundAgentCatalog(input: {
             )),
         model: runs.configuration.model,
         effort: runs.configuration.effort ? AGENT_EFFORT_CHOICE[runs.configuration.effort] : null,
-        unavailableReasons: input.unavailableReasons(
-          (runs.revision ?? revision).definition,
-          runs.configuration.model,
-        ),
+        unavailableReasons: input.unavailableReasons(agent.definition, runs.configuration.model),
       };
     },
 
@@ -496,9 +496,11 @@ export function createBoundAgentCatalog(input: {
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
     bound: AgentRevisionBinding,
+    /** `refreshFrom`'s result for this binding, when the caller already has it. */
+    known?: { refreshed: Awaited<ReturnType<typeof refreshFrom>> },
   ): Promise<AgentRevisionBinding> {
     if (!bound.revision || modelStillOffered({ ...bound, revision: bound.revision })) return bound;
-    const moved = await refreshFrom(userId, projectId, thread, bound);
+    const moved = known ? known.refreshed : await refreshFrom(userId, projectId, thread, bound);
     return moved?.revision ? moved : bound;
   }
   /** Whether the host still offers the model the chat is bound to. */

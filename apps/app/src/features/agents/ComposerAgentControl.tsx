@@ -27,7 +27,6 @@ import {
   type BoundAgent,
   boundAgentRow,
   type CreationAgent,
-  type PickableAgent,
   pickableAgents,
 } from "./creation-agent";
 
@@ -71,12 +70,7 @@ export function useComposerAgentToolbarControl(
     props.mode === "interactive"
       ? props.selectedAgent
       : props.mode === "started"
-        ? // The chat keeps its bound Agent when the newest save of it can't run, so it is
-          // found among every saved Agent, not only the ones a new chat could start with.
-          boundAgentRow(
-            agents.filter((agent): agent is PickableAgent => agent.selection !== null),
-            props.bound,
-          )
+        ? boundAgentRow(selectable, props.bound)
         : null;
   const name =
     props.mode === "readonly"
