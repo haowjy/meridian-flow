@@ -24,7 +24,6 @@ import { createWorkProjectionMutation } from "../../projects/adapters/work-proje
 import { createDrizzleProjectWorkRepository } from "../../projects/index.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleChatUploads } from "../uploads/index.js";
-import { createDrizzleContextSources } from "./context-sources.js";
 import { createDrizzleDocumentArrivals } from "./document-arrivals.js";
 import { createDrizzleLineageScratchLifecycle } from "./lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
@@ -99,7 +98,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       const db = database.current;
       const registry = createTestLinkAheadRegistry(db);
       const arrivals = createDrizzleDocumentArrivals(db, registry);
-      const sources = createDrizzleContextSources(db);
       const fileAccessChanges = createLocalFileAccessChanges();
       const lifecycle = createDrizzleLineageScratchLifecycle(db, arrivals, {
         fileAccessChanges,
@@ -164,17 +162,9 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       await expect(placed(upload)).resolves.toMatchObject({
         entry: { uri: "uploads://@c1/pic.png" },
       });
-      const [uploads] = await sources.ownedBy(p as never, { kind: "chat", chatId: root });
-      expect((await sources.liveDocuments(uploads?.id as never)).map((file) => file.id)).toContain(
-        upload,
-      );
       await expect(createDrizzleChatUploads(db).list(p, root)).resolves.toEqual({
         uploads: [{ documentId: upload, attachedAt: "2026-01-01T00:00:00.000Z" }],
       });
-      const [scratch] = await sources.ownedBy(p as never, { kind: "lineage", rootThreadId: root });
-      expect((await sources.liveDocuments(scratch?.id as never)).map((file) => file.id)).toContain(
-        note,
-      );
       const settlements = async () =>
         new Map(
           (await db.select().from(linkAheadRefs)).map((r) => [r.aheadId, r.settledDocumentId]),

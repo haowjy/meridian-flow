@@ -6,7 +6,7 @@
  * where a document lives now treats `deleted` as "no address".
  *
  */
-import { type DocumentId, isAheadFilename, type ProjectId } from "@meridian/contracts";
+import { type DocumentId, isAheadFilename } from "@meridian/contracts";
 import {
   contextRootUri,
   isOwnedContextScheme,

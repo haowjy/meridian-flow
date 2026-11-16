@@ -1474,9 +1474,6 @@ export function createInMemoryAppServices(): AppServices {
     async ownedBy() {
       return [];
     },
-    async liveDocuments() {
-      return [];
-    },
   };
   const workAuthorityResolver: ProjectWorkAuthorityResolver = {
     async byId() {

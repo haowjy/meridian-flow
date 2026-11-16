@@ -1,5 +1,5 @@
 /** What a project's sources are, as its tree list names them by id. */
-import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
+import type { ContextSourceId, ProjectId, UserId } from "@meridian/contracts";
 import type { ContextSource, ContextSourceOwner } from "@meridian/contracts/protocol";
 
 export interface ContextSources {
@@ -14,6 +14,4 @@ export interface ContextSources {
     projectId: ProjectId,
     owner: Exclude<ContextSourceOwner, { kind: "account" }>,
   ): Promise<ContextSource[]>;
-  /** The documents a source's live tree places, each with its source-relative path (filename included). */
-  liveDocuments(sourceId: ContextSourceId): Promise<{ id: DocumentId; path: string }[]>;
 }
