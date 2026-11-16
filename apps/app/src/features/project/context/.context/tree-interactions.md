@@ -210,13 +210,15 @@ different areas remain distinct destinations.
 Move… and dragging share every step. Refusal is judged by identity from the trees the list
 shows (`moveRefusal` in `entry-drag/move-plan.ts`: a folder over itself or its own subtree, a row
 already in the parent), so the picker and a hover agree even while a peer moves rows. A ready
-plan contains rows with their `TreeDestination` (`{ parentId, index? }`, the folder's id or the
-source's id at the top); hover prediction and `moveRows` consume those rows without resolving the
-destination again. `moveRows` (`entry-drag/execute-move.ts`) appends one `move` record per row to the
-list that holds the row (`TreeActions.move`) and returns which rows moved and which no list could
-take. A move sends no name: the replay numbers a clash, and `renamesOnArrival` only predicts it
-for the warning shown before the drop. A positional destination (an edge drop, the picker's
-"Change position") is an index among the destination's children without the carried rows, so a
+plan holds its rows and one `TreeDestination` (`{ parentId, position? }`, the folder's id or the
+source's id at the top); hover prediction and `moveRows` consume it without resolving the
+destination again. `moveRows` (`entry-drag/execute-move.ts`) appends the rows' `move` records as
+one gesture to the destination's list (`TreeActions.moveAll`) and returns the rows it moved. A
+move sends no name: the replay numbers a clash, and `renamesOnArrival` only predicts it for the
+warning shown before the drop. A positional destination (an edge drop, the picker's "Change
+position", a Trash row dragged to an edge) names a sibling by id, or the top or bottom, never an
+index: `TreeWriter.moveAll` lands the first row there and each next one right after the one
+before it, so several rows arrive together in screen order wherever they started, and a
 same-parent placement is a reorder rather than "already there". A move between the account's files
 and a project is not a record the browser can append to two lists; the drop offers Copy there.
 Copy stays a server route: `copyRows` (`entry-drag/execute-copy.ts`) mints the copies' ids and the

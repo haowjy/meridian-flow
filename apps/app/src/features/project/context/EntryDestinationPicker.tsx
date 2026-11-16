@@ -10,7 +10,10 @@ import type { DraftOwnerKey } from "@meridian/contracts";
  */
 
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type {
+  ContextSiblingPosition,
+  ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import {
   ArrowDownToLine,
   ArrowDownUp,
@@ -29,7 +32,7 @@ import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";
 import { runCopy, runMove } from "./entry-drag/entry-failure";
-import { namedRowOf, type ReadyCopy } from "./entry-drag/move-plan";
+import { namedRowOf, type ReadyCopy, type ReadyMove } from "./entry-drag/move-plan";
 import { useOptionalEntrySelection } from "./entry-drag/selection";
 import { useProjectMenuSource } from "./use-project-menu-source";
 import { useScopeScratchSource } from "./use-scratch-trees";
@@ -160,14 +163,14 @@ function OpenPicker({
       key: string;
       icon: LucideIcon;
       label: string;
-      index: number;
+      position: ContextSiblingPosition;
     }[] = [];
     if (at > 0)
       choices.push({
         key: "start",
         icon: ArrowUpToLine,
         label: t`Move to the top of ${folderName}`,
-        index: 0,
+        position: { kind: "start" },
       });
     others.forEach((other, index) => {
       // After the row just above it is where it already is.
@@ -179,23 +182,23 @@ function OpenPicker({
               key: "end",
               icon: ArrowDownToLine,
               label: t`Move to the bottom of ${folderName}`,
-              index: others.length,
+              position: { kind: "end" },
             }
           : {
               key: `after:${other.entryId}`,
               icon: CornerDownRight,
               label: t`Move after ${sibling}`,
-              index: index + 1,
+              position: { kind: "after", siblingId: other.entryId },
             },
       );
     });
     return choices;
   }
 
-  function move(trail: readonly DrillNode[], index?: number) {
+  function move(trail: readonly DrillNode[], position?: ContextSiblingPosition) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination?.writable || (index === undefined && refusalAt(destination))) return;
+    if (!folder || !destination?.writable || (!position && refusalAt(destination))) return;
     const area = {
       scheme: destination.scheme,
       owner: destination.owner,
@@ -206,18 +209,16 @@ function OpenPicker({
       if (!here) return [];
       const from = here.entry.parentId ?? here.tree.root.entryId;
       if (several && from === destination.entryId) return [];
-      return [
-        {
-          entry: row.ref,
-          name: row.name,
-          from,
-          to: { parentId: destination.entryId, ...(index === undefined ? {} : { index }) },
-          area,
-          named: namedRowOf(here.entry),
-        },
-      ];
+      return [{ entry: row.ref, name: row.name, from, named: namedRowOf(here.entry) }];
     });
-    runMove({ actions, projectId }, moves, selection);
+    const plan: ReadyMove = {
+      kind: "ready",
+      destinationName: folder.name,
+      to: { parentId: destination.entryId, ...(position ? { position } : {}) },
+      area,
+      moves,
+    };
+    runMove({ actions, projectId }, plan, selection);
     placedRows.current = true;
     onOpenChange(false);
     // The row this picker opened from may have moved and unmounted it, so this can't wait for close.
@@ -345,7 +346,7 @@ function OpenPicker({
               choices: positions.map((choice) => ({
                 ...choice,
                 onSelect: () => {
-                  move(trail, choice.index);
+                  move(trail, choice.position);
                 },
               })),
             },

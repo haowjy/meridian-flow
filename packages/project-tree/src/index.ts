@@ -84,4 +84,4 @@ export {
   viewRecords,
   viewValues,
 } from "./view.js";
-export { type CreateInput, TreeWriter } from "./writer.js";
+export { type CreateInput, type MovePlace, TreeWriter } from "./writer.js";

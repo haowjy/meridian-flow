@@ -10,6 +10,7 @@ import {
   matchDocumentAddress,
 } from "@meridian/contracts";
 import {
+  type ContextSiblingPosition,
   type ContextSource,
   classifyFiletype,
   type DocumentFileType,
@@ -30,8 +31,8 @@ import {
 export type TreeDestination = Readonly<{
   /** A folder's id, or the id of a source (the top of its tree). */
   parentId: string;
-  /** Where among the siblings, when the writer chose a place. */
-  index?: number;
+  /** Where among its children, when the writer chose a place; the end otherwise. */
+  position?: ContextSiblingPosition;
 }>;
 
 type TreeFileBase = {
