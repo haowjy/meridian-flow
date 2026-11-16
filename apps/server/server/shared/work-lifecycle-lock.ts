@@ -2,7 +2,11 @@
 import { works } from "@meridian/database/schema";
 import { asc, inArray } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
-import { LineageDraftsUnavailableError, lockLineageOwners } from "./draft-owner.js";
+import {
+  LineageDraftsUnavailableError,
+  lockLineageOwners,
+  readLineageOwners,
+} from "./draft-owner.js";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 import {
   confirmScopedEdits,
@@ -21,6 +25,44 @@ export type LockedOwners = {
 export interface LockedWork {
   state: LockedWorkLifecycle;
   handle: string | null;
+}
+
+const lifecycleOf = (
+  row: { archivedAt: unknown; deletedAt: unknown } | undefined,
+): LockedWorkLifecycle =>
+  !row ? "missing" : row.deletedAt ? "deleted" : row.archivedAt !== null ? "archived" : "active";
+
+/**
+ * Each Work's lifecycle and each lineage's liveness as they stand, with no lock: for a reader
+ * (admission, a chip). A writer reads them under the locks (`lockSeamWorks`).
+ */
+export async function readOwners(
+  db: DrizzleDb,
+  workIds: readonly string[],
+  lineageRootIds: readonly string[],
+): Promise<LockedOwners> {
+  const ids = [...new Set(workIds)];
+  const rows = ids.length
+    ? await currentDrizzleDb(db)
+        .select({
+          id: works.id,
+          handle: works.handle,
+          archivedAt: works.archivedAt,
+          deletedAt: works.deletedAt,
+        })
+        .from(works)
+        .where(inArray(works.id, ids))
+    : [];
+  const found = new Map(rows.map((row) => [row.id as string, row]));
+  return {
+    works: new Map(
+      ids.map((id) => [
+        id,
+        { state: lifecycleOf(found.get(id)), handle: found.get(id)?.handle ?? null },
+      ]),
+    ),
+    lineages: await readLineageOwners(db, lineageRootIds),
+  };
 }
 
 /**
@@ -50,15 +92,7 @@ export async function lockWorksInIdOrder(
   const found = new Map(rows.map((row) => [row.id as string, row]));
   for (const id of ids) {
     const row = found.get(id);
-    locked.set(
-      id,
-      row
-        ? {
-            state: row.deletedAt ? "deleted" : row.archivedAt !== null ? "archived" : "active",
-            handle: row.handle,
-          }
-        : { state: "missing", handle: null },
-    );
+    locked.set(id, { state: lifecycleOf(row), handle: row?.handle ?? null });
   }
   return locked;
 }

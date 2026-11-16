@@ -80,7 +80,15 @@ export {
   type DefaultSiblingOrderEntry,
   type RankedSibling,
 } from "./siblings.js";
-export { changeUndone, deleteStands, undoAnswer, undoChange } from "./undo.js";
+export {
+  type ClosedUndo,
+  changeUndone,
+  deleteStands,
+  type UndoAnswer,
+  type UndoReport,
+  undoChange,
+  undoReports,
+} from "./undo.js";
 export type { ReadRecord } from "./validate.js";
 export {
   droppedRecords,

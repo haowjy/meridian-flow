@@ -1,28 +1,31 @@
 import { t } from "@lingui/core/macro";
-import type { LeftOutWhy } from "@meridian/contracts/commands";
+import type { ClosedOwnerWhy, LeftOutWhy } from "@meridian/contracts/commands";
 import type { TreeFact } from "./tree-undo";
+
+function changeWords(fact: TreeFact): string {
+  return fact.did === "moved"
+    ? t`The move`
+    : fact.did === "renamed"
+      ? t`The rename`
+      : fact.did === "restored"
+        ? t`The restore from Trash`
+        : fact.did === "deleted"
+          ? t`The delete`
+          : fact.did === "created"
+            ? fact.folder
+              ? t`The new folder`
+              : t`The new document`
+            : fact.folder
+              ? t`The change to this folder`
+              : t`The change to this document`;
+}
 
 /**
  * Why a tree change an Undo left stayed, named as the writer saw it land. The review row, Ctrl+Z
  * and the chat card's Undo all say it with this sentence.
  */
 export function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
-  const change =
-    fact.did === "moved"
-      ? t`The move`
-      : fact.did === "renamed"
-        ? t`The rename`
-        : fact.did === "restored"
-          ? t`The restore from Trash`
-          : fact.did === "deleted"
-            ? t`The delete`
-            : fact.did === "created"
-              ? fact.folder
-                ? t`The new folder`
-                : t`The new document`
-              : fact.folder
-                ? t`The change to this folder`
-                : t`The change to this document`;
+  const change = changeWords(fact);
   switch (why) {
     case "purged":
       return t`${change} can no longer be taken back.`;
@@ -38,5 +41,31 @@ export function treeLeftSentence(fact: TreeFact, why: LeftOutWhy): string {
       return t`${change} stayed: it was changed since.`;
     default:
       return why satisfies never;
+  }
+}
+
+/**
+ * A tree change an Undo left because taking it back would change a closed owner's notes: the
+ * owner says what to do to undo it.
+ */
+export function treeReturnedSentence(
+  fact: TreeFact,
+  why: ClosedOwnerWhy | undefined,
+  owner: string | undefined,
+): string {
+  const change = changeWords(fact);
+  switch (why) {
+    case "chat_frozen":
+      return owner
+        ? t`${change} stayed: ${owner} is in Trash. Restore it to undo this.`
+        : t`${change} stayed: its chat is in Trash. Restore it to undo this.`;
+    case "work_deleted":
+      return owner
+        ? t`${change} stayed: ${owner} is deleted. Restore it to undo this.`
+        : t`${change} stayed: its Work is deleted. Restore it to undo this.`;
+    default:
+      return owner
+        ? t`${change} stayed: ${owner} is archived. Unarchive it to undo this.`
+        : t`${change} stayed: its Work is archived. Unarchive it to undo this.`;
   }
 }

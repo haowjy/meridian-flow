@@ -24,11 +24,11 @@ import {
   TreeWriter,
   treeViolations,
   undoApply,
-  undoChange,
   type View,
   viewRecords,
 } from "./index.js";
 import { projectedRows } from "./rows.js";
+import { undoChange } from "./undo-open.js";
 
 const ROOT = sourceRoot("manuscript");
 

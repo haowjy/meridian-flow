@@ -30,13 +30,13 @@ import { and, eq, inArray, max } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import type { SourceFate, TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { type IdentityStatus, LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
 import { ApplyClickUnsynced, type TreeCut } from "../domain/apply-click.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 import { cutOf } from "./drizzle-settlement-of.js";
-import type { SourceFate, TreeJudge } from "./tree-owners.js";
 
 /** One item of an Apply as the tree half reads it. */
 export type TreeApplyItem = {

@@ -34,11 +34,13 @@ threads of the receipt Works (marked ones included) and the chat's own, parents 
 runtime's thread lock does, so the Work step's `stopThreads` re-enters locks it already holds; then
 all the Works by id, the lineages and, when receipts exist, the project's tree lists and the
 namespace keys a restore takes (`works.lockRestoreNamespaces`). The documents' Works are locked as
-rows only. The commit scope compares the Works it would lock with that set
-before taking any lock; a Work outside it throws `ReversalOwnersMoved`, which rolls back past the
-claim and reruns the command with the larger set (four attempts). A miss the server retries (a
-moved capture, a deadlock) rolls back past the claim; four misses of the owners answer 503 with
-`Retry-After` and store nothing; exhausting the inverse's attempts is
+rows only. The set includes the owners of the sources the tree steps would change (`plan`'s
+`owners`: the estimate, read from the steps' `undoReports`). The commit scope compares the Works it
+would lock with that set before taking any lock; a Work outside it throws `TreeOwnersMoved`
+(`shared/tree-owners.ts`), which rolls back past the claim and reruns the command with the larger
+set and every source the attempt met unlocked (`untilOwnersHold`, the same restart Apply and
+Un-Apply use; it has no cap, and one that names nothing new escapes as 503 with `Retry-After`,
+storing nothing). Exhausting the inverse's attempts is
 `ReversalConflictError` and stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
@@ -251,12 +253,13 @@ semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain
 those outcomes and refresh the turn query. Every skipped part carries a typed `cause`
 (`TurnInverseSkipCause`) and the app words it; a tree skip names the path its entry was shown
-at, its `op`, and `changed_since` or `purged`.
+at, its `op`, and `changed_since`, `purged` or `returned`.
 
 Each tree receipt's fate is decided once, from `undoChange`'s own answers for its records
 (`changeUndone` in `@meridian/project-tree`), and the planner, the reversal's status, the chip
 and the model's `undo` all read it. The card's planner (`drizzle-turn-tree-inverse.ts` `plan`)
-asks with `undoAnswer`, which writes nothing, inside its one read of each list:
+asks with `undoReports`, which writes nothing, inside its one read of each list (one replay with
+every opposite record in it), then judges the sources they name (`answerOf`):
 - `acts`: some record would be taken back. Only these are steps the chip offers Undo for.
 - `taken`: every record's opposite already stands (the writer restored what the model
   deleted, or deleted what it created). It counts as taken back: the Undo records an empty
@@ -265,6 +268,13 @@ asks with `undoAnswer`, which writes nothing, inside its one read of each list:
   from a stale tab, answers `reversed` too; text an earlier card Undo took out does the same.
 - `changed_since` or `purged`: the receipt stays, a skip with that cause, in the chip's skips
   and the Undo's alike. A reply whose only parts stayed answers `not_undone`.
+- `closed`: an opposite record would change a closed owner's notes (an archived or deleted Work, a
+  chat in Trash): the record stays, as in Un-Apply, and the skip is `returned` with `why` and the
+  owner's name. A source with no `context_sources` row reads `purged`. The card's Undo and the
+  model's `undo` ask the same `TreeJudge` as Apply and Un-Apply, so a note the model moved out of
+  an archived Work's notes does not go back into them. The model's `undo` locks the owners with
+  its grants (`runWithEditGrants`' `alsoLock`), judges inside `treeCommand`, and restarts through
+  `withTreeOwners`; its answer is `returned` with the owner.
 
 The Work half (`lib/work-receipt-reversal.ts`) has fates of its own, one per Work, from where
 the turn started and ended it: `taken` when the Work stands as the turn found it (the writer

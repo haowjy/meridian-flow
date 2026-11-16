@@ -1,9 +1,16 @@
-import { type Actor, isSourceRoot, type TreeRecord, type TreeRecordInput } from "./record.js";
+import {
+  type Actor,
+  isSourceRoot,
+  recordsOf,
+  type TreeRecord,
+  type TreeRecordInput,
+} from "./record.js";
 import {
   type Change,
   labelOf,
   type NodeHistory,
   placeIn,
+  replay,
   type Sets,
   standingOf,
   type TreeNode,
@@ -12,7 +19,7 @@ import {
   wouldLoop,
 } from "./replay.js";
 import { descendantsOf } from "./shape.js";
-import { LIVE, lastOfFamily, type View } from "./view.js";
+import { LIVE, lastOfFamily, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /**
@@ -129,6 +136,19 @@ function turn(
 export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
 
 /**
+ * The Undo would change a source the caller's `closed` names (`closed` is that source): nothing
+ * is written, and the record it would have taken back stays.
+ */
+export type ClosedUndo = { closed: string };
+
+/** One record's answer as `changeUndone` reads it. */
+export type UndoAnswer = "undoes" | NotUndone | "closed";
+
+/** The view an opposite record is written to: live when it carries no draft (an Apply landed it). */
+const viewOfRecord = (record: TreeRecord, asked: View): View =>
+  record.draft === null ? LIVE : asked;
+
+/**
  * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
  * back, restore what was deleted, delete what was created). Every record is in force unless a
  * later record in force undoes it (`standingOf`), and Undo answers `already` for one that is not.
@@ -141,49 +161,104 @@ export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
  * no answer: the node stands in it, and rule 3 keeps the folder standing. A drafted change an
  * Apply landed is taken back in live, where its copy now stands: the opposite record's `draft`
  * says which view it went to.
+ *
+ * `closed` says which sources take no change. A record whose replay reports one of them is not
+ * written (`{ closed: source }`): the change stays, as it does in `undoApply`.
  */
 export function undoChange(
   writer: TreeWriter,
   asked: View,
   actor: Actor,
   recordId: string,
-): TreeRecord | NotUndone {
-  const done = undoFacts(writer, asked, actor, recordId);
-  if (typeof done === "string") return done;
-  writer.append(done.record);
-  return done.record;
+  closed: (source: string) => boolean,
+): TreeRecord | NotUndone | ClosedUndo {
+  const done = takeBack(writer, asked, actor, recordId, closed);
+  return typeof done === "string" || "closed" in done ? done : done.record;
 }
 
 /**
- * What `undoChange` would answer now, writing nothing: `undoes` when it would write the opposite
- * record. Each record is judged alone, against the list as it stands.
+ * Appends the opposite record unless it would change a closed source, telling which fact of a
+ * move that set a name stays (`kept`), when one does. The record is judged from the replay the
+ * next Undo reads anyway (the writer replays once per version of the list); one that lands in a
+ * closed source is taken out again in the same transaction, so nothing of it is written.
  */
-export function undoAnswer(
+export function takeBack(
   writer: TreeWriter,
   asked: View,
+  actor: Actor,
   recordId: string,
-): "undoes" | NotUndone {
-  const done = undoFacts(writer, asked, "system", recordId);
-  return typeof done === "string" ? done : "undoes";
+  closed: (source: string) => boolean,
+): { record: TreeRecord; kept?: Kept } | NotUndone | ClosedUndo {
+  const done = opposite(writer, asked, actor, recordId);
+  if (typeof done === "string") return done;
+  let source: string | undefined;
+  writer.transact(() => {
+    writer.append(done.record);
+    source = writer
+      .view(viewOfRecord(done.record, asked))
+      .changes.get(done.record.id)
+      ?.sources.find(closed);
+    if (source !== undefined) {
+      const records = recordsOf(writer.doc);
+      records.delete(records.length - 1, 1);
+    }
+  });
+  return source === undefined ? done : { closed: source };
+}
+
+/** What the Undo of one record would do now: `undoes`, or why it would not, and the sources it would change. */
+export type UndoReport = { answer: "undoes" | NotUndone; sources: readonly string[] };
+
+/**
+ * What the Undo of each record would do now, writing nothing: each record's opposite is made
+ * against the list as it stands, and one replay of the list with all of them in it reports the
+ * sources each would change. The reports estimate what a press does (the owners to lock, the
+ * chip's answer); the press asks again, record by record (`undoChange`).
+ */
+export function undoReports(
+  writer: TreeWriter,
+  asked: View,
+  recordIds: readonly string[],
+): Map<string, UndoReport> {
+  const made = recordIds.map((id) => ({ id, made: opposite(writer, asked, "system", id) }));
+  const sources = new Map<string, readonly string[]>();
+  for (const view of [LIVE, asked]) {
+    const records = made.flatMap(({ made }) =>
+      typeof made !== "string" && viewOfRecord(made.record, asked) === view ? [made.record] : [],
+    );
+    if (records.length === 0) continue;
+    const { changes } = replay([...viewRecords(writer.doc, view), ...records]);
+    for (const record of records) sources.set(record.id, changes.get(record.id)?.sources ?? []);
+  }
+  return new Map(
+    made.map(({ id, made }): [string, UndoReport] => [
+      id,
+      typeof made === "string"
+        ? { answer: made, sources: [] }
+        : { answer: "undoes", sources: sources.get(made.record.id) ?? [] },
+    ]),
+  );
 }
 
 /**
  * What an Undo of one change, made of several records, does with it, from each record's answer:
  * `acts` while any record is taken back; else the change stays when any record stays
- * (`unknown` read as `purged`); else every record's opposite already stands, and the change
- * counts as taken back (`taken`).
+ * (`unknown` read as `purged`; `closed` last, as the only one that can pass: its owner
+ * reopens); else every record's opposite already stands, and the change counts as taken back
+ * (`taken`).
  */
 export function changeUndone(
-  answers: readonly ("undoes" | NotUndone)[],
-): "acts" | "taken" | "changed_since" | "purged" {
+  answers: readonly UndoAnswer[],
+): "acts" | "taken" | "changed_since" | "purged" | "closed" {
   if (answers.includes("undoes")) return "acts";
   if (answers.includes("changed_since")) return "changed_since";
-  if (answers.some((answer) => answer !== "already")) return "purged";
+  if (answers.some((answer) => answer !== "already" && answer !== "closed")) return "purged";
+  if (answers.includes("closed")) return "closed";
   return "taken";
 }
 
-/** `undoChange`, saying which fact of a move that set a name stays (`kept`), when one does. */
-export function undoFacts(
+/** The opposite record of `recordId`, made and not written; `kept` as `takeBack` says. */
+function opposite(
   writer: TreeWriter,
   asked: View,
   actor: Actor,

@@ -446,6 +446,22 @@ msgid "{change} can no longer be taken back."
 msgstr "{change} can no longer be taken back."
 
 #: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is archived. Unarchive it to undo this."
+msgstr "{change} stayed: {owner} is archived. Unarchive it to undo this."
+
+#: src/core/project-tree/tree-left-sentence.ts
+#~ msgid "{change} stayed: {owner} is deleted."
+#~ msgstr "{change} stayed: {owner} is deleted."
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is deleted. Restore it to undo this."
+msgstr "{change} stayed: {owner} is deleted. Restore it to undo this."
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is in Trash. Restore it to undo this."
+msgstr "{change} stayed: {owner} is in Trash. Restore it to undo this."
+
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: it has writing in it since."
 msgstr "{change} stayed: it has writing in it since."
 
@@ -454,8 +470,24 @@ msgid "{change} stayed: it was changed since."
 msgstr "{change} stayed: it was changed since."
 
 #: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its chat is in Trash. Restore it to undo this."
+msgstr "{change} stayed: its chat is in Trash. Restore it to undo this."
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its Work is archived. Unarchive it to undo this."
+msgstr "{change} stayed: its Work is archived. Unarchive it to undo this."
+
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: its Work is closed."
 msgstr "{change} stayed: its Work is closed."
+
+#: src/core/project-tree/tree-left-sentence.ts
+#~ msgid "{change} stayed: its Work is deleted."
+#~ msgstr "{change} stayed: its Work is deleted."
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its Work is deleted. Restore it to undo this."
+msgstr "{change} stayed: its Work is deleted. Restore it to undo this."
 
 #: src/features/chat/DraftDock.tsx
 msgid "{changes, plural, one {Apply this chat's change to {name}} other {Apply this chat's # changes to {name}}}"

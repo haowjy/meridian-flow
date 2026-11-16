@@ -126,8 +126,14 @@ the replay uses them (package `AGENTS.md`).
   stale Undo has to take that copy out, so a later Undo of the other Undo doesn't find the change
   still taken out by the Apply. The record is a move when the place turns, a rename when only the
   name does (the replay's Trash reads that: a rename leaves the deletes a move lifted lifted), and
-  otherwise of the base change's type. `undoFacts` is the same, saying which fact of a move that
+  otherwise of the base change's type. `takeBack` is the same, saying which fact of a move that
   also set a name stays (`kept`), for `undoApply`'s `left`.
+  Every Undo asks `closed(source)` of the sources its record's replay reports
+  (`Change.sources`): a record into a closed source is not written and answers
+  `{ closed: source }`. The record is judged from the replay the writer makes anyway (appended, read,
+  and taken out again in the same transaction when closed), so a judged Undo costs no replay of its
+  own. `undoReports` is the estimate: what each record's Undo would do and the sources it would change,
+  from one replay with every opposite record in it, for the owners to lock and the chip.
 - **Creates, deletes and restores** follow the same in-force rule, but Trash keeps its own
   record-order account: it counts each delete of a node, and a restore lifts deletes outside any
   Undo chain (a plain restore, rule 9). `undoChange` on them takes back the record in force
@@ -186,8 +192,10 @@ the replay uses them (package `AGENTS.md`).
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
   `purged`, `already`, `has_text`). A move that also set a name is two facts: its Undo changes
   whichever no later change holds (a move without the name, or a rename whose undo puts no delete
-  back), and `left` names the one that stays (`fact`, from `undoFacts`' `kept`). `undoChange` answers
-  `changed_since | purged | already | unknown`.
+  back), and `left` names the one that stays (`fact`, from `takeBack`'s `kept`). `undoChange` answers
+  `changed_since | purged | already | unknown`, or `{ closed }`. `changeUndone` reads a change's
+  records together: `acts`, `changed_since`, `purged`, `closed` (the one that can pass, so last),
+  or `taken`.
 - **A Discard is final.** `restoreDiscard` appends fresh pending copies of what the command
   settled, on the branch the caller names (the Work's current one, which may differ from the one the
   Discard closed): new record ids, the same node ids, `carries` naming the

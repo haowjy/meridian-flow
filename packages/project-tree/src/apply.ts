@@ -10,7 +10,7 @@ import {
 } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { type NotUndone, undoFacts } from "./undo.js";
+import { type NotUndone, takeBack } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import {
   LIVE,
@@ -581,21 +581,15 @@ export function undoApply(
         left.push({ record: copy, why: "has_text" });
         continue;
       }
-      const back = undoFacts(writer, LIVE, by, copy.id);
+      const back = takeBack(writer, LIVE, by, copy.id, options.closed ?? (() => false));
       if (typeof back === "string") {
         left.push({ record: copy, why: back });
         continue;
       }
-      const source =
-        options.closed &&
-        replay([...viewRecords(writer.doc, LIVE), back.record])
-          .changes.get(back.record.id)
-          ?.sources.find(options.closed);
-      if (source) {
-        left.push({ record: copy, why: "closed", source });
+      if ("closed" in back) {
+        left.push({ record: copy, why: "closed", source: back.closed });
         continue;
       }
-      writer.append(back.record);
       undone.push(back.record);
       reversed.add(copy.carries ?? copy.id);
       // A move that also set a name, of which only one fact still stood: the other stays.

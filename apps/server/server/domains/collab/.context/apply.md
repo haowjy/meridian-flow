@@ -225,7 +225,7 @@ The server never works it out from parent chains. `closed` is asked of that answ
 which owners to lock (an estimate), which records may commit (the judge, under the locks), and what
 stayed and why (the answer).
 
-*Estimate, before the locks* (`withTreeOwners`, `adapters/tree-owners.ts`). Apply: the `sources` of
+*Estimate, before the locks* (`withTreeOwners`, `shared/tree-owners.ts`). Apply: the `sources` of
 each pending record of the branch in the Work's view, and where live has each node those records and
 the items name. Un-Apply: the `sources` of each copy the Apply made (`madeBy`), where live has each
 of those nodes, and where each document with an applied text effect stands. It is a guess and can

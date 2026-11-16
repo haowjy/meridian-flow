@@ -53,6 +53,13 @@ import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import {
+  type ClosedSource,
+  returnedFor,
+  type SourceFate,
+  type TreeJudge,
+  withTreeOwners,
+} from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { TreeReader } from "../../context/tree/tree-view.js";
@@ -90,13 +97,6 @@ import {
   settlementOf,
 } from "./drizzle-settlement-of.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
-import {
-  type ClosedSource,
-  returnedFor,
-  type SourceFate,
-  type TreeJudge,
-  withTreeOwners,
-} from "./tree-owners.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;

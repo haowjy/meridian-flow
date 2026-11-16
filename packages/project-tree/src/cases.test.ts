@@ -14,8 +14,8 @@ import {
   sourceRoot,
   TreeWriter,
   treeViolations,
-  undoChange,
 } from "./index.js";
+import { undoChange } from "./undo-open.js";
 
 const ROOT = sourceRoot("manuscript");
 

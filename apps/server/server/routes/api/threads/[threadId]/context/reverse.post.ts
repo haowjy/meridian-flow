@@ -11,12 +11,12 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { z } from "zod";
-import { ReversalOwnersMoved } from "../../../../../domains/collab/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
 import { reverseTurnCard } from "../../../../../lib/work-receipt-reversal.js";
 import { CommandConflictError } from "../../../../../shared/commands/command-record.js";
 import { throwHttpInterrupt } from "../../../../../shared/interrupt-boundary.js";
+import { TreeOwnersMoved } from "../../../../../shared/tree-owners.js";
 
 const reverseBodySchema = z.strictObject({
   // A tab that predates the removal of Redo still sends a direction.
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
     return outcome;
   } catch (cause) {
     // The Works kept changing under the click's locks: nothing was stored, the same request may resend.
-    if (cause instanceof ReversalOwnersMoved)
+    if (cause instanceof TreeOwnersMoved)
       throw createError({
         statusCode: 503,
         message: cause.message,

@@ -16,8 +16,8 @@ import {
   sourceRoot,
   type TreeRecord,
   TreeWriter,
-  undoChange,
 } from "./index.js";
+import { undoChange } from "./undo-open.js";
 
 const source = sourceRoot;
 const ROOT = source("manuscript");

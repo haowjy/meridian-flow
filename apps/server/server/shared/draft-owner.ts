@@ -151,15 +151,24 @@ export async function lockLineageOwners(
   rootThreadIds: readonly string[],
 ): Promise<ReadonlyMap<string, "active" | "frozen">> {
   const roots = [...new Set(rootThreadIds)].sort();
-  const states = new Map<string, "active" | "frozen">();
-  if (roots.length === 0) return states;
   const tx = currentDrizzleDb(db);
   for (const root of roots) {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${lineageLockKey(root)}, 0))`,
     );
   }
-  const live = await tx.execute<{ root: string; live: boolean }>(
+  return readLineageOwners(db, roots);
+}
+
+/** Each lineage's liveness as it stands, with no lock: a lineage with no live member is frozen. */
+export async function readLineageOwners(
+  db: DrizzleDb,
+  rootThreadIds: readonly string[],
+): Promise<ReadonlyMap<string, "active" | "frozen">> {
+  const roots = [...new Set(rootThreadIds)].sort();
+  const states = new Map<string, "active" | "frozen">();
+  if (roots.length === 0) return states;
+  const live = await currentDrizzleDb(db).execute<{ root: string; live: boolean }>(
     sql`SELECT r.id::text AS root, ${lineageHasLiveMember(sql`r.id`)} AS live
         FROM unnest(${sql`ARRAY[${sql.join(
           roots.map((root) => sql`${root}::uuid`),

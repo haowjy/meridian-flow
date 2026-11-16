@@ -10,11 +10,14 @@
  */
 import { modelResult, parseEditHandle } from "@meridian/agent-edit/integration";
 import type { BranchId, ThreadId, TurnId } from "@meridian/contracts";
+import { undoReports } from "@meridian/project-tree";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
 import { folderHolds, reachPath, runTreeUndo } from "../../domains/context/tree/tree-commands.js";
 import { runWithEditGrants } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import { type ClosedSource, withTreeOwners } from "../../shared/tree-owners.js";
+import { getDb } from "../db.js";
 import { threadContainerTarget } from "../file-targets.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, namesEvidence, shownNamesOf } from "./shown-paths.js";
@@ -159,6 +162,19 @@ export async function runTreeInverse(
   };
 }
 
+/** Why an Undo left a change where it is, for the model: the owner it would have changed is closed. */
+function closedMessage(closed: ClosedSource | undefined): string {
+  const who = closed?.owner ?? "its owner";
+  switch (closed?.why) {
+    case "chat_frozen":
+      return `Not undone: ${who} is in Trash, so the change stayed. It comes undone only after the writer restores it.`;
+    case "work_deleted":
+      return `Not undone: ${who} is deleted, so the change stayed. It comes undone only after the writer restores it.`;
+    default:
+      return `Not undone: ${who} is archived, so the change stayed. It comes undone only after the writer unarchives it.`;
+  }
+}
+
 /** One receipt taken back on its own list, with the receipt that names it. */
 async function reverseReceipt(
   deps: ToolWiringDeps,
@@ -184,61 +200,91 @@ async function reverseReceipt(
   const kind = "undo";
   const places = { area: parts.area, roots: new Map<string, string>(), locate: () => null };
 
-  const run = await runWithEditGrants(deps.fileAccess, grant ? [grant] : [], () =>
-    port.treeCommand(parts.area, {
-      origin: {
-        type: "agent",
-        agentSlug: ctx.agentSlug,
-        threadId: ctx.threadId,
-        turnId: ctx.turnId,
-      },
-      drafted,
-      make: (scope) => {
-        places.roots.set(parts.area, scope.root);
-        return {
-          result: runTreeUndo(scope, places, receipt.records, nodeId, input.path),
-          arrived: [],
-        };
-      },
-      afterWrite: async (result, scope) => {
-        // A receipt whose opposite already stands is taken back with no record of its own.
-        if (result.made.length === 0 && result.fate !== "taken") return;
-        const recorded = await history.recordAgentTreeChange({
-          subject: receipt.subject,
-          nodes: result.touched.map((touched) => ({
-            nodeId: touched.node,
-            beforeAt: touched.before,
-            afterAt: touched.after,
-          })),
-          records: result.made,
-          op: receipt.op,
-          threadId,
-          ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
-          ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
-          ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-          // An applied change is taken back in live: the Work's draft no longer has it.
-          ...(scope.view.draft && !result.inLive
-            ? { draftBranchId: scope.view.draft as BranchId }
-            : {}),
-          shownAt: `${parts.area}${parts.rest}`,
-          reverses: { kind, receipt: receipt.id },
-        });
-        handle = recorded.handle;
-      },
-    }),
+  // The sources the Undo changes, read before the locks: their owners are locked with the
+  // grants', and judged under the locks. A guess, so it can miss; a miss restarts the command.
+  const sources = async () => {
+    const read = await port.readTree(parts.area, {
+      version: drafted ? "draft" : "live",
+      read: ({ writer, view }) =>
+        undoReports(
+          writer,
+          view,
+          receipt.records.map((entry) => entry.record),
+        ),
+    });
+    return new Set(read.ok ? [...read.value.values()].flatMap((report) => report.sources) : []);
+  };
+  const run = await withTreeOwners(getDb(), sources, (owners) =>
+    runWithEditGrants(
+      deps.fileAccess,
+      grant ? [grant] : [],
+      () =>
+        port.treeCommand(parts.area, {
+          origin: {
+            type: "agent",
+            agentSlug: ctx.agentSlug,
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+          },
+          drafted,
+          owners,
+          make: (scope, judge) => {
+            places.roots.set(parts.area, scope.root);
+            return {
+              result: runTreeUndo(scope, places, receipt.records, nodeId, input.path, judge),
+              arrived: [],
+            };
+          },
+          afterWrite: async (result, scope) => {
+            // A receipt whose opposite already stands is taken back with no record of its own.
+            if (result.made.length === 0 && result.fate !== "taken") return;
+            const recorded = await history.recordAgentTreeChange({
+              subject: receipt.subject,
+              nodes: result.touched.map((touched) => ({
+                nodeId: touched.node,
+                beforeAt: touched.before,
+                afterAt: touched.after,
+              })),
+              records: result.made,
+              op: receipt.op,
+              threadId,
+              ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
+              ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
+              ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+              // An applied change is taken back in live: the Work's draft no longer has it.
+              ...(scope.view.draft && !result.inLive
+                ? { draftBranchId: scope.view.draft as BranchId }
+                : {}),
+              shownAt: `${parts.area}${parts.rest}`,
+              reverses: { kind, receipt: receipt.id },
+            });
+            handle = recorded.handle;
+          },
+        }),
+      { works: owners.works, lineages: owners.lineages },
+    ),
   );
   if (!run.ok) return fileAccessDeniedError(input.command, firstRefusal(run.refusal), input.path);
   if (!run.value.ok) return writeToolError(input.command, contextErrorMessage(run.value.error));
   const done = run.value.value;
   const undone = done.fate === "acts" || done.fate === "taken";
-  const status = !undone ? "cant_undo_changed" : done.partial ? "partial" : "reversed";
+  const status = !undone
+    ? done.fate === "closed"
+      ? "returned"
+      : "cant_undo_changed"
+    : done.partial
+      ? "partial"
+      : "reversed";
   const payload = {
     path: done.landedAt,
     ...(handle ? { write: { id: handle } } : {}),
     ...(done.kept ? { tree: { kept: done.kept } } : {}),
     ...(!undone
       ? {
-          message: `Can't ${input.command}: something changed it after that change, or it is gone.`,
+          message:
+            done.fate === "closed"
+              ? closedMessage(done.closed)
+              : `Can't ${input.command}: something changed it after that change, or it is gone.`,
         }
       : {}),
   };

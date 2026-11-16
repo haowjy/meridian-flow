@@ -470,7 +470,8 @@ function takeBack(
   let undone = 0;
   // One update per opposite record: each is judged against the replay the one before it left.
   for (const record of [...step.records].reverse()) {
-    const answer = undoChange(writer, view, actor, record);
+    // No source is closed here: admission drops a record into one when the update reaches the server.
+    const answer = undoChange(writer, view, actor, record, () => false);
     if (typeof answer !== "string") undone += 1;
   }
   return undone > 0;

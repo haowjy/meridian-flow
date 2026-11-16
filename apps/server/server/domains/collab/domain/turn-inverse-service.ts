@@ -21,6 +21,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
+import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
@@ -57,9 +58,11 @@ export type TurnInverseQuery = {
   principal?: Principal;
   /**
    * The owners the caller already locked (`ownersOf`): a commit that would lock any other
-   * throws `ReversalOwnersMoved` before taking a lock.
+   * throws `TreeOwnersMoved` before taking a lock.
    */
   declared?: OwnerLocks;
+  /** What the caller's earlier attempts found they needed: sources whose owners to lock and judge. */
+  learned?: Learned;
 };
 export type InverseDocument = {
   documentId: DocumentId;
@@ -108,7 +111,7 @@ export interface TurnInverseStore {
    * The Works and lineages a card reversal's commit locks, as `commit` would find them: the
    * documents' drafts, the reply's tree receipts and the grants of every document it writes.
    * Read with no lock, for the caller to lock them first and declare them in the query.
-   * Throws `ReversalOwnersMoved` when the documents move under the read.
+   * Throws `TreeOwnersMoved` when the documents move under the read.
    */
   ownersOf(query: TurnInverseQuery, userId: UserId | undefined): Promise<OwnerLocks>;
   /**
