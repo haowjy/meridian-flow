@@ -62,6 +62,7 @@ export function useComposerAgentToolbarControl(
   const overrides = props.overrides;
   const model = overrides.model;
   const models = useModelOptions(props.mode !== "readonly" || model !== null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
@@ -91,7 +92,12 @@ export function useComposerAgentToolbarControl(
     : fallsBack
       ? t`${name}; ${modelLabel ?? ""} isn't available, so it runs on its default model`
       : t`${name} on ${runsAt}`;
-  const item = { ariaLabel: t`Agent: ${value}`, label: t`Agent`, value };
+  // The overflow row shows what the chip shows; the sentence is for its name and tooltip.
+  const item = {
+    ariaLabel: t`Agent: ${value}`,
+    label: t`Agent`,
+    value: [name, modelLabel, effortLabel].filter(Boolean).join(" "),
+  };
   // The other model's and reasoning's names; on a phone a chip icon, so the Agent's name keeps its
   // place inline.
   const shown = (
@@ -184,6 +190,7 @@ export function useComposerAgentToolbarControl(
         candidates:
           pageId === "ready"
             ? [
+                { key: "search", ref: searchRef },
                 {
                   key: `selected:${selectedAgent?.selection.slug ?? "none"}`,
                   ref: selectedRef,
@@ -197,7 +204,12 @@ export function useComposerAgentToolbarControl(
       },
       render: ({ terminalClose }) => (
         <AgentPickerPanel
-          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
+          focusRefs={{
+            search: searchRef,
+            selected: selectedRef,
+            first: firstRef,
+            retry: retryRef,
+          }}
           status={catalog}
           agents={agents}
           current={{ slug: selectedAgent?.selection.slug ?? null, overrides }}

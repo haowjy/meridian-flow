@@ -8,8 +8,10 @@ import { ChevronRight, Settings2 } from "lucide-react";
 import { type CSSProperties, type Ref, type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Button } from "@/components/ui/button";
 import {
   dropdownGroupLabelClass,
+  dropdownMenuSeparatorClass,
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
@@ -17,6 +19,7 @@ import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
 import { useOpenAgentFile } from "./agent-file-document";
 import type { CreationAgent } from "./creation-agent";
@@ -34,6 +37,7 @@ const LINE_PX = 32;
 const VISIBLE_ROWS = 7;
 const MIN_ROWS = 5;
 const SEARCH_PX = 44;
+const POINT_DELAY_MS = 120;
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
@@ -55,6 +59,8 @@ type AgentPickerPanelProps = {
   /** Closes the picker's popover, before it opens a file or the Agents tab. */
   onClose: () => void;
   focusRefs: {
+    /** Where focus lands on open, as in every searchable picker. */
+    search: RefObject<HTMLInputElement | null>;
     selected: RefObject<HTMLButtonElement | null>;
     first: RefObject<HTMLButtonElement | null>;
     retry: RefObject<HTMLButtonElement | null>;
@@ -80,10 +86,15 @@ export function AgentPickerPanel({
 }: AgentPickerPanelProps) {
   const [pointed, setPointed] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement | null>(null);
-  // A touch has no hover: its first tap on a row shows the row's choices, a second tap picks it.
-  // Decided at pointer-down: Android focuses the row on tap, which points it before the click.
+  const searchRef = focusRefs.search;
+  // A handoff leaves the chat, so a touch's first tap on a handoff row only shows it; its card's
+  // "Hand off to" button confirms. Decided at pointer-down: Android focuses the row on tap,
+  // which points it before the click.
   const tapPicks = useRef(true);
+  // The pointer re-points only once it rests on a row, so a diagonal move toward the models
+  // doesn't swap the Agent they belong to on the way.
+  const pointTimer = useRef<number | undefined>(undefined);
+  const isPhone = usePhoneShell();
   const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
@@ -93,17 +104,17 @@ export function AgentPickerPanel({
       <Picker>
         {status.status === "loading" || status.status === "disabled" ? (
           <ListLine density="menu" status>
-            <Trans>Loading agents…</Trans>
+            <Trans>Loading Agents…</Trans>
           </ListLine>
         ) : status.status === "error" ? (
           <InlineErrorRow
-            message={t`Couldn't load agents.`}
+            message={t`Couldn't load Agents.`}
             onRetry={status.refetch}
             retryRef={focusRefs.retry}
           />
         ) : (
           <ListLine density="menu">
-            <Trans>No agents available.</Trans>
+            <Trans>No Agents available.</Trans>
           </ListLine>
         )}
       </Picker>
@@ -129,6 +140,7 @@ export function AgentPickerPanel({
     agents.map((agent) => agent.name).filter((name, index, names) => names.indexOf(name) !== index),
   );
   const firstPickable = listed.find(pickable)?.slug;
+  const handsOffFrom = (agent: AgentCatalogItem) => handsOff || Boolean(started && agent !== own);
   const rows = Math.min(Math.max(agents.length, MIN_ROWS), VISIBLE_ROWS);
   // The search, the rows and the footer: the one height, whatever is pointed at.
   const height = SEARCH_PX + rows * ROW_PX + (own ? 2 * LINE_PX : 0) + LINE_PX + 24;
@@ -143,12 +155,19 @@ export function AgentPickerPanel({
         key={agent.slug}
         data-agent={agent.slug}
         onPointerDown={(event) => {
-          tapPicks.current = event.pointerType !== "touch" || agent.slug === shown.slug;
+          tapPicks.current =
+            event.pointerType !== "touch" || !handsOffFrom(agent) || agent.slug === shown.slug;
         }}
         onPointerEnter={(event) => {
-          if (event.pointerType !== "touch") setPointed(agent.slug);
+          if (event.pointerType === "touch") return;
+          window.clearTimeout(pointTimer.current);
+          pointTimer.current = window.setTimeout(() => setPointed(agent.slug), POINT_DELAY_MS);
         }}
-        onFocus={() => setPointed(agent.slug)}
+        onPointerLeave={() => window.clearTimeout(pointTimer.current)}
+        onFocus={() => {
+          window.clearTimeout(pointTimer.current);
+          setPointed(agent.slug);
+        }}
       >
         <ListRow
           density="menu"
@@ -162,8 +181,6 @@ export function AgentPickerPanel({
                 ? focusRefs.first
                 : undefined
           }
-          // One Tab stop for the list: the row whose choices show. Arrows move between rows.
-          controlProps={{ tabIndex: agent.slug === shown.slug ? 0 : -1 }}
           onOpen={() => {
             if (!tapPicks.current) {
               tapPicks.current = true;
@@ -196,19 +213,6 @@ export function AgentPickerPanel({
           <div
             ref={listRef}
             onKeyDown={(event) => {
-              // Typing on a row searches, as it would with the search focused.
-              if (
-                event.key.length === 1 &&
-                !event.metaKey &&
-                !event.ctrlKey &&
-                !event.altKey &&
-                event.target !== searchRef.current
-              ) {
-                event.preventDefault();
-                setQuery((value) => value + event.key);
-                searchRef.current?.focus();
-                return;
-              }
               if (event.key === "ArrowRight" && event.target instanceof HTMLElement) {
                 if (!event.target.closest("li[data-agent]")) return;
                 event.preventDefault();
@@ -228,7 +232,8 @@ export function AgentPickerPanel({
                   setPointed(null);
                 }}
                 onSubmit={() => {
-                  const first = listed.find(pickable);
+                  // Only a search picks on Enter: an empty one would hand off to the first row.
+                  const first = needle ? listed.find(pickable) : undefined;
                   if (first) choose(first, NO_OVERRIDES);
                 }}
                 label={t`Search Agents`}
@@ -255,7 +260,7 @@ export function AgentPickerPanel({
                 state={
                   listed.length === 0 ? (
                     <ListLine density="menu" status>
-                      <Trans>No Agents match.</Trans>
+                      {t`No Agents match “${query.trim()}”.`}
                     </ListLine>
                   ) : undefined
                 }
@@ -263,29 +268,33 @@ export function AgentPickerPanel({
                 {listed.map(row)}
               </PickerSection>
             </section>
-            <ul className="mt-1 shrink-0 border-t border-border-subtle pt-1">
-              <li>
-                <ListRow
-                  density="menu"
-                  icon={Settings2}
-                  title={<span className="text-muted-foreground">{t`Manage Agents`}</span>}
-                  onOpen={() => {
-                    onClose();
-                    useSidebarTabs.getState().reveal("agents");
-                    useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
-                  }}
-                />
-              </li>
-            </ul>
+            {/* The phone shell has no Agents list to open. */}
+            {isPhone ? null : (
+              <ul className="shrink-0">
+                <li aria-hidden className={dropdownMenuSeparatorClass} />
+                <li>
+                  <ListRow
+                    density="menu"
+                    icon={Settings2}
+                    title={<span className="text-muted-foreground">{t`Manage Agents`}</span>}
+                    onOpen={() => {
+                      onClose();
+                      useSidebarTabs.getState().reveal("agents");
+                      useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
+                    }}
+                  />
+                </li>
+              </ul>
+            )}
           </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-            <div className="hidden max-h-[40%] shrink-0 flex-col @[34rem]/agents:flex">
+            <div className="flex shrink-0 flex-col">
               <AgentCard
                 key={shown.slug}
                 agent={shown}
                 thisChat={started && shown === own ? started.threadId : null}
                 useLabel={
-                  handsOff || (started && shown !== own)
+                  handsOffFrom(shown)
                     ? t`Hand off to ${shown.name}`
                     : shown.slug === current.slug
                       ? null
@@ -297,6 +306,7 @@ export function AgentPickerPanel({
             {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the choices' arrow keys; its rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
             <div
               ref={choicesRef}
+              onPointerEnter={() => window.clearTimeout(pointTimer.current)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft") {
                   event.preventDefault();
@@ -317,7 +327,7 @@ export function AgentPickerPanel({
                 <>
                   <ModelChoices
                     agent={shown}
-                    runsOn={runsOn}
+                    runsOn={shown.slug === current.slug && !handsOff ? runsOn : null}
                     models={models}
                     rebuildsCache={Boolean(started && shown === own)}
                     onChoose={(id) =>
@@ -327,7 +337,7 @@ export function AgentPickerPanel({
                   <ReasoningChoices
                     agent={shown}
                     model={runsOnOption}
-                    thinksAt={thinksAt}
+                    thinksAt={shown.slug === current.slug && !handsOff ? thinksAt : null}
                     onChoose={(level) =>
                       choose(shown, { ...overrides, effort: level === shown.effort ? null : level })
                     }
@@ -375,22 +385,29 @@ function AgentCard({
   onUse: () => void;
 }) {
   return (
-    <div className="flex max-h-full flex-col gap-2 overflow-y-auto overscroll-y-contain rounded-lg bg-ink-fill p-3">
+    // One height for every Agent, so the models under it never move as the writer points.
+    <div className="flex h-40 flex-col gap-1.5 overflow-y-auto overscroll-y-contain rounded-lg border border-border-subtle p-3 [&>*]:shrink-0">
       <p className="text-sm font-medium">{agent.name}</p>
-      {agent.description ? <p className="text-sm text-foreground">{agent.description}</p> : null}
+      {agent.description ? (
+        <p className="line-clamp-3 text-sm text-foreground" title={agent.description}>
+          {agent.description}
+        </p>
+      ) : null}
       {agent.path && agent.level !== "builtin" ? (
         <p className="truncate font-mono text-xs text-muted-foreground">{fileAddress(agent)}</p>
       ) : null}
       {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
       {useLabel && pickable(agent) ? (
-        // Touch picks here, having no hover to point with; a mouse or the keyboard picks the row.
-        <button
-          type="button"
-          className="hidden self-start rounded-md bg-ink-fill-strong px-3 py-1.5 text-sm font-medium text-foreground [@media(hover:none)]:inline-flex coarse:inline-flex"
+        // Touch confirms a handoff here, having no hover to point with; a mouse or the keyboard
+        // picks the row.
+        <Button
+          variant="secondary"
+          size="sm"
+          className="hidden self-start [@media(hover:none)]:inline-flex coarse:inline-flex"
           onClick={onUse}
         >
           {useLabel}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -408,11 +425,7 @@ function Unusable({ agent, onOpenFile }: { agent: AgentCatalogItem; onOpenFile: 
         ))}
       </ul>
       {agent.path && agent.level !== "builtin" ? (
-        <button
-          type="button"
-          className="self-start text-sm font-medium underline underline-offset-2"
-          onClick={onOpenFile}
-        >
+        <button type="button" className="text-button self-start" onClick={onOpenFile}>
           {t`Open ${fileName(agent)}`}
         </button>
       ) : null}
@@ -484,25 +497,21 @@ function ReasoningChoices({
   agent: AgentCatalogItem;
   model: ModelOption | undefined;
   thinksAt: ReasoningChoice | null;
-  /** A level, or null for the model's own when the Agent's file sets none. */
-  onChoose: (level: ReasoningChoice | null) => void;
+  onChoose: (level: ReasoningChoice) => void;
 }) {
   const levels: ReasoningChoice[] = model
     ? [...(model.canDisable ? (["disabled"] as const) : []), ...model.efforts]
     : [];
-  // An Agent whose file sets no level runs at the model's own: that is its Default.
-  const choices: (ReasoningChoice | null)[] = agent.effort ? levels : [null, ...levels];
+
   // A model with no levels to choose leaves the models the whole column.
   if (levels.length === 0) return null;
   return (
-    <section
-      aria-label={model ? t`Reasoning on ${model.name}` : t`Reasoning`}
-      className="mt-1 shrink-0 border-t border-border-subtle pt-2"
-    >
+    <section aria-label={model ? t`Reasoning on ${model.name}` : t`Reasoning`} className="shrink-0">
+      <div aria-hidden className={dropdownMenuSeparatorClass} />
       {/* One line of levels, so the models above keep the column's height. */}
       <ul className="flex flex-wrap gap-1">
-        {choices.map((level) => (
-          <li key={level ?? "default"}>
+        {levels.map((level) => (
+          <li key={level}>
             <button
               type="button"
               data-list-item
@@ -513,8 +522,8 @@ function ReasoningChoices({
               )}
               onClick={() => onChoose(level)}
             >
-              {level ? reasoningName(level) : t`Default`}
-              {level && level === agent.effort ? (
+              {reasoningName(level)}
+              {level === agent.effort ? (
                 <span className="text-xs text-muted-foreground">{t`Default`}</span>
               ) : null}
             </button>

@@ -108,14 +108,27 @@ export function ComposerToolbar({
       ? inlineOwners.current.get(currentView.controlId)
       : overflowTrigger.current;
   };
+  const coversBox = useRef(false);
+  coversBox.current = panel?.size === "split";
   const virtualRef = useMemo(
     () => ({
       current: {
         get contextElement() {
           return resolveAnchorHost();
         },
-        // On the trigger itself, so a tall panel may cover the composer box above it.
-        getBoundingClientRect: () => resolveAnchorHost()?.getBoundingClientRect() ?? new DOMRect(),
+        // Lined up with the trigger, standing on the composer box's top edge: a compact panel
+        // opening from the trigger itself would half-cover the box and read as under it. A
+        // `split` panel is too tall for the room above, so it opens from the trigger and covers
+        // the box whole.
+        getBoundingClientRect: () => {
+          const host = resolveAnchorHost();
+          if (!host) return new DOMRect();
+          const trigger = host.getBoundingClientRect();
+          const box = host.closest("[data-composer]")?.getBoundingClientRect();
+          return box && !coversBox.current
+            ? new DOMRect(trigger.x, box.top, trigger.width, trigger.bottom - box.top)
+            : trigger;
+        },
       },
     }),
     // A new virtual element makes Radix re-register its reference after the new host commits.

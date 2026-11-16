@@ -102,6 +102,7 @@ function HandoffPicker({
 }) {
   const [open, setOpen] = useState(false);
   const catalog = useAgentCatalog(open, derivation.projectId);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
@@ -111,14 +112,14 @@ function HandoffPicker({
   const selected = boundAgentRow(pickableAgents(agents), derivation.sourceAgent);
   const label = t`Hand off from here`;
   const ready = catalog.status;
-  // Land on the source's Agent so Enter hands off to it. The catalog may load
-  // after the picker opens; focus waits on the panel until a row exists.
+  // Land in the search, as every searchable picker does. The catalog may load after the
+  // picker opens; focus waits on the panel until the search exists.
   useEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(() => {
       const content = contentRef.current;
       if (!content || content.ownerDocument.activeElement !== content) return;
-      (selectedRef.current ?? firstRef.current ?? retryRef.current)?.focus();
+      (searchRef.current ?? retryRef.current)?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, [open, ready, agents.length]);
@@ -147,7 +148,12 @@ function HandoffPicker({
           current={{ slug: selected?.selection.slug ?? null, overrides: NO_OVERRIDES }}
           handsOff
           models={models}
-          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
+          focusRefs={{
+            search: searchRef,
+            selected: selectedRef,
+            first: firstRef,
+            retry: retryRef,
+          }}
           onChoose={(choice) => {
             setOpen(false);
             derivation.handoff(turnId, choice);
