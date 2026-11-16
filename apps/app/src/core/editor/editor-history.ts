@@ -121,6 +121,8 @@ export class DocumentHistory implements EditorHistoryHandle {
   /** The range selected when the dispatch now running began, for the stack item that dispatch adds. */
   private rangeBeforeDispatch: RelativeSelection | null = null;
   private active = true;
+  /** Apply entries hidden while an Un-Apply sent from elsewhere is out: they may come back. */
+  private hiddenApplies = 0;
   /** The editors showing this document now. */
   private readonly editors = new Set<Editor>();
   private readonly listeners = new Set<() => void>();
@@ -153,6 +155,7 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.manager.destroy();
     const redone = this.redo.splice(0);
     this.undo.length = 0;
+    this.hiddenApplies = 0;
     this.listeners.clear();
     for (const entry of redone) if (entry.kind === "apply") entry.action.dropped?.();
   }
@@ -172,16 +175,25 @@ export class DocumentHistory implements EditorHistoryHandle {
       }
       this.changed();
     };
+    const unhide = () => {
+      if (!hidden) return;
+      hidden = false;
+      this.hiddenApplies--;
+    };
     return {
-      remove: take,
+      remove: () => {
+        unhide();
+        take();
+      },
       hide: () => {
         if (hidden) return;
         hidden = true;
+        this.hiddenApplies++;
         take();
       },
       show: () => {
         if (!hidden || !this.active) return;
-        hidden = false;
+        unhide();
         insert(this.undo, entry);
         this.changed();
       },
@@ -191,10 +203,11 @@ export class DocumentHistory implements EditorHistoryHandle {
 
   /**
    * Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. An
-   * Apply passed over for a closed owner counts: Undo takes it once the owner reopens.
+   * Apply passed over for a closed owner counts: Undo takes it once the owner reopens. So does a
+   * hidden Apply, which may come back.
    */
   hasEntries(): boolean {
-    return this.active && (this.undo.length > 0 || this.redo.length > 0);
+    return this.active && (this.undo.length > 0 || this.redo.length > 0 || this.hiddenApplies > 0);
   }
 
   /** Calls `listener` after the stacks change. Returns the unsubscribe. */

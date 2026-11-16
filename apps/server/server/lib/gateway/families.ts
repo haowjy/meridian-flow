@@ -15,8 +15,6 @@ export interface ModelFamily {
   /** Who made the model, whoever serves it. */
   maker: ModelMaker;
   tokenizer: TokenizerFamily;
-  /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
-  maxLinkBytes?: number;
   /** The model thinks unless told not to; models.dev does not say. */
   thinksByDefault?: true;
 }
@@ -85,8 +83,12 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
       maker: "google",
       match: ["gemini-4-argon*"],
       tokenizer: "gemini",
-      // Gemini fetches a link up to 15 MB (ai.google.dev file-input docs).
-      maxLinkBytes: 15_000_000,
+    },
+    {
+      id: "hydrogen",
+      maker: "google",
+      match: ["gemini-4-hydrogen*"],
+      tokenizer: "gemini",
     },
   ],
 };

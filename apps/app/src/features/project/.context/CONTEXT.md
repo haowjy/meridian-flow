@@ -136,12 +136,10 @@ Which documents are mounted is one list, `PresentedDocuments` (`context/presente
 each document host registers its current descriptor there, and `shown` orders them newest on
 screen first. Besides main's and the side's document, the newest open tab shown that is off screen
 stays mounted as the kept host, hidden for a warm return, so at most three documents
-are mounted (main, side, kept). The kept host no longer holds undo: a session owns it, and
-`useOpenTabSessions` holds a session by an open-content lease while its tab is on screen, and
-after it leaves only while its history has something to undo or redo (at most 8 such sessions,
-the least recently edited dropped first, so reading other tabs never evicts an edited one). A
-tab never shown this visit is not held, and a tab in review mode edits the draft room's session,
-so its undo ends with the room as before. A kept return measured about 80 ms (16%) faster than a remount on a 4,000-word
+are mounted (main, side, kept). The kept host no longer holds undo: a session owns it, and the
+session registry keeps a session no host holds while its history has something to undo or redo,
+for any document, tab or not ([editor context](../../../core/editor/.context/CONTEXT.md), "Live
+session teardown"). A kept return measured about 80 ms (16%) faster than a remount on a 4,000-word
 document, which is all the kept host buys now. A parked host (`SlotGrid`) keeps the size of the slot it left and sets
 `content-visibility: hidden`, so an edit into the kept document lays out nothing until it returns. The kept document is mounted but not presented:
 it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and
