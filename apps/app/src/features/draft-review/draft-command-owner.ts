@@ -45,13 +45,15 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import type { ClosedOwners } from "@/core/project-tree/tree-undo";
 import {
   type ApplyClickOutcome,
   ApplyClickQueue,
+  type ApplyCommandHandle,
   type FrozenApply,
   frozenOn,
 } from "./apply-click-queue";
-import { BandApply, type LiveHistories } from "./apply-history";
+import { AppliedCommand, type LiveHistories, queuePort, serverBandPort } from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import {
@@ -165,7 +167,14 @@ type Joint = {
   send(body: ApplyClick): Promise<ApplyClickAnswer>;
   answered(answer: ApplyClickOutcome): void;
 };
-export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
+/** `band`: a band's Apply, the one owner of its Undo in the band's editors. */
+export type StartedApply = {
+  sent: boolean;
+  outcome: Promise<CommandOutcome>;
+  band?: AppliedCommand;
+};
+/** A band's Apply: the editors its Ctrl+Z goes in, and which owners are closed now. */
+export type BandHistories = { histories: LiveHistories; closed: ClosedOwners };
 /**
  * A Discard's answer for the documents it was sent. `done` when it took something, `settled` when
  * each item was settled before it, `returned` when a closed owner changed nothing. `untaken`: the
@@ -235,8 +244,19 @@ const RESOLVE_RETRY_MAX_MS = 30_000;
 export class DraftCommandOwner {
   private readonly items = new Map<string, Item>();
   private readonly entries = new Map<string, Entry>();
-  /** Band Applies in force or taken back, while their Ctrl+Z or Redo can still run. */
-  private readonly bandApplies = new Set<BandApply>();
+  /**
+   * Band Applies in force or taken back, while their Ctrl+Z or Redo can run: their draft, and the
+   * item queue's handle until the review lets go of the draft's room.
+   */
+  private readonly bandApplies = new Map<
+    AppliedCommand,
+    { draftId: string; handle: ApplyCommandHandle | null }
+  >();
+  /**
+   * Every Apply this tab can still take back or apply again: the one each Undo of it presses, a
+   * chat card's included (`AppliedCommand`).
+   */
+  readonly applied = new Set<AppliedCommand>();
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
@@ -675,7 +695,7 @@ export class DraftCommandOwner {
       });
     if (entry?.binding) for (const stop of entry.binding.notices) stop();
     // The server refuses an Un-Apply against an ended draft: Ctrl+Z goes past its Applies.
-    for (const band of this.bandApplies) if (band.draftId === id) band.end();
+    for (const [band, held] of this.bandApplies) if (held.draftId === id) band.end();
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);
     if (id !== ref.itemKey)
@@ -700,7 +720,11 @@ export class DraftCommandOwner {
       send: (body: ApplyClick) => applyDraftClick(entry.ref, body),
       unapply: (body: UnapplyClick) => unapplyDraftClick(entry.ref, body),
     };
-    for (const band of this.bandApplies) if (band.draftId === entry.draftId) band.release(port);
+    for (const [band, held] of this.bandApplies) {
+      if (held.draftId !== entry.draftId || !held.handle) continue;
+      band.switchPort(serverBandPort(port, held.handle.replay()));
+      held.handle = null;
+    }
     this.releaseItem(entry.item);
   }
 
@@ -783,7 +807,7 @@ export class DraftCommandOwner {
     requested: boolean,
     saw: TreeSaw | undefined,
     /** A band's Apply: the histories its Ctrl+Z goes in. */
-    histories?: LiveHistories | null,
+    histories?: BandHistories | null,
     joint?: Joint,
   ): StartedApply | null {
     if (!this.active || this.state(ref.itemKey).discarding) return null;
@@ -849,7 +873,7 @@ export class DraftCommandOwner {
     target: TextTarget,
     tree: boolean,
     saw: TreeSaw | undefined,
-    histories?: LiveHistories | null,
+    histories?: BandHistories | null,
     joint?: Joint,
   ): StartedApply | null {
     const entry = this.byItem.get(ref.itemKey);
@@ -916,18 +940,47 @@ export class DraftCommandOwner {
             }),
         })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
+    let band: AppliedCommand | undefined;
     if (scheduled.handle && histories) {
-      const band = new BandApply(entry.draftId, histories, scheduled.handle, () =>
-        this.bandApplies.delete(band),
+      const handle = scheduled.handle;
+      const applied: AppliedCommand = new AppliedCommand(
+        {
+          text: true,
+          tree: null,
+          sources: [],
+          name: "",
+          nodes: [ref.documentId],
+          facts: new Map(),
+        },
+        queuePort(handle),
+        histories.histories,
+        {
+          closed: histories.closed,
+          stack: null,
+          said: ({ answer, step }) =>
+            this.notices.showPress({
+              projectId: ref.projectId,
+              ownerKey: ref.ownerKey,
+              documentId: ref.documentId,
+              step,
+              answer,
+            }),
+          over: () => {
+            this.bandApplies.delete(applied);
+            this.applied.delete(applied);
+          },
+        },
       );
-      this.bandApplies.add(band);
+      band = applied;
+      this.bandApplies.set(band, { draftId: entry.draftId, handle });
+      this.applied.add(band);
     }
     binding.runtime.projectNow();
     const outcome = scheduled.outcome.then((answer) => {
       joint?.answered(answer);
       return this.settled(ref, entry.draftId, answer);
     });
-    return { sent: true, outcome };
+    return { sent: true, outcome, ...(band ? { band } : {}) };
   }
 
   /**
@@ -1221,7 +1274,7 @@ export class DraftCommandOwner {
     this.notices.close();
     for (const item of this.items.values()) item.queue.close();
     // Their entries sit on sessions that outlive this owner.
-    for (const band of this.bandApplies) band.end();
+    for (const applied of [...this.applied]) applied.end();
   }
 }
 

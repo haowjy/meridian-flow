@@ -6,7 +6,7 @@ import {
   type ReversalOutcome,
   type TurnInverseSkip,
 } from "@meridian/contracts/protocol";
-import { treeLeftSentence, treeReturnedSentence } from "@/core/project-tree/tree-left-sentence";
+import { heldSentence, treeLeftSentence } from "@/core/project-tree/tree-left-sentence";
 import type { TreeFact } from "@/core/project-tree/tree-undo";
 
 type TreeSkip = Extract<TurnInverseSkip, { kind: "tree" }>;
@@ -85,7 +85,7 @@ const DID: Record<TreeSkip["op"], TreeFact["did"]> = {
 export function treeSkipSentence(skip: TreeSkip, folder: boolean): string {
   const fact = { did: DID[skip.op], folder };
   return skip.cause === "returned"
-    ? treeReturnedSentence(fact, skip.why, skip.owner)
+    ? heldSentence(fact, skip.why, skip.owner)
     : treeLeftSentence(fact, skip.cause);
 }
 
