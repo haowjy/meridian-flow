@@ -190,25 +190,24 @@ export function undoFacts(
       change.root,
     );
   }
-  const record = named;
-  const node = placeIn(projection.nodes, record.node);
+  const node = placeIn(projection.nodes, named.node);
   if (!node) return "purged";
-  const extra = { undoes: record.carries ?? record.id };
+  const extra = { undoes: named.carries ?? named.id };
   const author = (made: TreeRecordInput) => ({
     record: writer.author(view, actor, made, extra),
   });
-  switch (record.type) {
+  switch (named.type) {
     case "create":
       if (node.trashed) return "already";
       // Only the node the create made: what others put in a folder since stands, and keeps it standing.
-      return author({ type: "delete", node: record.node, cascade: [] });
+      return author({ type: "delete", node: named.node, cascade: [] });
     case "delete":
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.
-      if (!standsIn(projection, record)) return "already";
-      return author({ type: "restore", node: record.node });
+      if (!standsIn(projection, named)) return "already";
+      return author({ type: "restore", node: named.node });
     case "restore":
       if (node.trashed) return "already";
-      return author({ type: "delete", node: record.node, cascade: liftedBy(projection, record) });
+      return author({ type: "delete", node: named.node, cascade: liftedBy(projection, named) });
     case "purge":
       return "purged";
     // A move or rename the replay skipped, or an Undo of one whose change is not in the view.

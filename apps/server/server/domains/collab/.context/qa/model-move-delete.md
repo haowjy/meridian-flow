@@ -29,15 +29,13 @@ model.
    `scratch://@w1/ideas/ch8` reads "Moved ch8 to Scratch for Ascension/ideas/ch8".
 2. **Delete, then Undo.** With ch2 open in main, script `delete` ch2. Main becomes "The AI
    in Chapter cleanup deleted ch2.", the row reads "Deleted ch2" with no door, the card lists
-   "Deleted ch2". The card's Undo brings ch2 back into the tree and offers Redo. The other
+   "Deleted ch2". The card's Undo brings ch2 back into the tree. The other
    Work's chat still docks "ch2 1 change Discard Apply".
-3. **Name taken.** Press Redo (ch2 deleted again), create a document at `manuscript://ch2`
-   (`./mf doc put`), then press Undo: the original returns at `manuscript://ch2 (2)` and the
-   expanded card reads "Restored as ch2 (2)." The new ch2 stays where it was. Redo and Undo
-   again; the same document returns and the card names the committed path. Then script a model
-   move of ch1 onto the occupied `manuscript://ch2`: its tool result, expanded turn receipt,
-   Undo/Redo landing copy and Recent dock entry all name the same committed suffixed path, not
-   the requested `ch2` path.
+3. **Name taken.** Delete ch2, create a document at `manuscript://ch2` (`./mf doc put`),
+   then press Undo: the original returns at `manuscript://ch2 (2)` and the expanded card
+   reads "Restored as ch2 (2)." The new ch2 stays where it was. Script a model move of ch1
+   onto the occupied `manuscript://ch2`: its tool result, expanded turn receipt, Undo landing
+   copy and Recent dock entry all name the committed suffixed path, not the requested path.
 4. **Absorbed folder.** In a draft-mode chat, move a document into a new `arc/` folder, then
    move it out. Create a live `arc/` folder so it absorbs the hidden draft folder. Model Undo
    of the second move returns the document inside the live `arc/`, not `folder_missing`.
@@ -73,7 +71,7 @@ the text it found or a block hash from that read.
 8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
    its manuscript destination, and live still has it in Scratch. Script `undo` by either path:
-   the dock row disappears and the branch sees it in Scratch again. Redo the move and Apply it;
+   the dock row disappears and the branch sees it in Scratch again. Move it again and Apply it;
    live now has sect-notes in the manuscript and not in Scratch. Move `manuscript://ch2` to
    `scratch://@w1/ch2`: the branch sees it in Scratch while live keeps ch2 in the manuscript;
    Discard removes the row and leaves live unchanged.
@@ -82,8 +80,8 @@ the text it found or a block hash from that read.
    the text edit: it reports `reverted`, restores the old text as a pending draft change, and
    leaves live unchanged. Script `undo` for the applied move: "Couldn't undo ch1-old"; the model
    reads `cant_undo_applied`. Script `undo` for the applied delete: it restores the same document.
-   Redo deletes it again. Apply another drafted delete, then use the turn card's Undo; it restores
-   the document.    `write edits` lists each applied delete once. Moves and renames remain applied and cannot be
+   Apply another drafted delete, then use the turn card's Undo; it restores
+   the document. `write edits` lists each applied delete once. Moves and renames remain applied and cannot be
    undone.
 
 With more than one file, the dock's Apply asks the same question in its footer
@@ -105,21 +103,15 @@ With more than one file, the dock's Apply asks the same question in its footer
 11. **A destination folder the writer makes, and a rename the Work ends.** Script `move` ch2 →
    `arc2/ch2` (a folder only the Work sees). In the live tree, create a folder and rename it to
    `arc2`: the dock still reads "ch2: renaming to arc2/ch2". The card's Undo moves it back and
-   the card expands with its draft outcome; Redo puts it in `arc2` again. Then script `move` ch4
-   → ch4b, press the card's Undo, and Discard all of the Work: the card's Redo then says the
-   change was discarded, not that it can't be restored.
+   the card expands with its draft outcome. Then script `move` ch4 → ch4b, press the card's
+   Undo, and Discard all of the Work.
 12. **Create is one reversible change.** In an auto-apply chat, script `create` of
    `manuscript://new-chapter` with prose. The card counts the new document. Its Undo removes the
-   document; Redo restores the prose. After Undo, put another document at that path and press
-   Redo: the created document returns at the next free name, which the expanded card reports.
-   Then script a whole-document `copy` and, in a later model step, `undo` the copy's path. One
-   Undo removes the copy rather than leaving an empty document; Redo restores its content. Repeat
-   after the writer replaces one of the copy's paragraphs. Undo reports that skipped text part and
-   removes the document as the same edit. Redo restores the document with the writer's paragraph
-   intact and reapplies the text parts Undo removed.
+   document. Restore it from Trash and check that its prose remains. Then script a whole-document
+   `copy` and, in a later model step, `undo` the copy's path. One Undo removes the copy rather
+   than leaving an empty document. Repeat after the writer replaces one of the copy's paragraphs:
+   Undo reports the skipped text part and removes the document as the same edit.
 13. **Draft create is one pending item.** In a draft-mode chat, script a nonempty `create`, then
    an empty `create`. Each turn card counts its created document, and the dock and Work Files list
    both. Undo each card: its row disappears from both lists, while the same active draft and
-   document identity remain hidden by the branch delete fact. Redo clears that fact and shows the
-   same draft with its original content (or the same empty draft), listed once. Apply and Discard
-   remain available on the restored row.
+   document identity remain hidden by the branch delete fact.
