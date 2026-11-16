@@ -469,6 +469,7 @@ export function createBoundAgentCatalog(input: {
 
     async followRemovedModel(userId, projectId, thread, bound) {
       const moved = await effectiveBinding(userId, projectId, thread, bound);
+      // effectiveBinding returns its input itself when nothing moves; a copy would write every turn.
       if (moved === bound || !moved.revision) return bound;
       await store.replaceThreadBinding(
         thread.id,
