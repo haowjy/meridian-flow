@@ -125,7 +125,7 @@ describe("model document stack", () => {
       {
         const turnId = await command("undo");
         const text = await harness.liveMarkdown(ALPHA_ID);
-        expect(await view.collab.getTurnReceiptChip(THREAD_ID, turnId)).toBeNull();
+        expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, turnId)).toBeNull();
         expect(
           await card.reverseThreadContext({
             commandId: randomUUID(),
@@ -151,7 +151,7 @@ describe("model document stack", () => {
       expect(again).toMatchObject({ status: "success" });
       editHandle = (again as { writeId: string }).writeId;
       const turnId = await command("revert");
-      expect(await view.collab.getTurnReceiptChip(THREAD_ID, turnId)).toMatchObject({
+      expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, turnId)).toMatchObject({
         control: "undo",
       });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
@@ -305,7 +305,7 @@ describe("model document stack", () => {
           secondContext,
         ),
       ).toMatchObject({ status: "success", writeId: "e3" });
-      expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
+      expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, TURN_ID)).toMatchObject({
         control: "undo",
       });
       let removeApplyHook = () => {};

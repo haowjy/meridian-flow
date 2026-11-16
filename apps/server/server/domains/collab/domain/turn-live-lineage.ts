@@ -118,7 +118,7 @@ export type TurnLiveLineageReadModel = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
   listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
-  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
+  getDocumentAndTreeChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
 export function createTurnLiveLineageReadModel(deps: {
@@ -195,8 +195,8 @@ export function createTurnLiveLineageReadModel(deps: {
       });
     },
 
-    async getTurnReceiptChip(threadId, turnId) {
-      return deps.receiptStore?.getTurnReceiptChip(threadId, turnId) ?? null;
+    async getDocumentAndTreeChip(threadId, turnId) {
+      return deps.receiptStore?.getDocumentAndTreeChip(threadId, turnId) ?? null;
     },
   };
 

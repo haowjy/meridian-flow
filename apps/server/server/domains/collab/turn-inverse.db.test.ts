@@ -55,7 +55,7 @@ it("a document in no view (deleted after its edit) does not stop another documen
       lists: [await treeListOfSource(db, SOURCE_ID)],
       make: ([{ writer }]) => writer.delete(LIVE, "system", BETA_ID),
     });
-    expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
+    expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",
     });
   } finally {

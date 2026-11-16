@@ -133,7 +133,7 @@ it.each([
       }),
     ).toMatchObject({ status: "reversed", acceptedParts: 2 });
     expect(await text()).toBe("gold\n\nbluepink\n\nblack\n");
-    expect(await view.collab.getTurnReceiptChip(THREAD_ID, currentTurn)).toMatchObject({
+    expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, currentTurn)).toMatchObject({
       state: "undone",
       control: "view_change",
     });

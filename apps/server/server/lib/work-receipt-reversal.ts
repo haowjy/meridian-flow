@@ -1,7 +1,11 @@
-/** Plans and executes typed durable Work receipts through one ordered state machine. */
+/** Decides each durable Work receipt's fate, undoes the ones that act, and composes the reply's chip. */
 
 import type { CommandId, UserId } from "@meridian/contracts";
-import type { ReversalOutcome, WorkReversalResult } from "@meridian/contracts/protocol";
+import type {
+  ReversalOutcome,
+  TurnReceiptChip,
+  WorkReversalResult,
+} from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
 import {
@@ -10,6 +14,7 @@ import {
   parseWorkReceipt,
   type Work,
   type WorkReceipt,
+  type WorkReceiptInverse,
   type WorkReceiptState,
 } from "@meridian/contracts/works";
 import {
@@ -43,10 +48,16 @@ type WorkReceiptReversalDeps = {
 
 export type WorkReceiptReversal = WorkReversalResult & { workId: WorkId };
 type ShadowWork = Work & { deleted: boolean };
+type ReversibleWorkReceipt = WorkReceipt & { inverse: WorkReceiptInverse };
+/**
+ * What one Work receipt's Undo comes to: `acts` still has to run, `taken` already stands as
+ * its inverse leaves it (the writer did it, or an earlier Undo), and `stayed` can't run.
+ */
+type WorkFate = "acts" | "taken" | "stayed";
 type PlannedStep = {
-  receipt: WorkReceipt;
+  receipt: ReversibleWorkReceipt;
   command: WorkReversalResult["command"];
-  executable: boolean;
+  fate: WorkFate;
   message?: string;
 };
 
@@ -81,28 +92,24 @@ export async function reverseTurnCard(
     },
     input,
   );
-  const alongsideRun = async (outcome: ReversalOutcome): Promise<ReversalOutcome> => {
-    const canReverseWorkReceipts =
-      outcome.status === "reversed" ||
-      outcome.status === "nothing_to_undo" ||
-      outcome.status === "partial" ||
-      outcome.status === "partial_failure";
-    if (!canReverseWorkReceipts) return outcome;
-    const workReceipts = await reverseWorkReceipts(
-      {
-        blocks: app.threadRepos.blocks,
-        turns: app.threadRepos.turns,
-        threads: app.threadRepos.threads,
-        works: app.works,
-        workContextNotices: app.workContextNotices,
-        stopThreads: app.stopThreads,
-        // A step's savepoint: a Work that fails leaves the others and the stored answer.
-        transaction: (operation) => runInDrizzleSavepoint(getDb(), operation),
-      },
-      input,
+  // The Work half is its own part: each receipt's fate decides it, whatever the documents did.
+  const alongsideRun = async (outcome: ReversalOutcome): Promise<ReversalOutcome> =>
+    combineWorkReversalOutcome(
+      outcome,
+      await reverseWorkReceipts(
+        {
+          blocks: app.threadRepos.blocks,
+          turns: app.threadRepos.turns,
+          threads: app.threadRepos.threads,
+          works: app.works,
+          workContextNotices: app.workContextNotices,
+          stopThreads: app.stopThreads,
+          // A step's savepoint: a Work that fails leaves the others and the stored answer.
+          transaction: (operation) => runInDrizzleSavepoint(getDb(), operation),
+        },
+        input,
+      ),
     );
-    return combineWorkReversalOutcome(outcome, workReceipts);
-  };
   return app.documentSync.reverseThreadContext({
     ...input,
     alongside: {
@@ -121,24 +128,55 @@ async function workReceiptWorkIds(
   return context ? [...new Set(context.receipts.map(({ workId }) => workId))] : [];
 }
 
+/** The documents' answers that settled the press, as parts that were reversed, stayed or failed. */
+const DOCUMENT_PARTS: Partial<
+  Record<ReversalOutcome["status"], { reversed?: true; stayed?: true; failed?: true }>
+> = {
+  nothing_to_undo: {},
+  reversed: { reversed: true },
+  reconciled: { reversed: true },
+  partial: { reversed: true, stayed: true },
+  expired: { stayed: true },
+  not_undone: { stayed: true },
+  partial_failure: { failed: true },
+};
+
+/**
+ * The click's answer with its Work part, from how many parts were reversed, stayed and failed
+ * across the documents, the tree and the Works: a Work taken back counts as reversed, one that
+ * stayed is a part the Undo left, and only a step that threw is a failure. A documents' answer
+ * that isn't one of these (a refusal) stands unless a Work failed.
+ */
 export function combineWorkReversalOutcome(
   outcome: ReversalOutcome,
   workReceipts: WorkReceiptReversal[],
 ): ReversalOutcome {
   if (workReceipts.length === 0) return outcome;
-  const succeeded = workReceipts.some((result) => result.status === "reversed");
-  const failed = workReceipts.some(
-    (result) => result.status === "failed" || result.status === "unavailable",
-  );
+  const works = (status: WorkReceiptReversal["status"]) =>
+    workReceipts.filter((result) => result.status === status).length;
+  const documents = DOCUMENT_PARTS[outcome.status];
+  const reversed = works("reversed") + (documents?.reversed ? 1 : 0);
+  const stayed = works("unavailable") + (documents?.stayed || outcome.skips?.length ? 1 : 0);
+  const failed = works("failed") + (documents?.failed ? 1 : 0);
   return {
     ...outcome,
-    status: failed
-      ? "partial_failure"
-      : succeeded && outcome.status === "nothing_to_undo"
-        ? "reversed"
-        : outcome.status,
+    status: turnStatus(outcome.status, documents !== undefined, { reversed, stayed, failed }),
+    acceptedParts: (outcome.acceptedParts ?? 0) + works("reversed"),
     workReceipts,
   };
+}
+
+function turnStatus(
+  documents: ReversalOutcome["status"],
+  settled: boolean,
+  parts: { reversed: number; stayed: number; failed: number },
+): ReversalOutcome["status"] {
+  if (parts.failed) return "partial_failure";
+  if (!settled) return documents;
+  if (parts.reversed && parts.stayed) return "partial";
+  if (parts.reversed) return documents === "reconciled" ? "reconciled" : "reversed";
+  // Nothing reversed: a tree change that stayed keeps its own answer.
+  return documents === "not_undone" ? "not_undone" : "expired";
 }
 
 export async function reverseWorkReceipts(
@@ -154,20 +192,16 @@ export async function reverseWorkReceipts(
       const plan = await planReceipts(deps, ordered, context.thread);
       const applied: WorkReceiptReversal[] = [];
       for (const step of plan) {
-        if (!step.executable) {
-          applied.push(
-            result(
-              step.receipt,
-              context.thread.projectId,
-              step.command,
-              "unavailable",
-              step.message,
-            ),
-          );
-          continue;
-        }
-        await applyStep(deps, step.receipt);
-        applied.push(result(step.receipt, context.thread.projectId, step.command, "reversed"));
+        if (step.fate === "acts") await applyStep(deps, step.receipt);
+        applied.push(
+          result(
+            step.receipt,
+            context.thread.projectId,
+            step.command,
+            step.fate === "stayed" ? "unavailable" : "reversed",
+            step.message,
+          ),
+        );
       }
       return applied;
     });
@@ -176,44 +210,44 @@ export async function reverseWorkReceipts(
     if (isRetryableTransactionError(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     return ordered.map((receipt) =>
-      result(receipt, context.thread.projectId, commandFor(receipt), "failed", message),
+      result(receipt, context.thread.projectId, receipt.inverse.command, "failed", message),
     );
   }
 }
 
-export async function getWorkReceiptReversalAvailability(
-  deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works" | "threads">,
+/**
+ * The reply's chip, composed once from its parts: the documents' and tree's (`chip`) and its
+ * Work receipts'. Undo while any part acts; Undone when every part is taken back.
+ */
+export async function getTurnReceiptChip(
+  deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works" | "threads"> & {
+    documentSync: Pick<AppServices["documentSync"], "getDocumentAndTreeChip">;
+  },
   input: { threadId: ThreadId; turnId: TurnId },
-): Promise<{ undo: boolean; undone: boolean }> {
-  const context = await reversalContext(deps, input);
-  if (!context || context.receipts.length === 0) return { undo: false, undone: false };
-  const [plan, works] = await Promise.all([
-    planReceipts(deps, [...context.receipts].reverse(), context.thread),
-    deps.works.listByProject(context.thread.projectId, { includeDeleted: true, lifecycle: "all" }),
+): Promise<TurnReceiptChip | null> {
+  const [chip, context] = await Promise.all([
+    deps.documentSync.getDocumentAndTreeChip(input.threadId, input.turnId),
+    reversalContext(deps, input),
   ]);
-  const states = new Map(works.map((work) => [work.id, { ...work, deleted: !!work.deletedAt }]));
-  const undone = context.receipts.every((receipt) => {
-    const work = states.get(receipt.workId);
-    if (!work || !receipt.inverse) return false;
-    if (receipt.operation === "update") {
-      if (work.deleted || !sameState(work, receipt.before) || !receipt.after) return false;
-      Object.assign(work, receipt.after);
-    } else if (receipt.operation === "create") {
-      if (!work.deleted || !sameState(work, receipt.after)) return false;
-      work.deleted = false;
-    } else {
-      if (work.deleted || !sameState(work, receipt.before)) return false;
-      work.deleted = true;
-    }
-    return true;
-  });
-  return { undo: plan.every((step) => step.executable), undone };
+  if (!context?.receipts.length) return chip;
+  const fates = (await planReceipts(deps, [...context.receipts].reverse(), context.thread)).map(
+    ({ fate }) => fate,
+  );
+  if (chip?.control === "undo" || fates.includes("acts"))
+    return { ...chip, state: "live-active", control: "undo" };
+  const taken = fates.includes("taken") || (!!chip && chip.state !== "expired");
+  const stayed = fates.includes("stayed") || (!!chip && chip.state !== "undone");
+  return {
+    ...chip,
+    state: taken ? (stayed ? "partly" : "undone") : "expired",
+    control: "view_change",
+  };
 }
 
 async function reversalContext(
   deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "threads">,
   input: { threadId: ThreadId; turnId: TurnId },
-): Promise<{ thread: Thread; receipts: WorkReceipt[] } | null> {
+): Promise<{ thread: Thread; receipts: ReversibleWorkReceipt[] } | null> {
   const [turn, thread] = await Promise.all([
     deps.turns.findById(input.turnId),
     deps.threads.findById(input.threadId),
@@ -225,10 +259,10 @@ async function reversalContext(
 async function receiptsForTurn(
   deps: Pick<WorkReceiptReversalDeps, "blocks">,
   turnId: TurnId,
-): Promise<WorkReceipt[]> {
+): Promise<ReversibleWorkReceipt[]> {
   return (await deps.blocks.listByTurn(turnId)).flatMap((block) => {
     const receipt = receiptFromContent(block.content);
-    return receipt && isReversibleWorkReceipt(receipt) ? [receipt] : [];
+    return receipt && isReversibleWorkReceipt(receipt) ? [receipt as ReversibleWorkReceipt] : [];
   });
 }
 
@@ -240,9 +274,14 @@ async function lockReceiptState(
   for (const workId of [...ids].sort()) await deps.works.lockById(workId);
 }
 
+/**
+ * Each receipt's step, in undo order. A Work's receipts share one fate, decided by where the
+ * turn started and ended it: at its start the Undo is taken, at its end it acts, anywhere else
+ * it stayed. A turn that set a Work back as it found it is taken, so its Undo never loops.
+ */
 async function planReceipts(
   deps: Pick<WorkReceiptReversalDeps, "works">,
-  receipts: WorkReceipt[],
+  receipts: ReversibleWorkReceipt[],
   thread: Thread,
 ): Promise<PlannedStep[]> {
   const projectWorks = await deps.works.listByProject(thread.projectId, {
@@ -252,68 +291,60 @@ async function planReceipts(
   const works = new Map<WorkId, ShadowWork>(
     projectWorks.map((work) => [work.id, { ...work, deleted: !!work.deletedAt }]),
   );
-  const plan: PlannedStep[] = [];
-
+  const fates = new Map<WorkId, { fate: WorkFate; message?: string }>();
   for (const receipt of receipts) {
-    const command = commandFor(receipt);
-    const unavailable = (message: string) => {
-      plan.push({ receipt, command, executable: false, message });
-    };
+    if (fates.has(receipt.workId)) continue;
+    const turn = receipts.filter(({ workId }) => workId === receipt.workId);
+    const first = turn.at(-1) ?? receipt;
     const work = works.get(receipt.workId);
-
-    if (!receipt.inverse) {
-      unavailable("Receipt has no inverse");
-      continue;
-    }
-
-    if (receipt.operation === "update") {
-      const expected = receipt.after;
-      const target = receipt.before;
-      if (!work || work.deleted || !sameState(work, expected) || !target) {
-        unavailable("Work state diverged from the receipt");
-        continue;
-      }
-      Object.assign(work, target);
-    } else if (receipt.operation === "create") {
-      if (!work || !sameState(work, receipt.after)) {
-        unavailable("Created Work state diverged from the receipt");
-        continue;
-      }
-      if (work.deleted) {
-        unavailable("Created Work lifecycle diverged from the receipt");
-        continue;
-      }
-      work.deleted = true;
-    } else if (receipt.operation === "delete") {
-      if (!work || !sameState(work, receipt.before)) {
-        unavailable("Deleted Work state diverged from the receipt");
-        continue;
-      }
-      if (!work.deleted) {
-        unavailable("Deleted Work lifecycle diverged from the receipt");
-        continue;
-      }
-      if (hasIdentityConflict(works, work)) {
-        unavailable("Deleted Work identity is no longer available");
-        continue;
-      }
-      work.deleted = false;
-    }
-    plan.push({ receipt, command, executable: true });
+    fates.set(receipt.workId, workFate(works, work, first, receipt));
+    // A Work this Undo restores or deletes frees or takes its handle for the Works after it.
+    if (work && fates.get(receipt.workId)?.fate === "acts")
+      work.deleted = first.operation === "create";
   }
-  return plan;
+  return receipts.map((receipt) => ({
+    receipt,
+    command: receipt.inverse.command,
+    ...(fates.get(receipt.workId) ?? { fate: "stayed" }),
+  }));
+}
+
+/** One Work's fate, from the turn's first and last receipt for it. */
+function workFate(
+  works: Map<WorkId, ShadowWork>,
+  work: ShadowWork | undefined,
+  first: ReversibleWorkReceipt,
+  last: ReversibleWorkReceipt,
+): { fate: WorkFate; message?: string } {
+  const startedDeleted = first.operation === "create";
+  const endedDeleted = last.operation === "delete";
+  // A Work the turn deleted that stands again is taken back, whatever it is called now.
+  const taken = startedDeleted
+    ? !work || work.deleted
+    : !!work && !work.deleted && (first.operation === "delete" || sameState(work, first.before));
+  if (taken) return { fate: "taken" };
+  if (
+    !work ||
+    work.deleted !== endedDeleted ||
+    !sameState(work, endedDeleted ? last.before : last.after)
+  )
+    return { fate: "stayed", message: "Work state diverged from the receipt" };
+  if (endedDeleted && !startedDeleted && hasIdentityConflict(works, work))
+    return { fate: "stayed", message: "Deleted Work identity is no longer available" };
+  return { fate: "acts" };
 }
 
 async function applyStep(
   deps: Pick<WorkReceiptReversalDeps, "works" | "workContextNotices" | "stopThreads">,
-  receipt: WorkReceipt,
+  receipt: ReversibleWorkReceipt,
 ): Promise<void> {
   if (receipt.operation === "create") {
+    // The tree's runs and subagent lineages end in this transaction, before its rows lock.
     await deps.works.softDelete(receipt.workId, deps.stopThreads);
   } else if (receipt.operation === "update") {
     if (!receipt.before) throw new Error("Receipt state is incomplete");
     await applyState(deps, receipt.workId, receipt.before);
-  } else if (receipt.operation === "delete") {
+  } else {
     await deps.works.restore(receipt.workId);
     await deps.workContextNotices.workChanged(receipt.workId);
   }
@@ -354,18 +385,6 @@ async function applyState(
       workId,
       true,
     );
-  }
-}
-
-function commandFor(receipt: WorkReceipt): WorkReversalResult["command"] {
-  if (receipt.inverse) return receipt.inverse.command;
-  switch (receipt.operation) {
-    case "create":
-      return "delete";
-    case "update":
-      return "update";
-    case "delete":
-      return "restore";
   }
 }
 

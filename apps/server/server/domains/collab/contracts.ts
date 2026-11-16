@@ -255,14 +255,14 @@ export type AgentTreeHistory = {
   /** Whether the turn (one reply) already made a drafted tree change. */
   draftedInReply(turnId: TurnId): Promise<boolean>;
   /**
-   * What a card Undo or Redo of a reply takes: the reply's receipts that were not reversed (Undo,
-   * newest first), or the ones a reversal took back and nothing redid (Redo, oldest first), each
-   * with the nodes it changed. The same receipts, reversed by the same `reverses` links, as
-   * the model's `undo` chooses from.
+   * What a card Undo of a reply takes: the reply's receipts that were not reversed, newest
+   * first, each with the nodes it changed, the same receipts by the same `reverses` links as
+   * the model's `undo` chooses from; and how many of the reply's receipts a card Undo took back.
    */
-  turnSteps(threadId: ThreadId, turnId: TurnId): Promise<TreeReceipt[]>;
-  /** Whether the reply's card Undo took back any of its tree changes: true for good once it did. */
-  undoneByCard(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  turnSteps(
+    threadId: ThreadId,
+    turnId: TurnId,
+  ): Promise<{ open: TreeReceipt[]; undoneByCard: number }>;
   /**
    * The node this chat's receipts took away from `at`, so an undo there finds it: the latest
    * deleted there or its create undone (the path the model wrote); else what last stood at `at`
@@ -554,7 +554,7 @@ export type TurnLiveLineageAccess = {
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
   /** The folders the turn changed: its card lists them with the documents. */
   listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
-  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
+  getDocumentAndTreeChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
 /**

@@ -73,10 +73,13 @@ hide the semantic refusal after a successful HTTP response.
 
 Every refusal is visible, and the receipt's reason line is where it shows.
 Skipped parts and refusals are worded in `turn-receipt-copy.ts` from typed
-causes (`TurnInverseSkipCause`, the `ancestor_taken` / `folder_missing` /
-`superseded` statuses); the card never prints server prose. A move or delete
-whose folder path a document blocks names the cause, the whole place and the next
-step, and the parts list doesn't repeat what that line already says. A taken leaf
+causes (`TurnInverseSkipCause`, and a tree skip's `op` and `changed_since` or
+`purged`); the card never prints server prose. A tree change that stayed is
+worded by `treeLeftSentence`, the review row's and Ctrl+Z's own sentence ("Not
+undone. The move stayed: it was changed since."), and the parts list doesn't
+repeat what that line already says. The chip carries the tree changes that stay
+in its `skips` before any press, so a card with nothing left to undo says why
+when opened. A taken leaf
 is not a refusal: the inverse lands at the next free name and the card says where,
 for example "Restored as ch2 (2)." from the committed transition.
 Copy covers the whole wire status union through an exhaustive switch that fails
@@ -105,7 +108,8 @@ surface.
 Work mutation rows consume the shared structured receipt contract. The server
 supplies operation, identity, before/after facts, and a typed inverse; this
 surface maps those facts through the active Lingui catalog. Idempotent receipts
-do not claim a change.
+do not claim a change. The chip's `state` covers the Work part too: a reply that made a Work
+offers Undo while that Work still stands as the reply left it, whatever its documents did.
 
 ## Reveal staging
 
