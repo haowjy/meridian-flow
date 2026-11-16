@@ -31,7 +31,7 @@ when the registry is built, not in the deployment that holds that provider's key
   checked, note? }`: `maker` (only to override the models.dev provider the row comes from), `tokenizer`, `promptCache`
   (`kind` and both lifetimes in seconds, null for a provider that documents none), `longCacheWrite` (the long-TTL
   cache-write multiple of the input price: Claude 2x, OpenAI 2.5x), `thinksByDefault`, `maxLinkBytes`,
-  `projectToolSchema` and `price`, the one way Flow charges a price other than models.dev's: DeepSeek's peak rates, and
+  `functionCallIds`, `projectToolSchema` and `price`, the one way Flow charges a price other than models.dev's: DeepSeek's peak rates, and
   Gemini 4 Argon's standard rates while models.dev lists Google's introductory ones. An override replaces every rate
   models.dev lists for its model, and it is absolute (no multiplier, which would double-charge once models.dev catches
   up). A model with no `tokenizer` or `promptCache` fact fails the build. A refresh report flags a fact older than 90
@@ -141,8 +141,8 @@ list: the gateway is built with Mars's ladder (`reasoningLevels: effortLevels()`
 level the model lacks (`resolveReasoning`, also what the picker runs). `none` in `efforts` means the model can switch
 reasoning off. Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 have no toggle, so `thinking: disabled` and `budget_tokens` are
 a 400 on them, and no registered model gets a thinking budget. DeepSeek rows declare `reasoning.thinksByDefault` (a
-`model-data.json` fact, not inferred from `none`), the Anthropic models `projectToolSchema` and Gemini 4 Argon
-`functionCallIds`.
+`model-data.json` fact, not inferred from `none`), the Anthropic models `projectToolSchema`, and every Gemini model (Argon and Hydrogen, through the
+Gemini `"*"` row) `functionCallIds`.
 
 Every model declares a tokenizer family with no fallback. No request sets an output limit; the registry maximum is
 subtracted once from the usable input window for compaction, and optional work reserves `outputReserveTokens` (capped
