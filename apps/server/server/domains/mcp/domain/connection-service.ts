@@ -58,6 +58,8 @@ export interface McpConnectionsDeps {
 }
 
 const LIST_TIMEOUT_MS = 15_000;
+/** A removed connection stays for Undo this long; then it goes with its token and pins. */
+export const REMOVED_RETENTION_MS = 30 * 24 * 60 * 60_000;
 
 function parseUrl(raw: unknown): string {
   if (typeof raw !== "string") throw new McpConnectionError("invalid", "The address is missing.");
@@ -333,6 +335,11 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       const fresh = (await deps.store.find(accountId, id)) ?? stored;
       checks.startDue([fresh.row]);
       return view(fresh, null);
+    },
+
+    /** Deletes the connections removed more than 30 days ago, so a writer's third-party credential never lingers. */
+    async purgeRemoved(): Promise<number> {
+      return deps.store.purgeRemovedBefore(new Date(now().getTime() - REMOVED_RETENTION_MS));
     },
 
     /** Try again: a check now, whatever the last one's age, and its result. */

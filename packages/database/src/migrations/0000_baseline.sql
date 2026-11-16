@@ -103,6 +103,7 @@ CREATE TABLE "prompt_bakes" (
 	"composed_system_prompt" text NOT NULL,
 	"baked_skill_slugs" jsonb NOT NULL,
 	"baked_tools" jsonb NOT NULL,
+	"baked_connections" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"content_hash" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );

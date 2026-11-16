@@ -20,7 +20,8 @@ flowchart LR
   browser -->|"reads and saves settings"| preferences
   preferences -->|"keeps settings per account"| postgres
   browser -->|"adds, checks and removes connections"| mcp
-  mcp -->|"keeps connections and encrypted tokens"| postgres
+  mcp -->|"keeps connections, encrypted tokens and call records"| postgres
+  conversation -->|"lists a chat's connections in its prompt, calls their tools"| mcp
   conversation -->|"emits events"| observability
   note1["Every group sends events here, not only conversation. observability sanitizes them before any log or sink, so writer text stays out of logs."]:::note
   note1 -.- observability
@@ -49,7 +50,7 @@ Per-account preferences.
 
 A writer's connections to remote MCP servers.
 
-Account- and project-level connections, their pinned tools, encrypted tokens and a stored status that a check keeps current. One MCP client per process, on the public-address dispatcher.
+Account- and project-level connections, their pinned tools, encrypted tokens and a stored status that a check keeps current. A chat's prompt lists its connections' tools, and `mcp_describe` and `mcp_call` reach them; every call leaves a record. One MCP client per process, on the public-address dispatcher.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/mcp`

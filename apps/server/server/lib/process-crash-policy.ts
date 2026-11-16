@@ -67,13 +67,6 @@ export function installApiProcessCrashPolicy(options: { eventSink: EventSink }):
    * instead of connection resets.
    */
   process.on("uncaughtException", (error, origin) => {
-    // undici closes an idle keep-alive socket with an InformationalError, and an HTTP/2 stream
-    // left from an aborted request (an MCP session's closed event stream) re-emits it as an
-    // unhandled 'error'. It reports a socket going away, not a fault in the process.
-    if ((error as { code?: unknown } | null)?.code === "UND_ERR_INFO") {
-      logProcessFault(eventSink, "uncaughtException", error, { origin, action: "logged_continue" });
-      return;
-    }
     logProcessFault(eventSink, "uncaughtException", error, {
       origin,
       action: "flush_then_exit",

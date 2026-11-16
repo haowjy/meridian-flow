@@ -40,6 +40,7 @@ else {
       const parts = {
         composedSystemPrompt: prompt,
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
       };
       return { ...parts, contentHash: hashPromptBakeContent(parts) };
@@ -105,6 +106,7 @@ else {
       const parts = {
         composedSystemPrompt: "unchanged bytes",
         bakedSkillSlugs: ["voice"],
+        bakedConnections: [],
         bakedTools: [{ type: "function", name: "write" }],
       };
       const first = await repos.threads.bakeInitialPrompt(ids.threadId, {

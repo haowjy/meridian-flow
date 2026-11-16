@@ -87,6 +87,10 @@ export interface ConnectionStore {
     id: McpConnectionId,
     at: Date | null,
   ): Promise<"ok" | "missing" | "name_taken">;
+  /** A pin by id, whether or not it is still its connection's current one. */
+  findPin(pinId: McpPinId): Promise<PinRecord | null>;
+  /** Deletes connections removed before `cutoff`, with their pins and tokens; returns how many. */
+  purgeRemovedBefore(cutoff: Date): Promise<number>;
   readSealedToken(connectionId: McpConnectionId, accountId: UserId): Promise<string | null>;
   /**
    * Stores a status only for the current settings version and only if it started after the

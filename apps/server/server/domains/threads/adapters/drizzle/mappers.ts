@@ -121,6 +121,7 @@ export function mapPromptBake(row: typeof schema.promptBakes.$inferSelect): Prom
     composedSystemPrompt: row.composedSystemPrompt,
     bakedSkillSlugs: row.bakedSkillSlugs,
     bakedTools: row.bakedTools as PromptBake["bakedTools"],
+    bakedConnections: row.bakedConnections,
     contentHash: row.contentHash,
     createdAt: toIsoString(row.createdAt),
   };

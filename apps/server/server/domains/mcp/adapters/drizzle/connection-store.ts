@@ -203,6 +203,19 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
       });
     },
 
+    async findPin(pinId) {
+      const [row] = await db.select().from(mcpPins).where(eq(mcpPins.id, pinId));
+      return row ? toPin(row) : null;
+    },
+
+    async purgeRemovedBefore(cutoff) {
+      const purged = await db
+        .delete(mcpConnections)
+        .where(lt(mcpConnections.deletedAt, cutoff))
+        .returning({ id: mcpConnections.id });
+      return purged.length;
+    },
+
     async readSealedToken(connectionId, accountId) {
       const [row] = await db
         .select({ ciphertext: mcpConnectionTokens.ciphertext })

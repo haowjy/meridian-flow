@@ -207,6 +207,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ownerThreadId: THREAD_ID,
         composedSystemPrompt: "index plan bake",
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
         contentHash: "index-plan-bake",
       });
