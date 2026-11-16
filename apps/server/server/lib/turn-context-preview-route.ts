@@ -9,6 +9,7 @@ import type { AgentRevisionStore } from "../domains/packages/index.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
 import type { WorkContextReader } from "../domains/runtime/loop/work-context.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
+import type { ConnectionsPort } from "../domains/runtime/ports/connections.js";
 import type { ToolExecutor, ToolRegistry } from "../domains/runtime/tools/index.js";
 import {
   loadThreadConversationContext,
@@ -25,6 +26,7 @@ export interface TurnContextPreviewRouteDeps {
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
   workContext: WorkContextReader;
+  connections?: ConnectionsPort;
   eventSink?: EventSink;
 }
 
@@ -70,6 +72,7 @@ export async function handleGetTurnContextPreview(
     promptBakes: deps.repos.promptBakes,
     persistBake: false,
     workContext: deps.workContext,
+    connections: deps.connections,
     eventSink: deps.eventSink,
   });
 

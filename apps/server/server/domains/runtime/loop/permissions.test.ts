@@ -122,6 +122,8 @@ __mergedSuite("tool-policy.test.ts", () => {
   const PRIMARY_DEFAULT = [
     "ask_user",
     "ls",
+    "mcp_call",
+    "mcp_describe",
     "read",
     "grep",
     "skill",

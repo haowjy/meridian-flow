@@ -15,6 +15,7 @@
  */
 
 import type { ToolPolicy } from "@meridian/contracts/agents";
+import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
 import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
@@ -31,6 +32,7 @@ import type {
   PromptBakeRepository,
   ThreadMediaInclusionRepository,
 } from "../../threads/ports/repositories.js";
+import type { ConnectionBake, ConnectionsPort } from "../ports/connections.js";
 import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
@@ -47,7 +49,11 @@ import {
   isThreadPromptFrozen,
   type PromptInventoryListing,
 } from "./composed-system-prompt.js";
-import { buildContext } from "./context-builder.js";
+import {
+  buildContext,
+  connectionCallKey,
+  turnsWithUnfinishedConnectionCalls,
+} from "./context-builder.js";
 import {
   type CompactionMediaProjectionMode,
   type MediaInclusionDecision,
@@ -105,6 +111,8 @@ export interface AssembleNextTurnContextInput {
     input: PromptBakeContent,
   ) => Promise<{ thread: Thread; bake: PromptBake }>;
   workContext: WorkContextReader;
+  /** Absent: no thread holds a connection. */
+  connections?: ConnectionsPort;
   eventSink?: EventSink;
 }
 
@@ -117,6 +125,8 @@ export interface AssembledNextTurnContext {
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   resolvedModel: ModelInfo | null;
   baked: boolean;
+  /** The connections the thread's prompt holds, as the bake saved or will save them. */
+  bakedConnections: McpBakedConnection[];
   compactionTriggerTokens: number | null;
   compactionUsableWindowTokens: number | null;
   /** First-attempt prompt freeze staged for the delivery commit, if still needed. */
@@ -149,6 +159,11 @@ export async function composeLivePromptBake(
     agentRevisions: input.agentRevisions,
   });
   const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
+  // A thread that may not call `mcp_call` never reads the writer's connections or their descriptions.
+  const connections: ConnectionBake =
+    agentContext.policy.has("mcp_call") && input.connections
+      ? await input.connections.bake(thread)
+      : { bakedConnections: [], catalogue: null };
   const bakedPrompt = assembleComposedSystemPrompt({
     basePrompt: agentContext.agentBody,
     appendPrompt: agentContext.appendPrompt,
@@ -157,6 +172,7 @@ export async function composeLivePromptBake(
     availableSkills,
     preloadedSkills,
     namedSubagents,
+    connectionCatalogue: connections.catalogue,
     subagentGuidance: agentContext.subagentGuidance,
   });
 
@@ -164,6 +180,7 @@ export async function composeLivePromptBake(
     composedSystemPrompt: bakedPrompt,
     bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
     bakedTools: agentContext.tools as unknown as PromptBake["bakedTools"],
+    bakedConnections: connections.bakedConnections,
   };
   const bakeContent = {
     ...content,
@@ -172,10 +189,32 @@ export async function composeLivePromptBake(
   return { bakeContent, bakedPrompt, availableSkills, namedSubagents, workContext, agentContext };
 }
 
+/** The records a connection call left that has no stored result, by turn and tool call. */
+async function recordedConnectionCalls(
+  connections: ConnectionsPort | undefined,
+  threadId: string,
+  history: { turns: readonly Turn[]; blocks: readonly Block[] },
+): Promise<Map<string, string[]>> {
+  const unfinished = connections
+    ? turnsWithUnfinishedConnectionCalls(history.turns, history.blocks)
+    : [];
+  const recorded = new Map<string, string[]>();
+  if (!connections || unfinished.length === 0) return recorded;
+  for (const { turnId, toolCallId, line } of await connections.recordedCalls(
+    threadId,
+    unfinished,
+  )) {
+    const key = connectionCallKey(turnId, toolCallId);
+    recorded.set(key, [...(recorded.get(key) ?? []), line]);
+  }
+  return recorded;
+}
+
 /** Resolved inputs can be rendered again without reads or image decisions. */
 interface PreparedNextTurnContext
   extends Omit<AssembledNextTurnContext, "tools" | "generateRequest"> {
   advertisedTools: Tool[];
+  recordedCalls: ReadonlyMap<string, readonly string[]>;
   promptCacheKey: ThreadId;
   eventSink?: EventSink;
 }
@@ -227,6 +266,7 @@ export async function prepareNextTurnContext(
   let tools = agentContext.tools;
   let systemPrompt: string;
   let pendingBake: PromptBakeContent | undefined;
+  let bakedConnections: McpBakedConnection[];
   const baked = thread.initialPromptBakeId != null;
 
   if (isThreadPromptFrozen(thread)) {
@@ -241,6 +281,7 @@ export async function prepareNextTurnContext(
     );
     if (!bake) throw new Error(`Prompt bake not found: ${thread.initialPromptBakeId}`);
     systemPrompt = bake.composedSystemPrompt;
+    bakedConnections = bake.bakedConnections;
     tools = withInvokedSkillTool(toolsFromBakedJson(bake.bakedTools) ?? tools, agentContext.tools);
   } else {
     const { bakeContent, bakedPrompt } = await composeLivePromptBake(input, agentContext);
@@ -252,11 +293,13 @@ export async function prepareNextTurnContext(
       if (!isThreadPromptFrozen(thread))
         throw new Error("Thread prompt freeze returned an unfrozen thread");
       systemPrompt = result.bake.composedSystemPrompt;
+      bakedConnections = result.bake.bakedConnections;
       // A losing CAS refetches the winner's frozen tools, mirroring the prompt above.
       tools = toolsFromBakedJson(result.bake.bakedTools) ?? tools;
     } else {
       pendingBake = bakeContent;
       systemPrompt = bakedPrompt;
+      bakedConnections = bakeContent.bakedConnections;
     }
   }
 
@@ -322,12 +365,14 @@ export async function prepareNextTurnContext(
     agentSlug: agentContext.agentSlug,
     systemPrompt,
     advertisedTools: tools,
+    recordedCalls: await recordedConnectionCalls(input.connections, thread.id, modelHistory),
     promptCacheKey: cacheKeyOwner,
     eventSink: input.eventSink,
     policy: agentContext.policy,
     gatewayParams: agentContext.gatewayParams,
     resolvedModel: resolvedModel ?? null,
     baked,
+    bakedConnections,
     compactionTriggerTokens: compactionTrigger?.thresholdTokens ?? null,
     compactionUsableWindowTokens: compactionTrigger?.usableWindowTokens ?? null,
     ...(pendingBake ? { pendingBake } : {}),
@@ -341,12 +386,13 @@ export async function prepareNextTurnContext(
 export function renderPreparedTurnContext(
   prepared: PreparedNextTurnContext,
 ): AssembledNextTurnContext {
-  const { advertisedTools, promptCacheKey, eventSink, ...context } = prepared;
+  const { advertisedTools, recordedCalls, promptCacheKey, eventSink, ...context } = prepared;
   const built = buildContext({
     thread: context.thread,
     ...context.activeHistory,
     systemPrompt: context.systemPrompt,
     tools: advertisedTools,
+    recordedCalls,
     eventSink,
   });
   return {
@@ -376,6 +422,7 @@ export async function persistPreparedPromptBake(
   assembled.baked = true;
   assembled.pendingBake = undefined;
   assembled.systemPrompt = result.bake.composedSystemPrompt;
+  assembled.bakedConnections = result.bake.bakedConnections;
   const tools = toolsFromBakedJson(result.bake.bakedTools) ?? assembled.generateRequest.tools ?? [];
   // Match buildContext: an empty advertised tool set is omitted from request bytes.
   assembled.generateRequest.tools = tools.length ? tools : undefined;

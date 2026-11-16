@@ -62,4 +62,6 @@ export interface McpDescribedItem {
 
 export interface McpDescribeResult {
   items: McpDescribedItem[];
+  /** What the model read: each tool's description and schema, or each connection's tool lines. */
+  text: string;
 }
