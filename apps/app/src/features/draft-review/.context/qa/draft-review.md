@@ -227,6 +227,9 @@ Open a draft with two separated changes and a move.
    sends the Un-Apply again. Apply all over two open tabs, Ctrl+Z and
    Ctrl+Shift+Z in one, then Ctrl+Z in the other: it takes the re-applied Apply
    back.
+8. Apply all over two open tabs, type in the second, then make the Un-Apply fail
+   from the first. Ctrl+Z in the second undoes the typing first, then sends the
+   Un-Apply. Undo typing in the second before the failure: its Redo stays.
 
 After each case, inspect the draft room and live document with `./mf`. Reversed
 Apply records are absent, skipped records remain, and replaying either command

@@ -264,7 +264,9 @@ identity in anchors or holds.
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
   boundary while skipping native no-ops. An Apply's undo resolves whether it
   happened; when it didn't (a refused or failed Un-Apply), the entry goes back to
-  the undo side at its place, unless it was redone or cleared since. Undo gives back the text or cell range a change
+  the undo side at its place, unless it was redone or cleared since. An owner can
+  also hide an Apply entry (out of both sides) and show it again, back on the undo
+  side at its place with the redo side left alone. Undo gives back the text or cell range a change
   started from (a drag, a cut, typing over a selection), captured by
   `editor-history.ts` on `beforeTransaction` and carried through the stack items
   that UndoManager generates. It is never read from y-tiptap's copy, which a

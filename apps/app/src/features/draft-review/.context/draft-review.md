@@ -341,12 +341,13 @@ Either Apply also enters the Undo history of every live session this tab holds f
 documents (`registry.liveHistory`: a shown editor or an open tab), so Ctrl+Z there takes the
 Apply back instead of the writer's typing under it. One entry spans those histories
 (`SharedApply`, `apply-history.ts`) for as long as the Apply is in force: Ctrl+Z in any of them
-takes back the whole Apply once, and the others drop it. Whenever it comes back into force (a
-Redo, an Un-Apply that failed or was refused), every live history without it gets it again, and
-the history that pressed puts it back at its place. A sidebar or strip Apply's entry is the
+takes back the whole Apply once, and the others hide it. Whenever it comes back into force (a
+Redo, an Un-Apply that failed or was refused), every history shows it again at its place, under
+what was typed after the Apply and with its Redo kept, and a live history that never had it (a
+session opened since) gets it on top. A sidebar or strip Apply's entry is the
 step's (`AppliedEntry`): its Ctrl+Z is the step's Un-Apply, its Redo sends the same Apply again
-as a new command whose step the entry follows, and an Un-Apply from the sidebar or a notice takes
-it out of every history until it answers: `unapplied` or `skipped` ends it, `failed` brings it
+as a new command whose step the entry follows, and an Un-Apply from the sidebar or a notice hides
+it in every history until it answers: `unapplied` or `skipped` ends it, `failed` brings it
 back. A band's entry is its queue's Un-Apply and Redo, and ends when the queue item is
 released.
 
