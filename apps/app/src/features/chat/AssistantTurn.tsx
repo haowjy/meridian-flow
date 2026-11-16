@@ -5,6 +5,7 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import type { AssistantView, ViewItem, ViewRow, ViewRun } from "@meridian/thread-client";
 import { memo, useMemo } from "react";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
+import { Button } from "@/components/ui/button";
 import { AgentSavesReceipt } from "@/features/agents/AgentSavesReceipt";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { AskReceipt } from "./ask/AskReceipt";
@@ -156,6 +157,18 @@ const TurnLineageReceipt = memo(function TurnLineageReceipt({
   // Gated on settlement like document lineage: a receipt is a record of a
   // finished turn, and mid-stream it would offer Undo on a turn still writing.
   const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
+  // A failed read is not an empty turn: the writer's Undo for this reply is somewhere unread.
+  if (liveLineage.isError && !hasTurnEditsReceiptContent(editedDocuments, workReceipts))
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground" role="alert">
+        <span>
+          <Trans>This reply’s edits couldn’t load.</Trans>
+        </span>
+        <Button variant="outline" size="sm" onClick={liveLineage.refetch}>
+          <Trans>Retry loading</Trans>
+        </Button>
+      </div>
+    );
   return hasTurnEditsReceiptContent(editedDocuments, workReceipts) ? (
     <TurnEditsReceipt
       threadId={threadId}

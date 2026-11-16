@@ -6361,6 +6361,7 @@ msgstr "Retry changes"
 msgid "Retry deleting {title}"
 msgstr "Retry deleting {title}"
 
+#: src/features/chat/AssistantTurn.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Retry loading"
 msgstr "Retry loading"
@@ -8043,6 +8044,10 @@ msgstr "This project's own {shadowName} is used here."
 #: src/features/agents/AgentFileState.tsx
 msgid "This project's own; it hides {below}."
 msgstr "This project's own; it hides {below}."
+
+#: src/features/chat/AssistantTurn.tsx
+msgid "This reply’s edits couldn’t load."
+msgstr "This reply’s edits couldn’t load."
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."

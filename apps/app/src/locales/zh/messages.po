@@ -6361,6 +6361,7 @@ msgstr ""
 msgid "Retry deleting {title}"
 msgstr ""
 
+#: src/features/chat/AssistantTurn.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Retry loading"
 msgstr ""
@@ -8042,6 +8043,10 @@ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "This project's own; it hides {below}."
+msgstr ""
+
+#: src/features/chat/AssistantTurn.tsx
+msgid "This reply’s edits couldn’t load."
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
