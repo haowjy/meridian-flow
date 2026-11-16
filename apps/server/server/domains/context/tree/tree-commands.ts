@@ -847,6 +847,9 @@ export function runTreeCommand(
       const arrived: string[] = [];
       let nothingToMake: string | undefined;
       let made = 0;
+      // The first note of each kind speaks for the call: every item shares the anchor.
+      let placedAtEnd: string | undefined;
+      let deletedInLive = false;
       // Each item lands right after the one moved before it, so several keep their order at
       // `start`, `before` and `after` alike.
       let placedLast: string | undefined;
@@ -876,6 +879,8 @@ export function runTreeCommand(
         } else if (result.done) {
           made += 1;
           placedLast = result.done.subject;
+          placedAtEnd ??= result.done.placedAtEnd;
+          deletedInLive ||= result.done.deletedInLive === true;
           arrived.push(...result.done.arrived);
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
@@ -900,6 +905,8 @@ export function runTreeCommand(
         notMoved,
         ...(leftOut.length > 0 ? { leftOut } : {}),
         ...(kept ? { kept } : {}),
+        ...(placedAtEnd ? { placedAtEnd } : {}),
+        ...(deletedInLive ? { deletedInLive: true as const } : {}),
         concurrent: [],
         taken: [],
         arrived,
