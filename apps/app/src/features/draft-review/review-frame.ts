@@ -9,7 +9,11 @@ import {
 } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { initProseMirrorDoc, refreshProseMirrorDoc } from "@tiptap/y-tiptap";
+import {
+  initProseMirrorDoc,
+  type ProsemirrorMapping,
+  refreshProseMirrorDoc,
+} from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import type { ProjectedReview } from "@/core/editor/extensions/inline-review";
 
@@ -97,11 +101,7 @@ function retainFragment(fragment: Y.XmlFragment, schema: Schema) {
 }
 
 /** Adopt the editor's schema and retained identities off the typing path, including after detach. */
-export function adoptRoomEditor(
-  doc: Y.Doc,
-  root: PMNode,
-  mapping: Map<Y.AbstractType<unknown>, PMNode>,
-): void {
+export function adoptRoomEditor(doc: Y.Doc, root: PMNode, mapping: ProsemirrorMapping): void {
   const retained = roomContent(doc);
   retained.doc = root;
   retained.meta.mapping.clear();

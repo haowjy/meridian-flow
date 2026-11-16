@@ -1,8 +1,8 @@
 diff --git a/dist/yjs.cjs b/dist/yjs.cjs
-index 5b5690eb2f172cd99d244ff33394ff59f44fe103..a3d089f9177ec37b530f92eb8373d96135036cc8 100644
+index a29f8ef1834d884d6650fde67c5541643f8a9d55..f6bca2a9947983b9499fcb47f753ce99027c1dff 100644
 --- a/dist/yjs.cjs
 +++ b/dist/yjs.cjs
-@@ -3523,18 +3523,38 @@ const popStackItem = (undoManager, stack, eventType) => {
+@@ -3526,18 +3526,38 @@ const popStackItem = (undoManager, stack, eventType) => {
         */
        const itemsToDelete = [];
        let performedChange = false;
@@ -50,7 +50,7 @@ index 5b5690eb2f172cd99d244ff33394ff59f44fe103..a3d089f9177ec37b530f92eb8373d961
          }
        });
        iterateDeletedStructs(transaction, stackItem.deletions, struct => {
-@@ -9567,6 +9587,7 @@ const followRedone = (store, id) => {
+@@ -9570,6 +9590,7 @@ const followRedone = (store, id) => {
     */
    let nextID = id;
    let diff = 0;
@@ -58,7 +58,7 @@ index 5b5690eb2f172cd99d244ff33394ff59f44fe103..a3d089f9177ec37b530f92eb8373d961
    let item;
    do {
      if (diff > 0) {
-@@ -9574,10 +9595,11 @@ const followRedone = (store, id) => {
+@@ -9577,10 +9598,11 @@ const followRedone = (store, id) => {
      }
      item = getItem(store, nextID);
      diff = nextID.clock - item.id.clock;
@@ -72,10 +72,10 @@ index 5b5690eb2f172cd99d244ff33394ff59f44fe103..a3d089f9177ec37b530f92eb8373d961
  };
  
 diff --git a/dist/yjs.mjs b/dist/yjs.mjs
-index 10d633d8e71171b2702c45376553832504921877..fbaf9ebce2d992fb654caa882d52c12694099ffc 100644
+index bd77560daff905e0c1785080a1b2ca4c52425e2b..d4e467ca02338bbe12dabd97d3603c8f72c74620 100644
 --- a/dist/yjs.mjs
 +++ b/dist/yjs.mjs
-@@ -3486,18 +3486,38 @@ const popStackItem = (undoManager, stack, eventType) => {
+@@ -3489,18 +3489,38 @@ const popStackItem = (undoManager, stack, eventType) => {
         */
        const itemsToDelete = [];
        let performedChange = false;
@@ -123,7 +123,7 @@ index 10d633d8e71171b2702c45376553832504921877..fbaf9ebce2d992fb654caa882d52c126
          }
        });
        iterateDeletedStructs(transaction, stackItem.deletions, struct => {
-@@ -9530,6 +9550,7 @@ const followRedone = (store, id) => {
+@@ -9533,6 +9553,7 @@ const followRedone = (store, id) => {
     */
    let nextID = id;
    let diff = 0;
@@ -131,7 +131,7 @@ index 10d633d8e71171b2702c45376553832504921877..fbaf9ebce2d992fb654caa882d52c126
    let item;
    do {
      if (diff > 0) {
-@@ -9537,10 +9558,11 @@ const followRedone = (store, id) => {
+@@ -9540,10 +9561,11 @@ const followRedone = (store, id) => {
      }
      item = getItem(store, nextID);
      diff = nextID.clock - item.id.clock;
@@ -178,7 +178,7 @@ index fca5827090ca1b0fd6fdff1b74d260308e6c9196..97860bf787f2f4a261161ec09627c10c
  }
  
 diff --git a/src/utils/UndoManager.js b/src/utils/UndoManager.js
-index 98410e4deafbf24e7fa6d6a2226700b09276b6dc..d14d1350e8953626a6bf4acf74249ec509663ab6 100644
+index e5c4dc82585b811b179ad4d9a7dfd9b25d98bf3f..68041dcb332daf4ace10883031fd6b7c602df895 100644
 --- a/src/utils/UndoManager.js
 +++ b/src/utils/UndoManager.js
 @@ -8,11 +8,13 @@ import {

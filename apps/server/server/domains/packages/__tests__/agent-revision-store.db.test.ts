@@ -231,6 +231,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       });
 
       it("rolls the row back with a restore that throws", async () => {
+        await store.savePackage(owner, "", await retain("Before"));
         const first = await store.savePackage(owner, "", await retain("A"));
         await expect(
           store.undoSave(owner, first.id, async () => {

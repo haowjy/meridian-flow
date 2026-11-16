@@ -6,7 +6,7 @@
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
-import type { Gateway, GenerateResult, Message } from "@meridian-flow/runtime/gateway";
+import type { ContentPart, Gateway, GenerateResult, Message } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it, vi } from "vitest";
 import {
   childCompletionMetadata,
@@ -465,7 +465,7 @@ describe("inbox drain", () => {
     expect(requests).toHaveLength(1);
     expect(
       required(requests[0])
-        .messages.flatMap((message) => message.content)
+        .messages.flatMap((message): readonly ContentPart[] => message.content)
         .some((part) => part.type === "media"),
     ).toBe(true);
     const imageBlock = (await repos.blocks.listByThread(thread.id)).find(

@@ -222,6 +222,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "undone_save_id": {
+          "name": "undone_save_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saved_by": {
+          "name": "saved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'writer'"
+        },
         "seq": {
           "name": "seq",
           "type": "bigint",

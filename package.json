@@ -44,7 +44,7 @@
     "dev:db:drop": "bun tools/dev/drop-db.ts",
     "smoke:project-domain": "tsx tools/dev/smoke-project-domain.ts",
     "smoke:app-dev-transform": "bun tools/dev/smoke-app-dev-transform.ts",
-    "smoke:prod-boot": "bun tools/dev/smoke-app-prod-boot.ts",
+    "smoke:prod-boot": "bun tools/dev/smoke-prod-boot.ts",
     "dev:gc-dbs": "bun tools/dev/gc-dbs.ts",
     "dev:stacks": "bun tools/dev/dev-stacks.ts",
     "dev:prune-worktrees": "bun tools/dev/prune-worktrees.ts",
@@ -71,6 +71,6 @@
     "typescript": "catalog:",
     "vitest": "catalog:",
     "ws": "^8.21.0",
-    "yjs": "13.6.31"
+    "yjs": "13.6.33"
   }
 }

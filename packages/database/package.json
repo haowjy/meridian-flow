@@ -21,7 +21,7 @@
     "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:",
-    "yjs": "13.6.31"
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "drizzle-kit": "catalog:",

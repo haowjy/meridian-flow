@@ -2,9 +2,9 @@
 
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-
 import { beginBlockDrag, draggedBlockPos, endBlockDrag, liftBlockDrag } from "@/core/editor/blocks";
 import { type EditorChrome, type PressStart, trackPress } from "@/core/editor/chrome";
+import { endUndoStep } from "@/core/editor/editor-history";
 
 import { useEditorChrome } from "../../chrome/useEditorChrome";
 import {
@@ -221,7 +221,10 @@ function dropHeldBlock(editor: Editor, held: number, pointerY: number): void {
   if (!source) return;
   const seam = seamIndexAtPointer(editor.view, pointerY);
   const transaction = moveBlockToSeamTransaction(editor.state, source, seam);
-  if (transaction) editor.view.dispatch(transaction);
+  if (!transaction) return;
+  // The hold and lift messages are meta-only and end nothing; the drop is the step boundary.
+  endUndoStep(editor.state);
+  editor.view.dispatch(transaction);
 }
 
 function releasePointerCapture(element: HTMLElement | null, pointerId: number): void {

@@ -1,13 +1,19 @@
-/** Exact public-route contract exercised by the app dev-boot smoke. */
+/** Route contracts the boot smokes assert, and the app's public routes. */
 
-export const APP_BOOT_ROUTES = [
+export type BootRoute = {
+  readonly path: string;
+  readonly status: number;
+  readonly bodyMarker?: string;
+};
+
+export const APP_BOOT_ROUTES: readonly BootRoute[] = [
   { path: "/", status: 307 },
   {
     path: "/login",
     status: 200,
     bodyMarker: "Get the story out of your head and onto the page.",
   },
-] as const;
+];
 
 export function routeContractFailure(input: {
   readonly path: string;
@@ -20,7 +26,7 @@ export function routeContractFailure(input: {
     return `${input.path}: expected ${input.expectedStatus}, received ${input.actualStatus}`;
   }
   if (input.bodyMarker && !input.body.includes(input.bodyMarker)) {
-    return `${input.path}: ${input.actualStatus} response did not contain app marker ${JSON.stringify(input.bodyMarker)}`;
+    return `${input.path}: ${input.actualStatus} response did not contain marker ${JSON.stringify(input.bodyMarker)}`;
   }
   return undefined;
 }

@@ -601,7 +601,7 @@ export async function createProductionAppPorts(input: {
     draftClose,
     treeLists,
     removals: createTrashRemovals(db),
-    onLiveTextChanged: createAgentFilesHints({ db, wake: projectWakeHub, eventSink }),
+    liveTextHints: createAgentFilesHints({ db, backgroundTasks, wake: projectWakeHub, eventSink }),
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -631,7 +631,7 @@ export async function createProductionAppPorts(input: {
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
     sourceHints: projectHints,
-    copy: { documentSync, objectStore, release: objectRelease },
+    copy: { documentSync, branches: documentSync.branches, objectStore, release: objectRelease },
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, projectHints),
@@ -656,6 +656,20 @@ export async function createProductionAppPorts(input: {
       arrivals,
       links: documentLinks,
     }),
+    onSaved: (userId, projectId, level) =>
+      runAfterDrizzleCommit(() => {
+        if (level === "project" && projectId) {
+          projectWakeHub.publish({
+            type: "agent-files-hint",
+            projectId: projectId as import("@meridian/contracts/runtime").ProjectId,
+          });
+        } else if (level === "user") {
+          projectWakeHub.publishToUser(userId, (id) => ({
+            type: "agent-files-hint",
+            projectId: id as import("@meridian/contracts/runtime").ProjectId,
+          }));
+        }
+      }),
     builtins: await readBuiltinPackages(defaultModel),
     defaultModel: () => gateway.getDefaultModel(),
     unavailableReasons: (definition, model) =>

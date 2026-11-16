@@ -55,6 +55,7 @@ import {
   type PendingImageUpload,
   pendingUploadFromDecorations,
 } from "./pending-images";
+import { RemoteImagePlaceholder } from "./RemoteImagePlaceholder";
 
 export function ImageNodeView(props: NodeViewProps) {
   const src = typeof props.node.attrs.src === "string" ? props.node.attrs.src : "";
@@ -156,6 +157,8 @@ export function ImageNodeView(props: NodeViewProps) {
           onLoad={pictureDrawn}
           onError={actions.imageLoadFailed}
         />
+      ) : state.kind === "remote" ? (
+        <RemoteImagePlaceholder address={state.address} alt={alt} />
       ) : (
         <span
           className="meridian-image-node__placeholder"

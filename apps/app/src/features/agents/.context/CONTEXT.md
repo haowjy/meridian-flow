@@ -36,7 +36,9 @@ revisions.
 - A file made at an Agent or skill path (`agentsFileOf`), from New Agent, New skill or a plain
   New file, starts with `agentFileTemplate`, written into its local copy as typing would be
   (`writeFirstAgentText`). The name goes through Mars's own emitter (`rewriteBlock`, the browser
-  build), so `123` and `[critic]` are quoted. The template must read with no Mars finding.
+  build), so `123` and `[critic]` are quoted. The template must read with no Mars finding. A new
+  Agent's template says `mode: primary`: only a primary Agent starts a chat, and an Agent with no
+  `mode` is a subagent.
 - The picker shows no level (Project, Yours, Built-in); rows that share a name add their file
   name as a quiet meta, and the detail shows the file's address.
 - Copy spells the levels `.agents/` and `~/.agents/`; `agents://` and `user://.agents` never
@@ -87,6 +89,14 @@ revisions.
   rest saves. Only a package-level Error (a broken `mars.toml`, state `cant-save`) fails the
   Save, as a result in a 200, never a refused write: the files and the saved version both stay.
   Warnings never fail it.
+- The Save word follows the current files; its Undo is separate and stays after typing or a hand
+  revert, until another Save supersedes it. `UndoSave` uses the shared `RowWord` action on the
+  toolbar, sidebar and AI receipt. The files query names the undoable Save; reload preserves
+  the offer. Old receipts show Undone when the latest row undid them, otherwise Unchanged with
+  the later-Save explanation. Only pending requests and retryable failures live in memory.
+- A saved removal stays in package status so its Undo survives reload too. The sidebar shows
+  the missing import while its removal is unsaved or its saved removal can be undone; it does
+  not keep a separate list of removed packages in tab memory.
 - Undo puts the package back on the version before and restores its files by a three-way
   merge, so an edit made since is kept: the package then reads Saved, or Unsaved when such an
   edit survives.

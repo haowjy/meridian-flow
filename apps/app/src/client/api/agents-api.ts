@@ -40,19 +40,13 @@ export async function saveAgentPackages(
   return (await postJson("/api/agents/save", body, { schema: saveAgentsResponseSchema })).outcomes;
 }
 
-/** False when a later Save of the package exists: nothing changed. */
-export async function undoAgentSave(
-  projectId: string,
-  level: AgentsLevel,
-  saveId: string,
-): Promise<boolean> {
-  return (
-    await postJson(
-      "/api/agents/save/undo",
-      { projectId, level, saveId },
-      { schema: undoSaveResponseSchema },
-    )
-  ).undone;
+/** The result distinguishes a repeated Undo from a superseded Save. */
+export async function undoAgentSave(projectId: string, level: AgentsLevel, saveId: string) {
+  return postJson(
+    "/api/agents/save/undo",
+    { projectId, level, saveId },
+    { schema: undoSaveResponseSchema },
+  );
 }
 
 /** A file's text as its package's latest Save holds it; a built-in's as shipped. */

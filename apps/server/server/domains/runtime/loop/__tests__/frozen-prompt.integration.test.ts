@@ -6,7 +6,13 @@ import { NO_OVERRIDES } from "@meridian/contracts/threads";
  */
 
 import { createHash } from "node:crypto";
-import type { Gateway, Message, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
+import type {
+  ContentPart,
+  Gateway,
+  Message,
+  ModelInfo,
+  Tool,
+} from "@meridian-flow/runtime/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryLevelFiles } from "../../../../test-support/in-memory-level-files.js";
 import {
@@ -405,7 +411,7 @@ describe("frozen prompt provider requests", () => {
     expect(
       gateway.requests
         .at(-1)
-        ?.messages.flatMap((message) => message.content)
+        ?.messages.flatMap((message): readonly ContentPart[] => message.content)
         .some((part) => part.type === "media"),
     ).toBe(true);
 
@@ -418,12 +424,12 @@ describe("frozen prompt provider requests", () => {
     const firstForkRequest = gateway.requests.at(-1);
     expect(
       firstForkRequest?.messages
-        .flatMap((message) => message.content)
+        .flatMap((message): readonly ContentPart[] => message.content)
         .some((part) => part.type === "media"),
     ).toBe(true);
     expect(
       firstForkRequest?.messages
-        .flatMap((message) => message.content)
+        .flatMap((message): readonly ContentPart[] => message.content)
         .flatMap((part) => (part.type === "text" ? [part.text] : []))
         .join("\n"),
     ).not.toContain("Image context changed.");

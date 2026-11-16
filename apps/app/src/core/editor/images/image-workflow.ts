@@ -5,6 +5,7 @@ import type { Transaction } from "@tiptap/pm/state";
 
 import type { AnchorRange } from "../anchors";
 import { pictureKeyOfNode } from "../links/link-resolution";
+import { remotePictureSource } from "./remote-image";
 
 export function isImageFile(file: Pick<File, "type" | "name">): boolean {
   return file.type.startsWith("image/") || /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(file.name);
@@ -70,6 +71,9 @@ export type PastedImageImport = {
  * with the picture. Where the import cannot happen, the link is already the
  * right answer and nothing has to be undone.
  *
+ * A web picture is the exception, whoever copied it: it pastes as a remote picture with its
+ * placeholder and fetches nothing until the writer clicks (`remote-image.ts`).
+ *
  * A `data:` image is treated the same way, ugly link text and all: it is the
  * rare door (the clipboard's own file item wins for a copied picture), the
  * import nearly always succeeds, and the alternative is base64 on the wire.
@@ -87,6 +91,9 @@ export function linkExternalPastedImages(
       // A picture naming a document address (with a ref, or ref-less and
       // resolved by its address) is the project's own, never a web import.
       if (!src || src.startsWith("asset:") || pictureKeyOfNode(node.attrs)) return node;
+      // A web picture, from any source, lands as a remote picture: nothing is fetched until the
+      // writer clicks, so the address a page or a model chose is never requested on a paste.
+      if (remotePictureSource(src)) return node;
       const alt = node.attrs.alt ? String(node.attrs.alt) : null;
       imports.push({ url: src, alt });
       const marks = linkType ? [...node.marks, linkType.create({ href: src })] : node.marks;
@@ -195,21 +202,17 @@ export function assetDocumentIdFromSrc(src: string): string | null {
   return src.startsWith("asset:") && src.length > 6 ? src.slice(6) : null;
 }
 
-/**
- * The web URL families a picture may be fetched from as written: an absolute
- * http(s) URL, a protocol-relative one, or an image `data:` URL.
- */
-const BROWSER_PICTURE_SOURCE = /^(?:https?:\/\/|\/\/|data:image\/)/i;
+const INLINE_PICTURE_SOURCE = /^data:image\//i;
 
 /**
- * A picture source the browser may fetch as written, or null. A positive
- * allowlist: an `asset:` upload or a document address names a document that
- * only a signed URL draws, and anything else (`/map.png`, `../map.png`, a
- * malformed scheme) would be fetched from the app's own origin. Put in an
- * `<img src>` (a node view, clipboard or drag HTML) none of those is a picture.
+ * A picture source the browser may draw as written, or null: an image `data:` URL, which
+ * fetches nothing. An `asset:` upload or a document address names a document that only a signed
+ * URL draws, and anything else (`/map.png`, `../map.png`, a malformed scheme) would be fetched
+ * from the app's own origin. A web address is `remotePictureSource`'s: it shows a placeholder
+ * until the writer loads it.
  */
-export function browserPictureSource(src: string): string | null {
-  return BROWSER_PICTURE_SOURCE.test(src) ? src : null;
+export function inlinePictureSource(src: string): string | null {
+  return INLINE_PICTURE_SOURCE.test(src) ? src : null;
 }
 
 export function signedUrlRefreshDelayMs(signedUrlExpiresAt: string, nowMs = Date.now()): number {

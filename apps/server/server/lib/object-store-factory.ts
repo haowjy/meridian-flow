@@ -1,17 +1,11 @@
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { envFlag, objectStoreConfig } from "@meridian/contracts/object-store-env";
 import {
   LocalObjectStoreAdapter,
   type ObjectStorePort,
   S3ObjectStoreAdapter,
 } from "../domains/storage/index.js";
-import { resolveBackends } from "./backend-policy.js";
-
-function boolEnv(name: string, fallback = false): boolean {
-  const value = process.env[name];
-  if (value === undefined) return fallback;
-  return value === "1" || value.toLowerCase() === "true";
-}
 
 function intEnv(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
@@ -22,10 +16,11 @@ export function createObjectStoreFromEnv(): {
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
 } {
-  // The provider comes from resolveBackends, as the startup guards read it: two readings of it would let a
-  // deployment pass the signing-secret guard and still build the local store.
-  const provider = resolveBackends(process.env).objectStore;
-  if (provider === "local") {
+  // The provider and the S3 addressing come from the shared reading the app's content security policy
+  // also uses: two readings would let a deployment pass the startup guards and still build the wrong store,
+  // or sign URLs the browser then blocks.
+  const config = objectStoreConfig(process.env);
+  if (config.provider === "local") {
     const localObjectStore = new LocalObjectStoreAdapter({
       rootDir: process.env.LOCAL_OBJECT_STORE_DIR ?? path.join(tmpdir(), "meridian-object-store"),
       signedUrlBasePath:
@@ -35,19 +30,16 @@ export function createObjectStoreFromEnv(): {
     });
     return { objectStore: localObjectStore, localObjectStore };
   }
-  if (provider === "s3") {
-    const objectStore = new S3ObjectStoreAdapter({
-      bucket: process.env.S3_BUCKET ?? "meridian-dev",
-      region: process.env.S3_REGION ?? "us-east-1",
-      endpoint: process.env.S3_ENDPOINT,
-      publicEndpoint: process.env.S3_PUBLIC_ENDPOINT,
-      accessKeyId: process.env.S3_ACCESS_KEY,
-      secretAccessKey: process.env.S3_SECRET_KEY,
-      forcePathStyle: boolEnv("S3_FORCE_PATH_STYLE", true),
-      signedUrlTtlSeconds: intEnv("OBJECT_STORE_SIGNED_URL_TTL_SECONDS", 900),
-      createBucketIfMissing: boolEnv("S3_CREATE_BUCKET_IF_MISSING"),
-    });
-    return { objectStore, localObjectStore: null };
-  }
-  throw new Error(`Unsupported OBJECT_STORE_PROVIDER: ${String(provider)}`);
+  const objectStore = new S3ObjectStoreAdapter({
+    bucket: config.bucket,
+    region: config.region,
+    endpoint: config.endpoint,
+    publicEndpoint: config.publicEndpoint,
+    accessKeyId: process.env.S3_ACCESS_KEY,
+    secretAccessKey: process.env.S3_SECRET_KEY,
+    forcePathStyle: config.forcePathStyle,
+    signedUrlTtlSeconds: intEnv("OBJECT_STORE_SIGNED_URL_TTL_SECONDS", 900),
+    createBucketIfMissing: envFlag(process.env.S3_CREATE_BUCKET_IF_MISSING),
+  });
+  return { objectStore, localObjectStore: null };
 }

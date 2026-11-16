@@ -21,6 +21,7 @@
  *   pnpm smoke:app-dev-transform
  */
 
+import { APP_BOOT_ROUTES } from "./lib/app-boot-contract";
 import { reserveEphemeralPort, runAppBootSmoke } from "./lib/app-boot-smoke";
 import { applyDevEnvToProcess, resolveCurrentRepoRoot } from "./lib/dev-env";
 
@@ -68,6 +69,7 @@ async function main(): Promise<void> {
     env: { ...process.env, HOST, PORT: String(port), NO_COLOR: "1" },
     boundOriginPattern: /Local:\s+(http:\/\/[^\s]+)/,
     serverName: "App dev server",
+    routes: APP_BOOT_ROUTES,
     successMessage: "App dev-transform smoke passed.",
   });
 }

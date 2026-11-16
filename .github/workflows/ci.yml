@@ -237,10 +237,21 @@ jobs:
     name: prod-boot
     # Skip draft PRs; pushes and workflow_call always run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    # Pinned like db-tests: the API server connects to the runner's own Postgres at startup.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v7
+      - name: Start Postgres
+        run: |
+          sudo systemctl start postgresql.service
+          for _ in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -U postgres && break
+            sleep 1
+          done
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER USER postgres PASSWORD 'postgres'"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -251,5 +262,6 @@ jobs:
           bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       # Builds .output, passes structurally valid fake production config through
-      # the child environment, then boots and probes the generated Nitro server.
+      # the child environment, then boots the generated Nitro servers (the API server against a
+      # throwaway database on this Postgres) and probes them.
       - run: pnpm smoke:prod-boot

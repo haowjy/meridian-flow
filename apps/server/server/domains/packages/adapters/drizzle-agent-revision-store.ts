@@ -7,7 +7,7 @@ import {
   agentPackageSaves,
   threadAgentBindings,
 } from "@meridian/database/schema";
-import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lt, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import {
   type CompiledAgentDefinition,
@@ -61,12 +61,16 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
   const saveOf = (
     row: typeof agentPackageSaves.$inferSelect,
     digest: string | null,
+    hasPrevious = false,
   ): PackageSave => ({
     id: row.id,
     folder: row.folder,
     packageRevisionId: row.packageRevisionId,
     contentDigest: digest,
     createdAt: row.createdAt,
+    undoneSaveId: row.undoneSaveId,
+    savedBy: row.savedBy,
+    hasPrevious,
   });
   /**
    * The one ordering of a package's Saves and Undos: whoever holds this lock reads the latest row
@@ -165,15 +169,21 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         if (!publish) return { value };
         const [row] = await db()
           .insert(agentPackageSaves)
-          .values({ ...ownerColumns(owner), folder, packageRevisionId: publish.packageRevisionId })
+          .values({
+            ...ownerColumns(owner),
+            folder,
+            packageRevisionId: publish.packageRevisionId,
+            savedBy: publish.savedBy,
+            undoneSaveId: publish.undoneSaveId,
+          })
           .returning();
-        return { value, row: saveOf(row, await digestOf(row.packageRevisionId)) };
+        return { value, row: saveOf(row, await digestOf(row.packageRevisionId), Boolean(latest)) };
       });
     },
-    async savePackage(owner, folder, packageRevisionId) {
+    async savePackage(owner, folder, packageRevisionId, metadata) {
       const { row } = await store.settleSave(owner, folder, async () => ({
         value: undefined,
-        publish: { packageRevisionId },
+        publish: { packageRevisionId, ...metadata },
       }));
       return row as PackageSave;
     },
@@ -182,6 +192,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .selectDistinctOn([agentPackageSaves.folder], {
           save: agentPackageSaves,
           digest: agentPackageRevisions.contentDigest,
+          hasPrevious: sql<boolean>`lead(${agentPackageSaves.seq}) over (partition by ${agentPackageSaves.folder} order by ${agentPackageSaves.seq} desc) is not null`,
         })
         .from(agentPackageSaves)
         .leftJoin(
@@ -190,7 +201,16 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         )
         .where(ownerIs(owner))
         .orderBy(agentPackageSaves.folder, desc(agentPackageSaves.seq));
-      return rows.map((row) => saveOf(row.save, row.digest));
+      const undos = await db()
+        .select({ folder: agentPackageSaves.folder, undone: agentPackageSaves.undoneSaveId })
+        .from(agentPackageSaves)
+        .where(and(ownerIs(owner), isNotNull(agentPackageSaves.undoneSaveId)));
+      return rows.map((row) => ({
+        ...saveOf(row.save, row.digest, row.hasPrevious),
+        undoneSaveIds: undos
+          .filter((undo) => undo.folder === row.save.folder)
+          .map((undo) => undo.undone as string),
+      }));
     },
     async undoSave(owner, saveId, restore) {
       return runInDrizzleTransaction(database, async () => {
@@ -201,7 +221,13 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         if (!target) return undefined;
         await lockPackage(owner, target.folder);
         const latest = (await latestOf(owner, target.folder)) as PackageSave;
-        if (latest.id !== target.id) return { current: latest, undone: null };
+        const [undo] = await db()
+          .select({ id: agentPackageSaves.id })
+          .from(agentPackageSaves)
+          .where(and(ownerIs(owner), eq(agentPackageSaves.undoneSaveId, saveId)))
+          .limit(1);
+        if (undo) return { current: latest, undone: null, reason: "already-undone" };
+        if (latest.id !== target.id) return { current: latest, undone: null, reason: "later-save" };
         const [before] = await db()
           .select()
           .from(agentPackageSaves)
@@ -214,16 +240,13 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
           )
           .orderBy(desc(agentPackageSaves.seq))
           .limit(1);
+        if (!before || target.undoneSaveId)
+          return { current: latest, undone: null, reason: "not-undoable" };
         const undone = saveOf(target, await digestOf(target.packageRevisionId));
-        await restore(
-          undone,
-          before ? saveOf(before, await digestOf(before.packageRevisionId)) : null,
-        );
-        const current = await store.savePackage(
-          owner,
-          target.folder,
-          before?.packageRevisionId ?? null,
-        );
+        await restore(undone, saveOf(before, await digestOf(before.packageRevisionId)));
+        const current = await store.savePackage(owner, target.folder, before.packageRevisionId, {
+          undoneSaveId: saveId,
+        });
         return { current, undone };
       });
     },

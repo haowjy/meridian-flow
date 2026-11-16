@@ -30,6 +30,14 @@ export {
 export {
   acceptsInlineImage,
   assetDocumentIdFromSrc,
-  browserPictureSource,
+  inlinePictureSource,
   signedUrlRefreshDelayMs,
 } from "./image-workflow";
+export { RemoteImagePlaceholder } from "./RemoteImagePlaceholder";
+export {
+  clipboardRemoteSource,
+  loadRemoteImage,
+  REMOTE_SRC_ATTRIBUTE,
+  remotePictureSource,
+  useRemoteImageLoaded,
+} from "./remote-image";

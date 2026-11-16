@@ -85,7 +85,10 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   own write path (`MarkdownDocumentStore.mergeCodeText`, which takes the document's durable
   mutation lock before it reads the live text and merges against what it holds then; base: that Save's text, target: the previous save's text; the writer's
   text wins where both changed the same text) and then adds the row, so a failure changes nothing
-  and a stale Undo answers `undone: false`. Undo never creates or deletes a file. The user level's
+  and a stale Undo answers `undone: false` with `already-undone` or `later-save`.
+  Undo rows record `undone_save_id`; Save rows record writer or AI origin. The files query
+  offers Undo only for a latest non-Undo row with a predecessor. A first Save has no Undo.
+  Save and Undo publish an agent-files hint after commit, even without document changes. Undo never creates or deletes a file. The user level's
   documents resolve from the account, not from `projectId`.
   `prepareFiles` binds creates outside transactions; its returned `applyFiles` runs inside the
   caller's transaction, after package Save locks. It takes the level's list lock before

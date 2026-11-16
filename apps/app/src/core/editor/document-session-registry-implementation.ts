@@ -98,7 +98,8 @@ export class DocumentSessionRegistry {
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
   private readonly unsentTypingObservers = new Set<UnsentTypingObserver>();
-  private readonly handedBack = new WeakSet<DocumentSession>();
+  /** Each retiring session's hand-back of its copy, once: a removal waits for it before the copy goes. */
+  private readonly handingBack = new WeakMap<DocumentSession, Promise<void>>();
   /** Stops following the notice store; set when the first observer starts it. */
   private stopNotices: (() => void) | null = null;
   /**
@@ -163,16 +164,15 @@ export class DocumentSessionRegistry {
     if (retainedChanged) this.publishRetainedLiveDocuments();
     const state = this.liveRooms.get(documentId);
     this.liveRooms.delete(documentId);
-    let claimed = true;
     if (state?.session) {
-      const handedBack = this.handBackUnsent(state.session, "removed");
       await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
-      claimed = await handedBack;
+      await this.handingBack.get(state.session);
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
     (await state?.hold)?.release();
-    // Words the notice store could not take have only the copy left for this page.
-    if (claimed) await this.copies.clear(documentId);
+    await this.copies.clear(documentId, (name, { update, lacking }) =>
+      readCopy(update, (document) => this.handBack("removed", name, document, lacking)),
+    );
   }
 
   /**
@@ -309,7 +309,7 @@ export class DocumentSessionRegistry {
 
   abandonDraftRoom(roomKey: string): Promise<void> {
     const session = this.draftRooms.peek(roomKey);
-    if (session) this.handedBack.add(session);
+    if (session) this.handingBack.set(session, Promise.resolve());
     return this.draftRooms.close(roomKey);
   }
 
@@ -605,23 +605,23 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * The typing a retiring session never delivered, handed back like every notice. Read
-   * synchronously, because the session is destroyed next. False when the notice store could not
-   * take its words.
+   * What a retiring session's copy holds beyond its mark, handed back like every notice. Read
+   * from the copy, which has every write of the session's by now: a claim the store can't take is
+   * claimed again from it, by the removal that deletes it or by a later start.
    */
-  private async handBackUnsent(
-    session: DocumentSession,
-    cause: UnsentTypingCause,
-  ): Promise<boolean> {
-    if (this.handedBack.has(session)) return true;
-    const unsent = session.unsentEdits();
-    if (!unsent) return true;
-    this.handedBack.add(session);
+  private handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): Promise<void> {
+    const started = this.handingBack.get(session);
+    if (started) return started;
     const copy = this.copyOfSession(session);
     const name = incarnationName(copy.key, copy.incarnation);
-    return readCopy(unsent.copy, (document) =>
-      this.handBack(cause, name, document, unsent.lacking),
-    );
+    const handing = this.copies.beyondMark(name).then(async (beyond) => {
+      if (beyond)
+        await readCopy(beyond.update, (document) =>
+          this.handBack(cause, name, document, beyond.lacking),
+        );
+    });
+    this.handingBack.set(session, handing);
+    return handing;
   }
 
   /**

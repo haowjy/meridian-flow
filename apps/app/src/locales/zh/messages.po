@@ -809,10 +809,6 @@ msgid "{name} is unavailable"
 msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
-#~ msgid "{name} on {modelLabel}"
-#~ msgstr ""
-
-#: src/features/agents/ComposerAgentControl.tsx
 msgid "{name} on {runsAt}"
 msgstr ""
 
@@ -864,14 +860,6 @@ msgstr ""
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "{name}; {0} isn't available, so it runs on its default model"
 msgstr ""
-
-#: src/features/agents/ComposerAgentControl.tsx
-#~ msgid "{name}; {modelLabel} isn't available, so it runs on its default model"
-#~ msgstr ""
-
-#: src/features/agents/ComposerAgentControl.tsx
-#~ msgid "{name}; {modelLabel} isn't available, so it runs on its own model"
-#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
@@ -1172,6 +1160,10 @@ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
+msgstr ""
+
+#: src/features/agents/UndoSave.tsx
+msgid "A later Save is in use. Nothing changed."
 msgstr ""
 
 #: src/components/app/AppStatus.tsx
@@ -1636,6 +1628,10 @@ msgstr ""
 msgid "Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved."
 msgstr ""
 
+#: src/features/agents/UndoSave.tsx
+msgid "Back to the previous saved version. Your later edits are kept."
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "Back to workspace"
 msgstr ""
@@ -1975,17 +1971,9 @@ msgstr ""
 msgid "Changes in this chat"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "Changing it rebuilds the chat's cache."
-#~ msgstr ""
-
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changing position"
 msgstr ""
-
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "Changing the model rebuilds this chat's cache on the next reply."
-#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Changing the position of {source}…"
@@ -2738,8 +2726,7 @@ msgstr ""
 msgid "Couldn't reach the server. Check your connection."
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Couldn't reach the server. Undo tries again."
 msgstr ""
 
@@ -3423,8 +3410,8 @@ msgid "Draft review"
 msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Draft view"
-msgstr ""
+#~ msgid "Draft view"
+#~ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft: {owner}"
@@ -4138,10 +4125,6 @@ msgstr ""
 msgid "Its folder is gone"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "its own"
-#~ msgstr ""
-
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
 msgstr ""
@@ -4279,6 +4262,10 @@ msgstr ""
 
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
+msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Load image"
 msgstr ""
 
 #: src/features/draft-review/DraftImagePreview.tsx
@@ -4823,10 +4810,6 @@ msgstr ""
 msgid "No Agents match “{0}”."
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "No Agents match."
-#~ msgstr ""
-
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "No Agents or skills in this project yet."
 msgstr ""
@@ -5181,6 +5164,10 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Only addresses on the standard web ports can be loaded."
+msgstr "只能加载标准网页端口上的地址。"
 
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
@@ -5557,10 +5544,6 @@ msgstr ""
 #: src/features/chat/ReportContent.tsx
 msgid "Reason: {0}"
 msgstr ""
-
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "Reasoning"
-#~ msgstr ""
 
 #. placeholder {0}: model.name
 #: src/features/agents/AgentPicker.tsx
@@ -5964,10 +5947,6 @@ msgstr ""
 msgid "Running"
 msgstr "运行中"
 
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "Runs on"
-#~ msgstr ""
-
 #: src/features/agents/PackageSave.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Save"
@@ -6069,6 +6048,7 @@ msgstr ""
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch"
 msgstr ""
 
@@ -6081,6 +6061,7 @@ msgid "Scratch for {chatTitle}"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch for {name}"
 msgstr ""
 
@@ -6276,15 +6257,19 @@ msgid "Show Work"
 msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing draft"
-msgstr ""
+#~ msgid "Showing draft"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing live"
-msgstr ""
+#~ msgid "Showing live"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Shows token counts and the model on each reply and compaction"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Sidebar version"
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
@@ -6628,6 +6613,14 @@ msgstr ""
 msgid "Text size"
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not allowed (private or local)."
+msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not an image."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be made because this Work's drafts are archived."
 msgstr "此工作中的草稿已归档，无法进行该修改。"
@@ -6928,6 +6921,10 @@ msgstr ""
 msgid "The header row stays first."
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The image could not be loaded."
+msgstr ""
+
 #: src/features/agents/AgentFileState.tsx
 msgid "The last Save left it out. Fix these and save again."
 msgstr ""
@@ -6958,6 +6955,14 @@ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "The server couldn't do that. Try again."
+msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The server didn't answer."
+msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The server took too long to answer."
 msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
@@ -7107,6 +7112,7 @@ msgid "This chapter is temporarily unavailable"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
+#: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "This chat"
 msgstr ""
 
@@ -7128,17 +7134,9 @@ msgstr ""
 msgid "This chat now uses {0}."
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "This chat runs on"
-#~ msgstr ""
-
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 #~ msgid "This chat uses {0}."
-#~ msgstr ""
-
-#: src/features/agents/ComposerAgentControl.tsx
-#~ msgid "This chat uses {name} on {modelLabel}."
 #~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
@@ -7550,6 +7548,10 @@ msgstr ""
 msgid "Tokens before"
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Too large to load (the limit is {megabytes} MB)."
+msgstr ""
+
 #: src/features/project/context/DocumentProperties.tsx
 msgid "Too large to show"
 msgstr ""
@@ -7662,6 +7664,10 @@ msgstr ""
 #~ msgid "Unavailable:"
 #~ msgstr ""
 
+#: src/features/agents/UndoSave.tsx
+msgid "Unchanged"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr ""
@@ -7675,8 +7681,7 @@ msgstr ""
 msgid "Undid change to Work {0}."
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
@@ -7713,7 +7718,7 @@ msgstr ""
 msgid "Undo discard of {name}"
 msgstr ""
 
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays."
 msgstr ""
 
@@ -7741,8 +7746,7 @@ msgstr ""
 msgid "Undo restore of {title}"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo save of {label}"
 msgstr ""
 
@@ -7763,12 +7767,16 @@ msgid "Undo switch to draft mode"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
+msgid "Undo takes back the Apply."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Undo takes back the whole Apply, all {count} changes."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Undo takes them back out."
-msgstr ""
+#~ msgid "Undo takes them back out."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Undoing Apply"
@@ -7779,8 +7787,8 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undone"
 msgstr ""
 

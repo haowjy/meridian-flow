@@ -53,7 +53,7 @@ import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { requireReload } from "@/client/release/release";
 import { DocumentHistory } from "./editor-history";
-import { insertedBy, type Ranges } from "./item-ranges";
+import type { Ranges } from "./item-ranges";
 import {
   commitContentInitialization,
   readContentInitialization,
@@ -74,6 +74,7 @@ import {
 
 export type { SchemaFence } from "./schema-fence";
 
+import { createServerMark, type ServerMark } from "./server-mark";
 import { SessionMarkerStore } from "./session-marker-store";
 import { UnsentEdits } from "./unsent-edits";
 
@@ -205,6 +206,12 @@ export type DocumentSessionTransportProvider = {
    * lacks (null when nothing). Never called on an edit admission.
    */
   subscribeDifference?: (listener: (difference: HandshakeDifference | null) => void) => () => void;
+  /**
+   * What the server is known to hold, as a state vector: its SyncStep1 at each handshake
+   * (`handshake`), and the whole document once it acknowledged everything. Written into the copy's
+   * mark (`server-mark.ts`).
+   */
+  subscribeServerHas?: (listener: (vector: Uint8Array, handshake: boolean) => void) => () => void;
   /** The origin of the updates the server's answers apply; every other origin is a local change. */
   readonly serverOrigin?: unknown;
   /** On a read-admitted connection, one more handshake; the server's answer is the verdict. */
@@ -257,6 +264,8 @@ export class DocumentSession {
   readonly history: DocumentHistory;
   /** What the document holds that a read-admitting server lacks, and which of it is the writer's. */
   private readonly unsent: UnsentEdits;
+  /** What the server is known to hold, written into the copy. */
+  private readonly serverMark: ServerMark;
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
@@ -272,6 +281,7 @@ export class DocumentSession {
   private unsubscribeChangeEvents: (() => void) | null = null;
   private unsubscribeAcknowledgement: (() => void) | null = null;
   private unsubscribeDifference: (() => void) | null = null;
+  private unsubscribeServerHas: (() => void) | null = null;
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
   private destroyStages: DestroyStage[] | null = null;
@@ -350,6 +360,9 @@ export class DocumentSession {
     this.document = createCollabYDoc();
     this.history = DocumentHistory.forDocument(this.document);
     this.unsent = new UnsentEdits(this.document, () => this.persistence?.db ?? null);
+    this.serverMark = createServerMark(() =>
+      this.destroyed ? null : (this.persistence?.db ?? null),
+    );
     this.document.on("update", this.onDocumentUpdate);
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
@@ -396,7 +409,8 @@ export class DocumentSession {
           ? this.waitForLocalPersistenceTransportGate()
           : null,
       ]).then(() => {
-        if (!this.destroyed && !this.inert) this.connectTransport(transportFactory);
+        if (!this.destroyed && !this.inert && this.resetDisposition === null)
+          this.connectTransport(transportFactory);
       });
       return;
     }
@@ -425,8 +439,6 @@ export class DocumentSession {
     this.status = "syncing";
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
-        // A close learned first from the server's answer stands: the socket's later news can't reopen it.
-        if (draftClosed(this.transportState)) return;
         this.transportState = state;
         if (state.kind !== "connected") this.forgetDifference();
         if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
@@ -453,6 +465,10 @@ export class DocumentSession {
         this.recomputeStatus();
         for (const waiter of [...this.verdictWaiters]) waiter();
       }) ?? null;
+    this.unsubscribeServerHas =
+      this.transportProvider.subscribeServerHas?.((vector, handshake) =>
+        this.serverMark.note(vector, handshake),
+      ) ?? null;
     this.unsubscribeChangeEvents =
       this.room.kind === "live"
         ? (this.transportProvider.subscribeChangeEvents?.((message) => {
@@ -482,11 +498,13 @@ export class DocumentSession {
     this.unsubscribeChangeEvents?.();
     this.unsubscribeAcknowledgement?.();
     this.unsubscribeDifference?.();
+    this.unsubscribeServerHas?.();
     this.unsubscribeTransportStatus = null;
     this.unsubscribeTransportAccess = null;
     this.unsubscribeChangeEvents = null;
     this.unsubscribeAcknowledgement = null;
     this.unsubscribeDifference = null;
+    this.unsubscribeServerHas = null;
     this.forgetDifference();
     // The provider never destroys this session's Awareness, so presence is held here and put
     // back on attach.
@@ -523,7 +541,8 @@ export class DocumentSession {
 
   /**
    * The server answered that this draft closed before its socket said so: the room ends as its
-   * close would (read-only, nothing reconnects), and stays readable for its owner.
+   * close would (read-only, its transport ended so nothing more is sent or reconnects), and stays
+   * readable for its owner.
    */
   endClosed(): void {
     if (this.destroyed || this.transportState?.kind === "reset") return;
@@ -533,6 +552,8 @@ export class DocumentSession {
       disposition: "closed",
     };
     this.localPeers?.stop();
+    this.transportAttachmentPending = false;
+    void this.transportProvider?.destroy();
     this.recomputeStatus();
   }
 
@@ -624,18 +645,6 @@ export class DocumentSession {
 
   hasUnacknowledgedEdits(): boolean {
     return this.unacknowledgedUpdates() !== null;
-  }
-
-  /**
-   * The typing here the server has not acknowledged, as the items it inserted (`lacking`) and the
-   * document they live in, encoded so it can be read after the session is destroyed; null when
-   * there is none.
-   */
-  unsentEdits(): { copy: Uint8Array; lacking: Ranges } | null {
-    const updates = this.unacknowledgedUpdates();
-    return updates
-      ? { copy: Y.encodeStateAsUpdate(this.document), lacking: insertedBy(updates) }
-      : null;
   }
 
   /**
@@ -945,6 +954,7 @@ export class DocumentSession {
         { settled: false, run: () => this.unsubscribeChangeEvents?.() },
         { settled: false, run: () => this.unsubscribeAcknowledgement?.() },
         { settled: false, run: () => this.unsubscribeDifference?.() },
+        { settled: false, run: () => this.unsubscribeServerHas?.() },
         { settled: false, run: () => this.transportProvider?.destroy() },
         { settled: false, run: () => this.localPeers?.drain() },
         {

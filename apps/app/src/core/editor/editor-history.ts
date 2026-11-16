@@ -3,7 +3,7 @@
  * session owns it, so it outlives the editors that attach to it while mounted.
  */
 import type { Editor } from "@tiptap/core";
-import { TextSelection, type Transaction } from "@tiptap/pm/state";
+import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 import {
   defaultDeleteFilter,
@@ -12,6 +12,7 @@ import {
   relativePositionToAbsolutePosition,
   resolveRelativeCellSelection,
   ySyncPluginKey,
+  yUndoPluginKey,
 } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
@@ -376,6 +377,15 @@ export class DocumentHistory implements EditorHistoryHandle {
     for (const editor of this.editors)
       if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
   }
+}
+
+/**
+ * Ends the Undo step now open, so the next edit starts its own. A step boundary must call this:
+ * y-tiptap closes the capture window only for a document-changing transaction marked
+ * `addToHistory: false`, never for a meta-only one, and a time window alone merges quick edits.
+ */
+export function endUndoStep(state: EditorState): void {
+  yUndoPluginKey.getState(state)?.undoManager.stopCapturing();
 }
 
 export function editorHistory(editor: Editor): DocumentHistory | null {

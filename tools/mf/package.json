@@ -8,7 +8,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@hocuspocus/provider": "4.3.0",
+    "@hocuspocus/provider": "4.8.0",
     "@meridian/agent-edit": "workspace:*",
     "@meridian/contracts": "workspace:*",
     "@meridian/markup": "workspace:*",
@@ -17,7 +17,7 @@
     "@meridian/thread-client": "workspace:*",
     "@meridian/tree-list-sync": "workspace:*",
     "ws": "^8.21.0",
-    "yjs": "13.6.31"
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "@types/node": "catalog:",

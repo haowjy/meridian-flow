@@ -49,7 +49,7 @@ The `_authenticated` layout mounts one provider tree for every route: do not gat
 
 The workspace shell: main and side panes, tabs, Works and routing.
 
-Two panes always hold different kinds: main shows a document or a chat (the Write | Chat switch picks which), and the side shows the other kind. Main keeps one row of tabs per kind; the left sidebar lists Chats, Manuscript, Knowledge and, while a Work has drafts, Changes, with the one Live/Draft toggle that turns every source to the Work's tree. `shell` draws the sidebar and main's band, `side` the other pane, `routing` turns a project address into what main shows, `context` hosts documents and the Manuscript tree, `work` manages Works, and `mobile` is the phone layout. The pane page says where an item opens.
+Two panes always hold different kinds: main shows a document or a chat (the Write | Chat switch picks which), and the side shows the other kind. Main keeps one row of tabs per kind; the left sidebar lists Chats, Manuscript, Knowledge and, while a Work has drafts, Changes, with the one Live/Draft chip (the page's version chip) that turns every source to the Work's tree. `shell` draws the sidebar and main's band, `side` the other pane, `routing` turns a project address into what main shows, `context` hosts documents and the Manuscript tree, `work` manages Works, and `mobile` is the phone layout. The pane page says where an item opens.
 
 The largest feature: every other feature except `billing` imports it or is imported by it.
 

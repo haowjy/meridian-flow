@@ -381,7 +381,7 @@ export function buildInlineReviewPlugin() {
             return false;
           if (!state.decorations.find(from, to, (spec) => spec.side === "added").length)
             return false;
-          // Native characterData dirties the entire decorated TextViewDesc in PM 1.41.9,
+          // Native characterData dirties the entire decorated TextViewDesc in PM 1.42.9,
           // which replaces its wrapper even when decoration identity is unchanged. Route ordinary
           // typing through PM's existing text-input handlers before the browser mutates that DOM.
           // Composition, replacement input, paste and deletion retain their native PM paths.
@@ -409,7 +409,7 @@ export function buildInlineReviewPlugin() {
         input: (view) => {
           // A repaint can land before the MutationObserver's delivery,
           // overwriting a native input's caret with the previous PM selection.
-          // Consume it through PM's own observer (prosemirror-view 1.41.9), not a
+          // Consume it through PM's own observer (prosemirror-view 1.42.9), not a
           // second DOM parser or a numeric selection repair after the repaint.
           const { domObserver } = view as EditorView & {
             domObserver: { forceFlush(): void; flush(): void };

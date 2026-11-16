@@ -71,7 +71,7 @@ and remain quarantined until their retryable destroy ledger succeeds.
   is not a child the editor compares: without that, the next local edit in the
   block rewrites everything after the empty text and duplicates words. The browser
   editor, the server and `packages/agent-edit` all bind through the one patched
-  `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.0.5.patch`; `y-prosemirror`
+  `@tiptap/y-tiptap` (`patches/@tiptap__y-tiptap@3.3.0.patch`; `y-prosemirror`
   is not a dependency); `agent-edit`'s `applyOps` (`model/y-prosemirror.ts`) restates the
   rule by addressing units across a block's texts. Stock y-tiptap and y-prosemirror fold the run into
   its first text, delete the rest, and fold again on read (a read that writes).
@@ -121,12 +121,33 @@ and remain quarantined until their retryable destroy ledger succeeds.
   the document. Cells and headers carry ids too, so their paragraphs and nested containers
   pair by id. Children inside a container rewritten in place as another block still pair
   by position. Stock y-tiptap pairs by position and
-  child equality: Enter at the end of a paragraph followed by an empty one moved
+  child equality (3.3.0 adds a first pass that pairs by the node a Yjs type was last mapped to,
+  `reconcileMappedChildren`; the patch bypasses it and keeps the id pairing): Enter at the end of a paragraph followed by an empty one moved
   the empty one's element to the new paragraph. Yjs has no move, so typing a
   peer puts into a block while it is dragged is lost, and two peers dragging one
   block at once leave two copies with one `id`. The fold fuzz
   (`qa/fold-fuzz.md`) checks this rule and the text rule above; run it by hand
   when the patch changes.
+- Redoing the y-tiptap patch on a new version: `pnpm patch @tiptap/y-tiptap@<version>`, edit
+  `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
+  the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
+  `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
+  text-run grouping, the id pairing with `movedIds`, the empty-fragment guard, the forced-render
+  selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
+  capture and restore (`resolveRelativeCellSelection`), and `recoverSelectionEndpoint` trusting a
+  position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`; upstream
+  [tiptap#8594](https://github.com/ueberdosis/tiptap/issues/8594), open: drop this change once a release fixes it).
+- Undo step boundaries: y-tiptap 3.x closes the capture window only for a document-changing
+  transaction with `addToHistory: false`; a meta-only one does not. A site that needs its edit to
+  be a separate step calls `endUndoStep(state)` (`editor-history.ts`) before the edit: image
+  upload, link actions, `@` references, reference drops, a Discard, a block drop. Meta-only
+  messages (block hold and lift, review projection, upload progress, reading position) are not
+  boundaries.
+- Debugging the patched y-tiptap: the `.map` files and `src/` in the package are pristine 3.3.0, so
+  devtools shows code that does not run. Set breakpoints in `dist/index.js` itself (delete its
+  `//# sourceMappingURL` line locally to stop devtools following the map) and read the patched
+  logic from `patches/@tiptap__y-tiptap@3.3.0.patch`. `refreshProseMirrorDoc` there is the headless
+  copy of the mapping refresh in `ProsemirrorBinding._typeChanged`; change both together.
 - Known limits, left as they are until writers hit them: deleting a run beside
   an inline atom deletes a peer's concurrent typing into it (a text is emptied
   only when the whole block empties), and a concurrent split moves the bylines
@@ -146,8 +167,9 @@ and remain quarantined until their retryable destroy ledger succeeds.
   ends the room when the review owner learns closure through authoritative metadata before
   the socket frame, and the pool refuses to reopen that closed id until a restore reopens the
   draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive` or a close the server
-  answers open). A room an owner still retains keeps its session, read-only (`endClosed`), so a
-  draft that ended on screen stays readable; a reader that comes to it while closed reads that
+  answers open). A room an owner still retains keeps its session, read-only, and its transport ends as
+  the socket's close would end it (`endClosed`), so a draft that ended on screen stays readable
+  and sends nothing more; a reader that comes to it while closed reads that
   session too, and a restore restarts its transport rather than opening a new one. Only an
   unretained closed room retires.
   `abandonDraftRoom` ends the room of a document's create the server dropped (its draft was
@@ -297,7 +319,7 @@ identity in anchors or holds.
 
 ## Interaction mechanics and recovery
 
-`patches/prosemirror-view@1.41.9.patch` adds `selectionForDOM`, an optional native
+`patches/prosemirror-view@1.42.9.patch` adds `selectionForDOM`, an optional native
 caret projection used by object physics. ProseMirror owns placing the caret and
 recording it with its DOM observer; application code must not write a second
 native selection or call the private observer. Native placement and orientation
@@ -555,28 +577,45 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Unsent typing handed back
 
-- Before a room's local copy goes with typing the server never acknowledged, the registry
-  reads it (`DocumentSession.unsentEdits`: the items the transport's unacknowledged updates
-  inserted, and the document encoded so it can be read once the session is destroyed) and
-  hands them back once per session, like every other notice (see "One notice store per
-  account"). It reads them as the session's retirement begins,
-  when it ended on a closing or removing reset (`DocumentSessionTeardownOwner`'s `retiring`),
-  and in `clearLocalCopy` (cause `removed`). Not at the reset: a session kept on screen still
-  shows that text, and a restore that restarts it delivers it, so the words would come back
-  twice. A session retires once, so each session's typing is handed back at most once. A 4409
-  access change is no reset: the room reconnects and keeps its typing. The account lifetime shows them in a toast (`unsentTypingToasts`,
-  `features/editor/RescuedText.tsx`). Whoever closed the room, the writer included, gets
-  the words back. A closed draft's copy also stays for an Undo of its Discard, which delivers it.
-- What it cannot reach: a room with no session in this tab (the copy lives only in
-  IndexedDB, for a document no tab has open: its next open decides, handing it back while the
-  Work is closed and delivering it after an Unarchive), and, for a closed draft or removed
-  document, typing from before this tab's transport existed (an offline reload replays it from
-  IndexedDB, outside the transport's unacknowledged updates). A read admission has no such loss:
-  see the next section. The same cause loses a reload's unsent typing in a document purged before
-  the room reconnects: `clearLocalCopy` with no session has no measure of what the server lacks
-  and deletes the copy unmeasured. The fix is a mark in the copy of what the server is known to
-  have (#1606). Both are known losses on
-  [the content merge page](../../../../../../packages/agent-edit/.context/content-merge.md).
+- **What the server has.** Each copy holds a mark in its `custom` store (`server-mark.ts`): a Yjs
+  state vector of what the server is known to hold. The transport reads one off each socket's
+  frames (`transport/server-has.ts`): the server's SyncStep1, every update the server sends and
+  every one written to the socket. It reports the SyncStep1 at each handshake and that vector each
+  time the server has acknowledged everything (`subscribeServerHas`); the session merges each into
+  the mark by per-client maximum in one transaction, skipping a vector it already wrote. Per client
+  the server holds every item below the mark, so the items the copy holds beyond it are all the
+  server can lack. A mark too low offers words the server has; one too high would lose words, so
+  nothing writes a vector no frame showed: never the document's own, which can hold a local
+  peer's pending items that a server update released in the provider's transaction, which
+  Hocuspocus never uploads. After each server frame, once the provider and every transaction it
+  opened (a schema repair included) are done, an editable room sends what the document holds
+  beyond the vector, so those items reach the server too, once that socket's SyncStep1 has
+  arrived (before it the vector is partial). A payload grows the vector only by runs that continue
+  from it, so structs past a gap are never counted. The check covers inserts: a vector carries
+  no deletions, so a peer's deletions released by a server frame go with the next handshake.
+- **A replaced room.** The server can replace a room's document with one that lacks items a mark
+  counts: a restore from a checkpoint (`CollabDomain.restore`, no caller yet) installs an older
+  state as a new generation, and a document with no authority head is reseeded empty. A handshake
+  whose vector does not cover the mark replaces it instead of merging. The client sees a
+  replacement only at its next handshake, whatever it is keyed on, so this is the same check a
+  generation id would give. Items the replaced room lost and a copy still holds stay within the mark
+  until then: the server had them, and the replacement dropped them. When a restore gets a
+  caller, it should tell open clients, so their marks are replaced before an offline purge.
+- **Who hands back from the mark.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s
+  `retiring`) reads its copy beyond its mark (`LocalDocumentCopies.beyondMark`) and claims that; the
+  copy has every write of the session's by then. Not at the reset: a session kept on screen still
+  shows that text, and a restore that restarts it delivers it. A session retires once. A 4409 access
+  change is no reset: the room reconnects and keeps its typing. `LocalDocumentCopies.clear`, the
+  only deletion on a final fact, claims each copy beyond its mark before deleting it and keeps a
+  copy whose claim the store can't take, so the next start claims it again. So typing from before an
+  offline reload, in a document purged before its room reconnects, comes back, and a room with no
+  session in this tab is measured too. A copy with no mark (written before marks, or whose first
+  mark write was lost) counts as marking nothing: all of it is offered. The
+  account lifetime shows the words in a toast (`unsentTypingToasts`,
+  `features/editor/RescuedText.tsx`). A closed draft's copy also stays for an Undo of its Discard,
+  which delivers it.
+- What it cannot reach: a read admission has no such loss (see the next section). A document no
+  tab has open keeps its typing in its copy until its next open or its purge.
 
 ### Undeliverable edits (a room admitted read-only)
 
@@ -630,14 +669,13 @@ from the wire alone, with nothing stored between handshakes.
     not the account's history.
 - **Who claims.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
   it reads that and a snapshot, makes the old session inert, then claims), the older-copy read
-  below (everything an older incarnation holds beyond the new session's first handshake), and a
-  closing or removing retirement (the session's unacknowledged typing, read synchronously; a
-  removal's `clearLocalCopy` claims through it). **A copy is deleted only after a claim of what it
-  holds has resolved, and a claim that rejects still shows its words**, unstored, in this tab
-  (`done` resolves at once). The replacement goes on and its old copy stays for the older-copy read; an
-  older copy stays for the next open; a removal keeps the copy for this page. A terminal
-  retirement has only the snapshot, so a rejected claim there is the one place words can be shown
-  once and then lost. Offering twice is accepted; losing is not. A change with no words (a
+  below (everything an older incarnation holds beyond the new session's first handshake), a
+  closing or removing retirement and `LocalDocumentCopies.clear` (each, the copy beyond its mark).
+  **A copy is deleted only after a claim of what it holds has resolved, and a claim that rejects
+  still shows its words**, unstored, in this tab (`done` resolves at once). The replacement goes on
+  and its old copy stays for the older-copy read; an older copy stays for the next open; a copy
+  `clear` could not claim stays for the next start, which claims it again from the copy. Offering
+  twice is accepted; losing is not. A change with no words (a
   deletion, a format change) is shown unstored by the session's tab, and only when the session's
   own ledger is among the undeliverable edits: it holds nothing a reload could lose.
 - **What a tab shows is the store's unacted notices.** When the registry's first observer
@@ -646,13 +684,12 @@ from the wire alone, with nothing stored between handshakes.
   the toasts of notices another tab acted on. It keeps the ids it has shown for the life of the
   page: a read while an `act` is on its way still finds the notice unacted. So every open tab of the account shows a notice, wherever its document is; a reload
   offers it again until the writer acts in one tab, and then never again in any. The start needs
-  no copy, lock, server or open document. A copy's measure of what the server lacks can't be the
-  store: what the server lacks is known only to a connected session, and an empty measure would
-  offer a purged document's whole text.
+  no copy, lock, server or open document. What the server lacks is measured by the copy's own
+  mark, never by the store: the store says only what was offered.
 - **Nothing is deleted from the store.** An acted notice's items stop any later claim from its
   copy offering the same words again, and a claim can still be on its way after its copy
-  database is gone: a terminal retirement claims from its snapshot without anyone waiting for it,
-  in any tab. No tab can know when the last such claim has run, so collecting acted notices by
+  database is gone: a closing retirement claims from what it read of its copy without anyone
+  waiting for it, in any tab. No tab can know when the last such claim has run, so collecting acted notices by
   their copy's absence brought words back. Sign-out (`clearAll`) deletes the whole
   notice database after the copies, and only when no copy was left behind.
 - **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy shows

@@ -423,7 +423,7 @@ export async function persistPreparedPromptBake(
     (message) => message.role === "system",
   );
   const systemMessage = assembled.generateRequest.messages[systemIndex];
-  if (!systemMessage) throw new Error("Prepared request has no system prompt");
+  if (systemMessage?.role !== "system") throw new Error("Prepared request has no system prompt");
   assembled.generateRequest.messages[systemIndex] = {
     ...systemMessage,
     content: systemMessage.content.map((part) =>

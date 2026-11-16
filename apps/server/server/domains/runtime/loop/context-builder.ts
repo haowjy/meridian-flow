@@ -11,9 +11,10 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type {
-  ContentPart,
+  AssistantContentPart,
   MediaPart,
   Message,
+  ReasoningPart,
   TextPart,
   Tool,
   ToolUsePart,
@@ -117,7 +118,7 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
   }
 
   if (turn.role === "assistant") {
-    const assistantParts: ContentPart[] = [];
+    const assistantParts: AssistantContentPart[] = [];
     for (const block of turnBlocks) {
       if (block.blockType === "tool_result") {
         if (assistantParts.length > 0) {
@@ -139,7 +140,7 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
         );
         continue;
       }
-      const part = blockToContentPart(block);
+      const part = blockToAssistantPart(block);
       if (part) assistantParts.push(part);
     }
     if (assistantParts.length > 0) {
@@ -268,19 +269,13 @@ function storedContentParts(
   );
 }
 
-function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {
-  const parts: ContentPart[] = [];
+/** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
+function userTurnContentParts(blocks: readonly Block[]): (TextPart | MediaPart)[] {
+  const parts: (TextPart | MediaPart)[] = [];
   for (const block of blocks) {
-    if (!allowed.includes(block.blockType)) continue;
-    const part = blockToContentPart(block);
+    const part = blockToUserPart(block);
     if (part) parts.push(part);
   }
-  return parts;
-}
-
-/** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
-function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
-  const parts = turnBlocksToContentParts([...blocks], ["text", "media"]);
   const included = new Set<string>();
   for (const block of blocks) {
     if (block.blockType === "custom") {
@@ -307,8 +302,23 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   return parts;
 }
 
-// Unsupported or empty blocks have no gateway content part.
-function blockToContentPart(block: Block): ContentPart | null {
+/** A user turn's text and projected media. Reference blocks are added separately by `userTurnContentParts`; other blocks map to no part. */
+function blockToUserPart(block: Block): TextPart | MediaPart | null {
+  switch (block.blockType) {
+    case "text":
+      return block.textContent ? text(block.textContent) : null;
+    case "media": {
+      // Only a projected picture carries a source; the stored part holds identity alone.
+      const image = block.content as Partial<MediaPart> | null;
+      return image?.type === "media" && image.source ? (image as MediaPart) : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** An assistant turn's text, reasoning and tool use; no provider takes media from the model. */
+function blockToAssistantPart(block: Block): AssistantContentPart | null {
   switch (block.blockType) {
     case "text":
       return block.textContent ? text(block.textContent) : null;
@@ -331,12 +341,7 @@ function blockToContentPart(block: Block): ContentPart | null {
         type: "reasoning",
         text: reasoningText,
         ...(hasProviderOptions
-          ? {
-              providerOptions: content.providerOptions as Extract<
-                ContentPart,
-                { type: "reasoning" }
-              >["providerOptions"],
-            }
+          ? { providerOptions: content.providerOptions as ReasoningPart["providerOptions"] }
           : {}),
       };
     }
@@ -353,14 +358,7 @@ function blockToContentPart(block: Block): ContentPart | null {
         input: content?.input ?? {},
       } satisfies ToolUsePart;
     }
-    case "media": {
-      // Only a projected picture carries a source; the stored part holds identity alone.
-      const image = block.content as Partial<MediaPart> | null;
-      return image?.type === "media" && image.source ? (image as MediaPart) : null;
-    }
-    case "custom":
-      // Interrupt content stays in its tool input/result to preserve provider ordering.
-      return null;
+    // Interrupt content stays in its tool input/result to preserve provider ordering.
     default:
       return null;
   }
