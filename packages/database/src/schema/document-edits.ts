@@ -28,6 +28,12 @@ import { documents } from "./content";
 import { users } from "./users";
 
 type Range = { client: number; clock: number; len: number };
+/** One replace of a write; absent `replaced` marks a receipt written before pairs were recorded. */
+type Effect = {
+  inserted: Range[];
+  deleted: Range[];
+  replaced?: { deleted: Range[]; inserted: Range[] }[];
+};
 type Alias = {
   source: { client: number; clock: number };
   target: { client: number; clock: number };
@@ -81,7 +87,7 @@ export const documentEditParts = pgTable(
       .references(() => documentEdits.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     update: byteaColumn("update").notNull(),
-    effect: jsonb("effect").$type<{ inserted: Range[]; deleted: Range[] }>().notNull(),
+    effect: jsonb("effect").$type<Effect>().notNull(),
     targets: jsonb("targets")
       .$type<{ editId: string; ordinal: number }[]>()
       .notNull()

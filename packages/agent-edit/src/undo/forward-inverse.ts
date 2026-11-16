@@ -26,9 +26,19 @@ export interface EditRange {
   clock: number;
   len: number;
 }
+/** One replace: the deleted runs and the inserted text that took their place. */
+export interface EditChange {
+  deleted: EditRange[];
+  inserted: EditRange[];
+}
 export interface EditEffect {
   inserted: EditRange[];
   deleted: EditRange[];
+  /**
+   * The replaces of the write, paired from the document as it stood at the write. A deleted item
+   * in none of them is a pure deletion. Absent on a receipt written before it was recorded.
+   */
+  replaced?: EditChange[];
 }
 export interface EditAlias {
   source: { client: number; clock: number };
@@ -157,21 +167,19 @@ export function captureEditParts(
     transient = intersectLineageRanges(inserted.map(lineageRange), deleted.map(lineageRange));
   return receipts.map((receipt, i) => {
     if (!receipt.frontier) throw new Error("Missing edit frontier");
-    return {
-      update: receipt.update,
-      frontier: receipt.frontier,
-      effect: {
-        inserted: subtractLineageRanges(
-          proseRanges(doc, raw[i].inserted).map(lineageRange),
-          transient,
-        ).map(editRange),
-        deleted: subtractLineageRanges(
-          proseRanges(doc, raw[i].deleted).map(lineageRange),
-          transient,
-        ).map(editRange),
-      },
-      aliases: [],
+    const effect: EditEffect = {
+      inserted: subtractLineageRanges(
+        proseRanges(doc, raw[i].inserted).map(lineageRange),
+        transient,
+      ).map(editRange),
+      deleted: subtractLineageRanges(
+        proseRanges(doc, raw[i].deleted).map(lineageRange),
+        transient,
+      ).map(editRange),
     };
+    if (effect.inserted.length && effect.deleted.length)
+      effect.replaced = pairChanges(doc, receipt.frontier, effect, (k) => k);
+    return { update: receipt.update, frontier: receipt.frontier, effect, aliases: [] };
   });
 }
 
@@ -426,21 +434,49 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
 }
 /**
  * Whether a deleted item belongs to a change whose new text is gone (discarded, deleted or typed
- * over), so restoring it would put the old text next to what the writer has now. One part holds
- * every change of a write to a block, so a change is found from the immutable item structure: an
- * inserted run takes the place of the deleted run its `origin` or `rightOrigin` reaches, up to
- * restoration lineage, and deleted siblings are one run. Any deleted item of the part's text that existed before the write
- * is not a boundary, whenever it was deleted, since every backspace leaves one. Only text counts:
- * attributes, containers and formats come and go with the text they belong to and never keep a
- * replacement standing. A deleted item with no inserted text beside it replaced nothing.
- * Every step is memoized so the work is linear in the part's items.
+ * over), so restoring it would put the old text next to what the writer has now. A deleted item
+ * in no change replaced nothing and always comes back. A receipt written before the changes were
+ * recorded is paired from the document as it stands: that can't tell an old backspace from text
+ * the writer deleted after the write, so it is the one place the doubling can still happen.
  */
 function replacedGone(index: Lineage, part: InversePart): (deleted: Key) => boolean {
-  const never = () => false;
-  if (!part.effect.inserted.length || !part.effect.deleted.length) return never;
-  const { doc } = index;
-  const inserted = new Set(clocks(part.effect.inserted)),
-    deleted = new Set(clocks(part.effect.deleted));
+  const { inserted, deleted, replaced } = part.effect;
+  if (!inserted.length || !deleted.length) return () => false;
+  const changes =
+    replaced ?? pairChanges(index.doc, part.frontier, part.effect, (k) => index.root(k));
+  const changeOf = new Map<Key, EditChange>();
+  for (const change of changes) for (const k of clocks(change.deleted)) changeOf.set(k, change);
+  const gone = new Map<EditChange, boolean>();
+  return (k) => {
+    const change = changeOf.get(k);
+    if (!change) return false;
+    let known = gone.get(change);
+    if (known === undefined) {
+      known = !clocks(change.inserted).some((n) => index.isVisible(index.effective(n)));
+      gone.set(change, known);
+    }
+    return known;
+  };
+}
+/**
+ * Pairs the replaces of a write from the item structure: an inserted run takes the place of the
+ * deleted run its `origin` or `rightOrigin` reaches, and deleted siblings are one run. A deleted
+ * item of the part's text that existed before the write is not a boundary, whenever it was
+ * deleted, since every backspace leaves one. Called at the write, "deleted" is exact; called later
+ * on an old receipt, it also counts text the writer deleted since. Only text counts as
+ * replacement: attributes, containers and formats come and go with the text they belong to. A
+ * deleted run with no inserted text beside it is not a change. `root` maps an item to its
+ * restoration lineage, so a change still pairs after Undo and Redo gave its items new clocks.
+ * Every step is memoized so the work is linear in the part's items.
+ */
+function pairChanges(
+  doc: Y.Doc,
+  frontier: EditFrontier,
+  effect: EditEffect,
+  root: (k: Key) => Key,
+): EditChange[] {
+  const inserted = new Set(clocks(effect.inserted)),
+    deleted = new Set(clocks(effect.deleted));
   const itemAt = (k: Key) => find(doc, k);
   const stepBack = (k: Key, item: Y.Item): Key | undefined => {
     const id = parse(k);
@@ -473,7 +509,7 @@ function replacedGone(index: Lineage, part: InversePart): (deleted: Key) => bool
   // Anything newer is: an item the writer deletes after the write still separates two changes.
   const transparent = (k: Key) => {
     const id = parse(k);
-    return !!itemAt(k)?.deleted && !deleted.has(k) && id.clock < (part.frontier[id.client] ?? 0);
+    return !!itemAt(k)?.deleted && !deleted.has(k) && id.clock < (frontier[id.client] ?? 0);
   };
   const top = (k: Key, set: ReadonlySet<Key>): Key => {
     const item = itemAt(k);
@@ -526,38 +562,42 @@ function replacedGone(index: Lineage, part: InversePart): (deleted: Key) => bool
   // A restored copy keeps its source's lineage root, so a change still pairs after Undo and Redo
   // gave its items new clocks.
   const runOfRoot = new Map<Key, Key>();
-  for (const k of deleted) runOfRoot.set(index.root(k), runOfElement(top(k, deleted)));
-  const paired = new Set<Key>(),
-    standing = new Set<Key>();
+  const deletedIn = new Map<Key, Key[]>();
+  for (const k of deleted) {
+    const run = runOfElement(top(k, deleted));
+    runOfRoot.set(root(k), run);
+    const members = deletedIn.get(run);
+    if (members) members.push(k);
+    else deletedIn.set(run, [k]);
+  }
+  const insertedIn = new Map<Key, Key[]>();
   const originBoundary = new Map<Key, Key | undefined>(),
     rightBoundary = new Map<Key, Key | undefined>();
   for (const k of inserted) {
     const content = itemAt(k)?.content;
     if (!(content instanceof Y.ContentString || content instanceof Y.ContentEmbed)) continue;
-    const root = top(k, inserted);
+    const container = top(k, inserted);
     const sides = [
       reach(
-        originOf(root),
+        originOf(container),
         (n) => (inserted.has(n) ? originOf(n) : leftOf(n)),
         (n) => inserted.has(n) || transparent(n),
         originBoundary,
       ),
-      reach(rightOriginOf(root), rightOf, transparent, rightBoundary),
+      reach(rightOriginOf(container), rightOf, transparent, rightBoundary),
     ];
-    let shown: boolean | undefined;
     for (const side of sides) {
-      const run = side && runOfRoot.get(index.root(side));
+      const run = side && runOfRoot.get(root(side));
       if (!run) continue;
-      paired.add(run);
-      if (standing.has(run)) continue;
-      shown ??= index.isVisible(index.effective(k));
-      if (shown) standing.add(run);
+      const members = insertedIn.get(run);
+      if (members) members.push(k);
+      else insertedIn.set(run, [k]);
     }
   }
-  return (k) => {
-    const run = runOfRoot.get(index.root(k));
-    return !!run && paired.has(run) && !standing.has(run);
-  };
+  return [...insertedIn].map(([run, keys]) => ({
+    deleted: ranges(deletedIn.get(run) ?? []),
+    inserted: ranges(keys),
+  }));
 }
 const lazy = <T>(compute: () => T) => {
   let value: { v: T } | undefined;
