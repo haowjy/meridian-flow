@@ -31,9 +31,12 @@ authority to Discard.
 ## Commands and attribution
 
 - The base provider receives the room and schema and isn't called per keystroke.
-- Every displayed group carries its immutable `frame`. Command callbacks get that frame,
-  not a later read of the runtime, and the owner validates it before interpreting
-  projection-local ids.
+- Every displayed group carries its immutable `frame`, which is for display and focus. A command
+  names its changes by id (`TextTarget`; its `frame` is only the cut sent when no room is open)
+  and the owner reads the room when it runs; it never refuses because the room moved past the frame the writer saw. The draft's base follows Live
+  about 2 s behind, so a click or a Redo meets a newer frame than the one on screen. An Apply's
+  rebuild and the server settle what is left; a Discard writes the chosen changes as the room
+  holds them then, and one it no longer has is already gone.
 - An absent attribution entry is explicitly unknown, so candidate chat rows stay visible
   without a byline. `room-attribution.ts` fetches on unresolved clock-range changes,
   Apply/restoration root revisions and reconnect, not text-frame identity. Local
@@ -283,8 +286,8 @@ of the previous document doesn't let `DraftOnlySettlement` close it first and en
 
 Chat-strip and Work Discard publish their notice and a projection-scoped `discarding` target first, so the row
 and notice paint before the indivisible write-back. Hidden pages drain on visibility
-change rather than waiting for animation frames. Changed base or prose refuses the stale
-write and restores the row.
+change rather than waiting for animation frames. A write finds the room as it is then
+and takes the chosen changes from it.
 
 Direct writes never impersonate the binding origin: its delete-only transactions without a
 writer ProseMirror transaction are schema-repair evidence. The draft-only editor plugin

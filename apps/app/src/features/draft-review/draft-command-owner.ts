@@ -826,19 +826,6 @@ export class DraftCommandOwner {
       return null;
     const frame = binding.runtime.projectNow();
     if (!frame) return null;
-    if (
-      target.kind === "groups" &&
-      (!blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
-        !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks))
-    ) {
-      this.setState(ref.itemKey, {
-        failure: { code: "apply-refused", serverCode: "review_updated" },
-      });
-      return {
-        sent: false,
-        outcome: Promise.resolve({ kind: "change-refused", code: "review_updated" }),
-      };
-    }
     const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
     if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id)))
       return null;

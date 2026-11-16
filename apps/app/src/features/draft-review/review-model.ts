@@ -98,8 +98,11 @@ export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: Re
   null;
 
 /**
- * A frozen frame is the command seam, never operation IDs or a later runtime read. A tree
- * line is the item's move or delete: alone (`tree`), or with text groups (`groups.tree`).
+ * Changes are named by id (a content hash). With a room open a command reads the room when it
+ * runs and never compares it with `frame`: the draft's base follows Live about 2 s behind, so a
+ * click or a Redo meets a newer frame than the one chosen on, and the server settles what that
+ * leaves. `frame` is the cut a command sends when no room is open. A tree line is the item's
+ * move or delete: alone (`tree`), or with text groups (`groups.tree`).
  */
 export type TextTarget =
   | { kind: "groups"; frame: ReviewFrame; groupIds: string[]; tree?: true }

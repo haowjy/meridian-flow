@@ -57,13 +57,6 @@ export function startDraftDiscardSession(input: {
     return null;
   const frame = editor ? binding.runtime.projectNow() : binding.runtime.state().frame;
   if (!frame) return null;
-  if (
-    !blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
-    !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks)
-  ) {
-    input.setState({ failure: { code: "discard-refused", serverCode: "review_updated" } });
-    return null;
-  }
   const ids = target.groupIds;
   if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id))) return null;
   const doc = binding.session.document;
@@ -86,23 +79,19 @@ export function startDraftDiscardSession(input: {
       input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
       return { kind: "change-refused", code: "read_only" };
     }
+    // The room may have moved since the click (Live typing reaching the base, a remote edit):
+    // write the chosen changes as it holds them now. One it no longer has is already gone.
     const current = binding.runtime.projectNow();
-    if (
-      !current ||
-      !blocksEqual(frame.diff.base.blocks, current.diff.base.blocks) ||
-      !blocksEqual(frame.diff.draft.blocks, current.diff.draft.blocks)
-    ) {
-      input.setState({ failure: { code: "discard-refused", serverCode: "review_updated" } });
-      return { kind: "change-refused", code: "review_updated" };
-    }
+    if (!current || ids.some((id) => !current.groups.some((group) => group.id === id)))
+      return { kind: "blocked" };
     const blocks = applySpanPatches(
-      frame.diff.draft.blocks,
-      composeGroups(frame.doc.type.schema, frame, ids, "discard"),
+      current.diff.draft.blocks,
+      composeGroups(current.doc.type.schema, current, ids, "discard"),
       "draft",
     );
     const before = history.undoStack.length;
     try {
-      doc.transact(() => writeDiscardBlocks(fragment, frame.doc.type.schema, blocks), origin);
+      doc.transact(() => writeDiscardBlocks(fragment, current.doc.type.schema, blocks), origin);
     } finally {
       history.removeTrackedOrigin(origin);
     }
