@@ -1679,6 +1679,11 @@ msgstr "Apply is temporarily unavailable."
 msgid "Apply is waiting for confirmation."
 msgstr "Apply is waiting for confirmation."
 
+#. placeholder {0}: file.name
+#: src/features/chat/DraftDock.tsx
+msgid "Apply this chat's changes to {0}"
+msgstr "Apply this chat's changes to {0}"
+
 #: src/features/chat/DraftDock.tsx
 msgid "Apply this chat's changes to {documents} documents"
 msgstr "Apply this chat's changes to {documents} documents"
@@ -3594,6 +3599,11 @@ msgstr "Discard draft of {name}"
 #: src/features/draft-review/ReviewActions.tsx
 #~ msgid "Discard this change? This can't be undone."
 #~ msgstr "Discard this change? This can't be undone."
+
+#. placeholder {0}: file.name
+#: src/features/chat/DraftDock.tsx
+msgid "Discard this chat's changes to {0}"
+msgstr "Discard this chat's changes to {0}"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Discard this chat's changes to {documents} documents"
