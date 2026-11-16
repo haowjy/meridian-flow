@@ -2,14 +2,15 @@
  * The document half of Trash's Discard entries (design section 7): every Discard, and every
  * restore or Un-Apply that swapped a newer draft out, that the day-30 purge hasn't removed, with the
  * text drafts it closed that are still closed. A restore reopens a draft by clearing `closed_by`,
- * so a taken member leaves the entry by itself. A deleted Work's entries are hidden until it is
- * restored, and a purged Work's branches (and so its entries) are gone.
+ * so a taken member leaves the entry by itself. A Work in Trash keeps its entries, as an archived
+ * Work does (a Restore answers `returned` until the Work is restored); a purged Work's branches
+ * (and so its entries) are gone.
  */
 import type { BranchId, CommandId, ProjectId } from "@meridian/contracts";
 import type { DiscardEntry } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { branches, commands, documentDrafts } from "@meridian/database/schema";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
 /** The commands whose id can name closed drafts that Trash lists and Restore reopens. */
@@ -60,13 +61,7 @@ export function createDrizzleDiscardEntries(db: Database) {
           await tx
             .select({ id: branches.id, workId: branches.originWorkId })
             .from(branches)
-            .leftJoin(works, eq(works.id, branches.originWorkId))
-            .where(
-              and(
-                inArray(branches.id, [...new Set(ran.map((command) => command.branchId))]),
-                isNull(works.deletedAt),
-              ),
-            )
+            .where(inArray(branches.id, [...new Set(ran.map((command) => command.branchId))]))
         ).map((row) => [row.id, row.workId]),
       );
       const drafts = await tx

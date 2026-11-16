@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { LandingFault } from "@meridian/project-tree";
@@ -7,6 +8,7 @@ import { Folder as FolderIcon, Layers } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -26,6 +28,7 @@ import {
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import {
   DeletedFromManuscriptTag,
+  DeletedWord,
   DraftCommandStatus,
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
@@ -190,6 +193,8 @@ export function ChangesSource({
       state.failure
     );
   });
+  const sources = useProjectTrees(projectId).sources;
+  const schemeOfSource = (id: string) => sources.find((source) => source.id === id)?.scheme;
   const shell = useShellTreeVersion();
   const tree = shell?.ownerKey === ownerKey ? shell.tree : null;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
@@ -484,6 +489,7 @@ export function ChangesSource({
                     key={`folder:${folder.id}`}
                     branchId={drafts.branchId}
                     folder={folder}
+                    schemeOfSource={schemeOfSource}
                     depth={item.depth}
                     open={!folded.has(folder.id)}
                     onToggle={() => fold(folder.id)}
@@ -738,6 +744,7 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
 function FolderGroupRow({
   branchId,
   folder,
+  schemeOfSource,
   depth,
   open,
   onToggle,
@@ -752,6 +759,7 @@ function FolderGroupRow({
   /** What the owner's notice says on this row. */
   notice: ReactNode;
   folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder"]>;
+  schemeOfSource: (sourceId: string) => ProjectContextTreeScheme | undefined;
   /** Under its changed folder's row. */
   depth: number;
   /** Its rows show; a click folds them. */
@@ -784,8 +792,13 @@ function FolderGroupRow({
         controlProps={files.length > 0 ? { "aria-expanded": open } : undefined}
         trailing={files.length > 0 ? <DisclosureMark open={open} /> : undefined}
         title={
-          <span className={cn("truncate", change.kind === "deleted" && "line-through")}>
-            {name}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className={cn("truncate", change.kind === "deleted" && "line-through")}>
+              {name}
+            </span>
+            {folder.deletedLive ? (
+              <DeletedWord scheme={schemeOfSource(folder.deletedLive)} />
+            ) : null}
           </span>
         }
         detail={folderSummary(folder)}

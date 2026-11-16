@@ -32,6 +32,10 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 6. A drafted create whose folder was discarded shows at the top of its `source` (`rescued`).
 7. A Work's view keeps a live-deleted node standing while the Work has a pending change to it
    (`keptByPending`; `pendingText` carries documents with pending text, which the list cannot see).
+   Its Apply writes a live `restore` of the node, before the copies, with what its delete took (the
+   Work's view keeps those in Trash); `keepsView` reads the same restores, so the check and the
+   Apply see one view. The restore carries `fromDraft`: it lifts the delete but keeps the node's
+   arrival (a Trash restore moves it), so a name clash reads as the Work showed it.
 8. A restore brings back the node and what its own delete took; `undoes` lifts one delete alone.
 9. A move or rename of a node in Trash restores it (a record with `undoes` never does). A live
    record lifts live deletes by list order; a drafted record lifts only its Work's own, so rule 7
@@ -155,7 +159,9 @@ the replay uses them (package `AGENTS.md`).
   and `appliedNodes(doc, command, restoredByApply)` is the one reader of what of an Apply still
   stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
   ids `undoApply` takes back) is in force. An Apply that only brought a document back from Trash
-  lists it until Un-Apply or a card's Undo takes the restore back. A tab can tell the Apply's tree
+  lists it until Un-Apply takes the restore back. A card's Undo takes back no restores: it
+  undoes only the copies it names, so a node an Apply restored stays live under its earlier name
+  (B9 part 3 makes the card's Undo of an applied change the whole Apply's Un-Apply). A tab can tell the Apply's tree
   half has ended (a card's Undo of the drafted change took the copy back). `appliedBy` keeps
   copies not in force, so `undoApply` reports them `already`. One Undo takes out every copy of a
   record: when a record applied, Un-Applied and applied again has its first copy back in force (an
