@@ -14,7 +14,10 @@ parentPort?.on("message", ({ id, input }: { id: number; input: InverseJob }) => 
   try {
     reply = { value: runInverseJob(input) };
   } catch (error) {
-    reply = { error: error instanceof Error ? error.message : String(error) };
+    reply =
+      error instanceof Error
+        ? { error: error.message, stack: error.stack }
+        : { error: String(error) };
   }
   parentPort?.postMessage({ id, reply });
 });

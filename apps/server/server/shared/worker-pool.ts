@@ -1,9 +1,8 @@
 /**
- * The one worker-thread pool for file conversions (image previews, EPUB and PDF text): a decoder
- * that is synchronous or hostile-input-bound must never run on the server's event loop, and only
- * a thread can be stopped. Each pool owns its jobs: a worker that crashes, runs out of memory or
- * outlives the job's deadline is terminated and replaced, and its job fails with a
- * `WorkerPoolError`.
+ * The worker-thread pool: CPU that is synchronous or bound by hostile input (file conversions,
+ * inverse planning) must never run on the server's event loop, and only a thread can be stopped.
+ * Each pool owns its jobs: a worker that crashes, runs out of memory or outlives the job's
+ * deadline is terminated and replaced, and its job fails with a `WorkerPoolError`.
  *
  * The protocol: the pool posts `{ id, input }`; the worker answers `{ id, reply }` and reports a
  * failure in its reply, not by throwing (a job with no reply runs to its deadline). A worker file

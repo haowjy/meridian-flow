@@ -5,9 +5,9 @@
  * which stay with `capturedAttempt` and are destroyed with it.
  */
 import type { ComputedInverse, InverseJob } from "@meridian/agent-edit/integration";
-import { createWorkerPool, WorkerPoolError } from "../../file-intake/worker-pool.js";
+import { createWorkerPool, WorkerPoolError } from "../../../shared/worker-pool.js";
 
-export type InverseWorkerReply = { value: ComputedInverse } | { error: string };
+export type InverseWorkerReply = { value: ComputedInverse } | { error: string; stack?: string };
 
 /** A plan that outlives this is stuck: its worker is replaced and the command fails. */
 const JOB_TIMEOUT_MS = 120_000;
@@ -33,6 +33,6 @@ export async function planInverseOffThread(job: InverseJob): Promise<ComputedInv
     if (!(error instanceof WorkerPoolError)) throw error;
     throw new Error(`Inverse planning failed: ${error.reason}`);
   }
-  if ("error" in reply) throw new Error(reply.error);
+  if ("error" in reply) throw new Error(reply.error, { cause: reply.stack });
   return reply.value;
 }

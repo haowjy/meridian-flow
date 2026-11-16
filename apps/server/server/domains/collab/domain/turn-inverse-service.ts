@@ -335,11 +335,18 @@ async function prepare(
   // they all started at once.
   const plans: PreparedDocumentInverse[] = [];
   let next = 0;
+  // One failed document ends every lane, so no more jobs go to the pool for a failed command.
+  let failed = false;
   await Promise.all(
     Array.from({ length: Math.min(INVERSE_WORKERS, documents.length) }, async () => {
-      while (next < documents.length) {
+      while (next < documents.length && !failed) {
         const at = next++;
-        plans[at] = await planOf(documents[at] as InverseDocument);
+        try {
+          plans[at] = await planOf(documents[at] as InverseDocument);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
       }
     }),
   );

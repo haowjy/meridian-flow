@@ -3,7 +3,7 @@
  * is terminated at the deadline and capped in memory, so a hostile or huge file costs the server
  * a refusal, never a frozen event loop. A later converter is one more job kind.
  */
-import { createWorkerPool, WorkerPoolError } from "../worker-pool.js";
+import { createWorkerPool, WorkerPoolError } from "../../../shared/worker-pool.js";
 import { CONVERSION_LIMITS, ConversionRefused } from "./limits.js";
 
 export type ConversionJob = { kind: "epub" | "pdf" | "pdf-pages"; bytes: Uint8Array };
