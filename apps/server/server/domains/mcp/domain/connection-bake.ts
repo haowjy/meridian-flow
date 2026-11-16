@@ -32,14 +32,18 @@ const WHY = {
 /** The id the model uses for a connection's tool, and the one place it is made. */
 export const toolId = (connection: string, tool: string) => `${connection}/${tool}`;
 
-/** A connection is listed by name when its status is needs sign-in, or unreachable from a check that ended in the last two minutes. */
+/**
+ * A connection is listed by name when its status is needs sign-in, or unreachable from a check
+ * that started in the last two minutes. The age is the status's own (`statusStartedAt`): a later
+ * check that learned nothing (a rate limit) moves `checkFinishedAt`, not the failure's age.
+ */
 function listingOf(row: ConnectionRow | null, now: Date): McpBakedListing {
   if (!row || row.statusVersion !== row.settingsVersion) return { listing: "full" };
   if (row.status === "needs_sign_in") return { listing: "by_name", reason: "needs_sign_in" };
   if (
     row.status === "unreachable" &&
-    row.checkFinishedAt &&
-    now.getTime() - row.checkFinishedAt.getTime() <= BY_NAME_WINDOW_MS
+    row.statusStartedAt &&
+    now.getTime() - row.statusStartedAt.getTime() <= BY_NAME_WINDOW_MS
   )
     return { listing: "by_name", reason: "unreachable" };
   return { listing: "full" };
