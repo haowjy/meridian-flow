@@ -31,6 +31,7 @@ import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
+import { useScopeScratchSource } from "./use-scratch-trees";
 
 export type PickedEntry = {
   kind: "file" | "folder";
@@ -86,9 +87,11 @@ function OpenPicker({
     () => (scheme && owner ? { scheme, owner, heading: schemeLabel(scheme) } : null),
     [scheme, owner],
   );
+  // A Scratch row's own Scratch, else the picked Work's, as the sidebar lists it.
+  const scopeScratch = useScopeScratchSource(projectId);
   const scratch = useMemo(
-    () => (scheme === "scratch" && owner ? { owner, heading: schemeLabel(scheme) } : null),
-    [scheme, owner],
+    () => (scheme === "scratch" && owner ? { owner, heading: schemeLabel(scheme) } : scopeScratch),
+    [scheme, owner, scopeScratch],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
   const openAt = own ? source.own.openAt(entry.path) : [];
