@@ -46,6 +46,7 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
+import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
@@ -112,6 +113,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       close: draftClose,
       treeLists,
       workProjection,
+      live: createDrizzleCollabPersistence(db).journal,
       scheduleLivePull: () => {},
     });
     const apply = createDrizzleApplyClick(db, {

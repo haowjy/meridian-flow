@@ -156,14 +156,20 @@ export function createDrizzleUndoDiscard(
                 outcome === "already" ? [] : [outcome],
               );
 
-              const { reopened, swapped } = await deps.reopen.reopen({
+              const {
+                reopened,
+                swapped,
+                leftOut: edited,
+              } = await deps.reopen.reopen({
                 drafts,
                 target: target.id,
                 commandId,
                 owner,
+                leaveOutEdited: true,
               });
 
               const leftOut = restoredTree.flatMap((one) => one.leftOut);
+              const editedChanges = edited.reduce((sum, one) => sum + one.changes, 0);
               const treeCopies = restoredTree.reduce((sum, one) => sum + one.copies.length, 0);
               const settled: Settlement[] = [];
               if (leftOut.length > 0)
@@ -172,9 +178,15 @@ export function createDrizzleUndoDiscard(
                   items: [...new Set(leftOut.map(({ record }) => record.node))],
                   why: "purged",
                 });
+              if (edited.length > 0)
+                settled.push({
+                  rule: "left_out",
+                  items: edited.map(({ documentId }) => documentId),
+                  why: "changed_since",
+                });
               // An entry with no member left: a restore took the members, or another Work holds
               // the records, or what it held left with its document's purge.
-              if (treeCopies + reopened === 0 && leftOut.length === 0)
+              if (treeCopies + reopened === 0 && leftOut.length === 0 && edited.length === 0)
                 settled.push(
                   treeAlreadyRestored ||
                     foreignRecords ||
@@ -189,7 +201,7 @@ export function createDrizzleUndoDiscard(
                 branchId: target.id as BranchId,
                 restored: treeCopies + reopened,
                 swapped,
-                leftOut: leftOut.length,
+                leftOut: leftOut.length + editedChanges,
                 ...(settled.length > 0 ? { settled } : {}),
               };
             },

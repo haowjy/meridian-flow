@@ -20,21 +20,25 @@ import {
   ruleCounter,
 } from "@meridian/agent-edit/content-merge";
 import {
+  diffBlocks,
+  projectReview,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId, CommandId, DocumentId, DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, documentDrafts } from "@meridian/database/schema";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type * as Y from "yjs";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
+import { storedDocument } from "../domain/stored-document.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { effectBases } from "./drizzle-unapply-read.js";
@@ -103,6 +107,7 @@ export function createReopenDrafts(
     close: Pick<DraftClose, "closeDrafts">;
     treeLists: Pick<TreeListStore, "resync">;
     workProjection: Pick<WorkProjectionMutation, "draftMembershipChanged">;
+    live: Pick<UpdateJournal, "read">;
     /** Live text written while the draft was closed has not reached its base. */
     scheduleLivePull(documentId: DocumentId): void;
   },
@@ -122,9 +127,25 @@ export function createReopenDrafts(
       /** The command that reopens: a newer draft it swaps out is closed under this id. */
       commandId: CommandId;
       owner: DraftOwner;
-    }): Promise<{ reopened: number; swapped: number }> {
+      /**
+       * A Restore of a Discard: a draft whose Live text was edited since it closed stays closed
+       * (an Un-Apply's reopen must not ask: its Apply wrote that text itself).
+       */
+      leaveOutEdited?: boolean;
+    }): Promise<{
+      reopened: number;
+      swapped: number;
+      leftOut: { documentId: string; changes: number }[];
+    }> {
       const tx = currentDrizzleDb(db);
-      const { drafts, target, commandId } = input;
+      const { target, commandId } = input;
+      const leftOut: { documentId: string; changes: number }[] = [];
+      const drafts: (typeof input.drafts)[number][] = [];
+      for (const draft of input.drafts) {
+        const changes = input.leaveOutEdited ? await editedSince(draft) : 0;
+        if (changes > 0) leftOut.push({ documentId: draft.documentId, changes });
+        else drafts.push(draft);
+      }
       let swapped = 0;
       // Draft rows lock in id order: two reopens of overlapping drafts cannot deadlock.
       for (const draft of [...drafts].sort((a, b) => a.draftId.localeCompare(b.draftId))) {
@@ -159,7 +180,7 @@ export function createReopenDrafts(
           .where(eq(documentDrafts.id, draft.draftId));
         deferUntilDrizzleCommit(() => deps.scheduleLivePull(draft.documentId as DocumentId));
       }
-      if (drafts.length === 0) return { reopened: 0, swapped };
+      if (drafts.length === 0) return { reopened: 0, swapped, leftOut };
       await replay(drafts.map((draft) => draft.draftId));
       deps.workProjection.draftMembershipChanged(input.owner);
       const lists = new Map<string, Parameters<TreeListStore["resync"]>[0][number]>();
@@ -168,9 +189,32 @@ export function createReopenDrafts(
         if (list) lists.set(JSON.stringify(list), list);
       }
       await deps.treeLists.resync([...lists.values()]);
-      return { reopened: drafts.length, swapped };
+      return { reopened: drafts.length, swapped, leftOut };
     },
   };
+
+  /**
+   * How many changes of the closed draft Live's text has since overtaken: all of them when Live
+   * and the draft changed the same text since the base the draft last saw (a pull merges only into
+   * an open draft, so that base is stale), else 0. The draft's own change would otherwise come
+   * back over the writer's word.
+   */
+  async function editedSince(draft: { draftId: string; documentId: string }): Promise<number> {
+    const base = await deps.coordinator.loadBase(draft.draftId);
+    const doc = base.replica.doc;
+    const baseBlocks = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+    const draftBlocks = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+    const snapshot = await deps.live.read(draft.documentId as DocumentId);
+    const live = storedDocument(snapshot);
+    try {
+      const liveBlocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+      const merge = contentMerge(schema, baseBlocks, liveBlocks, draftBlocks);
+      if (merge.conflicts.length === 0 && !merge.orderConflict) return 0;
+      return projectReview(diffBlocks(baseBlocks, draftBlocks)).groups.length;
+    } finally {
+      live.destroy();
+    }
+  }
 
   /** Each draft's waiting Un-Applies, applied to its base now that it is open. */
   async function replay(draftIds: readonly string[]): Promise<void> {

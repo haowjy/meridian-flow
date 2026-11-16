@@ -514,6 +514,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     close: deps.draftClose,
     treeLists: deps.treeLists,
     workProjection: deps.workProjectionMutation,
+    live: persistence.journal,
     scheduleLivePull: (documentId) => draftPulls.scheduleLivePull(documentId),
   });
   const applyCommands = createApplyClickService({

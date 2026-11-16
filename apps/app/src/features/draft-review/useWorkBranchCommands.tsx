@@ -979,6 +979,9 @@ export async function restoreDiscard(
     }
     if (answer.restored > 0)
       return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
+    // Everything it held was edited in Live since: the notice says how many changes stayed out.
+    if (answer.settled?.some((one) => one.rule === "left_out" && one.why === "changed_since"))
+      return { answer: "gone", leftOut: answer.leftOut };
     return answer.settled?.some((one) => one.rule === "already")
       ? { answer: "gone" }
       : { answer: "returned", why: "gone-from-trash" };

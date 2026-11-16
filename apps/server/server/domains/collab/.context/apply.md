@@ -232,7 +232,13 @@ clock; a restore that brings nothing back is `done` with `restored: 0` and says 
 `settled`: `already restored` (the tree took its records, another Work holds them, or a stored restore
 named this command), `left_out purged` (no command of kind `discard`, `undo_discard` or `unapply`
 is stored under the id: the day-30 purge took it, or it never was; or what the entry held was
-purged), with `leftOut` counting purged nodes beside a partial restore. A purged Work's branch is a 404
+purged), with `leftOut` counting purged nodes beside a partial restore. A restore reopens a draft only if
+Live's text has not overtaken it: `reopen` with `leaveOutEdited` three-way merges the draft's base (what Live last
+showed it: a closed draft is not pulled into), Live now and the draft's text, and if both changed the same text
+the whole draft stays closed. It counts as its review changes in `leftOut` and as `left_out changed_since` in `settled`,
+the room Discard's Undo rule (one edit ends that document's whole share) on the server's side. The room checks Yjs
+structs on the client (`touchedSince`) and cannot run here, where the draft is a stored row and Live a journal: the
+merge's conflict is the same question on text. An Un-Apply's reopen does not ask (its own Apply wrote that text). A purged Work's branch is a 404
 at the route. A branch of another project is a 404 too. A Work or
 chat that cannot take the restore (archived, deleted, a chat in Trash) bounces: stored `done`, nothing
 changed, `restored: 0`, `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.

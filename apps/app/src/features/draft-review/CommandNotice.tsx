@@ -254,10 +254,7 @@ export function DraftNoticeLine({
     return (
       <ActionNotice
         data-command-notice="undo-partial"
-        sentence={plural(count, {
-          one: "# change couldn't come back: it was drafted again or is gone.",
-          other: "# changes couldn't come back: they were drafted again or are gone.",
-        })}
+        sentence={leftOutSentence(count)}
         onDismiss={notice.dismiss}
         className={className}
       />
@@ -464,10 +461,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
           <RowWord
             tone="warning"
             word={<Trans>Partly restored</Trans>}
-            sentence={plural(left, {
-              one: "# change couldn't come back: it was drafted again or is gone.",
-              other: "# changes couldn't come back: they were drafted again or are gone.",
-            })}
+            sentence={leftOutSentence(left)}
           />
         );
       }
@@ -559,6 +553,13 @@ function factSentence(fact: AppliedFact): string {
     }
   }
 }
+
+/** What an Undo or Restore of a Discard couldn't bring back, wherever it says so. */
+export const leftOutSentence = (count: number) =>
+  plural(count, {
+    one: "# change couldn't come back: the text changed after it was discarded.",
+    other: "# changes couldn't come back: the text changed after they were discarded.",
+  });
 
 /** What a restore that did nothing says, wherever it was sent from. */
 export function restoreReturnedSentence(why: RestoreReturned | null): string {
