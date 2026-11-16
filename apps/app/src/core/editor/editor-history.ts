@@ -16,6 +16,7 @@ import {
 } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import { touchedSince } from "./touched-since";
 
 type StackItem = Y.UndoManager["undoStack"][number];
 
@@ -48,18 +49,11 @@ const noop = () => {};
 const HISTORY_META = "meridian-editor-history";
 /** On a stack item: the range selection from just before the change it holds ran. */
 const RANGE_META = "meridian-editor-range";
-/** On a stack item: its `StepGuard`. */
+/** On a stack item: its `Guard`. */
 const GUARD_META = "meridian-editor-guard";
 
-/**
- * A step that undoing may no longer take back (a Discard whose text was edited since): Ctrl+Z
- * asks `runs` when the step is next, and drops it unrun when it says no, telling `dropped`.
- */
-export type StepGuard = { runs(): boolean; dropped(): void };
-
-export function guardStep(item: StackItem, guard: StepGuard): void {
-  item.meta.set(GUARD_META, guard);
-}
+/** `after`: the document's state right after the guarded step was done (or redone). */
+type Guard = { dropped(): void; after: Map<number, number> };
 
 type RelativeSelection = ReturnType<typeof getRelativeSelection>;
 
@@ -251,6 +245,18 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.changed();
   }
 
+  /**
+   * Undo may take the step back only while what it wrote stands as it left it (a Discard): Ctrl+Z
+   * drops it unrun once a later edit touched that text, and calls `dropped`. Its Redo is guarded
+   * the same way, from the state the Redo left.
+   */
+  guard(item: StackItem, dropped: () => void): void {
+    item.meta.set(GUARD_META, {
+      dropped,
+      after: Y.decodeStateVector(Y.encodeStateVector(this.manager.doc)),
+    } satisfies Guard);
+  }
+
   /** Takes a step out of the history: its owner undid it some other way. */
   take(item: StackItem): void {
     for (const stack of [this.manager.undoStack, this.manager.redoStack]) {
@@ -272,11 +278,11 @@ export class DocumentHistory implements EditorHistoryHandle {
       for (let index = source.length - 1; index >= 0; index--) {
         const entry = source[index];
         if (!entry || entry.kind === "apply") break;
-        const guard = entry.item.meta.get(GUARD_META) as StepGuard | undefined;
+        const guard = entry.item.meta.get(GUARD_META) as Guard | undefined;
         if (guard && segment.length) break;
         segment.push(entry);
         if (!guard) continue;
-        if (guard.runs()) break;
+        if (!touchedSince(this.manager.doc, entry.item, guard.after)) break;
         this.take(entry.item);
         guard.dropped();
         return;
@@ -307,6 +313,8 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (popped && generated) {
       const range = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
       if (range) generated.meta.set(RANGE_META, range);
+      const guard = popped.meta.get(GUARD_META) as Guard | undefined;
+      if (guard) this.guard(generated, guard.dropped);
       const known = popped.meta.get(HISTORY_META) as Entry | undefined;
       const moved: Entry = {
         kind: "yjs",

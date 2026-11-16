@@ -493,7 +493,7 @@ msgstr ""
 msgid "{count, plural, one {# call} other {# calls}}"
 msgstr ""
 
-#: src/features/draft-review/CommandNotice.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
 msgstr ""
 
@@ -725,8 +725,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{left, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
-msgstr ""
+#~ msgid "{left, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
+#~ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"

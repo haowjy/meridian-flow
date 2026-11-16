@@ -4,7 +4,7 @@
  * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -25,6 +25,7 @@ import { type Removal, removalSentence } from "@/features/project/context/Remove
 import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
+import { leftOutSentence } from "./ReviewMessageText";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -226,10 +227,7 @@ export function DraftNoticeLine({
     return (
       <ActionNotice
         data-command-notice="undo-partial"
-        sentence={plural(count, {
-          one: "# change couldn't come back: it was drafted again or is gone.",
-          other: "# changes couldn't come back: they were drafted again or are gone.",
-        })}
+        sentence={leftOutSentence(count)}
         onDismiss={notice.dismiss}
         className={className}
       />
@@ -360,10 +358,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
           <RowWord
             tone="warning"
             word={<Trans>Partly restored</Trans>}
-            sentence={plural(left, {
-              one: "# change couldn't come back: it was drafted again or is gone.",
-              other: "# changes couldn't come back: they were drafted again or are gone.",
-            })}
+            sentence={leftOutSentence(left)}
           />
         );
       }

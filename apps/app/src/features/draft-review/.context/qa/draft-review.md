@@ -91,7 +91,7 @@ separate browser check covers rendering and native keyboard history.
 | Discard from the dock or the Changes list | The item leaves immediately; the notice takes its row's place (a dock: its footer). Undo restores the same draft and bylines. |
 | Discard, open another document, come back | The Changes or dock notice is still there; Undo restores the draft and main does not move. |
 | Discard, then type elsewhere in that draft | The notice stays; its Undo restores the discarded text and keeps the typing. |
-| Discard, then type over the discarded text or let a reply write the same sentence again | The notice stays; its Undo says "1 change couldn't come back" and writes nothing twice. In the editor that discarded, Ctrl+Z undoes the typing, then drops the Discard with the same line and never undoes an earlier step in that press. |
+| Discard, then type over the discarded text or let a reply write the same sentence again | The notice stays; its Undo says "1 change couldn't come back" and writes nothing twice. In the editor that discarded, Ctrl+Z undoes the typing, then drops the Discard, ends the notice, shows the same line on the draft's failure line, and never undoes an earlier step in that press. The same holds after the notice was dismissed, and for a Discard brought back by Ctrl+Shift+Z after its Ctrl+Z. |
 | A second Discard or an Apply by the same Work | It replaces the notice. |
 | Reload | The notice ends; discarded text persists. |
 | Discard all / the dock's Discard with only text drafts | No question; one notice "N drafts discarded."; one Undo restores every room. |

@@ -1,6 +1,6 @@
 /** Writer-facing copy for a review message; the controller emits codes, never localized text. */
 import type { MessageDescriptor } from "@lingui/core";
-import { msg } from "@lingui/core/macro";
+import { msg, plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { reloadNow } from "@/client/release/release";
@@ -75,11 +75,16 @@ function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
   return <> {/[.!?]$/.test(reason) ? reason : `${reason}.`}</>;
 }
 
-export function ReviewMessageText({
-  failure: { code, serverCode, serverReason },
-}: {
-  failure: BranchCommandFailure;
-}) {
+/** What an Undo of a Discard couldn't bring back, wherever it says so. */
+export const leftOutSentence = (count: number) =>
+  plural(count, {
+    one: "# change couldn't come back: it was drafted again or is gone.",
+    other: "# changes couldn't come back: they were drafted again or are gone.",
+  });
+
+export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }) {
+  if (failure.code === "undo-left-out") return leftOutSentence(failure.leftOut);
+  const { code, serverCode, serverReason } = failure;
   switch (code) {
     case "unapply-refused":
       return <Trans>Couldn't undo this Apply. Try again.</Trans>;

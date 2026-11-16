@@ -48,7 +48,7 @@ import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import { GroupApply } from "./group-apply";
-import type { BranchCommandFailure, DraftRef } from "./review-command-types";
+import type { BranchCommandFailure, CommandRefusal, DraftRef } from "./review-command-types";
 import {
   buildFrame,
   inSchema,
@@ -160,7 +160,7 @@ export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
  * applies): an archived Work removes its commands and shows its own notice with
  * Unarchive, so a held "archived" line would only go stale once it is unarchived.
  */
-function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | null {
+function shownRefusal(failure: CommandRefusal): CommandRefusal | null {
   return failure.serverCode === "work_archived" ? null : failure;
 }
 /** The server's word for an unapplied click, as the surfaces' refusal copy keys it. */
@@ -1296,7 +1296,7 @@ export class DraftCommandOwner {
     const own = [...scope.values()].map((ref) => this.generation(ref.itemKey));
     for (const key of own) this.discardedHere.add(key);
     for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: true, failure: null });
-    const failed = (failure: BranchCommandFailure | null) => {
+    const failed = (failure: CommandRefusal | null) => {
       for (const key of own) this.discardedHere.delete(key);
       if (this.active)
         for (const ref of scope.values())
