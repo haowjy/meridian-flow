@@ -220,6 +220,30 @@ function stamp(doc: Y.Doc, added: readonly Added[], connection: Connection): str
   const droppedNodes = new Set(
     droppedRecords(doc).flatMap(({ record }) => (record.type === "create" ? [record.node] : [])),
   );
+  const needsWalk = added.some(
+    (record) =>
+      (record.draft !== null && !connection.drafts.has(record.draft)) ||
+      droppedNodes.has(record.node) ||
+      (record.type === "create" && droppedNodes.has(record.parent)),
+  );
+  if (!needsWalk) {
+    const views = new Set(added.map((record) => record.draft));
+    let closed = false;
+    for (const draft of views) {
+      const view = { draft };
+      const records = viewRecords(doc, view);
+      const before = replay(
+        records.filter((record) => !remaining.has(record.id)),
+        view,
+      );
+      const after = replay(records, view);
+      if ([...changedSources(before, after)].some(connection.closed)) {
+        closed = true;
+        break;
+      }
+    }
+    if (!closed) return out;
+  }
   for (const record of added) {
     remaining.delete(record.id);
     if (record.type === "purge") continue;

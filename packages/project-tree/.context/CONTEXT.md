@@ -73,7 +73,19 @@ the replay uses them (package `AGENTS.md`).
   (`clientMayWrite`: `purge`, a file create, `carries`, `blob`), more than
   `MAX_RECORDS` records. It throws `CopyFault`; nothing is stored, and the room closes the
   connection with the one terminal code. Names, sources, drafts and types are not its business.
-- **`admit` stamps `dropped`** on a record in a closed draft, on a record of a dropped node or a create inside a dropped folder, and on a record whose addition changes a closed source. It considers incoming records in list order: each is replayed alongside every held record and the incoming records already kept, and compared with the tree without it. The diff counts both sources of a moved node and includes name, place, kind and shown state. A record inserted before a held record can change whether that later record takes effect; comparing the full projections catches that. The check takes one replay per incoming record per view after its baseline. A source with no database row is closed. The server's own records are never admitted. `viewValues` leaves dropped records out; `droppedRecords` reads their reason from the settle log for the browser.
+- **`admit` stamps `dropped`** on a record in a closed draft, on a record of a dropped node or
+  a create inside a dropped folder, and on a record whose addition changes a closed source. The
+  server decides: its arrival order is the one shared by all clients. For each view in an update,
+  admission compares the held tree with the tree after the whole update. If neither the diff nor
+  the records touch a closed draft, source or dropped node, it admits the update. A move out of a
+  closed source and back in the same update has no net diff and is admitted; the tree is unchanged.
+  Otherwise admission walks the records in list order, comparing each full projection with and
+  without the record, including held records after it. The diff counts both sources of a move and
+  changes to name, place, kind and shown state. In an in-process 300-record update against 25,000
+  held records, the fast path took 514 ms and the per-record path took 49.9 s (one dropped).
+  A source with no database row is closed. The
+  server's own records are never admitted. `viewValues` leaves dropped records out;
+  `droppedRecords` reads their reason from the settle log for the browser.
 - **Parts of one client's offline history** arrive in causal order and are admitted in order
   (the room queues a connection's messages); an honest client's parts are never a fault.
 - **An Undo settles only its own node.** Replay skips an Undo whose target is a change on another node. Each taken change reports `sources`: the node's sources before and after that record, for Apply and Un-Apply, which append records.
