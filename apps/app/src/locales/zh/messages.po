@@ -6277,6 +6277,10 @@ msgstr ""
 msgid "Restoring"
 msgstr ""
 
+#: src/features/editor/RescuedText.tsx
+msgid "Restoring the draft from Trash brings it back too."
+msgstr ""
+
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Restoring the drafts."
 msgstr ""

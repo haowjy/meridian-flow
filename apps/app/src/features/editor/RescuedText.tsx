@@ -237,7 +237,13 @@ function UnsentTypingToast({
       </p>
       <RescuedText
         passages={typing.text === null ? [] : [typing.text]}
-        note={typing.text === null ? null : <Trans>It isn't in the document.</Trans>}
+        note={
+          typing.text === null ? null : typing.cause === "closed" ? (
+            <Trans>Restoring the draft from Trash brings it back too.</Trans>
+          ) : (
+            <Trans>It isn't in the document.</Trans>
+          )
+        }
         onDismiss={onDismiss}
         onCopied={onCopied}
       />
