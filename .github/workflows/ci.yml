@@ -209,6 +209,9 @@ jobs:
       # Self-contained probes (tools/qa/probes/*/run.mts): they make and drop their own database.
       - name: Run database probes
         run: pnpm test:probes
+        env:
+          # package-fetch calls GitHub; unauthenticated calls from shared runners exhaust the rate limit.
+          FLOW_GITHUB_TOKEN: ${{ github.token }}
 
   app-dev-transform:
     name: app-dev-transform

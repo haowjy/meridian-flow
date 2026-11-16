@@ -69,6 +69,11 @@ export type ApplyCommandHandle = {
   /** Resolves false when the Un-Apply was refused, and the Apply stands. */
   undo(): Promise<boolean>;
   redo(): void;
+  /**
+   * Once nothing is outstanding: the Apply an Un-Apply takes back, and the click a Redo sends
+   * again (a new command id to fill).
+   */
+  replay(): { applyCommandId: string; again: ApplyClick };
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
   current: ApplyCommand;
@@ -202,6 +207,10 @@ export class ApplyClickQueue {
           if (!landedText(answer) && answer.status !== "cancelled") input.applyRefused(answer);
         });
       },
+      replay: () => ({
+        applyCommandId: handle.current.body.commandId,
+        again: { ...handle.current.body, groupIds: [...handle.replaySelection], tree: undefined },
+      }),
     };
 
     return {

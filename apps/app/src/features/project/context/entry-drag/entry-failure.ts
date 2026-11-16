@@ -20,7 +20,7 @@ import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
 import { copyRows } from "./execute-copy";
 import { moveRows } from "./execute-move";
-import type { MoveRow, ReadyCopy } from "./move-plan";
+import type { ReadyCopy, ReadyMove } from "./move-plan";
 import { type EntrySelection, leaveSelections } from "./selection";
 
 export type EntryContext = {
@@ -59,12 +59,11 @@ export const entryToast = (projectId: string, failure = "") => `entry:${projectI
  */
 export function runMove(
   context: EntryContext,
-  rows: readonly MoveRow[],
+  move: ReadyMove,
   selection: EntrySelection | null,
 ): void {
-  const moved = moveRows(rows, context.actions);
-  const [first] = rows;
-  if (first) revealPlaced(first.to.parentId, moved, selection);
+  const moved = moveRows(move, context.actions);
+  if (moved.length > 0) revealPlaced(move.to.parentId, moved, selection);
 }
 
 /** What the route said was wrong, when it said. */

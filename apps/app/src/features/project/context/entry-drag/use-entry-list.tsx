@@ -78,8 +78,7 @@ export function useEntryList({
   const [pending, setPending] = useState<PendingChoice | null>(null);
 
   const runListMove = useCallback(
-    (move: ReadyMove) =>
-      runMove({ actions, projectId, removal }, move.moves, latest.current.selection),
+    (move: ReadyMove) => runMove({ actions, projectId, removal }, move, latest.current.selection),
     [actions, projectId, removal],
   );
   const runListCopy = useCallback(
@@ -124,11 +123,11 @@ export function useEntryList({
         const first = items.find((item) => item.enabled);
         if (!first) return null;
         // A move renames a row the writer already has; a copy is new, so it needs no warning.
-        const moved = first.action === "move" ? (plans.move?.moves ?? []) : [];
+        const moved = first.action === "move" && plans.move ? renamesOnArrival(plans.move) : [];
         return {
           kind: "accept",
           label: askLabel(first.label),
-          warning: describeRenames(renamesOnArrival(moved)),
+          warning: describeRenames(moved),
         };
       }
       const planned = planMove(resolved);
@@ -136,7 +135,7 @@ export function useEntryList({
       return {
         kind: "accept",
         label: moveLabel(planned),
-        warning: describeRenames(renamesOnArrival(planned.moves)),
+        warning: describeRenames(renamesOnArrival(planned)),
       };
     };
     // `dragover` repeats many times a second over one target; its answer changes

@@ -22,6 +22,7 @@ import type {
   ApplyClickAnswer,
   DraftMetadataResponse,
   ThreadDraftListItem,
+  UnapplyClick,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
@@ -41,13 +42,13 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
-import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import {
   type ApplyClickOutcome,
   ApplyClickQueue,
   type FrozenApply,
   frozenOn,
 } from "./apply-click-queue";
+import { BandApply, type LiveHistories } from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
@@ -124,8 +125,6 @@ type Binding = {
 type Item = {
   ref: DraftRef;
   queue: ApplyClickQueue;
-  /** Removers of the editor-history entries whose actions go through `queue`. */
-  applyEntries: Set<() => void>;
   /** Its draft rooms: a text click pins the draft it froze, so an older room can outlive a newer bind. */
   rooms: Set<Entry>;
 };
@@ -172,6 +171,8 @@ const RESOLVE_RETRY_MAX_MS = 30_000;
 export class DraftCommandOwner {
   private readonly items = new Map<string, Item>();
   private readonly entries = new Map<string, Entry>();
+  /** Band Applies in force or taken back, while their Ctrl+Z or Redo can still run. */
+  private readonly bandApplies = new Set<BandApply>();
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
@@ -299,7 +300,6 @@ export class DraftCommandOwner {
     const item: Item = {
       ref,
       rooms: new Set(),
-      applyEntries: new Set(),
       queue: new ApplyClickQueue({
         send: (body) => applyDraftClick(ref, body),
         lookup: observeDraftClick,
@@ -620,6 +620,8 @@ export class DraftCommandOwner {
           this.setState(ref.itemKey, { ended: "other" }, id);
       });
     if (entry?.binding) for (const stop of entry.binding.notices) stop();
+    // The server refuses an Un-Apply against an ended draft: Ctrl+Z goes past its Applies.
+    for (const band of this.bandApplies) if (band.draftId === id) band.end();
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);
     if (id !== ref.itemKey)
@@ -638,15 +640,19 @@ export class DraftCommandOwner {
     this.entries.delete(entry.draftId);
     entry.item.rooms.delete(entry);
     if (this.byItem.get(entry.ref.itemKey) === entry) this.byItem.delete(entry.ref.itemKey);
+    // The Apply stays in force after its review closes (Draft view to Live): its Ctrl+Z goes on
+    // without the queue, which settles only by watching this room.
+    const port = {
+      send: (body: ApplyClick) => applyDraftClick(entry.ref, body),
+      unapply: (body: UnapplyClick) => unapplyDraftClick(entry.ref, body),
+    };
+    for (const band of this.bandApplies) if (band.draftId === entry.draftId) band.release(port);
     this.releaseItem(entry.item);
   }
 
   private releaseItem(item: Item) {
     if (item.rooms.size || item.queue.pending || this.items.get(item.ref.itemKey) !== item) return;
     this.items.delete(item.ref.itemKey);
-    // The Apply entries sit on a session that can outlive this queue; their actions need it.
-    for (const remove of item.applyEntries) remove();
-    item.applyEntries.clear();
   }
 
   /** A click's answer, as its caller's outcome and a refusal on the generation it was made for. */
@@ -715,7 +721,8 @@ export class DraftCommandOwner {
      * a whole-item Apply, or text groups chosen with the tree line.
      */
     requested?: { revision: string | null },
-    history?: EditorHistoryHandle | null,
+    /** A band's Apply: the histories its Ctrl+Z goes in. */
+    histories?: LiveHistories | null,
     joint?: Joint,
   ): StartedApply | null {
     if (!this.active || this.state(ref.itemKey).discarding) return null;
@@ -737,7 +744,7 @@ export class DraftCommandOwner {
       return whole || tree
         ? this.captureOnReceipt(ref, { draftId: whole, tree }, restore, joint)
         : null;
-    return this.captureText(ref, target, restore, tree, history, joint);
+    return this.captureText(ref, target, restore, tree, histories, joint);
   }
 
   /**
@@ -784,7 +791,7 @@ export class DraftCommandOwner {
     target: TextTarget,
     restore: boolean,
     tree: { revision: string | null } | undefined,
-    history?: EditorHistoryHandle | null,
+    histories?: LiveHistories | null,
     joint?: Joint,
   ): StartedApply | null {
     const entry = this.byItem.get(ref.itemKey);
@@ -838,7 +845,7 @@ export class DraftCommandOwner {
       acknowledged,
       ...(joint ? { send: joint.send } : {}),
     };
-    const scheduled = history
+    const scheduled = histories
       ? entry.item.queue.enqueueHistory({
           frozen,
           patchFor: (groupIds) =>
@@ -857,8 +864,12 @@ export class DraftCommandOwner {
             }),
         })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
-    if (scheduled.handle && history)
-      entry.item.applyEntries.add(history.captureApply(scheduled.handle).remove);
+    if (scheduled.handle && histories) {
+      const band = new BandApply(entry.draftId, histories, scheduled.handle, () =>
+        this.bandApplies.delete(band),
+      );
+      this.bandApplies.add(band);
+    }
     binding.runtime.projectNow();
     const outcome = scheduled.outcome.then((answer) =>
       this.settled(ref, entry.draftId, answer, restore),
@@ -1161,6 +1172,8 @@ export class DraftCommandOwner {
     this.active = false;
     this.notices.close();
     for (const item of this.items.values()) item.queue.close();
+    // Their entries sit on sessions that outlive this owner.
+    for (const band of this.bandApplies) band.end();
   }
 }
 
