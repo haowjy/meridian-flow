@@ -130,8 +130,9 @@ type OpenedList = { list: TreeList; sources: ContextSource[]; actor: string };
  * leaf, the document the codec's spelling of it names (`ch1.md` is `ch1`).
  */
 function childAt(kids: readonly TreeNode[], segment: string, last: boolean): TreeNode | undefined {
+  if (!last) return childAtSegment(kids, segment, "folder");
   const exact = childAtSegment(kids, segment);
-  if (exact || !last) return exact;
+  if (exact) return exact;
   const alias = childAtSegment(kids, canonicalLeaf(segment));
   return alias?.kind === "document" ? alias : undefined;
 }

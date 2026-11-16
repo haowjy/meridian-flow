@@ -1,6 +1,6 @@
 import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
 import { placeIn, type Setter, type TreeProjection } from "./replay.js";
-import { descendantsOf, nameAmong } from "./shape.js";
+import { descendantsOf } from "./shape.js";
 import { LIVE, lastOfFamily, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
@@ -73,16 +73,12 @@ export function recordsInForce(records: readonly TreeRecord[]): Set<string> {
 
 /** Whether `undoer` put back what `record` changed: an Undo drafted elsewhere may have gone elsewhere. */
 function reverses(undoer: TreeRecord, record: TreeRecord): boolean {
-  if (record.type === "move") {
-    // A move that set a name is also undone as a rename of that name, which leaves its place.
-    if (undoer.type === "rename")
-      return record.name !== undefined && undoer.fromName === record.name;
+  if (record.type === "move")
     return (
       undoer.type === "move" &&
       undoer.parent === record.from.parent &&
       undoer.rank === record.from.rank
     );
-  }
   if (record.type === "rename") return undoer.type === "rename" && undoer.name === record.fromName;
   return true;
 }
@@ -154,15 +150,9 @@ export function undoChange(
       if (record.undoes !== undefined) {
         // An Undo's own move taken back is a redo: the original move again, unless the node was moved since.
         if (movedAfter(writer, view, record)) return "changed_since";
-        const named =
-          record.name === undefined
-            ? undefined
-            : lastSetBy(projection.setters.get(record.node)?.label, record);
         const { parent, rank } = record.from;
         const back = projection.nodes.get(parent);
         if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
-        // Back at the place the original went to, under the name that place shows free.
-        const arrives = nameAmong(projection, parent, node.kind, node.name, node.id);
         return writer.author(
           view,
           actor,
@@ -172,31 +162,13 @@ export function undoChange(
             parent,
             rank,
             from: { parent: node.parent, rank: node.rank },
-            ...(named
-              ? { name: named.before.name }
-              : arrives === node.name
-                ? {}
-                : { name: arrives }),
           },
           extra,
         );
       }
-      // A move that carried a name set two facts, and each goes back while the move still holds
-      // it: a later rename keeps its name and the place still goes back, and the other way round.
       const placed = lastSetBy(projection.setters.get(record.node)?.place, record);
-      const named =
-        record.name === undefined
-          ? undefined
-          : lastSetBy(projection.setters.get(record.node)?.label, record);
-      if (!placed && !named) return "changed_since";
-      if (!placed && named)
-        return writer.author(
-          view,
-          actor,
-          { type: "rename", node: record.node, name: named.before.name, fromName: node.name },
-          extra,
-        );
-      const { parent, rank } = (placed as NonNullable<typeof placed>).before;
+      if (!placed) return "changed_since";
+      const { parent, rank } = placed.before;
       const back = projection.nodes.get(parent);
       if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
       return writer.author(
@@ -208,7 +180,6 @@ export function undoChange(
           parent,
           rank,
           from: { parent: node.parent, rank: node.rank },
-          ...(named ? { name: named.before.name } : {}),
         },
         extra,
       );

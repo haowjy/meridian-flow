@@ -155,7 +155,8 @@ export function resolveShown(
       const last = at + width === segments.length;
       for (name of candidates(written, last, path.folder)) {
         // The segment's holder now: a standing node before one in Trash it would reach.
-        const now = childAtSegment(kids, name) ?? inTrashAt(kids, name);
+        const now =
+          childAtSegment(kids, name, last ? undefined : "folder") ?? inTrashAt(kids, name);
         const was = shownAt(shown, folder, name);
         const meant = was ? projection.nodes.get(was) : undefined;
         // A node the map names but this view lacks was shown in the other view: its name here

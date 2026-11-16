@@ -94,6 +94,7 @@ export function toOutcome(
     ...(result.aheadSettlements ? { aheadSettlements: result.aheadSettlements } : {}),
     ...(result.showing ? { showing: result.showing } : {}),
     ...(result.frontier ? { frontier: result.frontier } : {}),
+    ...(result.occupied ? { occupied: true as const } : {}),
     result: model,
   };
   if (result.status === "success") {

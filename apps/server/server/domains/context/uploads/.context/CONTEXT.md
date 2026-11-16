@@ -89,23 +89,15 @@ the document id and sends it as the intake id (a UUID that no `documents` row ho
 `idempotency_conflict`), so the link to the file stands in the document before the file exists, and
 the door starts the upload before it inserts the chip.
 
-Every upload is named where it lands, when finish places it: a chat's in its flat `uploads`, a
-source upload in `<scheme>://assets/<name>`. Finish lists the folder once (`UploadContentPort.names`)
-and picks the first free name against that, so the number of copies costs nothing per finish; it
-binds and persists, and on a `conflict` from either (another writer took the name since the list)
-adds the name to the taken set and goes again, at most 100 times, so a text file's bound path
-always matches the one it lands at. The chat port reports a taken `uploads://` name as a conflict
-like any other, for text and stored files alike, which is why no name is reserved earlier. `finish.failed` logs a fixed `reason`, never
-writer text. A file's own extension stays its extension (`notes (2).zip`). `finalize` records the name
-it took.
+Every upload keeps its own name where it lands: a chat's in its flat `uploads`, a source upload in
+`<scheme>://assets/<name>`. The same file sent twice keeps both, each named `notes.zip`: the later is
+a twin (rule 14), its path `notes.zip~b21c`. Finish binds and persists once; `finalize` records the
+path the file landed at (`UploadContentPort.persist` answers it), a twin's leaf with its `~id`.
+`finish.failed` logs a fixed `reason`, never writer text.
 
-`start` also answers `name`: the name finish would give the file if it ran now, by the same rule
-(one list, the first free name, the type guessed from the name and declared type). The door labels
-a dropped file's chip with it, so a second `notes.zip` reads `notes (2).zip`. Finish still names
-the file itself, so two uploads of one name started before either finishes both hear `notes.zip`,
-and the one that finishes second lands as `notes (2).zip` under a chip labelled `notes.zip` (its
-link still finds it). A guess that the bytes overrule (text past the text cap kept as a file) can
-differ the same way. The label is never rewritten after the file lands: a chip's words are the
+`start` also answers `name`: the file's name, by the type guessed from the name and declared type.
+The door labels a dropped file's chip with it. A guess that the bytes overrule (text past the text
+cap kept as a file) can differ. The label is never rewritten after the file lands: a chip's words are the
 writer's once it stands (see the link identity design). `assets/` is created by that write wherever it has gone missing. The chat-only
 `lookupUpload` skips these rows.
 

@@ -43,8 +43,7 @@ function needs(record: TreeRecord): string[] {
 /** The facts a record sets: a later record of a same fact overrides an earlier one. */
 function factsOf(record: TreeRecord): string[] {
   if (record.type === "rename") return [`name:${record.node}`];
-  if (record.type === "move")
-    return [`place:${record.node}`, ...(record.name === undefined ? [] : [`name:${record.node}`])];
+  if (record.type === "move") return [`place:${record.node}`];
   if (record.type === "delete" || record.type === "restore") return [`presence:${record.node}`];
   return [`create:${record.node}`];
 }
@@ -291,11 +290,7 @@ export function applyDraft(
     if (copy.type === "create")
       was.set(copy.node, { name: copy.name, parent: copy.parent, rank: copy.rank });
     else if (before && copy.type === "move")
-      was.set(copy.node, {
-        name: copy.name ?? before.name,
-        parent: copy.parent,
-        rank: copy.rank,
-      });
+      was.set(copy.node, { name: before.name, parent: copy.parent, rank: copy.rank });
     else if (before && copy.type === "rename") was.set(copy.node, { ...before, name: copy.name });
     copies.push(writable(copy));
   }
@@ -410,11 +405,8 @@ export type UndoLeftWhy = NotUndone | "has_text";
 export type UndoApplyResult = {
   /** The opposite records made, newest first. */
   undone: TreeRecord[];
-  /**
-   * The live copies not taken back, each with why. `fact` is set when the copy was a move that
-   * also set a name and only the other of the two went back.
-   */
-  left: Array<{ record: TreeRecord; why: UndoLeftWhy; fact?: "name" | "place" }>;
+  /** The live copies not taken back, each with why. */
+  left: Array<{ record: TreeRecord; why: UndoLeftWhy }>;
 };
 
 /**
@@ -423,8 +415,7 @@ export type UndoApplyResult = {
  * a created folder) is kept, as it is for any other Undo. A fact something later changed stays
  * (`changed_since`), as does a document with text written since (`has_text`, from
  * `writtenSince`: text is not in the list), a node that is gone (`purged`) and a change no longer
- * in force (`already`); each is in `left`. A move that also set a name goes back fact by fact, and
- * the fact that stays is in `left` too. The records whose copies were taken back are pending
+ * in force (`already`); each is in `left`. The records whose copies were taken back are pending
  * again in the Work; the others stay applied. The live
  * `restore` records an Apply made first (`restoredByApply`) are taken back with the copies.
  */
@@ -459,16 +450,6 @@ export function undoApply(
       }
       undone.push(back);
       reversed.add(copy.carries ?? copy.id);
-      // A move that also set a name, of which only one fact still stood: the other stays.
-      if (copy.type === "move" && copy.name !== undefined && copy.undoes === undefined) {
-        const kept =
-          back.type === "rename"
-            ? "place"
-            : back.type === "move" && back.name === undefined
-              ? "name"
-              : undefined;
-        if (kept) left.push({ record: copy, why: "changed_since", fact: kept });
-      }
     }
     // A record this Apply settled is pending again once a copy of it is taken back: matched by
     // root, since a restored Discard's record (a copy itself) and its live copy share the original

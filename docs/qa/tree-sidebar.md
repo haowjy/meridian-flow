@@ -39,7 +39,7 @@ recipe is not a current pass claim.
 4. Take `tree-a` offline (browser network emulation). Rename one file, move another and delete a
    third. `tree-a` shows each at once. `tree-b` shows none of them. Create `new.md` in both tabs
    while `tree-a` is offline. Go back online: both tabs converge to one tree, and the second
-   `new.md` keeps both documents, numbered by the replay (`new (2).md`), never dropped.
+   `new.md` keeps both documents, both named `new` (the later's path is `new~…`), never dropped.
 5. Reload `tree-a`, then open the project in a third isolated session. All three sidebars must
    agree, and `./mf doc read` at each file's new URI returns its content. Record screenshots.
 

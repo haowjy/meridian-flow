@@ -33,7 +33,7 @@ describe("UploadIntake", () => {
   });
 });
 
-it("rejects a committed address different from the reservation", async () => {
+it("records the address the upload landed at: a twin of a file already there has its ~id", async () => {
   const reservation: PlacedUpload = {
     owner: { kind: "chat", chatId: "chat", chatRef: null },
     projectId: "project",
@@ -53,7 +53,7 @@ it("rejects a committed address different from the reservation", async () => {
     forProject: () => ({
       createBoundDocument: async () => ({
         ok: true,
-        value: { documentId: "document", uri: "uploads://upload" },
+        value: { documentId: "document", uri: "uploads://upload.md~b21c" },
       }),
     }),
   } as unknown as UnifiedContextPortFactory);
@@ -68,5 +68,5 @@ it("rejects a committed address different from the reservation", async () => {
       hasPreview: false,
       keptAsFile: false,
     }),
-  ).toEqual({ ok: false, conflict: false });
+  ).toEqual({ ok: true, finalPath: "upload.md~b21c" });
 });

@@ -121,7 +121,6 @@ function readOnlyStore(documents: ContextDocument[]): ContextDocumentStore {
       return document ? { contextSourceId: "source", document, path: document.name } : null;
     },
     listTree: async () => ({ folders: [], documents }),
-    namesAt: async () => new Set(documents.map((document) => document.name)),
     listFolders: async () => [],
     listDocuments: async () => documents,
   };

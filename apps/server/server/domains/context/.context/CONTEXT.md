@@ -196,8 +196,13 @@ document keys; a caller holds no document or namespace key when it submits. `con
   remains only where no document has been decided: a create, and `port.read` of a path for a person
   opening a thread's context.
 - **Create.** The record, the document's first Yjs state and its arrival are one unit
-  (`documentCreation.createDocumentAtomically`; `live-create.ts`). An occupied name refuses with
-  `conflict`; a create never replaces or joins another document. A text document created in a
+  (`documentCreation.createDocumentAtomically`; `live-create.ts`). A create never replaces or
+  joins another document, and is never refused for a name: beside a node of that name it makes a
+  twin (rule 14), and the answer's URI is the path it landed at (`Landed`, spelled by the router),
+  a twin's leaf with its `~id`. A `~id` segment that reaches no node reads as its name, for writers
+  and readers alike (`childAtSegment`, the SQL walk), so a create there lands under the name. The
+  model's `create` reuses the empty document its path reaches; one with text makes a twin
+  (agent-edit marks the write `occupied`, and the host ensures again with `beside`). A text document created in a
   Work's version gets its Yjs authority and its Work text draft from the list store, in the
   transaction that admits the create (`draftCreatedDocuments`, wired in `lib/compose.ts`): the
   writer's records through the list's room and the AI's through `submit` take the same path.
@@ -207,8 +212,8 @@ document keys; a caller holds no document or namespace key when it submits. `con
   `port.moveAcrossLists` (`SourceTree.moveAcrossLists`) makes `moveBetweenLists`' pair in one
   `submit` on both lists, live only, documents and files only (a folder or a Work's draft answers
   `invalid_operation`), and the browser reaches it at `POST /api/projects/:id/context/move`.
-  `undoMoveBetweenLists` takes the pair back across both lists. A destination name taken by
-  another node answers `conflict`.
+  `undoMoveBetweenLists` takes the pair back across both lists. A destination name another node
+  has makes a twin.
 - **Delete.** `port.delete` is the live one-record delete the upload remove uses (`SourceTree.delete`): the node and its subtree go to Trash together; the result
   lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
   that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.
@@ -253,11 +258,10 @@ one source's tree contributes.
   identity destination through the router's one resolver (`destination_missing` when the
   folder is gone, `permission_denied` when the writer cannot edit it), then the destination
   adapter inserts the plan (`copyInto`) as one `submit`.
-- Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
-  against live occupants and the rest of the batch, from a lock-free read of the destination
-  parent ([naming conflicts never
-  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)).
-  Only the roots meet existing occupants.
+- A copy keeps its source's names ([naming conflicts never
+  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)):
+  beside a node of that name it is a twin. The plan (`planCopy`) reads nothing of the destination;
+  the entries the insert answers carry the paths that landed (`insertTree`).
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
   every descendant keeps a server-minted identity. A node id already taken (`NodeIdRefusedError`
   from the list store's claim) makes the insert a typed `conflict`; a replay is not recognised
@@ -335,8 +339,8 @@ A delete or a move across lists is addressed by entry id: the router takes the n
 node in the list's replay inside `make` (`SourceTree.delete`, `moveAcrossLists`), so a rename or
 move by another writer in the gap is neither undone nor refused; the only facts it checks are about
 the target (the occupant, `onlyAt`, the source the caller found the node in). A node that left the
-source answers `stale_target`. A move with no `name` keeps the node's name. A move to an occupied
-name answers `conflict`.
+source answers `stale_target`. A move keeps the node's name; into a folder that shows it, the node
+is a twin.
 
 ## Document content and filetype rules
 
@@ -440,5 +444,5 @@ it is `domains/recent-documents`.
 
 ## Import reveal
 
-An import stages nothing in tables of its own: each planned text is written to the document journal under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` numbers each name against the list as it stands at the reveal (a name taken since the plan is renumbered), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
+An import stages nothing in tables of its own: each planned text is written to the document journal under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` stores each name as planned (beside a node of that name it is a twin), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
 

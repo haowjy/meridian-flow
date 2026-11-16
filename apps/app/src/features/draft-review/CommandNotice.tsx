@@ -129,8 +129,7 @@ export function DraftNoticeLine({
   if (!hasLine(notice)) return null;
   if (notice.kind === "applied") {
     const landed = notice.facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
-    const named = (kind: "renamed" | "restored") =>
-      notice.facts.flatMap((fact) => (fact.kind === kind ? [fact.name] : []));
+    const restored = notice.facts.flatMap((fact) => (fact.kind === "restored" ? [fact.name] : []));
     const also = notice.facts.flatMap((fact) =>
       fact.kind === "also" ? [`${fact.from} → ${fact.to}`] : [],
     );
@@ -141,7 +140,7 @@ export function DraftNoticeLine({
     // once per place, so the line holds at sidebar width.
     const sentence = [
       ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
-      appliedSentence(named("restored"), named("renamed"), also),
+      appliedSentence(restored, also),
     ]
       .filter(Boolean)
       .join(" ");
@@ -284,7 +283,6 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
       word: (id) => {
         const facts = factsOf(id);
         if (facts.length === 0) return null;
-        const renamed = facts.some((fact) => fact.kind === "renamed");
         const [first] = facts;
         const name = first ? (first.kind === "also" ? first.to : first.name) : "";
         const said = facts.map(factSentence).join(" ");
@@ -310,8 +308,8 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         return (
           <RowWord
             tone="done"
-            label={renamed ? t`${name}, renamed` : t`${name}, applied`}
-            word={renamed ? <Trans>Renamed</Trans> : <Trans>Applied</Trans>}
+            label={t`${name}, applied`}
+            word={<Trans>Applied</Trans>}
             sentence={said}
           />
         );
@@ -384,10 +382,6 @@ function factSentence(fact: AppliedFact): string {
     case "landed": {
       const place = placeOf(fact.uri);
       return t`Applied. Now in ${place}.`;
-    }
-    case "renamed": {
-      const name = fact.name;
-      return t`Applied as ${name}: the name was taken.`;
     }
     case "applied":
       return t`Applied just now: its changes are in the manuscript.`;
@@ -479,16 +473,12 @@ function placeOf(uri: string): string {
 
 export function appliedSentence(
   restored: readonly string[],
-  renamed: readonly string[],
   alsoApplied: readonly string[] = [],
 ): string {
   const others = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
     alsoApplied,
   );
   return [
-    ...(renamed.length === 1
-      ? [t`Added as ${renamed[0]}.`]
-      : renamed.map((name) => t`Added as ${name}.`)),
     ...(restored.length ? [restoredSentence(restored)] : []),
     ...(alsoApplied.length ? [t`Also applied ${others}.`] : []),
   ].join(" ");

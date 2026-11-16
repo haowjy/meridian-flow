@@ -383,7 +383,7 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
     markdown: string,
     options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
     const refused = this.placement.refuse("create a file with text");
     if (refused) return Err(refused);
     let bound: BoundWrite | null = null;
@@ -399,7 +399,7 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
     const refused = this.placement.refuse("create a file with text");
     if (refused) return Err(refused);
     if (bound && !this.boundWrites.boundFor(path, bound, null)) {
@@ -423,14 +423,16 @@ export class ContextFS implements ContextSchemeAdapter {
   ensureTrackedDocument(
     path: string,
     options?: ContextEnsureTrackedOptions,
-  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; created: boolean; path: string }, AdapterFault>> {
     return this.placement.ensureTracked(path, options);
   }
 
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<{ documentId: string; placement: "live" | "draft" }, AdapterFault>> {
+  ): Promise<
+    Result<{ documentId: string; placement: "live" | "draft"; path: string }, AdapterFault>
+  > {
     return this.placement.writeBinary(path, options);
   }
 

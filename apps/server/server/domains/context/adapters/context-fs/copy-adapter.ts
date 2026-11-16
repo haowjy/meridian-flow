@@ -14,12 +14,17 @@ import type {
   CopySourceFile,
   CopySourceFolder,
 } from "../../ports/context-copy.js";
-import type { ContextDocument, ContextFolder } from "../../ports/context-document-store.js";
+import type {
+  ContextDocument,
+  ContextDocumentStore,
+  ContextFolder,
+} from "../../ports/context-document-store.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
+  store: ContextDocumentStore;
   /** Why this placement cannot take a copy (a draft placement), or null. */
   refuseReceive(): AdapterFault | null;
 }
@@ -106,7 +111,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
     snapshotSource,
     planCopy: async (input) => {
       const refused = deps.refuseReceive();
-      return refused ? Err(refused) : Ok(await planCopyTree(deps, input));
+      return refused ? Err(refused) : Ok(planCopyTree(deps, input));
     },
     copyInto: (input) => insertCopiedTree(deps, input),
   };

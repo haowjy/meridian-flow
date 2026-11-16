@@ -33,72 +33,10 @@ describe("entryNameStemEnd", () => {
 });
 
 describe("validateContextEntryName", () => {
-  it("collides a typed `.md` with the stored name beside it", () => {
-    expect(
-      validateContextEntryName("Chapter 12.md", [
-        { entryId: "sibling", name: "Chapter 12", kind: "file" },
-      ]),
-    ).toMatchObject({
-      level: "error",
-      message: expect.stringContaining("Chapter 12"),
-    });
-    expect(
-      validateContextEntryName("Chapter 12", [
-        { entryId: "sibling", name: "Chapter 12", kind: "file" },
-      ])?.level,
-    ).toBe("error");
-  });
-
-  it("lets a folder and a document not share a name", () => {
-    expect(
-      validateContextEntryName("Lore", [{ entryId: "sibling", name: "Lore", kind: "dir" }], "file")
-        ?.level,
-    ).toBe("error");
-    expect(
-      validateContextEntryName(
-        "Lore.md",
-        [{ entryId: "sibling", name: "Lore", kind: "file" }],
-        "folder",
-      ),
-    ).toBeNull();
-    expect(
-      validateContextEntryName(
-        "binary.md",
-        [{ entryId: "sibling", name: "binary.md", kind: "file" }],
-        "folder",
-      )?.level,
-    ).toBe("error");
-    expect(
-      validateContextEntryName(
-        "Lore",
-        [{ entryId: "sibling", name: "Lore", kind: "file" }],
-        "folder",
-      )?.level,
-    ).toBe("error");
-  });
-
-  it("checks a rename's collision against the name it would be stored under", () => {
-    expect(
-      validateContextEntryName(
-        "settings",
-        [{ entryId: "sibling", name: "settings.toml", kind: "file" }],
-        "file",
-        { extension: "toml", editable: true },
-      )?.level,
-    ).toBe("error");
-    expect(
-      validateContextEntryName(
-        "settings",
-        [{ entryId: "sibling", name: "settings.toml", kind: "file" }],
-        "file",
-      ),
-    ).toBeNull();
-  });
-
   it("refuses no document name: one with no stem is Untitled, one that reads as another type stays whole", () => {
-    expect(validateContextEntryName(".md", [])).toBeNull();
+    expect(validateContextEntryName(".md")).toBeNull();
     expect(storedDocumentName(".md")).toMatchObject({ ok: true, name: "Untitled" });
-    expect(validateContextEntryName("data.json.md", [])).toBeNull();
+    expect(validateContextEntryName("data.json.md")).toBeNull();
     expect(storedDocumentName("data.json.md")).toMatchObject({ ok: true, name: "data.json.md" });
   });
 });

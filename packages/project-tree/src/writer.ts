@@ -1,5 +1,5 @@
 import type * as Y from "yjs";
-import { freeName, shownName } from "./names.js";
+import { shownName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
@@ -20,7 +20,7 @@ import {
   type TreeRecordInput,
 } from "./record.js";
 import type { TreeProjection } from "./replay.js";
-import { childrenOf, descendantsOf, nameAmong, rankAmong, rankAt } from "./shape.js";
+import { childrenOf, descendantsOf, rankAmong, rankAt } from "./shape.js";
 import { writable } from "./validate.js";
 import { LIVE, lastOfFamily, replayView, type View } from "./view.js";
 
@@ -113,14 +113,14 @@ export class TreeWriter {
   }
 
   /**
-   * Creates, in order, against one replay of the view: a name is numbered against the shown
-   * siblings and the ones this call made before it, a rank is placed among them, and a parent
-   * may be a node an earlier input created. A replay per create would cost the whole list each.
+   * Creates, in order, against one replay of the view: a rank is placed among the shown siblings
+   * and the ones this call made before it, and a parent may be a node an earlier input created.
+   * A replay per create would cost the whole list each.
    */
   createAll(view: View, actor: Actor, inputs: readonly CreateInput[]): CreateRecord[] {
     const projection = this.view(view);
     const sources = new Map<string, string>();
-    const siblings = new Map<string, { name: string; rank: string }[]>();
+    const siblings = new Map<string, string[]>();
     const out: CreateRecord[] = [];
     this.transact(() => {
       for (const input of inputs) {
@@ -130,23 +130,17 @@ export class TreeWriter {
         if (source === undefined) throw new Error(`create under unknown parent ${input.parent}`);
         let kids = siblings.get(input.parent);
         if (!kids) {
-          kids = childrenOf(projection, input.parent).map((node) => ({
-            name: node.name,
-            rank: node.rank,
-          }));
+          kids = childrenOf(projection, input.parent).map((node) => node.rank);
           siblings.set(input.parent, kids);
         }
-        const name = freeName(
+        const name = shownName(
           input.kind,
-          shownName(input.kind, input.name, input.kind === "document" ? input.filetype : undefined),
-          new Set(kids.map((kid) => kid.name)),
+          input.name,
+          input.kind === "document" ? input.filetype : undefined,
         );
         const at = Math.max(0, Math.min(input.index ?? kids.length, kids.length));
-        const rank = rankAmong(
-          kids.map((kid) => kid.rank),
-          at,
-        );
-        kids.splice(at, 0, { name, rank });
+        const rank = rankAmong(kids, at);
+        kids.splice(at, 0, rank);
         const record = this.author(view, actor, {
           type: "create",
           node: input.node ?? newId(),
@@ -179,27 +173,18 @@ export class TreeWriter {
     return this.moveAll(view, actor, [{ node, parent, index }])[0] as MoveRecord;
   }
 
-  /**
-   * Moves, in order, against one replay of the view: a rank is placed among the siblings as the
-   * earlier moves left them, and a name taken there is numbered and carried by the move itself,
-   * so the number stays when the other node is renamed. Two nodes moved into one folder under
-   * one name are numbered in turn.
-   */
+  /** Moves, in order, against one replay of the view: a rank is placed among the siblings as the earlier moves left them. */
   moveAll(
     view: View,
     actor: Actor,
     moves: readonly { node: string; parent: string; index?: number }[],
   ): MoveRecord[] {
     const projection = this.view(view);
-    const siblings = new Map<string, { id: string; name: string; rank: string }[]>();
+    const siblings = new Map<string, { id: string; rank: string }[]>();
     const kidsOf = (parent: string) => {
       let kids = siblings.get(parent);
       if (!kids) {
-        kids = childrenOf(projection, parent).map((child) => ({
-          id: child.id,
-          name: child.name,
-          rank: child.rank,
-        }));
+        kids = childrenOf(projection, parent).map((child) => ({ id: child.id, rank: child.rank }));
         siblings.set(parent, kids);
       }
       return kids;
@@ -216,15 +201,12 @@ export class TreeWriter {
           if (at >= 0) left.splice(at, 1);
         }
         const kids = kidsOf(parent);
-        const name = current
-          ? freeName(current.kind, current.name, new Set(kids.map((kid) => kid.name)))
-          : "";
         const at = Math.max(0, Math.min(index, kids.length));
         const rank = rankAmong(
           kids.map((kid) => kid.rank),
           at,
         );
-        kids.splice(at, 0, { id: node, name: current ? name : "", rank });
+        kids.splice(at, 0, { id: node, rank });
         placed.set(node, parent);
         out.push(
           this.author(view, actor, {
@@ -233,7 +215,6 @@ export class TreeWriter {
             parent,
             rank,
             from: { parent: current?.parent ?? parent, rank: current?.rank ?? "" },
-            ...(current && name !== current.name ? { name } : {}),
           }) as MoveRecord,
         );
       }
@@ -247,15 +228,7 @@ export class TreeWriter {
     return this.author(view, actor, {
       type: "rename",
       node,
-      name: current
-        ? nameAmong(
-            projection,
-            current.parent,
-            current.kind,
-            shownName(current.kind, name, filetype ?? current.filetype),
-            node,
-          )
-        : name,
+      name: current ? shownName(current.kind, name, filetype ?? current.filetype) : name,
       fromName: current?.name ?? "",
       ...(filetype ? { filetype } : {}),
     }) as RenameRecord;
@@ -320,7 +293,7 @@ export class TreeWriter {
   }
 }
 
-/** What a create asks for: the name is numbered and the rank placed by the writer. */
+/** What a create asks for: the rank is placed by the writer. */
 export type CreateInput = {
   name: string;
   parent: string;
@@ -371,7 +344,7 @@ export function moveBetweenLists(
     type: "create",
     node,
     kind: was.kind,
-    name: nameAmong(arrives, into.parent, was.kind, into.name ?? was.name),
+    name: into.name ?? was.name,
     parent: into.parent,
     source,
     rank: rankAt(arrives, into.parent, into.index ?? Number.MAX_SAFE_INTEGER),

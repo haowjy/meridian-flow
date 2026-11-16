@@ -282,9 +282,10 @@ function ensureFolders(
 ): string {
   let parent = start;
   for (const name of segments) {
+    // A segment's `~id` that reached nothing names no folder: the folder is made under its name.
     const created = cx.scope.writer.create(cx.scope.view, cx.scope.actor, {
       kind: "folder",
-      name,
+      name: readSegment(name).name,
       parent,
     });
     remember(cx, created.id, created.node);
@@ -744,7 +745,7 @@ export function runTreeCommand(
         return refuse("invalid_write", command.path, "A folder needs a name.");
       const found = resolveShown(projection, shown, path.root, path);
       // A folder that stands there is what the call asked for; a document there is kept and the
-      // new folder is numbered beside it by the replay.
+      // new folder is its twin, beside it.
       if (found.kind === "node" && found.node.kind === "folder" && !found.node.trashed)
         return finish(nothingDone(found.node.id, command.path, { already: "live", notMoved: [] }));
       const parent = destinationParent(cx, path, path.segments.slice(0, -1));
@@ -765,7 +766,7 @@ export function runTreeCommand(
         ok: true,
         subject: last,
         made: [],
-        shownAt: command.path,
+        shownAt: landedAt,
         landedAt,
         ...(landedAt !== uriOfPath(cx, command.path) ? { landed: landedAt } : {}),
         ...(kept ? { kept } : {}),

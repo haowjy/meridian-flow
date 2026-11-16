@@ -24,8 +24,10 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
   return {
     name: scheme,
     capabilities: schemeCapabilities(scheme),
-    createTrackedDocument: vi.fn(async () => Ok({ documentId: "document-new" })),
-    writeBinary: vi.fn(async () => Ok({ documentId: "binary-new" })),
+    createTrackedDocument: vi.fn(async (path: string) => Ok({ documentId: "document-new", path })),
+    writeBinary: vi.fn(async (path: string) =>
+      Ok({ documentId: "binary-new", placement: "live" as const, path }),
+    ),
     list: vi.fn(async () => Ok([])),
     tree: {
       sourceId: vi.fn(async () => `${scheme}-source`),
@@ -248,7 +250,7 @@ it("guards both tracked creation doors by lineage actor while binding remains pr
   adapter.bindTrackedDocument = vi.fn(async (_path, markdown) =>
     Ok({ markdown, bindings: [] } as never),
   );
-  adapter.createBoundDocument = vi.fn(async () => Ok({ documentId: "bound-new" }));
+  adapter.createBoundDocument = vi.fn(async (path) => Ok({ documentId: "bound-new", path }));
   const port = createContextPortRouter({
     sources: new Map(),
     workAuthorities: new Map(),

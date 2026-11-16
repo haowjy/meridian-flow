@@ -312,7 +312,7 @@ describe.runIf(enabled)("durable upload", () => {
     await repository.update(input.importId, {
       placement: {
         destinations: [{ area: "kb", folderId: null, uri: "kb://", fellBack: false }],
-        topLevelNames: {},
+        topLevelSegments: {},
       },
     });
     await repository.refreshCounts(input.importId);
@@ -324,7 +324,7 @@ describe.runIf(enabled)("durable upload", () => {
     expect(await repository.read(input.importId)).toMatchObject({
       placement: {
         destinations: [{ area: "kb", folderId: null, uri: "kb://", fellBack: false }],
-        topLevelNames: {},
+        topLevelSegments: {},
       },
     });
     await sweepImportObjects(repository, objects, { importId: input.importId });
