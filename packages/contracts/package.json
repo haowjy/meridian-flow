@@ -36,9 +36,9 @@
   },
   "dependencies": {
     "@meridian-flow/runtime": "catalog:",
-    "@ag-ui/core": "0.0.57",
+    "@ag-ui/core": "1.0.4",
     "@noble/hashes": "2.4.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "remark-gfm": "^4.0.1",

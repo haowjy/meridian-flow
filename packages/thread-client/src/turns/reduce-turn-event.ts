@@ -573,8 +573,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         return;
       }
 
-      case EventType.REASONING_MESSAGE_START:
-      case EventType.THINKING_TEXT_MESSAGE_START: {
+      case EventType.REASONING_MESSAGE_START: {
         const currentTurn = activeAssistantTurn(store, threadId);
         const identity = parseReasoningIdentity(
           currentTurn,
@@ -600,8 +599,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         return;
       }
 
-      case EventType.REASONING_MESSAGE_CONTENT:
-      case EventType.THINKING_TEXT_MESSAGE_CONTENT: {
+      case EventType.REASONING_MESSAGE_CONTENT: {
         const currentTurn = activeAssistantTurn(store, threadId);
         const identity = parseReasoningIdentity(
           currentTurn,
@@ -644,8 +642,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         return;
       }
 
-      case EventType.REASONING_MESSAGE_END:
-      case EventType.THINKING_TEXT_MESSAGE_END: {
+      case EventType.REASONING_MESSAGE_END: {
         const turn = activeAssistantTurn(store, threadId);
         if (!turn) return;
         const identity = parseReasoningIdentity(turn, (event as Record<string, unknown>).messageId);

@@ -128,8 +128,8 @@ same bytes, and every adapter's `put` is atomic.
 
 Conversion limits (`file-intake/text/limits.ts`): an EPUB's entry count, each entry's declared
 size and the total are checked from the zip's central directory before anything inflates, and only
-XML and XHTML entries are inflated; XML that declares an entity is refused whole; XHTML goes
-through the HTML5 parser, which has no DTD. Every conversion runs in a worker
+XML and XHTML entries are inflated; XML that declares an entity is refused whole; the package files go through htmlparser2 in XML mode, the XHTML goes
+through the HTML5 parser; neither has a DTD. Every conversion runs in a worker
 (`file-intake/text/convert.ts`, `conversion-worker.ts`, the shared `worker-pool.ts`) that is
 terminated at a 20 s deadline and capped at 512 MB of heap, so a hostile file can't freeze the
 event loop or outlive its read; the output cap is 1,000,000 characters (the text says where it
