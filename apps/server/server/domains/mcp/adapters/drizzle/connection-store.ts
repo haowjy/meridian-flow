@@ -1,5 +1,5 @@
 import type { ProjectId, UserId } from "@meridian/contracts";
-import { type McpConnectionId, nextFreeName } from "@meridian/contracts/mcp";
+import { nextFreeName } from "@meridian/contracts/mcp";
 import type { Database } from "@meridian/database";
 import { mcpConnections, mcpConnectionTokens, mcpPins, users } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
@@ -144,7 +144,7 @@ export function createDrizzleConnectionStore({ db }: { db: Database }): Connecti
         const [row] = await tx
           .update(mcpConnections)
           .set({
-            ...(change.spec ? { spec: change.spec } : {}),
+            ...(change.spec ? { spec: change.spec, currentPinId: null } : {}),
             settingsVersion: sql`${mcpConnections.settingsVersion} + 1`,
             updatedAt: new Date(),
           })

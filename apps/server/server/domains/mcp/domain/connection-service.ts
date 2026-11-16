@@ -183,6 +183,36 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
     return null;
   }
 
+  const chosenTools = (stored: StoredConnection) =>
+    stored.pin?.pin.tools.map((tool) => tool.name) ?? [];
+
+  /**
+   * After an address edit: pins what the new server lists of the tools the writer had chosen
+   * (read-only ones only, as `pin` requires). A server that cannot be listed leaves the connection
+   * with no pin, and the screen offers Choose tools.
+   */
+  async function repin(after: StoredConnection, chosen: readonly string[]): Promise<void> {
+    if (chosen.length === 0) return;
+    const listing = await listingOf(after);
+    if (!listing) return;
+    const names = chosen.filter((name) =>
+      listing.tools.some((tool) => String(tool.name) === name && isReadOnly(tool)),
+    );
+    if (names.length === 0) return;
+    const made = makePin(listing, { tools: names, pinnedAt: now().toISOString() });
+    if ("problems" in made) return;
+    // Another edit while the server was listing: its own re-pin follows, this listing is of an old address.
+    const current = await deps.store.find(after.row.accountId, after.row.id);
+    if (
+      !current ||
+      current.row.deletedAt ||
+      current.row.settingsVersion !== after.row.settingsVersion
+    )
+      return;
+    await deps.store.savePin(after.row.id, made.pin, pinHash(made.pin));
+    deps.statusChanged(after.row);
+  }
+
   return {
     resolve,
     checks,
@@ -238,9 +268,10 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       change: { url?: string; token?: string },
     ): Promise<McpConnectionView> {
       const before = await owned(accountId, id);
+      const url = change.url !== undefined ? parseUrl(change.url) : undefined;
       const spec =
-        change.url !== undefined
-          ? { transport: "http" as const, url: parseUrl(change.url) }
+        url !== undefined && url !== before.row.spec.url
+          ? { transport: "http" as const, url }
           : undefined;
       const token = change.token?.trim();
       const sealedToken =
@@ -257,6 +288,8 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       // A new version has no result; the check that learns one runs in the background.
       deps.statusChanged(after.row);
       void checks.check(after.row).catch((cause) => deps.failed(cause, after.row));
+      if (spec)
+        void repin(after, chosenTools(before)).catch((cause) => deps.failed(cause, after.row));
       return view(after, null);
     },
 
