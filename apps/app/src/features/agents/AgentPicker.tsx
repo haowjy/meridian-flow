@@ -5,14 +5,7 @@ import { agentsRootOf } from "@meridian/contracts/agents";
 import type { ModelList } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import { ChevronRight, Settings2 } from "lucide-react";
-import {
-  type CSSProperties,
-  type ReactNode,
-  type Ref,
-  type RefObject,
-  useRef,
-  useState,
-} from "react";
+import { type CSSProperties, type Ref, type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -20,12 +13,10 @@ import {
   dropdownGroupLabelClass,
   dropdownMenuSeparatorClass,
   dropdownRowVariants,
-  dropdownSurfaceVariants,
 } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -47,7 +38,6 @@ const VISIBLE_ROWS = 7;
 const MIN_ROWS = 5;
 const SEARCH_PX = 44;
 const POINT_DELAY_MS = 120;
-const FLYOUT_CLOSE_MS = 200;
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
@@ -297,7 +287,7 @@ export function AgentPickerPanel({
               </ul>
             )}
           </div>
-          {/* Reaching this side keeps the Agent it shows: card, model and reasoning move together. */}
+          {/* Reaching this side keeps the Agent it shows: card, models and reasoning move together. */}
           <div
             onPointerEnter={() => window.clearTimeout(pointTimer.current)}
             className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
@@ -320,6 +310,7 @@ export function AgentPickerPanel({
             {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the choices' arrow keys; its rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
             <div
               ref={choicesRef}
+              onPointerEnter={() => window.clearTimeout(pointTimer.current)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft") {
                   event.preventDefault();
@@ -344,17 +335,7 @@ export function AgentPickerPanel({
                     models={models}
                     rebuildsCache={Boolean(started && shown === own)}
                     onChoose={(id) =>
-                      choose(shown, {
-                        model: id === shown.model ? null : id,
-                        // Reasoning belongs to the model: a level the new one lacks falls away.
-                        effort:
-                          overrides.effort &&
-                          modelLevels(models?.find((option) => option.id === id)).includes(
-                            overrides.effort,
-                          )
-                            ? overrides.effort
-                            : null,
-                      })
+                      choose(shown, { ...overrides, model: id === shown.model ? null : id })
                     }
                   />
                   <ReasoningChoices
@@ -408,15 +389,17 @@ function AgentCard({
   onUse: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-border-subtle p-3">
+    // Sized for a name and three lines of description, so the models under it hold still for
+    // nearly every Agent; the file shows on hover.
+    <div
+      className="flex min-h-28 flex-col gap-1 rounded-lg border border-border-subtle p-3"
+      title={agent.path && agent.level !== "builtin" ? fileAddress(agent) : undefined}
+    >
       <p className="text-sm font-medium">{agent.name}</p>
       {agent.description ? (
         <p className="line-clamp-3 text-sm text-foreground" title={agent.description}>
           {agent.description}
         </p>
-      ) : null}
-      {agent.path && agent.level !== "builtin" ? (
-        <p className="truncate text-xs text-muted-foreground">{fileAddress(agent)}</p>
       ) : null}
       {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
       {useLabel && pickable(agent) ? (
@@ -463,66 +446,50 @@ function ModelChoices({
   onChoose,
 }: {
   agent: AgentCatalogItem;
-  /** The model it runs on here: the chat's for the Agent in use, else its own. */
   runsOn: string | null;
   models: ModelOption[] | null;
   rebuildsCache: boolean;
   onChoose: (id: string) => void;
 }) {
-  const option = runsOn ? models?.find((model) => model.id === runsOn) : undefined;
+  if (!models)
+    return (
+      <div className="app-scroll">
+        <ListLine density="menu" status>
+          <Trans>Loading models…</Trans>
+        </ListLine>
+      </div>
+    );
   return (
-    <FlyoutRow
-      label={t`Model`}
-      value={
-        <>
-          <ModelMark maker={option?.maker ?? null} />
-          <span className="truncate">{runsOn ? modelName(models, runsOn) : t`Default`}</span>
-        </>
-      }
-      title={t`Model for ${agent.name}`}
-    >
-      {(close) =>
-        !models ? (
-          <ListLine density="menu" status>
-            <Trans>Loading models…</Trans>
-          </ListLine>
-        ) : (
-          <>
-            {runsOn && !runsAvailable(models, runsOn) ? (
-              <p className="px-2 pb-1 text-xs text-muted-foreground">
-                {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
-              </p>
-            ) : null}
-            {rebuildsCache ? (
-              <p className="px-2 pb-1 text-xs text-muted-foreground">
-                <Trans>Changing it rebuilds the chat's cache.</Trans>
-              </p>
-            ) : null}
-            <ul className="flex flex-col">
-              {[
-                ...models.filter((model) => model.id === agent.model),
-                ...models.filter((model) => model.id !== agent.model),
-              ].map((model) => (
-                <li key={model.id}>
-                  <ListRow
-                    density="menu"
-                    disabled={!model.available}
-                    current={model.id === runsOn}
-                    leading={<ModelMark maker={model.maker} />}
-                    title={model.name}
-                    meta={model.id === agent.model ? t`Default` : undefined}
-                    onOpen={() => {
-                      onChoose(model.id);
-                      close();
-                    }}
-                  />
-                </li>
-              ))}
-            </ul>
-          </>
-        )
-      }
-    </FlyoutRow>
+    <section aria-label={t`Model for ${agent.name}`} className="app-scroll flex flex-col">
+      {runsOn && !runsAvailable(models, runsOn) ? (
+        <p className="px-2 pb-1 text-xs text-muted-foreground">
+          {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
+        </p>
+      ) : null}
+      {rebuildsCache ? (
+        <p className="px-2 pb-1 text-xs text-muted-foreground">
+          <Trans>Changing it rebuilds the chat's cache.</Trans>
+        </p>
+      ) : null}
+      <ul className="flex flex-col">
+        {[
+          ...models.filter((option) => option.id === agent.model),
+          ...models.filter((option) => option.id !== agent.model),
+        ].map((option) => (
+          <li key={option.id}>
+            <ListRow
+              density="menu"
+              disabled={!option.available}
+              current={option.id === runsOn}
+              leading={<ModelMark maker={option.maker} />}
+              title={option.name}
+              meta={option.id === agent.model ? t`Default` : undefined}
+              onOpen={() => onChoose(option.id)}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -534,130 +501,42 @@ function ReasoningChoices({
 }: {
   agent: AgentCatalogItem;
   model: ModelOption | undefined;
-  /** The level it runs at here: the chat's for the Agent in use, else its own. */
   thinksAt: ReasoningChoice | null;
   onChoose: (level: ReasoningChoice) => void;
 }) {
-  const levels = modelLevels(model);
-  if (!model || levels.length === 0) return null;
+  const levels: ReasoningChoice[] = model
+    ? [...(model.canDisable ? (["disabled"] as const) : []), ...model.efforts]
+    : [];
+
+  // A model with no levels to choose leaves the models the whole column.
+  if (levels.length === 0) return null;
   return (
-    <section aria-label={t`Reasoning on ${model.name}`} className="flex flex-wrap gap-1">
-      {levels.map((level) => (
-        <button
-          key={level}
-          type="button"
-          data-list-item
-          aria-current={level === thinksAt || undefined}
-          className={cn(dropdownRowVariants({ selected: level === thinksAt }), "w-auto gap-1.5")}
-          onClick={() => onChoose(level)}
-        >
-          {reasoningName(level)}
-          {level === agent.effort ? (
-            <span className="text-xs text-muted-foreground">{t`Default`}</span>
-          ) : null}
-        </button>
-      ))}
+    <section aria-label={model ? t`Reasoning on ${model.name}` : t`Reasoning`} className="shrink-0">
+      <div aria-hidden className={dropdownMenuSeparatorClass} />
+      {/* One line of levels, so the models above keep the column's height. */}
+      <ul className="flex flex-wrap gap-1">
+        {levels.map((level) => (
+          <li key={level}>
+            <button
+              type="button"
+              data-list-item
+              aria-current={level === thinksAt || undefined}
+              className={cn(
+                dropdownRowVariants({ selected: level === thinksAt }),
+                "w-auto gap-1.5",
+              )}
+              onClick={() => onChoose(level)}
+            >
+              {reasoningName(level)}
+              {level === agent.effort ? (
+                <span className="text-xs text-muted-foreground">{t`Default`}</span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   );
-}
-
-/**
- * A row that opens its choices in a menu beside it, on hover, click or Right; the picker stays
- * where it is. Left or a pick closes it.
- */
-function FlyoutRow({
-  label,
-  value,
-  title,
-  children,
-}: {
-  label: string;
-  value: ReactNode;
-  /** The flyout's name and heading. */
-  title: string;
-  children: (close: () => void) => ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const closeTimer = useRef<number | undefined>(undefined);
-  const rowRef = useRef<HTMLButtonElement | null>(null);
-  const hold = () => window.clearTimeout(closeTimer.current);
-  // Leaving the row toward the flyout crosses a gap; close only if the pointer doesn't arrive.
-  const release = () => {
-    hold();
-    closeTimer.current = window.setTimeout(() => setOpen(false), FLYOUT_CLOSE_MS);
-  };
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <div>
-          <ListRow
-            density="menu"
-            ref={rowRef}
-            pointed={open}
-            frameProps={{
-              onPointerEnter: (event) => {
-                if (event.pointerType === "touch") return;
-                hold();
-                setOpen(true);
-              },
-              onPointerLeave: release,
-            }}
-            controlProps={{
-              "aria-haspopup": "menu",
-              "aria-expanded": open,
-              onKeyDown: (event) => {
-                if (event.key !== "ArrowRight") return;
-                event.preventDefault();
-                event.stopPropagation();
-                setOpen(true);
-              },
-            }}
-            onOpen={() => setOpen((value) => !value)}
-            title={
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="text-muted-foreground">{label}</span>
-                {value}
-              </span>
-            }
-            trailing={<ChevronRight aria-hidden className="text-muted-foreground" />}
-          />
-        </div>
-      </PopoverAnchor>
-      <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={8}
-        aria-label={title}
-        className={dropdownSurfaceVariants({ measure: "identity" })}
-        onPointerEnter={hold}
-        onPointerLeave={release}
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          focusCurrent(event.currentTarget as HTMLElement);
-        }}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          rowRef.current?.focus();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") {
-            event.preventDefault();
-            event.stopPropagation();
-            setOpen(false);
-            return;
-          }
-          handleListKeys(event);
-        }}
-      >
-        <div className="app-scroll flex flex-col">{children(() => setOpen(false))}</div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/** The reasoning levels a model accepts, Off first where it can switch reasoning off. */
-function modelLevels(model: ModelOption | undefined): ReasoningChoice[] {
-  return model ? [...(model.canDisable ? (["disabled"] as const) : []), ...model.efforts] : [];
 }
 
 /** Whether this deployment can run the model; an id it has never heard of can't run either. */
