@@ -14,7 +14,7 @@
  * Delete this module, its call in `plugins/startup.ts` and its use in
  * `public-address-dispatcher.ts` when a release with the fix ships and the `undici` pin moves to it.
  */
-import { Agent, buildConnector, setGlobalDispatcher } from "undici";
+import { Agent, type buildConnector, setGlobalDispatcher } from "undici";
 
 export const OUTBOUND_CONNECT_OPTIONS = { allowH2: false } satisfies buildConnector.BuildOptions;
 
