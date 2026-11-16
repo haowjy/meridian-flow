@@ -307,7 +307,7 @@ async function resolveDerivedBinding(
   const retained = await deps.agentRevisions.readThreadBinding(source.id);
   if (!retained) throw new Error("Source thread has no Agent binding");
   if (!selection || selection.definitionRevisionId === retained.revision?.id) {
-    if (!retained.revision || retained.revision.definition.metadata.mode === "subagent") {
+    if (!retained.revision || retained.revision.definition.metadata.mode !== "primary") {
       throw new AgentSelectionError(retained.revision?.id ?? "generic subagent");
     }
     return retained;
