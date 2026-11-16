@@ -1,13 +1,14 @@
 import type * as Y from "yjs";
 import { settleLogOf, type TreeRecord } from "./record.js";
+import { standingOf } from "./replay.js";
 import { listRecords } from "./view.js";
 
 /**
  * What became of a drafted record: `pending` while it, or the copy a restored Discard put back
  * in its Work, still waits; `applied` once an Apply took it (a create live already had standing
  * counts, as there is nothing left to land); `replaced` when it couldn't land and a later change
- * to the same fact landed in its place (`superseded`); `discarded` when a Discard took it, the
- * server dropped it, or its list no longer holds it (a purge).
+ * to the same fact landed in its place (`superseded`); `discarded` when a Discard or an Undo took
+ * it, the server dropped it, or its list no longer holds it (a purge).
  */
 export type DraftedFate = "pending" | "applied" | "replaced" | "discarded";
 
@@ -26,6 +27,8 @@ type Index = {
   /** Each family's drafted records in list order: the original and a restored Discard's copies. */
   drafted: Map<string, string[]>;
   settled: Map<string, RecordSettled>;
+  /** The records in force: an Undo took out the rest. */
+  standing: Set<string>;
 };
 
 /**
@@ -39,7 +42,8 @@ function indexOf(doc: Y.Doc): Index {
   if (held) return held;
   const records = new Map<string, TreeRecord>();
   const drafted = new Map<string, string[]>();
-  for (const record of listRecords(doc)) {
+  const all = listRecords(doc);
+  for (const record of all) {
     records.set(record.id, record);
     // An Apply's live copies are what landed, which the drafted record's settlement already says.
     if (record.draft === null) continue;
@@ -65,7 +69,7 @@ function indexOf(doc: Y.Doc): Index {
         settled.set(target, { fate, command: settle.command, at });
       }
     });
-  const index = { records, drafted, settled };
+  const index = { records, drafted, settled, standing: standingOf(all) };
   indexes.set(doc, index);
   doc.once("update", () => indexes.delete(doc));
   return index;
@@ -82,12 +86,14 @@ export function settledRecords(doc: Y.Doc): ReadonlyMap<string, RecordSettled> {
  * settlement is the family's. An id the list doesn't hold reads `discarded`.
  */
 export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, DraftedFate> {
-  const { records, drafted, settled } = indexOf(doc);
+  const { records, drafted, settled, standing } = indexOf(doc);
   const fates = new Map<string, DraftedFate>();
   for (const id of ids) {
     const record = records.get(id);
     const newest = record && drafted.get(record.carries ?? record.id)?.at(-1);
-    const fate = newest ? (settled.get(newest)?.fate ?? "pending") : "discarded";
+    const fate = !newest
+      ? "discarded"
+      : (settled.get(newest)?.fate ?? (standing.has(newest) ? "pending" : "discarded"));
     fates.set(id, fate === "dropped" ? "discarded" : fate);
   }
   return fates;

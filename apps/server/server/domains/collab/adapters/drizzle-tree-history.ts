@@ -133,29 +133,12 @@ export function createDrizzleTreeHistory(
       return row !== undefined;
     },
 
-    async undoneByCard(threadId, turnId) {
-      return (await turnReceipts(threadId, turnId)).byCard.length > 0;
-    },
-
-    async turnSteps(threadId, turnId, direction) {
-      const { mine, undoneBy, byCard: undos } = await turnReceipts(threadId, turnId);
-      if (mine.length === 0) return [];
+    async turnSteps(threadId, turnId) {
+      const { mine, undoneBy, byCard } = await turnReceipts(threadId, turnId);
       const reversedIds = new Set(undoneBy.flatMap((row) => (row.reverses ? [row.reverses] : [])));
-      let chosen: (typeof mine)[number][];
-      if (direction === "undo") {
-        chosen = mine.filter((row) => row.kind !== "undo" && !reversedIds.has(row.id));
-      } else {
-        const redone = new Set(
-          (await reversing(undos.map((row) => row.id))).flatMap((row) =>
-            row.reverses ? [row.reverses] : [],
-          ),
-        );
-        const order = new Map(mine.map((row) => [row.id, row.seq]));
-        chosen = undos
-          .filter((row) => !redone.has(row.id))
-          .sort((a, b) => (order.get(a.reverses ?? "") ?? 0) - (order.get(b.reverses ?? "") ?? 0));
-      }
-      if (chosen.length === 0) return [];
+      const undoneByCard = new Set(byCard.map((row) => row.reverses)).size;
+      const chosen = mine.filter((row) => row.kind !== "undo" && !reversedIds.has(row.id));
+      if (chosen.length === 0) return { open: [], undoneByCard };
       const touched = await tx()
         .select({
           receiptId: treeEditReceiptNodes.receiptId,
@@ -168,14 +151,17 @@ export function createDrizzleTreeHistory(
             chosen.map((row) => row.id),
           ),
         );
-      return chosen.map((row) => {
-        const own = touched.filter((node) => node.receiptId === row.id);
-        return receiptOf(
-          row,
-          own.map((node) => node.nodeId),
-          0,
-        );
-      });
+      return {
+        open: chosen.map((row) => {
+          const own = touched.filter((node) => node.receiptId === row.id);
+          return receiptOf(
+            row,
+            own.map((node) => node.nodeId),
+            0,
+          );
+        }),
+        undoneByCard,
+      };
     },
 
     async nodeLeftAt(threadId, at, holds) {

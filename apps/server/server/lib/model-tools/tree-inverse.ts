@@ -201,7 +201,8 @@ async function reverseReceipt(
         };
       },
       afterWrite: async (result, scope) => {
-        if (result.made.length === 0) return;
+        // A receipt whose opposite already stands is taken back with no record of its own.
+        if (result.made.length === 0 && result.fate !== "taken") return;
         const recorded = await history.recordAgentTreeChange({
           subject: receipt.subject,
           nodes: result.touched.map((touched) => ({
@@ -229,14 +230,13 @@ async function reverseReceipt(
   if (!run.ok) return fileAccessDeniedError(input.command, firstRefusal(run.refusal), input.path);
   if (!run.value.ok) return writeToolError(input.command, contextErrorMessage(run.value.error));
   const done = run.value.value;
-  const landed = done.made.length;
-  const status =
-    landed === 0 ? "cant_undo_changed" : done.outcomes.length > 0 ? "partial" : "reversed";
+  const undone = done.fate === "acts" || done.fate === "taken";
+  const status = !undone ? "cant_undo_changed" : done.partial ? "partial" : "reversed";
   const payload = {
     path: done.landedAt,
     ...(handle ? { write: { id: handle } } : {}),
     ...(done.kept ? { tree: { kept: done.kept } } : {}),
-    ...(landed === 0
+    ...(!undone
       ? {
           message: `Can't ${input.command}: something changed it after that change, or it is gone.`,
         }

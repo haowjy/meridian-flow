@@ -84,10 +84,14 @@ export async function reverseTurnCard(
     input,
   );
   const alongsideRun = async (outcome: ReversalOutcome): Promise<ReversalOutcome> => {
+    // The Work half is its own part: what the document half left as it was doesn't keep it.
+    // Only an Undo the documents' command refused whole (a denied grant, a lost document) does.
     const canReverseWorkReceipts =
       outcome.status === "reversed" ||
       outcome.status === "reconciled" ||
       outcome.status === "nothing_to_undo" ||
+      outcome.status === "expired" ||
+      outcome.status === "not_undone" ||
       outcome.status === "partial" ||
       outcome.status === "partial_failure";
     if (!canReverseWorkReceipts) return outcome;
@@ -140,11 +144,15 @@ export function combineWorkReversalOutcome(
     ...outcome,
     status: failed
       ? "partial_failure"
-      : succeeded && outcome.status === "nothing_to_undo"
-        ? direction === "undo"
-          ? "reversed"
-          : "reconciled"
-        : outcome.status,
+      : !succeeded
+        ? outcome.status
+        : outcome.status === "nothing_to_undo" || outcome.status === "expired"
+          ? direction === "undo"
+            ? "reversed"
+            : "reconciled"
+          : outcome.status === "not_undone"
+            ? "partial"
+            : outcome.status,
     workReceipts,
   };
 }
