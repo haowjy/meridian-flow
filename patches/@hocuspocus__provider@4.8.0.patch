@@ -1,8 +1,8 @@
 diff --git a/dist/hocuspocus-provider.cjs b/dist/hocuspocus-provider.cjs
-index b30f2448f38be438af48b80bb85f7b5a4541f0f0..deb4c9f073c8d169cf0e66ccda1c0191edec262c 100644
+index de6e7f1e91752ed6dabf579602f2b5a5d5f69af4..8feb53a10e9074c11698530a9f2597f316a7c974 100644
 --- a/dist/hocuspocus-provider.cjs
 +++ b/dist/hocuspocus-provider.cjs
-@@ -690,7 +690,9 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -706,7 +706,9 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.forwardDestroy = () => this.emit("destroy");
  		this.setConfiguration(configuration);
  		this.configuration.document = configuration.document ? configuration.document : new yjs.Doc();
@@ -13,7 +13,7 @@ index b30f2448f38be438af48b80bb85f7b5a4541f0f0..deb4c9f073c8d169cf0e66ccda1c0191
  		this.on("open", this.configuration.onOpen);
  		this.on("message", this.configuration.onMessage);
  		this.on("outgoingMessage", this.configuration.onOutgoingMessage);
-@@ -702,12 +704,14 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -718,12 +720,14 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.on("unsyncedChanges", this.configuration.onUnsyncedChanges);
  		this.on("authenticated", this.configuration.onAuthenticated);
  		this.on("authenticationFailed", this.configuration.onAuthenticationFailed);
@@ -32,16 +32,16 @@ index b30f2448f38be438af48b80bb85f7b5a4541f0f0..deb4c9f073c8d169cf0e66ccda1c0191
  		this.document.on("update", this.boundDocumentUpdateHandler);
  		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
  		this.registerEventListeners();
-@@ -757,7 +761,7 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -773,7 +777,7 @@ var HocuspocusProvider = class extends EventEmitter {
  		});
  	}
  	pageHide() {
 -		if (this.awareness) (0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "page hide");
 +		if (this.awareness && this.ownsAwareness) (0, y_protocols_awareness.removeAwarenessStates)(this.awareness, [this.document.clientID], "page hide");
+ 		this.flushPendingUpdates();
  	}
  	registerEventListeners() {
- 		if (typeof window === "undefined" || !("addEventListener" in window)) return;
-@@ -870,9 +874,13 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -944,9 +948,13 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.emit("destroy");
  		if (this.intervals.forceSync) clearInterval(this.intervals.forceSync);
  		if (this.awareness) {
@@ -55,13 +55,13 @@ index b30f2448f38be438af48b80bb85f7b5a4541f0f0..deb4c9f073c8d169cf0e66ccda1c0191
 +				this.awareness.destroy();
 +			}
  		}
+ 		this.flushPendingUpdates();
  		this.document.off("update", this.boundDocumentUpdateHandler);
- 		this.removeAllListeners();
 diff --git a/dist/hocuspocus-provider.esm.js b/dist/hocuspocus-provider.esm.js
-index 2668e691cde03d717354ed273ef70ae1034c5ece..c54005cf908a565cc338a987dc5a36841189ccb6 100644
+index 29f203962923eada0c0291585b6d75921ffdc246..89bca5cf8a27130b39d19274284f8824f04de971 100644
 --- a/dist/hocuspocus-provider.esm.js
 +++ b/dist/hocuspocus-provider.esm.js
-@@ -660,7 +660,9 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -676,7 +676,9 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.forwardDestroy = () => this.emit("destroy");
  		this.setConfiguration(configuration);
  		this.configuration.document = configuration.document ? configuration.document : new Y.Doc();
@@ -72,7 +72,7 @@ index 2668e691cde03d717354ed273ef70ae1034c5ece..c54005cf908a565cc338a987dc5a3684
  		this.on("open", this.configuration.onOpen);
  		this.on("message", this.configuration.onMessage);
  		this.on("outgoingMessage", this.configuration.onOutgoingMessage);
-@@ -672,12 +674,14 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -688,12 +690,14 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.on("unsyncedChanges", this.configuration.onUnsyncedChanges);
  		this.on("authenticated", this.configuration.onAuthenticated);
  		this.on("authenticationFailed", this.configuration.onAuthenticationFailed);
@@ -91,16 +91,16 @@ index 2668e691cde03d717354ed273ef70ae1034c5ece..c54005cf908a565cc338a987dc5a3684
  		this.document.on("update", this.boundDocumentUpdateHandler);
  		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
  		this.registerEventListeners();
-@@ -727,7 +731,7 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -743,7 +747,7 @@ var HocuspocusProvider = class extends EventEmitter {
  		});
  	}
  	pageHide() {
 -		if (this.awareness) removeAwarenessStates(this.awareness, [this.document.clientID], "page hide");
 +		if (this.awareness && this.ownsAwareness) removeAwarenessStates(this.awareness, [this.document.clientID], "page hide");
+ 		this.flushPendingUpdates();
  	}
  	registerEventListeners() {
- 		if (typeof window === "undefined" || !("addEventListener" in window)) return;
-@@ -840,9 +844,13 @@ var HocuspocusProvider = class extends EventEmitter {
+@@ -914,9 +918,13 @@ var HocuspocusProvider = class extends EventEmitter {
  		this.emit("destroy");
  		if (this.intervals.forceSync) clearInterval(this.intervals.forceSync);
  		if (this.awareness) {
@@ -114,13 +114,13 @@ index 2668e691cde03d717354ed273ef70ae1034c5ece..c54005cf908a565cc338a987dc5a3684
 +				this.awareness.destroy();
 +			}
  		}
+ 		this.flushPendingUpdates();
  		this.document.off("update", this.boundDocumentUpdateHandler);
- 		this.removeAllListeners();
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 2f8588e44a91c8c6249ac740421684deaefc8133..0f31c8bfa59807efe290abdb3692043887632eb5 100644
+index 36d78f939d05c25770b0292328dc46209f6a9517..d01c2de9f31fb781c3b7f7540af6d8d3ca8e7714 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
-@@ -377,6 +377,9 @@ declare class HocuspocusProvider extends EventEmitter {
+@@ -409,6 +409,9 @@ declare class HocuspocusProvider extends EventEmitter {
    intervals: any;
    constructor(configuration: HocuspocusProviderConfiguration);
    boundDocumentUpdateHandler: (update: Uint8Array, origin: any) => void;
@@ -131,10 +131,10 @@ index 2f8588e44a91c8c6249ac740421684deaefc8133..0f31c8bfa59807efe290abdb36920438
      added,
      updated,
 diff --git a/src/HocuspocusProvider.ts b/src/HocuspocusProvider.ts
-index 74e3009ad64e85ba447b618ec7eeb9da5a691467..9893539a7c5b00ab9791ee3cb83d55ecdec1b69d 100644
+index ac0259a64894ba16a681b2a02a127a64ff666d3d..d729247107de9d233ef59c45aa9c06928bb344ed 100644
 --- a/src/HocuspocusProvider.ts
 +++ b/src/HocuspocusProvider.ts
-@@ -183,10 +183,11 @@ export class HocuspocusProvider extends EventEmitter {
+@@ -216,10 +216,11 @@ export class HocuspocusProvider extends EventEmitter {
  		this.configuration.document = configuration.document
  			? configuration.document
  			: new Y.Doc();
@@ -150,7 +150,7 @@ index 74e3009ad64e85ba447b618ec7eeb9da5a691467..9893539a7c5b00ab9791ee3cb83d55ec
  
  		this.on("open", this.configuration.onOpen);
  		this.on("message", this.configuration.onMessage);
-@@ -201,17 +202,8 @@ export class HocuspocusProvider extends EventEmitter {
+@@ -234,17 +235,8 @@ export class HocuspocusProvider extends EventEmitter {
  		this.on("authenticated", this.configuration.onAuthenticated);
  		this.on("authenticationFailed", this.configuration.onAuthenticationFailed);
  
@@ -170,7 +170,7 @@ index 74e3009ad64e85ba447b618ec7eeb9da5a691467..9893539a7c5b00ab9791ee3cb83d55ec
  
  		this.document.on("update", this.boundDocumentUpdateHandler);
  		this.awareness?.on("update", this.boundAwarenessUpdateHandler);
-@@ -237,6 +229,20 @@ export class HocuspocusProvider extends EventEmitter {
+@@ -270,6 +262,20 @@ export class HocuspocusProvider extends EventEmitter {
  
  	boundAwarenessUpdateHandler = this.awarenessUpdateHandler.bind(this);
  
@@ -191,7 +191,16 @@ index 74e3009ad64e85ba447b618ec7eeb9da5a691467..9893539a7c5b00ab9791ee3cb83d55ec
  	boundPageHide = this.pageHide.bind(this);
  
  	boundOnOpen = this.onOpen.bind(this);
-@@ -502,13 +508,17 @@ export class HocuspocusProvider extends EventEmitter {
+@@ -347,7 +353,7 @@ export class HocuspocusProvider extends EventEmitter {
+ 	}
+ 
+ 	pageHide() {
+-		if (this.awareness) {
++		if (this.awareness && this.ownsAwareness) {
+ 			removeAwarenessStates(
+ 				this.awareness,
+ 				[this.document.clientID],
+@@ -628,13 +634,17 @@ export class HocuspocusProvider extends EventEmitter {
  		}
  
  		if (this.awareness) {
@@ -214,4 +223,4 @@ index 74e3009ad64e85ba447b618ec7eeb9da5a691467..9893539a7c5b00ab9791ee3cb83d55ec
 +			}
  		}
  
- 		this.document.off("update", this.boundDocumentUpdateHandler);
+ 		// Send any buffered updates before the socket is torn down. The websocket

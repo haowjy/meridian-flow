@@ -210,7 +210,8 @@ export const MeridianParagraph = Paragraph.extend({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const tag = node.attrs.level === null ? "p" : `h${node.attrs.level}`;
+    // A level the binding read from the room may be anything; only a real one makes a heading.
+    const tag = HEADING_LEVELS.includes(node.attrs.level) ? `h${node.attrs.level}` : "p";
     return [tag, mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0];
   },
 
