@@ -1,7 +1,7 @@
 /** Drizzle store for what is pending review in a Work: counts, the branches changing a document and evidence. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, documentDrafts, threads, works } from "@meridian/database/schema";
+import { branches, documentDrafts, projects, threads, works } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -61,6 +61,22 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         documents: Number(row.documents),
         folders: Number(row.folders),
       }));
+    },
+    async closedDraftIds(userId, draftIds) {
+      if (draftIds.length === 0) return [];
+      const rows = await currentDrizzleDb(db)
+        .select({ id: documentDrafts.id })
+        .from(documentDrafts)
+        .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
+        .innerJoin(projects, eq(projects.id, branches.projectId))
+        .where(
+          and(
+            inArray(documentDrafts.id, [...draftIds]),
+            eq(documentDrafts.status, "closed"),
+            eq(projects.userId, userId),
+          ),
+        );
+      return rows.map((row) => row.id);
     },
     async countPendingInProject(projectId) {
       const [row] = await currentDrizzleDb(db)

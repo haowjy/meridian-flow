@@ -29,7 +29,10 @@ export function createWorkBranchReviewService(input: {
   commandDocuments: CollabBranches["draftReview"]["commandDocuments"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   folderRevisions(branchId: BranchId): Promise<{ id: string; revision: string }[]>;
-  pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument" | "countPendingInProject">;
+  pending: Pick<
+    WorkBranchPendingStore,
+    "listBranchesChangingDocument" | "countPendingInProject" | "closedDraftIds"
+  >;
 }): CollabBranches {
   async function ownerItems(
     owner: DraftOwner,
@@ -102,6 +105,7 @@ export function createWorkBranchReviewService(input: {
         const folders = branchId ? await input.folderRevisions(branchId) : [];
         return { branchId, items, folders, threadTitles };
       },
+      closedDraftIds: (userId, draftIds) => input.pending.closedDraftIds(userId, draftIds),
       pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),
       items: (command) => ownerItems(command.owner),

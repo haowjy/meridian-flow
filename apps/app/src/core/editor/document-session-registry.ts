@@ -89,6 +89,10 @@ export interface LiveDocumentSessionRegistry {
    */
   observeUnsentTyping(observer: UnsentTypingObserver): () => void;
   closeDraftRoom(roomKey: string): Promise<void>;
+  /** Hands back and releases the copies of the draft ids `closedOf` says the server closed; see the implementation. */
+  handBackClosedDraftCopies(
+    closedOf: (draftIds: string[]) => Promise<ReadonlySet<string>>,
+  ): Promise<void>;
   /** A restore reopened the draft: its room may open again under the same id. */
   reopenDraftRoom(roomKey: string): void;
   /**

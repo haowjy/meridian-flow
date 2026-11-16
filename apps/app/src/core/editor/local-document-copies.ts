@@ -344,7 +344,42 @@ export class LocalDocumentCopies {
     documentId: DocumentId,
     claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
   ): Promise<boolean> {
-    const names = await this.namesOf(documentId);
+    return this.claimAndDelete(documentId, await this.namesOf(documentId), claim, true);
+  }
+
+  /** The names of this account's draft copies (every incarnation) with the draft room and document each belongs to. */
+  async draftCopies(): Promise<{ name: string; roomKey: string; documentId: DocumentId }[]> {
+    const head = `${DRAFT_PREFIX}${encodeURIComponent(this.accountId)}/`;
+    return (await this.names()).flatMap((name) => {
+      if (!name.startsWith(head)) return [];
+      const [, documentId, roomKey] = parseName(name).key.slice(DRAFT_PREFIX.length).split("/");
+      return documentId && roomKey
+        ? [
+            {
+              name,
+              roomKey: decodeURIComponent(roomKey),
+              documentId: decodeURIComponent(documentId) as DocumentId,
+            },
+          ]
+        : [];
+    });
+  }
+
+  /** `clear` for the draft copies `names` of one document: the document's other copies stay. */
+  async clearDraftCopies(
+    documentId: DocumentId,
+    names: readonly string[],
+    claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
+  ): Promise<boolean> {
+    return this.claimAndDelete(documentId, names, claim, false);
+  }
+
+  private async claimAndDelete(
+    documentId: DocumentId,
+    names: readonly string[],
+    claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
+    whole: boolean,
+  ): Promise<boolean> {
     const run = async () => {
       const claimed = await Promise.all(
         names.map(async (name) => {
@@ -352,11 +387,12 @@ export class LocalDocumentCopies {
           return !beyond || (await claim(name, beyond));
         }),
       );
-      await this.deleteCopies(
-        documentId,
-        names.filter((_, index) => claimed[index]),
-        claimed.every(Boolean),
-      );
+      const every = claimed.every(Boolean);
+      const deleted = names.filter((_, index) => claimed[index]);
+      await this.deleteCopies(documentId, deleted, whole && every);
+      if (!whole && every)
+        for (const { key } of deleted.map(parseName))
+          this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
       return true;
     };
     if (!this.locks) return run();

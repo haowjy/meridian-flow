@@ -2,7 +2,7 @@
  * Account-scoped owner of live document sessions and stable-id draft rooms.
  * Live acquisition is lease-required; draft rooms retain their stable room identity.
  */
-import type { AccountId } from "@meridian/contracts/protocol";
+import { type AccountId, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
@@ -301,19 +301,49 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * The server closed the draft. A room that ended earlier (a schema reset, a lost sign-in) was
-   * retired without handing anything back and its copy may still hold typing the draft never took:
-   * the closed draft never opens again, so its copy's words are handed back here. A room whose
-   * session retires now does it in `retiring`; claiming twice stores one notice.
+   * The server closed the draft. A room that ended earlier (a schema reset, a terminal close) is
+   * retired without handing anything back, or retires now with no cause, and its copy may still hold
+   * typing the draft never took: the closed draft never opens again, so its copy's words are handed
+   * back here. A session that retires with the `closed` cause does it too; claiming twice stores
+   * one notice.
    */
   async closeDraftRoom(roomKey: string): Promise<void> {
     const documentId = this.draftRooms.documentOf(roomKey);
-    const open = this.draftRooms.peek(roomKey);
     await this.draftRooms.close(roomKey);
-    if (!open && documentId) {
+    if (documentId) {
       const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
       await this.handBackCopy(incarnationName(key, this.copies.current(key)), "closed");
     }
+  }
+
+  /**
+   * Hands back, as `closed`, what the copies of drafts the server closed hold beyond its mark, then
+   * lets them go. This covers a draft that closed while no page was open: no draft owner ran
+   * `closeDraftRoom` for it. A room open in this tab and a copy another tab holds are left to their
+   * own tab; a copy whose claim fails stays for the next start.
+   */
+  async handBackClosedDraftCopies(
+    closedOf: (draftIds: string[]) => Promise<ReadonlySet<string>>,
+  ): Promise<void> {
+    const copies = (await this.copies.draftCopies()).flatMap((copy) => {
+      const room = parseYjsRoomName(copy.roomKey);
+      return room?.kind === "draft" && !this.draftRooms.peek(copy.roomKey)
+        ? [{ ...copy, draftId: room.draftId }]
+        : [];
+    });
+    if (copies.length === 0) return;
+    const closed = await closedOf([...new Set(copies.map(({ draftId }) => draftId))]);
+    const byDocument = new Map<DocumentId, string[]>();
+    for (const { draftId, documentId, name } of copies)
+      if (closed.has(draftId))
+        byDocument.set(documentId, [...(byDocument.get(documentId) ?? []), name]);
+    await Promise.all(
+      [...byDocument].map(([documentId, names]) =>
+        this.copies.clearDraftCopies(documentId, names, (name, { update, lacking }) =>
+          readCopy(update, (document) => this.handBack("closed", name, document, lacking)),
+        ),
+      ),
+    );
   }
 
   reopenDraftRoom(roomKey: string): void {

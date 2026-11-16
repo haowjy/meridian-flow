@@ -1,6 +1,6 @@
 /** Loads active Work-draft membership and text-derived conversation evidence. */
 import type { BranchId } from "@meridian/contracts";
-import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { WorkBranchPendingCounts } from "../../../projects/ports/work-branch-pending-counts.js";
 
 /** An active branch with changes to one document, oldest first, and the owner it came from. */
@@ -31,6 +31,8 @@ export type WorkBranchPendingStore = {
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
   ): Promise<WorkBranchDraftMetadata[]>;
+  /** Which of these draft ids are closed drafts of the account's projects; any other id is left out. */
+  closedDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   /** Receipt members for list/report enrichment only, latest first and distinct. */
   pendingThreadIds(draftId: string): Promise<string[]>;
   /**

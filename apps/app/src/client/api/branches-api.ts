@@ -8,6 +8,8 @@ import type {
   ApplyItemsClick,
   BranchDiscardRequest,
   BranchDiscardResponse,
+  ClosedDraftsRequest,
+  ClosedDraftsResponse,
   DocumentDraftHintsResponse,
   DraftDiscardRequest,
   DraftDiscardResponse,
@@ -20,8 +22,10 @@ import type {
   UndoDiscardAnswer,
   UndoDiscardClick,
 } from "@meridian/contracts/branches";
+import { CLOSED_DRAFTS_MAX } from "@meridian/contracts/branches";
 import type { CommandLookupResponse } from "@meridian/contracts/commands";
 import {
+  apiClosedDraftsPath,
   apiCommandPath,
   apiProjectBranchApplyPath,
   apiProjectBranchDiscardPath,
@@ -48,6 +52,18 @@ export async function listOwnerDrafts(projectId: string, owner: string): Promise
     ...(await getJson<ThreadDraftListResponse>(apiProjectDraftsPath(projectId, owner))),
     readAt,
   };
+}
+
+/** Which of these draft ids the server has closed, asked in as many requests as the limit needs. */
+export async function listClosedDrafts(draftIds: string[]): Promise<Set<string>> {
+  const closed = new Set<string>();
+  for (let at = 0; at < draftIds.length; at += CLOSED_DRAFTS_MAX) {
+    const answer = await postJson<ClosedDraftsResponse>(apiClosedDraftsPath(), {
+      draftIds: draftIds.slice(at, at + CLOSED_DRAFTS_MAX),
+    } satisfies ClosedDraftsRequest);
+    for (const id of answer.closed) closed.add(id);
+  }
+  return closed;
 }
 
 /** The authorship evidence of an owner's drafts, many in one request. */
