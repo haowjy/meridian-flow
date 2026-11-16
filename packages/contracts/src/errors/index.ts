@@ -117,6 +117,21 @@ export function isToolNotRunResult(result: unknown): boolean {
   );
 }
 
+/**
+ * The code a reply's view gives a sent call that has no result because the run ended: the app
+ * can't know whether it ran, so it claims nothing beyond "stopped". The server never stores it.
+ */
+export const TOOL_STOPPED_CODE = "tool_stopped";
+
+/** Whether a tool result is the view's stand-in for a call the run ended without an answer. */
+export function isToolStoppedResult(result: unknown): boolean {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as { code?: unknown }).code === TOOL_STOPPED_CODE
+  );
+}
+
 export function meridianErrorFromTool(
   message: string,
   details?: JsonValue,

@@ -130,7 +130,7 @@ export function returnedWhy(
   removal: DocumentRemovalRecord | undefined,
 ): ReturnedWhy | null {
   if (isPermissionDenial(denial)) return denial.reason === "work_archived" ? "work_archived" : null;
-  if (denial.level === "read") return "work_deleted";
+  if (denial.reason === "work_deleted") return "work_deleted";
   return removal ? "document_removed" : null;
 }
 

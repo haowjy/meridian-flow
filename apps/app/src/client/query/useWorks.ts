@@ -7,6 +7,7 @@ import { isUuid, type ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { repeatedNameHandles, workNameWith } from "@/lib/work-name";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { projectWorkCommands } from "./work-command-projection";
@@ -57,6 +58,8 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
       ),
     [addressable],
   );
+  const handleOf = useMemo(() => repeatedNameHandles(addressable ?? []), [addressable]);
+  const nameOf = useMemo(() => workNameWith(handleOf), [handleOf]);
   const noWork = snapshot?.noWork && isAddressable(snapshot.noWork) ? snapshot.noWork : null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
@@ -72,6 +75,10 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
     works,
     deleted,
     noWork,
+    /** The handle beside a Work's name where another Work shares it (`repeatedNameHandles`). */
+    handleOf,
+    /** A Work's name as a string, its handle included where it shows one (`WorkName` draws it). */
+    nameOf,
     /** Works still being created; `works` leaves them out until the server has them. */
     creations: projected.creations,
     isError: list.isError,

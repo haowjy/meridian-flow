@@ -264,13 +264,13 @@ export function useOwnAreaHeading(
   projectId: string,
   own: { scheme: ProjectContextTreeScheme; owner: ContextOwner } | null,
 ): string {
-  const { works } = useWorks(projectId);
+  const { works, nameOf } = useWorks(projectId);
   const workId = own?.owner.workId;
   const rootThreadId = own?.owner.rootThreadId;
   const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
   // A document's owner names its own area: the Work, or the chat whose Scratch it is.
   const lineageTitle = useLineageTitle(projectId, rootThreadId ? { rootThreadId } : null);
-  const ownerName = work?.name ?? lineageTitle;
+  const ownerName = work ? nameOf(work) : lineageTitle;
   if (!own) return "";
   return ownerName ? t`${schemeLabel(own.scheme)} for ${ownerName}` : schemeLabel(own.scheme);
 }

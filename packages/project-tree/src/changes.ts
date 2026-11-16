@@ -2,7 +2,7 @@ import type { TreeRecord } from "./record.js";
 import type { SkipReason, TreeProjection } from "./replay.js";
 import { branchRows, pendingCreates, projectedRows } from "./rows.js";
 
-/** Why a pending change cannot land: the replay skips it, or live deleted what it changes. */
+/** Why a pending change cannot land: the replay skips it, or live deleted the folder it changes. */
 export type LandingFault =
   | { kind: "inside-itself"; into: string }
   | { kind: "gone" }
@@ -33,10 +33,16 @@ export function landingFaults(
     else if (GONE.has(reason)) faults.set(record.node, { kind: "gone" });
   }
   // A node the Work creates is the Work's own, whatever live holds under its id (Un-Apply leaves
-  // the applied copy in Trash); one the Work only changes, text included, has to be restored.
+  // the applied copy in Trash). A document live deleted is no fault: its Apply restores it. A
+  // folder the Work only changes has to be restored first.
   const created = pendingCreates(pending);
   for (const node of work.nodes.values()) {
-    if (node.keptByPending && !created.has(node.id) && !faults.has(node.id))
+    if (
+      node.keptByPending &&
+      node.kind === "folder" &&
+      !created.has(node.id) &&
+      !faults.has(node.id)
+    )
       faults.set(node.id, { kind: "deleted-live" });
   }
   return faults;

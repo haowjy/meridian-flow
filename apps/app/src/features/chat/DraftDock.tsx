@@ -1,4 +1,4 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place; a command's question asks in the footer below the files. A file's refused command shows once, in its status line. */
+/** Composer-attached strip for this chat's pending changes. Every count on it counts what its commands act on; what else the Work holds is a link to Changes. Summary and commands share one row; changes expand in place; a command's question asks in the footer below the files. A file's refused command shows once, in its status line. */
 
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
@@ -12,10 +12,7 @@ import {
   noticeAction,
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import {
-  DeletedFromManuscriptTag,
-  DraftCommandStatus,
-} from "@/features/draft-review/DraftCommandStatus";
+import { DeletedLiveTag, DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -68,7 +65,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         sentence: (
           <ApplyAllQuestion
             deleting={asking.deleting.map((file) => file.name)}
-            restoring={asking.restoring.map((file) => file.name)}
+            restoring={asking.restoring.map((file) => ({
+              name: file.name,
+              scheme: file.row.draft.deletedFrom?.scheme,
+            }))}
           />
         ),
         keep: <Trans>Cancel</Trans>,
@@ -122,10 +122,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">
-          {multi ? <ChangeCount count={dock.reviewCount} /> : only ? fileLabel(only) : null}
+          {multi ? (
+            <Plural value={dock.files.length} one="# document" other="# documents" />
+          ) : only ? (
+            fileLabel(only)
+          ) : null}
         </span>
-        {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
       </FoldToggle>
+      {only && !multi ? <DeletedLiveTag item={only.row.draft} /> : null}
       {trouble}
       {trouble || multi || dock.changeCount === null ? null : (
         <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
@@ -155,6 +159,21 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
+      {dock.more > 0 ? (
+        <div className="flex pr-2 pb-1 pl-[var(--chat-card-pad-x)] @max-[25rem]/dock:pl-1">
+          <button
+            type="button"
+            className="text-button flex items-center text-xs coarse:min-h-11"
+            onClick={dock.showChanges}
+          >
+            {dock.inWork ? (
+              <Trans>{dock.more} more in this Work</Trans>
+            ) : (
+              <Trans>{dock.more} more to review</Trans>
+            )}
+          </button>
+        </div>
+      ) : null}
       <CommandNotice notice={dock.notice} question={question} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
@@ -230,7 +249,7 @@ function DockFileLine({
       ) : expanded && !wholeDocument ? (
         <div className="flex min-h-7 items-center gap-1.5 px-2 text-xs text-foreground">
           <span className="min-w-0 truncate">{fileLabel(file)}</span>
-          <DeletedFromManuscriptTag item={file.row.draft} />
+          <DeletedLiveTag item={file.row.draft} />
           {trouble}
         </div>
       ) : null}

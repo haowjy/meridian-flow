@@ -9,6 +9,8 @@ export type DockFile = {
   retry: (() => void) | null;
   changes: readonly ReviewChange[];
   actionable: readonly ReviewChange[];
+  /** Read, and every change its draft holds is this chat's: the strip's Apply leaves nothing of it. */
+  alone: boolean;
 };
 export function dockFile(
   row: ReviewFileTarget,
@@ -16,21 +18,19 @@ export function dockFile(
   view: Pick<DraftChangesData, "status" | "items" | "retry"> | undefined,
   threadId: string,
 ): DockFile {
-  const changes = (view?.items ?? [])
+  const items = view?.items ?? [];
+  const changes = items
     .map((item) => item.change)
     .filter((change) => !change.attributed || change.members.includes(threadId));
+  const read = view?.status === "ready" || view?.status === "gone";
   return {
     row,
     name,
-    status:
-      view?.status === "ready" || view?.status === "gone"
-        ? "ready"
-        : view?.status === "error"
-          ? "error"
-          : "loading",
+    status: read ? "ready" : view?.status === "error" ? "error" : "loading",
     retry: view?.retry ?? null,
     changes,
     actionable: view?.status === "ready" ? changes : [],
+    alone: read && changes.length === items.length,
   };
 }
 export const isOnStrip = (file: DockFile) => file.status !== "ready" || file.changes.length > 0;

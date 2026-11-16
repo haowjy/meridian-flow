@@ -5,7 +5,10 @@
  * canonical transaction participant for every mutation visible in a Works snapshot. It owns
  * the Work's stored pending count (the badge): every Work a transaction locks through it is
  * recounted at commit, and a moved count, or a mark that its current drafts changed
- * (`draftMembershipChanged`), bumps the Work's revision and sends a notice. An
+ * (`draftMembershipChanged`), bumps the Work's revision and sends a notice. A chat's first write
+ * to a draft (`draftAuthorJoined`) and a live change under a branch's rows (`liveChangedUnder`)
+ * only wake the owner: the list names each draft's chats and reads live where it has rows. Every
+ * owner a commit wakes, for any of these reasons, gets one hint, in one publish. An
  * ordinary draft append (a keystroke) never enters it: the draft-effect projection runs after
  * every append and recounts then, through `mutate`.
  */
@@ -14,14 +17,15 @@ import { type DraftOwner, draftOwnerKey } from "@meridian/contracts";
 import type { DraftOwnerHint } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, works } from "@meridian/database/schema";
-import { type AnyColumn, and, inArray, ne, or, sql } from "drizzle-orm";
+import { branches, documentDrafts, works } from "@meridian/database/schema";
+import { type AnyColumn, and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   type BranchDraftRef,
   branchDraftRefs,
   LineageDraftsUnavailableError,
   lockLineageOwners,
   type OwnerLocks,
+  ownerKeyOfColumns,
 } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
@@ -112,6 +116,19 @@ export type WorkProjectionMutation = {
    * appends never mark it.
    */
   draftMembershipChanged(owner: DraftOwner): void;
+  /**
+   * A chat wrote a draft for the first time in the caller's transaction: once it commits, the
+   * draft's owner gets its `draft-owner-hint`, because the list names each draft's chats
+   * (`actorThreads`) and neither its count nor its membership moved. No lock, no revision.
+   */
+  draftAuthorJoined(draftId: string): void;
+  /**
+   * A tree commit changed live rows that these branches have rows on, or their rows' parents: once it commits, each
+   * branch's owner gets its `draft-owner-hint`, since its list reads live there (`deletedLive`,
+   * a move's place) and neither its count nor its membership need have moved. No lock, no
+   * revision.
+   */
+  liveChangedUnder(branchIds: readonly string[]): void;
 };
 
 const WORKS_NOTICE_STATE = {};
@@ -127,6 +144,11 @@ type WorksNoticeState = {
   /** Owners whose current drafts changed: woken at commit even if their count did not move. */
   membershipWorkIds: Set<WorkId>;
   membershipRootIds: Map<string, string>;
+  /** Owners woken whatever their count did: by a branch (a live change under its rows) or a draft (a new author). */
+  wakeBranchIds: Set<string>;
+  wakeDraftIds: Set<string>;
+  /** Their hints, resolved at commit and sent with the commit's one publish. */
+  wake: Map<string, DraftOwnerHint>;
 };
 
 export function createWorkProjectionMutation(input: {
@@ -136,6 +158,11 @@ export function createWorkProjectionMutation(input: {
   pendingCounts: WorkBranchPendingCounts;
   eventSink?: EventSink;
 }): WorkProjectionMutation {
+  const ownerColumns = {
+    projectId: branches.projectId,
+    workId: branches.originWorkId,
+    rootThreadId: branches.originRootThreadId,
+  };
   const worksNoticeParticipant: DrizzleTransactionParticipant<WorksNoticeState> = {
     key: WORKS_NOTICE_STATE,
     create: () => ({
@@ -146,6 +173,9 @@ export function createWorkProjectionMutation(input: {
       recountRootIds: new Set(),
       membershipWorkIds: new Set(),
       membershipRootIds: new Map(),
+      wakeBranchIds: new Set(),
+      wakeDraftIds: new Set(),
+      wake: new Map(),
     }),
     fork: (parent) => ({
       touchedWorkIds: new Set(parent.touchedWorkIds),
@@ -155,6 +185,9 @@ export function createWorkProjectionMutation(input: {
       recountRootIds: new Set(parent.recountRootIds),
       membershipWorkIds: new Set(parent.membershipWorkIds),
       membershipRootIds: new Map(parent.membershipRootIds),
+      wakeBranchIds: new Set(parent.wakeBranchIds),
+      wakeDraftIds: new Set(parent.wakeDraftIds),
+      wake: new Map(parent.wake),
     }),
     merge(parent, child) {
       for (const workId of child.touchedWorkIds) parent.touchedWorkIds.add(workId);
@@ -165,6 +198,9 @@ export function createWorkProjectionMutation(input: {
       for (const workId of child.membershipWorkIds) parent.membershipWorkIds.add(workId);
       for (const [root, projectId] of child.membershipRootIds)
         parent.membershipRootIds.set(root, projectId);
+      for (const id of child.wakeBranchIds) parent.wakeBranchIds.add(id);
+      for (const id of child.wakeDraftIds) parent.wakeDraftIds.add(id);
+      for (const [owner, hint] of child.wake) parent.wake.set(owner, hint);
       return parent;
     },
     async beforeCommit(state) {
@@ -172,17 +208,59 @@ export function createWorkProjectionMutation(input: {
       const unlockedRoots = [...state.recountRootIds].filter(
         (root) => !state.reconcileRootIds.has(root),
       );
-      if (unlocked.length || unlockedRoots.length)
-        runAfterDrizzleCommit(() => recountInRoot(unlocked.sort(), unlockedRoots.sort()));
+      await resolveWakes(state);
+      if (unlocked.length || unlockedRoots.length) {
+        // The recount publishes once for its owners: these wakes go out with it.
+        const wake = new Map(state.wake);
+        state.wake.clear();
+        runAfterDrizzleCommit(() => recountInRoot(unlocked.sort(), unlockedRoots.sort(), wake));
+      }
       await reconcilePendingCounts(state);
     },
   };
 
-  async function recountInRoot(workIds: WorkId[], lineages: string[]): Promise<void> {
+  /** The owners of the branches and drafts marked to wake, as hints on the state. */
+  async function resolveWakes(state: WorksNoticeState): Promise<void> {
+    const branchIds = [...state.wakeBranchIds];
+    const draftIds = [...state.wakeDraftIds];
+    state.wakeBranchIds.clear();
+    state.wakeDraftIds.clear();
+    if (branchIds.length === 0 && draftIds.length === 0) return;
+    const tx = currentDrizzleDb(input.db);
+    const rows = [
+      ...(branchIds.length
+        ? await tx.select(ownerColumns).from(branches).where(inArray(branches.id, branchIds))
+        : []),
+      ...(draftIds.length
+        ? await tx
+            .select(ownerColumns)
+            .from(documentDrafts)
+            .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
+            .where(inArray(documentDrafts.id, draftIds))
+        : []),
+    ];
+    for (const row of rows) {
+      const owner = ownerKeyOfColumns(row);
+      if (owner)
+        state.wake.set(owner, {
+          type: "draft-owner-hint",
+          projectId: row.projectId as DraftOwnerHint["projectId"],
+          owner,
+        });
+    }
+  }
+
+  async function recountInRoot(
+    workIds: WorkId[],
+    lineages: string[],
+    wake: ReadonlyMap<string, DraftOwnerHint>,
+  ): Promise<void> {
     try {
-      await runInRootDrizzleTransaction(input.db, () =>
-        mutation.mutate({ works: workIds, lineages }, async () => undefined),
-      );
+      await runInRootDrizzleTransaction(input.db, () => {
+        const state = worksNoticeState();
+        for (const [owner, hint] of wake) state.wake.set(owner, hint);
+        return mutation.mutate({ works: workIds, lineages }, async () => undefined);
+      });
     } catch (error) {
       // The next mutation of these Works reconciles their counts again.
       if (input.eventSink)
@@ -207,7 +285,12 @@ export function createWorkProjectionMutation(input: {
    * this transaction's own writes, is what that compares against.
    */
   async function reconcilePendingCounts(state: WorksNoticeState): Promise<void> {
-    if (state.reconcileWorkIds.size === 0 && state.reconcileRootIds.size === 0) return;
+    const woken = new Map(state.wake);
+    state.wake.clear();
+    if (state.reconcileWorkIds.size === 0 && state.reconcileRootIds.size === 0) {
+      input.draftOwnerHints.publishDraftOwnerHints([...woken.values()]);
+      return;
+    }
     const workIds = [...state.reconcileWorkIds].sort() as WorkId[];
     const rootThreadIds = [...state.reconcileRootIds].sort();
     const membershipWorkIds = new Set(state.membershipWorkIds);
@@ -221,7 +304,7 @@ export function createWorkProjectionMutation(input: {
     // Each owner whose list gained or lost a document is woken once: a branch whose count moved,
     // and a Work whose total moved (a whole Discard closes the branch, which then counts nowhere).
     // A draft joins the list when the effect projection judges it, after the write that made it.
-    const hints = new Map<string, DraftOwnerHint>();
+    const hints = woken;
     const wake = (projectId: DraftOwnerHint["projectId"], owner: DraftOwnerHint["owner"]) =>
       hints.set(owner, { type: "draft-owner-hint", projectId, owner });
     for (const [rootThreadId, projectId] of membershipRoots)
@@ -404,6 +487,13 @@ export function createWorkProjectionMutation(input: {
       const state = worksNoticeState();
       if (owner.kind === "work") state.membershipWorkIds.add(owner.workId);
       else state.membershipRootIds.set(owner.rootThreadId, owner.projectId);
+    },
+    draftAuthorJoined(draftId) {
+      worksNoticeState().wakeDraftIds.add(draftId);
+    },
+    liveChangedUnder(branchIds) {
+      const state = worksNoticeState();
+      for (const branchId of branchIds) state.wakeBranchIds.add(branchId);
     },
     lifecycleChanged(work) {
       input.draftOwnerHints.publishDraftOwnerHints([

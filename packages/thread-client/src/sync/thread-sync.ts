@@ -114,7 +114,7 @@ export type ThreadSync = {
 };
 
 /** The turn's own text: the text items of its view, in order. It reads the turn alone. */
-function ownText(turn: Pick<Turn, "blocks">): string {
+function ownText(turn: Pick<Turn, "blocks" | "status">): string {
   return viewAssistantTurn(turn)
     .items.map((item) => (item.kind === "text" ? item.text : ""))
     .join("");

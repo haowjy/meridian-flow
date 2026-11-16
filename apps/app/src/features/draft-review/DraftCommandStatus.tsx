@@ -6,25 +6,31 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { RowWord } from "@/components/app/RowWord";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import { isDeletedFromManuscript } from "./deleted-drafts";
+import { schemeLabel } from "@/features/project/context/context-schemes";
+import { isDeletedLive } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
-/**
- * Beside a drafted document's name when the manuscript no longer has it: Apply brings it back.
- * Nothing when it's still there.
- */
-export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem | undefined }) {
-  if (!isDeletedFromManuscript(item)) return null;
+/** Beside the name of a drafted document its area no longer has: Apply brings it back. */
+export function DeletedWord({ scheme }: { scheme: ProjectContextTreeScheme | null | undefined }) {
+  const area = schemeLabel(scheme);
   return (
-    <span
-      title={t`Deleted from the manuscript. Apply brings it back.`}
-      className="shrink-0 text-xs font-normal text-muted-foreground"
-    >
-      <Trans>Deleted</Trans>
-    </span>
+    <RowWord
+      tone="note"
+      word={<Trans>Deleted</Trans>}
+      sentence={
+        area ? t`Deleted from ${area}. Apply brings it back.` : t`Deleted. Apply brings it back.`
+      }
+    />
   );
+}
+
+/** `DeletedWord` for a drafted document live deleted; nothing when it's still there. */
+export function DeletedLiveTag({ item }: { item: ThreadDraftListItem | undefined }) {
+  return isDeletedLive(item) ? <DeletedWord scheme={item?.deletedFrom?.scheme} /> : null;
 }
 
 export function DraftCommandStatus({ itemKey }: { itemKey: string }) {

@@ -12,6 +12,7 @@ import type {
   AgentsLevel,
   ResolvedAgentConfiguration,
   RetainedSkillReference,
+  ThreadAgent,
 } from "@meridian/contracts/agents";
 import { AGENT_EFFORT_CHOICE } from "@meridian/contracts/agents";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
@@ -116,14 +117,15 @@ export interface BoundAgentCatalog extends PackageSaver {
     bound: AgentRevisionBinding,
   ): Promise<AgentRevisionBinding>;
   /**
-   * The Agent file a chat is bound to, as saved, and whether a newer save of the Agent or of an
+   * The Agent file a chat is bound to, as saved, the model, reasoning and availability its next
+   * turn runs at, and whether a newer save of the Agent or of an
    * invoked skill would take over at the chat's next compaction. Undefined for a chat with no Agent file (a generic subagent).
    */
   boundAgent(
     userId: string,
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
-  ): Promise<{ name: string; text: string; stale: boolean } | undefined>;
+  ): Promise<ThreadAgent | undefined>;
   /**
    * A file's text as its package's latest Save holds it, by level-relative path
    * (`AgentFileStatus.path`); a built-in's as shipped. Undefined when that version has no such file.
@@ -441,28 +443,36 @@ export function createBoundAgentCatalog(input: {
       const bound = await store.readThreadBinding(thread.id);
       if (!bound?.revision) return undefined;
       const { revision } = bound;
-      const source = await store.readSource(revision.packageRevisionId);
-      const text = source?.files[agentPath(revision.slug)];
-      if (text === undefined) return undefined;
       // A binding that only moves to another model is not a newer saved version.
       const refreshed = await catalog.refreshBinding(userId, projectId, thread);
+      // Everything below describes the next turn, which a removed model has already moved.
+      const runs = await effectiveBinding(userId, projectId, thread, bound, { refreshed });
+      const agent = runs.revision ?? revision;
+      const source = await store.readSource(agent.packageRevisionId);
+      const text = source?.files[agentPath(agent.slug)];
+      if (text === undefined) return undefined;
       return {
-        name: revision.definition.metadata.name ?? revision.slug,
+        selection: { slug: agent.slug, definitionRevisionId: agent.id },
+        name: agent.definition.metadata.name ?? agent.slug,
+        description: agent.definition.metadata.description ?? "",
         text,
         stale:
           refreshed !== undefined &&
-          (refreshed.revision?.id !== revision.id ||
+          refreshed !== runs &&
+          (refreshed.revision?.id !== agent.id ||
             Object.entries(refreshed.invokedSkills).some(
-              ([slug, pin]) => pin.contentDigest !== bound.invokedSkills[slug]?.contentDigest,
+              ([slug, pin]) => pin.contentDigest !== runs.invokedSkills[slug]?.contentDigest,
             )),
+        model: runs.configuration.model,
+        effort: runs.configuration.effort ? AGENT_EFFORT_CHOICE[runs.configuration.effort] : null,
+        unavailableReasons: input.unavailableReasons(agent.definition, runs.configuration.model),
       };
     },
 
     async followRemovedModel(userId, projectId, thread, bound) {
-      if (!bound.revision || modelStillOffered({ ...bound, revision: bound.revision }))
-        return bound;
-      const moved = await refreshFrom(userId, projectId, thread, bound);
-      if (!moved?.revision) return bound;
+      const moved = await effectiveBinding(userId, projectId, thread, bound);
+      // effectiveBinding returns its input itself when nothing moves; a copy would write every turn.
+      if (moved === bound || !moved.revision) return bound;
       await store.replaceThreadBinding(
         thread.id,
         moved.revision.id,
@@ -478,6 +488,23 @@ export function createBoundAgentCatalog(input: {
       return refreshFrom(userId, projectId, thread, bound);
     },
   };
+  /**
+   * The binding a chat's next turn runs on, read-only: the stored one, unless the host no longer
+   * offers its model and the Agent's newest save resolves to another, which `followRemovedModel`
+   * writes for the turn and the chat's Agent read reports.
+   */
+  async function effectiveBinding(
+    userId: string,
+    projectId: string | undefined,
+    thread: { id: string; parentThreadId: string | null },
+    bound: AgentRevisionBinding,
+    /** `refreshFrom`'s result for this binding, when the caller already has it. */
+    known?: { refreshed: Awaited<ReturnType<typeof refreshFrom>> },
+  ): Promise<AgentRevisionBinding> {
+    if (!bound.revision || modelStillOffered({ ...bound, revision: bound.revision })) return bound;
+    const moved = known ? known.refreshed : await refreshFrom(userId, projectId, thread, bound);
+    return moved?.revision ? moved : bound;
+  }
   /** Whether the host still offers the model the chat is bound to. */
   const modelStillOffered = (bound: AgentRevisionBinding & { revision: AgentRevision }) =>
     input.modelUnavailable(bound.configuration.model).length === 0;

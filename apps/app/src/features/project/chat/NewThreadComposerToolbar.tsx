@@ -4,6 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import {
   ComposerCurrentValueTrigger,
   ComposerToolbar,
@@ -19,7 +20,6 @@ import {
 import type { AgentChoice } from "@/features/agents/AgentPicker";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { workDisplayName } from "@/lib/work-name";
 
 export function NewThreadComposerToolbar({
   projectId,
@@ -61,6 +61,7 @@ export function NewThreadComposerToolbar({
   const workControl = useProspectiveWorkControl({
     work,
     selectedWorkId,
+    projectId,
     works,
     noWork,
     worksStatus,
@@ -79,12 +80,14 @@ export function NewThreadComposerToolbar({
 function useProspectiveWorkControl({
   work,
   selectedWorkId,
+  projectId,
   works,
   noWork,
   worksStatus,
   onWorkChange,
   onRetryWorks,
 }: {
+  projectId: string;
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
@@ -107,7 +110,8 @@ function useProspectiveWorkControl({
   const view = deriveWorkPickerViewModel(catalog, query, false);
 
   const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`None`;
-  const name = work ? workDisplayName(work) : unavailableLabel;
+  const { nameOf } = useWorks(projectId);
+  const name = work ? nameOf(work) : unavailableLabel;
   const label = t`Choose Work for new chat, currently ${name}`;
   return {
     kind: "panel",

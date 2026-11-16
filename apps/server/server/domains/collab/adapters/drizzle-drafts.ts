@@ -440,6 +440,8 @@ export function createDrizzleDraftStore(
         });
         if (!finalized) throw new Error(`Draft ${input.draftId} append was not finalized`);
         await recordAppendReceipts(tx, input, finalized, committed.rowIds);
+        if (await chatJoinedDraft(tx, input.draftId, finalized.rows, committed.rowIds))
+          workProjection.draftAuthorJoined(input.draftId);
         await testHook("draft.append.beforeCommit");
         if (onAppendSequenced) {
           const { lockedAt, rowIds } = committed;
@@ -758,6 +760,34 @@ function sqlState(cause: unknown): string | null {
     current = (current as { cause?: unknown }).cause;
   }
   return null;
+}
+
+/** Whether a chat's row in this append is its first in the draft: the draft's chats changed. */
+async function chatJoinedDraft(
+  db: Pick<Database, "select">,
+  draftId: string,
+  rows: readonly AppendDraftJournalInput[],
+  rowIds: readonly number[],
+): Promise<boolean> {
+  const first = Math.min(...rowIds);
+  const chats = new Set(
+    rows.flatMap((row) => (row.source !== "writer" && row.threadId ? [row.threadId] : [])),
+  );
+  for (const threadId of chats) {
+    const [earlier] = await db
+      .select({ id: draftWriteJournal.id })
+      .from(draftWriteJournal)
+      .where(
+        and(
+          eq(draftWriteJournal.draftId, draftId),
+          eq(draftWriteJournal.threadId, threadId),
+          lt(draftWriteJournal.id, first),
+        ),
+      )
+      .limit(1);
+    if (!earlier) return true;
+  }
+  return false;
 }
 
 /** The receipts finalization captured, written with the row ids the append allocated. */

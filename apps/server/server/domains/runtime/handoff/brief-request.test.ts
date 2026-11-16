@@ -79,6 +79,7 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
     composedSystemPrompt: "Frozen source prompt",
     bakedTools: [bakedTool as unknown as JsonValue],
     bakedSkillSlugs: [],
+    bakedConnections: [],
     contentHash: "source-bake",
   });
 

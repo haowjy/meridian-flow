@@ -23,7 +23,11 @@ throw failures use a registration formatter when one exists. Document handlers
 keep the typed `meridian.agent-edit.v1` envelope for these failures.
 
 Tools are grouped by owner: core `read`/`write`/`work` and listing/`grep`,
-spawn/history tools, and the `skill` adapter for retained `skills://` files.
+spawn/history tools, the `skill` adapter for retained `skills://` files, and `mcp_describe`
+`mcp_call` and `mcp_run` (`source: "mcp"`, no `timeoutMs`; `mcp_run` is `sequential`: the handler's limit goes to the client, so a slow
+server is its own outcome and never `tool_timeout`; see the [mcp domain](../../mcp/.context/CONTEXT.md)).
+A model's call to a connection's tool by the tool's own name is refused with a line telling it to
+use `mcp_call`. `ConnectionsPort.doNotRepeat` is the one "these calls ran; do not repeat them" text: a failed `mcp_run`'s call list and the restart stub of an unfinished connection call both open with it.
 The model's skill path is read-only; `write` and `grep` refuse it. The
 canonical tool schemas live in runtime and their handlers are bound from
 `lib/model-tools`.

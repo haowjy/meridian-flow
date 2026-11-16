@@ -43,7 +43,9 @@ starts unbaked.
 
 The composed prompt layers the Agent body, additive overlay, frozen Work
 context, available skills/descriptions, preloaded skill bodies, named spawn
-roster, document dialect, runtime URI guidance, and the subagent report
+roster, the connections' catalogue (only when the thread's policy has `mcp_call`; its
+connections are saved in the bake as `bakedConnections`, and a subagent takes its parent's bake in
+effect), document dialect, runtime URI guidance, and the subagent report
 instruction last. Bound `skills.load` bodies are baked into the first prompt;
 model-invocable availability controls `skills://` visibility, not preloading.
 Slash inventory is separate from the bound Agent package and includes eligible

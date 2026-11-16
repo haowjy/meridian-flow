@@ -11,6 +11,7 @@ import type {
   WorkId,
 } from "@meridian/contracts";
 import type { ReasoningChoice } from "@meridian/contracts/agents";
+import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type {
   CurrentToolCall,
   JsonValue,
@@ -453,6 +454,10 @@ export const promptBakes = pgTable(
     composedSystemPrompt: text("composed_system_prompt").notNull(),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[]>().notNull(),
     bakedTools: jsonb("baked_tools").notNull(),
+    bakedConnections: jsonb("baked_connections")
+      .$type<McpBakedConnection[]>()
+      .notNull()
+      .default([]),
     contentHash: text("content_hash").notNull(),
     createdAt: createdAt(),
   },

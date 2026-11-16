@@ -1,15 +1,18 @@
 /** Localized presentation for structured Work receipt facts. */
 import type { WorkReceipt } from "@meridian/contracts/works";
 import { i18n } from "@/lib/i18n";
+import type { OwnerNames } from "./document-display-name";
 
-export function workReceiptLine(receipt: WorkReceipt): string {
+/** `names` gives the Work's name as the project shows it now, its handle included where it repeats. */
+export function workReceiptLine(receipt: WorkReceipt, names?: OwnerNames): string {
+  const name = names?.({ kind: "work-id", workId: receipt.workId }) ?? receipt.workName;
   switch (receipt.operation) {
     case "create": {
-      const values = { name: receipt.workName };
+      const values = { name };
       return i18n._("workReceipt.created", values, { message: "Created Work {name}" });
     }
     case "update": {
-      const values = { name: receipt.workName };
+      const values = { name };
       if (receipt.before?.archived !== receipt.after?.archived) {
         return receipt.after?.archived
           ? i18n._("workReceipt.archived", values, { message: "Archived Work {name}" })
@@ -22,7 +25,7 @@ export function workReceiptLine(receipt: WorkReceipt): string {
           });
     }
     case "delete": {
-      const values = { name: receipt.workName };
+      const values = { name };
       return i18n._("workReceipt.deleted", values, { message: "Deleted Work {name}" });
     }
   }

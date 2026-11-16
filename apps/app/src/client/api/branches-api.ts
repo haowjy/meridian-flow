@@ -12,6 +12,8 @@ import type {
   DraftDiscardRequest,
   DraftDiscardResponse,
   DraftMetadataResponse,
+  DraftsProvenanceRequest,
+  DraftsProvenanceResponse,
   ThreadDraftListResponse,
   UnapplyClick,
   UnapplyClickAnswer,
@@ -30,16 +32,27 @@ import {
   apiProjectBranchUndoDiscardPath,
   apiProjectDocumentBranchesPath,
   apiProjectDraftsPath,
+  apiProjectDraftsProvenancePath,
 } from "@meridian/contracts/protocol";
 
 import { getJson, postJson } from "./http-client";
 
-/** The drafts one owner (`work:<id>` or `lineage:<root>`) has pending, one row per document. */
-export async function listOwnerDrafts(
-  projectId: string,
-  owner: string,
-): Promise<ThreadDraftListResponse> {
-  return getJson<ThreadDraftListResponse>(apiProjectDraftsPath(projectId, owner));
+/**
+ * The drafts one owner (`work:<id>` or `lineage:<root>`) has pending, one row per document.
+ * `readAt` is when the read started, the time its rows speak for (`DraftMetadataAnswer`).
+ */
+export type OwnerDraftList = ThreadDraftListResponse & { readAt: number };
+export async function listOwnerDrafts(projectId: string, owner: string): Promise<OwnerDraftList> {
+  const readAt = Date.now();
+  return {
+    ...(await getJson<ThreadDraftListResponse>(apiProjectDraftsPath(projectId, owner))),
+    readAt,
+  };
+}
+
+/** The authorship evidence of an owner's drafts, many in one request. */
+export function readDraftsProvenance(projectId: string, request: DraftsProvenanceRequest) {
+  return postJson<DraftsProvenanceResponse>(apiProjectDraftsProvenancePath(projectId), request);
 }
 
 export function listDocumentDraftHints(
