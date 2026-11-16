@@ -68,7 +68,8 @@ export function AgentPickerPanel({
 }: AgentPickerPanelProps) {
   const [pointed, setPointed] = useState<string | null>(null);
   // A touch has no hover: its first tap on a row shows the row's detail, a second tap picks it.
-  const touch = useRef(false);
+  // Decided at pointer-down: Android focuses the row on tap, which points it before the click.
+  const tapPicks = useRef(true);
   const detailRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
@@ -117,7 +118,7 @@ export function AgentPickerPanel({
         key={agent.slug}
         data-agent={agent.slug}
         onPointerDown={(event) => {
-          touch.current = event.pointerType === "touch";
+          tapPicks.current = event.pointerType !== "touch" || agent.slug === shown.slug;
         }}
         onPointerEnter={(event) => {
           if (event.pointerType !== "touch") setPointed(agent.slug);
@@ -138,7 +139,10 @@ export function AgentPickerPanel({
           // One Tab stop for the list: the row whose detail shows. Arrows move between rows.
           controlProps={{ tabIndex: agent.slug === shown.slug ? 0 : -1 }}
           onOpen={() => {
-            if (touch.current && agent.slug !== shown.slug) return setPointed(agent.slug);
+            if (!tapPicks.current) {
+              tapPicks.current = true;
+              return setPointed(agent.slug);
+            }
             // The current Agent keeps the model it runs on here.
             choose(agent, isCurrent ? current.model : null);
           }}
@@ -288,6 +292,8 @@ function AgentDetail({
           return;
         }
         handleListKeys(event);
+        // Up and Down stay in the detail even with no rows to move between.
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") event.preventDefault();
       }}
       className="app-scroll flex min-h-0 flex-1 flex-col gap-2 border-t border-border-subtle px-2 pt-2 @[28rem]/agents:border-t-0 @[28rem]/agents:pt-1.5"
     >
@@ -347,7 +353,7 @@ function AgentDetail({
             </span>
             <DisclosureMark open={open} className="ml-auto" />
           </button>
-          {runsOn && models?.some((option) => option.id === runsOn && !option.available) ? (
+          {runsOn && models && !runsAvailable(models, runsOn) ? (
             <p className="px-1 pb-1 text-xs text-muted-foreground">
               {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
             </p>
@@ -413,6 +419,11 @@ function ModelChoices({
       ))}
     </ul>
   );
+}
+
+/** Whether this deployment can run the model; an id it has never heard of can't run either. */
+export function runsAvailable(models: readonly ModelOption[], id: string): boolean {
+  return models.some((option) => option.id === id && option.available);
 }
 
 export function modelName(models: readonly ModelOption[] | null, id: string): string {

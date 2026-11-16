@@ -13,7 +13,7 @@ import {
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { cn } from "@/lib/utils";
-import { type AgentChoice, AgentPickerPanel, modelName } from "./AgentPicker";
+import { type AgentChoice, AgentPickerPanel, modelName, runsAvailable } from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
 import {
   type BoundAgent,
@@ -77,9 +77,7 @@ export function useComposerAgentToolbarControl(
         : null;
   const modelLabel = model ? modelName(models, model) : null;
   // An override the deployment can't run: replies fall back to the Agent's own model.
-  const fallsBack = Boolean(
-    model && models?.some((option) => option.id === model && !option.available),
-  );
+  const fallsBack = Boolean(model && models && !runsAvailable(models, model));
   const value = !modelLabel
     ? name
     : fallsBack
