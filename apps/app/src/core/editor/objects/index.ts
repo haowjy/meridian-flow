@@ -21,6 +21,7 @@ export {
   caretHomeFromObjectTransaction,
   caretInsideNodeAt,
   caretInsideObjectTransaction,
+  exitFence,
   gapCursorFits,
   type ObjectAt,
   objectBeside,

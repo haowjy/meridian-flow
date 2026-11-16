@@ -1,5 +1,11 @@
 import { type Editor, Extension, isMacOS } from "@tiptap/core";
-import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import {
+  NodeSelection,
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Transaction,
+} from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { isRemoteDocumentRebuild } from "../anchors";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
@@ -9,7 +15,9 @@ import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
   deleteObjectTransaction,
-  documentEdgeTransaction,
+  documentEndTransaction,
+  documentStartTransaction,
+  enterCellTransaction,
   type ObjectAt,
   objectBeside,
   objectSelectionForDOM,
@@ -17,6 +25,7 @@ import {
   selectedObject,
   selectObjectTransaction,
   typeBesideObjectTransaction,
+  verticalStepFrom,
 } from "./object-selection";
 import { EDITOR_OBJECT_TYPES, isEditorObject, objectBody, objectTypeSpec } from "./object-types";
 import { pictureCapped } from "./picture-cap";
@@ -215,10 +224,10 @@ export const ObjectPhysicsExtension = Extension.create({
               id: "object-walk",
               scope: "block",
               bindings: {
-                ArrowRight: walkForward,
-                ArrowDown: walkForward,
-                ArrowLeft: walkBackward,
-                ArrowUp: walkBackward,
+                ArrowRight: (state, dispatch) => walk(state, dispatch, 1),
+                ArrowDown: (state, dispatch, view) => walk(state, dispatch, 1, view),
+                ArrowLeft: (state, dispatch) => walk(state, dispatch, -1),
+                ArrowUp: (state, dispatch, view) => walk(state, dispatch, -1, view),
               },
             }),
             chrome?.registerKeymap({
@@ -331,15 +340,17 @@ export const ObjectPhysicsExtension = Extension.create({
                 event.isComposing ||
                 view.composing ||
                 /[\r\n]/.test(event.data) ||
-                !selectedObject(view.state)
+                view.state.selection instanceof TextSelection
               )
                 return false;
 
               // Native text input can have no keypress, which is where PM normally
-              // routes a non-text selection through the text-input handlers.
+              // routes a non-text selection through the text-input handlers. Left to
+              // the browser, the text goes to its own caret, which for a gap cursor
+              // a click made is still inside the table above it.
               const { from, to } = view.state.selection;
               const text = event.data;
-              const insert = () => view.state.tr.insertText(text, from, to).scrollIntoView();
+              const insert = () => view.state.tr.insertText(text).scrollIntoView();
               if (
                 !view.someProp("handleTextInput", (handler) =>
                   handler(view, from, to, text, insert),
@@ -470,47 +481,59 @@ function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
 const removeSelected: KeymapBinding = (state, dispatch) => {
   const selected = selectedObject(state);
   if (!selected) return false;
-  const transaction = deleteObjectTransaction(state, selected.pos);
+  return dispatchIfAny(deleteObjectTransaction(state, selected.pos), dispatch);
+};
+
+const toDocumentStart: KeymapBinding = (state, dispatch) =>
+  dispatchIfAny(documentStartTransaction(state), dispatch);
+const toDocumentEnd: KeymapBinding = (state, dispatch) =>
+  dispatchIfAny(documentEndTransaction(state), dispatch);
+
+function dispatchIfAny(
+  transaction: Transaction | null,
+  dispatch: Parameters<KeymapBinding>[1],
+): boolean {
   if (!transaction) return false;
   dispatch?.(transaction);
   return true;
-};
+}
 
-const toDocumentEdge =
-  (edge: "start" | "end"): KeymapBinding =>
-  (state, dispatch) => {
-    const transaction = documentEdgeTransaction(state, edge);
-    if (!transaction) return false;
-    dispatch?.(transaction);
-    return true;
-  };
-const toDocumentStart = toDocumentEdge("start");
-const toDocumentEnd = toDocumentEdge("end");
-
-const walkForward: KeymapBinding = (state, dispatch) => walk(state, dispatch, 1);
-const walkBackward: KeymapBinding = (state, dispatch) => walk(state, dispatch, -1);
-
+/** `lines` is passed for the up and down arrows, which leave a block from its first or last line rather than its first or last character. */
 function walk(
   state: Parameters<KeymapBinding>[0],
   dispatch: Parameters<KeymapBinding>[1],
   direction: 1 | -1,
+  lines?: EditorView,
 ): boolean {
   // Second press: pass beyond the object the first press selected.
   const selected = selectedObject(state);
   if (selected) {
-    const transaction = caretBesideObjectTransaction(state, selected.pos, direction);
-    if (!transaction) return false;
-    dispatch?.(transaction);
-    return true;
+    const step = lines ? verticalStepFrom(state, selected, direction) : { beside: selected };
+    if ("into" in step) {
+      return dispatchIfAny(enterCellTransaction(state, step.into, direction), dispatch);
+    }
+    const { beside } = step;
+    const endsDocument =
+      direction === 1 && beside.pos + beside.node.nodeSize === state.doc.content.size;
+    return dispatchIfAny(
+      endsDocument
+        ? documentEndTransaction(state)
+        : caretBesideObjectTransaction(state, beside.pos, direction),
+      dispatch,
+    );
   }
 
   // First press: the caret is beside an object, so walk onto it.
-  const beside = objectBeside(state, direction);
+  const inText = state.selection.$head.parent.isTextblock;
+  const beside = objectBeside(
+    state,
+    direction,
+    lines && {
+      atEdge: inText ? lines.endOfTextblock(direction === 1 ? "down" : "up", state) : undefined,
+    },
+  );
   if (!beside) return false;
-  const transaction = selectObjectTransaction(state, beside.pos);
-  if (!transaction) return false;
-  dispatch?.(transaction);
-  return true;
+  return dispatchIfAny(selectObjectTransaction(state, beside.pos), dispatch);
 }
 
 /** Registrations already reported as unengageable, so the warning fires once. */
