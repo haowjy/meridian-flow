@@ -43,6 +43,8 @@ export interface McpConnectionsDeps {
   store: ConnectionStore;
   client: McpClient;
   cipher: TokenCipher;
+  /** Why Flow will never contact this address, or null: an address like that is a typo, so add and edit refuse it at once. */
+  addressRefusal(url: URL): string | null;
   /** The sessions key: account, connection and settings version. */
   sessionKey(row: ConnectionRow): string;
   statusChanged(row: ConnectionRow): void;
@@ -53,20 +55,6 @@ export interface McpConnectionsDeps {
 const LIST_TIMEOUT_MS = 15_000;
 /** A removed connection stays for Undo this long; then it goes with its token and pins. */
 export const REMOVED_RETENTION_MS = 30 * 24 * 60 * 60_000;
-
-function parseUrl(raw: unknown): string {
-  if (typeof raw !== "string") throw new McpConnectionError("invalid", "The address is missing.");
-  let url: URL;
-  try {
-    url = new URL(raw.trim());
-  } catch {
-    throw new McpConnectionError("invalid", "That is not a web address.");
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:")
-    throw new McpConnectionError("invalid", "The address must start with https://.");
-  url.hash = "";
-  return url.toString();
-}
 
 const isReadOnly = (tool: { annotations?: unknown }): boolean => {
   const { annotations } = tool as { annotations?: { readOnlyHint?: unknown } };
@@ -84,6 +72,20 @@ function toolViews(
 }
 
 export function createMcpConnections(deps: McpConnectionsDeps) {
+  function parseUrl(raw: unknown): string {
+    if (typeof raw !== "string") throw new McpConnectionError("invalid", "The address is missing.");
+    let url: URL;
+    try {
+      url = new URL(raw.trim());
+    } catch {
+      throw new McpConnectionError("invalid", "That is not a web address.");
+    }
+    const refusal = deps.addressRefusal(url);
+    if (refusal) throw new McpConnectionError("invalid", refusal);
+    url.hash = "";
+    return url.toString();
+  }
+
   const now = deps.now ?? (() => new Date());
   const checks = createConnectionChecks({
     store: deps.store,

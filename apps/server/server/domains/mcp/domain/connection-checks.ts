@@ -28,11 +28,22 @@ export interface ConnectionChecksDeps {
 
 type Learned = { status: McpConnectionStatus; reason: string | null } | "unchanged";
 
+/**
+ * A request Flow refused to make, or a redirect it will not follow, shows as a failed start whose
+ * message is the refusal's (it crosses the client as text). Neither mends by trying again.
+ */
+const REFUSED_BY_FLOW = /connects only to|not a public address|does not follow redirects/i;
+
+const isRefusedByFlow = (outcome: Unreachable) =>
+  outcome.reason === "start_failed" && REFUSED_BY_FLOW.test(outcome.message);
+
 /** A writer's words for why a check failed. */
 export function reasonText(outcome: Unreachable): string {
   switch (outcome.reason) {
     case "start_failed":
-      return /public address|https|port 443/i.test(outcome.message)
+      if (/does not follow redirects/i.test(outcome.message))
+        return "The server redirected. Flow doesn't follow redirects.";
+      return REFUSED_BY_FLOW.test(outcome.message)
         ? "Flow connects only to public https addresses on port 443."
         : "Flow could not connect to the server.";
     case "connect_timeout":
@@ -65,7 +76,8 @@ export function createConnectionChecks(deps: ConnectionChecksDeps) {
     if (
       outcome.kind === "unreachable" &&
       outcome.reason !== "unauthorized" &&
-      outcome.reason !== "rate_limited"
+      outcome.reason !== "rate_limited" &&
+      !isRefusedByFlow(outcome)
     ) {
       await new Promise((resolve) =>
         setTimeout(resolve, deps.secondTryDelayMs ?? SECOND_TRY_DELAY_MS),

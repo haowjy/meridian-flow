@@ -1,27 +1,54 @@
 /**
  * The process's one MCP client. Every request it makes to a writer's server goes through
- * `publicFetch`, which allows https on port 443 only and dials through the public-address
+ * `publicFetch`, which allows (`addressRefusal`) https on port 443 only, follows no redirect and dials through the public-address
  * dispatcher (the one import of it for MCP). A session is held per key
  * (`sessionKey`), and one account holds at most `MCP_SESSIONS_PER_ACCOUNT` of them: past that
  * the least recently used idle one closes, a session an edit left behind first.
  */
+
+import { isIP } from "node:net";
 import { MCP_SESSIONS_PER_ACCOUNT } from "@meridian/contracts/mcp";
 import { createMcpClient, type McpClient, type McpEvent } from "@meridian-flow/runtime/mcp";
 import { fetch as undiciFetch } from "undici";
-import { publicAddressDispatcher } from "./public-address-dispatcher.js";
+import { isPublicAddress, publicAddressDispatcher } from "./public-address-dispatcher.js";
 
-const publicFetch = ((input: string | URL | Request, init?: RequestInit) => {
-  const url = new URL(input instanceof Request ? input.url : input);
+/**
+ * Why Flow will never contact this address, or null. The one rule the settings API applies at
+ * add and `publicFetch` applies to every request; a name that only resolves to a private address
+ * is refused later by the dispatcher.
+ */
+export function addressRefusal(url: URL): string | null {
   if (url.protocol !== "https:")
-    throw new Error("Flow connects to https addresses only, so this address was not contacted");
+    return "Flow connects only to https addresses, so the address must start with https://.";
   if (url.port !== "" && url.port !== "443")
-    throw new Error("Flow connects to port 443 only, so this address was not contacted");
+    return "Flow connects only to port 443, so take the port out of the address.";
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    (isIP(host) !== 0 && !isPublicAddress(host))
+  )
+    return `Flow connects only to public addresses, and ${host} is not one.`;
+  return null;
+}
+
+const publicFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(input instanceof Request ? input.url : input);
+  const refusal = addressRefusal(url);
+  if (refusal) throw new Error(refusal);
   // Redirects are not followed: a hop could change the scheme or the port.
-  return undiciFetch(url, {
+  const response = await undiciFetch(url, {
     ...(init as Parameters<typeof undiciFetch>[1]),
     dispatcher: publicAddressDispatcher,
     redirect: "manual",
   });
+  if (response.status >= 300 && response.status < 400) {
+    void response.body?.cancel();
+    throw new Error(
+      `The server redirected (HTTP ${response.status}); Flow does not follow redirects`,
+    );
+  }
+  return response;
 }) as unknown as typeof fetch;
 
 /** One session per account, connection and settings version: an edit starts a new one in every process. */
