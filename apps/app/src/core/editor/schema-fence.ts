@@ -5,14 +5,15 @@
  * not bind an editable schema to a room whose content it cannot preserve.
  */
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
+import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
 
 export type SchemaFence = {
   reason: "client-superseded";
 };
 
-function browserStorage(): Storage | null {
+function fenceStorage(): RecordStorage | null {
   try {
-    return globalThis.localStorage ?? null;
+    return browserStorage("local");
   } catch {
     return null;
   }
@@ -23,7 +24,7 @@ export function schemaFenceQuarantineKey(roomKey: string): string {
 }
 
 export function readSchemaFenceQuarantine(roomKey: string): SchemaFence | null {
-  const storage = browserStorage();
+  const storage = fenceStorage();
   if (!storage) return null;
 
   try {
@@ -39,7 +40,7 @@ export function readSchemaFenceQuarantine(roomKey: string): SchemaFence | null {
 
 /** Returns false when browser storage cannot make the fence durable. */
 export function writeSchemaFenceQuarantine(roomKey: string, fence: SchemaFence): boolean {
-  const storage = browserStorage();
+  const storage = fenceStorage();
   if (!storage) return false;
   try {
     storage.setItem(schemaFenceQuarantineKey(roomKey), JSON.stringify(fence));

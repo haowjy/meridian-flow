@@ -14,14 +14,14 @@ For `psql`, run `tools/dev/psql [psql args…]`. It targets this checkout's data
 
 ### Toolchain
 
-Node, Bun and Python are pinned in [`.tool-versions`](.tool-versions): Node 24.17.0, Bun 1.4.4, and Python 3.12, which resolves to the newest installed 3.12.x. Bun runs the TypeScript scripts under `tools/` and `./mf`; Vite, Nitro, Vitest and production run on Node. `mise activate` in your shell rc resolves the pins.
+Node, Bun and Python are pinned in [`.tool-versions`](.tool-versions): Node 26.13.1, Bun 1.4.4, and Python 3.12, which resolves to the newest installed 3.12.x. Bun runs the TypeScript scripts under `tools/` and `./mf`; Vite, Nitro, Vitest and production run on Node. `mise activate` in your shell rc resolves the pins.
 
 ```bash
 mise install                  # download the pinned versions
 eval "$(mise activate bash)"  # add to ~/.bashrc so every shell gets the pinned Node, Bun and Python
 ```
 
-`mise current` prints the versions a shell resolves (`node 24.17.0`, `bun 1.4.4`, `python 3.12.x`).
+`mise current` prints the versions a shell resolves (`node 26.13.1`, `bun 1.4.4`, `python 3.12.x`).
 
 Runtime dev-tool contracts: [tools/dev/.context/CONTEXT.md](tools/dev/.context/CONTEXT.md).
 

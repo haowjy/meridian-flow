@@ -5,10 +5,7 @@
  * last read.
  */
 
-import type { UserId } from "@meridian/contracts";
-import { type AgentsLevel, agentsRootOf } from "@meridian/contracts/agents";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import {
@@ -16,64 +13,18 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import type { DocumentLinkScopes, MarkdownDocumentStore } from "../../collab/index.js";
+import type { DocumentLinkScopes } from "../../collab/index.js";
 import type { AgentLevelFiles, LevelFiles } from "../../packages/ports/agent-level-files.js";
-import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import type { ContextDocument } from "../ports/context-document-store.js";
-import { LIVE_TREE } from "../tree/tree-view.js";
+import { type ApplyLevelFilesDeps, prepareLevelFiles } from "./apply-level-files.js";
+import { type Candidate, candidatesOf } from "./level-file-candidates.js";
 
-/** Texts kept between reads; a level is a few dozen small files, so this covers many writers. */
+/** A bound on retained texts across all levels this adapter reads. */
 const CACHED_TEXTS = 2000;
 
-interface Candidate {
-  document: ContextDocument;
-  /** What the document answers to as a package file: a prose `x` answers to `x.md`. */
-  path: string;
-}
-
-/** The documents answering to each path of a level, or none when its folder is not there. */
-async function candidatesOf(
-  db: Database,
-  input: { level: AgentsLevel; userId: string; projectId?: string },
-): Promise<Map<string, Candidate[]>> {
-  const root = agentsRootOf(input.level);
-  const byPath = new Map<string, Candidate[]>();
-  if (input.level === "project" && !input.projectId) return byPath;
-  const store = createProjectContextDocumentStore(
-    db,
-    input.projectId ?? "",
-    root.scheme,
-    input.userId,
-  );
-  const rootFolder =
-    root.path === ""
-      ? { kind: "found" as const, node: null }
-      : await store.resolveFolderAt(LIVE_TREE, root.path);
-  if (rootFolder.kind !== "found") return byPath;
-  const pending: Array<{ folderId: string | null; prefix: string }> = [
-    { folderId: rootFolder.node?.id ?? null, prefix: "" },
-  ];
-  for (let next = pending.pop(); next; next = pending.pop()) {
-    const { folderId, prefix } = next;
-    for (const folder of await store.listFolders(LIVE_TREE, folderId)) {
-      pending.push({ folderId: folder.id, prefix: `${prefix}${folder.name}/` });
-    }
-    for (const document of await store.listDocuments(LIVE_TREE, folderId)) {
-      const name = document.extension ? `${document.name}.${document.extension}` : document.name;
-      const prose =
-        document.fileType === null && document.filetype !== "source" && !document.extension;
-      const path = `${prefix}${prose ? `${name}.md` : name}`;
-      byPath.set(path, [...(byPath.get(path) ?? []), { document, path }]);
-    }
-  }
-  return byPath;
-}
-
-export function createAgentLevelFiles(deps: {
-  db: Database;
-  documentSync: Pick<MarkdownDocumentStore, "readFrozenMarkdown" | "mergeCodeText">;
-  links: Pick<DocumentLinkScopes, "within">;
-}): AgentLevelFiles {
+export function createAgentLevelFiles(
+  deps: ApplyLevelFilesDeps & { links: Pick<DocumentLinkScopes, "within"> },
+): AgentLevelFiles {
   const texts = new Map<string, { version: string; text: string }>();
 
   async function versionsOf(ids: string[]): Promise<Map<string, string>> {
@@ -107,26 +58,7 @@ export function createAgentLevelFiles(deps: {
   }
 
   return {
-    async mergeFiles({ level, userId, projectId, files }) {
-      // Only a document the writer still has: a file they deleted stays deleted, and nothing here
-      // creates one. Sorted by id so concurrent Undos take the documents' locks in one order.
-      const byPath = await candidatesOf(deps.db, { level, userId, projectId });
-      const documents = Object.entries(files).flatMap(([path, { base, target }]) => {
-        const found = byPath.get(path);
-        return found?.length === 1
-          ? [{ id: found[0].document.id as DocumentId, base, target }]
-          : [];
-      });
-      for (const { id, base, target } of documents.sort((a, b) => (a.id < b.id ? -1 : 1))) {
-        const merged = await deps.documentSync.mergeCodeText({
-          documentId: id,
-          base,
-          target,
-          origin: { type: "user", actorUserId: userId as UserId },
-        });
-        if (!merged.ok) throw new Error(`Cannot restore a package file: ${merged.error.code}`);
-      }
-    },
+    prepareFiles: (input) => prepareLevelFiles(deps, input),
 
     read(input): Promise<LevelFiles> {
       // Inside a command transaction the snapshot below would join it, not isolate the read.
@@ -144,8 +76,7 @@ export function createAgentLevelFiles(deps: {
             problems[path] = `${path} is a prose document; package files are plain text`;
           else readable.push(only);
         }
-        const ids = readable.map((candidate) => candidate.document.id);
-        const versions = await versionsOf(ids);
+        const versions = await versionsOf(readable.map((candidate) => candidate.document.id));
         const readAll = async () => {
           for (const { document, path } of readable) {
             const text = await storedText(document, versions.get(document.id));
