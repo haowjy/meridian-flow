@@ -16,10 +16,7 @@ import {
   type CatalogDocument,
   type ContextUriScheme,
   documentPathCandidateNames,
-  documentPathKey,
   type LinkView,
-  matchDocumentPath,
-  omittedExtensionPath,
   parseContextUri,
   parseLinkRef,
 } from "@meridian/contracts";
@@ -61,7 +58,7 @@ import {
 } from "../tree/tree-view.js";
 import {
   resolveCanonicalAddress,
-  resolveCanonicalFolderAddress,
+  resolveCanonicalPath,
   UnresolvableAddressError,
 } from "./document-address.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
@@ -87,8 +84,6 @@ type ViewIndex = {
   statuses: ReadonlyMap<DocumentId, IdentityStatus>;
   /** Decoded URI in this view → rows visible there. */
   byUri: Map<string, Row[]>;
-  /** The same URI without its filename's extension: pass 3's extension-omitted key. */
-  byStem: Map<string, Row[]>;
   /** The Work's branch and its owner, for a branch view: what "in a draft" names. */
   branch?: { branchId: string; owner: DraftOwnerKey };
 };
@@ -109,8 +104,10 @@ type Snapshot = {
   folderAddresses: Set<string>;
   foldersByView: Map<string, Map<string, CatalogFolder | null>>;
   foldersAtByView: Map<string, Map<string, CatalogFolder | null>>;
-  /** Decoded addresses whose exact and extension-omitted rows are all loaded. */
+  /** Decoded addresses whose rows and tree answers are all loaded. */
   addresses: Set<string>;
+  /** View key → address → the document the tree reaches there in that view (null: none). */
+  resolved: Map<string, Map<string, DocumentId | null>>;
   /** The live settlement by ahead id; null = unsettled or unregistered. */
   settlements: Map<string, string | null>;
   readable: Map<string, boolean>;
@@ -270,7 +267,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         if (atAddress.has(uri)) continue;
         let folderId: string | null = null;
         try {
-          const coordinates = await resolveCanonicalFolderAddress(db, {
+          const coordinates = await resolveCanonicalPath(db, {
             holderProjectId: snapshot.projectId as ProjectId,
             address: uri,
           });
@@ -405,7 +402,62 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const unknown = [...occupants].filter((id) => !snapshot.rows.get(id));
       for (const row of await loadRows({ ids: unknown }, views)) remember(snapshot, row);
     }
+    await loadResolved(snapshot, uris, views);
     for (const uri of uris) snapshot.addresses.add(uri);
+  }
+
+  /**
+   * What each view's tree reaches at each address a link names: the folder walk, so a name
+   * shared by a document and a folder reaches the folder's contents. Their rows join the snapshot.
+   */
+  async function loadResolved(
+    snapshot: Snapshot,
+    uris: readonly string[],
+    views: readonly LinkView[],
+  ) {
+    const holder = snapshot.projectId
+      ? { holderProjectId: snapshot.projectId as ProjectId }
+      : snapshot.viewer
+        ? { holderUserId: snapshot.viewer as UserId }
+        : null;
+    if (!holder) return;
+    const places = await Promise.all(
+      uris.map(async (uri) => {
+        try {
+          const coordinates = await resolveCanonicalPath(db, { ...holder, address: uri });
+          const contextSourceId = await presentSourceId(db, {
+            scheme: coordinates.scheme,
+            workId: coordinates.workId,
+            rootThreadId: coordinates.rootThreadId,
+            chatThreadId: coordinates.chatThreadId,
+            owner: coordinates.owner,
+          });
+          return { uri, contextSourceId, path: coordinates.path };
+        } catch (cause) {
+          if (!(cause instanceof UnresolvableAddressError)) throw cause;
+          return { uri, contextSourceId: null, path: "" };
+        }
+      }),
+    );
+    const named = new Set<string>();
+    for (const view of new Map(views.map((item) => [viewKey(item), item])).values()) {
+      const answers = snapshot.resolved.get(viewKey(view)) ?? new Map();
+      await Promise.all(
+        places.map(async ({ uri, contextSourceId, path }) => {
+          const found = contextSourceId
+            ? await tree.resolveDocumentAddress(treeViewOf(view), { contextSourceId, path })
+            : null;
+          const id =
+            found?.kind === "found" && found.node.kind === "document"
+              ? found.node.document.id
+              : null;
+          answers.set(uri, id);
+          if (id && !snapshot.rows.get(id)) named.add(id);
+        }),
+      );
+      snapshot.resolved.set(viewKey(view), answers);
+    }
+    for (const row of await loadRows({ ids: [...named] }, views)) remember(snapshot, row);
   }
 
   /** Storage coordinates of canonical addresses; an address naming nothing is skipped. */
@@ -491,7 +543,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const index: ViewIndex = {
         statuses,
         byUri: new Map(),
-        byStem: new Map(),
         ...(view.kind === "branch" && owners.has(view.branchId)
           ? {
               branch: {
@@ -505,8 +556,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
         const row = snapshot.rows.get(id);
         if (!row || status.kind !== "visible") continue;
         push(index.byUri, status.address.uri, row);
-        const stem = omittedExtensionPath(status.address.uri);
-        if (stem) push(index.byStem, stem, row);
       }
       snapshot.views.set(key, index);
     }
@@ -578,6 +627,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         foldersByView: new Map(),
         foldersAtByView: new Map(),
         addresses: new Set(),
+        resolved: new Map(),
         settlements: new Map(),
         readable: new Map(),
         views: new Map(),
@@ -746,14 +796,13 @@ function snapshotCatalog(
       nameable: owned(row),
     };
   };
-  const atAddress = (uri: string, stems: boolean) => {
+  const atAddress = (uri: string) => {
     const index = snapshot.views.get(key);
     if (!index) {
       miss(`view:${key}`);
       return undefined;
     }
-    const rows = [...(index.byUri.get(uri) ?? []), ...(stems ? (index.byStem.get(uri) ?? []) : [])];
-    const documents = rows.map(toDocument);
+    const documents = (index.byUri.get(uri) ?? []).map(toDocument);
     return documents.includes(UNLOADED)
       ? undefined
       : documents.filter((document): document is CatalogDocument | null => document !== UNLOADED);
@@ -786,21 +835,16 @@ function snapshotCatalog(
   };
   return {
     /**
-     * What this branch view created at an address a typed link names: the exact address, else
-     * the one extension-omitted match. Only the view's own branch counts (`documentAt` shows
+     * What this branch view created at an address a typed link names, as the tree reaches it. Only the view's own branch counts (`documentAt` shows
      * an ahead ref any branch's creation), and only a document the reader may name and read.
      */
     branchCreatedAt(uri) {
       if (view.kind !== "branch" || !snapshot.addresses.has(uri)) return null;
-      const statuses = snapshot.views.get(key)?.statuses;
-      const created = [...(statuses ?? [])].flatMap(([id, status]) => {
-        const row = snapshot.rows.get(id);
-        return row && status.kind === "visible" && status.existsOnlyInDraft
-          ? [{ row, address: status.address.uri }]
-          : [];
-      });
-      const match = matchDocumentPath(created, uri, (entry) => entry.address);
-      const document = match ? toDocument(match.row) : null;
+      const id = snapshot.resolved.get(key)?.get(uri);
+      const status = id ? snapshot.views.get(key)?.statuses.get(id) : undefined;
+      const row = id ? snapshot.rows.get(id) : undefined;
+      const document =
+        row && status?.kind === "visible" && status.existsOnlyInDraft ? toDocument(row) : null;
       return document && document !== UNLOADED && reachable(document) ? document : null;
     },
     document(id) {
@@ -822,7 +866,7 @@ function snapshotCatalog(
     settlement: (aheadId) => snapshot.settlements.get(aheadId),
     documentAt(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      const documents = atAddress(uri, false);
+      const documents = atAddress(uri);
       if (documents === undefined) return undefined;
       return (
         documents.find(
@@ -833,16 +877,17 @@ function snapshotCatalog(
     },
     documentFor(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      // A file kept as `again.md` sits at its own address, which the key `again` of the
-      // extension-omitted form does not list.
-      const exact = atAddress(uri, false);
-      const keyed = atAddress(documentPathKey(uri), true);
-      if (exact === undefined || keyed === undefined) return undefined;
-      return matchDocumentPath(
-        [...exact, ...keyed].filter(reachable),
-        uri,
-        (document) => document.uri,
-      );
+      const answers = snapshot.resolved.get(key);
+      const id = answers?.get(uri);
+      if (id === undefined) {
+        miss(`resolved:${key}`);
+        return undefined;
+      }
+      const row = id === null ? null : snapshot.rows.get(id);
+      if (row === undefined) return undefined;
+      const document = row === null ? null : toDocument(row);
+      if (document === UNLOADED) return undefined;
+      return document && reachable(document) ? document : null;
     },
     assetAddress(id) {
       const row = snapshot.rows.get(id);

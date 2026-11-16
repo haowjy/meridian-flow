@@ -105,10 +105,13 @@ export async function resolveCanonicalAddress(
   return resolveAddressCoordinates(db, input, "document");
 }
 
-/** A decoded canonical folder address resolved to the same storage coordinates as a document. */
-export async function resolveCanonicalFolderAddress(
+/**
+ * A decoded canonical address resolved to storage coordinates without a filename rule: a folder
+ * or a link's path that may leave its extension off.
+ */
+export async function resolveCanonicalPath(
   db: DrizzleDb,
-  input: { holderProjectId: ProjectId; address: string },
+  input: AheadHolder & { address: string },
 ): Promise<DocumentCoordinates> {
   return resolveAddressCoordinates(db, input, "folder");
 }
