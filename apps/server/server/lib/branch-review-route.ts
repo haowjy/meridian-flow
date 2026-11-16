@@ -611,11 +611,11 @@ async function commandIngress(
 
 /** Why a grant was refused, as the reason an Apply or an Undo of a Discard answers. */
 function denialReason(grant: FileAccessDenied) {
-  return grant.facts?.branchOwner?.deleted || grant.facts?.ownerWork?.deleted
-    ? ("work_deleted" as const)
-    : grant.reason === "work_archived" || grant.reason === "chat_frozen"
-      ? grant.reason
-      : ("not_found" as const);
+  return grant.reason === "work_deleted" ||
+    grant.reason === "work_archived" ||
+    grant.reason === "chat_frozen"
+    ? grant.reason
+    : ("not_found" as const);
 }
 
 /**
