@@ -1,8 +1,8 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 9afb866379c2a9f23fa49596af33cb10de933c8d..e9a5282f4122cf318e5f1d78eb0355cfc0ec5b1a 100644
+index 3182a2c995b6ee655dfff2dd77446d37c6c0b396..a8296f2211df17961a7ce764ee3aa769f0350253 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -2146,6 +2146,9 @@ function replaceNodes(nodes, from, to, view, replacement) {
+@@ -2183,6 +2183,9 @@ function replaceNodes(nodes, from, to, view, replacement) {
    }
    return result;
  }
@@ -12,7 +12,16 @@ index 9afb866379c2a9f23fa49596af33cb10de933c8d..e9a5282f4122cf318e5f1d78eb0355cf
  function selectionFromDOM(view) {
    var origin = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : null;
    var domSel = view.domSelectionRange(),
-@@ -2176,7 +2179,7 @@ function selectionFromDOM(view) {
+@@ -2201,7 +2204,7 @@ function selectionFromDOM(view) {
+     if (nearestDesc && nearestDesc.node.isAtom && prosemirrorState.NodeSelection.isSelectable(nearestDesc.node) && nearestDesc.parent && !(nearestDesc.node.isInline && isOnEdge(domSel.focusNode, domSel.focusOffset, nearestDesc.dom))) {
+       var pos = nearestDesc.posBefore;
+       selection = new prosemirrorState.NodeSelection(head == pos ? $head : doc.resolve(pos));
+-    } else if (gecko && origin == "key" && head > view.state.selection.to && isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length && nearestDesc && nearestDesc.posAtStart > view.state.selection.to) {
++    } else if (gecko && origin == "key" && head > domSelectionSource(view).to && isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length && nearestDesc && nearestDesc.posAtStart > domSelectionSource(view).to) {
+       for (var scan = domSel.focusNode;; scan = scan.parentNode) {
+         if (getComputedStyle(scan).overflow != "visible") {
+           selection = prosemirrorState.Selection.findFrom(doc.resolve(nearestDesc.posAtStart), 1);
+@@ -2220,7 +2223,7 @@ function selectionFromDOM(view) {
          max = Math.max(max, view.docView.posFromDOM(range.endContainer, range.endOffset, -1));
        }
        if (min < 0) return null;
@@ -21,7 +30,7 @@ index 9afb866379c2a9f23fa49596af33cb10de933c8d..e9a5282f4122cf318e5f1d78eb0355cf
        var _ref4 = _slicedToArray(_ref3, 2);
        anchor = _ref4[0];
        head = _ref4[1];
-@@ -2188,7 +2191,7 @@ function selectionFromDOM(view) {
+@@ -2232,7 +2235,7 @@ function selectionFromDOM(view) {
    }
    var $anchor = doc.resolve(anchor);
    if (!selection) {
@@ -30,7 +39,7 @@ index 9afb866379c2a9f23fa49596af33cb10de933c8d..e9a5282f4122cf318e5f1d78eb0355cf
      selection = selectionBetween(view, $anchor, $head, bias);
    }
    return selection;
-@@ -2214,13 +2217,14 @@ function selectionToDOM(view) {
+@@ -2258,13 +2261,14 @@ function selectionToDOM(view) {
    if (view.cursorWrapper) {
      selectCursorWrapper(view);
    } else {
@@ -50,7 +59,7 @@ index 9afb866379c2a9f23fa49596af33cb10de933c8d..e9a5282f4122cf318e5f1d78eb0355cf
      }
      view.docView.setSelection(anchor, head, view, force);
      if (brokenSelectBetweenUneditable) {
-@@ -2327,7 +2331,7 @@ function hasSelection(view) {
+@@ -2371,7 +2375,7 @@ function hasSelection(view) {
    }
  }
  function anchorInRightPlace(view) {
@@ -59,7 +68,7 @@ index 9afb866379c2a9f23fa49596af33cb10de933c8d..e9a5282f4122cf318e5f1d78eb0355cf
    var domSel = view.domSelectionRange();
    return isEquivalentPosition(anchorDOM.node, anchorDOM.offset, domSel.anchorNode, domSel.anchorOffset);
  }
-@@ -4616,7 +4620,7 @@ function rangeToSelectionRange(view, range) {
+@@ -4720,7 +4724,7 @@ function rangeToSelectionRange(view, range) {
      anchorOffset = range.startOffset;
    var focusNode = range.endContainer,
      focusOffset = range.endOffset;
@@ -69,10 +78,10 @@ index 9afb866379c2a9f23fa49596af33cb10de933c8d..e9a5282f4122cf318e5f1d78eb0355cf
      var _ref7 = [focusNode, focusOffset, anchorNode, anchorOffset];
      anchorNode = _ref7[0];
 diff --git a/dist/index.d.cts b/dist/index.d.cts
-index 21931acf320a62ee3659cf16fb280cdfc21c44a7..737c142affe3c96bfba8da4229e932f3ec382b36 100644
+index f738f6876f3fae6b4f055e0c9e8532404f793f73..8a49f88bd038a9d1180beabb6b442e90e887c801 100644
 --- a/dist/index.d.cts
 +++ b/dist/index.d.cts
-@@ -718,6 +718,14 @@ interface EditorProps<P = any> {
+@@ -726,6 +726,14 @@ interface EditorProps<P = any> {
      */
      dragCopies?: (event: DragEvent) => boolean;
      /**
@@ -88,10 +97,10 @@ index 21931acf320a62ee3659cf16fb280cdfc21c44a7..737c142affe3c96bfba8da4229e932f3
      reading a DOM selection between the given anchor and head.
      */
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 21931acf320a62ee3659cf16fb280cdfc21c44a7..737c142affe3c96bfba8da4229e932f3ec382b36 100644
+index f738f6876f3fae6b4f055e0c9e8532404f793f73..8a49f88bd038a9d1180beabb6b442e90e887c801 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
-@@ -718,6 +718,14 @@ interface EditorProps<P = any> {
+@@ -726,6 +726,14 @@ interface EditorProps<P = any> {
      */
      dragCopies?: (event: DragEvent) => boolean;
      /**
@@ -107,10 +116,10 @@ index 21931acf320a62ee3659cf16fb280cdfc21c44a7..737c142affe3c96bfba8da4229e932f3
      reading a DOM selection between the given anchor and head.
      */
 diff --git a/dist/index.js b/dist/index.js
-index aee1aafefa84d45c473e962f6279246bb46b8224..d512fd14aa600001612266802e821d22285ea390 100644
+index e7afadb77457943de14e5108aaee7c60f0c590d2..e0042ed78c14558d840e6ed213484e2d200f4996 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -2189,6 +2189,9 @@ function replaceNodes(nodes, from, to, view, replacement) {
+@@ -2231,6 +2231,9 @@ function replaceNodes(nodes, from, to, view, replacement) {
      return result;
  }
  
@@ -120,7 +129,19 @@ index aee1aafefa84d45c473e962f6279246bb46b8224..d512fd14aa600001612266802e821d22
  function selectionFromDOM(view, origin = null) {
      let domSel = view.domSelectionRange(), doc = view.state.doc;
      if (!domSel.focusNode)
-@@ -2219,7 +2222,7 @@ function selectionFromDOM(view, origin = null) {
+@@ -2250,9 +2253,9 @@ function selectionFromDOM(view, origin = null) {
+             let pos = nearestDesc.posBefore;
+             selection = new NodeSelection(head == pos ? $head : doc.resolve(pos));
+         }
+-        else if (gecko && origin == "key" && head > view.state.selection.to &&
++        else if (gecko && origin == "key" && head > domSelectionSource(view).to &&
+             isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length &&
+-            nearestDesc && nearestDesc.posAtStart > view.state.selection.to) {
++            nearestDesc && nearestDesc.posAtStart > domSelectionSource(view).to) {
+             // Firefox will jump across scrollable wrapper nodes on keyboard
+             // cursor motion (#1594). This tries to detect this situation
+             // and work around it.
+@@ -2276,7 +2279,7 @@ function selectionFromDOM(view, origin = null) {
              }
              if (min < 0)
                  return null;
@@ -129,7 +150,7 @@ index aee1aafefa84d45c473e962f6279246bb46b8224..d512fd14aa600001612266802e821d22
              $head = doc.resolve(head);
          }
          else {
-@@ -2230,7 +2233,7 @@ function selectionFromDOM(view, origin = null) {
+@@ -2287,7 +2290,7 @@ function selectionFromDOM(view, origin = null) {
      }
      let $anchor = doc.resolve(anchor);
      if (!selection) {
@@ -138,7 +159,7 @@ index aee1aafefa84d45c473e962f6279246bb46b8224..d512fd14aa600001612266802e821d22
          selection = selectionBetween(view, $anchor, $head, bias);
      }
      return selection;
-@@ -2261,12 +2264,13 @@ function selectionToDOM(view, force = false) {
+@@ -2318,12 +2321,13 @@ function selectionToDOM(view, force = false) {
          selectCursorWrapper(view);
      }
      else {
@@ -158,7 +179,7 @@ index aee1aafefa84d45c473e962f6279246bb46b8224..d512fd14aa600001612266802e821d22
          }
          view.docView.setSelection(anchor, head, view, force);
          if (brokenSelectBetweenUneditable) {
-@@ -2401,7 +2405,7 @@ function hasSelection(view) {
+@@ -2457,7 +2461,7 @@ function hasSelection(view) {
      }
  }
  function anchorInRightPlace(view) {
@@ -167,7 +188,7 @@ index aee1aafefa84d45c473e962f6279246bb46b8224..d512fd14aa600001612266802e821d22
      let domSel = view.domSelectionRange();
      return isEquivalentPosition(anchorDOM.node, anchorDOM.offset, domSel.anchorNode, domSel.anchorOffset);
  }
-@@ -4912,7 +4916,7 @@ function checkCSS(view) {
+@@ -5034,7 +5038,7 @@ function checkCSS(view) {
  function rangeToSelectionRange(view, range) {
      let anchorNode = range.startContainer, anchorOffset = range.startOffset;
      let focusNode = range.endContainer, focusOffset = range.endOffset;
@@ -177,19 +198,19 @@ index aee1aafefa84d45c473e962f6279246bb46b8224..d512fd14aa600001612266802e821d22
      // use a heuristic that flips it around if its end matches the
      // current anchor.
 diff --git a/src/domobserver.ts b/src/domobserver.ts
-index ac33f2c07fd63d5acf008ab89bdddff943fd00ef..be16ddd456b0113b96bad563f9fe89e610d727b6 100644
+index 618f2cff6ad02951fe80bd4f4c4c113ac22142d1..ea921d5276c52b339609c718bac9890c4839375d 100644
 --- a/src/domobserver.ts
 +++ b/src/domobserver.ts
 @@ -1,7 +1,7 @@
  import {Selection} from "prosemirror-state"
  import * as browser from "./browser"
- import {domIndex, isEquivalentPosition, selectionCollapsed, parentNode, DOMSelectionRange, DOMNode, DOMSelection} from "./dom"
+ import {domIndex, isEquivalentPosition, selectionCollapsed, parentNode, DOMSelectionRange, DOMNode, DOMSelection, isText, isElt} from "./dom"
 -import {hasFocusAndSelection, selectionToDOM, selectionFromDOM} from "./selection"
 +import {hasFocusAndSelection, selectionToDOM, selectionFromDOM, domSelectionSource} from "./selection"
  import {EditorView} from "./index"
  
  const observeOptions = {
-@@ -323,7 +323,7 @@ function rangeToSelectionRange(view: EditorView, range: StaticRange) {
+@@ -326,7 +326,7 @@ function rangeToSelectionRange(view: EditorView, range: StaticRange) {
    let anchorNode = range.startContainer, anchorOffset = range.startOffset
    let focusNode = range.endContainer, focusOffset = range.endOffset
  
@@ -199,7 +220,7 @@ index ac33f2c07fd63d5acf008ab89bdddff943fd00ef..be16ddd456b0113b96bad563f9fe89e6
    // use a heuristic that flips it around if its end matches the
    // current anchor.
 diff --git a/src/index.ts b/src/index.ts
-index 54f4d0eccf9ba6845984e32a148c537d1c203ca5..ca2f00a50b3a17114d50fd0319be3a46b02039d0 100644
+index 7d4205736a5533b8c22b2ce9a8ea719f8f52f143..bb9e20ecacc37236225866493ab4f475ed95e6f1 100644
 --- a/src/index.ts
 +++ b/src/index.ts
 @@ -682,6 +682,13 @@ export interface EditorProps<P = any> {
@@ -217,10 +238,10 @@ index 54f4d0eccf9ba6845984e32a148c537d1c203ca5..ca2f00a50b3a17114d50fd0319be3a46
    /// reading a DOM selection between the given anchor and head.
    createSelectionBetween?: (this: P, view: EditorView, anchor: ResolvedPos, head: ResolvedPos) => Selection | null
 diff --git a/src/selection.ts b/src/selection.ts
-index 83b4120d2d27af01722b1b8839766aa0e67a9a90..33b971f70d8a8b4512858702b2cc9ccd05f2d948 100644
+index 2cc1de165cafd2ede4f6b96d4eff0a7d1e6553a5..f53612a04d011fd0eacb5a77e02a532a0ade998c 100644
 --- a/src/selection.ts
 +++ b/src/selection.ts
-@@ -6,6 +6,10 @@ import {isEquivalentPosition, domIndex, isOnEdge, selectionCollapsed} from "./do
+@@ -6,6 +6,10 @@ import {isEquivalentPosition, domIndex, isOnEdge, selectionCollapsed, isElt, con
  import {EditorView} from "./index"
  import {NodeViewDesc} from "./viewdesc"
  
@@ -231,7 +252,19 @@ index 83b4120d2d27af01722b1b8839766aa0e67a9a90..33b971f70d8a8b4512858702b2cc9ccd
  export function selectionFromDOM(view: EditorView, origin: string | null = null) {
    let domSel = view.domSelectionRange(), doc = view.state.doc
    if (!domSel.focusNode) return null
-@@ -31,7 +35,7 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
+@@ -21,9 +25,9 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
+         !(nearestDesc.node!.isInline && isOnEdge(domSel.focusNode, domSel.focusOffset, nearestDesc.dom))) {
+       let pos = nearestDesc.posBefore
+       selection = new NodeSelection(head == pos ? $head : doc.resolve(pos))
+-    } else if (browser.gecko && origin == "key" && head > view.state.selection.to &&
++    } else if (browser.gecko && origin == "key" && head > domSelectionSource(view).to &&
+                isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length &&
+-               nearestDesc && nearestDesc.posAtStart > view.state.selection.to) {
++               nearestDesc && nearestDesc.posAtStart > domSelectionSource(view).to) {
+       // Firefox will jump across scrollable wrapper nodes on keyboard
+       // cursor motion (#1594). This tries to detect this situation
+       // and work around it.
+@@ -45,7 +49,7 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
          max = Math.max(max, view.docView.posFromDOM(range.endContainer, range.endOffset, -1))
        }
        if (min < 0) return null
@@ -240,7 +273,7 @@ index 83b4120d2d27af01722b1b8839766aa0e67a9a90..33b971f70d8a8b4512858702b2cc9ccd
        $head = doc.resolve(head)
      } else {
        anchor = view.docView.posFromDOM(domSel.anchorNode!, domSel.anchorOffset, 1)
-@@ -41,7 +45,7 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
+@@ -55,7 +59,7 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
    let $anchor = doc.resolve(anchor)
  
    if (!selection) {
@@ -249,7 +282,7 @@ index 83b4120d2d27af01722b1b8839766aa0e67a9a90..33b971f70d8a8b4512858702b2cc9ccd
      selection = selectionBetween(view, $anchor, $head, bias)
    }
    return selection
-@@ -77,12 +81,13 @@ export function selectionToDOM(view: EditorView, force = false) {
+@@ -91,12 +95,13 @@ export function selectionToDOM(view: EditorView, force = false) {
    if (view.cursorWrapper) {
      selectCursorWrapper(view)
    } else {
@@ -269,7 +302,7 @@ index 83b4120d2d27af01722b1b8839766aa0e67a9a90..33b971f70d8a8b4512858702b2cc9ccd
      }
      view.docView.setSelection(anchor, head, view, force)
      if (brokenSelectBetweenUneditable) {
-@@ -210,7 +215,7 @@ export function hasSelection(view: EditorView) {
+@@ -223,7 +228,7 @@ export function hasSelection(view: EditorView) {
  }
  
  export function anchorInRightPlace(view: EditorView) {

@@ -95,6 +95,7 @@ export async function copyRows(
       ? (copy.area.owner.rootThreadId ?? null)
       : null,
     destinationParent: destination,
+    ...(copy.area.view?.kind === "draft" ? { destinationView: copy.area.view } : {}),
     ...(copy.position ? { position: copy.position } : {}),
   };
   for (let wait = RESEND_FIRST_MS; ; wait = Math.min(wait * 2, RESEND_LAST_MS)) {

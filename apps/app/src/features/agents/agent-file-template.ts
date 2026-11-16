@@ -35,6 +35,8 @@ export async function agentFileTemplate(levelPath: string): Promise<string | nul
   const frontmatter = `---\n${rewriteBlock([
     ["name", file.slug],
     ["description", describe],
+    // Only `mode: primary` starts a chat; a new Agent is one the writer means to talk to.
+    ...(file.kind === "agent" ? [["mode", "primary"] as [string, string]] : []),
   ])}---\n\n`;
   return file.kind === "agent"
     ? `${frontmatter}You are ${file.slug}. Write what you do here.\n`

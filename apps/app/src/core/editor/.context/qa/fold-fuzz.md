@@ -1,7 +1,7 @@
 # Fold fuzz: random concurrent editing through the binding
 
 `fold-fuzz.probe.ts` checks the patched `@tiptap/y-tiptap` binding
-(`patches/@tiptap__y-tiptap@3.0.5.patch`) and agent-edit's writer against each other under
+(`patches/@tiptap__y-tiptap@3.3.0.patch`) and agent-edit's writer against each other under
 random concurrent edits. Two or three real TipTap editors, each on its own `Y.Doc`, type,
 delete, insert empty paragraphs, bold and align, and the first editor moves runs of one to three
 blocks the way a drag does. A server peer writes into the same paragraphs

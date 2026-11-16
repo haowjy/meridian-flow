@@ -3,6 +3,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import {
   absolutePositionToRelativePosition,
+  type ProsemirrorMapping,
   relativePositionToAbsolutePosition,
   ySyncPluginKey,
 } from "@tiptap/y-tiptap";
@@ -12,7 +13,7 @@ export type RelativePositionRuntime = {
   doc: PMNode;
   yDoc: Y.Doc;
   yFragment: Y.XmlFragment;
-  mapping: Map<Y.AbstractType<unknown>, PMNode>;
+  mapping: ProsemirrorMapping;
 };
 
 /** The binding is absent during the first frame of collaborative editor mount. */
@@ -23,7 +24,7 @@ export function relativePositionRuntimeFromState(
     | {
         doc?: Y.Doc;
         type?: Y.XmlFragment;
-        binding?: { mapping: Map<Y.AbstractType<unknown>, PMNode> };
+        binding?: { mapping: ProsemirrorMapping };
       }
     | undefined;
   if (!pluginState?.doc || !pluginState.type || !pluginState.binding) return null;

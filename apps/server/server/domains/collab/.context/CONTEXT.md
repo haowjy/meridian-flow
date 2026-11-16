@@ -694,7 +694,9 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
-A copy reads one document's frozen cut (`readEffectiveBlocks`): its projected blocks, the
+A copy reads one document's frozen cut (`readEffectiveBlocks`): a Draft view uses the Work's
+draft when present, otherwise live content, with links spelled in the Draft tree. The cut holds
+its projected blocks, the
 revision that version reports, the holder its links spell from, its Yjs state vector, and
 where each `ahead:` ref in the cut settles now. `bindCopiedBlocks` turns those blocks into a
 fresh `BoundWrite` for a new holder through `domain/copied-blocks.ts`: identities inside the

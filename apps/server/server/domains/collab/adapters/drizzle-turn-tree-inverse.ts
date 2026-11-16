@@ -62,10 +62,9 @@ export type TreePlan = {
   /** The steps' documents, each where it is reversed, for the edit grants (a restore is its own). */
   documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
   /**
-   * Documents whose create this Undo takes back in live: text an Apply wrote there has no
-   * inverse of its own and leaves with the document.
+   * Documents created in this turn: their text stays with the document.
    */
-  leavingLive: string[];
+  createdDocuments: string[];
 };
 
 export const NO_TREE_STEPS: TreePlan = {
@@ -76,7 +75,7 @@ export const NO_TREE_STEPS: TreePlan = {
   lists: [],
   branches: [],
   documents: [],
-  leavingLive: [],
+  createdDocuments: [],
 };
 
 export type TurnTreeInverse = ReturnType<typeof createTurnTreeInverse>;
@@ -150,8 +149,20 @@ export function createTurnTreeInverse(deps: {
    * the lists as they stand: the steps it takes, those already taken, and those that stay.
    */
   async function plan(threadId: ThreadId, turnId: TurnId): Promise<TreePlan> {
+    const creates = await db()
+      .select({ id: treeEditReceipts.nodeId })
+      .from(treeEditReceipts)
+      .where(
+        and(
+          eq(treeEditReceipts.threadId, threadId),
+          eq(treeEditReceipts.turnId, turnId),
+          eq(treeEditReceipts.kind, "write"),
+          eq(treeEditReceipts.op, "create"),
+        ),
+      );
+    const createdDocuments = creates.map((row) => row.id as string);
     const { open, undoneByCard } = await deps.history().turnSteps(threadId, turnId);
-    if (open.length === 0) return { ...NO_TREE_STEPS, undoneByCard };
+    if (open.length === 0) return { ...NO_TREE_STEPS, undoneByCard, createdDocuments };
     // A drafted Undo is applicable while its branch still places the node; once a Discard took it
     // out there is no file to ask a grant about and nothing to reverse.
     const held = new Set<string>();
@@ -258,14 +269,7 @@ export function createTurnTreeInverse(deps: {
             ]
           : [];
       }),
-      leavingLive: steps.flatMap((step) =>
-        step.op === "create" &&
-        subjects.has(step.subject) &&
-        live.has(step.subject) &&
-        live.get(step.subject) === null
-          ? [step.subject]
-          : [],
-      ),
+      createdDocuments,
     };
   }
 

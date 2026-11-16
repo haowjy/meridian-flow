@@ -115,11 +115,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     createDrizzleDraftDispositionStore(input.db),
   );
   /**
-   * What the tree half does to the documents' text: an Undo that deletes an applied create in
-   * live takes its applied text with it.
+   * An Undo that deletes a created document leaves its text with the document.
    */
-  async function leavingLiveOf(query: TurnInverseQuery) {
-    return new Set((await treePlanOf(query)).leavingLive);
+  async function createdDocumentsOf(query: TurnInverseQuery) {
+    return new Set((await treePlanOf(query)).createdDocuments);
   }
   async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
     if (query.model) return [...new Set(query.documentIds ?? [])].sort();
@@ -197,7 +196,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     /** A part whose draft the Trash purge deleted: what it recorded became of the part. */
     const purged = new Map<number, "applied" | "discarded">();
     const captured = await (async () => {
-      const leavingLive = await leavingLiveOf(query);
+      const createdDocuments = await createdDocumentsOf(query);
       const ids = await selectedDocuments(query);
       const rows = await history(ids);
       for (const row of rows) if (row.purgedDisposition) purged.set(row.id, row.purgedDisposition);
@@ -235,7 +234,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             live: Y.encodeSnapshotV2(Y.snapshot(live)),
             liveRoom: liveRoomName,
             liveClosed: liveAvailability.get(documentId)?.closed ?? null,
-            leavesLive: leavingLive.has(documentId),
+            createdInTurn: createdDocuments.has(documentId),
           });
           const document: InverseDocument = {
             documentId,
@@ -248,7 +247,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             live,
             liveRoom: removal ? null : liveRoomName,
             removal,
-            leavesLive: leavingLive.has(documentId),
+            createdInTurn: createdDocuments.has(documentId),
             history: parts.filter((part) => part.documentId === documentId),
             drafts: new Map(),
             excerptViews: new Map(),
@@ -628,28 +627,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // Every inverse supplies its principal explicitly; an absent one here means a composition
     // bug, not live routing.
     if (!principal) return null;
-    const restoring = new Set(
-      treeDocuments.flatMap((d) => (d.restore ? [`${d.documentId}:${d.branchId ?? "live"}`] : [])),
-    );
     const requirements = new Map<
       string,
       { documentId: DocumentId; branchId: BranchId | null; restore: boolean }
     >();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
-      // The text of a document this command restores is admitted as that restore, which a Redo
-      // runs first: the document is in Trash, or the draft gone from the Work's tree, until
-      // then. A live restore also takes the document's drafted text.
       const branchId = step.destination.kind === "draft" ? step.destination.branchId : null;
-      if (restoring.has(`${documentId}:live`)) {
-        requirements.set(`${documentId}:live:restore`, {
-          documentId,
-          branchId: null,
-          restore: true,
-        });
-        continue;
-      }
-      if (restoring.has(`${documentId}:${branchId ?? "live"}`)) continue;
       requirements.set(`${documentId}:${branchId ?? "live"}:content`, {
         documentId,
         branchId,
@@ -694,7 +678,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               kind: "draft",
               documentId: requirement.documentId,
               owner: holder.owner,
-              ...(requirement.restore ? { restore: true } : {}),
             }
           : requirement.restore
             ? { kind: "restore", documentId: requirement.documentId }

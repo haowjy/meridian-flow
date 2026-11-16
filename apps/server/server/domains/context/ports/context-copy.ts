@@ -1,3 +1,4 @@
+import type { BranchId } from "@meridian/contracts";
 /**
  * What one tree must tell a Copy about itself, and what it must do with what a Copy made.
  *
@@ -17,8 +18,9 @@ import type {
   Filetype,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
-import type { CopyIdentityMap } from "../../collab/index.js";
+import type { BoundWrite, CopyIdentityMap } from "../../collab/index.js";
 import type { CopiedFrom } from "../document-metadata.js";
+import type { TreeView } from "../tree/tree-view.js";
 import type { AdapterFault } from "./context-adapter.js";
 
 /** One tracked or binary file in a source tree: what a copy hands on. */
@@ -62,9 +64,8 @@ export type CopySourceEntry = CopySourceFolder | CopySourceFile;
 
 /** Content for one copied document, bound for the address its copy lands at. */
 export interface CopiedContent {
-  /** The copy's first Yjs state; null for a source with no text, whose copy is empty. */
+  content?: BoundWrite | null;
   state: Uint8Array | null;
-  /** Absent for newly authored text. */
   copiedFrom?: CopiedFrom;
 }
 
@@ -140,22 +141,25 @@ export interface ContextCopyAdapter {
    * The source subtree of node `id`: the folder with every descendant in the folder's visible
    * order (empty folders included), or the one file. The node is found by its id wherever it
    * stands now, in Trash too (`not_found` when it is purged or in another source); `path` only
-   * spells its address. Read once; the copy works from this and never re-lists.
+   * spells its address. A draft `view` reads the Work's tree instead, where the node must be
+   * placed. Read once; the copy works from this and never re-lists.
    */
   snapshotSource(source: {
     id: string;
     path: string;
+    view: TreeView;
   }): Promise<Result<CopySourceEntry, AdapterFault>>;
   /**
    * Plan `roots` under the scheme-relative folder `dir`: allocate every name and mint every
    * identity, writing nothing and holding no lock. A selected root that carries the device's
-   * `copyId` takes it; every descendant is minted here. Names are allocated against live
+   * `copyId` takes it; every descendant is minted here. Names are allocated against the destination view
    * occupants and the rest of the batch; a hidden node on a root's name yields at the insert. A copied folder
    * keeps its source ordering policy, and its children arrive in source order.
    */
   planCopy(input: {
     dir: readonly string[];
     roots: readonly CopySourceEntry[];
+    view: TreeView;
   }): Promise<Result<CopyPlan, AdapterFault>>;
   /**
    * Insert a plan, inside the caller's transaction and under its locks. `contents` has one
@@ -168,6 +172,7 @@ export interface ContextCopyAdapter {
     parent?: { folderId: string; createFolders: readonly string[] };
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
+    branchId: BranchId | null;
     position?: ContextSiblingPosition;
   }): Promise<Result<CopyOutcome, AdapterFault>>;
 }

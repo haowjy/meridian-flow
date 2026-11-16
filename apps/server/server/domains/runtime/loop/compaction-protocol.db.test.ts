@@ -7,6 +7,7 @@
 
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
+import type { ContentPart, GenerateRequest } from "@meridian-flow/runtime/gateway";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -31,7 +32,7 @@ import { createOrchestrator } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
 
-function promptBytes(request: import("@meridian-flow/runtime/gateway").GenerateRequest) {
+function promptBytes(request: GenerateRequest) {
   return JSON.stringify({
     messages: request.messages,
     tools: request.tools,
@@ -39,10 +40,7 @@ function promptBytes(request: import("@meridian-flow/runtime/gateway").GenerateR
   });
 }
 
-function expectStablePrefix(
-  previous: import("@meridian-flow/runtime/gateway").GenerateRequest,
-  next: import("@meridian-flow/runtime/gateway").GenerateRequest,
-) {
+function expectStablePrefix(previous: GenerateRequest, next: GenerateRequest) {
   expect(next.tools).toEqual(previous.tools);
   expect(next.promptCacheKey).toBe(previous.promptCacheKey);
   // Adjacent writer messages may merge into the previous final user message.
@@ -175,9 +173,9 @@ else
       return { userTurn, savedImages, assets, resolutionCounts };
     }
 
-    function requestImageData(request: import("@meridian-flow/runtime/gateway").GenerateRequest) {
+    function requestImageData(request: GenerateRequest) {
       return request.messages
-        .flatMap((message) => message.content)
+        .flatMap((message): readonly ContentPart[] => message.content)
         .filter((part) => part.type === "media")
         .map((part) => ("data" in part.source ? part.source.data : part.source));
     }
@@ -773,7 +771,7 @@ else
       const gateway = scriptedGateway();
       let calls = 0;
       let summaries = 0;
-      const requests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
+      const requests: GenerateRequest[] = [];
       gateway.stream = async function* (request) {
         requests.push(request);
         const summary = request.messages.some((message) =>
@@ -1974,7 +1972,7 @@ else
       };
       rig.deps.gateway.listModels = () => [model];
       const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);
-      const requests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
+      const requests: GenerateRequest[] = [];
       let summaryCalls = 0;
       rig.deps.gateway.stream = async function* (request) {
         requests.push(request);

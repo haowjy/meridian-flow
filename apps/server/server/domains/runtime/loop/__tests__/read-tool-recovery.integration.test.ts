@@ -6,7 +6,7 @@
 
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ToolContentPart } from "@meridian/contracts/threads";
-import type { GenerateResult } from "@meridian-flow/runtime/gateway";
+import type { ContentPart, GenerateResult } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it } from "vitest";
 import {
   type CoreToolHandlers,
@@ -151,7 +151,7 @@ describe("document command recovery through the runtime loop", () => {
       { type: "text", text: expect.stringContaining("Invalid arguments for write:") },
     ]);
     const retryMessage = requests[1]?.messages
-      .flatMap((message) => message.content)
+      .flatMap((message): readonly ContentPart[] => message.content)
       .find((part) => part.type === "tool_result" && part.toolCallId === "retired-read");
     expect(retryMessage).toMatchObject({
       content: persistedContent,

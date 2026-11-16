@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** Installed-router ingress retains duplicates without leaking parser metadata into URLs.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):

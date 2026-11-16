@@ -558,7 +558,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             OTHER.threadId as never,
             OTHER.turnId as never,
           ),
-        ).toMatchObject({ state: "partly", control: "view_change" });
+        ).toMatchObject({ state: "undone", control: "view_change" });
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {

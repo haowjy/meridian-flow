@@ -44,8 +44,6 @@ export type ServerRecentRow = {
   openedAt: string;
 };
 
-export type RecentRemoval = { documentId: string; projectId: string };
-
 type Removal = { documentId: string; projectId: string };
 
 type PersistedRecents = {
@@ -88,14 +86,6 @@ function byOpenedAt(left: AccountRecentItem, right: AccountRecentItem): number {
 
 function capItems(items: AccountRecentItem[]): AccountRecentItem[] {
   return [...items].sort(byOpenedAt).slice(0, ACCOUNT_RECENTS_CAP);
-}
-
-/** Oldest removals fall off at the cap. A list never clears one. */
-function rememberRemovals(existing: readonly Removal[], next: readonly Removal[]): Removal[] {
-  const replaced = new Set(next.map((entry) => entry.documentId));
-  return [...existing.filter((entry) => !replaced.has(entry.documentId)), ...next].slice(
-    -ACCOUNT_RECENTS_CAP,
-  );
 }
 
 function parseItem(value: unknown): AccountRecentItem | null {
@@ -278,24 +268,6 @@ export class DeviceAccountRecentsStore {
     }
     if (!changed) return false;
     state.items = capItems(kept);
-    this.persist();
-    return true;
-  }
-
-  remove(accountId: string, removed: readonly RecentRemoval[]): boolean {
-    const state = this.bound(accountId);
-    if (!state) return false;
-    const removedIds = new Set(removed.map((entry) => entry.documentId));
-    // A batch can name documents this record never held. Only remember rows removed from it,
-    // or unrelated ids can evict a real removal.
-    const dropped = state.items.flatMap((item) =>
-      removedIds.has(item.documentId)
-        ? [{ documentId: item.documentId, projectId: item.projectId }]
-        : [],
-    );
-    if (dropped.length === 0) return false;
-    state.removed = rememberRemovals(state.removed, dropped);
-    state.items = state.items.filter((item) => !removedIds.has(item.documentId));
     this.persist();
     return true;
   }

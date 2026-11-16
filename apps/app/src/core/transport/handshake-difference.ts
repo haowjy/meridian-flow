@@ -13,7 +13,7 @@
  * feeds it, on a read-admitted connection only.
  */
 import * as decoding from "lib0/decoding";
-import { messageYjsSyncStep1, messageYjsSyncStep2 } from "y-protocols/sync";
+import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import type { HandshakeDifference } from "@/core/editor/document-session";
 
@@ -26,6 +26,32 @@ export type HandshakeDifferenceReader = {
   noteFrameReceived(frame: Uint8Array): void;
 };
 
+/** A Sync frame's type (SyncStep1, SyncStep2 or Update) and payload; null for any other frame. */
+export function readSyncFrame(frame: Uint8Array): { syncType: number; payload: Uint8Array } | null {
+  try {
+    const body = decoding.createDecoder(frame);
+    decoding.readVarString(body);
+    if (decoding.readVarUint(body) !== MESSAGE_SYNC) return null;
+    const syncType = decoding.readVarUint(body);
+    if (
+      syncType !== messageYjsSyncStep1 &&
+      syncType !== messageYjsSyncStep2 &&
+      syncType !== messageYjsUpdate
+    )
+      return null;
+    return { syncType, payload: decoding.readVarUint8Array(body) };
+  } catch {
+    // Pings, pongs, and other frames without a document name.
+    return null;
+  }
+}
+
+/** The server's state vector, when `frame` is its SyncStep1. */
+export function readServerStateVector(frame: Uint8Array): Uint8Array | null {
+  const sync = readSyncFrame(frame);
+  return sync?.syncType === messageYjsSyncStep1 ? sync.payload : null;
+}
+
 export function createHandshakeDifferenceReader(
   document: Y.Doc,
   onHandshake: (difference: HandshakeDifference | null) => void,
@@ -36,27 +62,16 @@ export function createHandshakeDifferenceReader(
       serverStateVector = null;
     },
     noteFrameReceived(frame) {
-      let syncType: number;
-      let payload: Uint8Array;
-      try {
-        const body = decoding.createDecoder(frame);
-        decoding.readVarString(body);
-        if (decoding.readVarUint(body) !== MESSAGE_SYNC) return;
-        syncType = decoding.readVarUint(body);
-        if (syncType !== messageYjsSyncStep1 && syncType !== messageYjsSyncStep2) return;
-        payload = decoding.readVarUint8Array(body);
-      } catch {
-        // Pings, pongs, and other frames without a document name.
+      const sync = readSyncFrame(frame);
+      if (!sync) return;
+      if (sync.syncType === messageYjsSyncStep1) {
+        serverStateVector = sync.payload;
         return;
       }
-      if (syncType === messageYjsSyncStep1) {
-        serverStateVector = payload;
-        return;
-      }
-      if (!serverStateVector) return;
+      if (sync.syncType !== messageYjsSyncStep2 || !serverStateVector) return;
       const lacking = Y.encodeStateAsUpdate(document, serverStateVector);
       const snapshot = Y.createSnapshot(
-        Y.decodeUpdate(payload).ds,
+        Y.decodeUpdate(sync.payload).ds,
         Y.decodeStateVector(serverStateVector),
       );
       onHandshake(

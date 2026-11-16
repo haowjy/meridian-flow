@@ -12,11 +12,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hocuspocus/provider": "4.3.0",
+    "@hocuspocus/provider": "4.8.0",
     "@meridian/contracts": "workspace:*",
     "@meridian/project-tree": "workspace:*",
     "lib0": "^0.2.120",
-    "yjs": "13.6.31"
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "typescript": "catalog:",

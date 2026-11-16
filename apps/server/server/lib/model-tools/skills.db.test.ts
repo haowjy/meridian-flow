@@ -104,7 +104,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           coordinate: "meridian/general",
           files: {
             "mars.toml": '[package]\nname = "general"\nversion = "0.1.0"\nschema = 1\n',
-            "agents/general.md": "---\nname: General\nmodel: fixture-model\n---\n\n",
+            "agents/general.md": "---\nname: General\nmode: primary\nmodel: fixture-model\n---\n\n",
           },
         })
       ).definitions[0];

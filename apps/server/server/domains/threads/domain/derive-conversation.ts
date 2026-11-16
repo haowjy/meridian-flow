@@ -9,7 +9,7 @@ import type {
   AgentRevisionStore,
   BoundAgentCatalog,
 } from "../../packages/index.js";
-import { AgentSelectionError } from "../../packages/index.js";
+import { AgentSelectionError, isPrimary } from "../../packages/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
@@ -307,7 +307,7 @@ async function resolveDerivedBinding(
   const retained = await deps.agentRevisions.readThreadBinding(source.id);
   if (!retained) throw new Error("Source thread has no Agent binding");
   if (!selection || selection.definitionRevisionId === retained.revision?.id) {
-    if (!retained.revision || retained.revision.definition.metadata.mode === "subagent") {
+    if (!retained.revision || !isPrimary(retained.revision.definition)) {
       throw new AgentSelectionError(retained.revision?.id ?? "generic subagent");
     }
     return retained;

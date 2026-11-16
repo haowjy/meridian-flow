@@ -69,8 +69,8 @@ export type InverseDocument = {
   liveRoom: string | null;
   /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
-  /** The card's Undo deletes this applied create in live: the text an Apply brought there leaves with the document, so it isn't reverted. */
-  leavesLive: boolean;
+  /** The card's Undo deletes this created document, leaving its text intact. */
+  createdInTurn: boolean;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,
@@ -182,7 +182,7 @@ function prepare(
         );
         return false;
       }
-      return !(document.leavesLive && part.disposition === "applied");
+      return !document.createdInTurn;
     });
     const skips: TurnInverseSkip[] = [];
     const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) => {

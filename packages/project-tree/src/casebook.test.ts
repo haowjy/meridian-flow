@@ -759,13 +759,13 @@ function reorganisedOnce() {
 describe("an Apply's copy that a later record undid is no longer in force", () => {
   const inLive = (t: ReturnType<typeof start>, command: string) => appliedNodes(t.doc, command, []);
 
-  it("a card's Undo of the drafted rename ends the Apply's copy; a Redo brings it back", () => {
+  it("a card's Undo of the drafted rename ends the Apply's copy", () => {
     const t = start();
     const n = t.chapter("Hall");
     const drafted = t.w.rename(D, CHAT, n, "Lobby");
     const { command, copies } = applyDraft(t.w, "work-1", WRITER, cmd());
     expect(inLive(t, command)).toEqual([n]);
-    const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
+    undoChange(t.w, D, CHAT, drafted.id);
     expect(t.at(n)?.displayName).toBe("Hall");
     expect(inLive(t, command)).toEqual([]);
     expect(undoChange(t.w, LIVE, WRITER, (copies[0] as TreeRecord).id)).toBe("already");
@@ -773,15 +773,6 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       undone: [],
       left: [{ why: "already" }],
     });
-    const redo = undoChange(t.w, LIVE, CHAT, undid.id) as TreeRecord;
-    expect(t.at(n)?.displayName).toBe("Lobby");
-    expect(inLive(t, command)).toEqual([n]);
-    expect(undoChange(t.w, LIVE, CHAT, undid.id)).toBe("already");
-    expect(redo.undoes).toBe(undid.id);
-    const result = undoApply(t.w, command, WRITER, cmd());
-    expect(result.left).toEqual([]);
-    expect(t.at(n)?.displayName).toBe("Hall");
-    expect(inLive(t, command)).toEqual([]);
   });
 
   it("the same for a move that also set a name", () => {
@@ -794,15 +785,10 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
     const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
     const moved = { displayName: drafted.name, parent: folder };
     expect(t.at(n)).toMatchObject(moved);
-    const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
+    undoChange(t.w, D, CHAT, drafted.id);
     expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: ROOT });
     expect(inLive(t, command)).toEqual([]);
     expect(undoApply(t.w, command, WRITER, cmd()).undone).toEqual([]);
-    undoChange(t.w, LIVE, CHAT, undid.id);
-    expect(t.at(n)).toMatchObject(moved);
-    expect(inLive(t, command)).toEqual([n]);
-    expect(undoApply(t.w, command, WRITER, cmd()).left).toEqual([]);
-    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: ROOT });
   });
 
   it("an Apply that only restores lists the node until Un-Apply or a card's Undo takes the restore back", () => {
@@ -821,23 +807,6 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       expect(t.at(n)?.trashed).toBe(true);
       expect(appliedNodes(t.doc, command, mine)).toEqual([]);
     }
-  });
-
-  it("a move's name undone as a rename and redone is still taken back by Undo of the move", () => {
-    const t = start();
-    const folder = t.folder("Arc");
-    const other = t.folder("Elsewhere");
-    t.chapter("Hall", folder);
-    const n = t.chapter("Hall");
-    const moved = t.w.move(LIVE, WRITER, n, folder);
-    t.w.move(LIVE, WRITER, n, other);
-    const undid = undoChange(t.w, LIVE, CHAT, moved.id) as TreeRecord;
-    expect(undid.type).toBe("rename");
-    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: other });
-    undoChange(t.w, LIVE, CHAT, undid.id);
-    expect(t.at(n)?.displayName).toBe(moved.name);
-    expect(undoChange(t.w, LIVE, WRITER, moved.id)).toMatchObject({ type: "rename" });
-    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: other });
   });
 });
 
@@ -1177,9 +1146,9 @@ describe("numbered names after a partial Apply", () => {
 /**
  * Two copies of the list out of step: each case is a list two or three writers built offline and
  * merged. A move or rename is in force unless the last record about it is an Undo; a node's name
- * and place are what the last move or rename in force says; an Undo or Redo sets nothing itself.
+ * and place are what the last move or rename in force says; an Undo sets nothing itself.
  */
-describe("Undo and Redo of names and places read the changes in force", () => {
+describe("Undo of names and places reads the changes in force", () => {
   const W = WRITER;
   const replica = (client: number, from?: TreeWriter) => {
     const doc = new Y.Doc({ gc: false });
@@ -1442,5 +1411,75 @@ describe("Undo and Redo of names and places read the changes in force", () => {
     expect([restore.type, back.type]).toEqual(["restore", "rename"]);
     sync(a, b);
     expect(at(a, node)).toMatchObject({ name: "A", trashed: false });
+  });
+  it("skips an Undo aimed at a change on another node", () => {
+    const a = replica(1000);
+    const x = folder(a, "X");
+    const y = folder(a, "Y");
+    const change = a.rename(LIVE, W, y, "Changed");
+    const crafted = a.author(
+      LIVE,
+      W,
+      { type: "rename", node: x, name: "X", fromName: "X" },
+      { undoes: change.id },
+    );
+    const view = a.view(LIVE);
+    expect(view.skipped).toContainEqual({ record: crafted.id, reason: "undo-other-node" });
+    expect(view.nodes.get(y)?.name).toBe("Changed");
+  });
+  it("holds a folder and its selected child in a closed source", () => {
+    const t = start();
+    const closed = sourceRoot("closed");
+    const parent = t.w.create(D, CHAT, { kind: "folder", name: "P", parent: closed });
+    const child = t.w.create(D, CHAT, {
+      kind: "document",
+      filetype: "markdown",
+      name: "C",
+      parent: parent.node,
+    });
+    const result = applyDraft(
+      t.w,
+      "work-1",
+      WRITER,
+      cmd(),
+      [child.id],
+      undefined,
+      (s) => s === "closed",
+    );
+    expect(result.copies).toEqual([]);
+    expect(result.left.map((r) => [r.record.id, r.why, r.source])).toContainEqual([
+      child.id,
+      "closed",
+      "closed",
+    ]);
+  });
+
+  it("replans a create inside a folder whose move is held", () => {
+    const t = start();
+    const folder = t.folder("P");
+    const moved = t.w.move(D, CHAT, folder, sourceRoot("closed"));
+    const child = t.w.create(D, CHAT, { kind: "folder", name: "C", parent: folder });
+    const result = applyDraft(
+      t.w,
+      "work-1",
+      WRITER,
+      cmd(),
+      undefined,
+      undefined,
+      (s) => s === "closed",
+    );
+    expect(result.left.map((r) => r.record.id)).toContain(moved.id);
+    expect(result.copies.map((r) => r.carries)).toContain(child.id);
+    expect(t.at(child.node)?.source).toBe("manuscript");
+  });
+
+  it("holds Un-Apply when an Undo move would enter a closed source", () => {
+    const t = start();
+    const folder = t.folder("P", sourceRoot("closed"));
+    t.w.move(D, CHAT, folder, ROOT);
+    const applied = applyDraft(t.w, "work-1", WRITER, cmd());
+    const back = undoApply(t.w, applied.command, WRITER, cmd(), { closed: (s) => s === "closed" });
+    expect(back.left).toMatchObject([{ why: "closed", source: "closed" }]);
+    expect(t.at(folder)?.source).toBe("manuscript");
   });
 });

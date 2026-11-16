@@ -7,11 +7,13 @@
  */
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { admit, type Connection, changedSources, clientMayWrite } from "./admission.js";
 import {
   applyDraft,
   childrenOf,
   descendantsOf,
   discardDraft,
+  droppedRecords,
   fingerprint,
   LIVE,
   type NodeKind,
@@ -27,6 +29,47 @@ import {
   type View,
   viewRecords,
 } from "./index.js";
+
+// Reference admission, deliberately replaying one record at a time.
+function walk(doc: Y.Doc, added: readonly TreeRecord[], connection: Connection): string[] {
+  const out: string[] = [];
+  const remaining = new Set(added.map((record) => record.id));
+  const dropped = new Set<string>();
+  const projections = new Map<string | null, TreeProjection>();
+  const droppedNodes = new Set(
+    droppedRecords(doc).flatMap(({ record }) => (record.type === "create" ? [record.node] : [])),
+  );
+  for (const record of added) {
+    remaining.delete(record.id);
+    if (record.type === "purge") continue;
+    const view = { draft: record.draft };
+    const records = viewRecords(doc, view).filter(
+      (r) => !remaining.has(r.id) && !dropped.has(r.id),
+    );
+    const before =
+      projections.get(record.draft) ??
+      replay(
+        records.filter((r) => r.id !== record.id),
+        view,
+      );
+    const after = replay(records, view);
+    const closed =
+      (record.draft !== null && !connection.drafts.has(record.draft)) ||
+      droppedNodes.has(record.node) ||
+      (record.type === "create" && droppedNodes.has(record.parent)) ||
+      [...changedSources(before, after)].some(connection.closed);
+    if (closed) {
+      out.push(record.id);
+      dropped.add(record.id);
+      if (record.type === "create") droppedNodes.add(record.node);
+      projections.set(record.draft, before);
+    } else {
+      if (record.draft === null) projections.clear();
+      projections.set(record.draft, after);
+    }
+  }
+  return out;
+}
 
 const ROOT = sourceRoot("manuscript");
 
@@ -152,6 +195,8 @@ function runSeed(seed: number): {
     );
     const folders = [
       ROOT,
+      sourceRoot("notes-a"),
+      sourceRoot("notes-b"),
       ...shown.filter((node) => node.kind === "folder").map((node) => node.id),
     ];
     const action = random();
@@ -236,8 +281,6 @@ function runSeed(seed: number): {
         if (landed.left.length > 0) leftPending += 1;
         if (random() < 0.3) {
           // Undo of an Apply at once: live and the draft both read as before it.
-          // A redo of an Undo with a later move on the node (including the one this very
-          // Undo took back) answers `changed_since` and stays; everything else goes back.
           const result = undoApply(writer, landed.command, "user:w", cmd());
           undone += 1;
           const doubled = landed.copies.some((op) => inLive.has(op.carries as string));
@@ -342,6 +385,95 @@ function runSeed(seed: number): {
       expect(viewProblems(replica.writer.doc, view), `seed ${seed}`).toEqual([]);
   }
   const doc = replicas[0]?.writer.doc as Y.Doc;
+  for (const view of VIEWS) {
+    const records = viewRecords(doc, view);
+    if (records.length === 0) continue;
+    const inserted = pick(records);
+    const withRecord = replay(records, { draft: view.draft });
+    const without = replay(
+      records.filter((record) => record.id !== inserted.id),
+      { draft: view.draft },
+    );
+    const sources = changedSources(without, withRecord);
+    const shown = (p: TreeProjection, id: string) => {
+      const n = p.nodes.get(id);
+      return (
+        n && [
+          n.name,
+          n.displayName,
+          n.parent,
+          n.source,
+          n.rank,
+          n.trashed,
+          n.keptByChild,
+          n.keptByPending,
+          n.purged,
+          n.filetype,
+        ]
+      );
+    };
+    for (const id of new Set([...withRecord.nodes.keys(), ...without.nodes.keys()])) {
+      if (JSON.stringify(shown(withRecord, id)) === JSON.stringify(shown(without, id))) continue;
+      for (const node of [withRecord.nodes.get(id), without.nodes.get(id)])
+        if (node)
+          expect(
+            sources.has(node.source),
+            `seed ${seed} record ${JSON.stringify(inserted)} change ${JSON.stringify([...sources])} node ${id} before ${JSON.stringify(shown(without, id))} after ${JSON.stringify(shown(withRecord, id))} records ${JSON.stringify(records.filter((r) => r.node === id || r.node === inserted.node))}`,
+          ).toBe(true);
+    }
+    if (clientMayWrite(inserted) && inserted.draft === view.draft) {
+      const closed = [...sources][0] ?? "not-a-source";
+      const server = new Y.Doc({ gc: false });
+      server.clientID = 7;
+      server.getArray("ops").push(records.filter((r) => r.id !== inserted.id));
+      const copy = new Y.Doc({ gc: false });
+      copy.clientID = 2000;
+      Y.applyUpdate(copy, Y.encodeStateAsUpdate(server));
+      const vector = Y.encodeStateVector(copy);
+      copy.getArray("ops").insert(records.indexOf(inserted), [inserted]);
+      const result = admit(new TreeWriter(server), Y.encodeStateAsUpdate(copy, vector), {
+        drafts: new Set(["w1", "w2"]),
+        closed: (source) => source === closed,
+      });
+      expect(result.dropped.includes(inserted.id), `seed ${seed} closed ${closed}`).toBe(
+        sources.has(closed),
+      );
+      copy.destroy();
+      server.destroy();
+    }
+  }
+  const all = viewRecords(doc, LIVE);
+  if (all.length > 0) {
+    const start = Math.floor(random() * all.length);
+    const added: TreeRecord[] = [];
+    for (const record of all.slice(start, start + 8)) {
+      if (!clientMayWrite(record)) break;
+      added.push(record);
+    }
+    if (added.length > 0) {
+      const server = new Y.Doc({ gc: false });
+      server.clientID = 7;
+      server.getArray("ops").push([...all.slice(0, start), ...all.slice(start + added.length)]);
+      const copy = new Y.Doc({ gc: false });
+      copy.clientID = 2000;
+      Y.applyUpdate(copy, Y.encodeStateAsUpdate(server));
+      const vector = Y.encodeStateVector(copy);
+      copy.getArray("ops").insert(start, added);
+      const closed = pick(["manuscript", "not-a-source"]);
+      const connection = {
+        drafts: new Set(["w1", "w2"]),
+        closed: (source: string) => source === closed,
+      };
+      const expected = walk(copy, added, connection);
+      const result = admit(new TreeWriter(server), Y.encodeStateAsUpdate(copy, vector), connection);
+      expect(
+        result.dropped,
+        `seed ${seed} closed ${closed} added ${JSON.stringify(added)} all ${JSON.stringify(all)} `,
+      ).toEqual(expected);
+      copy.destroy();
+      server.destroy();
+    }
+  }
   const views = VIEWS.map((view) => replayView(doc, view));
   return {
     ops: viewRecords(doc, LIVE).length,

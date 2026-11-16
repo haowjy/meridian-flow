@@ -213,6 +213,11 @@ describe("estimateRequestTokens", () => {
                 toolName: "read",
                 input: { chapter: text },
               },
+            ],
+          },
+          {
+            role: "tool",
+            content: [
               {
                 type: "tool_result",
                 toolCallId: "call-1",

@@ -1,3 +1,4 @@
+import type { CopySourceView } from "../ports/context-port.js";
 /**
  * Context-port router: builds a ContextPort that parses a URI, dispatches to the
  * scheme adapter that owns it, resolves Work handles at the project gate, and lifts
@@ -50,7 +51,7 @@ export interface ContextSourceBinding {
 }
 
 export interface ContextPortRouterDeps {
-  resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
+  resolveDestinationFolder?: (folderId: string, view?: CopySourceView) => Promise<string | null>;
   /** A chat's uploads by handle (`uploads://@c12/`): found, trashed, or no such chat. */
   resolveChatSource?: (
     ref: string,
@@ -363,9 +364,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
    */
   async function resolveIdentityDestination(
     parent: IdentityDestination,
-    options: { authorize?: (uri: string) => Promise<boolean>; origin?: WriteProvenance } = {},
+    options: {
+      authorize?: (uri: string) => Promise<boolean>;
+      origin?: WriteProvenance;
+      view?: CopySourceView;
+    } = {},
   ): Promise<Result<MutationDispatch, ContextError>> {
-    const folderUri = await deps.resolveDestinationFolder?.(parent.folderId);
+    const folderUri = await deps.resolveDestinationFolder?.(parent.folderId, options.view);
     if (!folderUri) return Err({ code: "destination_missing", uri: parent.folderId });
     const dirUri = joinContextPath(folderUri, parent.createFolders ?? []);
     const resolved = await resolveMutation(dirUri, options.origin);
@@ -438,8 +443,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   }
 
   return {
-    async resolveFolderUri(folderId: string): Promise<Result<{ uri: string }, ContextError>> {
-      const uri = await deps.resolveDestinationFolder?.(folderId);
+    async resolveFolderUri(
+      folderId: string,
+      view?: CopySourceView,
+    ): Promise<Result<{ uri: string }, ContextError>> {
+      const uri = await deps.resolveDestinationFolder?.(folderId, view);
       return uri ? Ok({ uri }) : Err({ code: "destination_missing", uri: folderId });
     },
 

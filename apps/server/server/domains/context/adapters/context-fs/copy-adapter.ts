@@ -6,6 +6,7 @@
 
 import { compareCatalogSiblings } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import type { DraftPeerShadowAccess } from "../../../collab/index.js";
 import { joinPath, renderFilename } from "../../context/paths.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -14,14 +15,20 @@ import type {
   CopySourceFile,
   CopySourceFolder,
 } from "../../ports/context-copy.js";
-import type { ContextDocument, ContextFolder } from "../../ports/context-document-store.js";
+import type {
+  ContextDocument,
+  ContextDocumentStore,
+  ContextFolder,
+  ContextSubtree,
+} from "../../ports/context-document-store.js";
+import type { TreeView } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree.js";
 
-export interface ContextFsCopyDeps extends CopyTreeDeps {
-  /** Why this placement cannot take a copy (a draft placement), or null. */
-  refuseReceive(): AdapterFault | null;
-}
+type ContextFsCopyDeps = CopyTreeDeps & {
+  documentSync: CopyTreeDeps["documentSync"] &
+    Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
+};
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
   const { store, holderUri, folderUri } = deps;
@@ -29,11 +36,13 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   /**
    * The source subtree of node `id`, wherever it stands now (live, or in Trash with what its
    * delete took): the folder with every descendant in its visible order, or the one file. `path`
-   * only spells the root's address; the id decides which node is copied.
+   * only spells the root's address; the id decides which node is copied. A draft `view` reads the
+   * Work's tree, where the node must be placed.
    */
   async function snapshotSource(source: {
     id: string;
     path: string;
+    view: TreeView;
   }): Promise<Result<CopySourceEntry, AdapterFault>> {
     const clean = source.path.replace(/\/+$/, "");
     if (!clean) {
@@ -42,7 +51,10 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
         message: "The source root cannot be copied; copy a file or a folder in it.",
       });
     }
-    const subtree = await store.readSubtree(source.id);
+    const subtree =
+      source.view.kind === "live"
+        ? await store.readSubtree(source.id)
+        : await viewSubtree(store, source.view, source.id);
     if (!subtree) return Err({ code: "not_found" });
     if (subtree.root.kind === "document") return Ok(fileSnapshot(clean, subtree.root.document));
     const folders = new Map<string | null, ContextFolder[]>();
@@ -107,13 +119,44 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   return {
     sourceId: () => store.existingContextSourceId(),
     snapshotSource,
-    planCopy: async (input) => {
-      const refused = deps.refuseReceive();
-      return refused ? Err(refused) : Ok(await planCopyTree(deps, input));
-    },
+    planCopy: async (input) => Ok(await planCopyTree(deps, input)),
     copyInto: async (input) =>
       input.plan.dir.join("/") !== input.dir.join("/")
         ? Ok({ kind: "replan" })
-        : insertPlannedTrees(deps, [input], input.position),
+        : insertPlannedTrees(
+            deps,
+            [input],
+            input.position,
+            input.branchId
+              ? { branchId: input.branchId, documentSync: deps.documentSync }
+              : undefined,
+          ),
+  };
+}
+
+/** The subtree of node `id` as a Work's draft tree places it, from one read of the view. */
+async function viewSubtree(
+  store: ContextDocumentStore,
+  view: TreeView,
+  id: string,
+): Promise<ContextSubtree | null> {
+  const tree = await store.listTree(view);
+  const document = tree.documents.find((candidate) => candidate.id === id);
+  if (document) return { root: { kind: "document", document }, folders: [], documents: [] };
+  const root = tree.folders.find((candidate) => candidate.id === id);
+  if (!root) return null;
+  const inside = new Set([id]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const folder of tree.folders)
+      if (folder.parentId && inside.has(folder.parentId) && !inside.has(folder.id)) {
+        inside.add(folder.id);
+        grew = true;
+      }
+  }
+  return {
+    root: { kind: "folder", folder: root },
+    folders: tree.folders.filter((folder) => folder.id !== id && inside.has(folder.id)),
+    documents: tree.documents.filter((doc) => doc.folderId && inside.has(doc.folderId)),
   };
 }

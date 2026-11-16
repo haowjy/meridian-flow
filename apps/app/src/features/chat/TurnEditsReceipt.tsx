@@ -18,13 +18,11 @@ import type { WorkReceipt } from "@meridian/thread-client";
 import { useEffect, useId, useState } from "react";
 import { successfulWorkReversals } from "@/client/api/reverse-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
-import { removeAccountRecents } from "@/client/recents";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
-import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import {
@@ -88,7 +86,6 @@ export function TurnEditsReceipt({
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
   const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
-  const accountId = useOptionalAccountId();
   const projectId = useProjectDocumentNavigationProjectId();
 
   const drafts = receipt?.drafts;
@@ -125,23 +122,6 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id });
-      if (accountId && projectId) {
-        const liveCreates = documents.filter(
-          (document) =>
-            document.scope === "live" &&
-            outcome.documents.some(
-              (result) =>
-                result.documentId === document.documentId &&
-                result.created &&
-                result.status === "reversed" &&
-                result.destination?.kind === "live",
-            ),
-        );
-        removeAccountRecents(
-          accountId,
-          liveCreates.map(({ documentId }) => ({ documentId, projectId })),
-        );
-      }
       setActionSkips(outcome.skips ?? []);
       const restored = successfulWorkReversals(outcome);
       const status =

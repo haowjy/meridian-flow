@@ -1,6 +1,7 @@
 /** Sanitizes clipboard HTML down to the elements understood by the editor schema. */
 
 import { flattenDom, NESTING_DATA_ATTRIBUTES } from "./extensions/nesting/nesting-clipboard";
+import { clipboardRemoteSource, REMOTE_SRC_ATTRIBUTE } from "./images/remote-image";
 import {
   classifyLinkTarget,
   clipboardLinkAddress,
@@ -173,10 +174,13 @@ function copyImageAttributes(source: Element, target: Element): boolean {
   // A picture copied from a Meridian document names a document address,
   // which is its source here; nothing a browser would fetch on its own.
   const address = copyRecordedTarget(source, target, clipboardPictureRef);
+  // Flow's own copy of a remote picture names it here and carries no `src`.
+  const remote = clipboardRemoteSource(source.getAttribute(REMOTE_SRC_ATTRIBUTE));
+  if (remote) target.setAttribute(REMOTE_SRC_ATTRIBUTE, remote);
   // An upload recorded with no address keeps no source here: the link
   // transform restores its `asset:` source in the same project or drops it.
   const recordedUpload = !address && target.hasAttribute(LINK_REF_ATTRIBUTE);
-  if (!recordedUpload) {
+  if (!recordedUpload && !remote) {
     const rawSrc = source.getAttribute("src");
     if (!address && rawSrc === null) return false;
     const src = address ?? rawSrc?.trim() ?? "";

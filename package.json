@@ -71,6 +71,6 @@
     "typescript": "catalog:",
     "vitest": "catalog:",
     "ws": "^8.21.0",
-    "yjs": "13.6.31"
+    "yjs": "13.6.33"
   }
 }

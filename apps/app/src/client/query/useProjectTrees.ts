@@ -9,6 +9,7 @@ import type { ContextOwner, ContextSource } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import { LIVE_VERSION, type TreeVersion } from "@/core/project-tree/tree-version";
 import { buildTreeView, type TreeFile, type TreeView } from "@/core/project-tree/tree-view";
+import { type DocumentStanding, standingAcross } from "@/core/tree-list/standing";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 import { listIsComplete, useTreeList } from "./useProjectTree";
@@ -36,6 +37,8 @@ export type ProjectTrees = {
   sources: readonly ContextSource[];
   tree(sourceId: string): TreeView | null;
   find(documentId: string): DocumentPlace | null;
+  /** Where the document stands in the lists, for one `find` doesn't place: in Trash, purged. */
+  standing(documentId: string): DocumentStanding;
 };
 
 const WAITING: ProjectTrees = {
@@ -45,6 +48,7 @@ const WAITING: ProjectTrees = {
   sources: [],
   tree: () => null,
   find: () => null,
+  standing: () => ({ kind: "waiting" }),
 };
 
 /**
@@ -65,19 +69,21 @@ export function useProjectTrees(
     const lists = [
       { list: project, sources: projectSources },
       { list: account, sources: accountSources },
-    ];
-    if (lists.some(({ list, sources }) => !list.session || !list.snapshot || !sources))
-      return WAITING;
+    ].flatMap(({ list: { session, snapshot }, sources }) =>
+      session && snapshot && sources
+        ? [{ snapshot, sources, projection: session.replay(view, pendingText) }]
+        : [],
+    );
+    const [inProject, inAccount] = lists;
+    if (!inProject || !inAccount) return WAITING;
     const built = new Map<string, { source: ContextSource; tree: TreeView }>();
-    const entries = lists.flatMap(({ list, sources }) => {
-      const projection = list.session?.replay(view, pendingText);
-      if (!projection) return [];
-      return (sources ?? []).map((source) => ({
+    const entries = lists.flatMap(({ sources, projection }) =>
+      sources.map((source) => ({
         source,
         projection,
         node: (id: string) => projection.nodes.get(id),
-      }));
-    });
+      })),
+    );
     const treeOf = (entry: (typeof entries)[number]): TreeView => {
       let held = built.get(entry.source.id);
       if (!held) {
@@ -96,8 +102,8 @@ export function useProjectTrees(
     };
     return {
       ready: true,
-      isComplete: lists.every(({ list }) => listIsComplete(list.snapshot?.status ?? "waiting")),
-      isError: lists.some(({ list }) => list.snapshot?.status === "denied"),
+      isComplete: lists.every(({ snapshot }) => listIsComplete(snapshot.status)),
+      isError: lists.some(({ snapshot }) => snapshot.status === "denied"),
       sources: entries.map((entry) => entry.source),
       tree: (sourceId) => {
         const entry = entries.find((candidate) => candidate.source.id === sourceId);
@@ -112,6 +118,7 @@ export function useProjectTrees(
         }
         return null;
       },
+      standing: (documentId) => standingAcross(inProject, inAccount, documentId),
     };
     // `version` is the replay's input: the copy changing is what rebuilds the trees
   }, [
