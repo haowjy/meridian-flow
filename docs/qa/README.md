@@ -95,7 +95,7 @@ that has not exited after five minutes (`PROBE_TIMEOUT_MS`) is killed and counte
 
 - `pnpm smoke:app-dev-transform`: [dev startup and public routes](../../tools/dev/smoke-app-dev-transform.ts).
 - [Dev route ownership](../../tools/dev/.context/qa/dev-route-ownership.md): detached-checkout names, conflict refusal and explicit takeover without disturbing sibling stacks.
-- `pnpm smoke:prod-boot`: [production build and startup of the app and the API server, and their public routes](../../tools/dev/smoke-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
+- `pnpm smoke:prod-boot`: [production build and startup of the app and the API server (against a throwaway database), their public routes, and the server build's chunk imports](../../tools/dev/smoke-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
 - `pnpm exec tsx apps/server/scripts/probe-link-resolution.ts`: [import link resolution and frontmatter parse timings](../../apps/server/scripts/probe-link-resolution.ts) at vault scale; pure, no database. These scale checks stay out of the correctness gate.
