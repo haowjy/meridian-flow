@@ -42,6 +42,8 @@ type TreeFileBase = {
   /** The stored extension, which `name`'s suffix cannot tell from part of the name (`Vol. 2`). */
   extension: string;
   aliases?: readonly string[];
+  /** A later twin's `~` suffix, when another entry here shares the name (its path segment's end). */
+  suffix?: string;
   path: string;
   uri: string;
   /** The name was given, not chosen ("Untitled"); it ends at the first rename by a person. */
@@ -65,6 +67,8 @@ export type TreeDirectory = {
   entryId: string;
   parentId: string | null;
   name: string;
+  /** As a file's. */
+  suffix?: string;
   path: string;
   uri: string;
 };
@@ -181,6 +185,7 @@ export function buildTreeView(input: {
             entryId: node.id,
             parentId: parentIdOf(node),
             name: node.name,
+            ...(node.suffix ? { suffix: node.suffix } : {}),
             path,
             uri: uriOf(path),
           }
@@ -192,6 +197,7 @@ export function buildTreeView(input: {
             name: node.name,
             extension: extensionOf(node),
             ...(node.aliases ? { aliases: node.aliases } : {}),
+            ...(node.suffix ? { suffix: node.suffix } : {}),
             path,
             uri: uriOf(path),
             provisionalName: node.provisional,

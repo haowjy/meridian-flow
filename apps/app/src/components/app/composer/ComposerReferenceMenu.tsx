@@ -6,6 +6,8 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { parseContextUri } from "@meridian/contracts/context-uri";
+import { readSegment } from "@meridian/contracts/protocol";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { type Ref, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -17,6 +19,7 @@ import {
   ContextMenuLabel,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { EntryName } from "@/components/ui/entry-name";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import {
@@ -55,6 +58,9 @@ export function ComposerReferenceMenu({
   // Opening before the menu releases its focus scope immediately dismisses the picker.
   const changeAfterClose = useRef<"destination" | "label" | null>(null);
   const label = reference.displayText ?? reference.label;
+  // Words the writer gave the chip are theirs; its own label is the name, which a twin's `~id` ends.
+  const suffix = reference.displayText === undefined ? twinSuffix(reference.uri) : undefined;
+  const spoken = suffix ? `${label}~${suffix}` : label;
   const runtime = readRuntime();
   const follow =
     reference.kind === "document" && runtime.onOpen
@@ -108,10 +114,10 @@ export function ComposerReferenceMenu({
         {...linkChipAttributes(referenceChip(reference))}
         aria-haspopup="menu"
         aria-disabled={!folderHost}
-        aria-label={label}
+        aria-label={spoken}
         {...drag}
       >
-        {label}
+        <EntryName name={label} suffix={suffix} />
       </button>
     ) : (
       // biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.
@@ -122,7 +128,7 @@ export function ComposerReferenceMenu({
         tabIndex={0}
         role="link"
         aria-disabled={!follow}
-        aria-label={label}
+        aria-label={spoken}
         {...drag}
         // A click on the chip follows it and leaves the caret beside it, never on it: a chip the
         // click selected (or a focused chip holding the DOM selection) is replaced by the next keystroke.
@@ -140,7 +146,7 @@ export function ComposerReferenceMenu({
           follow?.();
         }}
       >
-        {label}
+        <EntryName name={label} suffix={suffix} />
       </span>
     );
   return (
@@ -307,4 +313,11 @@ function ReferenceDisplayText({
       <Button type="submit" disabled={!text.trim()}>{t`Save changes`}</Button>
     </form>
   );
+}
+
+/** The `~id` that ends the address's last segment: a twin's, which its label doesn't carry. */
+function twinSuffix(uri: string): string | undefined {
+  const parsed = parseContextUri(uri);
+  const leaf = parsed.ok ? parsed.value.path.split("/").at(-1) : undefined;
+  return leaf ? readSegment(leaf).suffix : undefined;
 }

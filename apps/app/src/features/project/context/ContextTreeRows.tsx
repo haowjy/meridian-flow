@@ -239,6 +239,7 @@ function DirRow({
           // The open or closed folder is the twistie: rows need no chevron column.
           icon={isOpen ? FolderOpen : Folder}
           title={dir.name}
+          suffix={dir.suffix}
           onOpen={() => {
             if (env.creation?.creating) env.creation.done();
             env.creation?.placeAt(isOpen ? parentContextEntryPath(dir.path) : dir.path);
@@ -330,6 +331,7 @@ function FileRow({
         depth={depth}
         icon={fileKindIcon(file)}
         title={file.name}
+        suffix={file.suffix}
         meta={env.meta?.(file)}
         crossedOut={env.crossedOut?.(file)}
         onOpen={() => env.onSelectFile(env.scheme, file)}
