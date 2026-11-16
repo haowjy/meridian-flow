@@ -33,7 +33,7 @@ import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
-import { useWorkSourceWritable } from "./use-work-source-writable";
+import { useScopeScratchSource } from "./use-scratch-trees";
 
 export type PickedEntry = {
   kind: "file" | "folder";
@@ -90,19 +90,14 @@ function OpenPicker({
     () => (scheme && owner ? { scheme, owner, heading: schemeLabel(scheme) } : null),
     [scheme, owner],
   );
-  // An ended Work's Scratch is a source to copy out of, never a place to copy into.
-  const scratchWritable = useWorkSourceWritable(projectId, owner?.workId);
+  // A Scratch row's own Scratch, else the picked Work's, as the sidebar lists it.
+  const scopeScratch = useScopeScratchSource(projectId);
   const scratch = useMemo(
-    () =>
-      scheme === "scratch" && owner && scratchWritable
-        ? { owner, heading: schemeLabel(scheme) }
-        : null,
-    [scheme, owner, scratchWritable],
+    () => (scheme === "scratch" && owner ? { owner, heading: schemeLabel(scheme) } : scopeScratch),
+    [scheme, owner, scopeScratch],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
-  // Opens at the row's own folder, except in a Scratch that takes no copy: the root then.
-  const openAt =
-    own && (scheme !== "scratch" || scratchWritable) ? source.own.openAt(entry.path) : [];
+  const openAt = own ? source.own.openAt(entry.path) : [];
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
   const several = picked !== undefined && picked.length > 1;
@@ -202,7 +197,8 @@ function OpenPicker({
   function move(trail: readonly DrillNode[], index?: number) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || pending || (index === undefined && refusalAt(destination))) return;
+    if (!destination?.writable || pending || (index === undefined && refusalAt(destination)))
+      return;
     setError(null);
     const actions = destination.scheme === "user" ? accountActions : projectActions;
     const moving = placed.filter(
@@ -230,7 +226,7 @@ function OpenPicker({
   async function copy(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || pending || refusalAt(destination)) return;
+    if (!folder || !destination?.writable || pending || refusalAt(destination)) return;
     setPending(true);
     setError(null);
     try {
@@ -272,7 +268,7 @@ function OpenPicker({
         scheme: destination.scheme,
         owner: destination.owner,
         tree: destination.tree,
-        writable: true,
+        writable: destination.writable,
         ...(shell?.showing === "draft"
           ? {
               view: {
@@ -287,20 +283,22 @@ function OpenPicker({
     };
   };
 
-  // Move… stays in the row's own list: its top level offers only the areas of that list.
+  // The top level offers only areas that take changes (an ended Work's Scratch reads, and copies
+  // out, but takes nothing), and Move… only the areas of the row's own list.
   const inAccount = placed[0]?.at?.scheme === "user";
-  const tree =
-    action === "move"
-      ? {
-          ...source.tree,
-          children: (folderId: string | null) =>
-            folderId === null
-              ? source.tree
-                  .children(null)
-                  .filter((node) => (source.folderFor(node.id)?.scheme === "user") === inAccount)
-              : source.tree.children(folderId),
-        }
-      : source.tree;
+  const tree = {
+    ...source.tree,
+    children: (folderId: string | null) =>
+      folderId === null
+        ? source.tree
+            .children(null)
+            .filter(
+              (node) =>
+                source.areaWritable(node.id) &&
+                (action === "copy" || (source.folderFor(node.id)?.scheme === "user") === inAccount),
+            )
+        : source.tree.children(folderId),
+  };
 
   return (
     <DrillInMenu
@@ -331,7 +329,7 @@ function OpenPicker({
         if (!folder) return [];
         const destination = source.folderFor(folder.id);
         const blocked = destination ? refusalAt(destination) : "inside-itself";
-        if (!destination || blocked === "inside-itself") return [];
+        if (!destination?.writable || blocked === "inside-itself") return [];
         if (action === "copy") {
           return [
             {

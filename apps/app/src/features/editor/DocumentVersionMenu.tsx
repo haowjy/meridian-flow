@@ -99,6 +99,10 @@ export function DocumentVersionMenu({
       followToChip(documentId);
     },
   }));
+  // As the sidebar's chip shows only while there is a draft to switch to, this one shows only
+  // while the document has a version besides the one on screen, or its review needs the menu.
+  const showing = paint && paint.showing !== "live" ? "draft" : "live";
+  if (showing === "live" && drafts.length === 0 && !review) return null;
   const shownLabel = listed.find((hint) => hint.owner === shown?.ownerKey)?.label ?? null;
   const outOfScope =
     shown && paint?.outOfScope ? (ownerName(shown.ownerKey, shownLabel) ?? t`Unnamed draft`) : null;
@@ -106,7 +110,7 @@ export function DocumentVersionMenu({
   return (
     <DraftSwitcher
       // An ended draft's review stays open ("No changes left") while main paints Live.
-      showing={paint && paint.showing !== "live" ? "draft" : "live"}
+      showing={showing}
       drafts={drafts}
       owner={outOfScope ?? undefined}
       draftOnly={review?.draftOnly ?? false}

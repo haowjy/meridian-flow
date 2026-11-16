@@ -2,14 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { DraftOwnerKey } from "@meridian/contracts";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import {
-  Ellipsis,
-  FileDiff,
-  ListChecks,
-  type LucideIcon,
-  MessageSquare,
-  Trash2,
-} from "lucide-react";
+import { Ellipsis, ListChecks, type LucideIcon, MessageSquare, Trash2 } from "lucide-react";
 import {
   type ComponentType,
   createContext,
@@ -22,6 +15,7 @@ import {
 } from "react";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
@@ -37,12 +31,14 @@ import { tabListKeys } from "@/components/ui/tab-keys";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
+import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
   useWorkBranchCommands,
   type WorkBranchCommands,
 } from "@/features/draft-review/useWorkBranchCommands";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { ContextTreePanel } from "../../context/ContextTreePanel";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../../context/context-schemes";
@@ -51,6 +47,7 @@ import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { useScopeScratchSource } from "../../context/use-scratch-trees";
 import { useWorkSourceWritable } from "../../context/use-work-source-writable";
 import { useAiDraftLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
@@ -288,8 +285,7 @@ export function SourcesBody({
 }) {
   // Scratch is the picked Work's when that is a named one; under No Work a chat keeps its notes
   // in its Files menu, and the foot has no Scratch.
-  const { noWork } = useWorks(projectId);
-  const scratchWorkId = noWork && editorWorkId !== noWork.id ? editorWorkId : null;
+  const scratchWorkId = useScopeScratchSource(projectId)?.owner.workId ?? null;
   // An archived or deleted Work's Scratch shows, and takes no change until it is back.
   const scratchWritable = useWorkSourceWritable(projectId, scratchWorkId);
   // Another owner's note (another Work's, a chat's) is in no list here.
@@ -598,46 +594,46 @@ function SourceTabs({
             })}
           </DropdownMenuContent>
         </DropdownMenu>
-        {tabs.includes("changes") ? (
-          <span className="ml-auto flex items-center gap-0.5 coarse:gap-1">
-            <TreeVersionToggle />
-            {tab("changes")}
-          </span>
-        ) : null}
+        {tabs.includes("changes") ? <span className="ml-auto">{tab("changes")}</span> : null}
       </div>
+      <TreeVersionChip />
     </div>
   );
 }
 
 /**
- * The one Live/Draft toggle, beside Changes while the Work has pending changes: a framed icon,
- * jade on Draft. Every tree, click, rename, move and Ctrl+Z in the sidebar follows it, and so
- * does main's page.
+ * The sidebar's version, as the page's version chip draws it: "Live" or "Draft", offered while
+ * the Work has pending changes. Every tree, click, rename, move and Ctrl+Z in the sidebar follows
+ * it, and so does main's page. Outside the tab strip, so it never scrolls out of view.
  */
-function TreeVersionToggle() {
+function TreeVersionChip() {
   const shell = useShellTreeVersion();
+  const touch = useCoarsePointer();
   if (!shell?.offered) return null;
-  const draft = shell.showing === "draft";
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={t`Draft view`}
-          aria-pressed={draft}
-          onClick={shell.flip}
-          className={cn(
-            "focus-ring grid size-7 shrink-0 place-items-center rounded-md border transition-colors coarse:h-8 coarse:w-9",
-            draft
-              ? "border-primary/40 bg-primary/12 text-primary hover:bg-primary/20"
-              : "border-border bg-card text-muted-foreground shadow-raise hover:text-foreground",
-          )}
-        >
-          <FileDiff className="size-4" aria-hidden />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{draft ? t`Showing draft` : t`Showing live`}</TooltipContent>
-    </Tooltip>
+    <DraftSwitcher
+      label={t`Sidebar version`}
+      showing={shell.showing}
+      drafts={[
+        {
+          key: shell.ownerKey,
+          name: (
+            <WorkIdentity
+              work={null}
+              unavailableLabel={shell.name ?? t`This chat`}
+              className="text-sm font-normal"
+            />
+          ),
+          current: shell.showing === "draft",
+          scope: true,
+          onSelect: () => shell.show("draft"),
+        },
+      ]}
+      draftOnly={false}
+      disabled={false}
+      onShowLive={() => shell.show("live")}
+      touch={touch}
+    />
   );
 }
 
