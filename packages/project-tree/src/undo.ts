@@ -308,8 +308,9 @@ export type TakenBack = { record: TreeRecord; kept?: Kept } | NotUndone | Closed
  * record's opposite is made against the list as it stands, and one replay of the view with all
  * of them appended says which would change a closed source (`holdClosed`), so the cost is a few
  * replays however many records there are, not one each. Only the ones that land are written, in
- * one transaction. A node's records go a layer at a time (its newest first, then the next), since
- * the Undo of the first changes what the Undo of the second means.
+ * one transaction. A node's records go newest first, one layer per replay (layer k holds each
+ * node's k-th record): the Undo of the first changes what the Undo of the second means, so the
+ * second is made only after the first is written.
  */
 export function takeBackAll(
   writer: TreeWriter,
