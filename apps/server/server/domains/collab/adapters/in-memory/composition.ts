@@ -200,7 +200,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     checkpoints,
     draftAttribution: {
       async readDraftProvenance() {
-        return null;
+        return new Map();
       },
     },
     attribution: {
@@ -345,6 +345,9 @@ function createInMemoryBranchStub(): CollabBranches {
         return null;
       },
       async lookupCommand() {
+        return { kind: "none" };
+      },
+      async awaitCommand() {
         return { kind: "none" };
       },
       discardItem: (input) => gone(input.item),

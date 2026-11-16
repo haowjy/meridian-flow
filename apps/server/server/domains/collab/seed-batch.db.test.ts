@@ -54,7 +54,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
     sourceId = randomUUID();
     await db.insert(users).values(conformanceUserValues(user, "seed-batch"));
     await db.insert(projects).values({ id: projectId, userId: user, name: "Seeds", slug: "seeds" });
-    await db.insert(contextSources).values({ id: sourceId, projectId, name: "KB", slug: "kb" });
+    await db.insert(contextSources).values({ id: sourceId, projectId, slug: "kb" });
   });
 
   it("a document seeded in a batch reads, opens and edits like one seeded singly", async () => {

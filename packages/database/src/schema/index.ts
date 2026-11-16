@@ -4,6 +4,7 @@ export * from "./billing";
 export * from "./branches";
 export * from "./content";
 export * from "./imports";
+export * from "./mcp";
 export * from "./model-evidence";
 export * from "./recent-documents";
 export * from "./results";
@@ -22,6 +23,7 @@ import * as branches from "./branches";
 import * as content from "./content";
 import * as documentEdits from "./document-edits";
 import * as imports from "./imports";
+import * as mcp from "./mcp";
 import * as modelEvidence from "./model-evidence";
 import * as recentDocuments from "./recent-documents";
 import * as results from "./results";
@@ -39,6 +41,7 @@ export const schema = {
   ...billing,
   ...content,
   ...imports,
+  ...mcp,
   ...branches,
   ...agentThreads,
   ...threadAsks,

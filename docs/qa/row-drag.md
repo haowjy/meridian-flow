@@ -30,13 +30,13 @@ browser reports no fine pointer, so rows render at touch height.
    rows fill. Ctrl-click `chapter-3` again: only it loses the fill. Shift-click
    selects the on-screen range from the last click. Escape returns to the open
    row.
-2. Drag the selection over the collapsed Knowledge Base header: after about
+2. Drag the selection over the collapsed Knowledge header: after about
    600 ms it opens, the header and its whole list light as one block, and the
-   hint reads "Move to Knowledge Base".
+   hint reads "Move to Knowledge".
 3. Hover the closed `characters` folder until it opens, then hover `keeper`
    inside it: the folder and its rows light, the hint reads "Move to
    characters". Drop. The three chapters appear under `characters`, stay
-   selected, and the open document's path reads Knowledge Base › characters.
+   selected, and the open document's path reads Knowledge › characters.
    No toast and no card: the tree is the whole report. Repeat on a phone from a
    row's Move…: same result, nothing else appears.
 4a. Open a row's `…` menu, Move… it into a collapsed folder: the row leaves its

@@ -96,11 +96,10 @@ describe("the tree list store (postgres)", () => {
       {
         id: MANUSCRIPT,
         projectId: PROJECT,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       },
-      { id: UNFILED, projectId: PROJECT, name: "Unfiled", slug: "unfiled", scope: "project" },
+      { id: UNFILED, projectId: PROJECT, slug: "unfiled", scope: "project" },
     ]);
     await db.insert(works).values({
       id: WORK,
@@ -591,7 +590,6 @@ describe("the tree list store (postgres)", () => {
       await db.insert(contextSources).values({
         id: manuscript2,
         projectId: project2,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });

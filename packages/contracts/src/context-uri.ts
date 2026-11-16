@@ -17,6 +17,20 @@ export const CONTEXT_URI_SCHEMES = [
 ] as const;
 export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
 
+/**
+ * The English name of each area, as the sidebar shows it. The server's copy, the model's text and
+ * exports read this; the app translates its own labels and a test keeps them matching.
+ */
+export const CONTEXT_URI_SCHEME_NAMES = {
+  manuscript: "Manuscript",
+  kb: "Knowledge",
+  user: "Your files",
+  unfiled: "Unfiled",
+  scratch: "Scratch",
+  uploads: "Uploads",
+  agents: ".agents",
+} as const satisfies Record<(typeof CONTEXT_URI_SCHEMES)[number], string>;
+
 /** Sources whose documents receive drafts in a draft-mode Work's branch. */
 export function isDraftedScheme(scheme: ContextUriScheme): boolean {
   return (

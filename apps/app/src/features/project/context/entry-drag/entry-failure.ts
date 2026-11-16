@@ -15,12 +15,13 @@ import {
   type NoticeSurface,
 } from "@/features/draft-review/draft-notices";
 import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
+import { revealPlaced } from "../tree-reveal";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
 import { copyRows } from "./execute-copy";
 import { moveRows } from "./execute-move";
-import type { MoveRow, ReadyCopy } from "./move-plan";
-import { leaveSelections } from "./selection";
+import type { ReadyCopy, ReadyMove } from "./move-plan";
+import { type EntrySelection, leaveSelections } from "./selection";
 
 export type EntryContext = {
   projectId: string;
@@ -33,48 +34,63 @@ export type EntryContext = {
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
-/** A Copy the route refused: it has its own key, and Retry runs it again. */
-export type CopyFailure = {
+/** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
+type CopyFailure = {
   key: string;
   sources: readonly string[];
   destination: string | null;
+  refusal: CopyRefusal;
+  copy: ReadyCopy;
+};
+
+type CopyRefusal = {
   /** The route's answer, in its words, when it gave one. */
   reason: string | null;
-  copy: ReadyCopy;
+  /** Sending it again can't land it: the Work is closed, or the writer can't copy there. */
+  final: boolean;
 };
 
 /** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
 export const entryToast = (projectId: string, failure = "") => `entry:${projectId}:${failure}`;
 
-/** Moves and deletes are appended to the copy of the list and cannot fail here; a Copy is a route. */
+/**
+ * Moves and deletes are appended to the copy of the list and cannot fail here; a Copy is a route.
+ * Either shows where its rows landed at once (`revealPlaced`), selected in `selection`.
+ */
 export function runMove(
   context: EntryContext,
-  rows: readonly MoveRow[],
-  onMoved?: (moved: readonly EntryRef[]) => void,
+  move: ReadyMove,
+  selection: EntrySelection | null,
 ): void {
-  onMoved?.(moveRows(rows, context.actions));
+  const moved = moveRows(move, context.actions);
+  if (moved.length > 0) revealPlaced(move.to.parentId, moved, selection);
 }
 
 /** What the route said was wrong, when it said. */
-function reasonOf(error: unknown): string | null {
-  if (!isMeridianApiError(error)) return null;
+function refusalOf(error: unknown): CopyRefusal {
+  const retry = (reason: string | null) => ({ reason, final: false });
+  const final = (reason: string) => ({ reason, final: true });
+  if (!isMeridianApiError(error)) return retry(null);
   const { details } = error;
   const reason = details && typeof details === "object" && "reason" in details && details.reason;
-  if (reason === "source_behind") return t`The latest edits hadn't reached the server.`;
-  if (reason === "no_draft") return t`That Work no longer has a draft of it.`;
+  if (reason === "source_behind") return retry(t`The latest edits hadn't reached the server.`);
+  if (reason === "no_draft") return retry(t`That Work no longer has a draft of it.`);
   switch (error.code) {
     case "not_found":
     case "stale_source":
-      return t`A source is no longer there.`;
+      return retry(t`A source is no longer there.`);
     case "destination_missing":
     case "stale_target":
-      return t`The destination is no longer there.`;
+      return retry(t`The destination is no longer there.`);
     case "permission_denied":
-      return t`You can't copy there.`;
-    case "context_unavailable":
-      return t`That Work isn't available.`;
+      return final(t`You can't copy there.`);
+    case "work_archived":
+    case "work_deleted":
+      return final(t`The Work was closed.`);
+    case "work_missing":
+      return final(t`That Work isn't available.`);
     default:
-      return null;
+      return retry(null);
   }
 }
 
@@ -101,30 +117,43 @@ function copyFailureTitle(
   return reason ? `${said} ${reason}` : said;
 }
 
-/** Toasts a refused Copy; Retry runs it again. */
-function showCopyFailure(context: EntryContext, failure: CopyFailure): void {
+/** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
+function showCopyFailure(
+  context: EntryContext,
+  failure: CopyFailure,
+  selection: EntrySelection | null,
+): void {
   notifyFailure({
     key: failure.key,
-    title: copyFailureTitle(failure.sources, failure.destination, failure.reason),
-    onRetry: () => void runCopy(context, failure.copy),
+    title: copyFailureTitle(failure.sources, failure.destination, failure.refusal.reason),
+    onRetry: failure.refusal.final
+      ? undefined
+      : () => void runCopy(context, failure.copy, selection),
   });
 }
 
 export async function runCopy(
   context: EntryContext,
   copy: ReadyCopy,
-  onCopied?: (copies: readonly EntryRef[]) => void,
+  selection: EntrySelection | null,
 ): Promise<void> {
+  const { copies, answered } = copyRows(context.projectId, copy);
+  revealPlaced(copy.into, copies, selection);
   try {
-    onCopied?.(await copyRows(context.projectId, copy));
+    await answered;
   } catch (error) {
-    showCopyFailure(context, {
-      key: entryToast(context.projectId, crypto.randomUUID()),
-      sources: copy.copies.map(({ name }) => name),
-      destination: copy.destinationName,
-      reason: reasonOf(error),
-      copy,
-    });
+    leaveSelections(copies);
+    showCopyFailure(
+      context,
+      {
+        key: entryToast(context.projectId, crypto.randomUUID()),
+        sources: copy.copies.map(({ name }) => name),
+        destination: copy.destinationName,
+        refusal: refusalOf(error),
+        copy,
+      },
+      selection,
+    );
   }
 }
 

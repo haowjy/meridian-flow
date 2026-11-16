@@ -196,7 +196,6 @@ export async function seedDatabase(
   await db.insert(schema.contextSources).values({
     id: SOURCE_ID,
     projectId: PROJECT_ID,
-    name: "Manuscript",
     slug: "manuscript",
     scope: "project",
   });
@@ -267,6 +266,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const draftStore = createFixtureDraftStore(db, {
     close: draftClose,
     workProjection: createTestWorkProjectionMutation(db),
+    treeLists,
     live: {
       journal: persistence.journal,
     },

@@ -34,7 +34,7 @@ import {
   type Was,
 } from "./tree-undo";
 import { LIVE_VERSION, type TreeVersion } from "./tree-version";
-import type { TreeView } from "./tree-view";
+import type { TreeDestination, TreeView } from "./tree-view";
 
 export class TreeActions {
   constructor(
@@ -162,19 +162,20 @@ export class TreeActions {
     return { name: record.name };
   }
 
-  move(node: string, parentId: string, index?: number): void {
-    this.moveAll([{ node, parentId, ...(index === undefined ? {} : { index }) }]);
+  move(node: string, parentId: string): void {
+    this.moveAll([node], { parentId });
   }
 
-  /** One gesture's moves, each placed among the siblings the ones before it left. */
-  moveAll(moves: readonly { node: string; parentId: string; index?: number }[]): void {
+  /** One gesture's moves: the nodes land in `to` together, in order, as one Undo. */
+  moveAll(nodes: readonly string[], to: TreeDestination): void {
     const made = this.writable();
     const replay = made.replay();
-    const parents = moves.map((move) => this.parentOf(replay, move.parentId));
     const records = made.writer.moveAll(
       made.view,
       this.actor,
-      moves.map((move, at) => ({ ...move, parent: parents[at] as string })),
+      nodes,
+      this.parentOf(replay, to.parentId),
+      to.position,
     );
     this.remember(made, "move", replay, records);
   }
@@ -195,33 +196,26 @@ export class TreeActions {
   }
 
   /**
-   * Brings nodes back from Trash, where they were or, dragged out, into `into` (a folder's or a
-   * source's id) from `index` on: one gesture, one Undo.
+   * Brings nodes back from Trash, where they were or, dragged out, together into `into`: one
+   * gesture, one Undo.
    */
-  restore(
-    nodes: readonly string[],
-    into?: { parentId: string; index?: number },
-  ): { records: readonly TreeRecord[] } {
+  restore(nodes: readonly string[], into?: TreeDestination): { records: readonly TreeRecord[] } {
     const made = this.writable();
     const before = made.replay();
     const records: TreeRecord[] = [];
     made.writer.transact(() => {
       for (const node of nodes) records.push(made.writer.restore(made.view, this.actor, node));
     });
-    if (into) {
-      const parent = this.parentOf(made.replay(), into.parentId);
+    if (into)
       records.push(
         ...made.writer.moveAll(
           made.view,
           this.actor,
-          nodes.map((node, at) => ({
-            node,
-            parent,
-            ...(into.index === undefined ? {} : { index: into.index + at }),
-          })),
+          nodes,
+          this.parentOf(made.replay(), into.parentId),
+          into.position,
         ),
       );
-    }
     this.remember(made, "restore", before, records);
     return { records };
   }

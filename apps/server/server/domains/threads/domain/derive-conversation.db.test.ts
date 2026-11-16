@@ -77,8 +77,9 @@ else
         store: revisions,
         levelFiles: levels,
         builtins: [],
-        defaultModel: () => "gpt-5.6-luna",
+        modelFor: (name) => name ?? "gpt-5.6-luna",
         unavailableReasons: () => [],
+        modelUnavailable: () => [],
       });
       const slug = `fork-agent-${crypto.randomUUID()}`;
       levels.write(
@@ -449,6 +450,7 @@ else
       const initialContent = {
         composedSystemPrompt: "Grandsource initial prompt",
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
       };
       const initialBake = await repos.threads.bakeInitialPrompt(fixture.source.id as never, {
@@ -470,6 +472,7 @@ else
       const boundaryContent = {
         composedSystemPrompt: "Grandsource second epoch",
         bakedSkillSlugs: ["updated"],
+        bakedConnections: [],
         bakedTools: [],
       };
       const boundaryBake = await repos.promptBakes.create({
@@ -498,6 +501,7 @@ else
       const forkEpochContent = {
         composedSystemPrompt: "First fork's later epoch",
         bakedSkillSlugs: ["later"],
+        bakedConnections: [],
         bakedTools: [],
       };
       const forkEpoch = await repos.promptBakes.create({

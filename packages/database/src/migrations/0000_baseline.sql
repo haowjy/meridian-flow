@@ -103,6 +103,7 @@ CREATE TABLE "prompt_bakes" (
 	"composed_system_prompt" text NOT NULL,
 	"baked_skill_slugs" jsonb NOT NULL,
 	"baked_tools" jsonb NOT NULL,
+	"baked_connections" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"content_hash" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -408,7 +409,6 @@ CREATE TABLE "context_sources" (
 	"work_id" uuid,
 	"root_thread_id" uuid,
 	"chat_thread_id" uuid,
-	"name" text NOT NULL,
 	"slug" text NOT NULL,
 	"scope" text DEFAULT 'project' NOT NULL,
 	"description" text,
@@ -642,6 +642,59 @@ CREATE TABLE "imports" (
 	"acknowledged_at" timestamp with time zone,
 	"objects_swept_at" timestamp with time zone,
 	"final_sweep_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "mcp_calls" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"thread_id" uuid NOT NULL,
+	"turn_id" uuid NOT NULL,
+	"model_response_id" uuid NOT NULL,
+	"tool_call_id" text NOT NULL,
+	"sequence" integer NOT NULL,
+	"connection_id" uuid NOT NULL,
+	"pin_id" uuid NOT NULL,
+	"tool_name" text NOT NULL,
+	"arguments" jsonb NOT NULL,
+	"outcome_kind" text,
+	"reply_ref" jsonb,
+	"sent_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"finished_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "mcp_connection_tokens" (
+	"connection_id" uuid NOT NULL,
+	"account_id" uuid NOT NULL,
+	"ciphertext" text NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "mcp_connection_tokens_connection_id_account_id_pk" PRIMARY KEY("connection_id","account_id")
+);
+--> statement-breakpoint
+CREATE TABLE "mcp_connections" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"account_id" uuid NOT NULL,
+	"project_id" uuid,
+	"name" text NOT NULL,
+	"spec" jsonb NOT NULL,
+	"current_pin_id" uuid,
+	"settings_version" integer DEFAULT 1 NOT NULL,
+	"status" text,
+	"status_reason" text,
+	"status_version" integer,
+	"status_started_at" timestamp with time zone,
+	"check_finished_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"deleted_at" timestamp with time zone,
+	CONSTRAINT "mcp_connections_name_valid" CHECK ("mcp_connections"."name" ~ '^[A-Za-z0-9_-]{1,40}$'),
+	CONSTRAINT "mcp_connections_status_valid" CHECK ("mcp_connections"."status" IS NULL OR "mcp_connections"."status" IN ('connected', 'unreachable', 'needs_sign_in'))
+);
+--> statement-breakpoint
+CREATE TABLE "mcp_pins" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"connection_id" uuid NOT NULL,
+	"pin" jsonb NOT NULL,
+	"pin_hash" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "observation_frontiers" (
@@ -906,6 +959,7 @@ CREATE TABLE "document_drafts" (
 	"seed_live_state" "bytea",
 	"seed_live_position" bigint,
 	"has_effect" boolean DEFAULT true NOT NULL,
+	"text_changes" integer DEFAULT 0 NOT NULL,
 	"has_effect_revision" bigint DEFAULT -1 NOT NULL,
 	"schema_version" integer DEFAULT 3001000 NOT NULL,
 	"revision" bigint DEFAULT 0 NOT NULL,
@@ -1073,6 +1127,13 @@ ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_thread_id_th
 ALTER TABLE "tree_edit_receipts" ADD CONSTRAINT "tree_edit_receipts_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id_fk" FOREIGN KEY ("import_id") REFERENCES "public"."imports"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_calls" ADD CONSTRAINT "mcp_calls_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_connection_id_mcp_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."mcp_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_connection_tokens" ADD CONSTRAINT "mcp_connection_tokens_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_connections" ADD CONSTRAINT "mcp_connections_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_connections" ADD CONSTRAINT "mcp_connections_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_connections" ADD CONSTRAINT "mcp_connections_current_pin_id_mcp_pins_id_fk" FOREIGN KEY ("current_pin_id") REFERENCES "public"."mcp_pins"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mcp_pins" ADD CONSTRAINT "mcp_pins_connection_id_mcp_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."mcp_connections"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "observation_frontiers" ADD CONSTRAINT "observation_frontiers_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_shown_links" ADD CONSTRAINT "thread_shown_links_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "thread_shown_links" ADD CONSTRAINT "thread_shown_links_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1206,6 +1267,11 @@ CREATE INDEX "imports_project_created" ON "imports" USING btree ("project_id","c
 CREATE INDEX "imports_user_open" ON "imports" USING btree ("user_id") WHERE "imports"."acknowledged_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "imports_organize_claim" ON "imports" USING btree ("state","lease_until") WHERE "imports"."state" = 'organizing';--> statement-breakpoint
 CREATE INDEX "imports_upload_expiry" ON "imports" USING btree ("last_activity_at") WHERE "imports"."state" = 'uploading';--> statement-breakpoint
+CREATE INDEX "mcp_calls_thread_turn" ON "mcp_calls" USING btree ("thread_id","turn_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "mcp_connections_account_name" ON "mcp_connections" USING btree ("account_id","name") WHERE "mcp_connections"."project_id" IS NULL AND "mcp_connections"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "mcp_connections_project_name" ON "mcp_connections" USING btree ("project_id","name") WHERE "mcp_connections"."project_id" IS NOT NULL AND "mcp_connections"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "mcp_connections_account" ON "mcp_connections" USING btree ("account_id");--> statement-breakpoint
+CREATE INDEX "mcp_pins_connection_created" ON "mcp_pins" USING btree ("connection_id","created_at");--> statement-breakpoint
 CREATE INDEX "observation_frontiers_room_latest" ON "observation_frontiers" USING btree ("room_key","recorded_seq" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "observation_frontiers_thread" ON "observation_frontiers" USING btree ("thread_id");--> statement-breakpoint
 CREATE INDEX "observation_frontiers_project" ON "observation_frontiers" USING btree ("project_id");--> statement-breakpoint
@@ -1472,6 +1538,19 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
+CREATE FUNCTION public.enforce_mcp_pin_insert_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1
+    AND NOT EXISTS (SELECT 1 FROM mcp_connections WHERE id = OLD.connection_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'MCP pins are insert-only'
+    USING ERRCODE = '23514', CONSTRAINT = 'mcp_pins_insert_only';
+END;
+$$;
+
 CREATE FUNCTION public.enforce_prompt_bake_insert_only() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1650,6 +1729,8 @@ $$;
 
 ALTER TABLE public.document_block_rooms SET (fillfactor = 90);
 
+CREATE TRIGGER mcp_pins_insert_only BEFORE DELETE OR UPDATE ON public.mcp_pins FOR EACH ROW EXECUTE FUNCTION public.enforce_mcp_pin_insert_only();
+
 CREATE TRIGGER prompt_bakes_insert_only BEFORE DELETE OR UPDATE ON public.prompt_bakes FOR EACH ROW EXECUTE FUNCTION public.enforce_prompt_bake_insert_only();
 
 CREATE TRIGGER recompute_thread_chat_activity_on_active_leaf AFTER UPDATE OF active_leaf_turn_id ON public.threads FOR EACH ROW WHEN ((new.active_leaf_turn_id IS DISTINCT FROM old.active_leaf_turn_id)) EXECUTE FUNCTION public.recompute_thread_chat_activity_from_thread();
@@ -1669,6 +1750,9 @@ CREATE TRIGGER threads_initial_prompt_bake_write_once BEFORE UPDATE OF initial_p
 CREATE TRIGGER turns_position_write_once BEFORE UPDATE OF "position" ON public.turns FOR EACH ROW EXECUTE FUNCTION public.enforce_turn_position_write_once();
 
 CREATE TRIGGER turns_prompt_bake_write_once BEFORE UPDATE OF prompt_bake_id ON public.turns FOR EACH ROW EXECUTE FUNCTION public.enforce_prompt_bake_write_once('prompt_bake_id', 'turns_prompt_bake_write_once');
+
+ALTER TABLE ONLY public.mcp_connections
+    ALTER CONSTRAINT mcp_connections_current_pin_id_mcp_pins_id_fk DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE ONLY public.threads
     ALTER CONSTRAINT threads_initial_prompt_bake_id_prompt_bakes_id_fk DEFERRABLE INITIALLY DEFERRED;
@@ -1721,7 +1805,7 @@ CREATE FUNCTION public.create_account_source() RETURNS trigger
     AS $$
 BEGIN
   -- An account's home folder has its source from the moment the account exists.
-  INSERT INTO context_sources (user_id, name, slug, scope) VALUES (NEW.id, 'User Files', 'user', 'account');
+  INSERT INTO context_sources (user_id, slug, scope) VALUES (NEW.id, 'user', 'account');
   RETURN NEW;
 END;
 $$;

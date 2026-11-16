@@ -24,6 +24,8 @@ export type DraftReviewItem = {
   draftId: string | null;
   /** Whether this item has a text draft. */
   hasDraft: boolean;
+  /** The text draft's review groups, as the projection job last counted them; 0 without one. */
+  textChanges: number;
   /** created: the branch has a `created` row; edited: draft rows only. */
   origin: "created" | "edited";
   /** A creation only the Work shows: derived on read, nothing rewrites it. */
@@ -38,6 +40,8 @@ export type DraftReviewItem = {
    * branch's draft on it and its final location (F9, §13.3), and Apply restores it.
    */
   deletedLive: boolean;
+  /** For `deletedLive`: where live last had it (`path` is where the branch puts it). */
+  deletedFrom: string | null;
   /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
   /**
@@ -143,9 +147,11 @@ function toItem(
         }
       : null,
     hasDraft: !!evidence,
+    textChanges: evidence?.textChanges ?? 0,
     documentName: documentTitleFromUri(path),
     path,
     deletedLive: node.deletedLive,
+    deletedFrom: node.deletedLive ? node.deletedFromUri : null,
     actorThreadIds: [...treeActorThreadIds],
     updatedAt: evidence?.updatedAt ?? new Date(),
   };

@@ -60,8 +60,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
+    const removalDeps = createTestRemovalDeps(db);
     const drafts = createDrizzleDraftStore(db, {
-      close: createTestRemovalDeps(db).draftClose,
+      close: removalDeps.draftClose,
+      treeLists: removalDeps.treeLists,
       workProjection: createTestWorkProjectionMutation(db),
       branches: createDrizzleBranchStore(db),
     });

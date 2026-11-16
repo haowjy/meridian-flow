@@ -82,7 +82,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       const noWorkId = noWork?.id ?? "";
       await db.insert(contextSources).values({
         projectId,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });

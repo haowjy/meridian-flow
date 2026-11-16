@@ -18,6 +18,7 @@ export {
   errorInterrupt,
   httpErrorInterruptBody,
   isToolNotRunResult,
+  isToolStoppedResult,
   meridianError,
   meridianErrorFromGateway,
   meridianErrorFromHttpStatus,
@@ -28,6 +29,7 @@ export {
   sharedErrorInterrupt,
   TOOL_EXCEPTION_CODE,
   TOOL_NOT_RUN_CODE,
+  TOOL_STOPPED_CODE,
   wsErrorInterruptPayload,
 } from "../errors/index.js";
 export { blockContentRecord } from "../threads/block-content-record.js";

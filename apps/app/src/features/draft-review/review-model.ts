@@ -103,7 +103,11 @@ export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: Re
  */
 export type TextTarget =
   | { kind: "groups"; frame: ReviewFrame; groupIds: string[]; tree?: true }
-  | { kind: "draft" };
+  /**
+   * Every change of the draft. `draftId` is the list's: with no room open, the server applies
+   * that draft's changes as it holds them on receipt.
+   */
+  | { kind: "draft"; draftId?: string };
 /** Some of a draft's changes, which a Discard writes back in the draft's room. */
 export type GroupsTarget = Extract<TextTarget, { kind: "groups" }>;
 export type ChangeTarget = TextTarget | { kind: "tree" };

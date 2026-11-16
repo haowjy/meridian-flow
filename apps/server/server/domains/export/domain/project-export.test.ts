@@ -262,7 +262,7 @@ describe("project exports", () => {
     const other = replica();
     reads.length = 0;
     const first = await entries(await other.download("project", "account", "Serial", options));
-    expect(first["Serial/Knowledge Base/map.png"]).toBeDefined();
+    expect(first["Serial/Knowledge/map.png"]).toBeDefined();
     expect(first["Serial/Works/Work/Scratch/note.md"]).toBeDefined();
     expect(JSON.parse(strFromU8(first["Serial/meridian-export.json"]!)).excludedLinks).toBe(0);
     expect(reads).toHaveLength(proseEntries(first));
@@ -282,7 +282,7 @@ describe("project exports", () => {
     );
     reads.length = 0;
     const second = await entries(await other.download("project", "account", "Serial", options));
-    expect(second["Serial/Knowledge Base/map.png"]).toBeUndefined();
+    expect(second["Serial/Knowledge/map.png"]).toBeUndefined();
     expect(Object.keys(second).some((path) => path.startsWith("Serial/Works/Work/"))).toBe(false);
     expect(second["Serial/Works/work/Scratch/note.md"]).toBeDefined();
     expect(strFromU8(second["Serial/Manuscript/Chapter.md"]!)).toContain("[Later](");
@@ -353,7 +353,7 @@ describe("project exports", () => {
     expect((await snapshot.read(uuid("x"))).filename).toBe("x (2).md");
     const text = strFromU8(Buffer.concat(chapter.chunks as Uint8Array[]));
     expect(text).toContain("---\naliases: [Gate]\n# kept\n---\n");
-    expect(text).toContain("[lore](../Knowledge%20Base/Lore/Sects.md)");
+    expect(text).toContain("[lore](../Knowledge/Lore/Sects.md)");
     expect(text).toContain("[[Not a link]] ![[Not an embed]]");
     expect(text).toContain("\\[ref] [^1] \\[^2]\\(https");
     expect(text).toContain("> [!warning]- A costly breakthrough\n> Not \\[!note]");
@@ -381,9 +381,9 @@ describe("project exports", () => {
     });
     const files = await entries(defaults.stream("Serial"));
     expect(Object.keys(files).some((path) => path.includes("/Works/"))).toBe(false);
-    expect(files["Serial/Knowledge Base/X.md"]).toBeDefined();
-    expect(files["Serial/Knowledge Base/x (2).md"]).toBeDefined();
-    expect(createHash("sha256").update(files["Serial/Knowledge Base/map.png"]!).digest("hex")).toBe(
+    expect(files["Serial/Knowledge/X.md"]).toBeDefined();
+    expect(files["Serial/Knowledge/x (2).md"]).toBeDefined();
+    expect(createHash("sha256").update(files["Serial/Knowledge/map.png"]!).digest("hex")).toBe(
       createHash("sha256").update(bytes).digest("hex"),
     );
     expect(JSON.parse(strFromU8(files["Serial/meridian-export.json"]!)).excludedLinks).toBe(2);
@@ -424,7 +424,7 @@ describe("project exports", () => {
         }
       })(),
     );
-    expect(files["Serial/Knowledge Base/Lore/Sects.md"]).toBeDefined();
+    expect(files["Serial/Knowledge/Lore/Sects.md"]).toBeDefined();
     checkRelativeLinks(files);
   });
   it("counts case-only folders and reserves portable filenames", () => {
@@ -475,7 +475,7 @@ describe("project exports", () => {
     expect(
       scope.spellLink({ href: "scratch://@w3/Future", ref: `ahead:${uuid("future")}` }).href,
     ).toBe("../../Works/Empty%20Work/Scratch/Future.md");
-    expect(paths.get(uuid("two"))).toBe("Knowledge Base/lore (2)/note.md");
-    expect(paths.get(uuid("bad"))).toBe("Knowledge Base/_CON.md");
+    expect(paths.get(uuid("two"))).toBe("Knowledge/lore (2)/note.md");
+    expect(paths.get(uuid("bad"))).toBe("Knowledge/_CON.md");
   });
 });

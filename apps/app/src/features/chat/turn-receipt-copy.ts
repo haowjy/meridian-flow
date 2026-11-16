@@ -44,7 +44,7 @@ export function treeFaultLocation(
 export function reversalRefusalCopy(refusal: ReversalRefusal, names?: OwnerNames): string {
   switch (refusal.status) {
     case "nothing_to_redo":
-      return t`Redo is no longer available because the manuscript changed.`;
+      return t`Redo is no longer available because the documents changed.`;
     case "nothing_to_undo":
       return t`Undo is no longer available.`;
     case "expired":
@@ -83,6 +83,8 @@ function permissionDeniedCopy(denial: ReversalOutcome["denial"]): string {
       return t`This document's Work is archived. Unarchive the Work to reverse this change.`;
     case "chat_frozen":
       return t`This document's chat was deleted. Restore the chat to reverse this change.`;
+    case "work_deleted":
+      return t`This document's Work was deleted, so this change can't be reversed.`;
     case "not_found":
       return t`This document, or the Work it belongs to, was deleted or isn't available to you, so this change can't be reversed.`;
     default:
@@ -144,7 +146,7 @@ export function skipCauseCopy(cause: TurnInverseSkipCause): string {
     case "refused":
       return t`Couldn't be reversed`;
     case "applied":
-      return t`Applied to the manuscript`;
+      return t`Already applied`;
     case "discarded":
       return t`Discarded`;
     case "already_undone":

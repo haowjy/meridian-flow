@@ -30,19 +30,6 @@ import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/
 import type { ProjectHintPort } from "./ports/project-hints.js";
 import type { TreeView } from "./tree/tree-view.js";
 
-const CONTEXT_SOURCE_NAMES: Record<
-  ProjectContextFsScheme | WorkScopedContextFsScheme | "uploads",
-  string
-> = {
-  manuscript: "Manuscript",
-  kb: "Knowledge Base",
-  user: "User Files",
-  unfiled: "Unfiled",
-  scratch: "Scratch",
-  uploads: "Uploads",
-  agents: "Agents",
-};
-
 export async function findNoWorkId(db: Database, projectId: string): Promise<string | null> {
   const [row] = await currentDrizzleDb(db)
     .select({ id: works.id })
@@ -66,7 +53,6 @@ export async function provisionProjectSources(db: Database, projectId: string): 
     .values(
       PROJECT_SOURCE_SCHEMES.map((scheme) => ({
         projectId,
-        name: CONTEXT_SOURCE_NAMES[scheme],
         slug: scheme,
         scope: "project" as const,
       })),
@@ -80,7 +66,6 @@ export async function provisionProjectSources(db: Database, projectId: string): 
 export async function provisionWorkScratch(db: Database, workId: string): Promise<void> {
   await currentDrizzleDb(db).insert(contextSources).values({
     workId,
-    name: CONTEXT_SOURCE_NAMES.scratch,
     slug: "scratch",
     scope: "work",
   });
@@ -350,7 +335,6 @@ async function ensureChatContextSource(
     .values({
       projectId: projectId as ProjectId,
       chatThreadId: chatId as ThreadId,
-      name: CONTEXT_SOURCE_NAMES[scheme],
       slug: scheme,
       scope: "chat",
     })

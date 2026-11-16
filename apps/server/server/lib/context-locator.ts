@@ -40,12 +40,6 @@ export type WorkLocator = {
   path: string;
 };
 
-export type NoWorkLocator = {
-  scope: "none";
-  scheme: WorkScopedContextFsScheme;
-  path: string;
-};
-
 export type LineageLocator = {
   scope: "lineage";
   scheme: "scratch";
@@ -53,7 +47,7 @@ export type LineageLocator = {
   path: string;
 };
 
-export type ContextLocator = ProjectLocator | NoWorkLocator | WorkLocator | LineageLocator;
+export type ContextLocator = ProjectLocator | WorkLocator | LineageLocator;
 
 export type ResolvedWorkLocator = Omit<WorkLocator, "workId"> & {
   authority: ResolvedWorkAuthority;
@@ -165,8 +159,8 @@ export async function resolveLocatorUri(
 }
 
 /**
- * The owner an unresolved locator names, resolved against this project: its Work (No Work for
- * `none`) or lineage. A Work or chat that is gone refuses.
+ * The owner an unresolved locator names, resolved against this project: its Work or lineage. A
+ * Work or chat that is gone refuses.
  */
 export async function resolveLocator(
   deps: LocatorDeps,
@@ -179,10 +173,7 @@ export async function resolveLocator(
     if (!lineage) return Err({ reason: "chat_missing" });
     return Ok({ ...locator, authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef } });
   }
-  const authority =
-    locator.scope === "none"
-      ? await deps.workAuthorityResolver.noWork(projectId)
-      : await deps.workAuthorityResolver.byId(projectId, locator.workId);
+  const authority = await deps.workAuthorityResolver.byId(projectId, locator.workId);
   if (!authority) return Err({ reason: "work_missing" });
   return Ok({ scope: "work", scheme: locator.scheme, path: locator.path, authority });
 }

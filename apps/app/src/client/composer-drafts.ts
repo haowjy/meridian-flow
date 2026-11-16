@@ -11,7 +11,13 @@ import { browserRecord, isRecord, type StorageSource } from "./storage/browser-r
 /** `side-new-chat`: the side's new chat, kept apart so a chip it attaches never reaches `/chats`. */
 export type ComposerDraftScope = { kind: "chat" | "new-chat" | "side-new-chat"; id: string };
 
-export type DeletedChatCard = { threadId: string; title: string | null; count: number };
+/** `own`: the writer deleted the chat in this tab, so the note says so plainly. */
+export type DeletedChatCard = {
+  threadId: string;
+  title: string | null;
+  count: number;
+  own?: boolean;
+};
 
 /**
  * A hand-back request the writer pressed whose answer has not been written to the composer: kept
@@ -29,6 +35,8 @@ type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   chatId?: string;
   parked?: ParkedDraft[];
   about?: AttachedAbout;
+  /** A chat box's project, so its words can find the New chat box when no pane shows the chat. */
+  project?: string;
 };
 
 /** A document chip the composer put in a new chat on its own: it may replace it, unlike the writer's. */
@@ -87,8 +95,21 @@ export class ComposerSessionDraft {
   private readonly mintsChat: boolean;
   private parked: ParkedDraft[] = [];
   private attached: AttachedAbout | null = null;
-  private chatField(): { chatId?: string; parked?: ParkedDraft[]; about?: AttachedAbout } {
-    if (!this.mintsChat) return {};
+  /** Set once a pane shows the chat; saved with the draft's next write. */
+  project: string | null = null;
+  setProject = (project: string): void => {
+    if (this.mintsChat || this.project === project) return;
+    this.project = project;
+    this.dirty = true;
+    this.flush();
+  };
+  private chatField(): {
+    chatId?: string;
+    parked?: ParkedDraft[];
+    about?: AttachedAbout;
+    project?: string;
+  } {
+    if (!this.mintsChat) return this.project ? { project: this.project } : {};
     return {
       chatId: this.chatId,
       parked: this.parked,
@@ -171,6 +192,19 @@ export class ComposerSessionDraft {
       ? [...this.notices.filter((item) => item.threadId !== notice.threadId), notice]
       : this.notices;
     return this.commit(edited, { received, notices, handBacks: this.handBacksPending });
+  }
+
+  /**
+   * Takes back what a deleted chat's move put in (its Undo): the box returns to what it held
+   * before, and the chat's note goes. The caller has checked with `holds` that the box still holds
+   * exactly what the move left.
+   */
+  withdraw(threadId: string, before: ComposerDraftSnapshot | null): void {
+    this.commit(before, {
+      received: this.received,
+      notices: this.notices.filter((notice) => notice.threadId !== threadId),
+      handBacks: this.handBacksPending,
+    });
   }
 
   /** The hand-back requests this tab pressed and has not written to the composer. */
@@ -305,10 +339,11 @@ export class ComposerSessionDraft {
 
   /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
-    if (this.matches(snapshot)) this.handoff();
+    if (this.holds(snapshot)) this.handoff();
   };
 
-  private matches(snapshot: ComposerDraftSnapshot): boolean {
+  holds(snapshot: ComposerDraftSnapshot | null): boolean {
+    if (!snapshot) return false;
     // Selection movement is not editing. Normalize both sides so storage parsing
     // and object property order cannot change a structured document's identity.
     return (
@@ -340,7 +375,8 @@ export class ComposerSessionDraft {
               typeof item.threadId === "string" &&
               (item.title === null || typeof item.title === "string") &&
               typeof item.count === "number" &&
-              item.count > 0,
+              item.count > 0 &&
+              (item.own === undefined || typeof item.own === "boolean"),
           )
         )
           return undefined;
@@ -356,6 +392,7 @@ export class ComposerSessionDraft {
                 ? { parked: value.parked.filter(isParkedDraft) }
                 : {}),
               ...(isAttachedAbout(value.about) ? { about: value.about } : {}),
+              ...(typeof value.project === "string" ? { project: value.project } : {}),
             };
       },
     );
@@ -368,6 +405,7 @@ export class ComposerSessionDraft {
     this.chatId = saved?.chatId ?? crypto.randomUUID();
     this.parked = saved?.parked ?? [];
     this.attached = saved?.about ?? null;
+    this.project = saved?.project ?? null;
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {

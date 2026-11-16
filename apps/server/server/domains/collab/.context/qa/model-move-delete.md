@@ -69,7 +69,7 @@ the text it found or a block hash from that read.
    (Cancel). ch3's Discard: its row goes at once, ch3 stays live. Apply all: ch4 → ch5
    and ch5 → ch6 both land in dependency order from either row. Repeat with a swap: both land
    in one Apply transaction. Apply a drafted move after a new live document takes its target:
-   the move lands at the next free name and the footer says "Added as <name>."
+   the move lands as a twin of that document (its path ends `~id`) and the footer names no rename.
 8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
    its manuscript destination, and live still has it in Scratch. Script `undo` by either path:
@@ -111,7 +111,7 @@ With more than one file, the dock's Apply asks the same question in its footer
 12. **Create is one reversible change.** In an auto-apply chat, script `create` of
    `manuscript://new-chapter` with prose. The card counts the new document. Its Undo removes the
    document; Redo restores the prose. After Undo, put another document at that path and press
-   Redo: the created document returns at the next free name, which the expanded card reports.
+   Redo: the created document returns as a twin beside it, and the expanded card reports its landed path.
    Then script a whole-document `copy` and, in a later model step, `undo` the copy's path. One
    Undo removes the copy rather than leaving an empty document; Redo restores its content. Repeat
    after the writer replaces one of the copy's paragraphs. Undo reports that skipped text part and

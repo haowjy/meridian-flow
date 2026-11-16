@@ -254,7 +254,6 @@ if (!RUN) {
           projectId: PROJECT,
           scope: "project",
           slug: "manuscript",
-          name: "Manuscript",
         });
         const collab = createCollabDomain({
           ...testLinkDeps(db),

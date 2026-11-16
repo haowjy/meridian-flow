@@ -27,8 +27,13 @@ export type ApplyClick = {
   commandId: CommandId;
   /** Stable room identity; omitted only for a no-room creation reveal. */
   draftId?: string;
-  /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted only for a no-room creation reveal. */
+  /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted for a tree cut alone and a whole cut. */
   snapshot?: string;
+  /**
+   * Apply every group the server's replica of `draftId` holds on receipt (`ApplyTextCut`'s whole
+   * cut), with no snapshot and empty `groupIds` and `baseViewDelta`.
+   */
+  whole?: true;
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
   /**
@@ -76,6 +81,8 @@ export type ApplyClickResult =
       restored?: true;
       /** A frozen text cut committed, including a cut whose live update was already contained. */
       textEffect?: true;
+      /** Items whose whole cut found no text change on receipt: nothing of their text applied. */
+      skipped?: DraftItemKey[];
     }
   /** The branch's row is not the revision the click froze: nothing applied (design-v2 §4). */
   | { status: "changed"; commandId: CommandId }
@@ -116,14 +123,21 @@ export type UnapplyClickResult =
   | { status: "refused"; commandId: CommandId; reason?: "gone" | "superseded" };
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 
-/** The text cut of one document in an Apply: the writer's frozen click on its review room. */
-export type ApplyTextCut = {
-  draftId: string;
-  /** Base64 of Y.encodeSnapshotV2(room snapshot). */
-  snapshot: string;
-  baseViewDelta: ApplySpanPatch[];
-  groupIds: string[];
-};
+/**
+ * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
+ * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
+ * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
+ * is skipped, not refused.
+ */
+export type ApplyTextCut =
+  | {
+      draftId: string;
+      /** Base64 of Y.encodeSnapshotV2(room snapshot). */
+      snapshot: string;
+      baseViewDelta: ApplySpanPatch[];
+      groupIds: string[];
+    }
+  | { draftId: string; whole: true };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
@@ -278,8 +292,15 @@ export interface ThreadDraftListItem {
   /** `${branchId}:${documentId}`: the review identity for list rows, address, commands and queries. */
   itemKey: DraftItemKey;
   documentId: string;
+  /** The text draft's id, whose room the review opens; null when the item has no text draft. */
+  draftId: string | null;
   /** Whether the item has a text draft (an empty create or image may not). */
   hasDraft: boolean;
+  /**
+   * The text draft's changes against its review base, as the review groups them, counted by the
+   * server shortly after each write; 0 with no text draft.
+   */
+  textChanges: number;
   origin: "created" | "edited";
   /** Created and still hidden from the manuscript. */
   isNew: boolean;
@@ -290,10 +311,13 @@ export interface ThreadDraftListItem {
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   /**
-   * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
-   * Apply brings it back at its prior or next free leaf name before merging.
+   * Live has the document in Trash while the branch keeps it (a move, a rename or text the
+   * branch has in it), in any area: Apply brings it back, at its name or the next free leaf
+   * name, before merging. A document the branch deletes is never `deletedLive`.
    */
   deletedLive: boolean;
+  /** For `deletedLive`: where live last had it, the area it was deleted from. */
+  deletedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
   /**
    * The branch's move, delete or creation of the document, when it has one: what a tree cut
    * applies (`revision`, frozen into the click) and what the row says. `movedFrom` is where

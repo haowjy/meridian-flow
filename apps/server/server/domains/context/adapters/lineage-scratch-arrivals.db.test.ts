@@ -58,7 +58,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       projectId: p,
       rootThreadId: root,
       scope: "lineage",
-      name: "Scratch",
       slug: "scratch",
     });
     await db.insert(contextSources).values({
@@ -66,7 +65,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       projectId: p,
       chatThreadId: root,
       scope: "chat",
-      name: "Uploads",
       slug: "uploads",
     });
     await treeSeeder(db).file(

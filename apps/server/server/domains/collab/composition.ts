@@ -209,6 +209,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       journal: persistence.journal,
     },
     workProjection: deps.workProjectionMutation,
+    treeLists: deps.treeLists,
     branches: workBranches,
     ...(deps.eventSink
       ? {

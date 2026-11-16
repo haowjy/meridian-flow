@@ -40,8 +40,10 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
+  sqlState,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
+import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import {
   type BranchHolder,
   branchMayHold,
@@ -80,6 +82,7 @@ import {
   readDraftAt,
   selectDraft,
 } from "./drizzle-draft-storage.js";
+import { writeTextAnswer } from "./drizzle-text-answer.js";
 
 export type RewriteCommitted = {
   draftId: string;
@@ -164,9 +167,11 @@ export function createDrizzleDraftStore(
     onRewriteCommitted?: (detail: RewriteCommitted) => void;
     /** An `appendRows` committed: its wait for the row lock and its hold to `COMMIT`. */
     onAppendSequenced?: (detail: AppendCommitted) => void;
+    /** Lists' rows read whether a draft holds text: a judgement that flips it resyncs them. */
+    treeLists: Pick<TreeListStore, "lock" | "resync">;
   },
 ): ApplicationDraftStore {
-  const { live, workProjection, branches, onRewriteCommitted, onAppendSequenced } = deps;
+  const { live, workProjection, branches, onRewriteCommitted, onAppendSequenced, treeLists } = deps;
   /** The owner of the thread's drafts: its primary Work, or its lineage when that is No Work. */
   async function findPrimaryOwner(threadId: ThreadId): Promise<DraftOwner> {
     const [row] = await currentDrizzleDb(db)
@@ -440,6 +445,8 @@ export function createDrizzleDraftStore(
         });
         if (!finalized) throw new Error(`Draft ${input.draftId} append was not finalized`);
         await recordAppendReceipts(tx, input, finalized, committed.rowIds);
+        if (await chatJoinedDraft(tx, input.draftId, finalized.rows, committed.rowIds))
+          workProjection.draftRowChanged(input.draftId);
         await testHook("draft.append.beforeCommit");
         if (onAppendSequenced) {
           const { lockedAt, rowIds } = committed;
@@ -480,19 +487,21 @@ export function createDrizzleDraftStore(
     draftId: string;
     revision: number;
     hasEffect: boolean;
+    textChanges: number;
     workId: WorkId | null;
     rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended"> {
     const write = async () => {
-      const [row] = await currentDrizzleDb(db)
-        .update(documentDrafts)
-        .set({ hasEffect: input.hasEffect, hasEffectRevision: input.revision })
-        .where(
-          and(eq(documentDrafts.id, input.draftId), eq(documentDrafts.revision, input.revision)),
-        )
-        .returning({ id: documentDrafts.id });
+      const written = await writeTextAnswer(db, treeLists, {
+        draftId: input.draftId,
+        revision: input.revision,
+        hasEffect: input.hasEffect,
+        hasEffectRevision: input.revision,
+        textChanges: input.textChanges,
+      });
       // The judgement no longer holds: the Work is not touched for it.
-      if (!row) throw new DraftWriteRollback({ status: "moved" });
+      if (!written) throw new DraftWriteRollback({ status: "moved" });
+      if (written.textChangesMoved) workProjection.draftRowChanged(input.draftId);
     };
     const { workId, rootThreadId } = input;
     try {
@@ -749,15 +758,32 @@ function isRewriteOutcome(outcome: DraftWriteRollback["outcome"]): outcome is Re
   return !["contained", "prefixMissing", "refused"].includes(outcome.status);
 }
 
-/** The PostgreSQL SQLSTATE of `cause` or of an error it wraps (Drizzle wraps in `cause`). */
-function sqlState(cause: unknown): string | null {
-  let current: unknown = cause;
-  while (current) {
-    const code = (current as { code?: unknown }).code;
-    if (typeof code === "string") return code;
-    current = (current as { cause?: unknown }).cause;
+/** Whether a chat's row in this append is its first in the draft: the draft's chats changed. */
+async function chatJoinedDraft(
+  db: Pick<Database, "select">,
+  draftId: string,
+  rows: readonly AppendDraftJournalInput[],
+  rowIds: readonly number[],
+): Promise<boolean> {
+  const first = Math.min(...rowIds);
+  const chats = new Set(
+    rows.flatMap((row) => (row.source !== "writer" && row.threadId ? [row.threadId] : [])),
+  );
+  for (const threadId of chats) {
+    const [earlier] = await db
+      .select({ id: draftWriteJournal.id })
+      .from(draftWriteJournal)
+      .where(
+        and(
+          eq(draftWriteJournal.draftId, draftId),
+          eq(draftWriteJournal.threadId, threadId),
+          lt(draftWriteJournal.id, first),
+        ),
+      )
+      .limit(1);
+    if (!earlier) return true;
   }
-  return null;
+  return false;
 }
 
 /** The receipts finalization captured, written with the row ids the append allocated. */

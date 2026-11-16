@@ -187,7 +187,7 @@ is a destination (`MenuArea.writable`: an ended Work's Scratch, by `useWorkSourc
 every tree on a deleted Work's Draft take none), so it is left off the top level and offers no
 Copy here or Move here; Copy to… from a row in it still works, opening at the project root.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
-position choices (it always adds, and its copy takes the next free name in the
+position choices (it always adds, and its copy is a twin of the row in the
 parent the row is already in), and it calls `copyRows` where Move… calls `moveRows`.
 `EntryDestinationPicker` mounts `useProjectMenuSource` and `DrillInMenu` only while open; closed rows keep only their stable row anchor. It starts inside
 the current parent for a new move or copy (at the project's root when no area is given). A retry opens at the refused destination
@@ -207,12 +207,16 @@ different areas remain distinct destinations.
 Move… and dragging share every step. Refusal is judged by identity from the trees the list
 shows (`moveRefusal` in `entry-drag/move-plan.ts`: a folder over itself or its own subtree, a row
 already in the parent), so the picker and a hover agree even while a peer moves rows. A ready
-plan contains rows with their `TreeDestination` (`{ parentId, index? }`, the folder's id or the
-source's id at the top); hover prediction and `moveRows` consume those rows without resolving the
-destination again. `moveRows` (`entry-drag/execute-move.ts`) appends one `move` record per row to the
-list that holds the row (`TreeActions.move`) and returns which rows moved and which no list could
-take. A move sends no name and keeps the row's: beside a sibling of that name it is a twin. A positional destination (an edge drop, the picker's
-"Change position") is an index among the destination's children without the carried rows, so a
+plan holds its rows and one `TreeDestination` (`{ parentId, position? }`, the folder's id or the
+source's id at the top); hover prediction and `moveRows` consume it without resolving the
+destination again. `moveRows` (`entry-drag/execute-move.ts`) appends the rows' `move` records as
+one gesture to the destination's list (`TreeActions.moveAll`) and returns the rows it moved. A
+move sends no name and keeps the row's: beside a sibling of that name it is a twin. A positional
+destination (an edge drop, the picker's "Change position", a Trash row dragged to an edge) names
+a sibling by id, or the top or bottom, never an index: `TreeWriter.moveAll` lands the first row
+there and each next one right after the one before it, so several rows arrive together in screen
+order wherever they started (the AI's `move` of several paths places through the same call, after
+the same `outermost` rule: a path inside a folder it also names moves with that folder), and a
 same-parent placement is a reorder rather than "already there". A move between the account's files
 and a project is not a record the browser can append to two lists; the drop offers Copy there.
 Copy stays a server route: `copyRows` (`entry-drag/execute-copy.ts`) mints the copies' ids and the
@@ -280,17 +284,27 @@ when the drop will ask, see below), refuse ("Can't go inside
 itself", a folder over its own subtree), or nothing (the row is already there, the target is a
 navigation-only folder, or the selection holds a row that can't move or has gone). A taken name
 never refuses and is never warned about: each row keeps its name, a twin beside a sibling of that
-name. A drop moves every carried row through
-`moveRows` (`entry-drag/execute-move.ts`), reselects them and reveals the destination (the target's
-own `reveal`, the same one the spring calls). The tree is the whole report of a move that works.
+name. A drop moves every carried row through `moveRows` (`entry-drag/execute-move.ts`) and shows
+where they landed (`revealPlaced`, below). The tree is the whole report of a move that works.
 A row no list will take (read-only, not open) toasts "Couldn't move chapter-3 to Act 2."
 ("Couldn't move 3 items to Act 2." for several) with Retry for the rows it refused. The server
 refuses no move; one into a Work that closed meanwhile bounces on its row ("Not moved").
 
-Move… and Copy to… report the same way, whether or not a list is mounted. A desktop list
-selects the moved row; the phone browser needs no selection or drop scope. Move… does not reveal a
-collapsed destination (expansion belongs to each section); moving the open
-document reveals it through the active-document reveal.
+Everything that places rows shows them through one `revealPlaced` (`tree-reveal.ts`), called at
+once: Move…, Copy to… and row drops (through `runMove` and `runCopy`, `entry-drag/entry-failure.ts`),
+a Trash restore drop, and an import (dropped files, or Import… on a folder). The sidebar shows the
+source that shows the destination folder, that tree opens the folder and the folders above it, and
+the placed rows are selected and take focus as they arrive. A Copy knows its copies' ids before the
+server answers (the browser mints them), so it selects them without waiting; a refused Copy leaves
+the selection and toasts, with Retry unless the refusal is final (the Work closed, or the writer
+can't copy there). An import's rows get their ids from the server, so it selects nothing. Expansion
+stays each tree's: the request goes by folder id, and a tree that mounts just after it (the tab it
+switched to) still takes it.
+
+Which source shows an entry is one rule (`sourceShowing`, `SourcesBody.tsx`), used for main's
+document, a placement and a creation request: the source on screen when it lists the entry, else
+Agents for what it lists, else the entry's own tree. Agents and Your files both list `~/.agents/`,
+so a placement inside the pane on screen never switches it.
 
 Placement is optimistic, exactly as for Move…: the record shows at once, and the server never
 refuses it (a change to a Work that closed meanwhile bounces on its row). Verdicts likewise resolve each
@@ -409,8 +423,8 @@ already leaves a drag that starts inside it alone.
 
 Copy duplicates the carried rows into the destination and leaves the sources where
 they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
-copied, the one already in the destination's parent included (its copy takes the
-next free name), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
+copied, the one already in the destination's parent included (its copy is a
+twin), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
 server with its root: a tree row copies the live document, a draft title or receipt row the draft it
 shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
 of the document, and a Work with no draft of it refuses the Copy (it never reads live text). The copies are
@@ -444,7 +458,7 @@ several trees (Scratch and its earlier notes) resolves the right one. The
 scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one
 block. Hovering a
-closed folder or area for 600 ms reveals it, and so does an accepted drop on it. The phone shell has no drag.
+closed folder or area for 600 ms reveals it; what a drop places, its route shows (`revealPlaced`). The phone shell has no drag.
 
 A scope holds two routes: `entries` (rows dragged inside the app) and `files` (desktop files, imported
 into the target's folder; see the [import feature](../../../import/AGENTS.md)). The routes share the
@@ -459,7 +473,7 @@ appeared to accept but landed elsewhere would mislead.
 A Trash row starts its drag as source `trash` (`useEntryRow(entry, { active, source: "trash" })`), carrying
 the entry's node (a document or a folder, `trashRef`). The entries route recognises it before `resolveDrop`: `planRestore`
 (`entry-drag/restore-drop.ts`) judges the same targets (folder, area root, row edge) and a drop calls
-`restoreInto` on `DocumentTrashRestoreProvider`, which appends a `restore` record per entry and a
+`restoreInto` on `DocumentTrashRestoreProvider` and shows the rows like a move (`revealPlaced`). It appends a `restore` record per entry and a
 `move` to the destination as one gesture (`TreeActions.restore` with its destination), one Undo step.
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
 refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the

@@ -49,11 +49,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
     await db.insert(contextSources).values([
       {
         projectId,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       },
-      { workId, name: "Scratch", slug: "scratch", scope: "work" },
+      { workId, slug: "scratch", scope: "work" },
     ]);
     const chatId = randomUUID();
     await db.insert(threads).values({

@@ -16,7 +16,7 @@
     "@meridian/prosemirror-schema": "workspace:*",
     "@meridian/thread-client": "workspace:*",
     "@meridian/tree-list-sync": "workspace:*",
-    "ws": "^8.21.0",
+    "ws": "^8.23.0",
     "yjs": "13.6.33"
   },
   "devDependencies": {

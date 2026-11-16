@@ -90,6 +90,7 @@ else
       const content = {
         composedSystemPrompt: "frozen prompt",
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
       };
       await repos.threads.bakeInitialPrompt(ids.threadId, {

@@ -105,14 +105,26 @@ reader for it (following replacement sessions even without a surface) and cancel
 close, so a newer draft under the same key can't inherit an old click. Retiring a
 session refuses only its draft's unsent clicks.
 
-`apply` synchronously freezes the `draftId`, Yjs snapshot, reviewed base blocks,
-selected ids, the result of applying those groups and one room-base-to-O delta. Its
-acknowledgement barrier waits for the server to acknowledge every local update in the
-cut before sending. The queue keeps its own `readDraftRoom` lease until terminal.
+`apply` with the draft's room ready in this tab synchronously freezes the `draftId`, Yjs
+snapshot, reviewed base blocks, selected ids, the result of applying those groups and one
+room-base-to-O delta. Its acknowledgement barrier waits for the server to acknowledge every
+local update in the cut before sending. The queue keeps its own `readDraftRoom` lease until
+terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
+sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
+draft holds on receipt. That click has no optimistic base and no room to record it (`frozenOn`
+is false), so it settles on the server's answer; its row hides until then, and the commands
+drop what it took from the cached list (`dropTaken`). An editor on the draft meanwhile leaves
+inline review (the item is `hidden`, `useReviewRoomOwner`) and its Apply waits on the pending
+command, so no frozen click can follow the whole cut onto the same changes. A draft with no
+change on receipt comes back in the answer's `skipped` (`CommandOutcome.skipped`): that item
+shows no Applied notice and joins no Undo step, and a command that applied nothing has neither.
+Changes holds no room: its rows, their "N text changes" (`textChanges`, counted by the server's
+draft-effect projection, which wakes the list's owner when the number moves) and Apply all read
+the list alone.
 
 An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
 so one Un-Apply takes it all back (`applyGroup`, `group-apply.ts`). Every document's click is
-frozen in the click's event turn and joins its own FIFO as a member sharing the command's id;
+made in the click's event turn and joins its own FIFO as a member sharing the command's id;
 the member's send hands its click to the group, and the group posts `ApplyItemsClick` once
 every member reached its queue's head, so each text cut lands after that document's earlier
 clicks. A member that ends unsent (closed draft, unread room) is left out; a drop before the
@@ -121,7 +133,9 @@ under `folderKey(branchId, folderId)`, so a folder-only command has the same pen
 and unknown-delivery states, shown on the folder row with Retry, as a document's. Its cut is the
 list response's `folders[].revision`, read once when the command first goes, so a resend
 carries the same body; folders lead the items. Every member's queue settles from the one answer,
-`conflict` included; groups are enqueued in item order in one turn, so two groups never wait on
+`conflict` included, and the group's answer, which makes the Undo step and the notice, is the
+first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (a queue
+refuses an unsent click itself, under the group's id, and that refusal is not the command's); groups are enqueued in item order in one turn, so two groups never wait on
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
 
@@ -141,7 +155,11 @@ The account owner keeps the answer's `restored` and `renamed` facts, so an edito
 keeps its result after navigation.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
-Retry. Transient disconnects keep acknowledgement barriers pending. Each click has two
+Retry. A timeout is not one of those failures: the Apply and Un-Apply requests
+(`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
+server answers `running`, so a large Apply stays `Applying` until its answer instead of
+stalling. Changes shows one "Applying" line while rows are hidden by an Apply in flight, and
+hides a folder whose own cut is in flight once nothing under it is listed. Transient disconnects keep acknowledgement barriers pending. Each click has two
 independent duties:
 
 - *Release* (the head leaves the FIFO and its optimistic contribution ends) happens once:
@@ -317,9 +335,27 @@ fact. For `gone`, the owner resolves the exact document through the availability
 available goes to its current live URI, deleted uses the removal flow, and failed reads
 never prove closure. It keeps an open room during that lookup for unsent-text recovery.
 
-The metadata GET returns the stable draft id and room name, or authoritative `gone`; list
-item keys can't supply room identity. The route keeps this read above editor address
+A draft's metadata is its row in the owner's list when the list holds it: each row carries
+its `draftId`, and the room name follows from it, so a review of 200 drafts reads one list,
+not 200 addresses (`useDraftMetadata`). The list read is stamped with when it started
+(`readAt`), the time its rows speak for, as an addressed read is. A listed answer is stored
+as the draft's own answer, so a surface that mounts after the list drops the row still finds
+its room, and it reports the list's re-read as its own fetch: when the Work's tree drops a
+discarded document before the list answers, the review waits instead of calling the draft
+unavailable; a failed re-read shows as an error with Retry. A draft the list doesn't hold (an empty draft, or one it dropped) reads its
+address, and an answer older than the list that dropped it counts as being read again: the metadata GET returns the
+stable draft id and room name, or authoritative `gone`, which is how an open review learns
+its draft ended once the list drops the row. The route keeps this read above editor address
 admission, so catalog invalidation can't strand a review after unmounting its room readers.
+
+Each room's authorship evidence (`room-attribution.ts`) goes in one request per owner
+(`POST /drafts/provenance`): one is in flight at a time, and the rooms that ask meanwhile go
+together in the next, at most `DRAFTS_PROVENANCE_MAX` drafts a request, so the reads stay a
+handful whatever the row count, and the server captures every named draft with one query per
+kind of fact. A failed read leaves every room in it without evidence (text stays, no byline);
+each asks again on its next change or reconnect. The old one-room route
+(`…/documents/:documentId/draft/provenance`) answers protocol-3 tabs until they reload; it goes
+in the release after this one (#1677).
 
 ## Tree lines
 
@@ -336,6 +372,26 @@ An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack 
 (`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
 command's id, and a refusal (`gone`, `superseded`: something changed since) is a skipped step
 with its notice. A band's Apply has its editor's Undo instead.
+
+Either Apply also enters the Undo history of every live session this tab holds for its
+documents (`registry.liveHistory`: a shown editor or an open tab), so Ctrl+Z there takes the
+Apply back instead of the writer's typing under it. One entry spans those histories
+(`SharedApply`, `apply-history.ts`) for as long as the Apply is in force: Ctrl+Z in any of them
+takes back the whole Apply once, and the others hide it. Whenever it comes back into force (a
+Redo, an Un-Apply that failed or was refused), every history shows it again at its place, under
+what was typed after the Apply and with its Redo kept, and a live history that never had it (a
+session opened since) gets it on top. A sidebar or strip Apply's entry is the
+step's (`AppliedEntry`): its Ctrl+Z is the step's Un-Apply, its Redo sends the same Apply again
+as a new command whose step the entry follows, and an Un-Apply from the sidebar or a notice hides
+it in every history until it answers: `unapplied` or `skipped` ends it, `failed` brings it
+back. A band's entry (`BandApply`) is its item queue's Un-Apply and Redo while the review's room
+shows the draft, so the review shows them at once. The review letting go of the room (Draft view
+to Live) doesn't end it, since the Apply is still in force: the queue settles an Un-Apply only by
+watching that room, so the entry leaves the queue, with the click it froze, and sends its
+Un-Apply and Redo itself, settled by the server's answer alone. Either way an Un-Apply refused,
+or one that reversed nothing, ends it, a lost answer brings it back, and the draft ending
+(`finishClose`) ends it without asking. Otherwise it lasts until sign-out, when the account's
+owner closes.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

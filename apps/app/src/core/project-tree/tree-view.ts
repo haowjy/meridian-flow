@@ -4,8 +4,13 @@
  * replay everywhere, so a rename, a move or a delete shows in the tree, the tabs, the identity
  * bar and the pickers at once.
  */
-import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
+  type CanonicalContextAuthority,
+  CONTEXT_URI_SCHEME_NAMES,
+  canonicalContextUri,
+} from "@meridian/contracts";
+import {
+  type ContextSiblingPosition,
   type ContextSource,
   canonicalLeaf,
   childAtSegment,
@@ -30,8 +35,8 @@ import {
 export type TreeDestination = Readonly<{
   /** A folder's id, or the id of a source (the top of its tree). */
   parentId: string;
-  /** Where among the siblings, when the writer chose a place. */
-  index?: number;
+  /** Where among its children, when the writer chose a place; the end otherwise. */
+  position?: ContextSiblingPosition;
 }>;
 
 type TreeFileBase = {
@@ -101,16 +106,6 @@ export function twinSuffix(path: string): string | undefined {
   return leaf ? readSegment(leaf).suffix : undefined;
 }
 
-const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
-  manuscript: "Manuscript",
-  kb: "Knowledge",
-  user: "User Files",
-  unfiled: "Unfiled",
-  scratch: "Scratch",
-  uploads: "Uploads",
-  agents: ".agents",
-};
-
 function extensionOf(node: TreeNode): string {
   if (node.kind === "folder") return "";
   const dot = node.name.lastIndexOf(".");
@@ -166,7 +161,7 @@ export function buildTreeView(input: {
     kind: "dir",
     entryId: sourceId,
     parentId: null,
-    name: ROOT_NAMES[scheme],
+    name: CONTEXT_URI_SCHEME_NAMES[scheme],
     path: "/",
     uri: uriOf(""),
   };

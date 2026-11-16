@@ -145,7 +145,6 @@ export const contextSources = pgTable(
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
     // A chat (primary thread) owns its uploads source; same no-FK rule as `root_thread_id`.
     chatThreadId: uuid("chat_thread_id").$type<ThreadId>(),
-    name: text("name").notNull(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
     description: text("description"),

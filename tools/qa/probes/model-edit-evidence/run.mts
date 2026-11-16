@@ -67,13 +67,17 @@ const cases: ModelEditCase[] = [
     expected:
       "the refusal changed nothing; what its answer showed is recorded after its block is stored",
     async run({ h, start }) {
-      const { thread, path } = await seedCase(h, "refused-frontier", "direct");
+      const { thread } = await seedCase(h, "refused-frontier", "direct");
       const child = await start();
-      // The path is taken by the seed document and `overwrite` is not given.
+      // Nothing stands at the path, so the delete is refused; a taken name never refuses.
       await child.script([
         {
           toolCalls: [
-            { id: "call-1", name: "write", args: { command: "create", path, content: "Other." } },
+            {
+              id: "call-1",
+              name: "write",
+              args: { command: "delete", path: "manuscript://refused-frontier-missing" },
+            },
           ],
         },
         reply,

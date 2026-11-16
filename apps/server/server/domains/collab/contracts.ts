@@ -517,6 +517,8 @@ export type DraftReviewApi = {
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
+  /** `lookupCommand` for a resend: waits a while on a first request still running under the id. */
+  awaitCommand(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
   discardItem(input: {
     item: DraftReviewItem;
     /** What ends, and the text draft the writer saw (`DraftDiscardRequest`). */

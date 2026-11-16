@@ -41,13 +41,10 @@ export type PlacedEntry = {
   entry: TreeEntry;
 };
 
-/** One row ready to move: its current parent and where it goes. */
+/** One row ready to move: its current parent. */
 export type MoveRow = {
   entry: EntryRef;
   from: string;
-  to: TreeDestination;
-  /** The area it lands in; names the list that takes the record. */
-  area: MoveArea;
 };
 
 export type MovePlan =
@@ -59,6 +56,10 @@ export type MovePlan =
       destinationName: string;
       /** The sibling an edge drop lands beside, by name, for the hint. */
       beside?: { kind: "before" | "after"; name: string };
+      /** Where the rows land, together and in order. */
+      to: TreeDestination;
+      /** The area they land in; names the list that takes the records. */
+      area: MoveArea;
       moves: readonly MoveRow[];
     };
 
@@ -243,20 +244,11 @@ export function planMove(resolved: ResolvedDrop | null): MovePlan {
   if (!resolved.canMove || resolved.unavailable.length > 0 || resolved.crossesLists) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(sources, resolved, position);
-  // Rows already there stay put; a taken name does not prevent a move.
-  const moves = sources.flatMap((source) =>
-    source.parentId === into
-      ? []
-      : [
-          {
-            entry: source.ref,
-            from: source.parentId,
-            to: { parentId: into },
-            area,
-          },
-        ],
-  );
-  return moves.length === 0 ? NONE : { kind: "ready", destinationName, moves };
+  // Rows already there stay put; a taken name never refuses a move: twins are made.
+  const moves = sources.flatMap((source) => (source.parentId === into ? [] : [moveRowOf(source)]));
+  return moves.length === 0
+    ? NONE
+    : { kind: "ready", destinationName, to: { parentId: into }, area, moves };
 }
 
 /** One row a Copy duplicates: the row as it is named now, where it is read from, and the view it reads. */
@@ -321,25 +313,10 @@ export function planCopy(resolved: ResolvedDrop | null): CopyPlan {
 
 const NONE_COPY: CopyPlan = { kind: "none" };
 
-/** Where among `into`'s children (without `carried`) an edge position falls, or null when its anchor is gone. */
-export function indexAt(
-  area: MoveArea,
-  into: string,
-  position: ContextSiblingPosition,
-  carried: ReadonlySet<string>,
-): number | null {
-  if (!("siblingId" in position)) return null;
-  const rest = area.tree
-    .children(into)
-    .filter((entry) => !carried.has(entry.entryId))
-    .map((entry) => entry.entryId);
-  const at = rest.indexOf(position.siblingId);
-  return at < 0 ? null : at + (position.kind === "after" ? 1 : 0);
-}
+const moveRowOf = (source: PlacedEntry): MoveRow => ({ entry: source.ref, from: source.parentId });
 
 /**
  * An edge drop: the carried rows land together, in screen order, beside the anchor in `into`.
- * The first takes the edge's index and each next one follows it, so "after" keeps their order.
  * Neighbours come from the parent's complete sibling sequence, not the rows a search leaves on
  * screen. Nothing happens when the anchor is itself carried or when every row would end where
  * it already is.
@@ -353,11 +330,11 @@ function planPositioned(
   const carried = new Set(sources.map((source) => source.ref.id));
   const siblings = area.tree.children(into);
   const anchor = siblings.find((entry) => entry.entryId === position.siblingId);
-  const at = indexAt(area, into, position, carried);
-  if (!anchor || carried.has(anchor.entryId) || at === null) return NONE;
+  if (!anchor || carried.has(anchor.entryId)) return NONE;
   if (sources.every((source) => source.parentId === into)) {
     const current = siblings.map((entry) => entry.entryId);
     const rest = current.filter((id) => !carried.has(id));
+    const at = rest.indexOf(anchor.entryId) + (position.kind === "after" ? 1 : 0);
     const next = [
       ...rest.slice(0, at),
       ...sources.map((source) => source.ref.id),
@@ -365,16 +342,12 @@ function planPositioned(
     ];
     if (next.every((id, index) => id === current[index])) return NONE;
   }
-  const moves = sources.map((source, index) => ({
-    entry: source.ref,
-    from: source.parentId,
-    to: { parentId: into, index: at + index },
-    area,
-  }));
   return {
     kind: "ready",
     destinationName,
     beside: { kind: position.kind, name: anchor.name },
-    moves,
+    to: { parentId: into, position },
+    area,
+    moves: sources.map(moveRowOf),
   };
 }

@@ -3,6 +3,7 @@ import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
 import type { DraftRoomRef } from "./draft-room-pool";
+import type { DocumentHistory } from "./editor-history";
 
 export type RetainedLiveDocumentReference = Readonly<{
   projectId: ProjectId;
@@ -60,6 +61,11 @@ export interface LiveDocumentSessionRegistry {
   /** Calls `observer` with the documents this browser holds a copy of for the account, open or not, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
+  /**
+   * The writer's Undo of the document's live session in this tab, shown or kept for an open tab;
+   * null when the tab holds none.
+   */
+  liveHistory(documentId: DocumentId): DocumentHistory | null;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,

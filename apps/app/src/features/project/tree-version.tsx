@@ -15,6 +15,7 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo } from 
 import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
+import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import {
   draftTreeVersion,
@@ -24,7 +25,6 @@ import {
 } from "@/core/project-tree/tree-version";
 import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
-import { workDisplayName } from "@/lib/work-name";
 import { useAccountId } from "./context/account-feature-context";
 import { useScopeDraftOwner } from "./use-work-scope";
 
@@ -37,7 +37,9 @@ export type ShellTreeVersion = {
   offered: boolean;
   /** Whose drafts the toggle shows. */
   ownerKey: string;
-  /** The Work's name, for the words on a page; null for a chat's own drafts. */
+  /** The Work whose drafts these are, for `WorkName`; null for a chat's own drafts. */
+  work: Work | null;
+  /** The Work's name (`nameOf`), for the words on a page; null for a chat's own drafts. */
   name: string | null;
   /** The documents and folders the Work changes: marked in the tree on Live. Never a count. */
   changed: ReadonlySet<string>;
@@ -142,7 +144,9 @@ export function TreeVersionProvider({
     [accountId, projectId],
   );
 
-  const name = work && !work.isNoWork ? workDisplayName(work) : null;
+  const { nameOf } = useWorks(projectId);
+  const named = work && !work.isNoWork ? work : null;
+  const name = named ? nameOf(named) : null;
   const state = useMemo<ShellTreeVersion>(
     () => ({
       version,
@@ -150,6 +154,7 @@ export function TreeVersionProvider({
       showing,
       offered,
       ownerKey,
+      work: named,
       name,
       changed,
       changeCount,
@@ -163,6 +168,7 @@ export function TreeVersionProvider({
       showing,
       offered,
       ownerKey,
+      named,
       name,
       changed,
       changeCount,

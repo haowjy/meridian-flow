@@ -20,7 +20,6 @@ export function createDrizzleContextSources(db: Database): ContextSources {
     const rows = await currentDrizzleDb(db)
       .select({
         id: contextSources.id,
-        name: contextSources.name,
         slug: contextSources.slug,
         workId: contextSources.workId,
         workHandle: works.handle,
@@ -54,7 +53,6 @@ export function createDrizzleContextSources(db: Database): ContextSources {
       return {
         id: row.id as ContextSourceId,
         scheme,
-        name: row.name,
         owner,
         authority: sourceAuthority(
           scheme,

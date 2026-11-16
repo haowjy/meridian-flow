@@ -97,7 +97,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.insert(contextSources).values({
           id: SOURCE_ID,
           projectId: PROJECT_ID,
-          name: "Manuscript",
           slug: "manuscript",
           scope: "project",
         });
@@ -126,8 +125,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     let db = database.current;
     let livePersistence = createDrizzleCollabPersistence(db);
     function createDraftStore() {
+      const removalDeps = createTestRemovalDeps(db);
       return createDrizzleDraftStore(db, {
-        close: createTestRemovalDeps(db).draftClose,
+        close: removalDeps.draftClose,
+        treeLists: removalDeps.treeLists,
         workProjection: createTestWorkProjectionMutation(db),
         live: { journal: livePersistence.journal },
         branches: createDrizzleBranchStore(db),
@@ -204,8 +205,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         pendingCounts: createDrizzleWorkBranchPendingStore(db),
         draftOwnerHints: { publishDraftOwnerHints: () => {} },
       });
+      const removalDeps = createTestRemovalDeps(db);
       const measuredStore = createDrizzleDraftStore(db, {
-        close: createTestRemovalDeps(db).draftClose,
+        close: removalDeps.draftClose,
+        treeLists: removalDeps.treeLists,
         live: { journal: livePersistence.journal },
         workProjection: projection,
         branches: createDrizzleBranchStore(db),

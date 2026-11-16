@@ -25,6 +25,11 @@ function isFinalApplyRefusal(
   return ["closed", "refused", "needs_restore", "changed"].includes(answer.status);
 }
 
+/** A click frozen on `draftId`'s room: the room folds it into its base until it records it. */
+export function frozenOn(command: { body: ApplyClick }, draftId: string): boolean {
+  return command.body.snapshot !== undefined && command.body.draftId === draftId;
+}
+
 export type ApplyClickLanded = { status: "landed"; commandId: string };
 export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
 export type UnapplyClickOutcome = UnapplyClickResult | { status: "cancelled" };
@@ -61,8 +66,14 @@ export type UnapplyCommand = {
 type Command = ApplyCommand | UnapplyCommand;
 
 export type ApplyCommandHandle = {
-  undo(): void;
+  /** Resolves false when the Un-Apply was refused, and the Apply stands. */
+  undo(): Promise<boolean>;
   redo(): void;
+  /**
+   * Once nothing is outstanding: the Apply an Un-Apply takes back, and the click a Redo sends
+   * again (a new command id to fill).
+   */
+  replay(): { applyCommandId: string; again: ApplyClick };
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
   current: ApplyCommand;
@@ -142,7 +153,7 @@ export class ApplyClickQueue {
         handle.pendingReplay = null;
         if (this.cancel(handle.current.body.commandId)) {
           handle.reversal = Promise.resolve({ status: "cancelled" });
-          return;
+          return Promise.resolve(true);
         }
         handle.replaySelection = [...handle.current.body.groupIds];
         const inverse = this.queueUnapply({
@@ -166,9 +177,10 @@ export class ApplyClickQueue {
           },
         });
         handle.reversal = inverse.outcome;
-        void inverse.outcome.then((answer) => {
-          if (answer.status !== "unapplied" && answer.status !== "cancelled")
-            input.unapplyRefused(answer);
+        return inverse.outcome.then((answer) => {
+          const happened = answer.status === "unapplied" || answer.status === "cancelled";
+          if (!happened) input.unapplyRefused(answer);
+          return happened;
         });
       },
       redo: () => {
@@ -195,6 +207,10 @@ export class ApplyClickQueue {
           if (!landedText(answer) && answer.status !== "cancelled") input.applyRefused(answer);
         });
       },
+      replay: () => ({
+        applyCommandId: handle.current.body.commandId,
+        again: { ...handle.current.body, groupIds: [...handle.replaySelection], tree: undefined },
+      }),
     };
 
     return {
@@ -216,7 +232,7 @@ export class ApplyClickQueue {
     let projected = base;
     for (const command of this.commands) {
       if (command.kind === "apply") {
-        if (command.body.draftId === draftId && !this.isRecorded(command))
+        if (frozenOn(command, draftId) && !this.isRecorded(command))
           projected = fold(projected, command.optimistic, command.patched);
       } else if (command.draftId === draftId) {
         projected = fold(projected, command.patched, command.optimistic);
@@ -317,7 +333,7 @@ export class ApplyClickQueue {
   }
 
   refuseUnsent(draftId: string): void {
-    for (const command of this.clicks.filter((click) => click.body.draftId === draftId))
+    for (const command of this.clicks.filter((click) => frozenOn(click, draftId)))
       this.refuse(command);
   }
 
@@ -417,7 +433,8 @@ export class ApplyClickQueue {
       return;
     }
     if (answer?.status === "applied") {
-      if (!command.body.draftId || command.closed || this.isRecorded(command))
+      // A frozen click settles once its room records it; one cut on receipt has no room to.
+      if (!command.body.snapshot || command.closed || this.isRecorded(command))
         this.settle(command, answer);
       return;
     }

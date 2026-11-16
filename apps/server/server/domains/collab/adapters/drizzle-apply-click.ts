@@ -26,23 +26,32 @@ import {
 import type { InversePart, JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
 import { computeInverse } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
+import { type DocumentId, type DraftItemKey, draftItemKey, type UserId } from "@meridian/contracts";
 import type { ApplyClickResult, UnapplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import { applyCommandEffects, branches, documentDrafts } from "@meridian/database/schema";
+import {
+  applyCommandEffects,
+  branches,
+  documentDrafts,
+  treeNodes,
+} from "@meridian/database/schema";
 import { appliedCreates, undoApply } from "@meridian/project-tree";
 import {
   allocateDocumentClient,
   buildDocumentSchema,
   PROSEMIRROR_FRAGMENT_NAME,
 } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import { type TreeListStore, TreeRefusal } from "../../context/ports/tree-list-store.js";
+import {
+  type TreeList,
+  type TreeListStore,
+  TreeRefusal,
+} from "../../context/ports/tree-list-store.js";
 import type { TreeReader } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
@@ -61,11 +70,12 @@ import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coor
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { createApplyTreeOperations, textWrittenSince } from "./drizzle-apply-tree.js";
-import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { treeListOfNode, treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { branchRowRevisions } from "./drizzle-branch-tree-state.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+import { writeTextAnswer } from "./drizzle-text-answer.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
 import { asLifecycleRefusal } from "./lifecycle-refusal.js";
 
@@ -90,7 +100,7 @@ export function createDrizzleApplyClick(
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     arrivals?: Pick<DocumentArrivals, "settle">;
-    treeLists: Pick<TreeListStore, "lock" | "read" | "submit">;
+    treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
     tree: Pick<TreeReader, "identityStatus">;
     branchTree: BranchTreeStateReader;
     close: Pick<DraftClose, "closeDrafts">;
@@ -311,7 +321,28 @@ export function createDrizzleApplyClick(
                   return tree ? [{ list, tree }] : [];
                 });
                 const lists = pairs.map(({ list }) => list);
-                await deps.treeLists.lock(lists);
+                // A text answer written under the document keys resyncs the list of a document
+                // in Trash, so that list's key is taken here too.
+                const trashed = prepared.texts.length
+                  ? await tx
+                      .select({ id: treeNodes.id })
+                      .from(treeNodes)
+                      .where(
+                        and(
+                          inArray(
+                            treeNodes.id,
+                            prepared.texts.map((text) => text.documentId),
+                          ),
+                          isNotNull(treeNodes.trashRecord),
+                        ),
+                      )
+                  : [];
+                const trashedLists: TreeList[] = [];
+                for (const { id } of trashed) {
+                  const list = await treeListOfNode(db, id);
+                  if (list) trashedLists.push(list);
+                }
+                await deps.treeLists.lock([...lists, ...trashedLists]);
                 const created = lists.length
                   ? await deps.treeLists.read({
                       lists,
@@ -510,6 +541,14 @@ export function createDrizzleApplyClick(
                   } finally {
                     write.dispose();
                   }
+                  // The take-back puts the draft's text back, so its row is right at this commit.
+                  // Its watermark stays stale: the projection judges it again.
+                  await writeTextAnswer(db, deps.treeLists, {
+                    draftId: currentBase.snapshot.draftId,
+                    hasEffect: true,
+                    hasEffectRevision: -1,
+                    listsHeld: true,
+                  });
                   deps.merged({ commandId, kind: "unapply", ...unapplyMerged });
                   await tx
                     .update(applyCommandEffects)
@@ -608,8 +647,13 @@ export function createDrizzleApplyClick(
                   let ordinal = 0;
                   let overrode = 0;
                   let textEffect = false;
+                  const skipped: DraftItemKey[] = [];
                   for (const item of [...items].sort((a, b) => a.node.localeCompare(b.node))) {
                     if (!item.text || reviewItems.get(item.node)?.change === "deleting") continue;
+                    if (item.text.click.groups.length === 0) {
+                      skipped.push(draftItemKey(branchId, item.node as DocumentId));
+                      continue;
+                    }
                     const wrote = await applyText(
                       command,
                       item.node as DocumentId,
@@ -628,6 +672,7 @@ export function createDrizzleApplyClick(
                     commandId,
                     applied,
                     ...(textEffect ? { textEffect: true as const } : {}),
+                    ...(skipped.length ? { skipped } : {}),
                     ...(overrode ? { overrode } : {}),
                     ...(outcome.restored ? { restored: true as const } : {}),
                   };

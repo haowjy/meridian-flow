@@ -47,18 +47,8 @@ export function moveInScope(
   }
   const node = writer.view(view).nodes.get(nodeId);
   if (!node) throw new Error(`No node ${nodeId} to move`);
-  const siblings = childrenOf(writer.view(view), parent).filter((child) => child.id !== nodeId);
-  const anchor =
-    position && "siblingId" in position
-      ? siblings.findIndex((child) => child.id === position.siblingId)
-      : -1;
-  const index =
-    position?.kind === "start"
-      ? 0
-      : anchor >= 0
-        ? anchor + (position?.kind === "after" ? 1 : 0)
-        : siblings.length;
-  if (parent !== node.parent || position) writer.move(view, actor, nodeId, parent, index);
+  if (parent !== node.parent || position)
+    writer.moveAll(view, actor, [nodeId], parent, position ?? { kind: "end" });
   if (leaf !== undefined) {
     const dot = node.name.lastIndexOf(".");
     const parsed =

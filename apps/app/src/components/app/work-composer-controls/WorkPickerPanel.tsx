@@ -11,6 +11,7 @@ import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { LoaderCircle } from "lucide-react";
 import type { RefObject } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { WorkName } from "@/components/app/WorkName";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
 
@@ -59,7 +60,9 @@ export function deriveWorkPickerViewModel(
       ? catalog.works.filter(
           (work) =>
             !isWorkArchived(work) &&
-            `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
+            `${work.name} ${work.handle ?? ""} ${work.goal ?? ""}`
+              .toLocaleLowerCase()
+              .includes(needle),
         )
       : [];
   const rows = {
@@ -183,7 +186,7 @@ export function WorkPickerPanel({
                       undefined
                     }
                     onOpen={() => onChoose(work)}
-                    title={work.name}
+                    title={<WorkName work={work} />}
                     detail={changing ? <Trans>Changing work</Trans> : work.goal}
                     trailing={
                       <>

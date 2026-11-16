@@ -262,7 +262,11 @@ identity in anchors or holds.
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
-  boundary while skipping native no-ops. Undo gives back the text or cell range a change
+  boundary while skipping native no-ops. An Apply's undo resolves whether it
+  happened; when it didn't (a refused or failed Un-Apply), the entry goes back to
+  the undo side at its place, unless it was redone or cleared since. An owner can
+  also hide an Apply entry (out of both sides) and show it again, back on the undo
+  side at its place with the redo side left alone. Undo gives back the text or cell range a change
   started from (a drag, a cut, typing over a selection), captured by
   `editor-history.ts` on `beforeTransaction` and carried through the stack items
   that UndoManager generates. It is never read from y-tiptap's copy, which a
@@ -275,7 +279,9 @@ identity in anchors or holds.
   history lasts as long as the session, so a tab's undo survives its editor (the patched
   y-tiptap undo plugin neither destroys a manager it didn't create nor leaves its
   listeners on it). Only edits written through an editor are tracked, so Ctrl+Z reverts
-  the writer's own and leaves peer and model edits alone. Reload resets it. The side, Work, tree-only Apply, and title changes never enter it.
+  the writer's own and leaves peer and model edits alone. Reload resets it. A text Apply enters it as one entry, from any surface, while the
+  session lives (`features/draft-review/.context/draft-review.md`); a Discard from the side, Work, tree-only Apply, and
+  title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

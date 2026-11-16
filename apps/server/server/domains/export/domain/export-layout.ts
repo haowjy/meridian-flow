@@ -1,5 +1,9 @@
 /** Portable, case-insensitive ZIP paths with one reservation space for files and folders. */
-import { DEFAULT_EXPORT_AREA_NAMES, type ProjectExportOptions } from "@meridian/contracts";
+import {
+  CONTEXT_URI_SCHEME_NAMES,
+  DEFAULT_EXPORT_AREA_NAMES,
+  type ProjectExportOptions,
+} from "@meridian/contracts";
 import { readSegment } from "@meridian/contracts/protocol";
 import type { ExportDocument, ExportSourceRoot } from "../ports/export-snapshot.js";
 export function portableName(name: string): string {
@@ -47,11 +51,7 @@ export function buildExportLayout(
       const work = source.workId
         ? folder(`work:${source.workId}`, "Works", source.workName ?? "Work")
         : "Works/No Work";
-      parent = folder(
-        `${work}:${source.scheme}`,
-        work,
-        source.scheme === "scratch" ? "Scratch" : "Uploads",
-      );
+      parent = folder(`${work}:${source.scheme}`, work, CONTEXT_URI_SCHEME_NAMES[source.scheme]);
       if (source.scheme === "scratch" && !source.workId)
         parent = folder(`chat:${source.rootThreadId}`, parent, source.chatTitle || "Untitled chat");
     } else {

@@ -72,7 +72,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { FolderMenuContext } from "@/features/project/context/FolderMenu";
 import { useChatNavigation } from "@/features/project/routing/chat-navigation";
-import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
+import { displayThreadTitle } from "@/lib/thread-title";
 import { prewarmMarkdownStreaming } from "@/rich-content/markdown-stream-service";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { type ChatCardHandlers, ChatCardsProvider, sameChatCards } from "./ChatCards";
@@ -307,10 +307,6 @@ export function ChatView({
     },
     {
       visible: active,
-      title:
-        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
-          ? null
-          : activeThread.title,
       leave: (moved) => {
         navigation.forgetChat(threadId);
         if (moved) void navigation.openNewChat({ replace: true });

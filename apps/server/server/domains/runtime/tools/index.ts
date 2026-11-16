@@ -33,6 +33,7 @@ export {
   renderInvalidArguments,
 } from "./invalid-arguments.js";
 export { type LsEntry, type LsResult, sortLsEntries } from "./ls-result.js";
+export { createMcpToolRegistrations } from "./mcp-tools.js";
 export { modelToolSchema } from "./model-tool-schema.js";
 export {
   createSkillToolRegistrations,

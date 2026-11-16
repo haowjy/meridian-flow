@@ -6,7 +6,7 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
-import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { hasLine } from "@/features/draft-review/draft-notices";
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
@@ -19,7 +19,9 @@ import { hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line"
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { useShellTreeVersion } from "@/features/project/tree-version";
+import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
+import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
+import { useWorkScope } from "@/features/project/use-work-scope";
 import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-files";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
@@ -54,6 +56,7 @@ export function useDraftDock({
   const runner = controller;
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
   const { projectId, ownerKey } = controller;
+  const { setWorkId } = useWorkScope(projectId);
 
   const candidates = useMemo(
     () =>
@@ -89,33 +92,46 @@ export function useDraftDock({
   // The open review keeps its own refresh; the strip refreshes the rest.
   const reads = useRoomReviews(targets);
   const untitled = t`Document`;
-  const files = candidates
-    .map((row) => {
-      const read = reads[targets.findIndex((target) => target.itemKey === row.draft.itemKey)];
-      const withoutText = row.draft.hasDraft === false || row.draft.tree?.deleted === true;
-      const file = dockFile(
-        row,
-        reviewFileTargetName(row, untitled),
-        {
-          status: withoutText ? "ready" : (read?.status ?? "loading"),
-          items: listedItemChanges(row.draft, read?.listedChanges ?? []).map((change) => ({
-            change,
-          })),
+  const drafted = candidates.map((row) => {
+    const read = reads[targets.findIndex((target) => target.itemKey === row.draft.itemKey)];
+    const withoutText = row.draft.hasDraft === false || row.draft.tree?.deleted === true;
+    const file = dockFile(
+      row,
+      reviewFileTargetName(row, untitled),
+      {
+        status: withoutText ? "ready" : (read?.status ?? "loading"),
+        items: listedItemChanges(row.draft, read?.listedChanges ?? []).map((change) => ({
+          change,
+        })),
 
-          retry: read?.retry,
-        },
-        threadId,
-      );
-      return controller.owner.state(row.draft.itemKey).discarding
-        ? { ...file, actionable: [] }
-        : file;
-    })
-    .filter((file) => {
-      const state = controller.owner.state(file.row.draft.itemKey);
-      // A command in flight hides its row, until its delivery needs the writer's Retry.
-      if (state.hidden && !state.stalled) return false;
-      return isOnStrip(file) || state.pending || state.failure;
-    });
+        retry: read?.retry,
+      },
+      threadId,
+    );
+    return controller.owner.state(row.draft.itemKey).discarding
+      ? { ...file, actionable: [] }
+      : file;
+  });
+  const files = drafted.filter((file) => {
+    const state = controller.owner.state(file.row.draft.itemKey);
+    // A command in flight hides its row, until its delivery needs the writer's Retry.
+    if (state.hidden && !state.stalled) return false;
+    return isOnStrip(file) || state.pending || state.failure;
+  });
+  // What the Changes list holds beyond this chat's: its items (documents and folders), less the
+  // documents the strip's Apply would empty. Counted over the listed drafts, not the rows on
+  // screen, so an Apply in flight doesn't count its own documents as more.
+  const { work } = controller;
+  const workCount =
+    shell?.ownerKey === ownerKey
+      ? shell.changeCount
+      : work && !work.isNoWork
+        ? reviewCount(shell, work)
+        : null;
+  const more =
+    workCount === null || drafted.some((file) => file.status !== "ready")
+      ? 0
+      : Math.max(0, workCount - drafted.filter((file) => file.alone).length);
 
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
@@ -191,8 +207,15 @@ export function useDraftDock({
     notice,
     mounted: files.length > 0 || notice !== null,
     changeCount: totalChanges(files),
-    /** The one review count (`reviewCount`): the Work's changed documents and folders. */
-    reviewCount: shell?.ownerKey === ownerKey ? shell.changeCount : files.length,
+    /** The Changes list's items the strip's commands leave. */
+    more,
+    /** The chat's drafts are a named Work's, not its own. */
+    inWork: work !== null && !work.isNoWork,
+    /** Opens the sidebar's Changes list on this chat's Work, which acts on all of its changes. */
+    showChanges: () => {
+      if (work && shell?.ownerKey !== ownerKey) setWorkId(work.id);
+      useSidebarTabs.getState().reveal("changes");
+    },
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
     canApply:
@@ -212,8 +235,8 @@ export function useDraftDock({
     imagePreview,
     closeImagePreview: () => setImagePreview(null),
     /** The files Apply would bring back from a delete; more than one file asks first. */
-    deletedToApply: applicable.filter((file) => isDeletedFromManuscript(file.row.draft)),
-    /** The files Apply would delete from the manuscript; more than one file asks first. */
+    deletedToApply: applicable.filter((file) => isDeletedLive(file.row.draft)),
+    /** The files Apply would delete; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
     apply: (restore: ReadonlySet<string>) => send("apply", restore),
     discard: () => void send("discard"),
