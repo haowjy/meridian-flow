@@ -177,10 +177,10 @@ closed draft checks Apply evidence first; its other parts are discarded.
 Released closed bytes yield null provenance/projection and all discarded, never
 an empty document. Removed-document precedence remains the caller's concern.
 
-`writerRanges` is the optional clock-range request. All projects currently have
-one `projects.user_id`, so this adapter never queries human receipt history and
-omits `writers` even when requested. A multi-user project model must supply
-bounded writer evidence and its kernel naming before enabling that mode.
+All projects currently have one `projects.user_id`, so this adapter never
+queries human receipt history and provenance never carries `writers`. A
+multi-user project model must supply bounded writer evidence and its kernel
+naming before enabling that mode.
 
 ## Save, replay, and grants
 

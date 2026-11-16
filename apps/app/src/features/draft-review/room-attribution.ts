@@ -1,6 +1,6 @@
 /** One evidence reader per retained room, shared by editor, dock and Work surfaces. */
 import { APPLY_RECORD_ROOT, type ItemRange, RESTORED_ROOT } from "@meridian/agent-edit/diff";
-import type { DraftProvenanceResponse } from "@meridian/contracts/branches";
+import { DRAFTS_PROVENANCE_MAX, type DraftProvenanceResponse } from "@meridian/contracts/branches";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import { readDraftsProvenance } from "@/client/api/branches-api";
@@ -10,13 +10,15 @@ import type { DraftRef } from "./review-command-types";
 import type { ReviewFrame } from "./review-frame";
 import type { ReviewRuntime } from "./review-runtime";
 
-type Ask = { documentId: string; answers: ((answer: DraftProvenanceResponse | null) => void)[] };
+/** A draft's evidence; null when the owner has no such active draft, "failed" when the read failed. */
+type Evidence = DraftProvenanceResponse | null | "failed";
+type Ask = { documentId: string; answers: ((answer: Evidence) => void)[] };
 /**
  * One evidence read in flight per owner. The rooms that ask while it is out go together in the
  * next read, so a review of many drafts sends a few reads, not one per room.
  */
 const owners = new Map<string, { asks: Map<string, Ask>; sending: boolean }>();
-function askEvidence(draft: DraftRef, draftId: string): Promise<DraftProvenanceResponse | null> {
+function askEvidence(draft: DraftRef, draftId: string): Promise<Evidence> {
   const key = JSON.stringify([draft.projectId, draft.ownerKey]);
   let owner = owners.get(key);
   if (!owner) {
@@ -34,19 +36,18 @@ function askEvidence(draft: DraftRef, draftId: string): Promise<DraftProvenanceR
     }
   });
   function send() {
-    const asks = queue.asks;
-    queue.asks = new Map();
+    const asks = [...queue.asks].slice(0, DRAFTS_PROVENANCE_MAX);
+    for (const [id] of asks) queue.asks.delete(id);
     void readDraftsProvenance(draft.projectId, {
       owner: draft.ownerKey,
-      drafts: [...asks].map(([id, ask]) => ({ draftId: id, documentId: ask.documentId })),
+      drafts: asks.map(([id, ask]) => ({ draftId: id, documentId: ask.documentId })),
     })
       .then(
-        (answer) => answer.drafts,
-        // Unknown evidence never removes text or guesses a byline. Reconnect/root changes retry.
-        () => ({}) as Record<string, DraftProvenanceResponse>,
+        (answer) => (id: string) => answer.drafts[id] ?? null,
+        () => () => "failed" as const,
       )
-      .then((drafts) => {
-        for (const [id, ask] of asks) for (const answer of ask.answers) answer(drafts[id] ?? null);
+      .then((answerOf) => {
+        for (const [id, ask] of asks) for (const answer of ask.answers) answer(answerOf(id));
         if (queue.asks.size > 0) send();
         else {
           queue.sending = false;
@@ -115,6 +116,12 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
       const ask = ++asked;
       void askEvidence(draft, roomName.draftId).then((next) => {
         if (disposed || ask !== asked || !next) return;
+        // Unknown evidence never removes text or guesses a byline: the room asks again on its
+        // next change or reconnect.
+        if (next === "failed") {
+          requested = "";
+          return;
+        }
         data = next;
         coveredRoots = revision;
         const covered = Y.decodeSnapshot(Uint8Array.from(next.snapshot)).ds;

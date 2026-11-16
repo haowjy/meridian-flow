@@ -119,8 +119,8 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
         const id = draft.documentDraft.draftId;
         const found = project.get(id);
         if (!found) continue;
-        // projects.user_id is the sole project user today. Even explicit writerRanges
-        // requests need no human receipt query: the captured snapshot proves the remainder.
+        // projects.user_id is the sole project user today, so no human receipt is read: the
+        // captured snapshot proves the remainder.
         out.set(id, {
           draft,
           contentReleased: found.contentReleased,

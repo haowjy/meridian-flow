@@ -19,7 +19,7 @@ export type ResolvedReviewItem = {
   branchId: BranchId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** The branch's text draft on the document; server-internal, null when it has none. */
+  /** The branch's text draft on the document, which names its review room; null when it has none. */
   draftId: string | null;
   item: DraftReviewItem;
   listed: boolean;

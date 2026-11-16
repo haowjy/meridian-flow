@@ -99,12 +99,14 @@ export function useDraftMetadata(drafts: readonly DraftRef[]) {
     const answer = listedAnswer(drafts[index]);
     if (!answer) {
       // Older than the list that dropped its row: asked again from this render on (the effect),
-      // so a surface waits for that answer instead of taking the draft for unavailable.
-      const stale =
+      // so a surface waits for that answer instead of taking the draft for unavailable. A failed
+      // re-read shows as its error.
+      const awaitingReread =
         result.data !== undefined &&
         list.data !== undefined &&
-        result.data.readAt < list.data.readAt;
-      return stale ? ({ ...result, isFetching: true } as typeof result) : result;
+        result.data.readAt < list.data.readAt &&
+        !result.isError;
+      return awaitingReread ? ({ ...result, isFetching: true } as typeof result) : result;
     }
     return {
       ...result,

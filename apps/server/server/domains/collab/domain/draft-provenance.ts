@@ -42,7 +42,6 @@ export function createDraftProvenanceReader(store: DraftDispositionStore) {
             deleted,
             owner,
           })),
-          ...(cut.writers ? { writers: cut.writers } : {}),
         });
       } finally {
         doc.destroy();

@@ -1,8 +1,9 @@
 /** Authenticated draft evidence read for every room a review holds; a transport address never supplies file authority. */
 
-import type {
-  DraftProvenanceResponse,
-  DraftsProvenanceResponse,
+import {
+  DRAFTS_PROVENANCE_MAX,
+  type DraftProvenanceResponse,
+  type DraftsProvenanceResponse,
 } from "@meridian/contracts/branches";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
@@ -14,7 +15,7 @@ const request = z.strictObject({
   owner: z.string().max(200),
   drafts: z
     .array(z.strictObject({ draftId: z.string().min(1).max(128), documentId: z.string().uuid() }))
-    .max(2000),
+    .max(DRAFTS_PROVENANCE_MAX),
 });
 
 /**

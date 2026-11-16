@@ -23,6 +23,8 @@ export type DraftProvenanceResponse = {
   }[];
 };
 
+/** The most drafts one evidence request may name; a client with more sends several. */
+export const DRAFTS_PROVENANCE_MAX = 2000;
 /** One request for the evidence of an owner's drafts: each draft a room on screen holds. */
 export type DraftsProvenanceRequest = {
   owner: string;
