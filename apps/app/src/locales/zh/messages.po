@@ -460,8 +460,12 @@ msgstr "{answered, plural, other {# 个已回答}}"
 #~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{appliedCount} changes"
+msgid "{appliedCount, plural, one {# change} other {# changes}}"
 msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount} changes"
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -1178,6 +1182,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} discarded this document from the draft before this change could be made."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
 msgstr ""
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
@@ -7236,8 +7244,8 @@ msgid "Taken out"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Takes back the whole Apply, all {wholeApply} changes."
-msgstr ""
+#~ msgid "Takes back the whole Apply, all {wholeApply} changes."
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"

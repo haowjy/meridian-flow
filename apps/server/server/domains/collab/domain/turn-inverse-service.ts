@@ -136,12 +136,12 @@ export interface TurnInverseStore {
     appliedBy: Record<string, string>;
   }>;
   /**
-   * Each Apply command's branch and the nodes it landed on, read by its id; an id with no stored
-   * Apply is absent.
+   * Each Apply command's branch, the nodes it landed on, and how many changes it made (text groups
+   * and tree moves), read by its id; an id with no stored Apply is absent.
    */
   applyCommands(
     commandIds: readonly string[],
-  ): Promise<Map<string, { branchId: string; nodes: readonly string[] }>>;
+  ): Promise<Map<string, { branchId: string; nodes: readonly string[]; changes: number }>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -425,7 +425,7 @@ async function appliedCommandsOf(
       {
         commandId,
         branchId: command.branchId,
-        count: command.nodes.length,
+        count: command.changes,
         onlyThisTurn: !others.has(commandId) && command.nodes.every((node) => nodes.has(node)),
       },
     ];

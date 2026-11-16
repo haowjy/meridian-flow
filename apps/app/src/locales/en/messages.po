@@ -460,8 +460,12 @@ msgstr "{answered, plural, one {# answered} other {# answered}}"
 #~ msgstr "{applied} applied"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{appliedCount} changes"
-msgstr "{appliedCount} changes"
+msgid "{appliedCount, plural, one {# change} other {# changes}}"
+msgstr "{appliedCount, plural, one {# change} other {# changes}}"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount} changes"
+#~ msgstr "{appliedCount} changes"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -1179,6 +1183,10 @@ msgstr "{who} discarded {name} from the draft before this change could be made."
 #: src/features/chat/tool-renderers.tsx
 msgid "{who} discarded this document from the draft before this change could be made."
 msgstr "{who} discarded this document from the draft before this change could be made."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
+msgstr "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -7236,8 +7244,8 @@ msgid "Taken out"
 msgstr "Taken out"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Takes back the whole Apply, all {wholeApply} changes."
-msgstr "Takes back the whole Apply, all {wholeApply} changes."
+#~ msgid "Takes back the whole Apply, all {wholeApply} changes."
+#~ msgstr "Takes back the whole Apply, all {wholeApply} changes."
 
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"

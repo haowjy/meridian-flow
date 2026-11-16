@@ -173,8 +173,8 @@ export class AppliedCommand implements ApplyStep {
       closed: ClosedOwners;
       /** The sidebar list whose stack holds it; null for a band's. */
       stack: TreeListSession | null;
-      /** A press from an editor answered: say it where the writer pressed. */
-      said?(said: PressSaid): void;
+      /** A press from an editor answered: say it where the writer pressed. Returns its end. */
+      said?(said: PressSaid): () => void;
       /** Nothing is left for its Undo or Redo. */
       over?(): void;
     },
@@ -203,10 +203,19 @@ export class AppliedCommand implements ApplyStep {
    */
   passedBy(from: DocumentHistory): void {
     if (!firstPassOver(this)) return;
-    this.hooks.said?.({
-      from,
-      answer: { taken: "nothing", treeLeft: [], held: this.held },
-      step: this,
+    this.say({ from, answer: { taken: "nothing", treeLeft: [], held: this.held }, step: this });
+  }
+
+  /** Says `said` where it was pressed; a line naming who it waits for ends once one reopens. */
+  private say(said: PressSaid): void {
+    const unsay = this.hooks.said?.(said);
+    const held = said.answer.taken === "failed" ? [] : said.answer.held;
+    if (!unsay || held.length === 0) return;
+    const { closed } = this.hooks;
+    const stop = closed.subscribe(() => {
+      if (held.every((part) => closed.owner(part.ownerKey))) return;
+      stop();
+      unsay();
     });
   }
 
@@ -225,7 +234,7 @@ export class AppliedCommand implements ApplyStep {
       if (this.over || this.asking) return null;
       this.from = from;
       const { stack } = this.hooks;
-      return stack ? undoApply(stack, this) : this.unapply();
+      return stack ? undoApply(stack, this, this.hooks.closed) : this.unapply();
     });
   }
 
@@ -238,7 +247,7 @@ export class AppliedCommand implements ApplyStep {
     const answer = await this.port.unapply();
     this.asking = false;
     this.answered(answer, from);
-    if (from) this.hooks.said?.({ from, answer, step: this });
+    if (from) this.say({ from, answer, step: this });
     return answer;
   }
 

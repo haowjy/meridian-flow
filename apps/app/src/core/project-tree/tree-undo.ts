@@ -249,6 +249,26 @@ function show(session: TreeListSession, notice: TreeNotice | null) {
   changed();
 }
 
+/**
+ * Shows `notice`, which says who each of `waiting` waits for, and ends it once one of them would
+ * be taken by a press again: "Unarchive it to undo this" is stale after the unarchive.
+ */
+function showWaiting(
+  session: TreeListSession,
+  notice: TreeNotice | null,
+  closed: ClosedOwners,
+  waiting: readonly UndoStep[],
+) {
+  show(session, notice);
+  if (!notice || waiting.length === 0) return;
+  const stop = closed.subscribe(() => {
+    if (notices.get(session) === notice && waiting.every((step) => waitsForClosed(step, closed)))
+      return;
+    stop();
+    if (notices.get(session) === notice) show(session, null);
+  });
+}
+
 /** The writer's changes the server bounced since their last action in the list, oldest first. */
 export function treeBounces(session: TreeListSession | null): readonly Bounce[] {
   return (session && bounces.get(session)) ?? [];
@@ -371,15 +391,26 @@ export async function undoLatest(
   actedIn(session);
   show(session, null);
   const passed: Left[] = [];
-  const outcome = await takeLatest(session, source, view, actor, closed, passed, pendingText);
+  const waiting: UndoStep[] = [];
+  const outcome = await takeLatest(
+    session,
+    source,
+    view,
+    actor,
+    closed,
+    { passed, waiting },
+    pendingText,
+  );
   const said = saidOf(outcome);
   // A step passed over for the first time says, on its rows, who it waits for.
   const told = passed.map((left) => ({ kind: "left" as const, ...left }));
-  show(
+  showWaiting(
     session,
     told.length
       ? { kind: "said", said: [...told, ...(said?.kind === "said" ? said.said : [])] }
       : said,
+    closed,
+    waiting,
   );
   return outcome;
 }
@@ -390,7 +421,8 @@ async function takeLatest(
   view: View,
   actor: string,
   closed: ClosedOwners,
-  passed: Left[],
+  /** `passed`: what the steps passed over for the first time say; `waiting`: each step said to wait. */
+  { passed, waiting }: { passed: Left[]; waiting: UndoStep[] },
   pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
   const stack = stackOf(session);
@@ -400,11 +432,18 @@ async function takeLatest(
     if (!fits(step, source, view)) continue;
     if (waitsForClosed(step, closed)) {
       const left = passedOverLeft(step, closed);
-      if (left) passed.push(left);
+      if (left) {
+        passed.push(left);
+        waiting.push(step);
+      }
       continue;
     }
     stack.splice(at, 1);
-    if (step.kind === "apply") return answerApply(session, step, at, skipped);
+    if (step.kind === "apply") {
+      const outcome = await answerApply(session, step, at, skipped);
+      if (outcome.kind !== "failed" && outcome.left?.held.length) waiting.push(step);
+      return outcome;
+    }
     const names = step.nodes.flatMap(
       (node) => session.replay(view, pendingText).nodes.get(node)?.name ?? [],
     );
@@ -416,6 +455,7 @@ async function takeLatest(
     if (back.length > 0) {
       step.waits = back;
       stack.splice(at, 0, step);
+      waiting.push(step);
       return { kind: "nothing", skipped, left: treeHeld(step, back, closed) };
     }
     step.ended?.();
@@ -456,7 +496,7 @@ export async function undoStep(
   closed: ClosedOwners,
   pendingText?: ReadonlySet<string>,
 ): Promise<boolean> {
-  if (step.kind === "apply") return (await undoApply(session, step))?.taken !== "failed";
+  if (step.kind === "apply") return (await undoApply(session, step, closed))?.taken !== "failed";
   const stack = stackOf(session);
   const at = stack.indexOf(step);
   if (at < 0) return false;
@@ -474,7 +514,12 @@ export async function undoStep(
   if (back.length > 0) {
     step.waits = back;
     stack.splice(Math.min(at, stack.length), 0, step);
-    show(session, saidOf({ kind: "nothing", skipped: [], left: treeHeld(step, back, closed) }));
+    showWaiting(
+      session,
+      saidOf({ kind: "nothing", skipped: [], left: treeHeld(step, back, closed) }),
+      closed,
+      [step],
+    );
     return false;
   }
   step.ended?.();
@@ -490,13 +535,15 @@ export async function undoStep(
 export async function undoApply(
   session: TreeListSession,
   step: ApplyStep,
+  closed: ClosedOwners,
 ): Promise<Unapplied | { taken: "failed" } | null> {
   const at = stackOf(session).indexOf(step);
   if (at < 0) return null;
   stackOf(session).splice(at, 1);
   show(session, null);
   const outcome = await answerApply(session, step, at, []);
-  show(session, saidOf(outcome));
+  const held = outcome.kind !== "failed" && (outcome.left?.held.length ?? 0) > 0;
+  showWaiting(session, saidOf(outcome), closed, held ? [step] : []);
   return outcome.answer;
 }
 

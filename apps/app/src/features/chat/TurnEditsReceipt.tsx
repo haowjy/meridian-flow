@@ -275,7 +275,7 @@ export function TurnEditsReceipt({
                 name:
                   documents.length === 1 && documents[0]
                     ? documentDisplayName(documents[0].uri)
-                    : t`${appliedCount} changes`,
+                    : plural(appliedCount, { one: "# change", other: "# changes" }),
                 nodes: [
                   ...new Set([
                     ...unapplied.treeLeft.map((one) => one.node),
@@ -683,7 +683,12 @@ function UndoButton({
   onUndo: () => void;
 }) {
   const takes =
-    wholeApply === null ? null : t`Takes back the whole Apply, all ${wholeApply} changes.`;
+    wholeApply === null
+      ? null
+      : plural(wholeApply, {
+          one: "Takes back the whole Apply, # change.",
+          other: "Takes back the whole Apply, all # changes.",
+        });
   const button = (
     <Button
       type="button"

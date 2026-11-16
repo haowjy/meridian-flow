@@ -416,9 +416,9 @@ export class DraftNotices {
     documentId: string;
     step: ApplyStep & { press(from: null): Promise<unknown> };
     answer: Unapplied | { taken: "failed" };
-  }): void {
+  }): () => void {
     const { step, answer } = input;
-    if (this.closed || answer.taken === "all" || answer.taken === "already") return;
+    if (this.closed || answer.taken === "all" || answer.taken === "already") return () => {};
     const held = this.notices.get(input.ownerKey);
     if (held) this.drop(held);
     const id = this.nextId++;
@@ -438,6 +438,7 @@ export class DraftNotices {
       dismiss: () => this.endIf(input.ownerKey, id),
     });
     this.publish();
+    return () => this.endIf(input.ownerKey, id);
   }
 
   /** The facts an Apply adds to the owner's applied notice, if it is the one showing. */

@@ -515,7 +515,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       return owners;
     },
     async applyCommands(commandIds) {
-      const found = new Map<string, { branchId: string; nodes: readonly string[] }>();
+      const found = new Map<
+        string,
+        { branchId: string; nodes: readonly string[]; changes: number }
+      >();
       if (commandIds.length === 0) return found;
       const ids = commandIds as CommandId[];
       const outcomes = await db()
@@ -540,15 +543,24 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
           .where(inArray(applyCommandEffects.commandId, textOnly)))
           branchOf.set(row.id, row.branchId);
+      // One effect row per text group the Apply landed.
+      const groups = new Map<string, number>();
+      for (const row of await db()
+        .select({ id: applyCommandEffects.commandId })
+        .from(applyCommandEffects)
+        .where(inArray(applyCommandEffects.commandId, ids)))
+        groups.set(row.id, (groups.get(row.id) ?? 0) + 1);
       for (const { id, outcome } of outcomes) {
         const branchId = branchOf.get(id);
         const result =
           outcome.status === "done" ? (outcome.result as Partial<ApplyClickResult>) : null;
         if (!branchId || result?.status !== "applied") continue;
-        const nodes = (result.items ?? []).flatMap((item) =>
+        const items = result.items ?? [];
+        const nodes = items.flatMap((item) =>
           item.tree?.landed || item.text?.landed ? [item.node] : [],
         );
-        found.set(id, { branchId, nodes });
+        const changes = (groups.get(id) ?? 0) + items.filter((item) => item.tree?.landed).length;
+        found.set(id, { branchId, nodes, changes });
       }
       return found;
     },
