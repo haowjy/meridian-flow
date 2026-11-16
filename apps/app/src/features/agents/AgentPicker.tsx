@@ -7,6 +7,7 @@ import { NO_OVERRIDES, type ThreadOverrides } from "@meridian/contracts/threads"
 import { Settings2 } from "lucide-react";
 import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
+import { useThreadAgent } from "@/client/query/useAgentFiles";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -103,7 +104,16 @@ export function AgentPickerPanel({
   const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
-  const agents = (status.agents ?? []).filter((agent) => agent.primary);
+  // A started chat runs its Agent as bound until it compacts, so its Default is the bound model
+  // and level, not the newest save's: the same binding the stale mark compares.
+  const bound = useThreadAgent(mode.kind === "chat" ? mode.threadId : null);
+  const agents = (status.agents ?? [])
+    .filter((agent) => agent.primary)
+    .map((agent) =>
+      mode.kind === "chat" && agent.slug === current.slug && bound.data
+        ? { ...agent, model: bound.data.model, effort: bound.data.effort }
+        : agent,
+    );
   if (status.status !== "ready" || agents.length === 0)
     return (
       <Picker>
@@ -221,6 +231,7 @@ export function AgentPickerPanel({
   const runsOn = overrides.model ?? shown.model;
   const option = (id: string | null) => (id ? models?.find((model) => model.id === id) : undefined);
   const runsOnOption = option(runsOn);
+  const awaitsBinding = shown === own && bound.isPending;
   // Reasoning as the gateway settles it on the model: the Agent's own level, and the one it runs at.
   const ownLevel = settledReasoning(shown.effort, runsOnOption);
   const thinksAt = overrides.effort ? settledReasoning(overrides.effort, runsOnOption) : ownLevel;
@@ -357,7 +368,7 @@ export function AgentPickerPanel({
                   <ModelChoices
                     agent={shown}
                     runsOn={runsOn}
-                    models={models}
+                    models={awaitsBinding ? null : models}
                     onChoose={(id) => {
                       // A reasoning override follows the model: settled on it, and dropped once
                       // it is the new model's own level.
@@ -370,7 +381,7 @@ export function AgentPickerPanel({
                     }}
                   />
                   <ReasoningChoices
-                    model={runsOnOption}
+                    model={awaitsBinding ? undefined : runsOnOption}
                     own={ownLevel}
                     thinksAt={thinksAt}
                     onChoose={(level) =>

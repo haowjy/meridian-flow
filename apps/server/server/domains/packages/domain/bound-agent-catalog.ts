@@ -12,6 +12,7 @@ import type {
   AgentsLevel,
   ResolvedAgentConfiguration,
   RetainedSkillReference,
+  ThreadAgent,
 } from "@meridian/contracts/agents";
 import { AGENT_EFFORT_CHOICE } from "@meridian/contracts/agents";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
@@ -105,14 +106,14 @@ export interface BoundAgentCatalog extends PackageSaver {
     thread: { id: string; parentThreadId: string | null },
   ): Promise<(AgentRevisionBinding & { revision: AgentRevision }) | undefined>;
   /**
-   * The Agent file a chat is bound to, as saved, and whether a newer save of the Agent or of an
+   * The Agent file a chat is bound to, as saved, with the model and reasoning it runs at, and whether a newer save of the Agent or of an
    * invoked skill would take over at the chat's next compaction. Undefined for a chat with no Agent file (a generic subagent).
    */
   boundAgent(
     userId: string,
     projectId: string | undefined,
     thread: { id: string; parentThreadId: string | null },
-  ): Promise<{ name: string; text: string; stale: boolean } | undefined>;
+  ): Promise<ThreadAgent | undefined>;
   /**
    * A file's text as its package's latest Save holds it, by level-relative path
    * (`AgentFileStatus.path`); a built-in's as shipped. Undefined when that version has no such file.
@@ -432,6 +433,8 @@ export function createBoundAgentCatalog(input: {
         name: revision.definition.metadata.name ?? revision.slug,
         text,
         stale: (await catalog.refreshBinding(userId, projectId, thread)) !== undefined,
+        model: bound.configuration.model,
+        effort: bound.configuration.effort ? AGENT_EFFORT_CHOICE[bound.configuration.effort] : null,
       };
     },
 

@@ -138,6 +138,9 @@ export const threadAgentSchema = z.object({
   name: z.string(),
   text: z.string(),
   stale: z.boolean(),
+  /** The model and reasoning the binding runs the Agent at, until the chat's next compaction. */
+  model: z.string(),
+  effort: reasoningChoiceSchema.nullable(),
 });
 export type ThreadAgent = z.infer<typeof threadAgentSchema>;
 
