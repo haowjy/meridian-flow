@@ -60,7 +60,9 @@ export function deriveWorkPickerViewModel(
       ? catalog.works.filter(
           (work) =>
             !isWorkArchived(work) &&
-            `${work.name} ${work.goal ?? ""}`.toLocaleLowerCase().includes(needle),
+            `${work.name} ${work.handle ?? ""} ${work.goal ?? ""}`
+              .toLocaleLowerCase()
+              .includes(needle),
         )
       : [];
   const rows = {

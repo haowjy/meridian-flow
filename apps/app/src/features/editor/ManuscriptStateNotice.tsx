@@ -1,7 +1,6 @@
 /**
- * ManuscriptStateNotice — what live did to the document this draft holds: deleted from
- * the manuscript (Apply brings it back). Once an
- * Apply brings it back the same place says so, until the writer dismisses it or opens another
+ * ManuscriptStateNotice — what live did to the document this draft holds: deleted from its
+ * area (Apply brings it back). Once an Apply brings it back the same place says so, until the writer dismisses it or opens another
  * document; a host swap on promotion (the phone's) remounts it and must not end it. With none
  * of those, it says what a Work's pending move or delete will do to the document, which
  * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
@@ -72,16 +71,17 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const cue = useLiveDraftCue(projectId, tab);
   const shell = useShellTreeVersion();
   const shown = shell?.showing === "draft" ? shell.ownerKey : cue?.ownerKey;
-  const { scheme } = tabLocation(tab);
-  const area = schemeLabel(scheme);
   if (deleted) {
+    const from = schemeLabel(item?.deletedFrom?.scheme);
     const sentence = deletedLiveSentence(
       title,
-      area,
+      from,
       removal?.kind === "removed" ? removal.record : null,
     );
-    return { kind: "deleted", sentence, label: t`Deleted from ${area}` };
+    return { kind: "deleted", sentence, label: from ? t`Deleted from ${from}` : t`Deleted` };
   }
+  const { scheme } = tabLocation(tab);
+  const area = schemeLabel(scheme);
   const renamed = renamedPath ? documentBasename(renamedPath) : null;
   if (restored || renamed)
     return {

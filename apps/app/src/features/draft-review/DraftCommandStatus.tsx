@@ -10,13 +10,13 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowWord } from "@/components/app/RowWord";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import { areaName } from "@/features/project/context/context-schemes";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 import { isDeletedLive } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
 /** Beside the name of a drafted document its area no longer has: Apply brings it back. */
 export function DeletedWord({ scheme }: { scheme: ProjectContextTreeScheme | null | undefined }) {
-  const area = areaName(scheme);
+  const area = schemeLabel(scheme);
   return (
     <RowWord
       tone="note"
@@ -30,7 +30,7 @@ export function DeletedWord({ scheme }: { scheme: ProjectContextTreeScheme | nul
 
 /** `DeletedWord` for a drafted document live deleted; nothing when it's still there. */
 export function DeletedLiveTag({ item }: { item: ThreadDraftListItem | undefined }) {
-  return isDeletedLive(item) ? <DeletedWord scheme={item?.contextLocation?.scheme} /> : null;
+  return isDeletedLive(item) ? <DeletedWord scheme={item?.deletedFrom?.scheme} /> : null;
 }
 
 export function DraftCommandStatus({ itemKey }: { itemKey: string }) {

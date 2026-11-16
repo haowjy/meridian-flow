@@ -6,7 +6,8 @@
  * the Work's stored pending count (the badge): every Work a transaction locks through it is
  * recounted at commit, and a moved count, or a mark that its current drafts changed
  * (`draftMembershipChanged`), bumps the Work's revision and sends a notice. A chat's first write
- * to a draft (`draftAuthorJoined`) only wakes the owner: the list names each draft's chats. An
+ * to a draft (`draftAuthorJoined`) and a live change under a branch's rows (`liveChangedUnder`)
+ * only wake the owner: the list names each draft's chats and reads live where it has rows. An
  * ordinary draft append (a keystroke) never enters it: the draft-effect projection runs after
  * every append and recounts then, through `mutate`.
  */
@@ -27,6 +28,7 @@ import {
 } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
+  type DrizzleDb,
   type DrizzleTransactionParticipant,
   enlistDrizzleTransactionParticipant,
   isInDrizzleTransaction,
@@ -120,6 +122,13 @@ export type WorkProjectionMutation = {
    * (`actorThreads`) and neither its count nor its membership moved. No lock, no revision.
    */
   draftAuthorJoined(draftId: string): void;
+  /**
+   * A tree commit changed live rows that these branches have rows on: once it commits, each
+   * branch's owner gets its `draft-owner-hint`, since its list reads live there (`deletedLive`,
+   * a move's place) and neither its count nor its membership need have moved. No lock, no
+   * revision.
+   */
+  liveChangedUnder(branchIds: readonly string[]): void;
 };
 
 const WORKS_NOTICE_STATE = {};
@@ -382,6 +391,32 @@ export function createWorkProjectionMutation(input: {
     return { ...locked, drafts };
   }
 
+  const ownerColumns = {
+    projectId: branches.projectId,
+    workId: branches.originWorkId,
+    rootThreadId: branches.originRootThreadId,
+  };
+  /** Once the caller commits, each owner the query names gets its `draft-owner-hint`. */
+  function wakeOwnersAfterCommit(
+    query: (
+      db: DrizzleDb,
+    ) => PromiseLike<{ projectId: string; workId: string | null; rootThreadId: string | null }[]>,
+  ) {
+    runAfterDrizzleCommit(async () => {
+      const hints = new Map<string, DraftOwnerHint>();
+      for (const row of await query(currentDrizzleDb(input.db))) {
+        const owner = ownerKeyOfColumns(row);
+        if (owner)
+          hints.set(owner, {
+            type: "draft-owner-hint",
+            projectId: row.projectId as DraftOwnerHint["projectId"],
+            owner,
+          });
+      }
+      if (hints.size > 0) input.draftOwnerHints.publishDraftOwnerHints([...hints.values()]);
+    });
+  }
+
   const mutation: WorkProjectionMutation = {
     async touchWorks(workIds, activityAt) {
       await runInDrizzleTransaction(input.db, async () => {
@@ -414,26 +449,21 @@ export function createWorkProjectionMutation(input: {
       else state.membershipRootIds.set(owner.rootThreadId, owner.projectId);
     },
     draftAuthorJoined(draftId) {
-      runAfterDrizzleCommit(async () => {
-        const [row] = await currentDrizzleDb(input.db)
-          .select({
-            projectId: branches.projectId,
-            workId: branches.originWorkId,
-            rootThreadId: branches.originRootThreadId,
-          })
+      wakeOwnersAfterCommit((db) =>
+        db
+          .select(ownerColumns)
           .from(documentDrafts)
           .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-          .where(eq(documentDrafts.id, draftId));
-        const owner = row ? ownerKeyOfColumns(row) : null;
-        if (!row || !owner) return;
-        input.draftOwnerHints.publishDraftOwnerHints([
-          {
-            type: "draft-owner-hint",
-            projectId: row.projectId as DraftOwnerHint["projectId"],
-            owner,
-          },
-        ]);
-      });
+          .where(eq(documentDrafts.id, draftId)),
+      );
+    },
+    liveChangedUnder(branchIds) {
+      wakeOwnersAfterCommit((db) =>
+        db
+          .select(ownerColumns)
+          .from(branches)
+          .where(inArray(branches.id, [...branchIds])),
+      );
     },
     lifecycleChanged(work) {
       input.draftOwnerHints.publishDraftOwnerHints([

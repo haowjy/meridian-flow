@@ -122,6 +122,7 @@ export function createDrizzleBranchTreeState(
           isNew: created && row.deleted === false,
           binary: row.binary,
           deletedLive: change === "moving" && row.live_trashed,
+          deletedFromUri: there?.kind === "deleted" ? (there.lastAddress?.uri ?? null) : null,
           change,
           revision: row.revision,
           pending: pending.has(id),

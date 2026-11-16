@@ -67,7 +67,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             deleting={asking.deleting.map((file) => file.name)}
             restoring={asking.restoring.map((file) => ({
               name: file.name,
-              scheme: file.row.draft.contextLocation?.scheme,
+              scheme: file.row.draft.deletedFrom?.scheme,
             }))}
           />
         ),

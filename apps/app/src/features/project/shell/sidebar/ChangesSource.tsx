@@ -282,7 +282,7 @@ export function ChangesSource({
             deleting={names(asking.deleting)}
             restoring={asking.restoring.map((file) => ({
               name: reviewFileTargetName(file, untitled),
-              scheme: file.draft.contextLocation?.scheme,
+              scheme: file.draft.deletedFrom?.scheme,
             }))}
           />
         ),

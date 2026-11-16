@@ -19,7 +19,7 @@ import {
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
-import { areaName } from "@/features/project/context/context-schemes";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { type Removal, removalSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { removalAnswer } from "@/features/project/context/removal-answer";
@@ -448,11 +448,11 @@ function factSentence(fact: AppliedFact): string {
       return t`Applied as ${name}: the name was taken.`;
     }
     case "applied": {
-      const area = areaName(fact.scheme);
+      const area = schemeLabel(fact.scheme);
       return area ? t`Applied just now: its changes are in ${area}.` : t`Applied just now.`;
     }
     case "restored": {
-      const area = areaName(fact.scheme);
+      const area = schemeLabel(fact.scheme);
       return area ? t`Applied. It is back in ${area}.` : t`Applied. It is back.`;
     }
     case "also": {
@@ -488,7 +488,7 @@ function byArea(
 ): { area: string | null; names: string; count: number }[] {
   const groups = new Map<string | null, string[]>();
   for (const { name, scheme } of documents) {
-    const area = areaName(scheme);
+    const area = schemeLabel(scheme);
     groups.set(area, [...(groups.get(area) ?? []), name]);
   }
   const list = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" });

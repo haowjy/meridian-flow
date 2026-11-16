@@ -793,8 +793,8 @@ msgid "{name} deleted {title}."
 msgstr "{name} deleted {title}."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "{name} deleted {title}. Applying brings it back."
-#~ msgstr "{name} deleted {title}. Applying brings it back."
+msgid "{name} deleted {title}. Applying brings it back."
+msgstr "{name} deleted {title}. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
@@ -1033,8 +1033,8 @@ msgid "{title} was deleted."
 msgstr "{title} was deleted."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "{title} was deleted. Applying brings it back."
-#~ msgstr "{title} was deleted. Applying brings it back."
+msgid "{title} was deleted. Applying brings it back."
+msgstr "{title} was deleted. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was discarded from the draft."
@@ -3166,6 +3166,7 @@ msgstr "deleted"
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/draft-review/DraftCommandStatus.tsx
+#: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3193,16 +3194,16 @@ msgid "Deleted a Work"
 msgstr "Deleted a Work"
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Deleted from {area}"
-msgstr "Deleted from {area}"
+#~ msgid "Deleted from {area}"
+#~ msgstr "Deleted from {area}"
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Deleted from {area}. Apply brings it back."
 msgstr "Deleted from {area}. Apply brings it back."
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-#~ msgid "Deleted from {from}"
-#~ msgstr "Deleted from {from}"
+msgid "Deleted from {from}"
+msgstr "Deleted from {from}"
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
@@ -6936,8 +6937,8 @@ msgid "The AI in {chat} deleted {title}."
 msgstr "The AI in {chat} deleted {title}."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "The AI in {chat} deleted {title}. Applying brings it back."
-#~ msgstr "The AI in {chat} deleted {title}. Applying brings it back."
+msgid "The AI in {chat} deleted {title}. Applying brings it back."
+msgstr "The AI in {chat} deleted {title}. Applying brings it back."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in {chat} deleted this document before this change could be made."
@@ -6968,8 +6969,8 @@ msgid "The AI in a chat deleted {title}."
 msgstr "The AI in a chat deleted {title}."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "The AI in a chat deleted {title}. Applying brings it back."
-#~ msgstr "The AI in a chat deleted {title}. Applying brings it back."
+msgid "The AI in a chat deleted {title}. Applying brings it back."
+msgstr "The AI in a chat deleted {title}. Applying brings it back."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in a chat deleted this document before this change could be made."
