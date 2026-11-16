@@ -351,15 +351,17 @@ function AgentDetail({
       className="app-scroll flex min-h-0 flex-1 flex-col gap-2 border-t border-border-subtle px-2 pt-2 @[28rem]/agents:border-t-0 @[28rem]/agents:pt-1.5"
     >
       {/* One size for every Agent, so the models below never move as the writer points. The row
-          on the left names the Agent. */}
-      <div className="flex shrink-0 flex-col gap-0.5">
-        <p className="line-clamp-3 h-15 text-sm text-muted-foreground" title={agent.description}>
-          {agent.description}
-        </p>
-        <p className="h-4 truncate font-mono text-xs text-muted-foreground">
-          {agent.path && agent.level !== "builtin" ? fileAddress(agent) : null}
-        </p>
-      </div>
+          on the left names the Agent; the full text and the file show on hover. */}
+      <p
+        className="line-clamp-2 h-10 shrink-0 text-sm text-foreground"
+        title={
+          agent.path && agent.level !== "builtin"
+            ? `${agent.description}\n${fileAddress(agent)}`
+            : agent.description
+        }
+      >
+        {agent.description}
+      </p>
       {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
       {useLabel && usable ? (
         // Touch picks here, having no hover to point with; a mouse or the keyboard picks the row.

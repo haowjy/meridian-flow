@@ -129,12 +129,17 @@ export function useComposerAgentToolbarControl(
         : catalog.status === "empty" || catalog.status === "ready"
           ? "empty"
           : "loading";
-  const choose = (next: AgentChoice) => {
+  /** True when the choice hands off, which leaves this chat; any other choice keeps the picker open. */
+  const choose = (next: AgentChoice): boolean => {
     const same = next.agent.selection.slug === selectedAgent?.selection.slug;
-    if (same && next.model === model) return;
+    if (same && next.model === model) return false;
     if (props.mode === "interactive") props.onChoose(next);
     else if (same) props.onModelChange(next.model);
-    else props.onHandoff?.(next);
+    else {
+      props.onHandoff?.(next);
+      return true;
+    }
+    return false;
   };
   return {
     kind: "panel",
@@ -180,8 +185,7 @@ export function useComposerAgentToolbarControl(
           started={props.mode === "handoff" ? { threadId: props.threadId } : undefined}
           models={models}
           onChoose={(next) => {
-            choose(next);
-            terminalClose();
+            if (choose(next)) terminalClose();
           }}
           projectId={props.projectId ?? ""}
           onClose={terminalClose}
