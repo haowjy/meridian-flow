@@ -621,7 +621,9 @@ export function replay(
         break;
       }
       case "restore":
-        lift(record, node, { index });
+        // An Apply's restore of a node the Work's view kept brings back what live deleted and
+        // leaves the node where it arrived: the numbering the writer reviewed stays.
+        lift(record, node, record.fromDraft === undefined ? { index } : { ownOnly: false });
         take(record, index);
         break;
       case "purge": {

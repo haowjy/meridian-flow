@@ -1104,6 +1104,30 @@ describe("numbered names after a partial Apply", () => {
     expect(t.at(map)?.displayName).toBe("Ch2 (2)");
   });
 
+  it("an Apply's restore leaves the clash as the Work showed it; a Trash restore does not", () => {
+    const clash = () => {
+      const t = start();
+      const doc = t.chapter("Doc");
+      t.w.author(D, CHAT, {
+        type: "move",
+        node: doc,
+        parent: ROOT,
+        rank: "Zz",
+        from: { parent: ROOT, rank: t.at(doc)?.rank as string },
+      });
+      t.w.delete(LIVE, WRITER, doc);
+      t.chapter("Doc");
+      return { t, doc };
+    };
+    const a = clash();
+    expect(a.t.names(ROOT, D)).toEqual(["Doc", "Doc (2)"]);
+    expect(applyDraft(a.t.w, "work-1", WRITER, cmd()).left).toEqual([]);
+    expect(a.t.names(ROOT)).toEqual(["Doc", "Doc (2)"]);
+    const b = clash();
+    b.t.w.restore(LIVE, WRITER, b.doc);
+    expect(b.t.names(ROOT)).toEqual(["Doc (2)", "Doc"]);
+  });
+
   it("a rename to the name a node has is not baked into a number", () => {
     const t = start();
     const first = t.chapter("Notes");

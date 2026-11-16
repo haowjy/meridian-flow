@@ -194,6 +194,7 @@ export function createApplyTreeOperations(input: {
                 saw,
               )
             : null;
+          for (const record of applied?.restored ?? []) restored.push(record.id);
           const deletes = new Set(
             (applied?.copies ?? []).flatMap((copy) => (copy.type === "delete" ? [copy.id] : [])),
           );
@@ -240,6 +241,7 @@ export function createApplyTreeOperations(input: {
                   (facts.get(it.node) as TreeItemFacts).restore ? [it.node] : [],
                 ),
                 ...copies.map((copy) => copy.node),
+                ...(applied?.restored ?? []).map((record) => record.node),
               ]),
             ],
           });
