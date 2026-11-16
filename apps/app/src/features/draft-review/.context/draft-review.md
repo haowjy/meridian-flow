@@ -116,15 +116,21 @@ nothing more. A whole-draft target then goes as the whole cut below (`wholeCut`)
 as the server holds it, and typing the room never delivered comes back through the hand-back.
 A click on some changes is built again when it reaches the head of the queue (`rebuilder`): the
 draft is read as the server holds it into a fresh document (`readRoomOnce`, one sync, nothing sent),
-its review recomputed, and the chosen changes whose ids are there go as an ordinary frozen click
-from that read, so the snapshot is the server's exactly. A chosen change whose id isn't there (made
-of typing the server never got, or changed since by another client) stays in the draft, shown as
-`left_out_not_on_server`: a choice is never widened to the server's version. Nothing left sends
-nothing. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
+its review recomputed, and the chosen changes it finds go as an ordinary frozen click from that
+read, so the snapshot is the server's exactly. A chosen change goes only when the read has its id
+and its family has one member in both frames: identical edits are numbered `X`, `X~1` in document
+order, so the same id can name another edit in the other frame. Any other chosen change (typing
+the server never got, an edit changed since by another client, a repeated edit) stays in the
+draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
+The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
+the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
 server won't open (closed, access ended) sends the frame's own cut and the server says why. A room
 this build can't open (schema stale or superseded) can't be read either: when the server then
 answers `unsynced`, the item says `needs_reload` with the deploy notice's own words
-(`ReloadWords`), since only a reload lets the click succeed. A click
+(`ReloadWords`), since only a reload lets the click succeed. The ended room stays bound for its
+projection only (`Entry.ended`): its rows fold the click while it runs, as any Apply's do, and
+keep folding it once it lands (`landedUnrecorded`), since no record will show, until a room opens
+on the draft again. No lease opens a room for such a click. A click
 whose typing was acknowledged before the room ended goes frozen as it is. Either way a click whose
 room ended settles on its answer, and never waits on the server's sync (`unsynced` stays for live
 rooms). The queue keeps its own `readDraftRoom` lease until

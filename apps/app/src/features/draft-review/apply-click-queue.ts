@@ -23,9 +23,12 @@ export type FrozenApply = {
   madeAfterRoomEnded?: true;
   /**
    * The click again, from the draft as the server holds it when this click is the head: what to
-   * send, null when none of its changes is there, undefined to send it as it is.
+   * send, null when none of its changes is there, undefined to send it as it is. Rejects when
+   * `signal` aborts: the read was not answered in time, or the queue closed.
    */
-  rebuild?: () => Promise<Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | undefined>;
+  rebuild?: (
+    signal: AbortSignal,
+  ) => Promise<Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | undefined>;
   /** A member of a several-item Apply sends through its group (`GroupApply`), not on its own. */
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
@@ -101,12 +104,21 @@ type ScheduledApplyHandle = ApplyCommandHandle & {
 
 export const APPLY_FEEDBACK_MS = 500;
 const RETRY_DELAYS = [1000, 2000, 4000];
+/** As long as a send waits for its answer (`branches-api.ts`), so a rebuild stalls as a send does. */
+const REBUILD_TIMEOUT_MS = 10_000;
 
 export class ApplyClickQueue {
   private readonly commands: Command[] = [];
   private readonly recorded = new Map<string, Set<string>>();
   private readonly recordedRows = new Map<string, { commandId: string; groupId?: string }[]>();
   private readonly resolving = new Set<ApplyCommand>();
+  /**
+   * Clicks whose room ended before it recorded them, by draft: the server applied them, so the
+   * projection keeps folding them until a room opens again on the draft as the server holds it.
+   */
+  private readonly landedUnrecorded = new Map<string, ApplyCommand[]>();
+  /** The read a rebuilding head waits on, stopped when the queue closes. */
+  private rebuildRead: AbortController | null = null;
   private closed = false;
   private request: Command | null = null;
   private retryTimer?: ReturnType<typeof setTimeout>;
@@ -249,6 +261,8 @@ export class ApplyClickQueue {
     ) => readonly PMNode[],
   ): readonly PMNode[] {
     let projected = base;
+    for (const command of this.landedUnrecorded.get(draftId) ?? [])
+      projected = fold(projected, command.optimistic, command.patched);
     for (const command of this.commands) {
       if (command.kind === "apply") {
         if (frozenOn(command, draftId) && !this.isRecorded(command))
@@ -369,8 +383,20 @@ export class ApplyClickQueue {
     else this.port.changed();
   }
 
+  /** A room opened on the draft as the server holds it: what it applied without a record is there. */
+  roomOpened(draftId: string): void {
+    if (this.landedUnrecorded.delete(draftId)) this.port.changed();
+  }
+
   close(draftId?: string): void {
     if (this.closed) return;
+    const head = this.commands[0];
+    if (
+      this.rebuildRead &&
+      head?.kind === "apply" &&
+      (draftId === undefined || head.body.draftId === draftId)
+    )
+      this.rebuildRead.abort();
     if (draftId === undefined) {
       this.closed = true;
       clearTimeout(this.retryTimer);
@@ -378,7 +404,6 @@ export class ApplyClickQueue {
     const closing = this.clicks.filter(
       (command) => !command.closed && (draftId === undefined || command.body.draftId === draftId),
     );
-    const head = this.commands[0];
     for (const command of closing) {
       command.closed = true;
       if (command === head && command.sent) continue;
@@ -393,6 +418,7 @@ export class ApplyClickQueue {
   }
 
   destroy(): void {
+    this.rebuildRead?.abort();
     clearTimeout(this.retryTimer);
     clearTimeout(this.feedbackTimer);
     for (const command of this.commands.splice(0))
@@ -431,21 +457,32 @@ export class ApplyClickQueue {
   private async dispatchApply(command: ApplyCommand): Promise<void> {
     if (!command.released) return;
     if (command.rebuilding && command.rebuild) {
-      command.rebuilding = false;
       // Holds the line: nothing is sent around a head that is being rebuilt.
       this.request = command;
+      const read = new AbortController();
+      this.rebuildRead = read;
+      const timeout = setTimeout(() => read.abort(), REBUILD_TIMEOUT_MS);
       let rebuilt: Awaited<ReturnType<NonNullable<FrozenApply["rebuild"]>>>;
+      let answered = true;
       try {
-        rebuilt = await command.rebuild();
+        rebuilt = await command.rebuild(read.signal);
       } catch (cause) {
-        reportError(cause);
-        rebuilt = undefined;
+        if (!read.signal.aborted) reportError(cause);
+        answered = false;
       }
+      clearTimeout(timeout);
+      this.rebuildRead = null;
       if (this.request === command) this.request = null;
       if (this.commands[0] !== command) {
         this.moveOn();
         return;
       }
+      // Unanswered, like a send: tried again, then stalled with Retry.
+      if (!answered) {
+        this.scheduleRetry(command);
+        return;
+      }
+      command.rebuilding = false;
       if (rebuilt === null) {
         this.settle(command, { status: "cancelled" });
         return;
@@ -632,7 +669,17 @@ export class ApplyClickQueue {
   private settle(command: ApplyCommand, result: ApplyClickOutcome): void;
   private settle(command: UnapplyCommand, result: UnapplyClickOutcome): void;
   private settle(command: Command, result: ApplyClickOutcome | UnapplyClickOutcome): void {
-    if (!this.release(command)) return;
+    if (this.commands[0] !== command) return;
+    // Folded before the release publishes, so the change doesn't flash back.
+    if (command.kind === "apply" && command.roomEnded && result.status === "applied") {
+      const draftId = command.body.draftId;
+      if (draftId && frozenOn(command, draftId))
+        this.landedUnrecorded.set(draftId, [
+          ...(this.landedUnrecorded.get(draftId) ?? []),
+          command,
+        ]);
+    }
+    this.release(command);
     if (command.kind === "apply") command.finish(result as ApplyClickOutcome);
     else command.finish(result as UnapplyClickOutcome);
   }

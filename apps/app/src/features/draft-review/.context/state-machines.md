@@ -27,7 +27,7 @@ stateDiagram-v2
   the room's typing and the click is sent: a whole-draft click as the whole cut, any other built
   again at the head from the draft read from the server (`cancelled` when none of its changes is
   there), and either settles on its answer. An Apply pressed after the room ended is built the
-  same way. A Redo whose Un-Apply did not land is `cancelled`:
+  same way. The read waits like a send: unanswered, it is tried again, then stalls with Retry. A Redo whose Un-Apply did not land is `cancelled`:
   the Apply it would repeat still stands.
 - **A click can be taken back only before it is sent.** Once `sent`, the server may have it,
   and the same command id is resent until the server answers.

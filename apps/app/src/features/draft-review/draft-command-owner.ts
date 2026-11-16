@@ -21,6 +21,7 @@ import type {
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import * as Y from "yjs";
 import {
   applyDraftClick,
@@ -50,7 +51,7 @@ import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
-import { buildFrame, readBase, roomContent } from "./review-frame";
+import { buildFrame, type ReviewFrame, readBase, roomContent } from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
@@ -130,6 +131,11 @@ type Entry = {
   roomKey: string;
   item: Item;
   binding: Binding | null;
+  /**
+   * The room that ended, kept for its projection only: it folds the clicks the server applied
+   * without a record (`ApplyClickQueue.landedUnrecorded`) until a room opens again.
+   */
+  ended: Binding | null;
   users: number;
   lease: DraftRoomRead | null;
   unwatchLease(): void;
@@ -164,6 +170,18 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
       return "gone";
   }
 }
+/**
+ * Whether `id` is the only one of its family in `ids`: identical edits are numbered `X`, `X~1`
+ * in document order, so the same id can name another edit in another frame.
+ */
+const unique = (ids: readonly string[], id: string) => {
+  const family = id.replace(/~\d+$/, "");
+  return ids.filter((other) => other.replace(/~\d+$/, "") === family).length === 1;
+};
+const inSchema = (schema: Schema, blocks: readonly PMNode[]) =>
+  blocks.every((block) => block.type.schema === schema)
+    ? blocks
+    : blocks.map((block) => schema.nodeFromJSON(block.toJSON()));
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
@@ -277,6 +295,7 @@ export class DraftCommandOwner {
         roomKey: session.roomKey,
         item,
         binding: null,
+        ended: null,
         users: 0,
         lease: null,
         unwatchLease: () => {},
@@ -307,6 +326,7 @@ export class DraftCommandOwner {
         changed: () => {
           for (const entry of item.rooms) {
             entry.binding?.runtime.invalidateBase();
+            entry.ended?.runtime.invalidateBase();
             this.holdRoom(entry);
           }
           this.publishQueue(item);
@@ -340,8 +360,9 @@ export class DraftCommandOwner {
 
   /** A draft with clicks outstanding keeps its room read, surface or not, to observe their record. */
   private holdRoom(entry: Entry) {
+    // A click whose room ended settles on its answer: no room needs opening to see its record.
     const pending =
-      this.textClicks(entry).length > 0 ||
+      this.textClicks(entry).some((click) => !click.roomEnded) ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
       const lease = readDraftRoom(this.registry, {
@@ -365,15 +386,17 @@ export class DraftCommandOwner {
   }
 
   private detach(entry: Entry) {
-    const binding = entry.binding;
-    if (!binding) return;
+    const { binding, ended } = entry;
     entry.binding = null;
-    binding.stop();
+    entry.ended = null;
+    binding?.stop();
+    ended?.stop();
   }
 
   private attach(entry: Entry, session: DocumentSession) {
-    if (entry.binding?.session === session) return;
+    if (entry.binding?.session === session || entry.ended?.session === session) return;
     this.detach(entry);
+    if (!session.isRoomEnded()) entry.item.queue.roomOpened(entry.draftId);
     const hold = retainReviewRuntime(session);
     const binding: Binding = {
       session,
@@ -386,7 +409,10 @@ export class DraftCommandOwner {
       return entry.item.queue.project(
         entry.draftId,
         readBase(session.document, schema),
-        (base, before, after) => applyBase(schema, base, before, after),
+        // A headless room projects with a schema of its own each time: a click frozen on an earlier
+        // one is read into this one, or no block would ever equal the base.
+        (base, before, after) =>
+          applyBase(schema, base, inSchema(schema, before), inSchema(schema, after)),
       );
     });
     const record = session.document.getArray(APPLY_RECORD_ROOT);
@@ -420,7 +446,9 @@ export class DraftCommandOwner {
         void this.resolveEnd(entry.ref, entry.draftId);
       } else if (session.isRoomEnded()) {
         entry.item.queue.roomEnded(entry.draftId);
-        this.detach(entry);
+        // It records nothing more, but its rows go on showing what the queue applies.
+        entry.binding = null;
+        entry.ended = binding;
       }
       // A released room is kept while it holds typing it can still send; this lets it go.
       this.releaseIdle(entry);
@@ -822,7 +850,12 @@ export class DraftCommandOwner {
     };
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     this.setState(ref.itemKey, { failure: null });
-    const rebuilt = this.rebuilder(entry.draftId, target.kind === "draft" ? null : ids, body);
+    const rebuilt = this.rebuilder(
+      entry.draftId,
+      target.kind === "draft" ? null : ids,
+      frame,
+      body,
+    );
     const frozen: FrozenApply = {
       body,
       optimistic,
@@ -876,24 +909,30 @@ export class DraftCommandOwner {
   ): StartedApply | null {
     const draftId = this.identities.get(ref.itemKey);
     if (!draftId || this.records.get(draftId)?.ended) return null;
+    const { frame, groupIds } = target;
+    // The frame's own cut: what the rows fold while it is rebuilt, and what goes when the room
+    // can't be read (closed, access ended), so the server says why.
     const body: ApplyClick = {
       commandId: joint?.commandId ?? crypto.randomUUID(),
       draftId,
-      groupIds: [...target.groupIds],
+      snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+      groupIds: [...groupIds],
       baseViewDelta: [],
       ...(restore ? { restore: true as const } : {}),
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
-    // Unreadable (closed, access ended): the frame's own cut goes, and the server says why.
-    const rebuilt = this.rebuilder(draftId, target.groupIds, body, {
-      ...body,
-      snapshot: base64(Y.encodeSnapshotV2(target.frame.snapshot)),
-    });
+    const rebuilt = this.rebuilder(draftId, groupIds, frame, body);
+    const schema = frame.doc.type.schema;
+    const optimistic = frame.diff.base.blocks;
     this.setState(ref.itemKey, { failure: null });
     const outcome = this.item(ref).queue.enqueue({
       body,
-      optimistic: [],
-      patched: [],
+      optimistic,
+      patched: applySpanPatches(
+        optimistic,
+        composeGroups(schema, frame, groupIds, "apply"),
+        "base",
+      ),
       acknowledged: Promise.resolve(),
       madeAfterRoomEnded: true,
       rebuild: rebuilt.rebuild,
@@ -908,20 +947,23 @@ export class DraftCommandOwner {
   /**
    * A text click again, for a room that ended before the server had its typing: the whole draft
    * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
-   * server now. A chosen change whose id isn't there stays (`stayed`): a choice is never widened.
-   * `chosen` null: the whole draft. `unreadable` is what goes when the room can't be read;
-   * `needsReload` when only a reload of this tab could read it.
+   * server now. A choice is never widened: a chosen change goes only when the server's read has
+   * its id and its family (`unique`) has one member in both frames; any other stays (`stayed`).
+   * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
+   * it applies (the read's own blocks are another schema's). A room that
+   * can't be read sends the click as it was frozen, and the server says why; `needsReload` when
+   * only a reload of this tab could read it.
    */
   private rebuilder(
     draftId: string,
     chosen: readonly string[] | null,
+    shown: ReviewFrame,
     body: ApplyClick,
-    unreadable?: ApplyClick,
   ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[]; needsReload: boolean } {
     const result = {
       stayed: [] as string[],
       needsReload: false,
-      rebuild: async () => {
+      rebuild: async (signal: AbortSignal) => {
         const fields = {
           commandId: body.commandId,
           draftId,
@@ -934,17 +976,26 @@ export class DraftCommandOwner {
             optimistic: [],
             patched: [],
           };
-        const fresh = await readRoomOnce(draftRoomName(draftId));
+        const fresh = await readRoomOnce(draftRoomName(draftId), signal);
         if (!(fresh instanceof Y.Doc)) {
           result.needsReload = fresh === "schema";
-          return unreadable && { body: unreadable, optimistic: [], patched: [] };
+          return undefined;
         }
         try {
           const content = roomContent(fresh);
           const schema = content.doc.type.schema;
           const base = readBase(fresh, schema);
           const frame = buildFrame(fresh, base, content.doc);
-          const kept = frame.groups.map((group) => group.id).filter((id) => chosen.includes(id));
+          const read = frame.groups.map((group) => group.id);
+          const kept = read.filter(
+            (id) =>
+              chosen.includes(id) &&
+              unique(
+                shown.groups.map((group) => group.id),
+                id,
+              ) &&
+              unique(read, id),
+          );
           result.stayed = chosen.filter((id) => !kept.includes(id));
           if (!kept.length) return null;
           return {
@@ -954,8 +1005,12 @@ export class DraftCommandOwner {
               groupIds: kept,
               baseViewDelta: [],
             },
-            optimistic: base,
-            patched: applySpanPatches(base, composeGroups(schema, frame, kept, "apply"), "base"),
+            optimistic: shown.diff.base.blocks,
+            patched: applySpanPatches(
+              shown.diff.base.blocks,
+              composeGroups(shown.doc.type.schema, shown, kept, "apply"),
+              "base",
+            ),
           };
         } finally {
           fresh.destroy();
