@@ -551,10 +551,13 @@ keyboard, pointer, drop, or draft-recovery answer.
 ### Live session teardown
 
 - A session holds the writer's undo (`session.history`), so teardown ends it. When no host holds
-  a live session and its history has entries, the registry keeps it, off its socket, wherever it
-  was shown: a side document whose review just ended, a closed tab, a phone sheet. A band or card
-  Apply puts an entry in that history, so this is what keeps an Apply's Ctrl+Z. At most
-  `KEPT_FOR_UNDO_CAP` (8) are kept, the least recently edited retired first; a history that
+  a live session whose room still takes writes (`canDeliverUnsentEdits()`) and its history has
+  entries, the registry keeps it, off its socket, wherever it was shown: a side document whose
+  review just ended, a closed tab, a phone sheet. An ended or read-only room's session retires,
+  so the writer comes back to a fresh one. A band or card Apply puts an entry in that history, so
+  this is what keeps an Apply's Ctrl+Z. An Apply hidden while an Un-Apply sent from elsewhere is
+  out counts as an entry: the Un-Apply can fail and bring it back, however long it takes. At most
+  `KEPT_FOR_UNDO_CAP` (8) are kept, the least recently changed retired first; a history that
   empties ends its session, and a host that takes the session back reattaches it.
 - A retained session's socket is open when some owner wants it (a host is on screen, reported
   through `setHosted` / `retain`'s `detachedDocumentIds`) or it has unsent edits it can still

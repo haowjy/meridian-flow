@@ -44,7 +44,7 @@ const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
 /** Closed-draft copies the start sweep loads at once. */
 const SWEEP_LOADS = 4;
-/** Most sessions kept for their undo once no host holds them; the least recently edited goes first. */
+/** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
 const KEPT_FOR_UNDO_CAP = 8;
 
 /**
@@ -104,7 +104,7 @@ export class DocumentSessionRegistry {
   /** Stops the connected-time cap of a held session kept open until the server acknowledges its edits. */
   private readonly holdCapStops = new Map<string, () => void>();
   /** Sessions no host holds, kept while their history has something to undo or redo. */
-  private readonly keptForUndo = new Map<string, { edited: number; stop: () => void }>();
+  private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
   private undoClock = 0;
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
@@ -872,28 +872,30 @@ export class DocumentSessionRegistry {
    * A session no host holds. Like draft rooms, one with unsent edits stays until they are
    * acknowledged: `settleDrainedRoom` ends the hold when the room can no longer take them, and a
    * room that stays connected without acknowledging ends it at the cap; offline time never counts.
-   * Then one whose history has entries is kept for its undo, wherever it was shown. The other exits
+   * Then one whose room still takes writes and whose history has entries is kept for its undo,
+   * wherever it was shown; a room that can't take them (ended, read-only) retires. The other exits
    * (removed document, revoked access, account close) go through `clearLocalCopy` and `invalidateAll`.
    */
   private releaseUnheld(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
     if (this.mustKeepForUnsentEdits(session)) this.holdUntilAcknowledged(roomKey, state, session);
-    else if (session.history.hasEntries()) this.keepForUndo(roomKey, state, session);
+    else if (session.canDeliverUnsentEdits() && session.history.hasEntries())
+      this.keepForUndo(roomKey, state, session);
     else this.retireLiveSession(roomKey, state);
   }
 
   /** Off the socket; a host that takes it back reattaches it, and an emptied history ends it. */
   private keepForUndo(roomKey: string, state: LiveRoomState, session: DocumentSession): void {
     const history = session.history;
-    const kept = { edited: ++this.undoClock, stop: () => {} };
+    const kept = { changed: ++this.undoClock, stop: () => {} };
     kept.stop = history.subscribe(() => {
-      if (history.hasEntries()) kept.edited = ++this.undoClock;
+      if (history.hasEntries()) kept.changed = ++this.undoClock;
       else this.retireLiveSession(roomKey, state);
     });
     this.keptForUndo.set(roomKey, kept);
     this.detachUnwantedTransport(session);
     if (this.keptForUndo.size <= KEPT_FOR_UNDO_CAP) return;
     const [oldest] = [...this.keptForUndo].reduce((least, entry) =>
-      entry[1].edited < least[1].edited ? entry : least,
+      entry[1].changed < least[1].changed ? entry : least,
     );
     const oldestState = this.liveRooms.get(oldest);
     if (oldestState) this.retireLiveSession(oldest, oldestState);
