@@ -129,8 +129,8 @@ export function meteredMillicreditsFromRaw(rawUsdMicros: bigint): bigint {
 }
 
 function pricingSnapshotSource(rate: ResolvedModelTokenRate): string {
-  if (rate.sourceLayer === "override") return `override: ${rate.source}`;
-  return `pinned: ${rate.source}`;
+  // A pinned rate's source already names the snapshot it came from.
+  return rate.sourceLayer === "override" ? `override: ${rate.source}` : rate.source;
 }
 
 function computeMissingUsageCost(input: { provider: string; model: string }): ComputedModelCost {
