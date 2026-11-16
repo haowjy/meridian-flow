@@ -49,7 +49,10 @@ nothing), each Work's authority, Trash times and retention, and a chat's uploads
 
 A record carries the name the writer typed, whatever the siblings are called: a create or rename
 beside a sibling of that name, and a move into a folder that shows it, make a twin (the replay's
-rule 14; the later's path carries `~id`). A move carries no name.
+rule 14; the later's path carries `~id`). A move carries no name. So whatever opens or focuses
+what a create made goes by the node's id, or the path `TreeActions.create` returns (where it
+landed, read from the replay): the typed name's path reaches the plain twin. A twin's row and a
+chip naming it show the `~id` faintly after the name (`EntryName`); tabs don't.
 
 The only verdict the server writes is `dropped` on a change to a Work that was closed (a create,
 rename, move or delete in its draft or its Scratch): it comes back as a settlement on the record,
