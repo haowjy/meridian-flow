@@ -18,7 +18,8 @@ import {
 } from "@meridian/contracts/commands";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
+import type { ApplyStep, Left, TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
+import type { AppliedCommand } from "./apply-history";
 import type { DiscardRestores } from "./discard-restores";
 
 export type NoticeSurface =
@@ -139,11 +140,12 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
 }
 
 /**
- * What an Un-Apply took back, the one reading every surface says: something taken back with
- * nothing left is `all`; with a tree fact left out, `partly`; nothing taken back
- * but something left, `nothing`; neither, `already` (the server's `already unapplied`). Each node
- * a `left_out` line names keeps that line's reason, so its row can say why it stayed; the lines
- * are read here, not through `settledOf`, whose views drop the nodes they name.
+ * What an Un-Apply took back, the one place its answer becomes what every surface says. Something
+ * taken back with nothing left or held is `all`; with something left or held, `partly`; nothing
+ * taken back but something left or held, `nothing`; neither, `already` (the server's `already
+ * unapplied`). Each node a `left_out` line names keeps that line's reason (`treeLeft`), read here,
+ * not through `settledOf`, whose views drop the nodes they name. `held` is what stayed for a closed
+ * owner, as the answer says it; an answer stored before it had one holds nothing.
  */
 export function unappliedOf(answer: UnapplyClickResult): Unapplied {
   const took = answer.reversedGroupIds.length > 0 || answer.treeUndone.length > 0;
@@ -151,10 +153,12 @@ export function unappliedOf(answer: UnapplyClickResult): Unapplied {
   for (const one of answer.settled ?? [])
     if (one.rule === "left_out")
       for (const node of one.items) if (!treeLeft.has(node)) treeLeft.set(node, one.why);
-  if (treeLeft.size === 0) return { taken: took ? "all" : "already" };
+  const held = answer.held ?? [];
+  const stayed = treeLeft.size > 0 || held.length > 0;
   return {
-    taken: took ? "partly" : "nothing",
+    taken: took ? (stayed ? "partly" : "all") : stayed ? "nothing" : "already",
     treeLeft: [...treeLeft].map(([node, why]) => ({ node, why })),
+    held,
   };
 }
 
@@ -261,10 +265,22 @@ export type DraftNotice =
       /** What the Apply did that the writer can't see from the rows alone, each on its document. */
       facts: readonly AppliedFact[];
       dismiss(): void;
+    })
+  | (Base & {
+      /**
+       * What Ctrl+Z on an Apply in an editor said, on that document: what stayed (`left`), or that
+       * the Un-Apply didn't reach the server, with its Retry.
+       */
+      kind: "unapplied";
+      said: { kind: "left"; left: Left } | { kind: "failed"; name: string; retry(): void };
+      dismiss(): void;
     });
 
-/** An Apply's Undo: its step on the sidebar's Undo stack (`undoApply`), over `count` changes. */
-export type AppliedUndo = { undo: () => void; count: number };
+/**
+ * An Apply's Undo: the Apply (`AppliedCommand`), whose state says whether its Undo is offered, over
+ * `count` changes.
+ */
+export type AppliedUndo = { command: AppliedCommand; count: number };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
@@ -283,7 +299,7 @@ export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
 export const hasLine = (notice: DraftNotice): boolean =>
   notice.kind === "applied"
     ? notice.facts.some((fact) => fact.kind !== "applied")
-    : notice.status !== "bounced";
+    : notice.kind === "unapplied" || notice.status !== "bounced";
 
 const BOUNCE_SHOWN_MS = 6_000;
 
@@ -333,6 +349,13 @@ export class DraftNotices {
   forDocument(projectId: string, documentId: string | null): DraftNotice | null {
     for (const notice of this.notices.values())
       if (
+        notice.kind === "unapplied" &&
+        notice.projectId === projectId &&
+        notice.surface.kind === "band" &&
+        notice.surface.documentId === documentId
+      )
+        return notice;
+      else if (
         notice.kind === "discarded" &&
         notice.projectId === projectId &&
         (notice.surface.kind === "band"
@@ -385,6 +408,41 @@ export class DraftNotices {
       dismiss: () => this.endIf(input.ownerKey, id),
     });
     this.publish();
+  }
+
+  /**
+   * What Ctrl+Z on an Apply in `documentId`'s editor answered, on that document's identity row:
+   * what stayed, or that it didn't go through. Taken back whole, the text says it.
+   */
+  showPress(input: {
+    projectId: string;
+    ownerKey: string;
+    documentId: string;
+    step: ApplyStep & { press(from: null): Promise<unknown> };
+    answer: Unapplied | { taken: "failed" };
+  }): () => void {
+    const { step, answer } = input;
+    if (this.closed || answer.taken === "all" || answer.taken === "already") return () => {};
+    const held = this.notices.get(input.ownerKey);
+    if (held) this.drop(held);
+    const id = this.nextId++;
+    this.notices.set(input.ownerKey, {
+      kind: "unapplied",
+      id,
+      projectId: input.projectId,
+      ownerKey: input.ownerKey,
+      surface: { kind: "band", documentId: input.documentId },
+      said:
+        answer.taken === "failed"
+          ? { kind: "failed", name: step.name, retry: () => void step.press(null) }
+          : {
+              kind: "left",
+              left: { ...answer, name: step.name, nodes: step.nodes, facts: step.facts },
+            },
+      dismiss: () => this.endIf(input.ownerKey, id),
+    });
+    this.publish();
+    return () => this.endIf(input.ownerKey, id);
   }
 
   /** The facts an Apply adds to the owner's applied notice, if it is the one showing. */

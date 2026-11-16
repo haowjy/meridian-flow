@@ -111,6 +111,11 @@ export function apiProjectDraftsProvenancePath(projectId: string): string {
   return `${apiProjectPath(projectId)}/drafts/provenance`;
 }
 
+/** The state, open or closed, of the account's drafts: a start-time read of the drafts this browser holds copies of. */
+export function apiDraftStatesPath(): string {
+  return "/api/drafts/states";
+}
+
 /** Commands address the branch; the server reads its owner from the branch row. */
 export function apiProjectBranchPath(projectId: string, branchId: string): string {
   return `${apiProjectPath(projectId)}/branches/${branchId}`;

@@ -7,7 +7,6 @@ import {
   APPLY_RECORD_ROOT,
   applySpanPatches,
   baseViewDelta,
-  blocksEqual,
   composeGroups,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
@@ -39,19 +38,28 @@ import {
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
-import { type DocumentSession, isSignInLapse } from "@/core/editor/document-session";
+import type { DocumentSession } from "@/core/editor/document-session";
 import {
   type DraftRoomRead,
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import { readRoomOnce } from "@/core/editor/room-read-once";
+import type { ClosedOwners } from "@/core/project-tree/tree-undo";
 import {
   type ApplyClickOutcome,
   ApplyClickQueue,
+  type ApplyCommandHandle,
   type FrozenApply,
   frozenOn,
 } from "./apply-click-queue";
-import { BandApply, type LiveHistories } from "./apply-history";
+import {
+  AppliedCommand,
+  AppliedCommands,
+  type LiveHistories,
+  queuePort,
+  serverBandPort,
+} from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
 import { startDraftDiscardSession } from "./draft-discard-session";
 import {
@@ -67,7 +75,14 @@ import {
 } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { ApplyLine, BranchCommandFailure, DraftRef } from "./review-command-types";
-import { readBase } from "./review-frame";
+import {
+  buildFrame,
+  inSchema,
+  type ReviewFrame,
+  readBase,
+  readChosen,
+  roomContent,
+} from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
@@ -152,6 +167,11 @@ type Entry = {
   roomKey: string;
   item: Item;
   binding: Binding | null;
+  /**
+   * The room that ended, kept for its projection only: it folds the clicks the server applied
+   * without a record (`ApplyClickQueue.landedUnrecorded`) until a room opens again.
+   */
+  ended: Binding | null;
   users: number;
   lease: DraftRoomRead | null;
   unwatchLease(): void;
@@ -165,7 +185,14 @@ type Joint = {
   send(body: ApplyClick): Promise<ApplyClickAnswer>;
   answered(answer: ApplyClickOutcome): void;
 };
-export type StartedApply = { sent: boolean; outcome: Promise<CommandOutcome> };
+/** `band`: a band's Apply, the one owner of its Undo in the band's editors. */
+export type StartedApply = {
+  sent: boolean;
+  outcome: Promise<CommandOutcome>;
+  band?: AppliedCommand;
+};
+/** A band's Apply: the editors its Ctrl+Z goes in, and which owners are closed now. */
+export type BandHistories = { histories: LiveHistories; closed: ClosedOwners };
 /**
  * A Discard's answer for the documents it was sent. `done` when it took something, `settled` when
  * each item was settled before it, `returned` when a closed owner changed nothing. `untaken`: the
@@ -235,8 +262,19 @@ const RESOLVE_RETRY_MAX_MS = 30_000;
 export class DraftCommandOwner {
   private readonly items = new Map<string, Item>();
   private readonly entries = new Map<string, Entry>();
-  /** Band Applies in force or taken back, while their Ctrl+Z or Redo can still run. */
-  private readonly bandApplies = new Set<BandApply>();
+  /**
+   * Band Applies in force or taken back, while their Ctrl+Z or Redo can run: their draft, and the
+   * item queue's handle until the review lets go of the draft's room.
+   */
+  private readonly bandApplies = new Map<
+    AppliedCommand,
+    { draftId: string; handle: ApplyCommandHandle | null }
+  >();
+  /**
+   * Every Apply this tab can still take back or apply again: the one each Undo of it presses, a
+   * chat card's included (`AppliedCommand`).
+   */
+  readonly applied = new AppliedCommands();
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
@@ -258,7 +296,7 @@ export class DraftCommandOwner {
   readonly notices = new DraftNotices(this.restores);
   constructor(
     private readonly registry: DraftRoomRegistry & {
-      closeDraftRoom(roomKey: string): Promise<void>;
+      closeDraftRoom(roomKey: string, cause: "closed" | "removed"): Promise<void>;
       /** A restore reopened the draft: the page may open its room again. */
       reopenDraftRoom(roomKey: string): void;
     },
@@ -339,6 +377,7 @@ export class DraftCommandOwner {
         roomKey: session.roomKey,
         item,
         binding: null,
+        ended: null,
         users: 0,
         lease: null,
         unwatchLease: () => {},
@@ -370,6 +409,7 @@ export class DraftCommandOwner {
         changed: () => {
           for (const entry of item.rooms) {
             entry.binding?.runtime.invalidateBase();
+            entry.ended?.runtime.invalidateBase();
             this.holdRoom(entry);
           }
           this.publishQueue(item);
@@ -403,8 +443,9 @@ export class DraftCommandOwner {
 
   /** A draft with clicks outstanding keeps its room read, surface or not, to observe their record. */
   private holdRoom(entry: Entry) {
+    // A click whose room ended settles on its answer: no room needs opening to see its record.
     const pending =
-      this.textClicks(entry).length > 0 ||
+      this.textClicks(entry).some((click) => !click.roomEnded) ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
       const lease = readDraftRoom(this.registry, {
@@ -428,15 +469,17 @@ export class DraftCommandOwner {
   }
 
   private detach(entry: Entry) {
-    const binding = entry.binding;
-    if (!binding) return;
+    const { binding, ended } = entry;
     entry.binding = null;
-    binding.stop();
+    entry.ended = null;
+    binding?.stop();
+    ended?.stop();
   }
 
   private attach(entry: Entry, session: DocumentSession) {
-    if (entry.binding?.session === session) return;
+    if (entry.binding?.session === session || entry.ended?.session === session) return;
     this.detach(entry);
+    if (!session.isRoomEnded()) entry.item.queue.roomOpened(entry.draftId);
     const hold = retainReviewRuntime(session);
     const binding: Binding = {
       session,
@@ -449,7 +492,10 @@ export class DraftCommandOwner {
       return entry.item.queue.project(
         entry.draftId,
         readBase(session.document, schema),
-        (base, before, after) => applyBase(schema, base, before, after),
+        // A headless room projects with a schema of its own each time: a click frozen on an earlier
+        // one is read into this one, or no block would ever equal the base.
+        (base, before, after) =>
+          applyBase(schema, base, inSchema(schema, before), inSchema(schema, after)),
       );
     });
     const record = session.document.getArray(APPLY_RECORD_ROOT);
@@ -481,14 +527,11 @@ export class DraftCommandOwner {
         (connection.disposition === "closed" || connection.disposition === "removed")
       ) {
         void this.resolveEnd(entry.ref, entry.draftId);
-      } else if (
-        snapshot.status === "destroyed" ||
-        connection?.kind === "reset" ||
-        connection?.kind === "terminal" ||
-        (connection?.kind === "unauthorized" && !isSignInLapse(connection))
-      ) {
-        this.detach(entry);
-        entry.item.queue.refuseUnsent(entry.draftId);
+      } else if (session.isRoomEnded()) {
+        entry.item.queue.roomEnded(entry.draftId);
+        // It records nothing more, but its rows go on showing what the queue applies.
+        entry.binding = null;
+        entry.ended = binding;
       }
       // A released room is kept while it holds typing it can still send; this lets it go.
       this.releaseIdle(entry);
@@ -675,11 +718,13 @@ export class DraftCommandOwner {
       });
     if (entry?.binding) for (const stop of entry.binding.notices) stop();
     // The server refuses an Un-Apply against an ended draft: Ctrl+Z goes past its Applies.
-    for (const band of this.bandApplies) if (band.draftId === id) band.end();
+    for (const [band, held] of this.bandApplies) if (held.draftId === id) band.end();
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);
     if (id !== ref.itemKey)
-      void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
+      void this.registry
+        .closeDraftRoom(draftRoomName(id), end === "document" ? "removed" : "closed")
+        .catch(reportError);
   }
 
   private releaseIdle(entry: Entry) {
@@ -700,7 +745,11 @@ export class DraftCommandOwner {
       send: (body: ApplyClick) => applyDraftClick(entry.ref, body),
       unapply: (body: UnapplyClick) => unapplyDraftClick(entry.ref, body),
     };
-    for (const band of this.bandApplies) if (band.draftId === entry.draftId) band.release(port);
+    for (const [band, held] of this.bandApplies) {
+      if (held.draftId !== entry.draftId || !held.handle) continue;
+      band.switchPort(serverBandPort(port, held.handle.replay()));
+      held.handle = null;
+    }
     this.releaseItem(entry.item);
   }
 
@@ -783,7 +832,7 @@ export class DraftCommandOwner {
     requested: boolean,
     saw: TreeSaw | undefined,
     /** A band's Apply: the histories its Ctrl+Z goes in. */
-    histories?: LiveHistories | null,
+    histories?: BandHistories | null,
     joint?: Joint,
   ): StartedApply | null {
     if (!this.active || this.state(ref.itemKey).discarding) return null;
@@ -802,6 +851,7 @@ export class DraftCommandOwner {
       return whole || tree
         ? this.captureOnReceipt(ref, { draftId: whole, tree }, saw, joint)
         : null;
+    if (target.kind === "groups" && !room) return this.captureEnded(ref, target, tree, saw, joint);
     return this.captureText(ref, target, tree, saw, histories, joint);
   }
 
@@ -849,7 +899,7 @@ export class DraftCommandOwner {
     target: TextTarget,
     tree: boolean,
     saw: TreeSaw | undefined,
-    histories?: LiveHistories | null,
+    histories?: BandHistories | null,
     joint?: Joint,
   ): StartedApply | null {
     const entry = this.byItem.get(ref.itemKey);
@@ -858,22 +908,19 @@ export class DraftCommandOwner {
       return null;
     const frame = binding.runtime.projectNow();
     if (!frame) return null;
-    if (
-      target.kind === "groups" &&
-      (!blocksEqual(frame.diff.base.blocks, target.frame.diff.base.blocks) ||
-        !blocksEqual(frame.diff.draft.blocks, target.frame.diff.draft.blocks))
-    ) {
-      this.setState(ref.itemKey, {
-        failure: { code: "apply-refused", serverCode: "review_updated" },
-      });
-      return {
-        sent: false,
-        outcome: Promise.resolve({ kind: "change-refused", code: "review_updated" }),
-      };
+    // The room may have moved since the writer chose (Live typing reaching the base): name the
+    // chosen changes as this frame does, and keep in the draft any it has no name for.
+    const chosen =
+      target.kind === "draft"
+        ? { going: frame.groups.map((group) => ({ read: group.id })), stayed: [] }
+        : readChosen(target.frame, frame, target.groupIds);
+    const ids = chosen.going.map((pair) => pair.read);
+    if (!ids.length) {
+      if (!chosen.stayed.length) return null;
+      const lines: ApplyLine[] = [{ half: "text", code: "left_out_not_on_server" }];
+      this.setState(ref.itemKey, { failure: { code: "apply-left-out", landed: false, lines } });
+      return { sent: false, outcome: Promise.resolve({ kind: "settled", lines }) };
     }
-    const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
-    if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id)))
-      return null;
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
     const patched = applySpanPatches(
@@ -896,11 +943,19 @@ export class DraftCommandOwner {
     };
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     this.setState(ref.itemKey, { failure: null });
+    const rebuilt = this.rebuilder(
+      entry.draftId,
+      target.kind === "draft" ? null : ids,
+      frame,
+      body,
+      chosen.stayed,
+    );
     const frozen: FrozenApply = {
       body,
       optimistic,
       patched,
       acknowledged,
+      rebuild: rebuilt.rebuild,
       ...(joint ? { send: joint.send } : {}),
     };
     const scheduled = histories
@@ -916,18 +971,209 @@ export class DraftCommandOwner {
             }),
         })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
+    let band: AppliedCommand | undefined;
     if (scheduled.handle && histories) {
-      const band = new BandApply(entry.draftId, histories, scheduled.handle, () =>
-        this.bandApplies.delete(band),
+      const handle = scheduled.handle;
+      const applied: AppliedCommand = new AppliedCommand(
+        {
+          text: true,
+          tree: null,
+          sources: [],
+          name: "",
+          nodes: [ref.documentId],
+          facts: new Map(),
+        },
+        queuePort(handle, ref.documentId),
+        histories.histories,
+        {
+          closed: histories.closed,
+          seat: null,
+          said: ({ answer, step }) =>
+            this.notices.showPress({
+              projectId: ref.projectId,
+              ownerKey: ref.ownerKey,
+              documentId: ref.documentId,
+              step,
+              answer,
+            }),
+          over: () => {
+            this.bandApplies.delete(applied);
+            this.applied.delete(applied);
+          },
+        },
       );
-      this.bandApplies.add(band);
+      band = applied;
+      this.bandApplies.set(band, { draftId: entry.draftId, handle });
+      this.applied.add(band);
     }
     binding.runtime.projectNow();
-    const outcome = scheduled.outcome.then((answer) => {
-      joint?.answered(answer);
-      return this.settled(ref, entry.draftId, answer);
+    return {
+      sent: true,
+      outcome: this.textOutcome(ref, entry.draftId, scheduled.outcome, rebuilt, joint),
+      ...(band ? { band } : {}),
+    };
+  }
+
+  /**
+   * Some changes chosen on a frame whose room has ended (or isn't open yet): the click is built
+   * from the draft as the server holds it when it is sent (`rebuilder`).
+   */
+  private captureEnded(
+    ref: DraftRef,
+    target: GroupsTarget,
+    tree: boolean,
+    saw: TreeSaw | undefined,
+    joint?: Joint,
+  ): StartedApply | null {
+    const draftId = this.identities.get(ref.itemKey);
+    if (!draftId || this.records.get(draftId)?.ended) return null;
+    const { frame, groupIds } = target;
+    // The frame's own cut: what the rows fold while it is rebuilt, and what goes when the room
+    // can't be read (closed, access ended), so the server says why.
+    const body: ApplyClick = {
+      commandId: joint?.commandId ?? crypto.randomUUID(),
+      draftId,
+      snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+      groupIds: [...groupIds],
+      baseViewDelta: [],
+      ...(tree ? { tree: true as const } : {}),
+      ...(saw ? { saw } : {}),
+    };
+    const rebuilt = this.rebuilder(draftId, groupIds, frame, body, []);
+    const schema = frame.doc.type.schema;
+    const optimistic = frame.diff.base.blocks;
+    this.setState(ref.itemKey, { failure: null });
+    const outcome = this.item(ref).queue.enqueue({
+      body,
+      optimistic,
+      patched: applySpanPatches(
+        optimistic,
+        composeGroups(schema, frame, groupIds, "apply"),
+        "base",
+      ),
+      acknowledged: Promise.resolve(),
+      madeAfterRoomEnded: true,
+      rebuild: rebuilt.rebuild,
+      ...(joint ? { send: joint.send } : {}),
     });
-    return { sent: true, outcome };
+    return {
+      sent: true,
+      outcome: this.textOutcome(ref, draftId, outcome, rebuilt, joint),
+    };
+  }
+
+  /**
+   * A text click again, for a room that ended before the server had its typing: the whole draft
+   * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
+   * server now. A choice is never widened: a chosen change goes only when the server's read names
+   * the same change (`readChosen`); any other stays (`stayed`, after `left`, what the caller
+   * already left out).
+   * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
+   * it applies (the read's own blocks are another schema's). A room that
+   * can't be read sends the click as it was frozen, and the server says why; one this build can't
+   * read settles unsent without a send, `needsReload`, since only a reload of this tab could read it.
+   */
+  private rebuilder(
+    draftId: string,
+    chosen: readonly string[] | null,
+    shown: ReviewFrame,
+    body: ApplyClick,
+    left: readonly string[],
+  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[]; needsReload: boolean } {
+    const result = {
+      stayed: [...left],
+      needsReload: false,
+      rebuild: async (signal: AbortSignal) => {
+        const fields = {
+          commandId: body.commandId,
+          draftId,
+          ...(body.tree ? { tree: true as const } : {}),
+          ...(body.saw ? { saw: body.saw } : {}),
+        };
+        if (!chosen)
+          return {
+            body: { ...fields, whole: true as const, groupIds: [], baseViewDelta: [] },
+            optimistic: [],
+            patched: [],
+          };
+        const fresh = await readRoomOnce(draftRoomName(draftId), signal);
+        if (fresh === "schema") {
+          result.needsReload = true;
+          return "reload" as const;
+        }
+        if (!(fresh instanceof Y.Doc)) return undefined;
+        try {
+          const content = roomContent(fresh);
+          const schema = content.doc.type.schema;
+          const base = readBase(fresh, schema);
+          const frame = buildFrame(fresh, base, content.doc);
+          const { going, stayed } = readChosen(shown, frame, chosen);
+          result.stayed = [...left, ...stayed];
+          if (!going.length) return null;
+          return {
+            body: {
+              ...fields,
+              snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+              groupIds: going.map((pair) => pair.read),
+              baseViewDelta: [],
+            },
+            optimistic: shown.diff.base.blocks,
+            patched: applySpanPatches(
+              shown.diff.base.blocks,
+              composeGroups(
+                shown.doc.type.schema,
+                shown,
+                going.map((pair) => pair.shown),
+                "apply",
+              ),
+              "base",
+            ),
+          };
+        } finally {
+          fresh.destroy();
+        }
+      },
+    };
+    return result;
+  }
+
+  /** A text click's outcome, with the changes a rebuild left in the draft said on its item. */
+  private textOutcome(
+    ref: DraftRef,
+    draftId: string,
+    outcome: Promise<ApplyClickOutcome>,
+    rebuilt: { stayed: string[]; needsReload: boolean },
+    joint?: Joint,
+  ): Promise<CommandOutcome> {
+    return outcome.then((answer) => {
+      joint?.answered(answer);
+      const settled = this.settled(ref, draftId, answer);
+      // The server can't take a click from this build until the tab reloads: say that, not "try again".
+      if (rebuilt.needsReload)
+        this.setState(
+          ref.itemKey,
+          { failure: { code: "apply-refused", serverCode: "needs_reload" } },
+          draftId,
+        );
+      else if (rebuilt.stayed.length && settled.kind !== "change-refused")
+        this.setState(
+          ref.itemKey,
+          {
+            failure: {
+              code: "apply-left-out",
+              landed: settled.kind === "done",
+              lines: [
+                ...(settled.kind === "done" || settled.kind === "settled"
+                  ? (settled.lines ?? [])
+                  : []),
+                { half: "text", code: "left_out_not_on_server" },
+              ],
+            },
+          },
+          draftId,
+        );
+      return settled;
+    });
   }
 
   /**
@@ -1221,7 +1467,7 @@ export class DraftCommandOwner {
     this.notices.close();
     for (const item of this.items.values()) item.queue.close();
     // Their entries sit on sessions that outlive this owner.
-    for (const band of this.bandApplies) band.end();
+    for (const applied of this.applied.values()) applied.end();
   }
 }
 

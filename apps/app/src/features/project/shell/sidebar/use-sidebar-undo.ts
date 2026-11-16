@@ -11,6 +11,7 @@ import { followFocusFrom } from "@/components/app/RowWord";
 import { undoLatest } from "@/core/project-tree/tree-undo";
 import type { TreeVersion } from "@/core/project-tree/tree-version";
 import { useAccountId } from "../../context/account-feature-context";
+import { useClosedOwners } from "../../context/closed-owners";
 import { entryRowOf } from "../../context/use-tree-notice-words";
 
 const isUndoKey = (event: KeyboardEvent) =>
@@ -30,6 +31,7 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
   const accountId = useAccountId();
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
+  const closed = useClosedOwners(projectId);
   const pressing = useRef(false);
   return useMemo(
     () => ({
@@ -50,7 +52,14 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
         pressing.current = true;
         const from = document.activeElement;
         const follow = from ? followFocusFrom(from) : null;
-        void undoLatest(session, source, version.view, `user:${accountId}`, version.pendingText)
+        void undoLatest(
+          session,
+          source,
+          version.view,
+          `user:${accountId}`,
+          closed,
+          version.pendingText,
+        )
           .then((outcome) => {
             const [node] = outcome.kind === "undone" ? outcome.nodes : [];
             if (node && follow) follow(() => entryRowOf(node));
@@ -60,6 +69,6 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
           });
       },
     }),
-    [account, project, version, accountId],
+    [account, project, version, accountId, closed],
   );
 }

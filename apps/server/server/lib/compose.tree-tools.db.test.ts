@@ -41,6 +41,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       handleApplyItemsRequest,
       handleDiscardWorkDraftRequest,
       handleOwnerDraftListRequest,
+      handleUnapplyClickRequest,
       selectBranchRouteServices,
     } = await import("./branch-review-route.js");
 
@@ -518,7 +519,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         );
 
-      it("the card's Undo after an Apply takes the applied moves back though one drafted document was discarded", async () => {
+      it("the card's Undo after an Apply is the Apply's Un-Apply, though one drafted document was discarded", async () => {
         const script = await start();
         await drafting(script).reply(async (edit) => {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
@@ -534,11 +535,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...scope,
           owner,
         } as never);
+        const branchId = await branchOf(OTHER_WORK_ID);
+        const applyCommandId = randomUUID();
         await handleApplyItemsRequest(routes, {
           ...scope,
-          branchId: await branchOf(OTHER_WORK_ID),
+          branchId,
           request: {
-            commandId: randomUUID(),
+            commandId: applyCommandId,
             items: left.map((item) => ({
               node: item.documentId,
               tree: true as const,
@@ -547,16 +550,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         } as never);
         const [part1] = await placementsNamed("part1");
         expect((await placement(CH1))?.parentId).toBe(part1?.id);
-        const undone = await cardUndo();
-        expect(undone.status, JSON.stringify(undone)).not.toBe("permission_denied");
-        expect((await placement(CH1))?.parentId).toBeNull();
-        expect(await placementsNamed("fresh")).toEqual([]);
-        expect(
-          await composed.ports.documentSync.getDocumentAndTreeChip(
+        const chip = () =>
+          composed.ports.documentSync.getDocumentAndTreeChip(
             OTHER.threadId as never,
             OTHER.turnId as never,
-          ),
-        ).toMatchObject({ state: "undone", control: "view_change" });
+          );
+        // The card names the Apply that took the move, and its own reversal leaves the move to it.
+        expect(await chip()).toMatchObject({
+          applied: [{ commandId: applyCommandId, branchId, count: 1, onlyThisTurn: true }],
+        });
+        await cardUndo();
+        expect((await placement(CH1))?.parentId).toBe(part1?.id);
+        const unapplied = await handleUnapplyClickRequest(routes, {
+          ...scope,
+          branchId,
+          request: { commandId: randomUUID(), applyCommandId },
+        } as never);
+        expect(unapplied, JSON.stringify(unapplied)).toMatchObject({ status: "unapplied" });
+        expect((await placement(CH1))?.parentId).toBeNull();
+        expect(await placementsNamed("fresh")).toEqual([]);
+        expect((await chip())?.applied).toBeUndefined();
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {

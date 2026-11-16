@@ -42,9 +42,18 @@ function UpdateWord() {
       }
       className={`${WORD} cursor-pointer hover:text-foreground`}
     >
-      <span className="max-sm:hidden">{reload}</span>
-      <span className="sm:hidden">{t`Update`}</span>
+      <ReloadWords />
     </button>
+  );
+}
+
+/** The update word's text, wherever a reload of the tab is the only way on. */
+export function ReloadWords() {
+  return (
+    <>
+      <span className="max-sm:hidden">{t`Reload to update`}</span>
+      <span className="sm:hidden">{t`Update`}</span>
+    </>
   );
 }
 
