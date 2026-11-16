@@ -656,7 +656,7 @@ export function ChatView({
     () =>
       handoffCutoff || pendingCreation
         ? {
-            mode: "handoff",
+            mode: "started",
             projectId,
             threadId,
             bound: { name: agentName, definitionRevisionId: agentRevisionId },

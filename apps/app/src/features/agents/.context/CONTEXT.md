@@ -1,7 +1,8 @@
 # features/agents — Agent selection
 
 New-chat Send reserves the selected Agent (default: the Agent of the newest chat started in the
-project, `AgentCatalog.lastStartedSlug`, else General) and the model it runs on with its display
+project, from the project's chat list, which every create, handoff and fork adds to at once; else
+General) and the model it runs on with its display
 snapshot on the local thread before persist, and catalog updates can't replace
 that choice. The server remains the authority for admission of retained
 revisions.

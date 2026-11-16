@@ -12,6 +12,7 @@
  * brief reports it as the open request.
  */
 import { t } from "@lingui/core/macro";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
@@ -19,7 +20,7 @@ import { useModelOptions } from "@/client/query/useModelOptions";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { type AgentChoice, AgentPickerPanel, NO_OVERRIDES } from "@/features/agents/AgentPicker";
+import { type AgentChoice, AgentPickerPanel } from "@/features/agents/AgentPicker";
 import { type BoundAgent, boundAgentRow, pickableAgents } from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";

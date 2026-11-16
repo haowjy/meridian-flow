@@ -40,7 +40,7 @@ export type ComposerAgentControlProps =
       onChoose: (choice: AgentChoice) => void;
     }
   | {
-      mode: "handoff";
+      mode: "started";
       projectId: string;
       /** The chat, whose bound definition the panel can open. */
       threadId: string;
@@ -69,13 +69,13 @@ export function useComposerAgentToolbarControl(
   const selectedAgent =
     props.mode === "interactive"
       ? props.selectedAgent
-      : props.mode === "handoff"
+      : props.mode === "started"
         ? boundAgentRow(selectable, props.bound)
         : null;
   const name =
     props.mode === "readonly"
       ? props.name
-      : props.mode === "handoff"
+      : props.mode === "started"
         ? (props.bound.name ?? DEFAULT_AGENT_NAME)
         : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
   const modelLabel = model ? modelName(models, model) : null;
@@ -155,7 +155,7 @@ export function useComposerAgentToolbarControl(
     kind: "panel",
     id: "agent",
     priority: 300,
-    interaction: props.mode === "handoff" && !props.onHandoff ? "busy" : "enabled",
+    interaction: props.mode === "started" && !props.onHandoff ? "busy" : "enabled",
     item: { ...item, ariaLabel: t`Choose agent, currently ${value}` },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger
@@ -167,7 +167,7 @@ export function useComposerAgentToolbarControl(
       </ComposerCurrentValueTrigger>
     ),
     panel: {
-      ariaLabel: props.mode === "handoff" ? t`This chat's Agent` : t`Choose agent`,
+      ariaLabel: props.mode === "started" ? t`This chat's Agent` : t`Choose agent`,
       size: "split",
       focus: {
         pageId,

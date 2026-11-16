@@ -1976,8 +1976,8 @@ msgid "Changes in this chat"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Changing it rebuilds the chat's cache."
-msgstr ""
+#~ msgid "Changing it rebuilds the chat's cache."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changing position"
@@ -3842,7 +3842,6 @@ msgid "Hand off from here"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-#: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to"
 msgstr ""
 
@@ -5560,8 +5559,8 @@ msgid "Reason: {0}"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Reasoning"
-msgstr ""
+#~ msgid "Reasoning"
+#~ msgstr ""
 
 #. placeholder {0}: model.name
 #: src/features/agents/AgentPicker.tsx
