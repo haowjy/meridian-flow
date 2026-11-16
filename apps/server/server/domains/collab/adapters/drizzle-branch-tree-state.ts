@@ -9,7 +9,7 @@ import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { pendingDocuments } from "../../context/tree/pending-documents.js";
-import { LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
+import { type IdentityStatus, LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
 import type {
   BranchDocumentTree,
   BranchTreeChange,
@@ -65,6 +65,21 @@ export async function branchFolderRevisions(
   return [...rows];
 }
 
+/**
+ * Where live has (or, in Trash, last had) a document the Work keeps elsewhere: a move of a
+ * deleted document is still a move, which Apply makes after restoring it. Null when live's
+ * address is the Work's, as for a deleted document the Work only has text in.
+ */
+function movedFrom(live: IdentityStatus | undefined, workUri: string | null): string | null {
+  const at =
+    live?.kind === "visible"
+      ? live.address.uri
+      : live?.kind === "deleted"
+        ? (live.lastAddress?.uri ?? null)
+        : null;
+  return at !== null && (live?.kind === "visible" || at !== workUri) ? at : null;
+}
+
 export function createDrizzleBranchTreeState(
   db: Database,
   tree: Pick<TreeReader, "identityStatus">,
@@ -116,6 +131,12 @@ export function createDrizzleBranchTreeState(
           row.deleted === null ? null : created ? "created" : row.deleted ? "deleting" : "moving";
         const here = inBranch.get(id);
         const there = inLive.get(id);
+        const uri =
+          here?.kind === "visible"
+            ? here.address.uri
+            : here?.kind === "deleted"
+              ? (here.lastAddress?.uri ?? null)
+              : null;
         return {
           documentId: id,
           origin: created ? "created" : "edited",
@@ -126,13 +147,8 @@ export function createDrizzleBranchTreeState(
           change,
           revision: row.revision,
           pending: pending.has(id),
-          uri:
-            here?.kind === "visible"
-              ? here.address.uri
-              : here?.kind === "deleted"
-                ? (here.lastAddress?.uri ?? null)
-                : null,
-          movedFromUri: change === "moving" && there?.kind === "visible" ? there.address.uri : null,
+          uri,
+          movedFromUri: change === "moving" ? movedFrom(there, uri) : null,
         };
       });
     },

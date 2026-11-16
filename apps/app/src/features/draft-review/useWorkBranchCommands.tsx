@@ -155,7 +155,7 @@ export function useWorkBranchCommands({
           done.flatMap(({ outcome }) => outcome.applied ?? []).map((fact) => [fact.itemKey, fact]),
         ).values(),
       ];
-      const fresh: AppliedFact[] = [
+      let fresh: AppliedFact[] = [
         ...done.flatMap(({ item, outcome }) => {
           const name = titleOf(item);
           return outcome.restored && name && item
@@ -196,6 +196,11 @@ export function useWorkBranchCommands({
           return from && to ? [{ documentId, kind: "also", from, to }] : [];
         }),
       ];
+      // A document brought back somewhere new says only where it is now.
+      const landedIds = new Set(
+        fresh.flatMap((fact) => (fact.kind === "landed" ? [fact.documentId] : [])),
+      );
+      fresh = fresh.filter((fact) => fact.kind !== "restored" || !landedIds.has(fact.documentId));
       // Every document the writer applied says so on its row, a plain Apply as much as one that
       // moved it.
       const told = new Set(fresh.map((fact) => fact.documentId));
