@@ -104,14 +104,19 @@ export function AgentPickerPanel({
   const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
-  // A started chat runs its Agent as bound until it compacts, so its Default is the bound model
-  // and level, not the newest save's: the same binding the stale mark compares.
+  // A started chat runs its Agent as bound until it compacts, so its row shows the bound model,
+  // level and availability, not the newest save's: the same binding the stale mark compares.
   const bound = useThreadAgent(mode.kind === "chat" ? mode.threadId : null);
   const agents = (status.agents ?? [])
     .filter((agent) => agent.primary)
     .map((agent) =>
       mode.kind === "chat" && agent.slug === current.slug && bound.data
-        ? { ...agent, model: bound.data.model, effort: bound.data.effort }
+        ? {
+            ...agent,
+            model: bound.data.model,
+            effort: bound.data.effort,
+            unavailableReasons: bound.data.unavailableReasons,
+          }
         : agent,
     );
   if (status.status !== "ready" || agents.length === 0)

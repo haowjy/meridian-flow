@@ -435,6 +435,10 @@ export function createBoundAgentCatalog(input: {
         stale: (await catalog.refreshBinding(userId, projectId, thread)) !== undefined,
         model: bound.configuration.model,
         effort: bound.configuration.effort ? AGENT_EFFORT_CHOICE[bound.configuration.effort] : null,
+        unavailableReasons: input.unavailableReasons(
+          revision.definition,
+          bound.configuration.model,
+        ),
       };
     },
 
