@@ -242,7 +242,7 @@ async function addFileFacts(
 
 /**
  * Names the document a Work's branch created at an address the live tree leaves empty (the
- * scope's `branchCreatedAt`: exact, then the one extension-omitted match). A live occupant
+ * scope's `branchCreatedAt`, as the branch's tree reaches the address). A live occupant
  * keeps winning, since these never reached one; another branch's creation and what the
  * reader may not read stay missing.
  */

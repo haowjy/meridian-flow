@@ -16,6 +16,7 @@ import * as links from "@/features/links";
 import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import * as phoneShell from "@/hooks/use-phone-shell";
+import { linkIndexOf } from "./link-trees";
 
 export function installEditorShell(registry: LiveDocumentSessionRegistry) {
   const removal = new ContextRemovalCoordinator();
@@ -51,7 +52,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
     vi.spyOn(account, "useLiveDocumentSessionRegistry").mockReturnValue(registry),
     vi
       .spyOn(links, "useLinkableDocuments")
-      .mockReturnValue({ documents: [], folders: [], revision: "", complete: false }),
+      .mockReturnValue({ ...linkIndexOf([]), revision: "", complete: false }),
     vi.spyOn(references, "useReferenceBrowserCatalog").mockReturnValue(null),
     vi.spyOn(focus, "useInlineReviewFocus").mockImplementation(() => {}),
     vi.spyOn(status, "SyncStatus").mockImplementation(() => null),

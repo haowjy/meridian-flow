@@ -8,6 +8,7 @@ import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/c
 import {
   type ContextSource,
   canonicalLeaf,
+  childAtSegment,
   classifyFiletype,
   type DocumentFileType,
   documentFileTypeFor,
@@ -17,7 +18,6 @@ import {
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import {
-  childAtSegment,
   isSourceRoot,
   pathOf,
   sourceIdOf,

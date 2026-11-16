@@ -140,10 +140,26 @@ export function matchDocumentPath<T>(
 ): T | null {
   const found = matchDocumentAddress(candidates, path, pathOf);
   if (found) return found;
-  const slash = path.lastIndexOf("/");
-  const wanted = path.slice(0, slash + 1) + canonicalLeaf(path.slice(slash + 1));
+  const dir = path.slice(0, path.lastIndexOf("/") + 1);
+  return matchOmittedExtension(
+    candidates.filter((candidate) => pathOf(candidate).startsWith(dir)),
+    path.slice(dir.length),
+    (candidate) => pathOf(candidate).slice(dir.length),
+  );
+}
+
+/**
+ * The one candidate whose segment differs from the link's `leaf` only by a registered extension
+ * the link left off, among candidates in one folder; null when none or several.
+ */
+export function matchOmittedExtension<T>(
+  candidates: readonly T[],
+  leaf: string,
+  segmentOf: (candidate: T) => string,
+): T | null {
+  const wanted = canonicalLeaf(leaf);
   const loose = candidates.filter(
-    (candidate) => omittedExtensionPath(pathOf(candidate)) === wanted,
+    (candidate) => omittedExtensionPath(segmentOf(candidate)) === wanted,
   );
   return loose.length === 1 ? (loose[0] ?? null) : null;
 }

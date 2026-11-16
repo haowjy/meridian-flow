@@ -10,13 +10,12 @@
  */
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { ContextSiblingPosition, Filetype } from "@meridian/contracts/protocol";
-import { readSegment } from "@meridian/contracts/protocol";
+import { childAtSegment, readSegment } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import {
   type Actor,
   type BlobRef,
-  childAtSegment,
   childrenOf,
   isSourceRoot,
   LIVE,

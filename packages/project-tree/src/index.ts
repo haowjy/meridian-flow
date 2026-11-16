@@ -63,7 +63,6 @@ export {
   projectedRows,
 } from "./rows.js";
 export {
-  childAtSegment,
   childrenOf,
   descendantsOf,
   fingerprint,

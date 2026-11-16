@@ -18,7 +18,7 @@ import {
   linkKeyOfMark,
   pictureKeyOfNode,
 } from "@/core/editor/links";
-
+import { linkIndexOf } from "@/test-support/link-trees";
 import { followProjectLink } from "./follow-link";
 import { createLinkSettlements } from "./link-settlements";
 import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
@@ -283,7 +283,7 @@ it("routes each link to the local index or the server", async () => {
     resolution.registerResolver(
       createProjectLinkResolver(
         scope,
-        { documents: DOCUMENTS, folders: [], revision: "r", complete: row.complete ?? true },
+        { ...linkIndexOf(DOCUMENTS), revision: "r", complete: row.complete ?? true },
         settlements,
       ),
       { baseUri: scope.baseUri },
@@ -351,7 +351,7 @@ it("routes each link to the local index or the server", async () => {
       resolution.registerResolver(
         createProjectLinkResolver(
           scope,
-          { documents: later.documents, folders: [], revision: `r${at + 2}`, complete: true },
+          { ...linkIndexOf(later.documents), revision: `r${at + 2}`, complete: true },
           settlements,
         ),
         { baseUri: scope.baseUri },
@@ -379,7 +379,7 @@ it("a link to a document that exists only in a draft is followed to that Work's 
   resolution.registerResolver(
     createProjectLinkResolver(
       { projectId: "p", workId: "w", baseUri: HOLDER },
-      { documents: [], folders: [], revision: "r", complete: true },
+      { ...linkIndexOf([]), revision: "r", complete: true },
       createLinkSettlements(),
     ),
     { baseUri: HOLDER },

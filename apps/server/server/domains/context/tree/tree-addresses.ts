@@ -53,6 +53,7 @@ export type DocumentCoordinates = {
 /** Where a document is in a view, in Trash or deleted in the Work included. */
 export type DocumentAddress = DocumentCoordinates & {
   documentId: DocumentId;
+  contextSourceId: ContextSourceId;
   /** Decoded canonical URI. */
   uri: string;
   deleted: boolean;
@@ -115,6 +116,7 @@ export async function loadDocumentAddresses(
     root_thread_ref: string | null;
     is_no_work: boolean | null;
     path: string;
+    context_source_id: string;
     deleted: boolean;
     file_type: string;
   }>(sql`
@@ -138,7 +140,7 @@ export async function loadDocumentAddresses(
       cs.slug AS scheme, cs.work_id::text AS work_id, w.handle AS work_handle,
       w.is_no_work AS is_no_work, cs.root_thread_id::text AS root_thread_id,
       cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref,
-      up.path || c.segment AS path,
+      up.path || c.segment AS path, c.context_source_id::text AS context_source_id,
       c.deleted OR cs.deleted_at IS NOT NULL OR w.deleted_at IS NOT NULL AS deleted,
       c.file_type
     FROM candidates c
@@ -170,6 +172,7 @@ export async function loadDocumentAddresses(
     return [
       {
         documentId: row.id as DocumentId,
+        contextSourceId: row.context_source_id as ContextSourceId,
         owner: ownerFrom({ projectId: row.project_id, userId: row.account_id }),
         userId: row.user_id,
         scheme,

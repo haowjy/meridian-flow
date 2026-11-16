@@ -22,12 +22,13 @@
 
 import {
   type LinkRef,
-  matchDocumentPath,
+  matchOmittedExtension,
   parseContextUri,
   storedLinkRef,
 } from "@meridian/contracts";
 import { assignFreshLink } from "@meridian/markup/links";
 import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
+import type { TreeView } from "@/core/project-tree/tree-view";
 
 /** One document the editor's local index knows, by id and current address. */
 export type LinkAssignmentDocument = { documentId: string; uri: string };
@@ -39,6 +40,8 @@ type LinkAssignmentFolder = { folderId: string; uri: string };
 export type LinkAssignmentIndex = {
   readonly documents: readonly LinkAssignmentDocument[];
   readonly folders: readonly LinkAssignmentFolder[];
+  /** The project trees behind them: the walk that says which node an address reaches. */
+  readonly trees: readonly TreeView[];
 };
 
 /** Everything an assignment is relative to: the holder's address, its project, its index. */
@@ -66,8 +69,8 @@ export function assignWrittenHref(
     href,
     grammar: "link",
     holderUri,
-    documentFor: (uri) => (index ? indexedDocumentAt(index.documents, uri) : null),
-    folderFor: (uri) => (index ? indexedFolderAt(index.folders, uri) : null),
+    documentFor: (uri) => (index ? indexedDocumentAt(index, uri) : null),
+    folderFor: (uri) => (index ? indexedFolderAt(index, uri) : null),
   });
   if (assigned.kind === "literal") return { ref: null, href };
   if (assigned.kind === "folder-address") return { ref: null, href: assigned.href };
@@ -85,7 +88,7 @@ export function assignWrittenSource(src: string, index: LinkAssignmentIndex | nu
     href: src,
     grammar: "source",
     holderUri: null,
-    documentFor: (uri) => (index ? indexedDocumentAt(index.documents, uri) : null),
+    documentFor: (uri) => (index ? indexedDocumentAt(index, uri) : null),
     // A picture's source is never a folder.
     folderFor: () => null,
   });
@@ -94,55 +97,62 @@ export function assignWrittenSource(src: string, index: LinkAssignmentIndex | nu
   return { ref: assigned.ref, href: assigned.href };
 }
 
-/**
- * The indexed document at an internal address, by the server's address rule
- * (`matchDocumentPath`: the exact path, else the one path that differs only by
- * an omitted extension). A contextual address means the scope's own Work,
- * which is the only Work whose Scratch and Uploads the index holds.
- */
-export function indexedDocumentAt<T extends LinkAssignmentDocument>(
-  documents: readonly T[],
-  uri: string,
-): T | null {
+/** The tree of the source an internal address is in, and the path in it. A contextual address means the scope's own Work, as for documents. */
+function treeAt(trees: readonly TreeView[], uri: string) {
   const requested = parseContextUri(uri);
   if (!requested.ok) return null;
   const { scheme, path, authority } = requested.value;
-  const candidates = documents.flatMap((document) => {
-    const candidate = parseContextUri(document.uri);
-    if (!candidate.ok || candidate.value.scheme !== scheme) return [];
-    if (
-      authority.kind !== "contextual" &&
-      JSON.stringify(candidate.value.authority) !== JSON.stringify(authority)
-    )
-      return [];
-    return [{ document, path: candidate.value.path }];
+  const tree = trees.find((candidate) => {
+    const root = parseContextUri(candidate.root.uri);
+    return (
+      root.ok &&
+      root.value.scheme === scheme &&
+      (authority.kind === "contextual" ||
+        JSON.stringify(root.value.authority) === JSON.stringify(authority))
+    );
   });
-  return matchDocumentPath(candidates, path, (candidate) => candidate.path)?.document ?? null;
+  return tree ? { tree, path } : null;
 }
 
 /**
- * The indexed folder at exactly a directory address. A contextual address
- * means the scope's own Work, as for documents.
+ * The indexed document at an internal address, as the server's tree reads it: folders are
+ * walked by segment, so a document `Kael` beside a folder `Kael~f051` leaves `Kael/Note` in the
+ * folder; the leaf is the exact name or its alias, else the one document there that differs only
+ * by an extension the link left off. A contextual address means the scope's own Work, which is
+ * the only Work whose Scratch and Uploads the index holds.
  */
-export function indexedFolderAt<T extends LinkAssignmentFolder>(
-  folders: readonly T[],
+export function indexedDocumentAt<T extends LinkAssignmentDocument>(
+  index: { documents: readonly T[]; trees: readonly TreeView[] },
   uri: string,
 ): T | null {
-  const requested = parseContextUri(uri);
-  if (!requested.ok) return null;
-  const { scheme, path, authority } = requested.value;
-  return (
-    folders.find((folder) => {
-      const candidate = parseContextUri(folder.uri);
-      return (
-        candidate.ok &&
-        candidate.value.scheme === scheme &&
-        candidate.value.path === path &&
-        (authority.kind === "contextual" ||
-          JSON.stringify(candidate.value.authority) === JSON.stringify(authority))
-      );
-    }) ?? null
-  );
+  const at = treeAt(index.trees, uri);
+  if (!at) return null;
+  const found = at.tree.findPath(at.path);
+  let documentId = found?.kind === "file" ? found.documentId : undefined;
+  if (documentId === undefined) {
+    const slash = at.path.lastIndexOf("/");
+    const folder = at.tree.findFolder(at.path.slice(0, Math.max(slash, 0)));
+    const files = folder
+      ? at.tree.children(folder.entryId).filter((entry) => entry.kind === "file")
+      : [];
+    documentId = matchOmittedExtension(files, at.path.slice(slash + 1), (entry) =>
+      entry.path.slice(entry.path.lastIndexOf("/") + 1),
+    )?.documentId;
+  }
+  return index.documents.find((document) => document.documentId === documentId) ?? null;
+}
+
+/**
+ * The indexed folder at exactly a directory address, every segment read at folder level as
+ * the server reads it. A contextual address means the scope's own Work, as for documents.
+ */
+export function indexedFolderAt<T extends LinkAssignmentFolder>(
+  index: { folders: readonly T[]; trees: readonly TreeView[] },
+  uri: string,
+): T | null {
+  const at = treeAt(index.trees, uri);
+  const folderId = at?.tree.findFolder(at.path)?.entryId;
+  return index.folders.find((folder) => folder.folderId === folderId) ?? null;
 }
 
 /**

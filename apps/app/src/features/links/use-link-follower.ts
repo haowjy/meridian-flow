@@ -143,6 +143,7 @@ export function useLinkFollower({
     const registered: LinkableDocumentIndex = {
       documents: catalog.current.documents,
       folders: catalog.current.folders,
+      trees: catalog.current.trees,
       revision,
       get complete() {
         return catalog.current.complete;

@@ -13,7 +13,7 @@ it may write, whether a node id is in use) comes in as plain inputs.
   and in a casebook test that fails without it.
 - Two siblings may share a name (rule 14): a node's `name` is its label, and the later twin's
   path segment adds `~` and its `suffix` (`segmentOf`). A reader that spells or walks a path
-  uses the segment (`childAtSegment`); one that shows a title uses the name.
+  uses the segment (`childAtSegment`, in `@meridian/contracts/protocol`); one that shows a title uses the name.
 - A client may write five record kinds with its own account as the actor. Everything else
   (copies, which carry `carries`; files, `purge`, settlements) is the server's, and `guard`
   closes a copy whose update carries it (`CopyFault`): nothing else is refused. `clientMayWrite`

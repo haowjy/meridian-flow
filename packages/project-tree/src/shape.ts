@@ -1,4 +1,4 @@
-import { entrySegment, idHex, readSegment } from "@meridian/contracts/protocol";
+import { entrySegment } from "@meridian/contracts/protocol";
 import { generateKeyBetween } from "fractional-indexing";
 import { isSourceRoot } from "./record.js";
 import type { TreeNode, TreeProjection } from "./replay.js";
@@ -39,37 +39,6 @@ export function pathOf(projection: TreeProjection, node: TreeNode): string {
     at = isSourceRoot(at.parent) ? undefined : projection.nodes.get(at.parent);
   }
   return `/${segments.join("/")}`;
-}
-
-/**
- * The shown child a path segment reaches. With a `~` suffix, the one whose id's hex digits begin
- * with it (the lowest id, should a suffix shortened by hand fit two), whatever name is in front;
- * a suffix that reaches none reads as the name in front, so a writer and a reader take a stale or
- * made-up `~id` the same way. By name, the child of that name that carries no suffix.
- *
- * `folder` reads a folder level of a path: only folders answer, and when the plain twin of the
- * name is a document, the folder of that name with the lowest id does (`Arc/x` reaches the folder
- * `Arc~922e` beside a document `Arc`). The SQL walk (`nodesAt`) reads the same.
- */
-export function childAtSegment(
-  children: readonly TreeNode[],
-  segment: string,
-  level?: "folder",
-): TreeNode | undefined {
-  const { name, suffix } = readSegment(segment);
-  let byId: TreeNode | undefined;
-  let plain: TreeNode | undefined;
-  let named: TreeNode | undefined;
-  for (const child of children) {
-    if (child.trashed || (level === "folder" && child.kind !== "folder")) continue;
-    if (suffix !== undefined && idHex(child.id).startsWith(suffix)) {
-      if (!byId || child.id < byId.id) byId = child;
-    } else if (child.name === name) {
-      if (child.suffix === undefined) plain = child;
-      else if (level === "folder" && (!named || child.id < named.id)) named = child;
-    }
-  }
-  return byId ?? plain ?? named;
 }
 
 /** A rank that sorts at `index` among sibling `ranks` (in display order). */
