@@ -274,7 +274,9 @@ identity in anchors or holds.
   history lasts as long as the session, so a tab's undo survives its editor (the patched
   y-tiptap undo plugin neither destroys a manager it didn't create nor leaves its
   listeners on it). Only edits written through an editor are tracked, so Ctrl+Z reverts
-  the writer's own and leaves peer and model edits alone. Reload resets it. The side, Work, tree-only Apply, and title changes never enter it.
+  the writer's own and leaves peer and model edits alone. Reload resets it. A text Apply enters it as one entry, from any surface, while the
+  session lives (`features/draft-review/.context/draft-review.md`); a Discard from the side, Work, tree-only Apply, and
+  title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks

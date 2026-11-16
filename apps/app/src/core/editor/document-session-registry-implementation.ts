@@ -22,6 +22,7 @@ import type {
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import type { DocumentHistory } from "./editor-history";
 import {
   createHandBackNotices,
   type HandBackNotice,
@@ -222,6 +223,10 @@ export class DocumentSessionRegistry {
   get(lease: LiveDocumentSessionLease): DocumentSession {
     const state = this.requireLease(lease);
     return this.getOrCreateLiveSession(lease, state, true);
+  }
+
+  liveHistory(documentId: DocumentId): DocumentHistory | null {
+    return this.liveRooms.get(documentId)?.session?.history ?? null;
   }
 
   async restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean> {

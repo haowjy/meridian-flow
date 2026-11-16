@@ -220,8 +220,8 @@ Open a draft with two separated changes and a move.
    settle in order, typing remains enabled, and the review does not flash back
    before its authoritative room update.
 6. Refuse Un-Apply. The restored change shows the error and Retry with the same
-   command id. Chat-side, tree-only, and delete-short-circuit Apply do not enter
-   editor history.
+   command id. Tree-only and delete-short-circuit Apply do not enter editor
+   history; a chat or sidebar Apply does (see `draft-review.md`).
 
 After each case, inspect the draft room and live document with `./mf`. Reversed
 Apply records are absent, skipped records remain, and replaying either command
