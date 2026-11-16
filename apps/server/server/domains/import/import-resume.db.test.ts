@@ -84,7 +84,6 @@ describe.runIf(enabled)("import resume", () => {
     });
     const ports = await createProductionAppPorts({
       db,
-      backgroundTasks: processDetachedWork,
       eventSink: createNoopEventSink(),
       environment: { FLOW_OPENAI_API_KEY: "sk-test-import-resume" },
     });
@@ -224,7 +223,6 @@ describe.runIf(enabled)("import resume", () => {
     });
     const ports = await createProductionAppPorts({
       db,
-      backgroundTasks: processDetachedWork,
       eventSink: createNoopEventSink(),
       environment: { FLOW_OPENAI_API_KEY: "sk-test-import-stop" },
     });

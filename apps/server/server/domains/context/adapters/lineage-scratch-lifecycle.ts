@@ -70,7 +70,6 @@ export function createDrizzleLineageScratchLifecycle(
             projectId,
             rootThreadId,
             scope: "lineage",
-            name: "Scratch",
             slug: "scratch",
           })
           .onConflictDoNothing()

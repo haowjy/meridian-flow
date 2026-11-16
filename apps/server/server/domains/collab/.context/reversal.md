@@ -249,6 +249,26 @@ the card and `internal_error` ("the document changed while reversing; try again"
 for model Undo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope.
 
+The card's chip answers from the same plan as the card's Undo, but a `preview` of it: `prepare`
+asks the kernel which edits an Undo would take (`PreparedEditRoots.preview`) and never builds
+the Undo, so the chip costs a classification per document instead of a full inverse (seconds for
+a turn of large documents). A preview builds only a part a later part of the selection is
+classified on, since its receipt joins the history that one is judged against; the last part
+is accepted when it classifies active. It admits and normalizes nothing, so it cannot answer
+differently from `compute` in two cases: the kernel's own checks throw, or the last part
+classifies active but `executeUndo` would return no updates (never seen in 62k random rows).
+Change `compute` and
+`preview` together, and check them against each other on random documents and peer edits. `prepare`
+plans a card's documents on a worker pool (`inverse-worker.ts`, two threads): the planner sends each
+document's live and draft updates, its history, the selection and the action id, and the worker's
+`runInverseJob` (agent-edit) rebuilds the documents and runs `compute`. The result is the same
+`ComputedInverse`, with plain objects where `compute` returns Yjs `ID`s. A worker that crashes or
+passes 120 s fails the command with the same 500 an in-process throw gives. The planner's own
+lineage is built only when something on the server classifies against it, because building one
+costs a string key per restored clock: it is not built for a plan that computes on a worker. The
+chip's `preview` stays in-process, one document per turn of the loop (`setImmediate`). The model's own
+`undo` plans one document at a time through `compute` on a scratch view and stays in-process.
+
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain

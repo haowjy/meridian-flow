@@ -81,7 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db
         .insert(contextSources)
-        .values({ id: source, workId: w, scope: "work", name: "Scratch", slug: "scratch" });
+        .values({ id: source, workId: w, scope: "work", slug: "scratch" });
       await treeSeeder(db).document(source, "probe", { id: probe });
     });
 
@@ -116,7 +116,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const kbSource = "00000000-0000-4000-8000-000000000b06";
       await database.current
         .insert(contextSources)
-        .values({ id: kbSource, projectId: p, scope: "project", name: "Knowledge", slug: "kb" });
+        .values({ id: kbSource, projectId: p, scope: "project", slug: "kb" });
       const thread = "00000000-0000-4000-8000-000000000b07";
       await database.current.insert(threads).values({
         rootThreadId: thread,

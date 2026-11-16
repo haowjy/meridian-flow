@@ -413,31 +413,34 @@ describe("UserTurnAdmission", () => {
       true,
     ],
     ["upload identity mismatch", [availableResolution()], false],
-  ])("degrades %s identity in place without veto or retargeting", async (_label, resolutions, draftUploadMatches) => {
-    // A picture that can't be admitted fails the send, in the app's words for a failed upload.
-    await expect(
-      harness(null, resolutions, draftUploadMatches).service.admit(input()),
-    ).rejects.toThrow("The upload failed.");
-    const h = harness(null, resolutions, draftUploadMatches);
-    const mentionsOnly = input({
-      blocks: (input().blocks as { type: string }[]).filter((block) => block.type !== "image"),
-    });
-    await expect(h.service.admit(mentionsOnly)).resolves.toMatchObject({ kind: "accepted" });
-    expect(h.captured()?.blocks).toEqual([
-      { type: "text", text: "see " },
-      { type: "text", text: occurrenceText },
-      { type: "text", text: occurrenceText },
-    ]);
-    expect(h.captured()?.references).toEqual([]);
-    expect(
-      h
-        .captured()
-        ?.blocks.filter((block) => block.type === "text" || block.type === "reference")
-        .map((block) => block.text)
-        .join(""),
-    ).toBe(input().text);
-    expect(h.availability.placed).toHaveBeenCalledTimes(1);
-  });
+  ])(
+    "degrades %s identity in place without veto or retargeting",
+    async (_label, resolutions, draftUploadMatches) => {
+      // A picture that can't be admitted fails the send, in the app's words for a failed upload.
+      await expect(
+        harness(null, resolutions, draftUploadMatches).service.admit(input()),
+      ).rejects.toThrow("The upload failed.");
+      const h = harness(null, resolutions, draftUploadMatches);
+      const mentionsOnly = input({
+        blocks: (input().blocks as { type: string }[]).filter((block) => block.type !== "image"),
+      });
+      await expect(h.service.admit(mentionsOnly)).resolves.toMatchObject({ kind: "accepted" });
+      expect(h.captured()?.blocks).toEqual([
+        { type: "text", text: "see " },
+        { type: "text", text: occurrenceText },
+        { type: "text", text: occurrenceText },
+      ]);
+      expect(h.captured()?.references).toEqual([]);
+      expect(
+        h
+          .captured()
+          ?.blocks.filter((block) => block.type === "text" || block.type === "reference")
+          .map((block) => block.text)
+          .join(""),
+      ).toBe(input().text);
+      expect(h.availability.placed).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("admits a New-chat upload by identity and records the address it now has, whatever its name", async () => {
     const h = harness(null, [availableResolution("uploads://@c1/moved.png")]);

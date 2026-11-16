@@ -1,5 +1,8 @@
+import { sharedTest } from "../../tools/ci/vitest-shared";
+
 export default {
   test: {
+    ...sharedTest,
     environment: "node",
     // Reuse pure codecs as production does; test resolvers and registries are instance-owned.
     isolate: false,

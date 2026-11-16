@@ -79,7 +79,7 @@ Bytes in and out: import, export, uploads and the object store.
 
 What belongs to the account and the operator: credits, settings, and the safe event stream.
 
-`billing`, `preferences` and `observability`. Billing is the credit ledger that runs consume; observability sanitizes every event so writer text stays out of logs.
+`billing`, `preferences`, `mcp` and `observability`. Billing is the credit ledger that runs consume; observability sanitizes every event so writer text stays out of logs.
 
 - Kind: group
 - Opens: [Account](server-account.md)

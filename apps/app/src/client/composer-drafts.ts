@@ -2,6 +2,7 @@
 import { type HandBackCommand, type MessageDoc, prependMessageDoc } from "@meridian/thread-client";
 import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
 import {
+  composerDocEnd,
   parseRestorableComposerDraft,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
@@ -10,7 +11,13 @@ import { browserRecord, isRecord, type StorageSource } from "./storage/browser-r
 /** `side-new-chat`: the side's new chat, kept apart so a chip it attaches never reaches `/chats`. */
 export type ComposerDraftScope = { kind: "chat" | "new-chat" | "side-new-chat"; id: string };
 
-export type DeletedChatCard = { threadId: string; title: string | null; count: number };
+/** `own`: the writer deleted the chat in this tab, so the note says so plainly. */
+export type DeletedChatCard = {
+  threadId: string;
+  title: string | null;
+  count: number;
+  own?: boolean;
+};
 
 /**
  * A hand-back request the writer pressed whose answer has not been written to the composer: kept
@@ -28,6 +35,8 @@ type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   chatId?: string;
   parked?: ParkedDraft[];
   about?: AttachedAbout;
+  /** A chat box's project, so its words can find the New chat box when no pane shows the chat. */
+  project?: string;
 };
 
 /** A document chip the composer put in a new chat on its own: it may replace it, unlike the writer's. */
@@ -86,8 +95,21 @@ export class ComposerSessionDraft {
   private readonly mintsChat: boolean;
   private parked: ParkedDraft[] = [];
   private attached: AttachedAbout | null = null;
-  private chatField(): { chatId?: string; parked?: ParkedDraft[]; about?: AttachedAbout } {
-    if (!this.mintsChat) return {};
+  /** Set once a pane shows the chat; saved with the draft's next write. */
+  project: string | null = null;
+  setProject = (project: string): void => {
+    if (this.mintsChat || this.project === project) return;
+    this.project = project;
+    this.dirty = true;
+    this.flush();
+  };
+  private chatField(): {
+    chatId?: string;
+    parked?: ParkedDraft[];
+    about?: AttachedAbout;
+    project?: string;
+  } {
+    if (!this.mintsChat) return this.project ? { project: this.project } : {};
     return {
       chatId: this.chatId,
       parked: this.parked,
@@ -118,8 +140,7 @@ export class ComposerSessionDraft {
     if (snapshots.every((_, index) => recordIds[index] && this.hasReceived(recordIds[index])))
       return true;
     const recovered = snapshots.some((snapshot) => snapshot.ownedUploads.length > 0);
-    const typed =
-      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
+    const typed = this.typed();
     const park = recovered && typed !== null && typed.ownedUploads.length > 0;
     const before = { current: this.current, chatId: this.chatId, parked: this.parked };
     if (park && typed) {
@@ -164,29 +185,26 @@ export class ComposerSessionDraft {
       (_, index) => !recordIds[index] || !this.hasReceived(recordIds[index]),
     );
     if (!pending.length) return true;
-    snapshots = pending;
-    const first = snapshots[0];
-    if (!first) return false;
-    const all = [...snapshots];
-    const typed =
-      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
-    if (typed) all.push(typed);
-    // The package's rule: each earlier message above the rest, one empty paragraph between.
-    const doc = all.reduceRight<MessageDoc | null>(
-      (below, snapshot) => prependMessageDoc(snapshot.doc as MessageDoc, below),
-      null,
-    ) as ComposerDraftSnapshot["doc"];
-    const edited = {
-      ...first,
-      revision: Math.max(...all.map((snapshot) => snapshot.revision)) + 1,
-      doc,
-      ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
-    };
+    const edited = this.withReturned(pending);
+    if (!edited) return false;
     const received = new Set([...this.received, ...recordIds]);
     const notices = notice
       ? [...this.notices.filter((item) => item.threadId !== notice.threadId), notice]
       : this.notices;
     return this.commit(edited, { received, notices, handBacks: this.handBacksPending });
+  }
+
+  /**
+   * Takes back what a deleted chat's move put in (its Undo): the box returns to what it held
+   * before, and the chat's note goes. The caller has checked with `holds` that the box still holds
+   * exactly what the move left.
+   */
+  withdraw(threadId: string, before: ComposerDraftSnapshot | null): void {
+    this.commit(before, {
+      received: this.received,
+      notices: this.notices.filter((notice) => notice.threadId !== threadId),
+      handBacks: this.handBacksPending,
+    });
   }
 
   /** The hand-back requests this tab pressed and has not written to the composer. */
@@ -233,24 +251,59 @@ export class ComposerSessionDraft {
    */
   receiveHandBack(requestId: string, returned: MessageDoc): boolean {
     if (this.hasReceivedHandBack(requestId)) return this.dropHandBack(requestId);
-    const typed =
-      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
-    const doc = prependMessageDoc(
-      returned,
-      typed ? (typed.doc as MessageDoc) : null,
-    ) as ComposerDraftSnapshot["doc"];
-    const edited = {
-      revision: (this.current?.revision ?? 0) + 1,
-      selection: typed?.selection ?? { anchor: 1, head: 1 },
-      ownedUploads: typed?.ownedUploads ?? [],
-      doc,
-    };
-    if (!parseRestorableComposerDraft(edited)) return false;
+    const edited = this.withReturned([sentWords(returned)]);
+    if (!edited) return false;
     return this.commit(edited, {
       received: new Set([...this.received, handBackReceipt(requestId)]),
       notices: this.notices,
       handBacks: this.handBacksPending.filter((known) => known.requestId !== requestId),
     });
+  }
+
+  /**
+   * A sent message back above what is typed, for the writer to change and send again (Edit after
+   * Stop). It carries no receipt: each press puts the words back once more. False when the write
+   * failed or the merged document wouldn't restore.
+   */
+  putBack(returned: MessageDoc): boolean {
+    const edited = this.withReturned([sentWords(returned)]);
+    if (!edited) return false;
+    return this.commit(edited, {
+      received: this.received,
+      notices: this.notices,
+      handBacks: this.handBacksPending,
+    });
+  }
+
+  /** What the writer has typed in this box, or null when it holds no words. */
+  private typed(): ComposerDraftSnapshot | null {
+    return this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
+  }
+
+  /**
+   * The one way words come back into the box: each returned message above the next, then what is
+   * typed, one empty paragraph between, with every upload they own and the caret at the end of the
+   * returned words. Null when the result wouldn't restore after a reload.
+   */
+  private withReturned(returned: readonly ComposerDraftSnapshot[]): ComposerDraftSnapshot | null {
+    const typed = this.typed();
+    const stack = (snapshots: readonly ComposerDraftSnapshot[]) =>
+      snapshots.reduceRight<MessageDoc | null>(
+        (below, snapshot) => prependMessageDoc(snapshot.doc as MessageDoc, below),
+        null,
+      ) as ComposerDraftSnapshot["doc"];
+    const all = typed ? [...returned, typed] : returned;
+    const edited: ComposerDraftSnapshot = {
+      revision:
+        Math.max(this.current?.revision ?? 0, ...all.map((snapshot) => snapshot.revision)) + 1,
+      selection: { anchor: 1, head: 1 },
+      ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
+      doc: stack(all),
+    };
+    if (!parseRestorableComposerDraft(edited)) return null;
+    // The returned words open the document that just parsed, so they parse too.
+    const end = composerDocEnd(stack(returned));
+    return { ...edited, selection: { anchor: end, head: end } };
   }
 
   /** One checked write of the draft with its receipts, notices and pending commands. */
@@ -286,10 +339,11 @@ export class ComposerSessionDraft {
 
   /** Once recorded, only the exact unchanged authoring draft transfers to the journal. */
   handoffSubmitted = (snapshot: ComposerDraftSnapshot): void => {
-    if (this.matches(snapshot)) this.handoff();
+    if (this.holds(snapshot)) this.handoff();
   };
 
-  private matches(snapshot: ComposerDraftSnapshot): boolean {
+  holds(snapshot: ComposerDraftSnapshot | null): boolean {
+    if (!snapshot) return false;
     // Selection movement is not editing. Normalize both sides so storage parsing
     // and object property order cannot change a structured document's identity.
     return (
@@ -321,7 +375,8 @@ export class ComposerSessionDraft {
               typeof item.threadId === "string" &&
               (item.title === null || typeof item.title === "string") &&
               typeof item.count === "number" &&
-              item.count > 0,
+              item.count > 0 &&
+              (item.own === undefined || typeof item.own === "boolean"),
           )
         )
           return undefined;
@@ -337,6 +392,7 @@ export class ComposerSessionDraft {
                 ? { parked: value.parked.filter(isParkedDraft) }
                 : {}),
               ...(isAttachedAbout(value.about) ? { about: value.about } : {}),
+              ...(typeof value.project === "string" ? { project: value.project } : {}),
             };
       },
     );
@@ -349,6 +405,7 @@ export class ComposerSessionDraft {
     this.chatId = saved?.chatId ?? crypto.randomUUID();
     this.parked = saved?.parked ?? [];
     this.attached = saved?.about ?? null;
+    this.project = saved?.project ?? null;
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
@@ -404,6 +461,14 @@ export class ComposerSessionDraft {
     if (saved) this.dirty = false;
   };
 }
+
+/** Words the server already holds, as a returned snapshot: their uploads were adopted at admission. */
+const sentWords = (doc: MessageDoc): ComposerDraftSnapshot => ({
+  revision: 0,
+  selection: { anchor: 1, head: 1 },
+  ownedUploads: [],
+  doc: doc as ComposerDraftSnapshot["doc"],
+});
 
 const sessionDrafts = new Map<string, ComposerSessionDraft>();
 

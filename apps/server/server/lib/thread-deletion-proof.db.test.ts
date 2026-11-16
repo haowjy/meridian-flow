@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** Real persistence contract for the two HTTP owner gates and shared root creation policy. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
@@ -103,51 +104,46 @@ describe.each(["snapshot", "runtime"] as const)("%s HTTP owner gate", (gate) => 
         : app.threadRuntime.requireOwnedThread(id, userId);
   }
 
-  it.each([
-    "thread",
-    "project",
-    "project-and-thread",
-    "cascade",
-  ] as const)("attests %s deletion only to the full owner", async (state) => {
-    const ask = await fixture();
-    await deleteFixture(state);
-    expect(await failure(() => ask(THREAD, OWNER))).toEqual({
-      kind: "error",
-      error: {
-        code: "thread_deleted",
-        message: "Thread deleted",
-        retryable: false,
-        source: "system",
-        details: {
-          authenticatedUserId: OWNER,
-          ...(state.startsWith("project") ? { projectDeleted: true } : {}),
+  it.each(["thread", "project", "project-and-thread", "cascade"] as const)(
+    "attests %s deletion only to the full owner",
+    async (state) => {
+      const ask = await fixture();
+      await deleteFixture(state);
+      expect(await failure(() => ask(THREAD, OWNER))).toEqual({
+        kind: "error",
+        error: {
+          code: "thread_deleted",
+          message: "Thread deleted",
+          retryable: false,
+          source: "system",
+          details: {
+            authenticatedUserId: OWNER,
+            ...(state.startsWith("project") ? { projectDeleted: true } : {}),
+          },
         },
-      },
-    });
-    expect(JSON.stringify(await failure(() => ask(THREAD, OTHER)))).toBe(
-      JSON.stringify(await failure(() => ask(MISSING, OTHER))),
-    );
-  });
-
-  it.each([
-    "live",
-    "thread",
-    "project",
-    "project-and-thread",
-    "cascade",
-  ] as const)("conceals mismatched creators in %s rows from both users", async (state) => {
-    const ask = await fixture();
-    await database.current
-      .update(schema.threads)
-      .set({ createdByUserId: OTHER })
-      .where(eq(schema.threads.id, THREAD));
-    if (state !== "live") await deleteFixture(state);
-    for (const user of [OWNER, OTHER]) {
-      expect(JSON.stringify(await failure(() => ask(THREAD, user)))).toBe(
-        JSON.stringify(await failure(() => ask(MISSING, user))),
+      });
+      expect(JSON.stringify(await failure(() => ask(THREAD, OTHER)))).toBe(
+        JSON.stringify(await failure(() => ask(MISSING, OTHER))),
       );
-    }
-  });
+    },
+  );
+
+  it.each(["live", "thread", "project", "project-and-thread", "cascade"] as const)(
+    "conceals mismatched creators in %s rows from both users",
+    async (state) => {
+      const ask = await fixture();
+      await database.current
+        .update(schema.threads)
+        .set({ createdByUserId: OTHER })
+        .where(eq(schema.threads.id, THREAD));
+      if (state !== "live") await deleteFixture(state);
+      for (const user of [OWNER, OTHER]) {
+        expect(JSON.stringify(await failure(() => ask(THREAD, user)))).toBe(
+          JSON.stringify(await failure(() => ask(MISSING, user))),
+        );
+      }
+    },
+  );
 
   it("attests a purged thread as not found and still permits a live owner", async () => {
     const ask = await fixture();
@@ -167,11 +163,12 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
     const { app } = await runtimes.compose();
     await app.workRepo.ensureNoWork(PROJECT);
     const agentCatalog = createBoundAgentCatalog({
-      defaultModel: () => "mock-model",
+      modelFor: (name) => name ?? "mock-model",
       store: app.agentRevisions,
       levelFiles: noLevelFiles,
       builtins: [generalAgentSource("mock-model")],
       unavailableReasons: () => [],
+      modelUnavailable: () => [],
     });
     const general = (await agentCatalog.list(OWNER, {})).agents.find(
       (agent) => agent.slug === "general",
@@ -195,7 +192,11 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
     };
     const create = async (overrides: Partial<typeof args> = {}) => {
       try {
-        return await createThreadForProject(deps, { ...args, ...overrides });
+        return await createThreadForProject(deps, {
+          overrides: NO_OVERRIDES,
+          ...args,
+          ...overrides,
+        });
       } catch (error) {
         throwThreadCreationError(error);
       }
@@ -203,28 +204,26 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
     return { create, app };
   }
 
-  it.each([
-    "thread",
-    "project",
-    "project-and-thread",
-    "cascade",
-  ] as const)("attests the owner's existing %s-deleted id before project gating", async (state) => {
-    const { create } = await fixture();
-    await deleteFixture(state);
-    expect(await failure(() => create())).toEqual({
-      kind: "error",
-      error: {
-        code: "thread_deleted",
-        message: "Thread deleted",
-        retryable: false,
-        source: "system",
-        details: {
-          authenticatedUserId: OWNER,
-          ...(state.startsWith("project") ? { projectDeleted: true } : {}),
+  it.each(["thread", "project", "project-and-thread", "cascade"] as const)(
+    "attests the owner's existing %s-deleted id before project gating",
+    async (state) => {
+      const { create } = await fixture();
+      await deleteFixture(state);
+      expect(await failure(() => create())).toEqual({
+        kind: "error",
+        error: {
+          code: "thread_deleted",
+          message: "Thread deleted",
+          retryable: false,
+          source: "system",
+          details: {
+            authenticatedUserId: OWNER,
+            ...(state.startsWith("project") ? { projectDeleted: true } : {}),
+          },
         },
-      },
-    });
-  });
+      });
+    },
+  );
 
   it("conceals missing and foreign live or deleted projects for a new id", async () => {
     const { create, app } = await fixture();

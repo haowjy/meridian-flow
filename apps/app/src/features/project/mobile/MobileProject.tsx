@@ -27,6 +27,7 @@ import { useTrashNavigation } from "../routing/ProjectNavigationContext";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { useOnOpen } from "../routing/use-on-open";
 import { useOpenInMain } from "../routing/use-open-document-in-editor";
+import { useSidebarTabs } from "../shell/sidebar/sidebar-tabs-store";
 import { useSideChatName } from "../side/SideHeader";
 import { SidePicker } from "../side/SidePicker";
 import { useChatOnScreen, useHostChatId, useSideItem, useSideRevealed } from "../side/SideView";
@@ -64,6 +65,11 @@ export function MobileProject(props: MobileProjectProps) {
     setSheetOpen(true);
   }, [revealed]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The drawer is the phone's sidebar: an ask to show one of its panes opens it.
+  const asked = useSidebarTabs((state) => state.asked);
+  useEffect(() => {
+    if (asked) setDrawerOpen(true);
+  }, [asked]);
   const trashedId = useTrashNavigation().shown;
   const trashed = useDocumentStanding(props.projectId, trashedId ?? null);
   const trashedName = trashed.kind === "in-trash" ? trashed.node.displayName : undefined;

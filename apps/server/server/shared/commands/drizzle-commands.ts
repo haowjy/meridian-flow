@@ -3,12 +3,14 @@
 import type { CommandOutcome } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { commands } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleDb,
   runInCommandTransaction,
   runInDrizzleSavepoint,
+  runInRootDrizzleTransaction,
+  sqlState,
 } from "../drizzle-transaction.js";
 import { testHook } from "../test-hooks.js";
 import {
@@ -41,6 +43,47 @@ export async function lookupCommand(db: DrizzleDb, key: CommandLookupKey): Promi
     return { kind: "conflict" };
   }
   return { kind: "stored", commandKind: row.kind, outcome: row.outcome };
+}
+
+/** How long a resend waits on a first request still running, below the client's 10 s timeout. */
+const RUNNING_WAIT = "5s";
+
+class ProbeRollback extends Error {}
+
+/**
+ * `lookupCommand` for a resend that may arrive while the first request under the id is still
+ * running: its claim can't be read until it commits, so an insert on the key waits on it, and the
+ * insert is rolled back. `running` when the first request still holds the id after the wait.
+ */
+export async function awaitCommand(
+  db: Database,
+  envelope: CommandEnvelope,
+): Promise<CommandLookup | { kind: "running" }> {
+  const found = await lookupCommand(currentDrizzleDb(db), envelope);
+  if (found.kind !== "none") return found;
+  try {
+    await runInRootDrizzleTransaction(db, async () => {
+      const tx = currentDrizzleDb(db);
+      await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${RUNNING_WAIT}'`));
+      await tx
+        .insert(commands)
+        .values({
+          id: envelope.commandId,
+          kind: envelope.kind,
+          accountId: envelope.accountId,
+          projectId: envelope.projectId,
+          threadId: envelope.threadId,
+          requestDigest: envelope.digest,
+          outcome: { status: "never" },
+        })
+        .onConflictDoNothing();
+      throw new ProbeRollback();
+    });
+  } catch (cause) {
+    if (sqlState(cause) === "55P03") return { kind: "running" };
+    if (!(cause instanceof ProbeRollback)) throw cause;
+  }
+  return lookupCommand(currentDrizzleDb(db), envelope);
 }
 
 /** What a kind supplies to `runCommand` besides its effect. */

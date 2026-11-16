@@ -1,4 +1,5 @@
 // Forward inverse receipts, cold lineage tracing, classification and admission.
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   intersectLineageRanges,
@@ -347,11 +348,14 @@ interface InversePlan {
 function planInverse(index: Lineage, part: InversePart): InversePlan {
   const pairs = (list: readonly EditRange[]) =>
     clocks(list).map((original) => ({ original, effective: index.effective(original) }));
-  const removing = pairs(part.effect.inserted);
+  const removingRanges = part.effect.inserted;
   const returning = pairs(part.effect.deleted);
-  const removingKeys = removing.map((pair) => pair.effective);
-  const removingSet = new Set(removingKeys);
-  const insertions = deleteSet(removingKeys);
+  // Classifying only asks whether the plan acts, which the first visible item usually answers,
+  // so the effective identity of every removed item is resolved only when the plan is used.
+  const removing = lazy(() => pairs(removingRanges));
+  const removingKeys = lazy(() => removing().map((pair) => pair.effective));
+  const removingSet = lazy(() => new Set(removingKeys()));
+  const insertions = lazy(() => deleteSet(removingKeys()));
   const authorized = (k: Key) => {
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
@@ -370,7 +374,7 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
     // Yjs restores a map entry only while nothing newer than the undone edit has replaced it.
     const superseded =
       item.parentSub !== null &&
-      itemsRightOf(item).some((newer) => !removingSet.has(key(newer.id)));
+      itemsRightOf(item).some((newer) => !removingSet().has(key(newer.id)));
     const parent = ancestorItems(item)[0],
       home = parent && index.effective(key(parent.id));
     const result = superseded
@@ -383,18 +387,47 @@ function planInverse(index: Lineage, part: InversePart): InversePlan {
   };
   const verdicts = [...candidates].map((k) => ({ k, verdict: verdict(k) }));
   const restoring = verdicts.filter((v) => v.verdict === "ok").map((v) => v.k);
-  const stackItem = { insertions, meta: new Map() };
-  const removable = removing.some(({ effective }) => {
+  const stackItem = {
+    get insertions() {
+      return insertions();
+    },
+    meta: new Map(),
+  };
+  // A container or attribute is judged against every removed item, a text item on its own: look
+  // at the text first, and let the containers settle it only when no text can.
+  const deferred: Key[] = [];
+  const removes = (original: Key) => {
+    const effective = index.effective(original);
     const item = find(index.doc, effective);
     return !!item && index.isVisible(effective) && shouldDeleteUndoItem(item, stackItem);
-  });
+  };
+  let removable = false;
+  for (const range of removingRanges) {
+    for (let n = 0; n < range.len && !removable; n++) {
+      const original = key({ client: range.client, clock: range.clock + n });
+      const item = find(index.doc, index.effective(original));
+      if (item && (item.content instanceof Y.ContentType || item.parentSub !== null))
+        deferred.push(original);
+      else removable = removes(original);
+    }
+  }
+  removable ||= deferred.some(removes);
   return {
-    removing: removingKeys,
+    get removing() {
+      return removingKeys();
+    },
     restoring,
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
   };
 }
+const lazy = <T>(compute: () => T) => {
+  let value: { v: T } | undefined;
+  return () => {
+    value ??= { v: compute() };
+    return value.v;
+  };
+};
 function itemsRightOf(item: Y.Item): Y.Item[] {
   const out: Y.Item[] = [];
   for (let right = item.right; right; right = right.right) out.push(right);
@@ -529,34 +562,63 @@ export function computeInverse(
   return computePreparedInverse(doc, history, selection, action);
 }
 
+/**
+ * `preview` answers which selected edits an Undo would take, without building it. Only a part a later one is classified on is built, since its
+ * receipt joins the history that one is judged against; the last is accepted when it classifies
+ * active, and nothing is admitted or normalized.
+ */
 function computePreparedInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
   selection: readonly InversePart[],
   action: InverseAction,
   prepared?: Lineage,
+  { preview = false }: { preview?: boolean } = {},
 ): ComputedInverse {
   if (!action.actionId) throw new Error("Inverse requires an action ID");
   if (!selection.length) return { actionId: action.actionId, edits: [], skipped: [] };
-  const scratch = new Y.Doc({ gc: false });
-  Y.applyUpdate(scratch, Y.encodeStateAsUpdate(doc));
+  let scratch: Y.Doc | undefined;
+  const copy = () => {
+    scratch = new Y.Doc({ gc: false });
+    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(doc));
+    return scratch;
+  };
+  if (!preview) copy();
   const local = [...history],
     result: ComputedInverse = { actionId: action.actionId, edits: [], skipped: [] };
   const groups = new Map<string, ComputedInverseEdit>();
+  const groupFor = (editId: string) => {
+    let edit = groups.get(editId);
+    if (!edit) {
+      edit = { targetEditId: editId, parts: [] };
+      groups.set(editId, edit);
+      result.edits.push(edit);
+    }
+    return edit;
+  };
   try {
-    for (const part of selection) {
-      const index = new Lineage(
-          scratch,
+    for (const [at, part] of selection.entries()) {
+      const lineageOn = (view: Y.Doc) =>
+        new Lineage(
+          view,
           local,
           local.length === history.length ? prepared : undefined,
           undefined,
           true,
-        ),
-        state = classify(index, part);
+        );
+      let index = lineageOn(scratch ?? doc);
+      const state = classify(index, part);
       if (state.state !== "active") {
         result.skipped.push(state);
         continue;
       }
+      if (preview && at === selection.length - 1) {
+        groupFor(part.editId);
+        continue;
+      }
+      const working = scratch ?? copy();
+      // Hydrating and undoing change the view, so they run on the replica, never on `doc`.
+      if (index.doc !== working) index = lineageOn(working);
       index.hydrate();
       const plan = planInverse(index, part);
       const stack = {
@@ -564,34 +626,29 @@ function computePreparedInverse(
         deletions: deleteSet(plan.restoring),
         meta: new Map(),
       };
-      const frontier = captureEditFrontier(scratch),
-        snapshot = snapshotRedone(scratch);
-      const client = action.allocateClient(scratch);
+      const frontier = captureEditFrontier(working),
+        snapshot = snapshotRedone(working);
+      const client = action.allocateClient(working);
       if (frontier[client] !== undefined) throw new Error("Inverse client is not fresh");
-      const before = new Y.Doc({ gc: false });
-      Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
+      const before = preview ? undefined : new Y.Doc({ gc: false });
+      if (before) Y.applyUpdate(before, Y.encodeStateAsUpdate(working));
       let updates: Uint8Array[];
       try {
-        updates = executeUndo(scratch, ROOT, client, stack, (item) =>
+        updates = executeUndo(working, ROOT, client, stack, (item) =>
           shouldDeleteUndoItem(item, stack),
         );
       } catch (error) {
-        before.destroy();
+        before?.destroy();
         throw error;
       }
       try {
         if (!updates.length) continue;
         const update = Y.mergeUpdates(updates),
-          receipt = captureEditParts(scratch, [{ update, frontier }])[0];
-        receipt.aliases = captureAliases(scratch, snapshot);
-        admitPreparedInverseReceipt(before, local, [part], receipt, index);
+          receipt = captureEditParts(working, [{ update, frontier }])[0];
+        receipt.aliases = captureAliases(working, snapshot);
+        if (before) admitPreparedInverseReceipt(before, local, [part], receipt, index);
         const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal }];
-        let edit = groups.get(part.editId);
-        if (!edit) {
-          edit = { targetEditId: part.editId, parts: [] };
-          groups.set(part.editId, edit);
-          result.edits.push(edit);
-        }
+        const edit = groupFor(part.editId);
         edit.parts.push({ ...receipt, targets });
         local.push({
           ...receipt,
@@ -603,46 +660,119 @@ function computePreparedInverse(
           actionId: action.actionId,
         });
       } finally {
-        before.destroy();
+        before?.destroy();
       }
     }
-    for (const edit of result.edits) {
-      const normalized = captureEditParts(scratch, edit.parts);
-      edit.parts = edit.parts.map((p, i) => ({ ...p, effect: normalized[i].effect }));
-    }
+    if (!preview)
+      for (const edit of result.edits) {
+        const normalized = captureEditParts(scratch as Y.Doc, edit.parts);
+        edit.parts = edit.parts.map((p, i) => ({ ...p, effect: normalized[i].effect }));
+      }
     return result;
   } finally {
-    scratch.destroy();
+    scratch?.destroy();
   }
 }
 
-/** One immutable-view lineage for host inspection and inverses; discard before mutation. */
+/**
+ * One `compute` as bytes, for a thread that holds no Y.Doc of the caller's: the live document's
+ * update, the update of the draft view it lands in (`null` for live) and the history. A Y.Doc
+ * rebuilt from an update plans the same inverse as the one it encodes.
+ */
+export interface InverseJob {
+  live: Uint8Array;
+  view: Uint8Array | null;
+  history: readonly InversePart[];
+  selection: readonly InversePart[];
+  actionId: string;
+}
+export function runInverseJob(
+  job: InverseJob,
+  allocateClient: InverseAction["allocateClient"] = allocateDocumentClient,
+): ComputedInverse {
+  const cold = (update: Uint8Array) => {
+    const doc = new Y.Doc({ gc: false });
+    Y.applyUpdate(doc, update);
+    return doc;
+  };
+  const live = cold(job.live);
+  const view = job.view && cold(job.view);
+  try {
+    const roots = prepareEditRoots(live, job.history);
+    return (view ? roots.forView(view) : roots).compute(job.selection, {
+      actionId: job.actionId,
+      allocateClient,
+    });
+  } finally {
+    live.destroy();
+    view?.destroy();
+  }
+}
+
+/**
+ * One immutable-view lineage for host inspection and inverses; discard before mutation. The
+ * lineage is built on first use: it costs a string key per restored clock, which a host that
+ * plans the inverse on another thread never needs here.
+ */
 export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): PreparedEditRoots {
-  return preparedRoots(new Lineage(doc, history));
+  return preparedRoots(
+    doc,
+    history,
+    once(() => new Lineage(doc, history)),
+  );
+}
+function once<T>(make: () => T): () => T {
+  let made: { value: T } | undefined;
+  return () => {
+    made ??= { value: make() };
+    return made.value;
+  };
 }
 export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
   classify(parts: readonly InversePart[]): PartClassification[];
   compute(selection: readonly InversePart[], action: InverseAction): ComputedInverse;
+  /**
+   * `compute` for a caller that only needs which edits would be taken. Each accepted part but
+   * the last carries its receipt; the last is accepted without being built, so its edit may
+   * have no parts. Read only which edits come back, not their parts.
+   */
+  preview(selection: readonly InversePart[], action: InverseAction): ComputedInverse;
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
 }
-function preparedRoots(index: Lineage): PreparedEditRoots {
-  const { doc, ordered: history } = index;
+function preparedRoots(
+  doc: Y.Doc,
+  history: readonly InversePart[],
+  lineage: () => Lineage,
+): PreparedEditRoots {
   return {
     forView(view) {
-      return preparedRoots(new Lineage(view, history, index));
+      return preparedRoots(
+        view,
+        history,
+        once(() => new Lineage(view, history, lineage())),
+      );
     },
     classify(parts) {
+      const index = lineage();
       return parts.map((part) => classify(index, part));
     },
     compute(selection, action) {
-      return computePreparedInverse(doc, history, selection, action, index);
+      const index = lineage();
+      return computePreparedInverse(doc, index.ordered, selection, action, index);
+    },
+    preview(selection, action) {
+      const index = lineage();
+      return computePreparedInverse(doc, index.ordered, selection, action, index, {
+        preview: true,
+      });
     },
     roots(effect: EditEffect): string[] {
-      return index.rootsFor(effect);
+      return lineage().rootsFor(effect);
     },
     inspect(roots: Iterable<string>): { root: string; identity: string | null }[] {
+      const index = lineage();
       return [...roots].map((root) => {
         const effective = index.effective(root);
         return { root, identity: index.isVisible(effective) ? effective : null };

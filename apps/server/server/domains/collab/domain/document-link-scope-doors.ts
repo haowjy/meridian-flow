@@ -119,8 +119,9 @@ export function scopeModelEditWrite(
  * tree, so it is scoped like the text.
  */
 export function scopeDraftPeer(
-  access: DraftPeerShadowAccess,
+  access: Omit<DraftPeerShadowAccess, "draftCreatedDocuments">,
   scopes: DocumentLinkScopes,
+  draftCreatedDocuments: DraftPeerShadowAccess["draftCreatedDocuments"],
 ): DraftPeerShadowAccess {
   const by = (command: { documentId: string; threadId?: string | null }) => ({
     documentId: command.documentId,
@@ -139,7 +140,7 @@ export function scopeDraftPeer(
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>
       scopes.within(by(command), () => access.readEffectiveBlocks(command)),
-    draftCreatedDocuments: access.draftCreatedDocuments,
+    draftCreatedDocuments,
     writeCreatedDraftContent: access.writeCreatedDraftContent,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),

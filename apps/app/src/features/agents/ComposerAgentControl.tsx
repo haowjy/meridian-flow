@@ -1,19 +1,27 @@
 /**
- * Composer Agent control. A new chat picks its Agent; a started chat is bound to one, so
- * picking another hands off to it; a subagent's chat only shows its Agent.
+ * Composer Agent control. A new chat picks its Agent and the model it runs on; a started chat is
+ * bound to one, so it can change only the model, and picking another Agent hands off to it; a
+ * subagent's chat only shows its Agent.
  */
 import { t } from "@lingui/core/macro";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
+import { Cpu } from "lucide-react";
 import { useRef } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
+import { useModelOptions } from "@/client/query/useModelOptions";
 import {
   ComposerCurrentValueStatus,
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
-import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
-import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
-import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
-import { AgentPickerPanel } from "./AgentPicker";
+import { cn } from "@/lib/utils";
+import {
+  type AgentChoice,
+  AgentPickerPanel,
+  modelName,
+  reasoningName,
+  runsAvailable,
+} from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
 import {
   type BoundAgent,
@@ -21,25 +29,28 @@ import {
   type CreationAgent,
   pickableAgents,
 } from "./creation-agent";
-import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
 
 export type ComposerAgentControlProps =
   | {
       mode: "interactive";
       projectId?: string;
       selectedAgent: CreationAgent | null;
-      onSelectedAgentChange: (agent: CreationAgent) => void;
+      /** The model and reasoning the new chat will run its Agent at, where not its own. */
+      overrides: ThreadOverrides;
+      onChoose: (choice: AgentChoice) => void;
     }
   | {
-      mode: "handoff";
+      mode: "started";
       projectId: string;
       /** The chat, whose bound definition the panel can open. */
       threadId: string;
       bound: BoundAgent;
+      overrides: ThreadOverrides;
+      onOverridesChange: (overrides: ThreadOverrides) => void;
       /** Null until the server has a turn to hand off from. */
-      onHandoff: ((agent: CreationAgent) => void) | null;
+      onHandoff: ((choice: AgentChoice) => void) | null;
     }
-  | { mode: "readonly"; name: string };
+  | { mode: "readonly"; name: string; overrides: ThreadOverrides };
 
 export function useComposerAgentToolbarControl(
   props: ComposerAgentControlProps,
@@ -48,23 +59,74 @@ export function useComposerAgentToolbarControl(
     props.mode !== "readonly",
     props.mode === "readonly" ? undefined : props.projectId,
   );
-  const selectedRef = useRef<HTMLButtonElement | null>(null);
-  const firstRef = useRef<HTMLButtonElement | null>(null);
+  const overrides = props.overrides;
+  const model = overrides.model;
+  const models = useModelOptions(props.mode !== "readonly" || model !== null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
-  const selectable = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
+  const agents = catalog.status === "ready" ? (catalog.agents ?? []) : [];
+  const selectable = pickableAgents(agents);
   const selectedAgent =
     props.mode === "interactive"
       ? props.selectedAgent
-      : props.mode === "handoff"
+      : props.mode === "started"
         ? boundAgentRow(selectable, props.bound)
         : null;
   const name =
     props.mode === "readonly"
       ? props.name
-      : props.mode === "handoff"
+      : props.mode === "started"
         ? (props.bound.name ?? DEFAULT_AGENT_NAME)
         : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
-  const item = { ariaLabel: t`Agent: ${name}`, label: t`Agent`, value: name };
+  const modelLabel = model ? modelName(models, model) : null;
+  // An override the deployment can't run: replies fall back to the Agent's own model. A reasoning
+  // override is always one its model has: the picker settles it when the model changes.
+  const fallsBack = Boolean(model && models && !runsAvailable(models, model));
+  const effortLabel = overrides.effort ? reasoningName(overrides.effort) : null;
+  const runsAt = [modelLabel, effortLabel && t`${effortLabel} reasoning`]
+    .filter(Boolean)
+    .join(", ");
+  const value = !runsAt
+    ? name
+    : fallsBack
+      ? t`${name}; ${modelLabel ?? ""} isn't available, so it runs on its default model`
+      : t`${name} on ${runsAt}`;
+  // The overflow row shows what the chip shows; the sentence is for its name and tooltip.
+  const item = {
+    ariaLabel: t`Agent: ${value}`,
+    label: t`Agent`,
+    value: [name, modelLabel, effortLabel].filter(Boolean).join(" "),
+  };
+  // The other model's and reasoning's names; on a phone a chip icon, so the Agent's name keeps its
+  // place inline.
+  const shown = (
+    <>
+      {name}
+      {modelLabel || effortLabel ? (
+        <>
+          {modelLabel ? (
+            <span
+              className={cn(
+                "ml-1.5 hidden font-normal text-muted-foreground sm:inline",
+                fallsBack && "line-through",
+              )}
+            >
+              {modelLabel}
+            </span>
+          ) : null}
+          {effortLabel ? (
+            <span className="ml-1.5 hidden font-normal text-muted-foreground sm:inline">
+              {effortLabel}
+            </span>
+          ) : null}
+          <Cpu
+            aria-hidden
+            className="ml-1 inline size-3.5 align-[-2px] text-muted-foreground sm:hidden"
+          />
+        </>
+      ) : null}
+    </>
+  );
   if (props.mode === "readonly")
     return {
       kind: "status",
@@ -74,80 +136,69 @@ export function useComposerAgentToolbarControl(
       inline: ({ controlRef }) => (
         <ComposerCurrentValueStatus
           ref={controlRef}
-          ariaLabel={t`Agent: ${name}`}
-          tooltip={t`This chat uses ${name}.`}
+          ariaLabel={t`Agent: ${value}`}
+          tooltip={runsAt ? t`This chat uses ${name} on ${runsAt}.` : t`This chat uses ${name}.`}
         >
-          {name}
+          {shown}
         </ComposerCurrentValueStatus>
       ),
     };
-  const focusableIds = selectable.map((agent) => agent.selection.slug);
   const pageId =
     catalog.status === "error"
       ? "error"
-      : catalog.status === "ready" && selectable.length > 0
+      : catalog.status === "ready" && agents.some((agent) => agent.primary)
         ? "ready"
         : catalog.status === "empty" || catalog.status === "ready"
           ? "empty"
           : "loading";
-  const choose = (next: CreationAgent) => {
-    if (props.mode === "interactive") props.onSelectedAgentChange(next);
-    else if (next.selection.slug !== selectedAgent?.selection.slug) props.onHandoff?.(next);
-  };
   return {
     kind: "panel",
     id: "agent",
     priority: 300,
-    interaction: props.mode === "handoff" && !props.onHandoff ? "busy" : "enabled",
-    item: { ...item, ariaLabel: t`Choose agent, currently ${name}` },
+    interaction: props.mode === "started" && !props.onHandoff ? "busy" : "enabled",
+    item: { ...item, ariaLabel: t`Choose agent, currently ${value}` },
     inline: ({ trigger }) => (
-      <ComposerCurrentValueTrigger binding={trigger} ariaLabel={t`Agent: ${name}`}>
-        {name}
+      <ComposerCurrentValueTrigger
+        binding={trigger}
+        ariaLabel={t`Agent: ${value}`}
+        className="max-w-[16rem]"
+      >
+        {shown}
       </ComposerCurrentValueTrigger>
     ),
     panel: {
-      ariaLabel: props.mode === "handoff" ? t`Hand off to an Agent` : t`Choose agent`,
-      size: "identity",
+      ariaLabel: props.mode === "started" ? t`This chat's Agent` : t`Choose agent`,
+      size: "split",
       focus: {
         pageId,
-        repairRevision: focusableIds.join("\0"),
+        repairRevision: selectable.map((agent) => agent.selection.slug).join("\0"),
         candidates:
           pageId === "ready"
-            ? [
-                {
-                  key: `selected:${selectedAgent?.selection.slug ?? "none"}`,
-                  ref: selectedRef,
-                },
-                { key: `first:${focusableIds[0] ?? "none"}`, ref: firstRef },
-              ]
+            ? [{ key: "search", ref: searchRef }]
             : pageId === "error"
               ? [{ key: "retry", ref: retryRef }]
               : [],
         fallback: "content",
       },
       render: ({ terminalClose }) => (
-        <>
-          {props.mode === "handoff" ? (
-            <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
-          ) : null}
-          <AgentPickerPanel
-            focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
-            status={catalog}
-            agents={selectable}
-            selectedAgent={selectedAgent}
-            onSelect={(next) => {
-              choose(next);
-              terminalClose();
-            }}
-            projectId={props.projectId}
-            onOpenAgents={() => {
-              terminalClose();
-              useSidebarTabs.getState().reveal("agents");
-              useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
-            }}
-          />
-          {props.mode === "handoff" ? <ThreadAgentDefinition threadId={props.threadId} /> : null}
-        </>
+        <AgentPickerPanel
+          focusRefs={{ search: searchRef, retry: retryRef }}
+          status={catalog}
+          current={{ slug: selectedAgent?.selection.slug ?? null, overrides }}
+          mode={
+            props.mode === "interactive"
+              ? { kind: "new", onChoose: props.onChoose }
+              : {
+                  kind: "chat",
+                  threadId: props.threadId,
+                  onChoose: (next) => props.onOverridesChange(next.overrides),
+                  onHandoff: (next) => props.onHandoff?.(next),
+                }
+          }
+          models={models}
+          projectId={props.projectId ?? ""}
+          onClose={terminalClose}
+        />
       ),
     },
   };

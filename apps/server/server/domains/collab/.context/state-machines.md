@@ -46,12 +46,14 @@ stateDiagram-v2
   still names its command, so a late one leaves a reopened draft's room alone. Only an `active`
   draft accepts writes, and a draft room for a closed
   draft is refused at the [handshake](../../../lib/.context/state-machines.md).
-- **A model's edit planned on a closed draft changes nothing and says so.** The edit is a `done`
-  `model_edit` row with `settled: returned` (`draft_discarded` when a Discard closed the draft,
-  `draft_replaced` when a restore's or an Un-Apply's swap did, `document_removed` when the document's removal, an
-  Apply of its delete or a Work's purge did; `closed_by` names the closing command, and a null one
-  is a purge, whose chats go with the Work). The test runs
-  before any branch or draft opens, nothing is journalled, and the result shows the document as
-  that chat reads it now. A closed draft is never written to.
+- **A model's edit planned on a closed draft lands in a new draft.** A Discard, or a restore's or
+  an Un-Apply's swap, closed the draft the model last saw; the edit takes the path of a first
+  write: a draft seeded from the document as it stands, which the result says it opened. A block
+  the model names that only the closed draft held is found in the model's view of it, and its words
+  land at the nearest block both hold. A closed draft is never written to. Only the document's
+  removal, an Apply of its delete or a Work's purge (`closed_by` names the closing command, and a
+  null one is a purge, whose chats go with the Work) make the edit a `done` `model_edit` row with
+  `settled: returned` (`document_removed`): the test runs before any branch or draft opens,
+  nothing is journalled, and the result shows the document as that chat reads it now.
 - A closed draft keeps `closedCause`, and a closed branch has `closedAt` and a pending document
   count of zero. Restoring a Work does not erase a draft's own cause.

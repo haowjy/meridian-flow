@@ -84,67 +84,67 @@ function setup(handshakeTimeoutMs?: number) {
   return { transport, sockets, events, onClose };
 }
 
-it.each([
-  "connecting",
-  "open awaiting connected",
-])("recovers a reply when the restart handshake stalls %s and fences late events", (phase) => {
-  const { transport, sockets, events, onClose } = setup();
-  try {
-    sockets[0].open();
-    sockets[0].deliver(connected);
-    subscribed(sockets[0]);
-    sockets[0].deliver({ type: "event", threadId: "thread-1", ...delta("1", "Early ") });
-    sockets[0].close(1006);
-    vi.advanceTimersByTime(250);
-    expect(sockets).toHaveLength(2);
-    const stalled = sockets[1];
-    stalled.stallClose = true;
-    if (phase === "open awaiting connected") {
-      vi.advanceTimersByTime(9_000);
+it.each(["connecting", "open awaiting connected"])(
+  "recovers a reply when the restart handshake stalls %s and fences late events",
+  (phase) => {
+    const { transport, sockets, events, onClose } = setup();
+    try {
+      sockets[0].open();
+      sockets[0].deliver(connected);
+      subscribed(sockets[0]);
+      sockets[0].deliver({ type: "event", threadId: "thread-1", ...delta("1", "Early ") });
+      sockets[0].close(1006);
+      vi.advanceTimersByTime(250);
+      expect(sockets).toHaveLength(2);
+      const stalled = sockets[1];
+      stalled.stallClose = true;
+      if (phase === "open awaiting connected") {
+        vi.advanceTimersByTime(9_000);
+        stalled.open();
+        stalled.deliver({ type: "ping" });
+      }
+      vi.advanceTimersByTime(phase === "connecting" ? 10_000 : 1_000);
+      expect(onClose).toHaveBeenLastCalledWith(
+        expect.objectContaining({ reason: "handshake_timeout" }),
+      );
+      expect(stalled.readyState).toBe(2);
+      vi.advanceTimersByTime(500);
+      expect(sockets).toHaveLength(3);
+
+      const replacement = sockets[2];
+      const stateListener = vi.fn();
+      transport.onConnectionState(stateListener);
+      stateListener.mockClear();
       stalled.open();
-      stalled.deliver({ type: "ping" });
+      stalled.deliver(connected);
+      stalled.deliver({ type: "event", threadId: "thread-1", ...delta("99", "Stale") });
+      stalled.stallClose = false;
+      stalled.close(4403);
+      expect(stateListener).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledTimes(2);
+      expect(events.map((event) => event.seq)).toEqual(["1"]);
+
+      replacement.open();
+      expect(replacement.sent).toEqual([]);
+      replacement.deliver(connected);
+      expect(requests(replacement)).toEqual([
+        { type: "subscribe", requestId: expect.any(String), threadId: "thread-1", lastSeq: "1" },
+      ]);
+      subscribed(replacement, [delta("1", "Early "), delta("2", "catch-up ")], "1");
+      replacement.deliver({ type: "event", threadId: "thread-1", ...delta("3", "final line") });
+      expect(events).toEqual([
+        delta("1", "Early "),
+        delta("2", "catch-up "),
+        delta("3", "final line"),
+      ]);
+      vi.advanceTimersByTime(10_000);
+      expect(sockets).toHaveLength(3);
+      expect(stateListener).toHaveBeenLastCalledWith({ kind: "connected" });
+    } finally {
+      transport.disconnect();
     }
-    vi.advanceTimersByTime(phase === "connecting" ? 10_000 : 1_000);
-    expect(onClose).toHaveBeenLastCalledWith(
-      expect.objectContaining({ reason: "handshake_timeout" }),
-    );
-    expect(stalled.readyState).toBe(2);
-    vi.advanceTimersByTime(500);
-    expect(sockets).toHaveLength(3);
-
-    const replacement = sockets[2];
-    const stateListener = vi.fn();
-    transport.onConnectionState(stateListener);
-    stateListener.mockClear();
-    stalled.open();
-    stalled.deliver(connected);
-    stalled.deliver({ type: "event", threadId: "thread-1", ...delta("99", "Stale") });
-    stalled.stallClose = false;
-    stalled.close(4403);
-    expect(stateListener).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalledTimes(2);
-    expect(events.map((event) => event.seq)).toEqual(["1"]);
-
-    replacement.open();
-    expect(replacement.sent).toEqual([]);
-    replacement.deliver(connected);
-    expect(requests(replacement)).toEqual([
-      { type: "subscribe", requestId: expect.any(String), threadId: "thread-1", lastSeq: "1" },
-    ]);
-    subscribed(replacement, [delta("1", "Early "), delta("2", "catch-up ")], "1");
-    replacement.deliver({ type: "event", threadId: "thread-1", ...delta("3", "final line") });
-    expect(events).toEqual([
-      delta("1", "Early "),
-      delta("2", "catch-up "),
-      delta("3", "final line"),
-    ]);
-    vi.advanceTimersByTime(10_000);
-    expect(sockets).toHaveLength(3);
-    expect(stateListener).toHaveBeenLastCalledWith({ kind: "connected" });
-  } finally {
-    transport.disconnect();
-  }
-});
+  },
+);
 
 it("teardown cancels the handshake and fences a late connected frame", () => {
   const { transport, sockets, onClose } = setup();

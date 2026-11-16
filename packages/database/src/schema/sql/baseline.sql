@@ -1,3 +1,16 @@
+CREATE FUNCTION public.enforce_mcp_pin_insert_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1
+    AND NOT EXISTS (SELECT 1 FROM mcp_connections WHERE id = OLD.connection_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'MCP pins are insert-only'
+    USING ERRCODE = '23514', CONSTRAINT = 'mcp_pins_insert_only';
+END;
+$$;
+
 CREATE FUNCTION public.enforce_prompt_bake_insert_only() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -176,6 +189,8 @@ $$;
 
 ALTER TABLE public.document_block_rooms SET (fillfactor = 90);
 
+CREATE TRIGGER mcp_pins_insert_only BEFORE DELETE OR UPDATE ON public.mcp_pins FOR EACH ROW EXECUTE FUNCTION public.enforce_mcp_pin_insert_only();
+
 CREATE TRIGGER prompt_bakes_insert_only BEFORE DELETE OR UPDATE ON public.prompt_bakes FOR EACH ROW EXECUTE FUNCTION public.enforce_prompt_bake_insert_only();
 
 CREATE TRIGGER recompute_thread_chat_activity_on_active_leaf AFTER UPDATE OF active_leaf_turn_id ON public.threads FOR EACH ROW WHEN ((new.active_leaf_turn_id IS DISTINCT FROM old.active_leaf_turn_id)) EXECUTE FUNCTION public.recompute_thread_chat_activity_from_thread();
@@ -195,6 +210,9 @@ CREATE TRIGGER threads_initial_prompt_bake_write_once BEFORE UPDATE OF initial_p
 CREATE TRIGGER turns_position_write_once BEFORE UPDATE OF "position" ON public.turns FOR EACH ROW EXECUTE FUNCTION public.enforce_turn_position_write_once();
 
 CREATE TRIGGER turns_prompt_bake_write_once BEFORE UPDATE OF prompt_bake_id ON public.turns FOR EACH ROW EXECUTE FUNCTION public.enforce_prompt_bake_write_once('prompt_bake_id', 'turns_prompt_bake_write_once');
+
+ALTER TABLE ONLY public.mcp_connections
+    ALTER CONSTRAINT mcp_connections_current_pin_id_mcp_pins_id_fk DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE ONLY public.threads
     ALTER CONSTRAINT threads_initial_prompt_bake_id_prompt_bakes_id_fk DEFERRABLE INITIALLY DEFERRED;
@@ -247,7 +265,7 @@ CREATE FUNCTION public.create_account_source() RETURNS trigger
     AS $$
 BEGIN
   -- An account's home folder has its source from the moment the account exists.
-  INSERT INTO context_sources (user_id, name, slug, scope) VALUES (NEW.id, 'User Files', 'user', 'account');
+  INSERT INTO context_sources (user_id, slug, scope) VALUES (NEW.id, 'user', 'account');
   RETURN NEW;
 END;
 $$;

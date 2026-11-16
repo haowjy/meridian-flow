@@ -112,6 +112,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
           model: lazyThreadModel({
             thread: input.thread,
             agentRevisions: input.deps.agentRevisions,
+            agentCatalog: input.deps.agentCatalog,
             threads: input.deps.repos.threads,
             toolRegistry: input.deps.toolRegistry,
             gateway: input.deps.gateway,
@@ -144,6 +145,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     turns: input.turns,
     blocks,
     agentRevisions: input.deps.agentRevisions,
+    agentCatalog: input.deps.agentCatalog,
     threads: input.deps.repos.threads,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
@@ -157,6 +159,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     persistBake: false,
     bakeInitialPrompt: input.deps.repos.threads.bakeInitialPrompt.bind(input.deps.repos.threads),
     workContext: input.deps.workContext,
+    connections: input.deps.connections,
     eventSink: input.deps.eventSink,
     persistMediaProjection: async (projection) => {
       const updates = buildMediaProjectionEvents({

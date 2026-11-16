@@ -14,6 +14,7 @@
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
+import { defaultThreadTitle } from "@/lib/thread-title";
 import { patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 
@@ -22,6 +23,18 @@ export function readProjectThreadList(
   projectId: string,
 ): ThreadListItem[] | null {
   return client.getQueryData<ThreadListItem[] | null>(projectQueryKeys.threads(projectId)) ?? null;
+}
+
+/** A chat's name as any cached project list holds it; null when it has none yet. */
+export function cachedChatTitle(client: QueryClient, threadId: string): string | null {
+  for (const query of client.getQueryCache().findAll({ queryKey: projectQueryKeys.all })) {
+    if (query.queryKey[2] !== "threads") continue;
+    const title = (query.state.data as ThreadListItem[] | null | undefined)
+      ?.find((thread) => thread.id === threadId)
+      ?.title?.trim();
+    if (title && title !== defaultThreadTitle()) return title;
+  }
+  return null;
 }
 
 /**

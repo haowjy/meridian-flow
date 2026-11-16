@@ -97,6 +97,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const persistence = createDrizzleCollabPersistence(db);
     const draftStore = createDrizzleDraftStore(db, {
       close: draftClose,
+      treeLists,
       workProjection: projection,
       branches: branchStore,
       live: persistence,
@@ -189,6 +190,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           resolveItemInBranch: identity.resolveReviewItemInBranch,
           branchOwner: (branchId: BranchId) => branchStore.ownerOf(branchId),
           lookupCommand: commands.lookup,
+          awaitCommand: commands.await,
         },
         roomRemoval: async () => null,
       },
@@ -206,7 +208,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await db.insert(contextSources).values({
         id: SOURCE,
         projectId: PROJECT,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       });

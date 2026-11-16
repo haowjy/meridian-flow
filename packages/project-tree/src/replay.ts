@@ -36,7 +36,7 @@ export type TreeNode = {
   keptByChild: boolean;
   /**
    * Deleted in live, but shown in this Work's view because the Work has a pending change to it
-   * (rule 7). Review marks it "deleted in live"; Apply leaves the change pending.
+   * (rule 7). Review marks it "Deleted"; Apply restores it and lands the change.
    */
   keptByPending: boolean;
   /** Trash emptied: gone for good, and in no Trash entry. */
@@ -662,7 +662,9 @@ export function startReplay(
       }
       case "restore":
         if (dry) return { parent: parentAfter(node, flipsOf(record)) };
-        lift(record, node, { index });
+        // An Apply's restore of a node the Work's view kept brings back what live deleted and
+        // leaves the node where it arrived: the numbering the writer reviewed stays.
+        lift(record, node, record.fromDraft === undefined ? { index } : { ownOnly: false });
         take(record, index);
         return;
       case "purge": {

@@ -231,6 +231,9 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     // the authoritative final tool result. Kept past completion so the card can
     // still show the streamed log alongside the structured result.
     streamedOutput?: string | null;
+    // The calls a running `mcp_run` script has made, from `meridian.tool.connection_call`:
+    // `{ sequence, id, arguments, call? }`, `call` set once the call finished.
+    connectionCalls?: JsonValue[] | null;
     // Server-authored result metadata (e.g. the work receipt). Mirrors the
     // durable block's `content.metadata` so live and cold-loaded tool views
     // read the same field.
@@ -250,6 +253,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         message: typeof args.message === "string" ? args.message : null,
         isError: args.isError ?? false,
         streamedOutput: typeof args.streamedOutput === "string" ? args.streamedOutput : null,
+        connectionCalls: args.connectionCalls ?? null,
         metadata: args.metadata ?? null,
       },
       provider: args.toolName,
@@ -272,6 +276,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     // Intentionally kept past completion — the typed `result` is what the card's
     // preview consumes, but the streamed buffer remains visible in details.
     streamedOutput: string | null;
+    connectionCalls: JsonValue[] | null;
     metadata: Record<string, JsonValue> | null;
   } {
     return {
@@ -280,6 +285,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
       message: typeof content.message === "string" ? content.message : null,
       isError: toolIsErrorFromContent(content),
       streamedOutput: typeof content.streamedOutput === "string" ? content.streamedOutput : null,
+      connectionCalls: Array.isArray(content.connectionCalls) ? content.connectionCalls : null,
       metadata: recordContentField(content, "metadata"),
     };
   }
@@ -435,6 +441,27 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
     return { toolCallId, stream, text };
   }
 
+  /** A call a running script made: `call` is set once it finished. */
+  function parseConnectionCallPayload(value: unknown): {
+    toolCallId: string;
+    sequence: number;
+    id: string;
+    arguments: JsonValue;
+    call?: JsonValue;
+  } | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const { toolCallId, sequence, id, arguments: sent, call } = value as Record<string, unknown>;
+    if (typeof toolCallId !== "string" || toolCallId.length === 0) return null;
+    if (typeof sequence !== "number" || typeof id !== "string") return null;
+    return {
+      toolCallId,
+      sequence,
+      id,
+      arguments: (sent ?? {}) as JsonValue,
+      ...(call !== undefined ? { call: call as JsonValue } : {}),
+    };
+  }
+
   type ToolResultErrorPayload = {
     toolCallId: string;
     isError: true;
@@ -573,8 +600,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         return;
       }
 
-      case EventType.REASONING_MESSAGE_START:
-      case EventType.THINKING_TEXT_MESSAGE_START: {
+      case EventType.REASONING_MESSAGE_START: {
         const currentTurn = activeAssistantTurn(store, threadId);
         const identity = parseReasoningIdentity(
           currentTurn,
@@ -600,8 +626,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         return;
       }
 
-      case EventType.REASONING_MESSAGE_CONTENT:
-      case EventType.THINKING_TEXT_MESSAGE_CONTENT: {
+      case EventType.REASONING_MESSAGE_CONTENT: {
         const currentTurn = activeAssistantTurn(store, threadId);
         const identity = parseReasoningIdentity(
           currentTurn,
@@ -644,8 +669,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         return;
       }
 
-      case EventType.REASONING_MESSAGE_END:
-      case EventType.THINKING_TEXT_MESSAGE_END: {
+      case EventType.REASONING_MESSAGE_END: {
         const turn = activeAssistantTurn(store, threadId);
         if (!turn) return;
         const identity = parseReasoningIdentity(turn, (event as Record<string, unknown>).messageId);
@@ -885,6 +909,45 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
               toolName: toolNameFromBlock(existingTool),
               ...preservedToolFields(content),
               streamedOutput: nextBuffer,
+              status: existingTool.status === "complete" ? "complete" : "partial",
+            }),
+          );
+          return;
+        }
+        if (event.name === "meridian.tool.connection_call") {
+          const payload = parseConnectionCallPayload(event.value);
+          if (!payload) return;
+          const turn = activeAssistantTurn(store, threadId);
+          if (!turn) return;
+          // A call row with no tool block to join is dropped; the final result carries every call.
+          // The server's own block replaces the live one (its id is not `tool-<call id>`), so the call id finds it.
+          const existingTool = turn.blocks.find(
+            (block) =>
+              block.blockType === "tool_use" && toolCallIdFromBlock(block) === payload.toolCallId,
+          );
+          if (existingTool?.blockType !== "tool_use") return;
+          const content = blockContentRecord(existingTool);
+          const prior = preservedToolFields(content).connectionCalls ?? [];
+          const { toolCallId: _toolCallId, ...entry } = payload;
+          store.upsertAssistantBlock(
+            threadId,
+            turn.id,
+            toolBlock({
+              id: existingTool.id,
+              turnId: turn.id,
+              sequence: existingTool.sequence,
+              toolCallId: toolCallIdFromBlock(existingTool),
+              toolName: toolNameFromBlock(existingTool),
+              ...preservedToolFields(content),
+              connectionCalls: [
+                ...prior.filter(
+                  (call) => (call as { sequence?: unknown }).sequence !== entry.sequence,
+                ),
+                entry as unknown as JsonValue,
+              ].sort(
+                (a, b) =>
+                  (a as { sequence: number }).sequence - (b as { sequence: number }).sequence,
+              ),
               status: existingTool.status === "complete" ? "complete" : "partial",
             }),
           );

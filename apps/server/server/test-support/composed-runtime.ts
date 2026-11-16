@@ -18,7 +18,6 @@ import { createNoopEventSink } from "../domains/observability/index.js";
 import { TREE_NAMES_ROOM } from "../domains/runtime/index.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { composeAppServices, createProductionAppPorts } from "../lib/compose.js";
-import { processDetachedWork } from "../shared/detached-work.js";
 
 type ComposedRuntime = Awaited<ReturnType<typeof composeRuntime>>;
 type RuntimeThread = { threadId: string; turnId: string };
@@ -32,7 +31,6 @@ type ToolCallText = (name: string, args: Record<string, unknown>) => Promise<str
 async function composeRuntime(db: Database, eventSink: EventSink) {
   const ports = await createProductionAppPorts({
     db,
-    backgroundTasks: processDetachedWork,
     eventSink,
     environment: { FLOW_OPENAI_API_KEY: "sk-test-runtime-composition" },
   });

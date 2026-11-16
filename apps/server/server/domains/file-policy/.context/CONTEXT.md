@@ -13,6 +13,12 @@ or `ai_access_denied` (`@meridian/contracts` `protocol/file-access.ts`; wording 
 Continuity-checker and Reader-sim agents declare `permission: read`; the other
 built-ins take the default `edit`.
 
+A deleted Work's files read until its purge, and a write to one is limited by `work_deleted`. The
+term order hides existence: a person who can't read the file meets the person term first, so they
+get `not_found`. Transports read `reason` and nothing else: HTTP answers 404 `work_deleted`, branch
+review names it, and to the model the file reads as gone (`isPermissionDenial` leaves it out, and a
+text edit is returned with `work_deleted`).
+
 ## AI access
 
 `placeAccess(facts)` is what a place does with an AI write: `auto-apply`, `ask` or `deny`. It takes

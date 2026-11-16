@@ -1,11 +1,12 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
-import type { JsonValue } from "@meridian/contracts/protocol";
-import { isToolNotRunResult } from "@meridian/contracts/protocol";
+import { isToolNotRunResult, type JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
   documentToolReturned,
+  mcpCallFailed,
+  mcpRunFailed,
   sourcePath,
   stringInput,
   toolCommand,
@@ -31,6 +32,7 @@ import {
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
+import { MCP_CALL_RENDERER, MCP_DESCRIBE_RENDERER, MCP_RUN_RENDERER } from "./mcp-renderers";
 import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
 import {
@@ -64,8 +66,11 @@ export type ToolExpand = () => ReactNode;
 export type ToolRenderer = {
   /** Single-line summary of the tool action. Already i18n'd. */
   title: (tool: ToolView) => ReactNode;
-  /** Deferred inline expansion. `null` = no expand affordance on this row. */
-  expand?: (tool: ToolView) => ToolExpand | null;
+  /**
+   * Deferred inline expansion. `null` = no expand affordance on this row. `renderRow` draws a
+   * tool as a row of its own, for a tool that holds others (a script's calls).
+   */
+  expand?: (tool: ToolView, renderRow: (tool: ToolView) => ReactNode) => ToolExpand | null;
 };
 
 /* ── input helpers ─────────────────────────────────────────────────────── */
@@ -252,6 +257,8 @@ function documentFailureDocumentName(tool: ToolView): string | null {
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
+  if (tool.toolName === "mcp_call") return mcpCallFailed(tool);
+  if (tool.toolName === "mcp_run") return mcpRunFailed(tool);
   return documentToolFailed(tool);
 }
 
@@ -361,10 +368,6 @@ function documentFailureRemoval(tool: ToolView): {
 /** An edit the document's state returned: nothing was kept, and the AI was shown the document as it stands. */
 function returnedWriteCopy(why: string | null, name: string | null, tool: ToolView): string {
   switch (why) {
-    case "draft_discarded":
-      return t`You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
-    case "draft_replaced":
-      return t`A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
     case "document_removed":
       return removedWriteCopy(name, documentFailureRemoval(tool));
     case "work_archived":
@@ -413,6 +416,17 @@ function removedWriteCopy(
       : t`This document was deleted before this change could be made.`;
 }
 
+/**
+ * A call the run ended never failed: its row names what it was going to do, whatever the tool. A
+ * stored "not run" says it never ran; a call the view found unanswered only says it was stopped.
+ */
+export function EndedCallTitle({ tool }: { tool: ToolView }) {
+  const names = useOwnerNames();
+  const { verb, parameter } = descriptorFor(tool).phrases(tool, names).active;
+  const label = [verb, parameter].filter(Boolean).join(" ").replace(/…$/, "");
+  return isToolNotRunResult(tool.result) ? t`Didn't run: ${label}` : t`Stopped: ${label}`;
+}
+
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   const input = inputObject(tool);
@@ -422,12 +436,6 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
       : (settledDocumentPath(tool) ?? asString(input.path));
   const descriptor = descriptorFor(tool);
   const command = toolCommand(tool);
-
-  // A call the run ended never failed: it reads as what it was going to do.
-  if (isToolNotRunResult(tool.result)) {
-    const { verb, parameter } = descriptor.phrases(tool, names).active;
-    return <PhraseTitle phrase={{ verb, parameter: parameter?.replace(/…$/, "") }} />;
-  }
 
   if (documentToolFailed(tool)) {
     const verb = failureOrReturnedVerb(tool);
@@ -659,6 +667,9 @@ const RENDERERS: Record<string, ToolRenderer> = {
   },
   thread_message: THREAD_MESSAGE_RENDERER,
   thread_report: THREAD_REPORT_RENDERER,
+  mcp_call: MCP_CALL_RENDERER,
+  mcp_describe: MCP_DESCRIBE_RENDERER,
+  mcp_run: MCP_RUN_RENDERER,
 };
 
 export function rendererFor(toolName: string): ToolRenderer {

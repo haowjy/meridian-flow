@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** Exact root binding, ownership create-or-get, and atomic failure in the app transaction.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
@@ -27,11 +28,12 @@ async function fixture() {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "owner", title: "Agents" });
   const agentCatalog = createBoundAgentCatalog({
-    defaultModel: () => "test-model",
+    modelFor: (name) => name ?? "test-model",
     store: app.agentRevisions,
     levelFiles: noLevelFiles,
     builtins: [generalAgentSource("fixture-model")],
     unavailableReasons: () => [],
+    modelUnavailable: () => [],
   });
   const general = (await agentCatalog.list("owner", {})).agents.find(
     (agent) => agent.slug === "general",
@@ -56,6 +58,7 @@ async function fixture() {
     title: "Branch a scene",
     workId: null,
     agentSelection: general.selection,
+    overrides: NO_OVERRIDES,
   };
   return { app, deps, args, projects };
 }
@@ -153,7 +156,11 @@ describe("exact thread creation", () => {
     await createThreadForProject(deps, args);
     const strangerProject = await projects.create({ userId: "stranger", title: "Stranger" });
     await expect(
-      createThreadForProject(deps, { ...args, projectId: strangerProject.id, userId: "stranger" }),
+      createThreadForProject(deps, {
+        ...args,
+        projectId: strangerProject.id,
+        userId: "stranger",
+      }),
     ).rejects.toBeInstanceOf(ThreadCreationNotFoundError);
   });
 

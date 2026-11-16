@@ -123,9 +123,17 @@ export type ProjectChatsHint = {
  */
 export type AgentFilesHint = { type: "agent-files-hint"; projectId: ProjectId };
 
+/**
+ * A connection of the writer's changed or was checked (its status, its address, its tools, its
+ * removal): the Connections list is stale. Account-level, so every project the writer has open
+ * gets it. Truth-free.
+ */
+export type McpConnectionsHint = { type: "mcp-connections-hint"; projectId: ProjectId };
+
 /** What a project's subscription receives. */
 export type CatalogChannelMessage =
   | DraftOwnerHint
   | ProjectChatsHint
   | ContextSourcesHint
-  | AgentFilesHint;
+  | AgentFilesHint
+  | McpConnectionsHint;

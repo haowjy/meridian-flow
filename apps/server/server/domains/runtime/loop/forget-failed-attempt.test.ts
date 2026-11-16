@@ -369,20 +369,21 @@ describe("loadForgettingFacts", () => {
     ],
     ["a child seed without references stays hidden", [childSeed, report], ["r"], false],
   ];
-  it.each(
-    walks,
-  )("walks deliveries to the view's next row: %s", async (_name, after, expected, refs) => {
-    const graph = chain([turn("u", "user"), failed("f"), ...after]);
-    const loaded = await loadForgettingFacts(
-      {
-        turns: graph as never,
-        blocks: {
-          listByTurnIds: async (ids) => (refs && ids.includes("c" as never) ? [reference] : []),
+  it.each(walks)(
+    "walks deliveries to the view's next row: %s",
+    async (_name, after, expected, refs) => {
+      const graph = chain([turn("u", "user"), failed("f"), ...after]);
+      const loaded = await loadForgettingFacts(
+        {
+          turns: graph as never,
+          blocks: {
+            listByTurnIds: async (ids) => (refs && ids.includes("c" as never) ? [reference] : []),
+          },
         },
-      },
-      "t" as never,
-      "f" as never,
-    );
-    expect(loaded.members[0]?.delivered.map((held) => held.id)).toEqual(expected);
-  });
+        "t" as never,
+        "f" as never,
+      );
+      expect(loaded.members[0]?.delivered.map((held) => held.id)).toEqual(expected);
+    },
+  );
 });

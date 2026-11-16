@@ -1,7 +1,11 @@
 /** Agent source, account/system catalog and retained conversation configuration contracts. */
 import { z } from "zod";
 import { isUuid } from "../request-id.js";
-import type { InvocationPatch } from "./execution-knobs.js";
+import {
+  type InvocationPatch,
+  type ReasoningChoice,
+  reasoningChoiceSchema,
+} from "./execution-knobs.js";
 import { type AgentPackageStatus, agentPackageStatusSchema } from "./save.js";
 
 export * from "./execution-knobs.js";
@@ -27,9 +31,18 @@ export interface AgentCatalogItem {
   /** Null for a name two packages bring: it is held, unavailable, and nothing to pick. */
   selection: AgentSelection | null;
   slug: string;
+  /**
+   * The Agent's file, relative to its level's root (`agentsRootOf`), as `AgentFileStatus.path`.
+   * Null exactly when `selection` is: two packages bring the name, so there are two files.
+   */
+  path: string | null;
   name: string;
   description: string;
   model: string | null;
+  /** The Agent's own reasoning setting, in the wire vocabulary; null when its file sets none. */
+  effort: ReasoningChoice | null;
+  /** False for an Agent only other Agents call: it starts no chat, so the picker leaves it out. */
+  primary: boolean;
   level: AgentLevel;
   /** Levels below this one that have an Agent of the same name, now hidden. */
   shadows: AgentLevel[];
@@ -45,9 +58,12 @@ export const agentCatalogSchema = z.object({
     z.object({
       selection: agentSelectionSchema.nullable(),
       slug: z.string().min(1),
+      path: z.string().nullable(),
       name: z.string(),
       description: z.string(),
       model: z.string().nullable(),
+      effort: reasoningChoiceSchema.nullable(),
+      primary: z.boolean(),
       level: agentLevelSchema,
       shadows: z.array(agentLevelSchema),
       unavailableReasons: z.array(z.string()),
@@ -117,11 +133,21 @@ export const agentFilesSchema = z.object({
 export const savedAgentFileQuerySchema = z.object({ level: agentLevelSchema, path: z.string() });
 export const savedAgentFileSchema = z.object({ text: z.string() });
 
-/** The Agent file a chat is bound to, as saved; `stale` when a newer save exists. */
+/**
+ * The Agent a started chat runs, as its next turn runs it: the chat's own row in the picker comes
+ * from this alone, since the catalog's newest save takes over only at a compaction.
+ */
 export const threadAgentSchema = z.object({
+  selection: agentSelectionSchema,
   name: z.string(),
+  description: z.string(),
   text: z.string(),
   stale: z.boolean(),
+  /** The model and reasoning the next turn runs with no per-chat override. */
+  model: z.string(),
+  effort: reasoningChoiceSchema.nullable(),
+  /** Why the Agent can't run on that model now; empty when it can. */
+  unavailableReasons: z.array(z.string()),
 });
 export type ThreadAgent = z.infer<typeof threadAgentSchema>;
 

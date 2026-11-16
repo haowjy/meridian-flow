@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { sharedTest } from "../../tools/ci/vitest-shared";
 import { asVitestGlob, mockedServerTests } from "./vitest.mocked-files";
 
 // vi.mock is file-scoped only when the file has its own module graph.
@@ -6,6 +7,7 @@ import { asVitestGlob, mockedServerTests } from "./vitest.mocked-files";
 // excluded from one gate and forgotten by the other.
 export default defineConfig({
   test: {
+    ...sharedTest,
     name: "@meridian/server-isolated",
     isolate: true,
     include: mockedServerTests.map(asVitestGlob),

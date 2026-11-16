@@ -184,10 +184,10 @@ closed draft checks Apply evidence first; its other parts are discarded.
 Released closed bytes yield null provenance/projection and all discarded, never
 an empty document. Removed-document precedence remains the caller's concern.
 
-`writerRanges` is the optional clock-range request. All projects currently have
-one `projects.user_id`, so this adapter never queries human receipt history and
-omits `writers` even when requested. A multi-user project model must supply
-bounded writer evidence and its kernel naming before enabling that mode.
+All projects currently have one `projects.user_id`, so this adapter never
+queries human receipt history and provenance never carries `writers`. A
+multi-user project model must supply bounded writer evidence and its kernel
+naming before enabling that mode.
 
 ## Save, replay, and grants
 
@@ -229,13 +229,20 @@ An undo or revert records in the room its inverse committed into
 (`DocumentEditResult.room`). `format: "edits"` reads record none.
 A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
-A write to a Work draft that closed after the model last read it is returned by the
-closed-draft rule in `model-edit-write.ts` (`closedDraftSeen`), before a branch or draft opens:
-a `done` row with `settled: returned`, and the document as that chat reads it now, its evidence
-stored in the row so the model's next write plans on it. The same answer covers an archived or
-deleted Work's draft, a removed document and a block the writer deleted, merged or moved
-(`block_gone`, from the write core). An insert whose anchor block the writer deleted lands where
-the anchor was: it is new words, and the anchor's tombstone still places them.
+A write to a Work draft that a Discard or a restore closed after the model last read it lands in
+a new draft (`closedDraftSeen` in `model-edit-write.ts`), seeded from the document as it stands,
+and the result says the earlier draft closed and this edit opened a new one. The core resolves the write's selectors in the model's view of the closed draft
+(`supersededWorkDraftId`) and carries the result onto the new draft by block hash
+(`resolver/carry.ts`): blocks it lacks get their words after the nearest block both hold, and a
+remove of them changes nothing; the Discard's restored text is never in scope. The day-30 purge
+rewrites the draft's frontier rows to `superseded:<documentId>` with the cut dropped, so a write
+planned on a purged draft still finds it superseded, has no view, and lands its words at the end
+with nothing deleted. A removed document, an archived or deleted Work's draft
+return the write instead: a `done` row with `settled: returned`, and the document as that chat
+reads it now, its evidence stored in the row so the model's next write plans on it. A block the
+writer deleted, merged or moved in a draft that is still open is returned too (`block_gone`, from
+the write core). An insert whose anchor block the writer deleted lands where the anchor was: it is
+new words, and the anchor's tombstone still places them.
 
 Replay treats ordinary concurrent chat edits and writer deletions as Yjs peers. A
 planning-visible item disappearing is not by itself evidence against a write. Only
@@ -359,7 +366,15 @@ the transaction; `55P03` is `contended` and retried on backoff, a moved revision
 is re-judged at once, so the badge converges within the max wait once typing
 pauses and eventually while typing. That is the contract, not a bound to
 tighten: the job's write must never bump `revision`, and the badge must not move back onto the append. Every writer of `has_effect` (the seed or projection job) writes the watermark with it; `-1` is stale
-whatever the revision. A sweep (the `draft-effects` recovery lane, every 30 s)
+whatever the revision.
+Lists' rows read that answer (`has_effect OR has_effect_revision < revision`) only for a
+document live does not show (rule 7). `writeTextAnswer` is the one writer of the answer on a
+judgement or an Un-Apply: it resyncs the document's list, under the list's key taken before the
+draft row's (a judgement holds no document key, so it takes it; Un-Apply holds document keys, so
+it locks the lists of its documents in Trash upfront and passes `listsHeld`), only when the document is in Trash and the answer differs from what the rows may
+hold (a different stored answer, or a stale draft judged false). Un-Apply writes `true` with the
+stale watermark in its own transaction, so its row is right at its commit.
+A sweep (the `draft-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
 crash inside the debounce converges without another key. Review readers
 (`isEdited` and the Works badge) may lag a key by that second;

@@ -1,7 +1,6 @@
 /**
- * ManuscriptStateNotice — what live did to the document this draft holds: deleted from
- * the manuscript (Apply brings it back). Once an
- * Apply brings it back the same place says so, until the writer dismisses it or opens another
+ * ManuscriptStateNotice — what live did to the document this draft holds: deleted from its
+ * area (Apply brings it back). Once an Apply brings it back the same place says so, until the writer dismisses it or opens another
  * document; a host swap on promotion (the phone's) remounts it and must not end it. With none
  * of those, it says what a Work's pending move or delete will do to the document, which
  * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
@@ -23,16 +22,17 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { appliedSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { isDeletedFromManuscript } from "@/features/draft-review/deleted-drafts";
+import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import {
   type PendingTreeChange,
   treeNoticeLabel,
   treeNoticeSentence,
 } from "@/features/draft-review/tree-line";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useLiveDraftCue } from "@/features/project/context/LiveDraftNotice";
-import { deletedFromManuscriptSentence } from "@/features/project/context/RemovedDocumentNotice";
+import { deletedLiveSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { cn } from "@/lib/utils";
@@ -62,7 +62,7 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   );
   useEffect(() => owner.keepApplyFactsOnly(projectId, documentId), [owner, projectId, documentId]);
   const item = files.find((file) => file.documentId === documentId)?.draft;
-  const deleted = isDeletedFromManuscript(item);
+  const deleted = isDeletedLive(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
   const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
@@ -72,18 +72,25 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const shell = useShellTreeVersion();
   const shown = shell?.showing === "draft" ? shell.ownerKey : cue?.ownerKey;
   if (deleted) {
-    const sentence = deletedFromManuscriptSentence(
+    const from = schemeLabel(item?.deletedFrom?.scheme);
+    const sentence = deletedLiveSentence(
       title,
+      from,
       removal?.kind === "removed" ? removal.record : null,
     );
-    return { kind: "deleted", sentence, label: t`Deleted from the manuscript` };
+    return { kind: "deleted", sentence, label: from ? t`Deleted from ${from}` : t`Deleted` };
   }
+  const { scheme } = tabLocation(tab);
+  const area = schemeLabel(scheme);
   const renamed = renamedPath ? documentBasename(renamedPath) : null;
   if (restored || renamed)
     return {
       kind: "applied",
-      sentence: appliedSentence(restored ? [title] : [], renamed ? [renamed] : []),
-      label: renamed ? t`Added as ${renamed}` : t`Back in the manuscript`,
+      sentence: appliedSentence(
+        restored ? [{ name: title, scheme }] : [],
+        renamed ? [renamed] : [],
+      ),
+      label: renamed ? t`Added as ${renamed}` : t`Back in ${area}`,
       dismiss: () => owner.forgetApplyFacts(projectId, documentId),
     };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>

@@ -14,7 +14,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { branchOwnerSql } from "../../../shared/draft-owner.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -176,10 +176,28 @@ export async function readDraftAt(
   draftId: string,
   since?: DraftReadSince,
 ): Promise<DraftRead | null> {
+  return (await readDrafts(db, [draftId], since)).get(draftId) ?? null;
+}
+
+/** `readDraftAt` for many drafts in one statement; a draft that doesn't exist is absent. */
+export function readDraftsAt(
+  db: DrizzleDb,
+  draftIds: readonly string[],
+): Promise<Map<string, DraftRead>> {
+  return readDrafts(db, draftIds);
+}
+
+async function readDrafts(
+  db: DrizzleDb,
+  draftIds: readonly string[],
+  since?: DraftReadSince,
+): Promise<Map<string, DraftRead>> {
+  const out = new Map<string, DraftRead>();
+  if (draftIds.length === 0) return out;
   const sinceRevision = since?.checkpointRevision ?? -1;
   const sinceSeq = since?.seq ?? 0;
   const held = sql`${documentDrafts.checkpointRevision} = ${sinceRevision}`;
-  const [row] = await db
+  const rows = await db
     .select({
       ...draftColumns,
       state: sql<Buffer | null>`case when ${held} then null else ${documentDrafts.state} end`,
@@ -197,22 +215,23 @@ export async function readDraftAt(
     })
     .from(documentDrafts)
     .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-    .where(eq(documentDrafts.id, draftId))
-    .limit(1);
-  if (!row) return null;
-  const tail: DraftTailRow[] = (row.tail ?? []).map((entry) => ({
-    id: Number(entry.id),
-    update: new Uint8Array(Buffer.from(entry.update, "base64")),
-    source: entry.source,
-  }));
-  return {
-    documentDraft: mapDraft(row),
-    checkpoint:
-      row.state?.length && row.stateVector?.length
-        ? { state: new Uint8Array(row.state), stateVector: new Uint8Array(row.stateVector) }
-        : null,
-    tail,
-  };
+    .where(inArray(documentDrafts.id, [...draftIds]));
+  for (const row of rows) {
+    const tail: DraftTailRow[] = (row.tail ?? []).map((entry) => ({
+      id: Number(entry.id),
+      update: new Uint8Array(Buffer.from(entry.update, "base64")),
+      source: entry.source,
+    }));
+    out.set(row.draftId, {
+      documentDraft: mapDraft(row),
+      checkpoint:
+        row.state?.length && row.stateVector?.length
+          ? { state: new Uint8Array(row.state), stateVector: new Uint8Array(row.stateVector) }
+          : null,
+      tail,
+    });
+  }
+  return out;
 }
 
 /** What an append's sequence point committed, with the lock's wait and hold. */

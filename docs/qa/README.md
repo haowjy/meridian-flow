@@ -22,6 +22,7 @@ server, or a reused database, produces regressions that vanish on a clean
 stack.
 
 - [Agents through Mars](../../apps/server/server/domains/packages/.context/qa/agents-through-mars.md): an error in an Agent file leaves that Agent out of the saved version, and one in a package manifest fails the Save; a database probe and a server gate on the mock provider.
+- [Package fetch budgets](../../apps/server/server/domains/packages/.context/qa/package-fetch.md): each shared fetch budget aborts with its own name when lowered; a probe against live GitHub.
 - [Signed-out redirects](../../apps/www/.context/qa/signed-out-redirects.md): the circle between the landing page, sign-in, sign-up and log out, with the auth bypass off.
 - [Rich mock provider](../../apps/server/server/lib/gateway/.context/qa/mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
 - [The model's move and delete](../../apps/server/server/domains/collab/.context/qa/model-move-delete.md): tool rows, the turn card's lines and Undo at a free name, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
@@ -198,7 +199,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    create into a refusal that closes locally.
 10. Verify atomic reveal and complete documents with the notes-folder fixture under
    `apps/server/server/domains/import/__fixtures__/`, including properties and links.
-11. Verify order. In one project make a Knowledge Base folder with four documents and
+11. Verify order. In one project make a Knowledge folder with four documents and
    reorder one of them (Move… > Change position, or a row-edge drag) so the folder is
    manual; make a second folder with the same documents and leave it alone. Import 100+
    files and a nested folder into each. In the default folder the arrivals list in name
@@ -325,7 +326,7 @@ Three harness artifacts have produced false defects. Rule them out first.
 ## Project export
 
 1. Start an owned worktree with `pnpm dev` and discover its HTTPS routes with
-   `pnpm portless:list`. Seed links across Manuscript and Knowledge Base, a
+   `pnpm portless:list`. Seed links across Manuscript and Knowledge, a
    binary image, case-only siblings, two Works with Scratch and Uploads, and a
    No Work chat with Scratch. Seed `documents.metadata.properties` directly
    as `{ "format": "yaml", "text": "..." }`.

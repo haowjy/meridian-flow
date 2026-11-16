@@ -111,5 +111,10 @@ With a failed writer row and saved composer text in a deleted chat, cold-load it
 URL. Bind cleanup waits for the pane to report attested deletion, then moves the
 row and words together into New chat exactly once. Restore the moved chat, type at
 the same composer revision, delete it again, and confirm the fresh words move too.
-If New chat storage or journal enumeration is refused, the chat stays in place
+A chat deleted from another tab or `./mf api DELETE` moves its box words to New chat
+whether or not a pane shows it, and a reload in between keeps them (the chat's box
+stores its project). Its unsent messages are shared by every tab, so only a tab with a
+surface for the chat takes them (the deleting tab always does); another tab leaves them
+in localStorage. A chat purged from Trash that no tab saw deleted is left alone.
+Deleting from the chat menu moves the words at the click and Undo moves them back. If New chat storage or journal enumeration is refused, the chat stays in place
 and words remain; restore storage and Retry, Edit or wake to finish cleanup.

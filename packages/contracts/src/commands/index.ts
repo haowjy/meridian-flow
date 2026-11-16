@@ -24,6 +24,7 @@ export const COMMAND_KINDS = [
   "work_delete",
   "work_restore",
   "project_create",
+  "thread_set_overrides",
 ] as const;
 export type CommandKind = (typeof COMMAND_KINDS)[number];
 
@@ -83,14 +84,9 @@ export type LeftOutWhy =
 /**
  * Why an act was returned. The first three close the owner of the drafts (a Work, or a chat in
  * Trash); the rest are a model's edit that cannot
- * land: the draft it edited was discarded or replaced by a restore, its document was removed, or the block it named is gone.
+ * land: its document was removed, or the block it named is gone.
  */
-export type ReturnedWhy =
-  | ClosedOwnerWhy
-  | "draft_discarded"
-  | "draft_replaced"
-  | "document_removed"
-  | "block_gone";
+export type ReturnedWhy = ClosedOwnerWhy | "document_removed" | "block_gone";
 
 /** The reasons that name a closed owner of drafts: in a `returned` act, a 4409 close and a read-only room's scope. */
 export const CLOSED_OWNER_WHYS = ["work_archived", "work_deleted", "chat_frozen"] as const;
@@ -98,6 +94,12 @@ export type ClosedOwnerWhy = (typeof CLOSED_OWNER_WHYS)[number];
 
 /** What a stored command result may carry beyond its own fields. */
 export type StoredResult = { settled?: Settlement[] };
+
+/**
+ * A resend's answer while the first request under its id is still running: nothing is known yet,
+ * and sending it again waits on that request for its answer.
+ */
+export type CommandRunning = { status: "running"; commandId: string };
 
 /** `GET /api/commands/:id`: the stored outcome, or `none` (also for another account's id). */
 export type CommandLookupResponse =

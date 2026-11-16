@@ -7,10 +7,11 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { settledCause } from "./draft-disposition.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
+import { planInverseOffThread } from "./inverse-worker.js";
 import {
   type Entry,
   entries,
@@ -54,15 +55,25 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     }
     return inspection;
   };
-  const compute = (
+  const compute = async (
     destination: InverseDestination,
     selection: readonly InversePart[],
     actionId: string,
+    { preview = false }: { preview?: boolean } = {},
   ) => {
     if (destination.kind === "draft" && destination.state === "gone")
       throw new Error("A gone destination cannot be selected");
-    const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
-    return index.compute(selection, { actionId, allocateClient: allocateDocumentClient });
+    if (preview) {
+      const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
+      return index.preview(selection, { actionId, allocateClient: allocateDocumentClient });
+    }
+    return planInverseOffThread({
+      live: Y.encodeStateAsUpdate(document.live),
+      view: destination.kind === "live" ? null : Y.encodeStateAsUpdate(destination.view),
+      history: document.history,
+      selection,
+      actionId,
+    });
   };
   const version = (destination: InverseDestination) => {
     const draftId = draftIdOf(destination);
