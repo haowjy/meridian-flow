@@ -119,4 +119,14 @@ Provider-conditioned model variables:
 refuses it and staging allows it. Startup fails if it is set in production, names an unknown
 model, or names a model whose provider has no key. Leave it unset in production.
 
+### Object-store variables on the app service too
+
+The app service sets the page's `Content-Security-Policy: img-src …` header. It lists the
+origin the object store's signed read URLs point at, which it works out from the same
+variables as the server (`packages/contracts/src/object-store-env.ts`): `OBJECT_STORE_PROVIDER`
+or `MERIDIAN_BACKENDS`, `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION` and
+`S3_FORCE_PATH_STYLE`. Give the app service the same values as the server's. When they differ,
+the browser blocks every uploaded picture, figure and preview, and nothing fails at boot.
+With `S3_FORCE_PATH_STYLE` off the policy also allows `<bucket>.` subdomains of the endpoint.
+
 No external package-execution provider is part of the Meridian Flow v3 deployment contract.
