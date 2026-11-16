@@ -154,6 +154,8 @@ export function createBoundAgentCatalog(input: {
   modelFor(named?: string): string | undefined;
   /** Host-owned routing/support checks, independent of source syntax compilation. */
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
+  /** Why the host doesn't offer a model; empty when it does. Says nothing of an Agent's fields or tools. */
+  modelUnavailable(model: string): string[];
 }): BoundAgentCatalog {
   const { store } = input;
   const levels: PackageLevels = createPackageLevels(input);
@@ -478,7 +480,7 @@ export function createBoundAgentCatalog(input: {
   };
   /** Whether the host still offers the model the chat is bound to. */
   const modelStillOffered = (bound: AgentRevisionBinding & { revision: AgentRevision }) =>
-    input.unavailableReasons(bound.revision.definition, bound.configuration.model).length === 0;
+    input.modelUnavailable(bound.configuration.model).length === 0;
 
   async function refreshFrom(
     userId: string,
@@ -510,8 +512,7 @@ export function createBoundAgentCatalog(input: {
       const holds =
         named !== undefined &&
         named === revision.definition.metadata.model &&
-        input.unavailableReasons(newest.revision.definition, bound.configuration.model).length ===
-          0;
+        input.modelUnavailable(bound.configuration.model).length === 0;
       const configuration = holds
         ? { ...newest.configuration, model: bound.configuration.model }
         : newest.configuration;

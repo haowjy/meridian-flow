@@ -33,6 +33,7 @@ async function fixture() {
     levelFiles: noLevelFiles,
     builtins: [generalAgentSource("fixture-model")],
     unavailableReasons: () => [],
+    modelUnavailable: () => [],
   });
   const general = (await agentCatalog.list("owner", {})).agents.find(
     (agent) => agent.slug === "general",

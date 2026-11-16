@@ -79,6 +79,7 @@ else
         builtins: [],
         modelFor: (name) => name ?? "gpt-5.6-luna",
         unavailableReasons: () => [],
+        modelUnavailable: () => [],
       });
       const slug = `fork-agent-${crypto.randomUUID()}`;
       levels.write(

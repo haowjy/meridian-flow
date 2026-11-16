@@ -676,6 +676,7 @@ export async function createProductionAppPorts(input: {
     modelFor: modelFor(gateway),
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons(gateway, model),
   });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
@@ -1527,6 +1528,7 @@ export function createInMemoryAppServices(): AppServices {
     modelFor: (name) => name ?? "mock-model",
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons({ listModels: () => [] }, model),
   });
   return {
     gateway: {

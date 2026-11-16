@@ -85,6 +85,7 @@ const catalog = createBoundAgentCatalog({
   builtins,
   modelFor: (name) => name ?? "fixture-model",
   unavailableReasons: () => [],
+  modelUnavailable: () => [],
 });
 
 const failures: string[] = [];

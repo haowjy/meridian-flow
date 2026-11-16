@@ -82,6 +82,7 @@ You are Writer.
       builtins: [launch],
       modelFor: (name) => name ?? "fixture-model",
       unavailableReasons: () => [],
+      modelUnavailable: () => [],
     });
     const thread = await repos.threads.create({
       aiWriteMode: "direct",

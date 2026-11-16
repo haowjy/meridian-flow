@@ -168,6 +168,7 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
       levelFiles: noLevelFiles,
       builtins: [generalAgentSource("mock-model")],
       unavailableReasons: () => [],
+      modelUnavailable: () => [],
     });
     const general = (await agentCatalog.list(OWNER, {})).agents.find(
       (agent) => agent.slug === "general",

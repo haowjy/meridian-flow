@@ -71,6 +71,7 @@ async function fixture(
     builtins: [],
     modelFor: (name) => name ?? "gpt-5.6-luna",
     unavailableReasons: () => [],
+    modelUnavailable: () => [],
   });
   levels.write(
     "user",
