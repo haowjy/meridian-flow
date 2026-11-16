@@ -84,7 +84,7 @@ function turn(
   const extra = { undoes };
   if (!placed && (named || !base.sets.place))
     return {
-      record: writer.author(
+      record: writer.prepare(
         view,
         actor,
         {
@@ -108,7 +108,7 @@ function turn(
     if (wouldLoop(projection.nodes, node.id, parent)) return "changed_since";
   }
   return {
-    record: writer.author(
+    record: writer.prepare(
       view,
       actor,
       {
@@ -169,7 +169,9 @@ export function undoChange(
   recordId: string,
 ): TreeRecord | NotUndone {
   const done = undoFacts(writer, asked, actor, recordId);
-  return typeof done === "string" ? done : done.record;
+  if (typeof done === "string") return done;
+  writer.append(done.record);
+  return done.record;
 }
 
 /** `undoChange`, saying which fact of a move that set a name stays (`kept`), when one does. */
@@ -215,7 +217,7 @@ export function undoFacts(
   if (!node) return "purged";
   const extra = { undoes: record.carries ?? record.id };
   const author = (made: TreeRecordInput) => ({
-    record: writer.author(view, actor, made, extra),
+    record: writer.prepare(view, actor, made, extra),
   });
   switch (record.type) {
     case "create":

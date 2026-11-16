@@ -70,9 +70,8 @@ export const keptBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db
 export const openBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db, list, true);
 
 /**
- * The facts the server decides a create by: the open branches, and the sources of Works that are
- * closed (archived or deleted), which nothing may be created in. Null when the list is not the
- * account's (the project or account is gone or another's).
+ * The facts admission needs: open branches and whether each source is closed or gone.
+ * Null when the list is not the account's (the project or account is gone or another's).
  */
 export async function readConnection(
   db: DrizzleDb,
@@ -81,25 +80,32 @@ export async function readConnection(
 ): Promise<Connection | null> {
   const tx = currentDrizzleDb(db as Database);
   if (list.kind === "account") {
-    // Nothing in `~` sits in a Work's source, so an account's list has no closed sources.
     const [account] = await tx.execute<{ id: string }>(
       sql`SELECT id::text FROM users WHERE id = ${list.userId}::uuid`,
     );
     if (!account || account.id !== accountId) return null;
-    return { drafts: await openBranches(tx, list), closedSources: new Set() };
-  }
-  const [project] = await tx.execute<{ id: string; owner: string }>(
-    sql`SELECT id::text, user_id::text AS owner FROM projects
+  } else {
+    const [project] = await tx.execute<{ id: string; owner: string }>(
+      sql`SELECT id::text, user_id::text AS owner FROM projects
       WHERE id = ${list.projectId}::uuid AND deleted_at IS NULL`,
+    );
+    if (!project || project.owner !== accountId) return null;
+  }
+  const sources = await tx.execute<{ id: string; closed: boolean }>(sql`
+    SELECT s.id::text AS id,
+      (s.deleted_at IS NOT NULL OR (s.scope = 'work' AND (w.id IS NULL OR w.archived_at IS NOT NULL OR w.deleted_at IS NOT NULL))) AS closed
+    FROM context_sources s
+    LEFT JOIN works w ON w.id = s.work_id
+    WHERE ${
+      list.kind === "project"
+        ? sql`${ownerProjectIdSql("s", "w")} = ${list.projectId}::uuid`
+        : sql`s.user_id = ${list.userId}::uuid`
+    }`);
+  const openSources = new Set(
+    sources.filter((source) => !source.closed).map((source) => source.id),
   );
-  if (!project || project.owner !== accountId) return null;
-  const closed = await tx.execute<{ id: string }>(sql`
-    SELECT s.id::text AS id FROM context_sources s
-    JOIN works w ON w.id = s.work_id
-    WHERE s.scope = 'work' AND w.project_id = ${project.id}::uuid
-      AND (w.archived_at IS NOT NULL OR w.deleted_at IS NOT NULL)`);
   return {
     drafts: await openBranches(tx, list),
-    closedSources: new Set(closed.map((source) => source.id)),
+    closed: (source) => !openSources.has(source),
   };
 }
