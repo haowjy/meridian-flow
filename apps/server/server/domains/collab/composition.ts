@@ -143,10 +143,7 @@ import { createThreadCores } from "./thread-cores.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-import type { DetachedWorkTracker } from "../../shared/detached-work.js";
-
 type CollabDomainDeps = {
-  backgroundTasks?: DetachedWorkTracker;
   db: Database;
   /** How links and image sources spell, loaded per document operation (contract §4.4). */
   links: DocumentLinkScopes;
@@ -196,7 +193,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal: persistence.journal,
     transactions: { inTransaction: isInDrizzleTransaction, afterCommit: deferUntilDrizzleCommit },
     diagnostics: createRoomDeliveryDiagnostics(deps.eventSink),
-    backgroundTasks: deps.backgroundTasks,
   });
   // Every bounded draft-store attempt's rollback boundary.
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
@@ -415,7 +411,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
-    backgroundTasks: deps.backgroundTasks,
     journal: persistence.journal,
     draftStore: drafts,
     draftCoordinator,

@@ -15,7 +15,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
-import { type DetachedWorkTracker, processDetachedWork } from "../../shared/detached-work.js";
+import { processDetachedWork } from "../../shared/detached-work.js";
 import { recordFailureAfterCommit } from "../../shared/failure-records.js";
 import type { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 import {
@@ -51,8 +51,6 @@ type ThreadHubState = {
 };
 
 type ThreadEventHubDeps = {
-  /** Tracks journal drains a notification or commit starts, so shutdown and test resets wait for them. */
-  backgroundTasks?: DetachedWorkTracker;
   journalWriter: EventJournalWriter;
   journalReader: EventJournalReader;
   eventSink: EventSink;
@@ -340,7 +338,7 @@ export function createThreadEventHub(
   }
 
   function invalidateCommittedJournal(threadId: ThreadId): void {
-    (deps.backgroundTasks ?? processDetachedWork).track(
+    processDetachedWork.track(
       drainCommittedJournal(threadId).catch((error) => {
         emitEvent(eventSink, {
           level: "error",

@@ -17,7 +17,7 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import { type DetachedWorkTracker, processDetachedWork } from "../../../shared/detached-work.js";
+import { processDetachedWork } from "../../../shared/detached-work.js";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { partitionConcurrentUpdates } from "../domain/concurrent-updates.js";
 import {
@@ -47,7 +47,6 @@ type CoordinatorDeps = {
   /** The waits before each retry of a failed delivery; the last repeats until the outage ends. */
   deliveryBackoffMs?: readonly number[];
   /** Tracks the delivery chains, so shutdown and test resets wait for their reads. */
-  backgroundTasks?: DetachedWorkTracker;
 };
 
 /** `stop` ends every delivery outage's retries; a pass already running still finishes. */
@@ -366,7 +365,6 @@ function createCoordinator(
     },
     backoffMs: deps.deliveryBackoffMs ?? DELIVERY_BACKOFF_MS,
     diagnostics: deps.diagnostics,
-    backgroundTasks: deps.backgroundTasks ?? processDetachedWork,
   });
 
   /**
@@ -450,7 +448,6 @@ function createRoomDelivery(deps: {
   loaded(docId: string): Y.Doc | undefined;
   backoffMs: readonly number[];
   diagnostics: RoomDeliveryDiagnostics | undefined;
-  backgroundTasks: DetachedWorkTracker;
 }): { deliver(docId: string): Promise<void>; stop(): void } {
   // `wake` cuts short a retry's wait: a new request is served at once, not after the backoff.
   type Chain = { again: boolean; waiters: (() => void)[]; wake?: () => void };
@@ -520,7 +517,9 @@ function createRoomDelivery(deps: {
         }
         const chain: Chain = { again: true, waiters: [resolve] };
         chains.set(docId, chain);
-        void deps.backgroundTasks.track(run(docId, chain), "hocuspocus-room-delivery");
+        void processDetachedWork
+          .track(run(docId, chain), "hocuspocus-room-delivery")
+          .catch((cause) => deps.diagnostics?.failed({ documentId: docId, cause }));
       });
     },
     stop() {

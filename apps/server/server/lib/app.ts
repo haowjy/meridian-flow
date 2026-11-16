@@ -95,9 +95,13 @@ async function createAppServices(): Promise<AppServices> {
   );
   app.organizeWake.bind(() => scheduler.wake("import-organize"));
   registerProcessShutdownCallback(async () => {
-    // A notification after shutdown starts would begin reads the drain no longer waits for.
-    await Promise.all(listeners.map((listener) => listener.unlisten()));
-    await Promise.all([scheduler.stop(), app.shutdown()]);
+    // postgres.js drops the listener before unlisten's first await, so the drain below cannot be
+    // joined by a notification even when the DB stalls and these promises never settle.
+    await Promise.all([
+      ...listeners.map((listener) => listener.unlisten()),
+      scheduler.stop(),
+      app.shutdown(),
+    ]);
   });
   return app;
 }

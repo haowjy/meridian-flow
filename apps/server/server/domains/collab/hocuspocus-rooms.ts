@@ -28,7 +28,9 @@ export function closeRoom(
     connection.context.closeTransport?.(close);
     connection.close(close);
   }
-  void processDetachedWork.track(hocuspocus.unloadDocument(document), "unload closed room");
+  void processDetachedWork
+    .track(hocuspocus.unloadDocument(document), "unload closed room")
+    .catch(() => {});
 }
 
 /**

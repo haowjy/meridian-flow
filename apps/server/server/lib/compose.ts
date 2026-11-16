@@ -457,7 +457,6 @@ const WAKE_SWEEP_LIMIT = 100;
 
 export async function createProductionAppPorts(input: {
   db: Database;
-  backgroundTasks?: DetachedWorkTracker;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
@@ -503,7 +502,7 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = input.backgroundTasks ?? processDetachedWork;
+  const backgroundTasks = processDetachedWork;
   const projectWakeHub = createProjectWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
   const contextSources = createDrizzleContextSources(db);
@@ -592,7 +591,6 @@ export async function createProductionAppPorts(input: {
   });
   const documentSync = createCollabDomain({
     db,
-    backgroundTasks,
     arrivals,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
@@ -811,7 +809,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     );
   });
   const threadEventHub = createThreadEventHub({
-    backgroundTasks,
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
