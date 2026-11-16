@@ -227,6 +227,16 @@ the card and `internal_error` ("the document changed while reversing; try again"
 for model Undo, Redo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope.
 
+The card's chip answers from the same plan as the card's Undo, but a `preview` of it: `prepare`
+asks the kernel which edits an Undo would take (`PreparedEditRoots.preview`) and never builds
+the Undo, so the chip costs a classification per document instead of a full inverse (seconds for
+a turn of large documents). A preview builds only a part a later part of the selection is
+classified on, since its receipt joins the history that one is judged against; the last part
+is accepted when it classifies active. It admits and normalizes nothing, so it cannot answer
+differently from `compute` unless the kernel's own checks would throw. Change `compute` and
+`preview` together, and check them against each other on random documents and peer edits. `prepare`
+yields between documents, so a real Undo of many large documents does not hold the event loop.
+
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
 `expired`, or `partial` with HTTP 200; callers retain
