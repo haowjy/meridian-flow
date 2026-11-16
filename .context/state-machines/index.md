@@ -30,6 +30,7 @@ have it:
 | User-turn admission | One writer submission, admitted exactly once | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
 | Media inclusion | Whether one picture or tool-result media part is in the model request | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
 | Spawn status | What became of one subagent, as its parent sees it | [runtime](../../apps/server/server/domains/runtime/.context/state-machines.md) |
+| Connection status | Whether a writer's MCP connection works: no result, connected, unreachable, needs sign-in | [mcp](../../apps/server/server/domains/mcp/.context/state-machines.md) |
 | Thread trash | Whether a chat is in the Trash | [threads](../../apps/server/server/domains/threads/.context/state-machines.md) |
 | Work archive, Work delete | Whether a Work is available | [projects](../../apps/server/server/domains/projects/.context/state-machines.md) |
 | Import, import entry | An import job and each file in it | [import](../../apps/server/server/domains/import/.context/state-machines.md) |

@@ -6,6 +6,7 @@ The domains about the writer's account and the operator. Paying for credits: the
 flowchart LR
   billing["billing<br/><small>the credit ledger and the Stripe gateway</small>"]:::domain
   preferences["preferences<br/><small>account settings</small>"]:::domain
+  mcp["mcp<br/><small>connections to MCP servers</small>"]:::domain
   observability["observability<br/><small>events and failures, sanitized</small>"]:::domain
   browser["browser<br/><small>the writer's tab</small>"]:::context
   stripe["stripe<br/><small>payments</small>"]:::context
@@ -18,6 +19,8 @@ flowchart LR
   conversation -->|"consumes credit lots"| billing
   browser -->|"reads and saves settings"| preferences
   preferences -->|"keeps settings per account"| postgres
+  browser -->|"adds, checks and removes connections"| mcp
+  mcp -->|"keeps connections and encrypted tokens"| postgres
   conversation -->|"emits events"| observability
   note1["Every group sends events here, not only conversation. observability sanitizes them before any log or sink, so writer text stays out of logs."]:::note
   note1 -.- observability
@@ -41,6 +44,17 @@ Per-account preferences.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/preferences`
+
+## mcp
+
+A writer's connections to remote MCP servers.
+
+Account- and project-level connections, their pinned tools, encrypted tokens and a stored status that a check keeps current. One MCP client per process, on the public-address dispatcher.
+
+- Kind: domain
+- Paths: `apps/server/server/domains/mcp`
+- Docs: [CONTEXT](../../apps/server/server/domains/mcp/.context/CONTEXT.md)
+- Machines: [connection status](../../apps/server/server/domains/mcp/.context/state-machines.md)
 
 ## observability
 
