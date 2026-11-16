@@ -129,7 +129,7 @@ async function resolvedAuthorities(
 
 /**
  * Resolve one project-browse port whose Work authorities have all been proven. Without a
- * primary Work the port is the project's, where a bare `scratch://` is Unfiled; `workIds` are
+ * primary Work the port is the project's, where a bare `scratch://` is No Work's Scratch; `workIds` are
  * then only checked to exist, so a caller that merely reads a Work's files does not make it
  * the port's own Work.
  */
