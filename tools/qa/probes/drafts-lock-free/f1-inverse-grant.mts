@@ -61,7 +61,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
         turnId: work.turnId as never,
         actor: "agent",
         wId,
-        receipts: captureReceiptRows(pre, [{ update, origin: { kind: "live", seq } }]),
+        receipts: captureReceiptRows(pre, [{ update, origin: { kind: "live", seq } }], true),
       });
     } finally {
       pre.destroy();

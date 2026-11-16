@@ -93,8 +93,9 @@ element the edit created that the writer typed in stays, holding only the writer
 A replacement is judged per change: each deleted run pairs with the inserted run that took its
 place, and the deleted run comes back only while some visible text of that run's replacement still
 stands. The write records the pairing in the part's `effect.replaced` (`pairChanges` in
-`packages/agent-edit/src/undo/forward-inverse.ts`), from the document as it stood at the write, so
-later deletions can't change it. The old word is
+`packages/agent-edit/src/undo/forward-inverse.ts`), from the document right after that write
+applied (each row of a batch before the next is applied; a writer's frame gets none), so later
+deletions can't change it. The old word is
 never put beside the writer's text once the new word is gone ("One huge cat." with `huge`
 overtyped stays as the writer left it), and a part with several changes decides each one alone.
 Where part of a replacement still stands, the old run returns beside it ("One smallhuge cat." when

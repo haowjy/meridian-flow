@@ -35,8 +35,9 @@ export interface EditEffect {
   inserted: EditRange[];
   deleted: EditRange[];
   /**
-   * The replaces of the write, paired from the document as it stood at the write. A deleted item
-   * in none of them is a pure deletion. Absent on a receipt written before it was recorded.
+   * The replaces of the write, paired from the document right after that write. A deleted item
+   * in none of them is a pure deletion. Absent on a receipt written before it was recorded and on
+   * one that can't be undone.
    */
   replaced?: EditChange[];
 }
@@ -153,32 +154,55 @@ export function captureEditFrontier(doc: Y.Doc): EditFrontier {
   return Object.fromEntries(Y.decodeStateVector(Y.encodeStateVector(doc)));
 }
 /**
+ * The replaces of one write, from the item structure. Call it right after `update` applied to
+ * `doc`, before any later write changes the document: a deletion made by a later write would
+ * otherwise read as one from before this write. Only a receipt that can be undone needs it.
+ */
+export function pairEdit(
+  doc: Y.Doc,
+  receipt: { update: Uint8Array; frontier: EditFrontier; held?: ReadonlySet<string> },
+): EditChange[] {
+  const raw = rawEffect(receipt.update, receipt.held);
+  const effect = {
+    inserted: proseRanges(doc, raw.inserted),
+    deleted: proseRanges(doc, raw.deleted),
+  };
+  return effect.inserted.length && effect.deleted.length
+    ? pairChanges(doc, receipt.frontier, effect, (k) => k)
+    : [];
+}
+/**
  * Normalize the whole write together, excluding cross-part transients and non-prose roots.
  * `held` is `heldDeletes` taken before the update applied: a delete of an item the room had
- * already deleted is not the update's effect, so Undo never restores it.
+ * already deleted is not the update's effect, so Undo never restores it. `replaced` is the
+ * receipt's `pairEdit`, taken at its own write; the transients are dropped from it, never
+ * paired again here.
  */
 export function captureEditParts(
   doc: Y.Doc,
-  receipts: readonly { update: Uint8Array; frontier: EditFrontier; held?: ReadonlySet<string> }[],
+  receipts: readonly {
+    update: Uint8Array;
+    frontier: EditFrontier;
+    held?: ReadonlySet<string>;
+    replaced?: readonly EditChange[];
+  }[],
 ): CapturedPart[] {
   const raw = receipts.map((r) => rawEffect(r.update, r.held));
   const inserted = normalizedRanges(raw.flatMap((effect) => effect.inserted)),
     deleted = normalizedRanges(raw.flatMap((effect) => effect.deleted)),
     transient = intersectLineageRanges(inserted.map(lineageRange), deleted.map(lineageRange));
+  const outside = (input: readonly EditRange[]) =>
+    subtractLineageRanges(input.map(lineageRange), transient).map(editRange);
   return receipts.map((receipt, i) => {
     if (!receipt.frontier) throw new Error("Missing edit frontier");
     const effect: EditEffect = {
-      inserted: subtractLineageRanges(
-        proseRanges(doc, raw[i].inserted).map(lineageRange),
-        transient,
-      ).map(editRange),
-      deleted: subtractLineageRanges(
-        proseRanges(doc, raw[i].deleted).map(lineageRange),
-        transient,
-      ).map(editRange),
+      inserted: outside(proseRanges(doc, raw[i].inserted)),
+      deleted: outside(proseRanges(doc, raw[i].deleted)),
     };
-    if (effect.inserted.length && effect.deleted.length)
-      effect.replaced = pairChanges(doc, receipt.frontier, effect, (k) => k);
+    if (receipt.replaced)
+      effect.replaced = receipt.replaced
+        .map((change) => ({ deleted: outside(change.deleted), inserted: outside(change.inserted) }))
+        .filter((change) => change.deleted.length && change.inserted.length);
     return { update: receipt.update, frontier: receipt.frontier, effect, aliases: [] };
   });
 }
@@ -501,9 +525,7 @@ function pairChanges(
   };
   const rightOriginOf = (k: Key): Key | undefined => {
     const item = itemAt(k);
-    return item?.rightOrigin && parse(k).clock === item.id.clock
-      ? key(item.rightOrigin)
-      : undefined;
+    return item?.rightOrigin ? key(item.rightOrigin) : undefined;
   };
   // Deleted before this write, so the writer's backspaces and earlier edits are not boundaries.
   // Anything newer is: an item the writer deletes after the write still separates two changes.
@@ -822,7 +844,9 @@ function computePreparedInverse(
       try {
         if (!updates.length) continue;
         const update = Y.mergeUpdates(updates),
-          receipt = captureEditParts(working, [{ update, frontier }])[0];
+          receipt = captureEditParts(working, [
+            { update, frontier, replaced: pairEdit(working, { update, frontier }) },
+          ])[0];
         receipt.aliases = captureAliases(working, snapshot);
         if (before) admitPreparedInverseReceipt(before, local, [part], receipt, index);
         const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal }];
@@ -843,7 +867,10 @@ function computePreparedInverse(
     }
     if (!preview)
       for (const edit of result.edits) {
-        const normalized = captureEditParts(scratch as Y.Doc, edit.parts);
+        const normalized = captureEditParts(
+          scratch as Y.Doc,
+          edit.parts.map((p) => ({ ...p, replaced: p.effect.replaced })),
+        );
         edit.parts = edit.parts.map((p, i) => ({ ...p, effect: normalized[i].effect }));
       }
     return result;

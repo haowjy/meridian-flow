@@ -93,9 +93,11 @@ try {
       turnId: work.turnId as never,
       actor: "agent",
       wId,
-      receipts: captureReceiptRows(before, [
-        { update, origin: { kind: "pending", draftId, rowId: Number(row.id) } },
-      ]),
+      receipts: captureReceiptRows(
+        before,
+        [{ update, origin: { kind: "pending", draftId, rowId: Number(row.id) } }],
+        true,
+      ),
     });
     before.destroy();
     async function save() {
