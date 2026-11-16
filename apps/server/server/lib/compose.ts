@@ -282,7 +282,7 @@ import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
-import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
+import { MODEL_REGISTRY, registryTokenRateSource, resolveModelName } from "./gateway/registry.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -674,6 +674,7 @@ export async function createProductionAppPorts(input: {
       }),
     builtins: await readBuiltinPackages(defaultModel),
     defaultModel: () => gateway.getDefaultModel(),
+    resolveModel: (name) => resolveModelName(name, gateway.listModels()),
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
   });
@@ -1122,6 +1123,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
     defaultModel: () => ports.gateway.getDefaultModel(),
+    resolveModel: (name) => resolveModelName(name, ports.gateway.listModels()),
     repos: {
       threads: ports.threadRepos.threads,
       turns: ports.threadRepos.turns,
@@ -1525,6 +1527,7 @@ export function createInMemoryAppServices(): AppServices {
     levelFiles: noLevelFiles,
     builtins: [],
     defaultModel: () => "mock-model",
+    resolveModel: (name) => name,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
   });

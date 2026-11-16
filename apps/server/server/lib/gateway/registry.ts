@@ -9,8 +9,6 @@
 
 import {
   type BuiltinAdapter,
-  DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
-  DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
   type GatewayConfig,
   type InputModality,
   type PromptCacheDescriptor,
@@ -27,14 +25,23 @@ import {
   type ModelTokenRate,
   type ModelTokenRateSource,
 } from "../../domains/runtime/costing/pricing.js";
-import { DEFAULT_MODEL_ID, findFamily, MODEL_FAMILIES, type ModelFamily } from "./families.js";
+import {
+  DEFAULT_MODEL_ID,
+  findFamily,
+  MODEL_FAMILIES,
+  type ModelFamily,
+  resolveAlias,
+} from "./families.js";
 import snapshotJson from "./models-snapshot.json" with { type: "json" };
 import { PROVIDER_ROWS, type ProviderRow } from "./provider-rows.js";
 
 export interface RegisteredModel {
   id: string;
   tokenizer: TokenizerFamily;
+  /** The picker name: the family alias for its newest model, "alias version" for an older one. */
   displayName: string;
+  /** ISO date models.dev lists; the newest model of a family is the one its alias resolves to. */
+  releaseDate?: string;
   contextWindow: number;
   maxOutputTokens: number;
   /** Copied from models.dev `modalities.input`. */
@@ -48,11 +55,7 @@ export interface RegisteredModel {
 export interface RegisteredOffering {
   model: RegisteredModel;
   pricing: ModelPricing;
-  /**
-   * Fields this offering changes from the defaults in `resolvePromptCache`; a field left out
-   * keeps the default and `null` stays `null` (the provider documents no lifetime).
-   */
-  promptCache?: Partial<PromptCacheDescriptor>;
+  promptCache: PromptCacheDescriptor;
 }
 
 export interface RegisteredProvider {
@@ -76,6 +79,8 @@ export interface ModelRegistry {
 /** The slice of a models.dev model row that Flow reads, keyed in the snapshot by Flow's provider id then model id. */
 export interface SnapshotModel {
   name: string;
+  /** ISO date. */
+  release_date?: string;
   tool_call: boolean;
   limit: { context: number; output: number };
   modalities: { input: readonly InputModality[] };
@@ -118,7 +123,7 @@ function formatUsd(nano: bigint): string {
 }
 
 function usd(price: number, multiplier = 1): string {
-  return formatUsd((toNano(price) * BigInt(Math.round(multiplier * 100))) / 100n);
+  return formatUsd(toNano(price * multiplier));
 }
 
 function toReasoning(model: SnapshotModel, family: ModelFamily): ReasoningSupport {
@@ -134,13 +139,13 @@ function toReasoning(model: SnapshotModel, family: ModelFamily): ReasoningSuppor
 }
 
 /**
- * The single above-tier step as the multipliers `ModelPricing` carries. models.dev gives the
- * tier's own prices, so this holds only when every input-side rate scales by one factor.
+ * The single above-tier step as the multipliers `ModelPricing` carries, or why the row doesn't
+ * fit: models.dev gives the tier's own prices, so this holds only when every input-side rate
+ * scales by one factor.
  */
-function toTier(
-  id: string,
-  { cost }: SnapshotModel,
-): Pick<ModelPricing, "inputTierTokens" | "aboveTierMultipliers"> {
+function tierOf(
+  cost: SnapshotModel["cost"],
+): Pick<ModelPricing, "inputTierTokens" | "aboveTierMultipliers"> | string {
   const [step, ...rest] = cost.tiers ?? [];
   if (!step) return {};
   const ratios = [
@@ -157,14 +162,40 @@ function toTier(
     step.tier.type !== "context" ||
     ratios.some((ratio) => Math.abs(ratio - ratios[0]) > 1e-9)
   ) {
-    throw new Error(
-      `${id}: models.dev cost tiers do not fit one context threshold with one input-side multiplier`,
-    );
+    return "its cost tiers do not fit one context threshold with one input-side multiplier";
   }
   const round = (value: number) => Math.round(value * 1e6) / 1e6;
   return {
     inputTierTokens: step.tier.size,
     aboveTierMultipliers: { input: round(ratios[0]), output: round(step.output / cost.output) },
+  };
+}
+
+/** Why a models.dev row in a family can't be offered, or undefined when Flow can serve it. */
+export function unservableReason(model: Partial<SnapshotModel>): string | undefined {
+  const { cost, limit, modalities } = model;
+  if (!cost || typeof cost.input !== "number" || typeof cost.output !== "number") {
+    return "models.dev lists no input and output price for it";
+  }
+  if (!limit || !modalities) return "models.dev lists no limit or input modalities for it";
+  if (!model.tool_call) return "it does not support tool calls";
+  const tier = tierOf(cost);
+  return typeof tier === "string" ? tier : undefined;
+}
+
+/** What Flow charges for a row: models.dev's cost, with the provider's override laid over it. */
+export function billedCost(row: ProviderRow, id: string, cost: SnapshotModel["cost"]) {
+  const override = row.priceOverrides?.[id];
+  if (!override) return { cost, override };
+  if (cost.tiers) throw new Error(`${row.id}/${id}: a price override cannot sit on context tiers`);
+  return {
+    cost: {
+      ...cost,
+      input: override.input,
+      output: override.output,
+      ...(override.cache_read === undefined ? {} : { cache_read: override.cache_read }),
+    },
+    override,
   };
 }
 
@@ -174,19 +205,12 @@ function toPricing(
   id: string,
   model: SnapshotModel,
 ): ModelPricing {
-  const { cost } = model;
-  const factor = row.rateMultiplier?.multiplier ?? 1;
-  const rate = (price: number | undefined) =>
-    price === undefined ? undefined : usd(price, factor);
-  const cacheRead = rate(cost.cache_read);
-  const cacheWrite = rate(cost.cache_write);
+  const { cost, override } = billedCost(row, id, model.cost);
+  const tier = tierOf(cost);
+  if (typeof tier === "string") throw new Error(`${row.id}/${id}: ${tier}`);
   const notes = [
     `models.dev snapshot ${snapshot.takenAt}`,
-    ...(row.rateMultiplier
-      ? [
-          `${row.rateMultiplier.multiplier}x models.dev's rates per ${row.rateMultiplier.source} (checked ${row.rateMultiplier.checked})`,
-        ]
-      : []),
+    ...(override ? [`price per ${override.source} (checked ${override.checked})`] : []),
     ...(row.longCacheWrite
       ? [
           `long-TTL cache write ${row.longCacheWrite.multiplier}x input per ${row.longCacheWrite.source} (checked ${row.longCacheWrite.checked})`,
@@ -194,53 +218,62 @@ function toPricing(
       : []),
   ];
   return {
-    inputUsdPerMillionTokens: usd(cost.input, factor),
-    ...(cacheRead === undefined ? {} : { cachedInputUsdPerMillionTokens: cacheRead }),
-    ...(cacheWrite === undefined ? {} : { cacheWriteUsdPerMillionTokens: cacheWrite }),
+    inputUsdPerMillionTokens: usd(cost.input),
+    ...(cost.cache_read === undefined
+      ? {}
+      : { cachedInputUsdPerMillionTokens: usd(cost.cache_read) }),
+    ...(cost.cache_write === undefined
+      ? {}
+      : { cacheWriteUsdPerMillionTokens: usd(cost.cache_write) }),
     ...(row.longCacheWrite
       ? {
-          cacheWriteLongUsdPerMillionTokens: usd(
-            cost.input,
-            factor * row.longCacheWrite.multiplier,
-          ),
+          cacheWriteLongUsdPerMillionTokens: usd(cost.input, row.longCacheWrite.multiplier),
         }
       : {}),
-    outputUsdPerMillionTokens: usd(cost.output, factor),
-    ...toTier(id, model),
+    outputUsdPerMillionTokens: usd(cost.output),
+    ...tier,
     source: notes.join("; "),
   };
+}
+
+/** "5.1" from "Claude Fable 5.1": the first number in the model's name. */
+function versionOf(model: { id: string; name: string }): string {
+  return /\d+(\.\d+)*/.exec(model.name)?.[0] ?? model.id;
 }
 
 /** The registry the snapshot, the families and the provider rows describe. Throws on a row Flow cannot serve. */
 export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
   const providers = PROVIDER_ROWS.map((row): RegisteredProvider => {
     const rows = snapshot.providers[row.id] ?? {};
-    const families = MODEL_FAMILIES[row.id] ?? [];
-    for (const id of Object.keys(rows)) {
-      if (!findFamily(row.id, id)) throw new Error(`Snapshot ${row.id}/${id} matches no family`);
-    }
-    const offerings = families.flatMap((family) =>
-      Object.keys(rows)
-        .filter((id) => findFamily(row.id, id) === family)
-        .map((id): RegisteredOffering => {
-          const model = rows[id];
-          if (!model.tool_call) throw new Error(`${row.id}/${id} does not support tool calls`);
-          return {
-            model: {
-              id,
-              tokenizer: family.tokenizer,
-              displayName: model.name,
-              contextWindow: model.limit.context,
-              maxOutputTokens: model.limit.output,
-              inputModalities: model.modalities.input,
-              ...(family.maxLinkBytes === undefined ? {} : { maxLinkBytes: family.maxLinkBytes }),
-              reasoning: toReasoning(model, family),
-            },
-            pricing: toPricing(row, snapshot, id, model),
-            promptCache: row.promptCache.descriptor,
-          };
-        }),
-    );
+    // A snapshot row the allowlist no longer admits stays in the file until the next refresh
+    // and gets no offering.
+    const offerings = (MODEL_FAMILIES[row.id] ?? []).flatMap((family) => {
+      const ids = Object.keys(rows).filter((id) => findFamily(row.id, id) === family);
+      const newest = resolveAlias(
+        ids.map((id) => ({ id, provider: row.id, releaseDate: rows[id].release_date })),
+        family,
+      );
+      return ids.map((id): RegisteredOffering => {
+        const model = rows[id];
+        const problem = unservableReason(model);
+        if (problem) throw new Error(`${row.id}/${id}: ${problem}`);
+        return {
+          model: {
+            id,
+            tokenizer: family.tokenizer,
+            displayName: id === newest ? family.id : `${family.id} ${versionOf({ id, ...model })}`,
+            ...(model.release_date === undefined ? {} : { releaseDate: model.release_date }),
+            contextWindow: model.limit.context,
+            maxOutputTokens: model.limit.output,
+            inputModalities: model.modalities.input,
+            ...(family.maxLinkBytes === undefined ? {} : { maxLinkBytes: family.maxLinkBytes }),
+            reasoning: toReasoning(model, family),
+          },
+          pricing: toPricing(row, snapshot, id, model),
+          promptCache: row.promptCache.descriptor,
+        };
+      });
+    });
     return {
       id: row.id,
       adapter: row.adapter,
@@ -263,15 +296,18 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
 
 export const MODEL_REGISTRY: ModelRegistry = buildModelRegistry(snapshotJson as ModelsSnapshot);
 
-/** The descriptor `ModelInfo` carries; the validator checks this same value. */
-// Every offering starts from explicit breakpoints and the two default lifetimes (Anthropic's).
-function resolvePromptCache({ promptCache }: RegisteredOffering): PromptCacheDescriptor {
-  return {
-    kind: "explicit",
-    shortTtlSeconds: DEFAULT_SUBAGENT_PROMPT_CACHE_TTL,
-    longTtlSeconds: DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
-    ...promptCache,
-  };
+/**
+ * What an Agent file's `model` names: a picker name (a family alias is its newest model's name,
+ * an older one is "fable 5.1") becomes that model's id, and anything else, an exact id included,
+ * stays as written. Only models in `available` count, so a provider without a key resolves to
+ * nothing and the Agent reports the model as unavailable.
+ */
+export function resolveModelName(name: string, available: readonly { id: string }[]): string {
+  const ids = new Set(available.map((model) => model.id));
+  const found = MODEL_REGISTRY.providers
+    .flatMap((provider) => provider.offerings)
+    .find(({ model }) => model.displayName === name && ids.has(model.id));
+  return found?.model.id ?? name;
 }
 
 /** Adapter-neutral registry checks, run as soon as a registry is loaded. */
@@ -287,7 +323,7 @@ export function validateModelRegistry(registry: ModelRegistry): void {
         `Input pricing tier for ${model.id} must be positive and below its context window`,
       );
     }
-    const { shortTtlSeconds, longTtlSeconds } = resolvePromptCache(offering);
+    const { shortTtlSeconds, longTtlSeconds } = offering.promptCache;
     if ((shortTtlSeconds === null) !== (longTtlSeconds === null)) {
       throw new Error(`Prompt cache lifetimes for ${model.id} must both be set or both be null`);
     }
@@ -328,7 +364,7 @@ function toModelInfo(provider: RegisteredProvider, offering: RegisteredOffering)
     inputTierTokens: pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
     ...(provider.projectToolSchema ? { projectToolSchema: true as const } : {}),
-    promptCache: resolvePromptCache(offering),
+    promptCache: offering.promptCache,
     reasoning: model.reasoning,
     inputModalities: model.inputModalities,
     ...(model.maxLinkBytes === undefined ? {} : { maxLinkBytes: model.maxLinkBytes }),

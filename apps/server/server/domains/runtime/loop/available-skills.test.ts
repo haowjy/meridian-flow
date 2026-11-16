@@ -75,12 +75,14 @@ You are Writer.
       revision: writer,
       store: agentRevisions,
       defaultModel: "fixture-model",
+      resolveModel: (name) => name,
     });
     const agentCatalog = createBoundAgentCatalog({
       store: agentRevisions,
       levelFiles: noLevelFiles,
       builtins: [launch],
       defaultModel: () => "fixture-model",
+      resolveModel: (name) => name,
       unavailableReasons: () => [],
     });
     const thread = await repos.threads.create({

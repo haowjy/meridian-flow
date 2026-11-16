@@ -55,9 +55,12 @@ export async function resolveAgentConfiguration(input: {
   revision: AgentRevision;
   store: Pick<AgentRevisionStore, "readSource" | "readPackageDefinitions">;
   defaultModel: string | undefined;
+  /** Turns an alias in the Agent's `model` into the model id a chat starts with. */
+  resolveModel(name: string): string;
 }): Promise<ResolvedAgentConfiguration> {
   const { revision, store } = input;
-  const model = revision.definition.metadata.model ?? input.defaultModel;
+  const named = revision.definition.metadata.model;
+  const model = named === undefined ? input.defaultModel : input.resolveModel(named);
   if (!model) throw new AgentConfigurationError("No configured default model is available.");
 
   return { model, ...(await resolveAgentDependencies({ revision, store })) };

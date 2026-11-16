@@ -48,6 +48,7 @@ async function criticTools() {
     revision: critic,
     store: agentRevisions,
     defaultModel: "fixture-model",
+    resolveModel: (name) => name,
   });
   await agentRevisions.bindThread(THREAD_ID, critic.id, configuration, null);
   const deps = {

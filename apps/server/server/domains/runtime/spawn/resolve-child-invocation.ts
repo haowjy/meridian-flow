@@ -32,6 +32,7 @@ export interface ResolveChildInvocationDeps {
     "readRevision" | "readSource" | "readPackageDefinitions"
   >;
   defaultModel(): string | undefined;
+  resolveModel(name: string): string;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   modelUnavailable(model: string): string[];
 }
@@ -103,6 +104,7 @@ export async function resolveChildInvocation(
       revision: childAgent,
       store: deps.agentRevisions,
       defaultModel: deps.defaultModel(),
+      resolveModel: deps.resolveModel,
     });
     resolvedSlug = requestedSlug;
     defaultTitle = `${requestedSlug} subagent`;

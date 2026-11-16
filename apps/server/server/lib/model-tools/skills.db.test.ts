@@ -97,6 +97,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         levelFiles: noLevelFiles,
         builtins: [await launchAgentsSource()],
         defaultModel: () => "fixture-model",
+        resolveModel: (name) => name,
         unavailableReasons: () => [],
       });
       const generalRow = (
@@ -114,6 +115,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         revision: general,
         store: agentRevisions,
         defaultModel: "fixture-model",
+        resolveModel: (name) => name,
       });
       await agentRevisions.bindThread(PARENT, general.id, configuration, null);
       await agentRevisions.bindThread(CHILD, null, configuration, null);

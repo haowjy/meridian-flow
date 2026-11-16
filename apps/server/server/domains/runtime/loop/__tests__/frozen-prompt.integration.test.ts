@@ -70,6 +70,7 @@ async function fixture(
     levelFiles: levels,
     builtins: [],
     defaultModel: () => "gpt-5.6-luna",
+    resolveModel: (name) => name,
     unavailableReasons: () => [],
   });
   levels.write(

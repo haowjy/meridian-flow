@@ -18,8 +18,9 @@ export interface ModelFamily {
 }
 
 /**
- * Keyed by Flow's provider id. The `exclude` entries are versions models.dev lists that Flow
- * has chosen not to offer (older siblings, and newer ones nobody has picked up yet); delete
+ * Keyed by Flow's provider id. A family id is its alias in meridian-base's mars.toml: the
+ * picker shows it and an Agent file's `model` may name it. The `exclude` entries are dated,
+ * deprecated and older-generation ids that models.dev lists and Flow does not offer; delete
  * one to offer that model at the next refresh. Offerings keep this family order.
  */
 export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = {
@@ -39,7 +40,7 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
     {
       id: "fable",
       match: ["claude-fable-*"],
-      exclude: ["claude-fable-5", "claude-fable-5-2"],
+      exclude: ["claude-fable-5"],
       tokenizer: "anthropic",
     },
   ],
@@ -47,10 +48,10 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
   openai: [
     { id: "sol", match: ["gpt-*-sol"], exclude: ["gpt-6-sol", "gpt-5.6-sol"], tokenizer: "o200k" },
     { id: "terra", match: ["gpt-*-terra"], exclude: ["gpt-5.6-terra"], tokenizer: "o200k" },
-    { id: "luna", match: ["gpt-*-luna"], exclude: ["gpt-6-luna"], tokenizer: "o200k" },
+    { id: "luna", match: ["gpt-*-luna"], tokenizer: "o200k" },
   ],
   deepseek: [
-    { id: "flash", match: ["deepseek-flash*"], tokenizer: "deepseek", thinksByDefault: true },
+    { id: "deepseek", match: ["deepseek-flash*"], tokenizer: "deepseek", thinksByDefault: true },
   ],
   gemini: [
     {
@@ -70,11 +71,42 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
 }
 
+interface AliasRule {
+  match: readonly string[];
+  exclude?: readonly string[];
+  provider?: string;
+}
+
+/**
+ * Mars's alias rule (`auto_resolve_all` in meridian-cli `src/models/mod.rs`): the newest model
+ * that every `match` glob hits and no `exclude` glob hits, within `provider` when one is set.
+ * Ids ending in `-latest` are skipped. Newest is the latest `release_date`, then the shorter
+ * id, then alphabetical order; a row without a date sorts last.
+ * Replace this with `resolveAlias` from `@meridian-flow/mars-schema` when that ships.
+ */
+export function resolveAlias(
+  rows: readonly { id: string; provider: string; releaseDate?: string }[],
+  rule: AliasRule,
+): string | null {
+  const hits = rows.filter(
+    (row) =>
+      (rule.provider === undefined || row.provider === rule.provider) &&
+      !row.id.endsWith("-latest") &&
+      rule.match.every((glob) => globToRegExp(glob).test(row.id)) &&
+      !(rule.exclude ?? []).some((glob) => globToRegExp(glob).test(row.id)),
+  );
+  hits.sort(
+    (a, b) =>
+      (b.releaseDate ?? "").localeCompare(a.releaseDate ?? "") ||
+      a.id.length - b.id.length ||
+      a.id.localeCompare(b.id),
+  );
+  return hits[0]?.id ?? null;
+}
+
 /** The first family of a provider that admits this models.dev id, or undefined. */
 export function findFamily(providerId: string, modelId: string): ModelFamily | undefined {
   return MODEL_FAMILIES[providerId]?.find(
-    (family) =>
-      family.match.some((glob) => globToRegExp(glob).test(modelId)) &&
-      !(family.exclude ?? []).some((glob) => globToRegExp(glob).test(modelId)),
+    (family) => resolveAlias([{ id: modelId, provider: providerId }], family) !== null,
   );
 }

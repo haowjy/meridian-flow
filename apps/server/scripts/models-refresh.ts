@@ -5,7 +5,9 @@
  * `pnpm check`; the daily `models-refresh` workflow runs it and files the report as an issue.
  *
  *   --api <url|path>      read the catalog from here instead of models.dev
- *   --dry-run             print the report and leave the snapshot as it is
+ *   --dry-run             report mode: print the report and leave the snapshot as it is. A row
+ *                         Flow cannot serve becomes a report section; without this flag it is
+ *                         an error and nothing is written.
  *   --report-file <path>  also write the report there, only when something changed
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,6 +20,7 @@ import {
   type ModelRegistry,
   type ModelsSnapshot,
   type SnapshotModel,
+  unservableReason,
 } from "../server/lib/gateway/registry.js";
 
 const SNAPSHOT_PATH = fileURLToPath(
@@ -52,6 +55,7 @@ function pick(model: CatalogModel): SnapshotModel {
   const { cost } = model;
   return {
     name: model.name,
+    release_date: model.release_date,
     tool_call: model.tool_call,
     limit: { context: model.limit.context, output: model.limit.output },
     modalities: { input: model.modalities.input },
@@ -66,17 +70,34 @@ function pick(model: CatalogModel): SnapshotModel {
   };
 }
 
-function offeredModels(catalog: Catalog): ModelsSnapshot["providers"] {
-  return Object.fromEntries(
+/** The rows each family admits, and the family-matched rows Flow cannot serve (as report lines). */
+function offeredModels(catalog: Catalog): {
+  providers: ModelsSnapshot["providers"];
+  unservable: string[];
+} {
+  const unservable: string[] = [];
+  const providers = Object.fromEntries(
     PROVIDER_ROWS.map((row) => {
-      const models = catalog[row.modelsDevId]?.models ?? {};
+      const models = catalog[row.modelsDevId ?? row.id]?.models ?? {};
       const offered = Object.keys(models)
         .sort()
-        .filter((id) => models[id].status !== "deprecated" && findFamily(row.id, id))
-        .map((id) => [id, pick(models[id])]);
+        .filter((id) => models[id].status !== "deprecated")
+        .flatMap((id) => {
+          const family = findFamily(row.id, id);
+          if (!family) return [];
+          const problem = unservableReason(models[id]);
+          if (problem) {
+            unservable.push(
+              `- \`${row.id}/${id}\` matched family \`${family.id}\`, but Flow can't serve it: ${problem}. Add an exclude to \`families.ts\`.`,
+            );
+            return [];
+          }
+          return [[id, pick(models[id])]];
+        });
       return [row.id, Object.fromEntries(offered)];
     }),
   );
+  return { providers, unservable };
 }
 
 type Fields = Map<string, string>;
@@ -136,9 +157,10 @@ function notFromModelsDev(today: string): string[] {
             },
           ]
         : []),
-      ...(row.rateMultiplier
-        ? [{ what: `rates ${row.rateMultiplier.multiplier}x models.dev's`, ...row.rateMultiplier }]
-        : []),
+      ...Object.entries(row.priceOverrides ?? {}).map(([id, override]) => ({
+        what: `price override for \`${id}\``,
+        ...override,
+      })),
     ];
     return entries.map(({ what, source, checked }) => {
       const age = Math.floor((Date.parse(today) - Date.parse(checked)) / 86_400_000);
@@ -148,13 +170,55 @@ function notFromModelsDev(today: string): string[] {
   });
 }
 
-function buildReport(
-  before: ModelsSnapshot,
-  oldRegistry: ModelRegistry,
-  newRegistry: ModelRegistry,
-  today: string,
-  changed: boolean,
-): string {
+type CostField = "input" | "output" | "cache_read";
+const COST_FIELDS: readonly CostField[] = ["input", "output", "cache_read"];
+
+/** Overridden prices with models.dev's number beside the billed one, and when an override can go. */
+function overrideLines(before: ModelsSnapshot, after: ModelsSnapshot): string[] {
+  return PROVIDER_ROWS.flatMap((row) =>
+    Object.entries(row.priceOverrides ?? {}).map(([id, override]) => {
+      const [was, now] = [before.providers[row.id]?.[id], after.providers[row.id]?.[id]];
+      if (!now) {
+        return `- \`${row.id}/${id}\`: the override is for a model that is not in the snapshot. Delete it.`;
+      }
+      const fields = COST_FIELDS.filter((field) => override[field] !== undefined);
+      const parts = fields.map((field) => {
+        const moved = was && was.cost[field] !== now.cost[field] ? ` (was ${was.cost[field]})` : "";
+        return `${field}: models.dev $${now.cost[field]}${moved}, billed $${override[field]}`;
+      });
+      const agrees = fields.every((field) => now.cost[field] === override[field]);
+      return `- \`${row.id}/${id}\` ${parts.join("; ")}. Override per ${override.source}, checked ${override.checked}.${agrees ? " **models.dev now agrees: delete the override.**" : ""}`;
+    }),
+  );
+}
+
+/** Cache rates models.dev dropped: billing then charges those tokens at the input rate. */
+function droppedCacheRates(before: ModelsSnapshot, after: ModelsSnapshot): string[] {
+  return Object.entries(after.providers).flatMap(([providerId, models]) =>
+    Object.entries(models).flatMap(([id, model]) => {
+      const old = before.providers[providerId]?.[id];
+      return (["cache_read", "cache_write"] as const)
+        .filter((field) => old?.cost[field] !== undefined && model.cost[field] === undefined)
+        .map(
+          (field) =>
+            `- \`${providerId}/${id}\`: models.dev dropped \`${field}\` (was $${old?.cost[field]}). Billing would charge those tokens at the input rate.`,
+        );
+    }),
+  );
+}
+
+function buildReport(input: {
+  before: ModelsSnapshot;
+  after: ModelsSnapshot;
+  oldRegistry: ModelRegistry;
+  newRegistry: ModelRegistry;
+  today: string;
+  unservable: readonly string[];
+  buildError: string | undefined;
+  /** The snapshot differs from models.dev, or something can't be served. */
+  changed: boolean;
+}): string {
+  const { before, after, oldRegistry, newRegistry, today, unservable, buildError, changed } = input;
   const [was, now] = [offeringFields(oldRegistry), offeringFields(newRegistry)];
   const isPrice = (path: string) => path.startsWith("price.");
   const added: string[] = [];
@@ -195,15 +259,22 @@ function buildReport(
         "Flow charges the committed snapshot, so nothing here is billed yet. To apply it, run",
         "`pnpm models:refresh` on a branch, review the diff to `apps/server/server/lib/gateway/models-snapshot.json`,",
         "and open a PR. This issue closes itself once the snapshot matches models.dev.",
+        ...(unservable.length > 0 || buildError
+          ? ["", "`pnpm models:refresh` refuses to write until the problems below are fixed."]
+          : []),
         "",
       ]
     : [`No changes since the snapshot of ${before.takenAt}.`, ""];
   return [
     ...header,
+    ...section("Matched a family but can't be served", unservable),
+    ...section("The new snapshot would not build", buildError ? [buildError] : []),
     ...section("New models", added),
     ...section("Removed models", removed),
     ...section("Price changes", prices),
+    ...section("Dropped cache rates", droppedCacheRates(before, after)),
     ...section("Limit, modality, reasoning and cache changes", facts),
+    ...section("Prices Flow charges that differ from models.dev's", overrideLines(before, after)),
     ...section("Derived long-TTL cache-write prices", derived),
     ...section("Not from models.dev", [
       `Held in \`provider-rows.ts\`. A date older than ${RECHECK_AFTER_DAYS} days means someone should open the source and confirm it still holds.`,
@@ -213,22 +284,39 @@ function buildReport(
   ].join("\n");
 }
 
+const dryRun = args["dry-run"];
 const before = JSON.parse(readFileSync(SNAPSHOT_PATH, "utf8")) as ModelsSnapshot;
 const today = new Date().toISOString().slice(0, 10);
-const providers = offeredModels(await loadCatalog(args.api as string));
-const changed = JSON.stringify(providers) !== JSON.stringify(before.providers);
-const after: ModelsSnapshot = { takenAt: changed ? today : before.takenAt, providers };
+const { providers, unservable } = offeredModels(await loadCatalog(args.api as string));
+if (unservable.length > 0 && !dryRun) {
+  throw new Error(`Nothing written.\n${unservable.join("\n")}`);
+}
+const snapshotChanged = JSON.stringify(providers) !== JSON.stringify(before.providers);
+const after: ModelsSnapshot = { takenAt: snapshotChanged ? today : before.takenAt, providers };
 
 // Building the registry checks the new rows (default model present, tiers that fit) before anything is written.
-const report = buildReport(
+const oldRegistry = buildModelRegistry(before);
+let newRegistry = oldRegistry;
+let buildError: string | undefined;
+try {
+  newRegistry = buildModelRegistry(after);
+} catch (error) {
+  if (!dryRun) throw error;
+  buildError = (error as Error).message;
+}
+const changed = snapshotChanged || unservable.length > 0 || buildError !== undefined;
+const report = buildReport({
   before,
-  buildModelRegistry(before),
-  buildModelRegistry(after),
+  after,
+  oldRegistry,
+  newRegistry,
   today,
+  unservable,
+  buildError,
   changed,
-);
+});
 
-if (changed && !args["dry-run"]) {
+if (snapshotChanged && !dryRun) {
   writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(after, null, 2)}\n`);
 }
 if (changed && args["report-file"]) {

@@ -164,6 +164,7 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
     await app.workRepo.ensureNoWork(PROJECT);
     const agentCatalog = createBoundAgentCatalog({
       defaultModel: () => "mock-model",
+      resolveModel: (name) => name,
       store: app.agentRevisions,
       levelFiles: noLevelFiles,
       builtins: [generalAgentSource("mock-model")],

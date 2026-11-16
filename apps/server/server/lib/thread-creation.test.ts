@@ -29,6 +29,7 @@ async function fixture() {
   const project = await projects.create({ userId: "owner", title: "Agents" });
   const agentCatalog = createBoundAgentCatalog({
     defaultModel: () => "test-model",
+    resolveModel: (name) => name,
     store: app.agentRevisions,
     levelFiles: noLevelFiles,
     builtins: [generalAgentSource("fixture-model")],

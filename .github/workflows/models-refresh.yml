@@ -23,21 +23,40 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The token (issues: write) stays out of .git/config, where install scripts could read it.
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 26.13.1
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # --dry-run: the runner's snapshot stays as committed; the report file exists only when models.dev differs.
+      # --dry-run is report mode: the runner's snapshot stays as committed, a catalog row Flow
+      # cannot serve becomes a report section, and the report file exists only when something differs.
       - name: Compare the snapshot with models.dev
-        run: pnpm models:refresh --dry-run --report-file "$RUNNER_TEMP/report.md"
+        id: refresh
+        shell: bash
+        run: pnpm models:refresh --dry-run --report-file "$RUNNER_TEMP/report.md" 2>&1 | tee "$RUNNER_TEMP/refresh.log"
+      # Runs when the refresh fails too: the error goes into the same issue, so a failing daily run is seen.
       - name: Open, update or close the issue
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
           TITLE: models.dev changes
+          REFRESH_OUTCOME: ${{ steps.refresh.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          if [ "$REFRESH_OUTCOME" != success ]; then
+            {
+              echo "The models.dev refresh failed, so this issue cannot say what changed. Run: $RUN_URL"
+              echo
+              echo "~~~~"
+              tail -n 60 "$RUNNER_TEMP/refresh.log" 2>/dev/null || true
+              echo "~~~~"
+            } > "$RUNNER_TEMP/report.md"
+          fi
           number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" \
             --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
           if [ -s "$RUNNER_TEMP/report.md" ]; then

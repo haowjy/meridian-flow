@@ -280,6 +280,7 @@ async function fixture(
     readActivity,
     agentRevisions: revisions,
     defaultModel: () => "parent-model",
+    resolveModel: (name) => name,
     unavailableReasons: () => [],
     modelUnavailable: (model) =>
       model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],

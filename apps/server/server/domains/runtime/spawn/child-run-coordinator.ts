@@ -108,6 +108,7 @@ export interface ChildRunCoordinatorDeps {
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
   >;
   defaultModel(): string | undefined;
+  resolveModel(name: string): string;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   /** Host-availability check for a model id, used when the child has no definition. */
   modelUnavailable(model: string): string[];

@@ -140,6 +140,8 @@ export function createBoundAgentCatalog(input: {
   /** The built-in packages, read once at boot. */
   builtins: AgentSourceSnapshot[];
   defaultModel(): string | undefined;
+  /** Turns an alias in an Agent's `model` into the model id a chat starts with; an id stays as written. */
+  resolveModel(name: string): string;
   /** Host-owned routing/support checks, independent of source syntax compilation. */
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
 }): BoundAgentCatalog {
@@ -158,6 +160,12 @@ export function createBoundAgentCatalog(input: {
   const rowOf = async (pkg: CompiledPackage, slug: string) =>
     (await install(pkg)).definitions.find((definition) => definition.slug === slug);
 
+  /** The model a chat started on this Agent would run. */
+  const modelOf = (definition: CompiledAgentDefinition) => {
+    const named = definition.metadata.model;
+    return named === undefined ? input.defaultModel() : input.resolveModel(named);
+  };
+
   /** Why an Agent cannot run: its errors, then what the host adds. */
   const reasonsOf = (
     agent: Pick<CompiledAgent, "definition" | "diagnostics">,
@@ -175,7 +183,7 @@ export function createBoundAgentCatalog(input: {
     if (asPrimary && !isPrimary(definition)) {
       return ["This Agent is unavailable for primary conversations"];
     }
-    const model = definition.metadata.model ?? input.defaultModel();
+    const model = modelOf(definition);
     if (!model) return ["No configured default model is available."];
     return input.unavailableReasons(definition, model);
   };
@@ -193,9 +201,7 @@ export function createBoundAgentCatalog(input: {
       path: id && entry.value && found ? `${entry.value.folder}${agentPath(found.slug)}` : null,
       name: found?.name ?? entry.slug,
       description: found?.description ?? "",
-      model: found?.definition
-        ? (found.definition.metadata.model ?? input.defaultModel() ?? null)
-        : null,
+      model: (found?.definition && modelOf(found.definition)) ?? null,
       effort: found?.definition?.metadata.effort
         ? AGENT_EFFORT_CHOICE[found.definition.metadata.effort]
         : null,
@@ -259,6 +265,7 @@ export function createBoundAgentCatalog(input: {
         revision,
         store,
         defaultModel: input.defaultModel(),
+        resolveModel: input.resolveModel,
       });
       return { ok: true, revision, configuration };
     } catch (error) {
@@ -447,11 +454,19 @@ export function createBoundAgentCatalog(input: {
         { slug: bound.revision.slug, definitionRevisionId: bound.revision.id },
         projectId,
       );
-      const moved =
-        newest.ok &&
-        runsDifferently(bound, { definition: newest.revision.definition, ...newest.configuration })
-          ? newest
-          : undefined;
+      let moved: { revision: AgentRevision; configuration: ResolvedAgentConfiguration } | undefined;
+      if (newest.ok) {
+        // An alias in the Agent's `model` was resolved when the chat started: a newer model in
+        // its family moves no running chat, only a change to the `model` line does.
+        const named = newest.revision.definition.metadata.model;
+        const configuration =
+          named !== undefined && named === bound.revision.definition.metadata.model
+            ? { ...newest.configuration, model: bound.configuration.model }
+            : newest.configuration;
+        if (runsDifferently(bound, { definition: newest.revision.definition, ...configuration })) {
+          moved = { revision: newest.revision, configuration };
+        }
+      }
       const pins: Record<string, RetainedSkillReference> = {};
       for (const slug of Object.keys(bound.invokedSkills)) {
         const skill = await skillIn(saved, slug);
