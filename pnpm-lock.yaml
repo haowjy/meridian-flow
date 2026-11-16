@@ -174,8 +174,8 @@ settings:
 catalogs:
   default:
     '@meridian-flow/runtime':
-      specifier: ^0.1.0
-      version: 0.1.0
+      specifier: ^0.2.0
+      version: 0.2.0
     '@types/node':
       specifier: ^26
       version: 26.0.1
@@ -259,7 +259,7 @@ importers:
         version: 8.20.0
       drizzle-orm:
         specifier: 'catalog:'
-        version: 0.45.2(postgres@4.0.0)
+        version: 0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0)
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
@@ -283,7 +283,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       ws:
         specifier: ^8.21.0
         version: 8.21.0
@@ -460,7 +460,7 @@ importers:
         version: 12.42.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       nitro:
         specifier: 'catalog:'
-        version: 3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       radix-ui:
         specifier: ^1.8.1
         version: 1.8.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -578,7 +578,7 @@ importers:
         version: 8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   apps/server:
     dependencies:
@@ -596,7 +596,7 @@ importers:
         version: 0.34.1
       '@meridian-flow/runtime':
         specifier: 'catalog:'
-        version: 0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(supports-color@7.2.0)(ws@8.21.0)
+        version: 0.2.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@7.28.0)(ws@8.21.0)
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -641,7 +641,7 @@ importers:
         version: 1.6.0
       drizzle-orm:
         specifier: 'catalog:'
-        version: 0.45.2(postgres@4.0.0)
+        version: 0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0)
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -662,7 +662,7 @@ importers:
         version: 1.12.0
       nitro:
         specifier: 'catalog:'
-        version: 3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       picomatch:
         specifier: ^4.0.7
         version: 4.0.7
@@ -759,7 +759,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       ws:
         specifier: ^8.21.0
         version: 8.21.0
@@ -811,7 +811,7 @@ importers:
         version: 6.0.3(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       nitro:
         specifier: 'catalog:'
-        version: 3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       tailwindcss:
         specifier: ^4.3.1
         version: 4.3.1
@@ -823,7 +823,7 @@ importers:
         version: 8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/agent-edit:
     dependencies:
@@ -860,7 +860,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/command-driver:
     dependencies:
@@ -873,7 +873,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/contracts:
     dependencies:
@@ -882,7 +882,7 @@ importers:
         version: 0.0.57
       '@meridian-flow/runtime':
         specifier: 'catalog:'
-        version: 0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(supports-color@7.2.0)(ws@8.21.0)
+        version: 0.2.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@7.28.0)(ws@8.21.0)
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -904,7 +904,7 @@ importers:
         version: 11.0.5
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/database:
     dependencies:
@@ -916,7 +916,7 @@ importers:
         version: link:../prosemirror-schema
       drizzle-orm:
         specifier: 'catalog:'
-        version: 0.45.2(postgres@4.0.0)
+        version: 0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0)
       postgres:
         specifier: 'catalog:'
         version: 4.0.0
@@ -932,7 +932,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/design-tokens:
     devDependencies:
@@ -999,7 +999,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/project-tree:
     dependencies:
@@ -1018,7 +1018,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/prosemirror-schema:
     dependencies:
@@ -1040,7 +1040,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/thread-client:
     dependencies:
@@ -1056,7 +1056,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/tree-list-sync:
     dependencies:
@@ -1081,7 +1081,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/yjs-inspect:
     dependencies:
@@ -1097,7 +1097,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       y-protocols:
         specifier: ^1.0.7
         version: 1.0.7(yjs@13.6.31(patch_hash=b9c4280605a17548cf402b5fdafd11c55484c65d5e8c7caeababc8c536a4045e))
@@ -1146,7 +1146,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
 packages:
 
@@ -1156,8 +1156,8 @@ packages:
   '@antfu/install-pkg@1.1.0':
     resolution: {integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==}
 
-  '@anthropic-ai/sdk@0.106.0':
-    resolution: {integrity: sha512-ufwVvYNDBj2dzOGupBCTaNzBLxqcTnGOzI4z8Wouxlt+mT3J3HuOmatgCy1VmwCHOUueqZ41ERhm0O99OUcbWA==}
+  '@anthropic-ai/sdk@1.8.0':
+    resolution: {integrity: sha512-yDOArk2+Qpd/djEKmZjrv7JZ+pn5iBHARJ9PAdvfhGf4H5wNqTgY/2K0/yDKdQdm8G8hrNQchMlBAHpPK7yBfg==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -2418,9 +2418,9 @@ packages:
   '@meridian-flow/mars-schema@0.34.1':
     resolution: {integrity: sha512-/5bJ7TjK9TtWAp04iRvDJ8ioG+w1bM28LYlWaxGSJpxtn0nv7bDN6z0UOU2UPez7RmgzdBB1WsFnHHGgeabGvw==}
 
-  '@meridian-flow/runtime@0.1.0':
-    resolution: {integrity: sha512-YrsSvUji7jOMPWXh9LyUbU9SUzWXijlr5s1zLdNSHoC4ZWs/bVi3Pg0Yk4+TtDzXsybFbs3/ilNgaiwJSk2wzw==}
-    engines: {node: '>=20'}
+  '@meridian-flow/runtime@0.2.0':
+    resolution: {integrity: sha512-MT/kv9oz73sc9V9Wd4m8CXTkBE+VtfKWrBr1yfTiBn6JgEEnkFsJKGyHgJdoUhPpcD7rnRxxtxez84z1+RNQdQ==}
+    engines: {node: '>=22'}
 
   '@mermaid-js/parser@1.2.0':
     resolution: {integrity: sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==}
@@ -2523,6 +2523,10 @@ packages:
   '@oozcitak/util@10.0.0':
     resolution: {integrity: sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA==}
     engines: {node: '>=20.0'}
+
+  '@opentelemetry/api@1.10.0':
+    resolution: {integrity: sha512-lMkyes8iHrG+mk6WH7X70MdCLI2RS0FwNBY1PyQ8UemaijE2m5mv5A0Niy3HtbYTFrgkUEQjFMXmSAk2hQDuPQ==}
+    engines: {node: '>=8.0.0'}
 
   '@oxc-project/types@0.137.0':
     resolution: {integrity: sha512-WT+Gb24i8hmvo85AIv2oEYouEXkRlKAlT9WaCa3TfLgNCN+GhrJOGZuIlMouAh38Qe4QOx26eUOVsq70qXrywA==}
@@ -6146,13 +6150,16 @@ packages:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
     engines: {node: '>=12'}
 
-  openai@6.49.0:
-    resolution: {integrity: sha512-aYCc0C6L864eR6WSYIwQGyXriw/nIyZx0ObvhzOEVuk0zoBDpynjSbrionWI7q65B5H8jJX0DXR9snEzM6bfPg==}
+  openai@7.57.0:
+    resolution: {integrity: sha512-RbmrdE5NdfW6nGq/FaCJ3KFCZpotoExPzruQUSMCTw/ouUFO08vpvVdSmgmPxQMFAiv9EXZCEXvcWYU+n6NzsQ==}
+    engines: {node: '>=22.0.0'}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
       '@smithy/signature-v4': '>=5.4.0 <6'
-      ws: ^8.18.0
+      google-auth-library: '>=9.15.1 <12'
+      undici: '>=5 <9'
+      ws: ^8.21.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
       '@aws-sdk/credential-provider-node':
@@ -6160,6 +6167,10 @@ packages:
       '@smithy/hash-node':
         optional: true
       '@smithy/signature-v4':
+        optional: true
+      google-auth-library:
+        optional: true
+      undici:
         optional: true
       ws:
         optional: true
@@ -7278,12 +7289,13 @@ snapshots:
       package-manager-detector: 1.6.0
       tinyexec: 1.2.4
 
-  '@anthropic-ai/sdk@0.106.0(zod@4.4.3)':
+  '@anthropic-ai/sdk@1.8.0(zod@4.6.7)':
     dependencies:
+      '@opentelemetry/api': 1.10.0
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
     optionalDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@asamuzakjp/css-color@5.1.11':
     dependencies:
@@ -8487,20 +8499,22 @@ snapshots:
 
   '@meridian-flow/mars-schema@0.34.1': {}
 
-  '@meridian-flow/runtime@0.1.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(supports-color@7.2.0)(ws@8.21.0)':
+  '@meridian-flow/runtime@0.2.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@7.28.0)(ws@8.21.0)':
     dependencies:
-      '@anthropic-ai/sdk': 0.106.0(zod@4.4.3)
+      '@anthropic-ai/sdk': 1.8.0(zod@4.6.7)
       '@google/genai': 3.3.0(supports-color@7.2.0)
       jsonrepair: 3.15.0
-      openai: 6.49.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)(zod@4.4.3)
-      zod: 4.4.3
+      openai: 7.57.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(undici@7.28.0)(ws@8.21.0)(zod@4.6.7)
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
       - '@smithy/hash-node'
       - '@smithy/signature-v4'
       - bufferutil
+      - google-auth-library
       - supports-color
+      - undici
       - utf-8-validate
       - ws
 
@@ -8584,6 +8598,8 @@ snapshots:
       '@oozcitak/util': 10.0.0
 
   '@oozcitak/util@10.0.0': {}
+
+  '@opentelemetry/api@1.10.0': {}
 
   '@oxc-project/types@0.137.0': {}
 
@@ -10861,9 +10877,9 @@ snapshots:
 
   dayjs@1.11.21: {}
 
-  db0@0.3.4(drizzle-orm@0.45.2(postgres@4.0.0)):
+  db0@0.3.4(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0)):
     optionalDependencies:
-      drizzle-orm: 0.45.2(postgres@4.0.0)
+      drizzle-orm: 0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0)
 
   debug@4.4.3(supports-color@7.2.0):
     dependencies:
@@ -10922,8 +10938,9 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.22.4
 
-  drizzle-orm@0.45.2(postgres@4.0.0):
+  drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0):
     optionalDependencies:
+      '@opentelemetry/api': 1.10.0
       postgres: 4.0.0
 
   duck@0.1.12:
@@ -12330,11 +12347,11 @@ snapshots:
 
   nf3@0.3.17: {}
 
-  nitro@3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)):
+  nitro@3.0.260610-beta(chokidar@5.0.0)(dotenv@16.4.7)(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0))(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.6(srvx@0.11.17)
-      db0: 0.3.4(drizzle-orm@0.45.2(postgres@4.0.0))
+      db0: 0.3.4(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0))
       env-runner: 0.1.14
       h3: 2.0.1-rc.22(crossws@0.4.6(srvx@0.11.17))
       hookable: 6.1.1
@@ -12345,7 +12362,7 @@ snapshots:
       rolldown: 1.2.19
       srvx: 0.11.17
       unenv: 2.0.0-rc.24
-      unstorage: 2.0.0-alpha.7(chokidar@5.0.0)(db0@0.3.4(drizzle-orm@0.45.2(postgres@4.0.0)))(lru-cache@11.5.1)(ofetch@2.0.0-alpha.3)
+      unstorage: 2.0.0-alpha.7(chokidar@5.0.0)(db0@0.3.4(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0)))(lru-cache@11.5.1)(ofetch@2.0.0-alpha.3)
     optionalDependencies:
       dotenv: 16.4.7
       jiti: 2.7.0
@@ -12553,12 +12570,14 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@6.49.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(ws@8.21.0)(zod@4.4.3):
+  openai@7.57.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(undici@7.28.0)(ws@8.21.0)(zod@4.6.7):
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.972.58
       '@smithy/signature-v4': 5.5.2
+      google-auth-library: 10.9.1(supports-color@7.2.0)
+      undici: 7.28.0
       ws: 8.21.0
-      zod: 4.4.3
+      zod: 4.6.7
 
   option@0.2.4: {}
 
@@ -13391,10 +13410,10 @@ snapshots:
       rolldown: 1.1.3
       vite: 8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
 
-  unstorage@2.0.0-alpha.7(chokidar@5.0.0)(db0@0.3.4(drizzle-orm@0.45.2(postgres@4.0.0)))(lru-cache@11.5.1)(ofetch@2.0.0-alpha.3):
+  unstorage@2.0.0-alpha.7(chokidar@5.0.0)(db0@0.3.4(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0)))(lru-cache@11.5.1)(ofetch@2.0.0-alpha.3):
     optionalDependencies:
       chokidar: 5.0.0
-      db0: 0.3.4(drizzle-orm@0.45.2(postgres@4.0.0))
+      db0: 0.3.4(drizzle-orm@0.45.2(@opentelemetry/api@1.10.0)(postgres@4.0.0))
       lru-cache: 11.5.1
       ofetch: 2.0.0-alpha.3
 
@@ -13465,7 +13484,7 @@ snapshots:
     optionalDependencies:
       vite: 8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
 
-  vitest@4.1.9(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)):
+  vitest@4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.9
       '@vitest/mocker': 4.1.9(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -13488,6 +13507,7 @@ snapshots:
       vite: 8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
+      '@opentelemetry/api': 1.10.0
       '@types/node': 26.0.1
       jsdom: 29.1.1(@noble/hashes@2.4.0)
     transitivePeerDependencies:
