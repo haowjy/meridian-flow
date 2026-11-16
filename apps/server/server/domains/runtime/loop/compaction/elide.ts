@@ -5,7 +5,7 @@ import {
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
 import { type Block, isNotesStepHeldResult, type JsonObject } from "@meridian/contracts/threads";
-import { ToolCallPairing } from "@meridian-flow/gateway";
+import { ToolCallPairing } from "@meridian-flow/runtime/gateway";
 import type { CompactionMetadata } from "../../../threads/index.js";
 import { type DocumentTextPolicy, showsDocumentText } from "../../tools/document-text.js";
 import { textContent } from "../../tools/tool-content.js";

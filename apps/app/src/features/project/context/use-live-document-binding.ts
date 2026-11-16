@@ -49,6 +49,7 @@ export function useLiveDocumentBinding({
     }
     const abort = new AbortController();
     let binding: LiveDocumentBinding | null = null;
+    let stopSession = () => {};
     const bindingOwner = `${hostId.current}:attempt:${++attemptRef.current}`;
     setState({ kind: "opening", documentId });
     void (async () => {
@@ -76,6 +77,10 @@ export function useLiveDocumentBinding({
           documentId,
           session: candidate.session,
         });
+        // A read-only room replaces its session; the editor remounts on the new one.
+        stopSession = candidate.subscribeSession((session) =>
+          setState({ kind: "opened", documentId, session }),
+        );
       } catch (error) {
         if (abort.signal.aborted) return;
         reportError(error);
@@ -84,6 +89,7 @@ export function useLiveDocumentBinding({
     })();
     return () => {
       abort.abort();
+      stopSession();
       binding?.release();
     };
   }, [documentId, opener, projectId, retryGeneration, trashed]);

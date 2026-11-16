@@ -89,6 +89,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
       Ok({
         status: "copied",
         entries: [],
+        folders: [],
         settled: [
           { rule: "left_out", items: request.sources.map((source) => source.uri), why: "purged" },
         ],

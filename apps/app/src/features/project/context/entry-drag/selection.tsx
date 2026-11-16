@@ -31,8 +31,18 @@ import { type DragEntry, type EntryRef, entryKey } from "./entry";
 /** What a row lets a selection's menu do with it. */
 export type SelectionGrant = "move" | "delete" | "restore";
 
-/** A selection of two or more rows, in screen order, and what every one of them grants. */
-export type SelectionGroup = { entries: DragEntry[]; grants: SelectionGrant[] };
+/** Which list a row's node is in: the project's files, or the account's Your files. */
+export type EntryList = "project" | "account";
+
+/**
+ * A selection of two or more rows, in screen order, and what every one of them grants. A list is
+ * the unit of history, so a selection in both lists is copied, never moved.
+ */
+export type SelectionGroup = {
+  entries: DragEntry[];
+  grants: SelectionGrant[];
+  crossesLists: boolean;
+};
 
 export type EntrySelection = {
   /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
@@ -64,7 +74,7 @@ export type EntrySelection = {
   /** Rows announce themselves while mounted; the open row says so. */
   register(entry: DragEntry, active: boolean): () => void;
   /** What a row's menu lets a selection's menu do with it, while the menu is mounted. */
-  grant(entry: DragEntry, grants: readonly SelectionGrant[]): () => void;
+  grant(entry: DragEntry, grants: readonly SelectionGrant[], list: EntryList): () => void;
   root: RefObject<HTMLDivElement | null>;
 };
 
@@ -96,7 +106,7 @@ export function useEntrySelection(): EntrySelection {
   const anchor = useRef<string | null>(null);
   const registry = useRef(new Map<string, { entry: DragEntry; active: boolean }>());
   const granted = useRef(
-    new Map<string, { entry: DragEntry; grants: readonly SelectionGrant[] }>(),
+    new Map<string, { entry: DragEntry; grants: readonly SelectionGrant[]; list: EntryList }>(),
   );
   const root = useRef<HTMLDivElement>(null);
   const focusUntil = useRef(0);
@@ -244,13 +254,13 @@ export function useEntrySelection(): EntrySelection {
       group(entry) {
         const rows = selectedRows(entry);
         if (!rows || rows.length < 2) return null;
+        const grantsOf = rows.map((row) => granted.current.get(entryKey(row.entry.ref)));
         return {
           entries: rows.map((row) => row.entry),
           grants: (["move", "delete", "restore"] as const).filter((grant) =>
-            rows.every((row) =>
-              granted.current.get(entryKey(row.entry.ref))?.grants.includes(grant),
-            ),
+            grantsOf.every((each) => each?.grants.includes(grant)),
           ),
+          crossesLists: new Set(grantsOf.map((each) => each?.list)).size > 1,
         };
       },
       pick(entry) {
@@ -285,9 +295,9 @@ export function useEntrySelection(): EntrySelection {
           paintRuns();
         };
       },
-      grant(entry, grants) {
+      grant(entry, grants, list) {
         const key = entryKey(entry.ref);
-        granted.current.set(key, { entry, grants });
+        granted.current.set(key, { entry, grants, list });
         return () => {
           if (granted.current.get(key)?.entry === entry) granted.current.delete(key);
         };

@@ -117,15 +117,20 @@ export function useEntryInteraction({
       );
     else if (action === "delete") onRequestDelete([entry]);
   };
-  const menu = useEntryMenu(entry, actions, (action, selection) => {
-    if (!selection) {
-      setPickedSelection(null);
-      onAction(action);
-    } else if (action === "move") {
-      setPickedSelection(selection);
-      setPicking("move");
-    } else if (action === "delete") onRequestDelete(selection);
-  });
+  const menu = useEntryMenu(
+    entry,
+    actions,
+    (action, selection) => {
+      if (!selection) {
+        setPickedSelection(null);
+        onAction(action);
+      } else if (action === "move" || action === "copy") {
+        setPickedSelection(selection);
+        setPicking(action);
+      } else if (action === "delete") onRequestDelete(selection);
+    },
+    scheme === "user" ? "account" : "project",
+  );
   const rename: UseRenameEntryFormOptions = {
     projectId,
     entryId: id,

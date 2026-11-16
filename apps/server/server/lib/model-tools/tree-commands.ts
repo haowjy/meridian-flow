@@ -8,7 +8,9 @@
 import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import { modelResult } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts";
+import { addressScheme } from "@meridian/contracts/context-uri";
 import { contextPortForThread } from "../../domains/context/index.js";
+import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
 import {
   type Placement,
   runTreeCommand,
@@ -32,7 +34,7 @@ import {
   type WriteToolErrorOutput,
   writeToolError,
 } from "./tool-context.js";
-import { crossesLists, runMoveAcrossLists } from "./tree-across-lists.js";
+import { type Copies, copyAcross, recordCopies } from "./tree-copy-across.js";
 
 type MoveInput = Extract<WriteToolInput, { command: "move" }>;
 type DeleteInput = Extract<WriteToolInput, { command: "delete" }>;
@@ -87,7 +89,7 @@ export async function runTreeToolCommand(
   ctx: ToolHandlerContext,
   /** Runs the part that changes things as the call's command. */
   settle: (effect: () => Promise<unknown>) => Promise<unknown>,
-) {
+): Promise<unknown> {
   const command = commandOf(input);
   if (isToolError(command)) return command;
   const paths = command.command === "move" ? [...command.from, command.path] : [command.path];
@@ -114,22 +116,26 @@ export async function runTreeToolCommand(
     grants.push(granted);
     if (granted.destination.kind === "draft") draftArea ??= area;
   }
-  const crossing =
-    command.command === "move" &&
-    command.from.some((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary));
-  if (crossing && draftArea !== undefined)
+  const leaving =
+    command.command === "move"
+      ? command.from.filter((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary))
+      : [];
+  if (leaving.length > 0 && draftArea !== undefined)
     return writeToolError(
       input.command,
-      "A change in a Work's draft can't move files between a project and the account's files.",
+      "A change in a Work's draft can't copy files between a project and the account's files.",
     );
-  if (crossing) return runMoveAcrossLists(deps, call, ctx, grants, command as never, settle);
+  // A source in the destination's list moves; one in the other list is copied and stays. The
+  // call has one answer.
+  const across = command.command === "move" && leaving.length > 0 ? command : undefined;
+  const staying = across ? across.from.filter((from) => !leaving.includes(from)) : [];
   const drafted = draftArea !== undefined;
   const destination = (grants.find((granted) => granted.destination.kind === "draft") ?? grants[0])
     ?.destination;
   // A drafted change runs in the source that has the chat's draft; a live one in the path's own.
   const area = draftArea ?? primary;
   const places = { area, roots, locate: (path: string) => areaOfPath(path) };
-  const local = command;
+  const local: TreeCommand = across ? { ...across, from: staying } : command;
 
   const shown = await shownNamesOf(ctx);
   const history = deps.documentSync.treeHistory();
@@ -148,7 +154,7 @@ export async function runTreeToolCommand(
       });
   let handle: string | undefined;
 
-  return settle(async () => {
+  const withinList = async (): Promise<InList> => {
     const run = await runWithEditGrants(deps.fileAccess, grants, () =>
       port.treeCommand(area, {
         origin,
@@ -184,11 +190,14 @@ export async function runTreeToolCommand(
       }),
     );
     if (!run.ok)
-      return fileAccessDeniedError(input.command, firstRefusal(run.refusal), paths[0] as string);
+      return refused(
+        fileAccessDeniedError(input.command, firstRefusal(run.refusal), paths[0] as string),
+      );
     const done = run.value;
-    if (!done.ok) return writeToolError(input.command, contextErrorMessage(done.error));
+    if (!done.ok) return refused(writeToolError(input.command, contextErrorMessage(done.error)));
     const result = done.value;
-    if (!result.ok) return refusalOf(input, result);
+    if (!result.ok)
+      return { refused: refusalOf(input, result), notMoved: result.notMoved ?? [result.message] };
 
     // A delete is never refused for its Works: they keep their drafts of what it took.
     const survivingWorks =
@@ -224,15 +233,83 @@ export async function runTreeToolCommand(
         ...(result.concurrent.length > 0 ? { concurrent: result.concurrent } : {}),
       },
     };
-    return {
-      output: modelResult({
-        command: input.command,
-        status: "success",
-        phase: "committed",
-        payload,
-      }),
-      metadata: { treeWrite: true },
-      evidence: { shown: [], ...namesEvidence(result.delta) },
-    };
+    return { payload, delta: result.delta };
+  };
+
+  // Copy reads its sources outside any transaction, so it runs before the call's command.
+  const copies = across
+    ? await copyAcross(deps, call, ctx, grants, { ...across, from: leaving })
+    : undefined;
+  if (copies && "refused" in copies) return copies.refused;
+
+  return settle(async () => {
+    const stayed = staying.length > 0 || !across ? await withinList() : undefined;
+    if (!across) {
+      const only = stayed as InList;
+      return "refused" in only ? only.refused : answerOf(input.command, only.payload, only.delta);
+    }
+    const copied = await recordCopies(deps, call, ctx, port, copies as Copies);
+    const notMoved = [
+      ...(stayed === undefined
+        ? []
+        : "refused" in stayed
+          ? stayed.notMoved
+          : (stayed.payload.tree?.notMoved ?? [])),
+      ...copied.notCopied,
+    ];
+    const kept = stayed && "payload" in stayed ? stayed : undefined;
+    const moved = kept?.payload.tree?.moved?.made ?? (kept ? 1 : 0);
+    if (moved + copied.copied === 0)
+      return writeToolError("move", `Nothing moved or copied: ${notMoved.join("; ")}`);
+    // One handle for a call with two receipts: a mixed call's is the copy's, so `revert` of it
+    // takes back only the copy. `undo` and the card's Undo take back the whole call.
+    const handle = copied.handle ?? kept?.payload.write?.id;
+    return answerOf(
+      "move",
+      {
+        ...(kept?.payload ?? {}),
+        ...(!across.many && copied.landed[0] ? { path: copied.landed[0].to } : {}),
+        destination: "live",
+        ...(handle ? { write: { id: handle } } : {}),
+        tree: {
+          ...(kept?.payload.tree ?? {}),
+          ...(across.many ? { moved: { made: moved, of: staying.length } } : {}),
+          copied: copied.landed,
+          ...(notMoved.length > 0 ? { notMoved } : {}),
+        },
+      },
+      {
+        whole: [...(kept?.delta?.whole ?? []), ...(copied.names?.whole ?? [])],
+        names: [...(kept?.delta?.names ?? []), ...(copied.names?.names ?? [])],
+      },
+    );
   });
+}
+
+/** Whether a move from `from` to `to` leaves its list: `user://` is the account's, the rest the project's. */
+const crossesLists = (from: string, to: string) =>
+  (addressScheme(from) === "user") !== (addressScheme(to) === "user");
+
+type Payload = NonNullable<Parameters<typeof modelResult>[0]["payload"]>;
+
+/** What the part of a call that stays in its list did: its answer, or why it moved nothing. */
+type InList =
+  | { refused: unknown; notMoved: string[] }
+  | { payload: Payload; delta: ShownDelta | undefined };
+
+const refused = (answer: { output: { message?: string } }): InList => ({
+  refused: answer,
+  notMoved: [answer.output.message ?? "not moved"],
+});
+
+function answerOf(
+  command: TreeToolInput["command"],
+  payload: Payload,
+  delta: ShownDelta | undefined,
+) {
+  return {
+    output: modelResult({ command, status: "success", phase: "committed", payload }),
+    metadata: { treeWrite: true },
+    evidence: { shown: [], ...namesEvidence(delta) },
+  };
 }

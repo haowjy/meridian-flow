@@ -368,7 +368,13 @@ function DocumentRow({
   canOpenContextUri: CanOpenContextUri | null;
 }) {
   const drag = useDocumentRowDrag(document);
-  // A folder has no document to open; a deleted document's old address may hold another now.
+  // A folder has no document to open or drag: its row names where it is.
+  if (document.folder && !document.tree)
+    return (
+      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground">
+        {folderDisplayName(document.uri)}
+      </span>
+    );
   const openable =
     !document.folder &&
     document.tree?.op !== "delete" &&

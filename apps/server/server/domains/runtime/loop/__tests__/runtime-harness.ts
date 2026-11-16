@@ -1,7 +1,7 @@
 /** One runtime composition: resolve ports first, then derive delivery, producer and loop. */
 
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
-import type { Gateway, StreamEvent } from "@meridian-flow/gateway";
+import type { Gateway, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { registryTokenRateSource } from "../../../../lib/gateway/registry.js";
 import {
   createDetachedWorkTracker,

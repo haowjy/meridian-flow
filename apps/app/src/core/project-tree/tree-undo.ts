@@ -63,15 +63,13 @@ export type TreeStep = {
 
 /**
  * What an Un-Apply took back of its Apply: `all` of what stood, `partly`, `nothing`, or `already`
- * (an earlier Un-Apply, here or in another tab, took it all). `textLeft` counts the text changes
- * that stayed (edited since; the answer doesn't say whose document); `treeLeft` names each node
- * whose tree change stayed, with why.
+ * (an earlier Un-Apply, here or in another tab, took it all). `treeLeft` names each node whose tree
+ * change stayed, with why.
  */
 export type Unapplied =
   | { taken: "all" | "already" }
   | {
       taken: "partly" | "nothing";
-      textLeft: number;
       treeLeft: readonly { node: string; why: LeftOutWhy }[];
     };
 

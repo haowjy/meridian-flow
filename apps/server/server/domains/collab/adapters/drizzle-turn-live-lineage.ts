@@ -91,7 +91,9 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           >`coalesce(${treeEditReceiptNodes.beforeAt}, ${treeEditReceiptNodes.afterAt})`,
           landedAt: treeEditReceiptNodes.afterAt,
           // A copy's create names the document it read, so the turn can say it copied.
-          copiedFrom: sql<string | null>`${documents.metadata}->'copiedFrom'->>'uri'`,
+          copiedFrom: sql<
+            string | null
+          >`coalesce(${treeEditReceiptNodes.copiedFrom}, ${documents.metadata}->'copiedFrom'->>'uri')`,
           // The model's own undo has the last word on it: the newest receipt of its chain (an
           // undo, its redo, an undo of that) is an undo no card made. A card's Undo isn't one: the
           // card still says what the reply did, beside its Redo.
@@ -110,6 +112,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         })
         .from(treeEditReceipts)
         .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
+        // Folders have no document metadata, but their receipt still carries a tree line.
         .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
         // A drafted entry's owner: the branch it was drafted in.
         .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))

@@ -9,7 +9,7 @@ import {
   DEFAULT_ATTEMPT_STALL_MS,
   type GatewayConfig,
   type ProviderConfig,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import { buildFromRegistry, MODEL_REGISTRY } from "./registry.js";
 
 export interface GatewayEnvInput {

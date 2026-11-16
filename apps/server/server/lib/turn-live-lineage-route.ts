@@ -137,6 +137,7 @@ function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocu
     uri: parsed.value.normalized,
     path: `/${parsed.value.path}`,
     folder: true,
+    ...(folder.tree ? { tree: folder.tree } : {}),
     ...(folder.ownerKey
       ? { scope: "draft" as const, owner: folder.ownerKey }
       : { scope: "live" as const }),

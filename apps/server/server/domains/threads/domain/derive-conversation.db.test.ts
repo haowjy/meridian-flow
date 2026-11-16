@@ -708,7 +708,7 @@ else
       expect(seed.status).toBe("pending");
       expect(launchRequests).toEqual([{ threadId: handoff.id, seedTurnId: seed.id }]);
 
-      const model: import("@meridian-flow/gateway").ModelInfo = {
+      const model: import("@meridian-flow/runtime/gateway").ModelInfo = {
         id: "handoff-test-model",
         provider: "test-provider",
         tokenizer: "o200k" as const,
@@ -720,8 +720,8 @@ else
         wire: "openai",
         inputModalities: ["text"],
       };
-      const summaryRequests: import("@meridian-flow/gateway").GenerateRequest[] = [];
-      const gateway: import("@meridian-flow/gateway").Gateway = {
+      const summaryRequests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
+      const gateway: import("@meridian-flow/runtime/gateway").Gateway = {
         getDefaultModel: () => model.id,
         listModels: () => [model],
         async *stream(request) {

@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { AgentFileStatus } from "@meridian/contracts/agents";
 import { useState } from "react";
-import { useBuiltinAgentFile } from "@/client/query/useAgentFiles";
+import { useSavedAgentFile } from "@/client/query/useAgentFiles";
 import { AgentFileDialog } from "./AgentFileDialog";
 import { TroubleChip } from "./AgentFileState";
 import { fileTrouble } from "./findings";
@@ -20,7 +20,9 @@ export function BuiltinAgentFileDialog({
   // The dialog fades out after `file` clears; it keeps showing the last file until it is gone.
   const [shown, setShown] = useState(file);
   if (file && file !== shown) setShown(file);
-  const text = useBuiltinAgentFile(shown?.path ?? null);
+  const text = useSavedAgentFile(
+    shown ? { level: "builtin", path: shown.path, saveId: null } : null,
+  );
   const trouble = shown ? fileTrouble(shown, undefined) : null;
   return (
     <AgentFileDialog

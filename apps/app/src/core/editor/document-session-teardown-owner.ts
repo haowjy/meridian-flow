@@ -44,6 +44,15 @@ export class DocumentSessionTeardownOwner {
     return this.start(entry);
   }
 
+  /**
+   * Retires a session another one replaced, once its editors have unmounted. Its database is its
+   * own, so the room's name stays available: the quarantine is keyed by persistence name.
+   */
+  async retireReplaced(kind: DocumentSessionRetirementKey["kind"], session: DocumentSession) {
+    await session.whenUnbound();
+    return this.retire({ kind, roomKey: session.persistenceName ?? session.roomKey }, session);
+  }
+
   assertAvailable(key: DocumentSessionRetirementKey): void {
     if (this.byRoom.has(qualifiedKey(key))) throw this.unavailable(key);
   }

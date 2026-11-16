@@ -570,6 +570,7 @@ CREATE TABLE "tree_edit_receipt_nodes" (
 	"thread_id" uuid,
 	"node_id" uuid NOT NULL,
 	"w_id" integer NOT NULL,
+	"copied_from" text,
 	"before_at" text,
 	"after_at" text,
 	CONSTRAINT "tree_edit_receipt_nodes_receipt_id_node_id_pk" PRIMARY KEY("receipt_id","node_id")
@@ -589,7 +590,6 @@ CREATE TABLE "tree_edit_receipts" (
 	"kind" text DEFAULT 'write' NOT NULL,
 	"reverses" uuid,
 	"draft_branch_id" uuid,
-	"across_lists" boolean DEFAULT false NOT NULL,
 	"shown_at" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "tree_edit_receipts_op_valid" CHECK ("tree_edit_receipts"."op" IN ('create','move','delete','restore')),

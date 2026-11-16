@@ -5,7 +5,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { Gateway, Message, ModelInfo, Tool } from "@meridian-flow/gateway";
+import type { Gateway, Message, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryLevelFiles } from "../../../../test-support/in-memory-level-files.js";
 import {

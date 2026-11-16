@@ -3,7 +3,7 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/errors";
 import type { SummaryRejectionReason } from "@meridian/contracts/runtime";
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { GenerateRequest, TokenizerFamily } from "@meridian-flow/gateway";
+import type { GenerateRequest, TokenizerFamily } from "@meridian-flow/runtime/gateway";
 import {
   type CompactionFailureOutcome,
   type CompactionFailurePhase,

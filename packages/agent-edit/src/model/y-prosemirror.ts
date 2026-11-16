@@ -318,7 +318,8 @@ function insertContent(leaf: Y.XmlElement, at: number, content: Fragment): void 
       seen += part.insert.length;
       if (skip >= part.insert.length) continue;
       const rest = part.insert.slice(skip);
-      tail.insert(end, rest, part.attributes);
+      // An omitted attributes argument means "inherit the marks before it"; {} means plain.
+      tail.insert(end, rest, part.attributes ?? {});
       end += rest.length;
     }
     inside.child.delete(at - inside.start, inside.length - (at - inside.start));

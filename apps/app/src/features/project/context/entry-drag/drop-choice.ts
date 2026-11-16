@@ -1,8 +1,9 @@
 /**
- * What a drop that asks offers. A list row dropped within one system moves at
- * once; one that crosses systems changes ownership, and any other source
- * names a document without being a row to reposition, so the list holds the
- * drop as a `PendingChoice` and asks at the drop point: Move, Copy or Cancel. The hover
+ * What a drop that asks offers. A list row dropped within one list moves at
+ * once. One dropped on another list (the project's files and Your files are
+ * two) can only be copied, and any other source names a document without being
+ * a row to reposition, so the list holds the drop as a `PendingChoice` and asks
+ * at the drop point: Move, Copy or Cancel, or Copy and Cancel between lists. The hover
  * hint, the decision to ask and the menu all come from `dropChoices`, derived
  * from `resolveDrop` against the trees as they are when each asks, so a
  * destination renamed or removed while the menu was open is judged by
@@ -77,7 +78,6 @@ function reason(
   if (resolved.unavailable.length > 0) return noLongerThere();
   if (plan.kind === "inside-itself") return insideItself();
   if (action === "move") {
-    if (resolved.crossesLists) return t`Copy these between your files and a project`;
     return resolved.canMove ? t`Already there` : t`Can't move these from here`;
   }
   return t`Can't copy these`;
@@ -114,8 +114,8 @@ export function dropChoices(
           reason: reason("copy", resolved, copy),
         };
   return {
-    // The writer's own files take copies: what lives in a project stays there.
-    items: target.scheme === "user" ? [copyItem] : [moveItem, copyItem],
+    // Between two lists, and into the writer's own files, the action is Copy: the original stays.
+    items: target.scheme === "user" || resolved?.crossesLists ? [copyItem] : [moveItem, copyItem],
     plans: {
       ...(move.kind === "ready" ? { move } : {}),
       ...(copy.kind === "ready" ? { copy } : {}),

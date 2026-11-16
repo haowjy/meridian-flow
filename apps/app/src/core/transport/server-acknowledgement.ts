@@ -34,6 +34,9 @@ export type ServerAcknowledgementTracker = {
   beginConnection(): void;
   /** The socket closed, is reconnecting, or the transport is terminal. */
   endConnection(): void;
+  /** The server admitted this connection read-only; cleared with the connection. */
+  admitReadOnly(): void;
+  readonly readOnly: boolean;
   /** Refuse all captured cuts when this transport can never acknowledge them. */
   terminate(): void;
   /** A frame was handed to the open socket (not merely queued for later). */
@@ -79,6 +82,7 @@ export function createServerAcknowledgementTracker(
   let open = false;
   let handshakeSent = false;
   let rejected = false;
+  let readOnly = false;
   let sent = 0;
   let acknowledgedCount = 0;
   let published = false;
@@ -89,9 +93,10 @@ export function createServerAcknowledgementTracker(
     reject(error: Error): void;
   }>();
 
-  const compute = () => open && handshakeSent && !rejected && acknowledgedCount >= sent;
+  const compute = () =>
+    open && !readOnly && handshakeSent && !rejected && acknowledgedCount >= sent;
   const publish = () => {
-    if (open && !rejected)
+    if (open && !rejected && !readOnly)
       for (const barrier of barriers) {
         if (barrier.target !== null && acknowledgedCount >= barrier.target) {
           barriers.delete(barrier);
@@ -111,12 +116,18 @@ export function createServerAcknowledgementTracker(
       open = true;
       handshakeSent = false;
       rejected = false;
+      readOnly = false;
       sent = 0;
       acknowledgedCount = 0;
       publish();
     },
     endConnection() {
       open = false;
+      readOnly = false;
+      publish();
+    },
+    admitReadOnly() {
+      readOnly = true;
       publish();
     },
     terminate() {
@@ -144,7 +155,7 @@ export function createServerAcknowledgementTracker(
       publish();
     },
     noteFrameReceived(frame) {
-      if (!open) return;
+      if (!open || readOnly) return;
       const message = readMessageType(frame);
       if (message?.type !== MESSAGE_SYNC_STATUS) return;
       let applied: boolean;
@@ -153,9 +164,8 @@ export function createServerAcknowledgementTracker(
       } catch {
         return;
       }
-      // An unapplied message (read-only connection) is never "saved". Staying
-      // false for the rest of this connection is deliberate: the reconnect
-      // handshake is what re-sends the content.
+      // A refusal is never "saved". Staying false for the rest of this connection is
+      // deliberate: the reconnect handshake is what re-sends the content.
       // Clamp: an acknowledgement for nothing we sent must not pre-pay a later send.
       if (applied) acknowledgedCount = Math.min(acknowledgedCount + 1, sent);
       else rejected = true;
@@ -170,6 +180,9 @@ export function createServerAcknowledgementTracker(
     },
     get acknowledged() {
       return published;
+    },
+    get readOnly() {
+      return readOnly;
     },
   };
 }

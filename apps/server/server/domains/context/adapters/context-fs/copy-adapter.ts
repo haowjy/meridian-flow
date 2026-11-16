@@ -16,7 +16,7 @@ import type {
 } from "../../ports/context-copy.js";
 import type { ContextDocument, ContextFolder } from "../../ports/context-document-store.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
-import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
+import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
   /** Why this placement cannot take a copy (a draft placement), or null. */
@@ -111,6 +111,9 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
       const refused = deps.refuseReceive();
       return refused ? Err(refused) : Ok(await planCopyTree(deps, input));
     },
-    copyInto: (input) => insertCopiedTree(deps, input),
+    copyInto: async (input) =>
+      input.plan.dir.join("/") !== input.dir.join("/")
+        ? Ok({ kind: "replan" })
+        : insertPlannedTrees(deps, [input], input.position),
   };
 }

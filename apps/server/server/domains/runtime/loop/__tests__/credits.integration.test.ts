@@ -4,7 +4,7 @@
  * - Pending usage projection and debt gate
  */
 
-import type { Gateway, GenerateResult, StreamEvent } from "@meridian-flow/gateway";
+import type { Gateway, GenerateResult, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { describe, expect, it } from "vitest";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { runtimeScenario } from "./runtime-harness.js";

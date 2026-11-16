@@ -1,6 +1,6 @@
 /** Maps tool views to writer-facing commands and labels. */
 import { type SaveOutcome, saveOutcomeSchema } from "@meridian/contracts/agents";
-import type { JsonValue } from "@meridian/contracts/protocol";
+import { isDoneWriteStatus, type JsonValue } from "@meridian/contracts/protocol";
 import { parseWorkReceipt, type WorkReceipt } from "@meridian/contracts/works";
 import type { ToolView } from "./group-delivery-segments";
 
@@ -172,7 +172,7 @@ export function documentToolFailed(tool: ToolView): boolean {
     return false;
   const result = tool.result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return false;
-  return typeof result.status === "string" && result.status !== "success";
+  return typeof result.status === "string" && !isDoneWriteStatus(result.status);
 }
 
 /**

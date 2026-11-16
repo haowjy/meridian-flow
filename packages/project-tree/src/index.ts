@@ -35,9 +35,7 @@ export {
   type CreateRecord,
   type DeleteRecord,
   type DraftId,
-  isListRoot,
   isSourceRoot,
-  listRoot,
   type MoveRecord,
   type NodeKind,
   nameSet,
@@ -100,4 +98,4 @@ export {
   viewRecords,
   viewValues,
 } from "./view.js";
-export { type CreateInput, type ListEnd, moveBetweenLists, TreeWriter } from "./writer.js";
+export { type CreateInput, TreeWriter } from "./writer.js";

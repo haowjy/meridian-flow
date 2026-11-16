@@ -520,12 +520,7 @@ export function createDrizzleApplyClick(
                   // Latest group first: a group's live update builds on the earlier groups' items, so the
                   // earlier group is intact only once the later one is out.
                   [...targeted].reverse().map(({ part }) => part),
-                  // A group whose inverse would cut or join a word holding later writing stays applied.
-                  {
-                    actionId: commandId,
-                    allocateClient: allocateDocumentClient,
-                    keepLaterWords: true,
-                  },
+                  { actionId: commandId, allocateClient: allocateDocumentClient },
                 );
                 const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
                 const reversed = effects.filter(
