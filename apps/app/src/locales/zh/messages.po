@@ -453,6 +453,10 @@ msgstr ""
 msgid "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "{count, plural, =0 {Read connection tools} one {Read how to use # connection tool} other {Read how to use # connection tools}}"
+msgstr ""
+
 #. placeholder {0}: <> {name} can't be saved: {count} problem </>
 #. placeholder {1}: <> {name} can't be saved: {count} problems </>
 #: src/features/agents/PackageSave.tsx
@@ -758,8 +762,16 @@ msgstr "{name}（@{handle}）"
 msgid "{name} (in the trash)"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "{name} answers now. Ask the AI to try again."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} can't be changed."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "{name} couldn't be reached."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -806,6 +818,14 @@ msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
 msgid "{name} is unavailable"
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "{name} refused the request."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "{name} refused the token."
+msgstr ""
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr ""
@@ -824,6 +844,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was discarded from the draft before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "{name} was removed from your connections."
 msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
@@ -2068,6 +2092,10 @@ msgstr ""
 msgid "Checked Work"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Checking {name}…"
+msgstr ""
+
 #: src/features/connections/NewChatConnectionMarks.tsx
 msgid "Checking <0>{name}</0>…"
 msgstr ""
@@ -2823,6 +2851,10 @@ msgstr ""
 msgid "Couldn't read"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't read a connection's tools"
+msgstr ""
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
@@ -3038,6 +3070,14 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
+msgstr ""
+
+#: src/features/chat/mcp-renderers.tsx
+msgid "Couldn't use"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't use a connection"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -5176,6 +5216,10 @@ msgstr ""
 msgid "Notes the AI kept, grouped by Work."
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Nothing"
+msgstr ""
+
 #: src/features/import/import-presentation.ts
 msgid "Nothing from it will be kept."
 msgstr ""
@@ -5604,7 +5648,15 @@ msgid "Read"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+msgid "Read {name}’s tools"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
 msgid "Read file"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Read how to use"
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
@@ -5621,6 +5673,18 @@ msgstr "阅读中"
 
 #: src/features/import/import-presentation.ts
 msgid "Reading {name}"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Reading {name}’s tools…"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Reading connection tools…"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Reading how to use"
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
@@ -5821,6 +5885,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Replaced by a restore in {workName}"
+msgstr ""
+
+#: src/features/chat/mcp-renderers.tsx
+msgid "Reply"
 msgstr ""
 
 #: src/features/chat/SpawnReportCard.tsx
@@ -6258,6 +6326,10 @@ msgstr "正在发送"
 msgid "Sending now"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Sent"
+msgstr ""
+
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
 msgstr ""
@@ -6303,6 +6375,10 @@ msgstr ""
 msgid "Show {sheetName}"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Show all"
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Show changes"
@@ -6317,6 +6393,7 @@ msgstr ""
 msgid "Show less"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
@@ -7021,6 +7098,14 @@ msgstr ""
 msgid "the project's"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "The reply was cut short: this is the part the AI read."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The reply was too large to keep."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage in {name} wasn't specific enough."
 msgstr ""
@@ -7031,6 +7116,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "The review updated. Choose the change again."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The server couldn't be reached."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -7045,6 +7134,11 @@ msgstr ""
 msgid "The server didn't list its tools."
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "The server refused the request."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
 #: src/features/connections/connection-status.ts
 msgid "The server refused the token."
 msgstr ""
@@ -7065,6 +7159,10 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 #~ msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The tool ran and reported a problem."
+msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "The upload didn’t start."
@@ -7174,6 +7272,10 @@ msgstr ""
 msgid "This browser will not turn that into an image."
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "This call failed."
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This cell is not merged."
 msgstr ""
@@ -7201,6 +7303,10 @@ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "This chat has no connection tool by that name."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -7247,6 +7353,10 @@ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "This compaction already started."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "This connection was removed."
 msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
@@ -7546,6 +7656,10 @@ msgstr "耗时太久，已停止。"
 msgid "This version of Meridian can't display it."
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "This was stopped before it finished."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "This Work is archived, so its drafts take no new text and the change wasn't kept."
 msgstr ""
@@ -7664,6 +7778,7 @@ msgid "Trash"
 msgstr ""
 
 #: src/features/chat/ChatCards.tsx
+#: src/features/chat/mcp-renderers.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
 #: src/features/connections/connection-status.ts
 #: src/features/editor/InTrashStatus.tsx
@@ -7959,6 +8074,7 @@ msgstr ""
 msgid "Update"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
 #: src/features/connections/connection-status.ts
 msgid "Update the token"
 msgstr ""
@@ -8057,6 +8173,14 @@ msgstr ""
 
 #: src/features/connections/ToolChooser.tsx
 msgid "Use these tools"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Used a connection"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Using a connection…"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
