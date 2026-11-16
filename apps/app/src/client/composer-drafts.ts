@@ -233,24 +233,46 @@ export class ComposerSessionDraft {
    */
   receiveHandBack(requestId: string, returned: MessageDoc): boolean {
     if (this.hasReceivedHandBack(requestId)) return this.dropHandBack(requestId);
+    const edited = this.withReturned(returned);
+    if (!edited) return false;
+    return this.commit(edited, {
+      received: new Set([...this.received, handBackReceipt(requestId)]),
+      notices: this.notices,
+      handBacks: this.handBacksPending.filter((known) => known.requestId !== requestId),
+    });
+  }
+
+  /**
+   * A sent message back above what is typed, for the writer to change and send again (Edit after
+   * Stop). It carries no receipt: each press puts the words back once more. False when the write
+   * failed or the merged document wouldn't restore.
+   */
+  putBack(returned: MessageDoc): boolean {
+    const edited = this.withReturned(returned);
+    if (!edited) return false;
+    return this.commit(edited, {
+      received: this.received,
+      notices: this.notices,
+      handBacks: this.handBacksPending,
+    });
+  }
+
+  /** The draft with `returned` above what is typed, the caret at the end of it; null when it wouldn't restore. */
+  private withReturned(returned: MessageDoc): ComposerDraftSnapshot | null {
     const typed =
       this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
     const doc = prependMessageDoc(
       returned,
       typed ? (typed.doc as MessageDoc) : null,
     ) as ComposerDraftSnapshot["doc"];
+    const end = endOfContent(returned);
     const edited = {
       revision: (this.current?.revision ?? 0) + 1,
-      selection: typed?.selection ?? { anchor: 1, head: 1 },
+      selection: { anchor: end, head: end },
       ownedUploads: typed?.ownedUploads ?? [],
       doc,
     };
-    if (!parseRestorableComposerDraft(edited)) return false;
-    return this.commit(edited, {
-      received: new Set([...this.received, handBackReceipt(requestId)]),
-      notices: this.notices,
-      handBacks: this.handBacksPending.filter((known) => known.requestId !== requestId),
-    });
+    return parseRestorableComposerDraft(edited) ? edited : null;
   }
 
   /** One checked write of the draft with its receipts, notices and pending commands. */
@@ -403,6 +425,19 @@ export class ComposerSessionDraft {
           });
     if (saved) this.dirty = false;
   };
+}
+
+/** The ProseMirror position at the end of a document of paragraphs: a leaf atom is one, text its length. */
+function endOfContent(doc: MessageDoc): number {
+  const size = (node: MessageDoc): number =>
+    node.type === "text"
+      ? (node.text?.length ?? 0)
+      : node.content
+        ? 2 + node.content.reduce((sum, child) => sum + size(child), 0)
+        : node.type === "paragraph"
+          ? 2
+          : 1;
+  return Math.max(1, (doc.content ?? []).reduce((sum, child) => sum + size(child), 0) - 1);
 }
 
 const sessionDrafts = new Map<string, ComposerSessionDraft>();
