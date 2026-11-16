@@ -85,6 +85,7 @@ function fixture() {
   source.prependSnapshots([snapshot("And quieter")]);
   target.prependSnapshots([snapshot("Existing writing")]);
   let visible = true;
+  const waiting: (() => void)[] = [];
   let left: boolean | undefined;
   let forgotten = 0;
   const ports: DeletedChatPorts = {
@@ -111,9 +112,14 @@ function fixture() {
         },
       },
     ],
+    visible: () => true,
+    whenVisible: (run) => {
+      waiting.push(run);
+    },
     lock: new MemorySubmissionLock(),
   };
   return {
+    waiting,
     ports,
     source,
     target,
@@ -348,17 +354,20 @@ it("bind skips URL and remembered dock chats before panes mount, and rechecks th
   probe.mockClear();
 });
 
-it("only a tab with a surface or the deleting tab takes the shared messages", async () => {
+it("a hidden tab with no surface takes the shared messages once it is visible", async () => {
   const f = fixture();
   f.ports.surfaces = () => [];
+  f.ports.visible = () => false;
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
   expect(f.records()).toHaveLength(1);
   expect(f.source.initialDraft).toBeNull();
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
     "And quieter\n\nExisting writing",
   );
-  await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
-  expect(f.records()).toEqual([]);
+  expect(f.waiting).toHaveLength(1);
+  f.ports.visible = () => true;
+  f.waiting[0]?.();
+  await vi.waitFor(() => expect(f.records()).toEqual([]));
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
     "Make the elder colder\n\nAnd quieter\n\nExisting writing",
   );

@@ -35,6 +35,10 @@ export type DeletedChatPorts = {
   forgetOrder(): void;
   draft(accountId: string, scope: ComposerDraftScope): ComposerSessionDraft;
   surfaces(): DeletedChatSurface[];
+  /** Whether this tab is the one the writer is looking at. */
+  visible(): boolean;
+  /** Runs `run` once, when this tab becomes visible. */
+  whenVisible(run: () => void): void;
   lock: SubmissionLock;
 };
 /**
@@ -91,14 +95,24 @@ function browserPorts(accountId: string, threadId: string): DeletedChatPorts {
     forgetOrder: () => forgetChatSubmissionOrder(accountId, threadId),
     draft: composerSessionDraft,
     surfaces: () => [...(surfaces.get(surfaceKey(accountId, threadId)) ?? [])],
+    visible: () => document.visibilityState === "visible",
+    whenVisible: (run) => {
+      const onVisible = () => {
+        if (document.visibilityState !== "visible") return;
+        document.removeEventListener("visibilitychange", onVisible);
+        run();
+      };
+      document.addEventListener("visibilitychange", onVisible);
+    },
     lock: browserSubmissionLock,
   };
 }
 /**
  * Moves a deleted chat's unsent words into its project's New chat box. This tab's own box words
  * always move. The chat's unsent messages are shared by every tab (localStorage), so a tab takes
- * them only where they land in front of the writer: the tab that deleted the chat, or one with a
- * surface for it. Any other tab leaves them for such a tab or a later sweep.
+ * them only where they land in front of the writer: the tab that deleted the chat, one with a
+ * surface for it, or otherwise the first visible tab (the cross-tab lock keeps it to one). A hidden
+ * tab with no surface waits and claims when it becomes visible, unless a tab took them first.
  */
 export async function cleanDeletedChat(
   accountId: string,
@@ -116,7 +130,21 @@ export async function cleanDeletedChat(
   const clean = async () => {
     if (!ports.current() || !eligible()) return false;
     const panes = ports.surfaces();
-    const claims = own || panes.length > 0;
+    const claims = own || panes.length > 0 || ports.visible();
+    if (!claims)
+      ports.whenVisible(
+        () =>
+          void cleanDeletedChat(
+            accountId,
+            threadId,
+            projectId,
+            reason,
+            ports,
+            false,
+            eligible,
+            ownTitle,
+          ).catch(reportError),
+      );
     const source = ports.draft(accountId, { kind: "chat", id: threadId });
     const snapshot = claims ? ports.records() : [];
     if (snapshot === null) return false;
