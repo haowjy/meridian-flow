@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d032ecdf1 100644
+index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e22fae9b90 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -594,15 +594,90 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
@@ -253,7 +253,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -955,23 +1114,73 @@ const ytextTrans = (ytext) => {
+@@ -955,23 +1114,68 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -277,19 +277,14 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
 +// Meridian patch: `simpleDiff` places an edit at the far end of any run of equal characters, so a
 +// typed space before a space, or a typed letter beside the same letter, becomes the item at the
 +// other end of the run. The words then read in the wrong item order (the hand-back of unsent typing
-+// shows them split and out of order). A cursor after the edit says where the writer typed it.
-+const placeAtCursor = (view, before, after, diff) => {
-+  const selection = view ? view.state.selection : null;
-+  if (!selection || !selection.empty) return diff;
-+  const { parent, parentOffset } = selection.$head;
-+  if (!parent.isTextblock || parent.content.size !== after.length || parent.textContent !== after) return diff;
-+  const { insert, remove } = diff;
-+  let index;
-+  if (remove === 0 && insert.length > 0) index = parentOffset - insert.length;
-+  else if (insert.length === 0 && remove > 0) index = parentOffset;
-+  else return diff;
-+  if (index < 0 || index === diff.index || before.slice(0, index) + insert + before.slice(index + remove) !== after) return diff;
-+  return { index, insert, remove };
++// shows them split and out of order). The sync plugin's `apply` records where the transaction's one
++// step put its text (`binding.edit`); a block it names is written there instead.
++const placeByStep = (meta, pNode, before, after, diff) => {
++  const edit = meta.edit;
++  if (!edit || edit.node !== pNode) return diff;
++  const insert = after.slice(edit.index, edit.index + edit.insert);
++  if (before.slice(0, edit.index) + insert + before.slice(edit.index + edit.remove) !== after) return diff;
++  return { index: edit.index, insert, remove: edit.remove };
 +};
 +/**
 + * @todo test this more
@@ -298,7 +293,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
 + * @param {Array<any>} ptexts
 + * @param {BindingMetadata} meta
 + */
-+const updateYText = (ytexts, ptexts, meta) => {
++const updateYText = (ytexts, ptexts, meta, pNode) => {
 +  meta.mapping.set(ytexts[0], ptexts);
 +  const trans = ytexts.map(ytextTrans);
 +  const content = ptexts.map((p) => ({
@@ -313,7 +308,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
 +  });
 +  const before = trans.map((t) => t.str).join('');
 +  const after = content.map((c) => c.insert).join('');
-+  const { insert, remove, index } = placeAtCursor(meta.view, before, after, (0, lib0_diff.simpleDiff)(before, after));
++  const { insert, remove, index } = placeByStep(meta, pNode, before, after, (0, lib0_diff.simpleDiff)(before, after));
 +  // Each edit goes to the text that owns its offset, so a peer's concurrent insert into
 +  // any of them survives. An insert at a boundary goes left. No text is deleted, only emptied.
 +  for (const { ytext, start, end } of spans) {
@@ -344,7 +339,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1042,125 +1251,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1042,125 +1246,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -597,7 +592,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
 +      const rightP = pChildren[pChildCnt - right - 1];
 +      if (leftY instanceof Array && leftP instanceof Array) {
 +        if (!equalYTextPText(leftY, leftP)) {
-+          updateYText(leftY, leftP, meta);
++          updateYText(leftY, leftP, meta, pNode);
 +        }
 +        left += 1;
 +      } else if (
@@ -794,16 +789,18 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1195,6 +1614,8 @@ var ProsemirrorBinding = class {
+@@ -1195,6 +1609,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = (0, lib0_mutex.createMutex)();
  		this.isOMark = /* @__PURE__ */ new Map();
 +		/** Ids of blocks this editor moved since the last write to Yjs (see the sync plugin's `apply`). */
 +		this.movedIds = /* @__PURE__ */ new Set();
++		/** Where this editor's last transaction put its text in one text-only block (see the sync plugin's `apply`). */
++		this.edit = null;
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1281,7 +1702,6 @@ var ProsemirrorBinding = class {
+@@ -1281,7 +1699,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -811,7 +808,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1325,7 +1745,7 @@ var ProsemirrorBinding = class {
+@@ -1325,7 +1742,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = lib0_math.min(lib0_math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = lib0_math.min(lib0_math.max(sel.head, 0), tr.doc.content.size);
@@ -820,7 +817,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1426,8 +1846,13 @@ var ProsemirrorBinding = class {
+@@ -1426,8 +1843,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -831,10 +828,11 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  		this.doc.transact(() => {
  			updateYFragment(this.doc, this.type, doc, this);
 +			this.movedIds.clear();
++			this.edit = null;
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1498,6 +1923,45 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1498,6 +1921,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -877,10 +875,30 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
 +						});
 +					});
 +				}
++				// Meridian patch: the one range a local transaction's steps changed, when it lies inside one
++				// text-only block before and after (a typed, pasted or deleted run). Anything else (a split, a
++				// join, several steps) is not recorded, and `updateYText` diffs the text.
++				if (tr.docChanged && !(change !== undefined && change.isChangeOrigin)) {
++					binding.edit = null;
++					let range = null;
++					let count = 0;
++					tr.steps.forEach((step, i) => step.getMap().forEach((oldStart, oldEnd, newStart, newEnd) => {
++						count++;
++						range = { oldStart, oldEnd, newStart, newEnd, i };
++					}));
++					if (count === 1) {
++						const textOnly = (node) => node.isTextblock && node.content.size === node.textContent.length;
++						const $old = tr.docs[range.i].resolve(range.oldStart);
++						const $new = tr.doc.resolve(range.newStart);
++						if (textOnly($new.parent) && $new.sameParent(tr.doc.resolve(range.newEnd)) && textOnly($old.parent) && $old.sameParent(tr.docs[range.i].resolve(range.oldEnd))) {
++							binding.edit = { node: $new.parent, index: $new.parentOffset, remove: range.oldEnd - range.oldStart, insert: range.newEnd - range.newStart };
++						}
++					}
++				}
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1633,14 +2097,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1633,14 +2115,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -907,7 +925,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1758,6 +2232,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1758,6 +2250,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -934,7 +952,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1784,6 +2278,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
+@@ -1784,6 +2296,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.findAbsolutePositionAfterStructuralChange = findAbsolutePositionAfterStructuralChange;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -944,7 +962,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..d5b1a2f830385dd02b6ebde1720f291d
  exports.isMisresolvedTextPosition = isMisresolvedTextPosition;
  exports.isStructuralTransaction = isStructuralTransaction;
 diff --git a/dist/index.d.cts b/dist/index.d.cts
-index 77d1461f56186b756d25dba83eb5f6453dc94676..fedc72728bb95bb232aa8e0c3d7cebe2c4b4e4ac 100644
+index 77d1461f56186b756d25dba83eb5f6453dc94676..87799588498459c845760d82dba334516982c8de 100644
 --- a/dist/index.d.cts
 +++ b/dist/index.d.cts
 @@ -71,6 +71,13 @@ interface SyncPluginOptions {
@@ -961,16 +979,18 @@ index 77d1461f56186b756d25dba83eb5f6453dc94676..fedc72728bb95bb232aa8e0c3d7cebe2
    depth: number | undefined;
    anchor: RelativePosition$1;
    head: RelativePosition$1;
-@@ -86,6 +93,8 @@ export declare class ProsemirrorBinding {
+@@ -86,6 +93,10 @@ export declare class ProsemirrorBinding {
    readonly mux: import("lib0/mutex.js").mutex;
    readonly mapping: ProsemirrorMapping;
    readonly isOMark: Map<PModel.MarkType, boolean>;
 +  /** Meridian patch: ids of blocks this editor moved since its last write to Yjs. */
 +  readonly movedIds: Set<string>;
++  /** Meridian patch: where this editor's last transaction put its text in one text-only block. */
++  edit: { node: PModel.Node; index: number; remove: number; insert: number } | null;
    readonly doc: Y.Doc;
    beforeTransactionSelection: RelativeSelection | null;
    readonly _observeFunction: Parameters<Y.XmlFragment['observeDeep']>[0];
-@@ -311,6 +320,21 @@ interface InitialProseMirrorDoc {
+@@ -311,6 +322,21 @@ interface InitialProseMirrorDoc {
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  export declare const initProseMirrorDoc: (yXmlFragment: Y.XmlFragment, schema: Schema) => InitialProseMirrorDoc;
  //#endregion
@@ -993,7 +1013,7 @@ index 77d1461f56186b756d25dba83eb5f6453dc94676..fedc72728bb95bb232aa8e0c3d7cebe2
  /** A selection stored as Yjs relative positions. */
  type CursorAwarenessSelection = {
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index cd119d0d4ccbf7c175052efb60907f98c6f93859..4d178552299c974356d995516e573b76dc4937be 100644
+index cd119d0d4ccbf7c175052efb60907f98c6f93859..a25c38bac7ea41bb4eccb448a11325c691238236 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -71,6 +71,13 @@ interface SyncPluginOptions {
@@ -1010,16 +1030,18 @@ index cd119d0d4ccbf7c175052efb60907f98c6f93859..4d178552299c974356d995516e573b76
    depth: number | undefined;
    anchor: RelativePosition$1;
    head: RelativePosition$1;
-@@ -86,6 +93,8 @@ export declare class ProsemirrorBinding {
+@@ -86,6 +93,10 @@ export declare class ProsemirrorBinding {
    readonly mux: import("lib0/mutex.js").mutex;
    readonly mapping: ProsemirrorMapping;
    readonly isOMark: Map<PModel.MarkType, boolean>;
 +  /** Meridian patch: ids of blocks this editor moved since its last write to Yjs. */
 +  readonly movedIds: Set<string>;
++  /** Meridian patch: where this editor's last transaction put its text in one text-only block. */
++  edit: { node: PModel.Node; index: number; remove: number; insert: number } | null;
    readonly doc: Y.Doc;
    beforeTransactionSelection: RelativeSelection | null;
    readonly _observeFunction: Parameters<Y.XmlFragment['observeDeep']>[0];
-@@ -311,6 +320,21 @@ interface InitialProseMirrorDoc {
+@@ -311,6 +322,21 @@ interface InitialProseMirrorDoc {
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  export declare const initProseMirrorDoc: (yXmlFragment: Y.XmlFragment, schema: Schema) => InitialProseMirrorDoc;
  //#endregion
@@ -1042,7 +1064,7 @@ index cd119d0d4ccbf7c175052efb60907f98c6f93859..4d178552299c974356d995516e573b76
  /** A selection stored as Yjs relative positions. */
  type CursorAwarenessSelection = {
 diff --git a/dist/index.js b/dist/index.js
-index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0ab2072119 100644
+index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc700d436b32 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -561,15 +561,90 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
@@ -1296,7 +1318,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -922,23 +1081,73 @@ const ytextTrans = (ytext) => {
+@@ -922,23 +1081,68 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -1320,19 +1342,14 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
 +// Meridian patch: `simpleDiff` places an edit at the far end of any run of equal characters, so a
 +// typed space before a space, or a typed letter beside the same letter, becomes the item at the
 +// other end of the run. The words then read in the wrong item order (the hand-back of unsent typing
-+// shows them split and out of order). A cursor after the edit says where the writer typed it.
-+const placeAtCursor = (view, before, after, diff) => {
-+  const selection = view ? view.state.selection : null;
-+  if (!selection || !selection.empty) return diff;
-+  const { parent, parentOffset } = selection.$head;
-+  if (!parent.isTextblock || parent.content.size !== after.length || parent.textContent !== after) return diff;
-+  const { insert, remove } = diff;
-+  let index;
-+  if (remove === 0 && insert.length > 0) index = parentOffset - insert.length;
-+  else if (insert.length === 0 && remove > 0) index = parentOffset;
-+  else return diff;
-+  if (index < 0 || index === diff.index || before.slice(0, index) + insert + before.slice(index + remove) !== after) return diff;
-+  return { index, insert, remove };
++// shows them split and out of order). The sync plugin's `apply` records where the transaction's one
++// step put its text (`binding.edit`); a block it names is written there instead.
++const placeByStep = (meta, pNode, before, after, diff) => {
++  const edit = meta.edit;
++  if (!edit || edit.node !== pNode) return diff;
++  const insert = after.slice(edit.index, edit.index + edit.insert);
++  if (before.slice(0, edit.index) + insert + before.slice(edit.index + edit.remove) !== after) return diff;
++  return { index: edit.index, insert, remove: edit.remove };
 +};
 +/**
 + * @todo test this more
@@ -1341,7 +1358,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
 + * @param {Array<any>} ptexts
 + * @param {BindingMetadata} meta
 + */
-+const updateYText = (ytexts, ptexts, meta) => {
++const updateYText = (ytexts, ptexts, meta, pNode) => {
 +  meta.mapping.set(ytexts[0], ptexts);
 +  const trans = ytexts.map(ytextTrans);
 +  const content = ptexts.map((p) => ({
@@ -1356,7 +1373,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
 +  });
 +  const before = trans.map((t) => t.str).join('');
 +  const after = content.map((c) => c.insert).join('');
-+  const { insert, remove, index } = placeAtCursor(meta.view, before, after, simpleDiff(before, after));
++  const { insert, remove, index } = placeByStep(meta, pNode, before, after, simpleDiff(before, after));
 +  // Each edit goes to the text that owns its offset, so a peer's concurrent insert into
 +  // any of them survives. An insert at a boundary goes left. No text is deleted, only emptied.
 +  for (const { ytext, start, end } of spans) {
@@ -1387,7 +1404,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1009,125 +1218,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1009,125 +1213,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -1640,7 +1657,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
 +      const rightP = pChildren[pChildCnt - right - 1];
 +      if (leftY instanceof Array && leftP instanceof Array) {
 +        if (!equalYTextPText(leftY, leftP)) {
-+          updateYText(leftY, leftP, meta);
++          updateYText(leftY, leftP, meta, pNode);
 +        }
 +        left += 1;
 +      } else if (
@@ -1837,16 +1854,18 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1162,6 +1581,8 @@ var ProsemirrorBinding = class {
+@@ -1162,6 +1576,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = createMutex();
  		this.isOMark = /* @__PURE__ */ new Map();
 +		/** Ids of blocks this editor moved since the last write to Yjs (see the sync plugin's `apply`). */
 +		this.movedIds = /* @__PURE__ */ new Set();
++		/** Where this editor's last transaction put its text in one text-only block (see the sync plugin's `apply`). */
++		this.edit = null;
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1248,7 +1669,6 @@ var ProsemirrorBinding = class {
+@@ -1248,7 +1666,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -1854,7 +1873,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1292,7 +1712,7 @@ var ProsemirrorBinding = class {
+@@ -1292,7 +1709,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = math.min(math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = math.min(math.max(sel.head, 0), tr.doc.content.size);
@@ -1863,7 +1882,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1393,8 +1813,13 @@ var ProsemirrorBinding = class {
+@@ -1393,8 +1810,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -1874,10 +1893,11 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  		this.doc.transact(() => {
  			updateYFragment(this.doc, this.type, doc, this);
 +			this.movedIds.clear();
++			this.edit = null;
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1465,6 +1890,45 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1465,6 +1888,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -1920,10 +1940,30 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
 +						});
 +					});
 +				}
++				// Meridian patch: the one range a local transaction's steps changed, when it lies inside one
++				// text-only block before and after (a typed, pasted or deleted run). Anything else (a split, a
++				// join, several steps) is not recorded, and `updateYText` diffs the text.
++				if (tr.docChanged && !(change !== undefined && change.isChangeOrigin)) {
++					binding.edit = null;
++					let range = null;
++					let count = 0;
++					tr.steps.forEach((step, i) => step.getMap().forEach((oldStart, oldEnd, newStart, newEnd) => {
++						count++;
++						range = { oldStart, oldEnd, newStart, newEnd, i };
++					}));
++					if (count === 1) {
++						const textOnly = (node) => node.isTextblock && node.content.size === node.textContent.length;
++						const $old = tr.docs[range.i].resolve(range.oldStart);
++						const $new = tr.doc.resolve(range.newStart);
++						if (textOnly($new.parent) && $new.sameParent(tr.doc.resolve(range.newEnd)) && textOnly($old.parent) && $old.sameParent(tr.docs[range.i].resolve(range.oldEnd))) {
++							binding.edit = { node: $new.parent, index: $new.parentOffset, remove: range.oldEnd - range.oldStart, insert: range.newEnd - range.newStart };
++						}
++					}
++				}
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1600,14 +2064,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1600,14 +2082,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -1950,7 +1990,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1725,6 +2199,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1725,6 +2217,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -1977,7 +2017,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..ccc14ff1574a9843ad04250ce5607f0a
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1740,6 +2234,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1740,6 +2252,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
  	};
  };
  //#endregion
