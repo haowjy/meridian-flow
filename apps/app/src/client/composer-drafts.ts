@@ -323,12 +323,16 @@ export class ComposerSessionDraft {
       ...this.chatField(),
     };
     if (!this.record.write(stored)) return false;
+    // A new version remounts the editor (`useComposerSessionDraft` keys it), dropping its focus and
+    // the keystrokes typed meanwhile, so a write that changes only the pending commands or receipts
+    // must not publish.
+    const restarts = draft !== this.current || next.notices !== this.notices;
     this.notices = next.notices;
     this.received = next.received;
     this.handBacksPending = next.handBacks;
     this.current = draft;
     this.dirty = false;
-    this.publish();
+    if (restarts) this.publish();
     return true;
   }
 
