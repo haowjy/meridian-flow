@@ -10,7 +10,11 @@ import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import { type RefObject, useLayoutEffect, useMemo, useRef } from "react";
 import type { DocumentSession } from "./document-session";
 import { captureReadingPosition, restoreReadingPosition } from "./reading-position";
-import { markRestoredPlace, mayRestoreReadingPosition } from "./reading-position-navigation";
+import {
+  markRestoredPlace,
+  mayRestoreReadingPosition,
+  reportReviewEditorMounted,
+} from "./reading-position-navigation";
 import { type ReadingPosition, ReadingPositionStore } from "./reading-position-store";
 
 export function useReadingPosition({
@@ -19,6 +23,7 @@ export function useReadingPosition({
   accountId,
   documentId,
   active,
+  inReview,
   session,
   signal,
 }: {
@@ -27,6 +32,8 @@ export function useReadingPosition({
   accountId: string;
   documentId: string;
   active: boolean;
+  /** The editor shows a Draft; a review launch waits for its mount. */
+  inReview: boolean;
   session: DocumentSession;
   signal: AbortSignal;
 }): void {
@@ -40,6 +47,7 @@ export function useReadingPosition({
     if (!editor || !scroller || signal.aborted) return;
     const key = session.roomKey;
     let stop: (() => void) | null = null;
+    let unreport: (() => void) | null = null;
     const begin = () => {
       // A mount with no layout yet (hidden warm, or an editor that remounted before its pane was
       // measured) begins once it has some: its first reveal is its first restoration.
@@ -55,6 +63,7 @@ export function useReadingPosition({
         }
       }
       stop = track(editor, scroller);
+      if (inReview) unreport = reportReviewEditorMounted(documentId, editor);
     };
     const track = (editor: Editor, scroller: HTMLDivElement) => {
       let candidate: { place: ReadingPosition; at: number } | null = null;
@@ -99,6 +108,7 @@ export function useReadingPosition({
     return () => {
       layout.disconnect();
       stop?.();
+      unreport?.();
     };
-  }, [editor, pane, store, documentId, active, session, signal]);
+  }, [editor, pane, store, documentId, active, inReview, session, signal]);
 }

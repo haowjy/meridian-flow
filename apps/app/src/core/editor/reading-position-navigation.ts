@@ -25,7 +25,7 @@ export function markEditorTarget(editor: Editor): void {
   targeted.add(editor);
 }
 
-/** A restored editor's place stands: later automatic scrolls (a review's focused change) yield to it. */
+/** The editor reopened at the writer's place; only the review's first reconcile after that mount yields to it. */
 export function markRestoredPlace(editor: Editor): void {
   restored.add(editor);
 }
@@ -36,4 +36,36 @@ export function keepsRestoredPlace(editor: Editor): boolean {
 
 export function mayRestoreReadingPosition(editor: Editor, documentId: string): boolean {
   return !pending.has(documentId) && !targeted.has(editor);
+}
+
+const reviewEditors = new Map<string, Set<Editor>>();
+const reviewEditorWaiters = new Map<string, Set<() => void>>();
+
+/** A review (Draft view) editor of the document has decided whether to restore a place. */
+export function reportReviewEditorMounted(documentId: string, editor: Editor): () => void {
+  const editors = reviewEditors.get(documentId) ?? new Set<Editor>();
+  editors.add(editor);
+  reviewEditors.set(documentId, editors);
+  for (const wake of reviewEditorWaiters.get(documentId) ?? []) wake();
+  return () => {
+    editors.delete(editor);
+    if (!editors.size) reviewEditors.delete(documentId);
+  };
+}
+
+/** Resolves when a review editor of the document has mounted; `signal` bounds a mount that never comes. */
+export function whenReviewEditorMounted(documentId: string, signal: AbortSignal): Promise<void> {
+  if (reviewEditors.has(documentId) || signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const waiters = reviewEditorWaiters.get(documentId) ?? new Set<() => void>();
+    const done = () => {
+      signal.removeEventListener("abort", done);
+      waiters.delete(done);
+      if (!waiters.size) reviewEditorWaiters.delete(documentId);
+      resolve();
+    };
+    waiters.add(done);
+    reviewEditorWaiters.set(documentId, waiters);
+    signal.addEventListener("abort", done, { once: true });
+  });
 }
