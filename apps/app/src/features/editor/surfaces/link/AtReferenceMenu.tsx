@@ -7,6 +7,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { EntryName } from "@/components/ui/entry-name";
 import { ListLine } from "@/components/ui/list-row";
+import { LabelNote } from "@/components/ui/marks";
 import {
   closedSuggestionMenu,
   type ReferenceBrowserMeta,
@@ -124,9 +125,7 @@ export function ReferenceSuggestionMenu({
               <span className="min-w-0 truncate">
                 <EntryName name={row.label} suffix={row.suffix} truncate />
               </span>
-              <span className="ml-auto shrink-0 pl-4 text-muted-foreground text-xs">
-                {rowLocation(row)}
-              </span>
+              <LabelNote className="ml-auto shrink-0 pl-4">{rowLocation(row)}</LabelNote>
               {row.kind !== "file" ? <ChevronRight aria-hidden /> : null}
             </>
           ),

@@ -8,6 +8,7 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { LabelNote } from "@/components/ui/marks";
 import { role } from "@/components/ui/roles";
 import { closedSuggestionMenu } from "@/core/completion";
 import {
@@ -68,9 +69,7 @@ function SlashRow({ item }: { item: SlashCommandItem }) {
     <>
       <Icon aria-hidden />
       <span>{item.label}</span>
-      {item.hint ? (
-        <span className="ml-auto pl-4 text-muted-foreground text-xs">{item.hint}</span>
-      ) : null}
+      {item.hint ? <LabelNote className="ml-auto pl-4">{item.hint}</LabelNote> : null}
     </>
   );
 }

@@ -64,7 +64,9 @@ export function ListSectionHeader({
           name
         )}
       </Heading>
-      {actions ? <span className="mr-2 flex shrink-0 items-center gap-1">{actions}</span> : null}
+      {actions ? (
+        <span className="mr-2 flex shrink-0 items-center gap-1 text-xs">{actions}</span>
+      ) : null}
     </div>
   );
 }

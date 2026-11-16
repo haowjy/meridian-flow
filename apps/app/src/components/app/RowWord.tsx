@@ -80,7 +80,7 @@ export function RowWord({
           aria-disabled={pending || undefined}
           data-row-word={tone}
           className={cn(
-            "focus-ring flex shrink-0 select-none items-center gap-1 rounded-sm px-1.5 text-xs [-webkit-touch-callout:none] coarse:min-h-11 coarse:min-w-11 coarse:justify-center",
+            "focus-ring flex shrink-0 select-none items-center gap-1 rounded-sm px-1.5 [-webkit-touch-callout:none] coarse:min-h-11 coarse:min-w-11 coarse:justify-center",
             tone === "action"
               ? "font-medium text-jade-text hover:underline underline-offset-2"
               : "text-muted-foreground",
@@ -130,7 +130,11 @@ export function RowWord({
           ) : tone === "done" ? (
             <Check aria-hidden className="size-3.5 text-jade-text" />
           ) : null}
-          {word}
+          {/* As in LabelNote: the outer span keeps the text size around the word, so the word
+              sits on the baseline of the text beside it (a row's name) rather than centred. */}
+          <span>
+            <span className="text-xs">{word}</span>
+          </span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-64">
