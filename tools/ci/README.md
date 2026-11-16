@@ -174,8 +174,10 @@ every unit and DB run and compares the **expanded case count per test file**
 - Vitest 5 does not pass the root config's `test` options to projects that are
   config files, and a project's own `maxWorkers` default is every core. Every
   project config spreads `sharedTest` from `tools/ci/vitest-shared.ts` (worker cap,
-  pool, shuffle); a new project config must do the same, or the suite runs 24
-  workers (4.7 GB instead of 2.4 GB) and stops shuffling.
+  pool, shuffle); a new project config must do the same. One that forgets stops the
+  run: `Projects "b" and "a" have different 'maxWorkers' but same 'sequence.groupOrder'`.
+  `apps/server/vitest.db.config.ts` does not spread it: it needs `pool: "forks"` and
+  its own hooks, and takes only `databaseWorkers` from the same file.
 - Contracts, markup and DB suites reuse worker module caches: no module or
   global mocks there. Keep test data and connections instance-owned; DB
   rollback/FK resets, not fresh module loading, isolate persisted state.

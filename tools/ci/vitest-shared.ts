@@ -1,8 +1,10 @@
 import { availableParallelism } from "node:os";
 
 const includeDatabase = process.env.RUN_DB_TESTS === "1";
-const databaseWorkers = process.env.DB_TEST_DATABASE_URLS
-  ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[]).length
+// One rule for the DB fleet size: apps/server/vitest.db.config.ts uses it too, and
+// under `test:all` the unit projects must match it.
+export const databaseWorkers = process.env.DB_TEST_DATABASE_URLS
+  ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[]).length || 1
   : 1;
 
 // Half the cores, but never more than 8. Measured on a 24-core shared host with
@@ -32,10 +34,14 @@ const maxWorkers = includeDatabase
 
 /**
  * Options every project shares. Vitest 5 does not pass the root config's `test`
- * options down to projects that are config files, and a project's own default
- * for `maxWorkers` is every core, so each project config spreads this in.
- * Without it the suite ran 24 workers and peaked at 4.7GB instead of 2.2GB, and
- * `sequence.shuffle` silently turned off.
+ * options down to projects that are config files (on Vitest 4 `maxWorkers` and
+ * `shuffle` reached them but `pool` never did; `pnpm test` got threads from a
+ * CLI flag), and a project's own default for `maxWorkers` is every core, so
+ * each project config spreads this in. This is the only place `pool: "threads"`
+ * is set. Without the spread the project ran 24 workers and peaked at 4.7GB
+ * instead of 2.2GB, and `sequence.shuffle` turned off. A config that forgets it
+ * while others spread it makes Vitest refuse the run:
+ * `Projects "b" and "a" have different 'maxWorkers' but same 'sequence.groupOrder'`.
  */
 export const sharedTest = {
   maxWorkers,
