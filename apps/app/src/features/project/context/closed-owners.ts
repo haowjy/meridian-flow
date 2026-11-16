@@ -2,7 +2,7 @@ import { parseDraftOwnerKey, type ThreadDraftListResponse } from "@meridian/cont
 import type { ContextSource } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextSourceFacts, useProjectContextSources } from "@/client/query/useContextSources";
 import { useWorks } from "@/client/query/useWorks";
@@ -20,6 +20,28 @@ export function useClosedOwners(projectId: string): ClosedOwners {
   const facts = useContextSourceFacts(projectId);
   const now = useRef({ works, deleted, nameOf, sources, facts });
   now.current = { works, deleted, nameOf, sources, facts };
+  const listeners = useRef(new Set<() => void>());
+  const tell = () => {
+    for (const listener of [...listeners.current]) listener();
+  };
+  // The Works list and the sources are this hook's: a new read is a change.
+  useEffect(tell, [works, deleted, sources, facts]);
+  // A lineage's `frozen` arrives with its draft list, which another surface reads.
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe((event) => {
+        const [, project, kind, owner] = event.query.queryKey as unknown[];
+        if (
+          event.type === "updated" &&
+          project === projectId &&
+          kind === "drafts" &&
+          typeof owner === "string" &&
+          owner.startsWith("lineage:")
+        )
+          tell();
+      }),
+    [queryClient, projectId],
+  );
   return useMemo(() => {
     const workClosed = (workId: string): ClosedOwner | null => {
       const { works, deleted, nameOf } = now.current;
@@ -54,6 +76,10 @@ export function useClosedOwners(projectId: string): ClosedOwners {
         const parsed = parseDraftOwnerKey(ownerKey);
         if (!parsed) return false;
         return parsed.kind === "work" ? workClosed(parsed.id) !== null : lineageClosed(parsed.id);
+      },
+      subscribe: (listener) => {
+        listeners.current.add(listener);
+        return () => listeners.current.delete(listener);
       },
     };
   }, [queryClient, projectId]);

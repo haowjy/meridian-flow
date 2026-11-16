@@ -37,8 +37,9 @@ type ApplyEntry = { remove(): void };
 /**
  * `hide` takes the entry out of both sides and keeps its place; `show` puts a hidden entry back on
  * the undo side at that place, below what was done after it, and leaves the redo side alone.
+ * `restate`: whether it is passed over changed, so what Undo offers is read again.
  */
-export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void };
+export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void; restate(): void };
 export type EditorHistoryHandle = {
   captureApply(action: EditorHistoryAction): ApplyEntry;
 };
@@ -152,7 +153,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   }
 
   captureApply(action: EditorHistoryAction): DocumentApplyEntry {
-    if (!this.active) return { remove: noop, hide: noop, show: noop };
+    if (!this.active) return { remove: noop, hide: noop, show: noop, restate: noop };
     this.manager.stopCapturing();
     const entry: Entry = { kind: "apply", sequence: ++this.sequence, action, presses: 0 };
     this.undo.push(entry);
@@ -179,6 +180,7 @@ export class DocumentHistory implements EditorHistoryHandle {
         insert(this.undo, entry);
         this.changed();
       },
+      restate: () => this.changed(),
     };
   }
 

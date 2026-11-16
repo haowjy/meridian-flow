@@ -96,6 +96,11 @@ class SharedApply {
     for (const [history, entry] of this.entries) if (history !== kept) entry.hide();
   }
 
+  /** Whether it is passed over changed: each history reads what its Undo offers again. */
+  restate(): void {
+    for (const entry of this.entries.values()) entry.restate();
+  }
+
   /** Every history lets go of it, but `kept`, which holds it for its Redo. */
   keepOnly(kept: DocumentHistory | null): void {
     for (const [history, entry] of this.entries) {
@@ -148,6 +153,8 @@ export class AppliedCommand implements ApplyStep {
   private reapplied: Promise<unknown> = Promise.resolve();
   private over = false;
   private readonly shared: SharedApply;
+  /** While something is held: the histories hear an owner reopen or close. */
+  private stopHearing = () => {};
   /** Hears it leave the sidebar's stack: the watch on its tree half and its notice end. */
   leftStack: () => void = () => {};
   /**
@@ -228,15 +235,24 @@ export class AppliedCommand implements ApplyStep {
     }
     const took = answer.taken === "all" || answer.taken === "partly";
     this.undone = Promise.resolve(took);
-    this.held = answer.held;
+    this.holding(answer.held);
     if (this.held.length > 0 && took && !this.hooks.stack) {
       // The text went back: what is held is the sidebar's from now on.
       this.handOff(this.held);
-      this.held = [];
+      this.holding([]);
     }
     if (this.held.length > 0) this.shared.enter();
     else if (took && from) this.shared.keepOnly(from);
     else this.end();
+  }
+
+  /** What it waits for: while it waits, an owner reopening shows it in Undo again. */
+  private holding(held: readonly Held[]): void {
+    this.held = held;
+    this.stopHearing();
+    this.stopHearing = held.length
+      ? this.hooks.closed.subscribe(() => this.shared.restate())
+      : () => {};
   }
 
   /** The Redo of the press that took it back: the same changes applied again as a new command. */
@@ -256,7 +272,7 @@ export class AppliedCommand implements ApplyStep {
   ): void {
     Object.assign(this, init);
     this.port = port;
-    this.held = [];
+    this.holding([]);
     this.undone = Promise.resolve(false);
     this.shared.enter();
   }
@@ -277,6 +293,7 @@ export class AppliedCommand implements ApplyStep {
   end(): void {
     if (this.over) return;
     this.over = true;
+    this.holding([]);
     this.shared.end();
     this.hooks.over?.();
   }

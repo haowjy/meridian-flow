@@ -82,9 +82,15 @@ export type ClosedOwners = {
   source(sourceId: string): ClosedOwner | null;
   /** Whether the owner a key names (`work:<id>`, `lineage:<root>`) is closed. */
   owner(ownerKey: string): boolean;
+  /** Hears what the tab knows of its owners change (one reopened, one closed). */
+  subscribe(listener: () => void): () => void;
 };
 
-export const NOTHING_CLOSED: ClosedOwners = { source: () => null, owner: () => false };
+export const NOTHING_CLOSED: ClosedOwners = {
+  source: () => null,
+  owner: () => false,
+  subscribe: () => () => {},
+};
 
 /**
  * Part of an Apply an Un-Apply left applied, because taking it back would change a closed owner's
