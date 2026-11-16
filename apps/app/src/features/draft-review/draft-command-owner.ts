@@ -630,11 +630,16 @@ export class DraftCommandOwner {
   }
 
   private releaseItem(item: Item) {
-    if (item.rooms.size || item.queue.pending || this.items.get(item.ref.itemKey) !== item) return;
+    // An Apply stays in force after its review closes (Draft view to Live), and its Ctrl+Z needs
+    // this queue; an item holding entries lives until `close`.
+    if (
+      item.rooms.size ||
+      item.queue.pending ||
+      item.applyEntries.size ||
+      this.items.get(item.ref.itemKey) !== item
+    )
+      return;
     this.items.delete(item.ref.itemKey);
-    // The Apply entries sit on a session that can outlive this queue; their actions need it.
-    for (const remove of item.applyEntries) remove();
-    item.applyEntries.clear();
   }
 
   /** A click's answer, as its caller's outcome and a refusal on the generation it was made for. */
@@ -1133,7 +1138,12 @@ export class DraftCommandOwner {
   close() {
     this.active = false;
     this.notices.close();
-    for (const item of this.items.values()) item.queue.close();
+    for (const item of this.items.values()) {
+      item.queue.close();
+      // The entries sit on a session that can outlive this queue; their actions need it.
+      for (const remove of item.applyEntries) remove();
+      item.applyEntries.clear();
+    }
   }
 }
 

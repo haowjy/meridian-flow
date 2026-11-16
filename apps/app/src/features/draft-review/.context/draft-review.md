@@ -348,8 +348,8 @@ session opened since) gets it on top. A sidebar or strip Apply's entry is the
 step's (`AppliedEntry`): its Ctrl+Z is the step's Un-Apply, its Redo sends the same Apply again
 as a new command whose step the entry follows, and an Un-Apply from the sidebar or a notice hides
 it in every history until it answers: `unapplied` or `skipped` ends it, `failed` brings it
-back. A band's entry is its queue's Un-Apply and Redo, and ends when the queue item is
-released.
+back. A band's entry is its queue's Un-Apply and Redo, and ends when the owner closes: the
+review closing (Draft view to Live) doesn't end it, since the Apply is still in force.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so
