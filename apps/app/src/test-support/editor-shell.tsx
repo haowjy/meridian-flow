@@ -42,6 +42,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       works: [],
       deleted: [],
       handleOf: () => null,
+      nameOf: (work: { name: string }) => work.name,
       creations: new Map(),
       isError: false,
       isFetching: false,

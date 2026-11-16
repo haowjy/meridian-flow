@@ -57,6 +57,7 @@ import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
 import { SideViewProvider, useChatOnScreen, usePlaceChat } from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
 import { TreeVersionProvider } from "./tree-version";
+import { useLiveDeleteDraftRefresh } from "./use-live-delete-draft-refresh";
 import { useMainArrival } from "./use-main-arrival";
 import { useReviewAddressSync } from "./use-review-address-sync";
 import type { ReviewAddressAdmission } from "./use-review-admission";
@@ -124,6 +125,7 @@ export function ProjectView(props: ProjectViewProps) {
   const accountId = useAccountId();
   const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   useProjectWake(props.projectId);
+  useLiveDeleteDraftRefresh(props.projectId, accountId);
   // The removed-documents notice sits in main's band; a navigation in main ends it.
   useRemovedNoticeLifetime(props.projectId, {
     key: JSON.stringify([props.chatDisplay, props.activeContextScheme, props.activeContextPath]),

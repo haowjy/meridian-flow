@@ -20,10 +20,13 @@ import { areaOf, schemeLabel } from "@/features/project/context/context-schemes"
 export type ContextOwner = Extract<ParsedContextAuthority, { kind: "work" | "lineage" | "chat" }>;
 
 /**
- * The writer's name for an owner an address names by handle: the Work's name or the chat's
- * title, never the handle (#914). Null while it is unknown.
+ * The writer's name for an owner an address names by handle, or a Work a receipt names by id:
+ * the Work's name (with its handle only where another Work shares the name) or the chat's
+ * title, never the bare handle (#914). Null while it is unknown.
  */
-export type OwnerNames = (owner: ContextOwner) => string | null;
+export type OwnerNames = (
+  owner: ContextOwner | { kind: "work-id"; workId: string },
+) => string | null;
 
 export const noOwnerNames: OwnerNames = () => null;
 

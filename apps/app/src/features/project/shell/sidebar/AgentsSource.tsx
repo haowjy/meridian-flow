@@ -272,7 +272,6 @@ function InsideCount({
   return (
     <RowWord
       tone="note"
-      label={inside.word}
       sentence={inside.word}
       word={
         <span className="flex items-center gap-1 tabular-nums">

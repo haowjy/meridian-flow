@@ -1227,10 +1227,11 @@ msgstr ""
 
 #. placeholder {0}: nameWithHandle(work.name, handle)
 #: src/features/project/work/WorkActionsMenu.tsx
-msgid "Actions for {0}"
-msgstr ""
+#~ msgid "Actions for {0}"
+#~ msgstr ""
 
 #: src/components/ui/list-row.tsx
+#: src/features/project/work/WorkActionsMenu.tsx
 msgid "Actions for {name}"
 msgstr ""
 
@@ -1983,7 +1984,7 @@ msgstr ""
 msgid "Changing work"
 msgstr ""
 
-#. placeholder {0}: workDisplayName(target)
+#. placeholder {0}: naming.current(target)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Changing work to {0}"
 msgstr ""
@@ -5595,7 +5596,11 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Redid change to Work {0}."
+#~ msgid "Redid change to Work {0}."
+#~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Redid change to Work {name}."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -5766,11 +5771,13 @@ msgstr "回复完成"
 msgid "Restore"
 msgstr ""
 
-#. placeholder {0}: nameWithHandle(entry.work.name, handleOf(entry.work))
-#. placeholder {0}: scoped.name
-#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+#. placeholder {0}: nameOf(entry.work)
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Restore {scopedName}"
 msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
@@ -7136,7 +7143,7 @@ msgstr ""
 msgid "This chat is in Trash. Restore it to edit or apply its drafts."
 msgstr ""
 
-#. placeholder {0}: workDisplayName(commit.work)
+#. placeholder {0}: naming.current(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
 msgstr ""
@@ -7167,8 +7174,8 @@ msgstr ""
 msgid "This chat's current Work could not be found. Refresh the page and try again."
 msgstr ""
 
-#. placeholder {0}: workDisplayName(outcome.currentWork)
-#. placeholder {0}: workDisplayName(work)
+#. placeholder {0}: naming.current(outcome.currentWork)
+#. placeholder {0}: naming.current(work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's Work changed to {0}"
 msgstr ""
@@ -7644,7 +7651,11 @@ msgstr ""
 
 #. placeholder {0}: scoped.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "Unarchive {0}"
+#~ msgid "Unarchive {0}"
+#~ msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Unarchive {scopedName}"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -7685,7 +7696,11 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undid change to Work {0}."
+#~ msgid "Undid change to Work {0}."
+#~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undid change to Work {name}."
 msgstr ""
 
 #: src/features/agents/UndoSave.tsx

@@ -11,6 +11,7 @@ import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { type GoneRow, withGone } from "@/components/app/RowWord";
+import { WorkName } from "@/components/app/WorkName";
 import { contentInset, ICON_SLOT_PX, ListLine, ListRow } from "@/components/ui/list-row";
 import { DisclosureMark } from "@/components/ui/marks";
 import { AgentFileSave } from "@/features/agents/PackageSave";
@@ -83,7 +84,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   const lineageCount = useOwnerDrafts(projectId, picked ? "" : ownerKey, {
     enabled: !picked,
   }).drafts?.length;
-  const { works } = useWorks(projectId);
+  const { works, nameOf } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
   // The shell's count is the Changes list's: the Work's changed documents and folders, from its
   // open list. The Works list's stored count is the same count for a Work whose list is not open.
@@ -101,7 +102,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
     // Under No Work the chat on screen's Work, when it has one, is followed like a pick.
     const named = picked ?? (work && !work.isNoWork ? work : null);
     if (named) {
-      const name = named.name;
+      const name = nameOf(named);
       return {
         work,
         ownerKey,
@@ -121,7 +122,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       offered: Boolean(ownerKey) && count > 0,
       elsewhere,
     };
-  }, [picked, work, ownerKey, lineageCount, works, chatWorkId, changed, shell]);
+  }, [picked, work, ownerKey, lineageCount, works, nameOf, chatWorkId, changed, shell]);
 }
 
 /**
@@ -861,7 +862,7 @@ function ElsewhereLink({
     <ListRow
       icon={Layers}
       onOpen={() => setWorkId(work.id)}
-      title={work.name}
+      title={<WorkName work={work} />}
       detail={<Plural value={count} one="# document to review" other="# documents to review" />}
     />
   );

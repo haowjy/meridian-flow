@@ -4,6 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import {
   ComposerCurrentValueTrigger,
   ComposerToolbar,
@@ -19,14 +20,12 @@ import {
 import type { AgentChoice } from "@/features/agents/AgentPicker";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { nameWithHandle, type WorkHandleOf, workDisplayName } from "@/lib/work-name";
 
 export function NewThreadComposerToolbar({
   projectId,
   work,
   selectedWorkId,
   works,
-  handleOf,
   noWork,
   worksStatus,
   agent: selectedAgent,
@@ -41,7 +40,6 @@ export function NewThreadComposerToolbar({
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
-  handleOf: WorkHandleOf;
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   agent: CreationAgent | null;
@@ -63,8 +61,8 @@ export function NewThreadComposerToolbar({
   const workControl = useProspectiveWorkControl({
     work,
     selectedWorkId,
+    projectId,
     works,
-    handleOf,
     noWork,
     worksStatus,
     onWorkChange,
@@ -82,17 +80,17 @@ export function NewThreadComposerToolbar({
 function useProspectiveWorkControl({
   work,
   selectedWorkId,
+  projectId,
   works,
-  handleOf,
   noWork,
   worksStatus,
   onWorkChange,
   onRetryWorks,
 }: {
+  projectId: string;
   work: Work | null;
   selectedWorkId: string | null;
   works: Work[];
-  handleOf: WorkHandleOf;
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   onWorkChange(work: Work): void;
@@ -108,12 +106,12 @@ function useProspectiveWorkControl({
       ? { status: "error" as const, retry: onRetryWorks }
       : worksStatus === "loading" || !noWork
         ? { status: "loading" as const }
-        : { status: "ready" as const, works, noWork, refreshing: false, handleOf };
+        : { status: "ready" as const, works, noWork, refreshing: false };
   const view = deriveWorkPickerViewModel(catalog, query, false);
 
   const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`None`;
-  const handle = work ? handleOf(work) : null;
-  const name = work ? nameWithHandle(workDisplayName(work), handle) : unavailableLabel;
+  const { nameOf } = useWorks(projectId);
+  const name = work ? nameOf(work) : unavailableLabel;
   const label = t`Choose Work for new chat, currently ${name}`;
   return {
     kind: "panel",
@@ -127,7 +125,7 @@ function useProspectiveWorkControl({
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger binding={trigger} ariaLabel={label}>
-        <WorkIdentity work={work} handle={handle} unavailableLabel={unavailableLabel} />
+        <WorkIdentity work={work} unavailableLabel={unavailableLabel} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {

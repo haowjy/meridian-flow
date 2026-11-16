@@ -15,7 +15,6 @@ import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
-import { nameWithHandle } from "@/lib/work-name";
 import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { GoneWord } from "./GoneWord";
@@ -64,7 +63,7 @@ export function WorkCollection({
   onNew: () => void;
   deletion: WorkDeletion;
 }) {
-  const { works, deleted, creations, handleOf, isError, isFetching, refetch } = useWorks(projectId);
+  const { works, deleted, creations, nameOf, isError, isFetching, refetch } = useWorks(projectId);
   const now = useMinuteClock();
   const { restore } = useWorkMutations(projectId);
   const restoring = useRestoringWorkIds(projectId);
@@ -90,8 +89,8 @@ export function WorkCollection({
     if (entry.state === "gone")
       return (
         <WorkRow
-          work={{ name: entry.work.name, goal: null }}
-          handle={handleOf(entry.work)}
+          projectId={projectId}
+          work={{ id: entry.work.id, name: entry.work.name, goal: null }}
           now={now}
           onOpen={() => undefined}
           gone
@@ -99,7 +98,7 @@ export function WorkCollection({
         />
       );
     const { work, state, failure } = entry;
-    const shared = { work, handle: handleOf(work), now, onOpen: () => onOpen(work.id) };
+    const shared = { projectId, work, now, onOpen: () => onOpen(work.id) };
     switch (state) {
       case "creating":
         return (
@@ -131,7 +130,7 @@ export function WorkCollection({
           />
         );
       case "undo": {
-        const name = nameWithHandle(work.name, shared.handle);
+        const name = nameOf(work);
         const line = failure ? workFailureLine(failure, { name }) : null;
         return (
           <WorkRow
@@ -167,7 +166,6 @@ export function WorkCollection({
               actions={
                 <WorkActionsMenu
                   work={work}
-                  handle={shared.handle}
                   onToggleArchive={() =>
                     archiveFocus.follow(
                       work.id,
@@ -215,8 +213,8 @@ export function WorkCollection({
           <LoadingRows />
         ) : view === "deleted" ? (
           <DeletedWorkList
+            projectId={projectId}
             entries={entries.deleted}
-            handleOf={handleOf}
             list={`works:${projectId}:deleted`}
             onRestore={(work, place) => {
               rememberWorkPlace(work.id, place);

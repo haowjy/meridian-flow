@@ -6,10 +6,10 @@
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useEffect } from "react";
-import { type AddressableWork, useWorks } from "@/client/query/useWorks";
+import type { AddressableWork } from "@/client/query/useWorks";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-mutations";
-import { WorkHandle } from "@/components/app/WorkIdentity";
+import { WorkName } from "@/components/app/WorkName";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -51,7 +51,6 @@ export function WorkDetail({
   onShowWork: (workId: string) => void;
 }) {
   const mutations = useWorkMutations(projectId);
-  const { handleOf } = useWorks(projectId);
   const toggleArchive = useWorkArchiveToggle(projectId);
   const headerFailure = useWorkCommandFailures(projectId, HEADER_FAILURES).get(work.id);
   const controller = useWorkMetadataController(work, async (data) => {
@@ -70,10 +69,9 @@ export function WorkDetail({
           <div className="min-w-0 flex-1">
             <WorkTitleLine
               title={
-                <span className="flex min-w-0 items-baseline gap-2">
+                <WorkName work={work} className="gap-2">
                   <WorkHeading projectId={projectId} work={work} />
-                  <WorkHandle handle={handleOf(work)} />
-                </span>
+                </WorkName>
               }
               status={work.status}
               size="heading"
@@ -86,7 +84,6 @@ export function WorkDetail({
           )}
           <WorkActionsMenu
             work={work}
-            handle={handleOf(work)}
             onToggleArchive={() => void toggleArchive(work)}
             onDelete={() => {
               deletion.remove(work);

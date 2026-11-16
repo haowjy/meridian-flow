@@ -6,15 +6,15 @@
 import { t } from "@lingui/core/macro";
 import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
-import { WorkHandle } from "@/components/app/WorkIdentity";
+import { useWorks } from "@/client/query/useWorks";
+import { WorkName } from "@/components/app/WorkName";
 import { ListRow } from "@/components/ui/list-row";
-import { nameWithHandle } from "@/lib/work-name";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
 
 export function WorkRow({
+  projectId,
   work,
-  handle,
   now,
   onOpen,
   actions,
@@ -22,10 +22,9 @@ export function WorkRow({
   gone = false,
   notice,
 }: {
+  projectId: string;
   /** A Work still being created has no status yet; a purged one has no age. */
-  work: Pick<Work, "name" | "goal"> & Partial<Pick<Work, "status" | "id" | "lastActivityAt">>;
-  /** Its handle, where another Work shares its name (`WorkHandleOf`). */
-  handle?: string | null;
+  work: Pick<Work, "id" | "name" | "goal"> & Partial<Pick<Work, "status" | "lastActivityAt">>;
   now: number;
   onOpen: () => void;
   /** Trailing menu; absent while the Work has no server identity yet. */
@@ -37,7 +36,7 @@ export function WorkRow({
   /** What just happened to the Work (`RowWord`), in the age's place. */
   notice?: ReactNode;
 }) {
-  const named = nameWithHandle(work.name, handle);
+  const named = useWorks(projectId).nameOf(work);
   return (
     // The row's inset hangs in the list's gutter, so names stay on the page's edge.
     <div className="px-0.5">
@@ -47,18 +46,10 @@ export function WorkRow({
         notice={notice}
         controlProps={{
           "aria-label": work.status ? t`Open ${named} (${work.status})` : t`Open ${named}`,
-          ...(work.id && !gone ? { "data-work-id": work.id } : {}),
+          ...(!gone ? { "data-work-id": work.id } : {}),
         }}
         title={
-          <WorkTitleLine
-            title={
-              <span className="flex min-w-0 items-baseline gap-1.5">
-                <span className="truncate">{work.name}</span>
-                <WorkHandle handle={handle} />
-              </span>
-            }
-            status={work.status}
-          />
+          <WorkTitleLine title={<WorkName work={{ ...work, projectId }} />} status={work.status} />
         }
         detail={work.goal ? (work.goal.split("\n").find((line) => line.trim()) ?? "") : null}
         meta={liveState || !work.lastActivityAt ? null : relativeTime(work.lastActivityAt, now)}

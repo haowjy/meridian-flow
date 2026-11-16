@@ -1,6 +1,6 @@
 /**
  * Names the owners a chat's addresses carry by handle, from the project's Works and chats: a
- * Work by its name (soft-deleted ones too, while restorable), a lineage by its first chat's
+ * Work by its name and, where another Work shares it, its handle (soft-deleted ones too, while restorable), a lineage by its first chat's
  * title, an upload's chat by its title.
  */
 import type { ReactNode } from "react";
@@ -18,16 +18,20 @@ export function ProjectOwnerNamesProvider({
   projectId: string;
   children: ReactNode;
 }) {
-  const { works, deleted } = useWorks(projectId);
+  const { works, deleted, nameOf } = useWorks(projectId);
   const { threads } = useProjectThreads(projectId);
   const names = useCallback<OwnerNames>(
     (owner) => {
       switch (owner.kind) {
         case "work":
-          return (
-            (works ?? []).concat(deleted).find((work) => work.handle === owner.workHandle)?.name ??
-            null
-          );
+        case "work-id": {
+          const work = (works ?? [])
+            .concat(deleted)
+            .find((each) =>
+              owner.kind === "work" ? each.handle === owner.workHandle : each.id === owner.workId,
+            );
+          return work ? nameOf(work) : null;
+        }
         case "lineage": {
           const first = threads?.find(
             (thread) => thread.ref === owner.rootThreadRef && thread.rootThreadId === thread.id,
@@ -42,7 +46,7 @@ export function ProjectOwnerNamesProvider({
         }
       }
     },
-    [works, deleted, threads],
+    [works, deleted, nameOf, threads],
   );
   return <OwnerNamesProvider names={names}>{children}</OwnerNamesProvider>;
 }

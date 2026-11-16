@@ -21,7 +21,6 @@ import { useHostDocumentPaint } from "@/features/project/DocumentReview";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus } from "@/lib/focus-follow";
-import { workDisplayName } from "@/lib/work-name";
 
 export type DocumentVersionReview = Pick<
   DraftSwitcherProps,
@@ -46,7 +45,7 @@ export function DocumentVersionMenu({
   // The chip and the sidebar's Live/Draft toggle are one state (`shownDraft`): a pick here sets it.
   const shell = useShellTreeVersion();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: document.kind !== "new" });
-  const { works } = useWorks(projectId);
+  const { works, nameOf } = useWorks(projectId);
   if (document.kind === "new") return null;
 
   // The chip reads the paint, the one version rule, never whether the review's controls are up:
@@ -58,7 +57,7 @@ export function DocumentVersionMenu({
   };
   const ownerName = (owner: string, label: string | null) => {
     const work = ownerWork(owner);
-    return work ? workDisplayName(work) : label;
+    return work ? nameOf(work) : label;
   };
   const listed: Pick<DocumentDraftHint, "owner" | "itemKey" | "label" | "tree">[] = [...hints];
   // A draft on screen that the hints have not caught up with is still a version of the document.

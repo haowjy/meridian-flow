@@ -10,6 +10,7 @@ import { MessageSquare, MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { WorkName } from "@/components/app/WorkName";
 import { Button } from "@/components/ui/button";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
@@ -190,7 +191,9 @@ function RecentChatRow({
         onOpen={() => onOpen(item.id)}
         icon={MessageSquare}
         title={displayThreadTitle(item.title)}
-        detail={item.work?.title ?? null}
+        detail={
+          item.work ? <WorkName work={{ ...item.work, name: item.work.title, projectId }} /> : null
+        }
         // The age is for the eye; the row's name is the chat and its Work.
         meta={<span aria-hidden>{relativeTime(item.lastActivityAt, now)}</span>}
       />

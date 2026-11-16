@@ -11,10 +11,9 @@ import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { LoaderCircle } from "lucide-react";
 import type { RefObject } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { WorkHandle } from "@/components/app/WorkIdentity";
+import { WorkName } from "@/components/app/WorkName";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
-import type { WorkHandleOf } from "@/lib/work-name";
 
 export type WorkPickerFailure =
   | { kind: "thread_busy" }
@@ -27,7 +26,7 @@ export type WorkCatalogView =
   | { status: "loading" }
   | { status: "error"; retry: () => void }
   | { status: "empty" }
-  | { status: "ready"; works: Work[]; noWork: Work; refreshing: boolean; handleOf: WorkHandleOf };
+  | { status: "ready"; works: Work[]; noWork: Work; refreshing: boolean };
 export type WorkPickerOperation = {
   currentWorkId: string | null;
   targetId: string | null;
@@ -47,7 +46,7 @@ export type WorkPickerViewModel = WorkPickerRows &
     | { status: "loading" }
     | { status: "error"; retry: () => void }
     | { status: "empty" }
-    | { status: "ready"; noWork: Work; refreshing: boolean; handleOf: WorkHandleOf }
+    | { status: "ready"; noWork: Work; refreshing: boolean }
   );
 
 export function deriveWorkPickerViewModel(
@@ -71,13 +70,7 @@ export function deriveWorkPickerViewModel(
     enabledIds: catalog.status === "ready" && !pending ? works.map(({ id }) => id) : [],
   };
   if (catalog.status === "ready")
-    return {
-      ...rows,
-      status: "ready",
-      noWork: catalog.noWork,
-      refreshing: catalog.refreshing,
-      handleOf: catalog.handleOf,
-    };
+    return { ...rows, status: "ready", noWork: catalog.noWork, refreshing: catalog.refreshing };
   if (catalog.status === "error") return { ...rows, status: "error", retry: catalog.retry };
   return { ...rows, status: catalog.status };
 }
@@ -191,14 +184,7 @@ export function WorkPickerPanel({
                       undefined
                     }
                     onOpen={() => onChoose(work)}
-                    title={
-                      <span className="flex min-w-0 items-baseline gap-1.5">
-                        <span className="min-w-0 truncate">{work.name}</span>
-                        {view.status === "ready" ? (
-                          <WorkHandle handle={view.handleOf(work)} />
-                        ) : null}
-                      </span>
-                    }
+                    title={<WorkName work={work} />}
                     detail={changing ? <Trans>Changing work</Trans> : work.goal}
                     trailing={
                       <>

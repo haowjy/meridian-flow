@@ -184,7 +184,6 @@ export function CreationComposer({
             work={work}
             selectedWorkId={workId}
             works={works.works ?? []}
-            handleOf={works.handleOf}
             noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}

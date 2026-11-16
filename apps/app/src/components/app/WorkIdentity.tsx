@@ -1,19 +1,17 @@
 import { Layers } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
-import { type WorkNaming, workDisplayName } from "@/lib/work-name";
+import type { WorkRef } from "@/lib/work-name";
+import { WorkName } from "./WorkName";
 
-/** How a Work reads wherever one is named: the Work glyph, then its name as the writer reads it. */
+/** How a Work reads wherever one is named as a value: the Work glyph, then its `WorkName`. */
 export function WorkIdentity({
   work,
-  handle,
   unavailableLabel,
   className,
   ...props
 }: Omit<ComponentProps<"span">, "children"> & {
-  work: WorkNaming | null | undefined;
-  /** Its handle, where another Work shares its name (`WorkHandleOf`). */
-  handle?: string | null;
+  work: WorkRef | null | undefined;
   unavailableLabel: string;
 }) {
   return (
@@ -25,23 +23,11 @@ export function WorkIdentity({
       {...props}
     >
       <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate">
-        {(work && workDisplayName(work)) || unavailableLabel}
-      </span>
-      <WorkHandle handle={handle} />
-    </span>
-  );
-}
-
-/**
- * A Work's handle beside its name, for a name another Work shares. The name truncates first; the
- * handle stays whole, since it is what tells the two apart.
- */
-export function WorkHandle({ handle }: { handle: string | null | undefined }) {
-  if (!handle) return null;
-  return (
-    <span className="shrink-0 font-normal text-muted-foreground text-xs tabular-nums">
-      {handle}
+      {work ? (
+        <WorkName work={work} />
+      ) : (
+        <span className="min-w-0 truncate">{unavailableLabel}</span>
+      )}
     </span>
   );
 }

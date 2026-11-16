@@ -619,8 +619,8 @@ function TreeVersionChip() {
           key: shell.ownerKey,
           name: (
             <WorkIdentity
-              work={null}
-              unavailableLabel={shell.name ?? t`This chat`}
+              work={shell.work}
+              unavailableLabel={t`This chat`}
               className="text-sm font-normal"
             />
           ),

@@ -6,10 +6,11 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
+import { useWorks } from "@/client/query/useWorks";
 import { withGone } from "@/components/app/RowWord";
-import { WorkHandle } from "@/components/app/WorkIdentity";
+import { WorkName } from "@/components/app/WorkName";
 import { ListLine } from "@/components/ui/list-row";
-import { nameWithHandle, type WorkHandleOf } from "@/lib/work-name";
+import type { WorkRef } from "@/lib/work-name";
 import { RuledList } from "../RuledList";
 import { GoneWord } from "./GoneWord";
 import { type WorkPlace, workPlace } from "./useWorkDeletion";
@@ -17,17 +18,18 @@ import { WorkCommandFailureRow } from "./WorkCommandFailureRow";
 import type { GoneEntry, ListedWorkEntry } from "./work-list-model";
 
 export function DeletedWorkList({
+  projectId,
   entries,
-  handleOf,
   list,
   onRestore,
 }: {
+  projectId: string;
   entries: readonly (ListedWorkEntry | GoneEntry)[];
-  handleOf: WorkHandleOf;
   /** This list's name, for the place a restored row leaves. */
   list: string;
   onRestore: (work: Work, place: WorkPlace) => void;
 }) {
+  const { nameOf } = useWorks(projectId);
   if (!entries.length)
     return (
       <div className="px-0.5">
@@ -53,16 +55,11 @@ export function DeletedWorkList({
         key,
         node:
           entry.state === "gone" ? (
-            <DeletedRow
-              name={entry.work.name}
-              handle={handleOf(entry.work)}
-              word={<GoneWord entry={entry} />}
-            />
+            <DeletedRow work={{ ...entry.work, projectId }} word={<GoneWord entry={entry} />} />
           ) : (
             <>
               <DeletedRow
-                name={entry.work.name}
-                handle={handleOf(entry.work)}
+                work={entry.work}
                 word={
                   <button
                     type="button"
@@ -72,7 +69,7 @@ export function DeletedWorkList({
                         after: ids.slice(0, ids.indexOf(entry.work.id)).reverse(),
                       })
                     }
-                    aria-label={t`Restore ${nameWithHandle(entry.work.name, handleOf(entry.work))}`}
+                    aria-label={t`Restore ${nameOf(entry.work)}`}
                     className="text-button shrink-0 text-sm coarse:min-h-11"
                   >
                     <Trans>Restore</Trans>
@@ -91,21 +88,10 @@ export function DeletedWorkList({
   );
 }
 
-function DeletedRow({
-  name,
-  handle,
-  word,
-}: {
-  name: string;
-  handle: string | null;
-  word: React.ReactNode;
-}) {
+function DeletedRow({ work, word }: { work: WorkRef; word: React.ReactNode }) {
   return (
     <div className="flex min-h-12 min-w-0 items-center gap-3 px-2 py-1.5">
-      <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-        <span className="truncate text-sm font-medium text-muted-foreground">{name}</span>
-        <WorkHandle handle={handle} />
-      </div>
+      <WorkName work={work} className="flex-1 text-sm font-medium text-muted-foreground" />
       {word}
     </div>
   );
