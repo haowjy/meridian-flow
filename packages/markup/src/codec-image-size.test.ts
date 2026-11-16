@@ -45,14 +45,15 @@ function spannedTable(imageWire: string, canonical = false): string {
 }
 
 describe.each(dialects)("$name image sizes", ({ codec }) => {
-  it.each([
-    '<img src="assets/map.png" alt="World map" width="240">',
-  ])("reads an HTML void image without a closing slash: %s", (wire) => {
-    const closed = wire.replace('width="240">', 'width="240" />');
-    const blocks = codec.parse(wire).blocks;
-    expect(docFrom(blocks).toJSON()).toEqual(parsedDoc(codec, closed).toJSON());
-    expect(codec.serialize(blocks, links)).toBe(`${closed}\n`);
-  });
+  it.each(['<img src="assets/map.png" alt="World map" width="240">'])(
+    "reads an HTML void image without a closing slash: %s",
+    (wire) => {
+      const closed = wire.replace('width="240">', 'width="240" />');
+      const blocks = codec.parse(wire).blocks;
+      expect(docFrom(blocks).toJSON()).toEqual(parsedDoc(codec, closed).toJSON());
+      expect(codec.serialize(blocks, links)).toBe(`${closed}\n`);
+    },
+  );
 
   it("de-escalates to byte-identical markdown when the size is taken away", () => {
     const sized = codec.parse(SIZED).blocks[0];
@@ -145,12 +146,11 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
 // reader, so the refusals run once, through the Markdown raw-HTML parser.
 describe("image attribute refusals", () => {
   const codec = markdownCodec({ schema });
-  it.each([
-    'width="12.5"',
-    'width="0"',
-    'loading="lazy"',
-  ])("declines an img tag carrying %s", (attribute) => {
-    const wire = `<img src="assets/map.png" alt="World map" ${attribute} />`;
-    expect(codec.parse(wire).blocks[0]?.firstChild?.type.name).not.toBe("image");
-  });
+  it.each(['width="12.5"', 'width="0"', 'loading="lazy"'])(
+    "declines an img tag carrying %s",
+    (attribute) => {
+      const wire = `<img src="assets/map.png" alt="World map" ${attribute} />`;
+      expect(codec.parse(wire).blocks[0]?.firstChild?.type.name).not.toBe("image");
+    },
+  );
 });

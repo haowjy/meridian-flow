@@ -945,7 +945,7 @@ else
       const compaction = await rig.repos.turns.findById(run.executionTurnId);
       expect(compaction).toMatchObject({ role: "compaction", status: "complete" });
       expect(
-        (compaction?.metadata as { pinnedRequestTurnIds?: string[] }).pinnedRequestTurnIds,
+        (compaction!.metadata as { pinnedRequestTurnIds?: string[] }).pinnedRequestTurnIds,
       ).toContain(run.userTurnId);
       expect(await leaseRow(rig)).toBeNull();
       expect((await rowOf(rig, run.userTurnId)).deliveredAt).toBeNull();

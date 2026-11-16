@@ -337,31 +337,31 @@ describe("a create raced into a closed Work is stamped dropped", () => {
       [folder.id, inside.id, stray.id].sort(),
     );
   });
-  it.each([
-    "rename",
-    "create",
-  ] as const)("drops an offline %s placed before a folder moves into a closed source", (kind) => {
-    const doc = server();
-    const offline = client(
-      doc,
-      (copy) => {
-        const w = new TreeWriter(copy);
-        if (kind === "rename") w.rename(LIVE, ME, "arc", "Renamed");
-        else w.create(LIVE, ME, { kind: "folder", name: "New", parent: "arc" });
-      },
-      1000,
-    );
-    const moving = client(
-      doc,
-      (copy) => new TreeWriter(copy).move(LIVE, ME, "arc", source("old-scratch")),
-      2000,
-    );
-    Y.applyUpdate(doc, moving.update);
-    const result = admit(doc, offline.update, connection);
-    expect(result.dropped).toHaveLength(1);
-    const ops = recordsOf(doc).toArray();
-    const inserted = ops.findIndex((op) => op.id === result.dropped[0]);
-    const moved = ops.findIndex((op) => op.type === "move" && op.node === "arc");
-    expect(inserted).toBeLessThan(moved);
-  });
+  it.each(["rename", "create"] as const)(
+    "drops an offline %s placed before a folder moves into a closed source",
+    (kind) => {
+      const doc = server();
+      const offline = client(
+        doc,
+        (copy) => {
+          const w = new TreeWriter(copy);
+          if (kind === "rename") w.rename(LIVE, ME, "arc", "Renamed");
+          else w.create(LIVE, ME, { kind: "folder", name: "New", parent: "arc" });
+        },
+        1000,
+      );
+      const moving = client(
+        doc,
+        (copy) => new TreeWriter(copy).move(LIVE, ME, "arc", source("old-scratch")),
+        2000,
+      );
+      Y.applyUpdate(doc, moving.update);
+      const result = admit(doc, offline.update, connection);
+      expect(result.dropped).toHaveLength(1);
+      const ops = recordsOf(doc).toArray();
+      const inserted = ops.findIndex((op) => op.id === result.dropped[0]);
+      const moved = ops.findIndex((op) => op.type === "move" && op.node === "arc");
+      expect(inserted).toBeLessThan(moved);
+    },
+  );
 });

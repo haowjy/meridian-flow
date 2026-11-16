@@ -167,67 +167,67 @@ describe("model document stack", () => {
       await harness.dispose();
     }
   });
-  it.each([
-    "stepwise",
-    "count",
-  ] as const)("overlapping replacements compose %s undo and redo", async (schedule) => {
-    const { harness, view, context } = await fixture();
-    try {
-      for (const [index, [find, content]] of [
-        ["Beta", "Gold"],
-        ["Gold", "Silver"],
-        ["Silver", "Azure"],
-      ].entries())
-        expect(
-          await view.collab.agentEdit().write(
+  it.each(["stepwise", "count"] as const)(
+    "overlapping replacements compose %s undo and redo",
+    async (schedule) => {
+      const { harness, view, context } = await fixture();
+      try {
+        for (const [index, [find, content]] of [
+          ["Beta", "Gold"],
+          ["Gold", "Silver"],
+          ["Silver", "Azure"],
+        ].entries())
+          expect(
+            await view.collab.agentEdit().write(
+              {
+                command: "replace",
+                documentId: ALPHA_ID,
+                file: "alpha.md",
+                find,
+                content,
+                tool_use_id: `entry-${index}`,
+              },
+              context,
+            ),
+          ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
+        const draftId = await readDraftId(db, ALPHA_ID);
+        let call = 0;
+        const write = async (command: "undo" | "redo", count?: number) =>
+          view.collab.agentEdit().write(
             {
-              command: "replace",
+              command,
               documentId: ALPHA_ID,
               file: "alpha.md",
-              find,
-              content,
-              tool_use_id: `entry-${index}`,
+              ...(count ? { count } : {}),
+              tool_use_id: `inverse-${++call}`,
             },
             context,
-          ),
-        ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
-      const draftId = await readDraftId(db, ALPHA_ID);
-      let call = 0;
-      const write = async (command: "undo" | "redo", count?: number) =>
-        view.collab.agentEdit().write(
-          {
-            command,
-            documentId: ALPHA_ID,
-            file: "alpha.md",
-            ...(count ? { count } : {}),
-            tool_use_id: `inverse-${++call}`,
-          },
-          context,
-        );
-      expect(await write("undo", 4)).toMatchObject({ status: "insufficient_undo" });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
-      if (schedule === "count") {
-        expect(await write("undo", 3)).toMatchObject({ status: "success" });
-        expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
-        expect(await write("redo", 3)).toMatchObject({ status: "success" });
-      } else {
-        for (const text of ["Silver", "Gold", "Beta"]) {
-          expect(await write("undo")).toMatchObject({ status: "success" });
-          expect(await view.draftMarkdown(draftId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
+          );
+        expect(await write("undo", 4)).toMatchObject({ status: "insufficient_undo" });
+        expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
+        if (schedule === "count") {
+          expect(await write("undo", 3)).toMatchObject({ status: "success" });
+          expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+          expect(await write("redo", 3)).toMatchObject({ status: "success" });
+        } else {
+          for (const text of ["Silver", "Gold", "Beta"]) {
+            expect(await write("undo")).toMatchObject({ status: "success" });
+            expect(await view.draftMarkdown(draftId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
+          }
+          expect(await write("redo")).toMatchObject({
+            status: "success",
+            result: { message: "redone: e1" },
+          });
+          expect(await view.draftMarkdown(draftId)).toBe("Alpha Gold.\n\nBlue.\n");
+          expect(await write("redo", 2)).toMatchObject({ status: "success" });
         }
-        expect(await write("redo")).toMatchObject({
-          status: "success",
-          result: { message: "redone: e1" },
-        });
-        expect(await view.draftMarkdown(draftId)).toBe("Alpha Gold.\n\nBlue.\n");
-        expect(await write("redo", 2)).toMatchObject({ status: "success" });
+        expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+      } finally {
+        await harness.dispose();
       }
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
-    } finally {
-      await harness.dispose();
-    }
-  });
+    },
+  );
   it("reverts applied text in a mixed count and reapplies an applied Undo through Redo", async () => {
     const { harness, view, context, responseId } = await fixture();
     try {
@@ -431,75 +431,76 @@ describe("model document stack", () => {
   });
 });
 
-it.each([
-  "undo",
-  "redo",
-] as const)("model %s follows its edit to the draft, keeps the writer's typing, and refuses only after none remains", async (direction) => {
-  const { harness, view, context } = await fixture();
-  try {
-    const core = view.collab.agentEdit();
-    const command = { documentId: ALPHA_ID, file: "alpha.md" };
-    await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
-    const draftId = await readDraftId(db, ALPHA_ID);
-    if (direction === "redo")
-      expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
+it.each(["undo", "redo"] as const)(
+  "model %s follows its edit to the draft, keeps the writer's typing, and refuses only after none remains",
+  async (direction) => {
+    const { harness, view, context } = await fixture();
+    try {
+      const core = view.collab.agentEdit();
+      const command = { documentId: ALPHA_ID, file: "alpha.md" };
+      await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
+      const draftId = await readDraftId(db, ALPHA_ID);
+      if (direction === "redo")
+        expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
+          status: "success",
+        });
+      const liveContext = {
+        ...context,
+        responseIdentity: undefined,
+        grant: {
+          ...testFileGrant({ kind: "live" }, ALPHA_ID),
+          principal: context.grant.principal,
+        },
+      };
+      await core.read({ ...command, format: "edits" }, liveContext);
+      expect(await core.write({ ...command, command: direction }, liveContext)).toMatchObject({
+        status: "success",
+        result: { destination: "draft", draftWork: "w1" },
+      });
+      expect(await view.draftMarkdown(draftId)).toBe(
+        direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
+      );
+      expect(
+        await core.write(
+          { ...command, command: direction === "undo" ? "redo" : "undo" },
+          liveContext,
+        ),
+      ).toMatchObject({ status: "success" });
+      await core.read({ ...command, format: "edits" }, context);
+      const [documentDraft] = await db
+        .select()
+        .from(schema.documentDrafts)
+        .where(eq(schema.documentDrafts.id, draftId));
+      const doc = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
+        doc.clientID = allocateDocumentClient(doc);
+        const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+        const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
+        await view.draftCoordinator.commitWriterUpdate({
+          draftId: documentDraft.id,
+          updateData: Y.mergeUpdates(updates),
+          actorUserId: USER_ID,
+          roomDocument: doc,
+        });
+      } finally {
+        doc.destroy();
+      }
+      const expected =
+        direction === "undo" ? "Alpha Beta!.\n\nBlue.\n" : "Alpha !Gamma.\n\nBlue.\n";
+      expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
         status: "success",
       });
-    const liveContext = {
-      ...context,
-      responseIdentity: undefined,
-      grant: {
-        ...testFileGrant({ kind: "live" }, ALPHA_ID),
-        principal: context.grant.principal,
-      },
-    };
-    await core.read({ ...command, format: "edits" }, liveContext);
-    expect(await core.write({ ...command, command: direction }, liveContext)).toMatchObject({
-      status: "success",
-      result: { destination: "draft", draftWork: "w1" },
-    });
-    expect(await view.draftMarkdown(draftId)).toBe(
-      direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
-    );
-    expect(
-      await core.write(
-        { ...command, command: direction === "undo" ? "redo" : "undo" },
-        liveContext,
-      ),
-    ).toMatchObject({ status: "success" });
-    await core.read({ ...command, format: "edits" }, context);
-    const [documentDraft] = await db
-      .select()
-      .from(schema.documentDrafts)
-      .where(eq(schema.documentDrafts.id, draftId));
-    const doc = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
-      doc.clientID = allocateDocumentClient(doc);
-      const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
-      const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.draftCoordinator.commitWriterUpdate({
-        draftId: documentDraft.id,
-        updateData: Y.mergeUpdates(updates),
-        actorUserId: USER_ID,
-        roomDocument: doc,
+      expect(await view.draftMarkdown(draftId)).toBe(expected);
+      expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
+        status: `nothing_to_${direction}`,
       });
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
-      doc.destroy();
+      await harness.dispose();
     }
-    const expected = direction === "undo" ? "Alpha Beta!.\n\nBlue.\n" : "Alpha !Gamma.\n\nBlue.\n";
-    expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
-      status: "success",
-    });
-    expect(await view.draftMarkdown(draftId)).toBe(expected);
-    expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
-      status: `nothing_to_${direction}`,
-    });
-    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
-  } finally {
-    await harness.dispose();
-  }
-});
+  },
+);
 
 it("model inverse receipts echo only changed blocks and their immediate context", async () => {
   const { harness, view, context, responseId } = await fixture();

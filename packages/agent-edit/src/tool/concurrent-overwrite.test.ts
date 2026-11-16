@@ -156,22 +156,22 @@ describe("concurrent structural mutation matrix", () => {
     expect(blockTexts(ctx.liveDoc(DOC_ID)).join("\n")).toContain(HUMAN_MARKER);
   });
 
-  it.each(scenarios)("$operation has the intended parent-identity semantics", async ({
-    command,
-    markerSurvives,
-  }) => {
-    const { ctx, appendHookCount } = harnessWithHumanEditAfterAppend();
-    const result = await ctx.core.write(command, {
-      ...context,
-      turnId: "turn-concurrent-overwrite",
-    });
-    expectOutcome(result, "success");
+  it.each(scenarios)(
+    "$operation has the intended parent-identity semantics",
+    async ({ command, markerSurvives }) => {
+      const { ctx, appendHookCount } = harnessWithHumanEditAfterAppend();
+      const result = await ctx.core.write(command, {
+        ...context,
+        turnId: "turn-concurrent-overwrite",
+      });
+      expectOutcome(result, "success");
 
-    expect(appendHookCount()).toBe(1);
-    const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
-    if (markerSurvives) expect(visibleText).toContain(HUMAN_MARKER);
-    else expect(visibleText).not.toContain(HUMAN_MARKER);
-  });
+      expect(appendHookCount()).toBe(1);
+      const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
+      if (markerSurvives) expect(visibleText).toContain(HUMAN_MARKER);
+      else expect(visibleText).not.toContain(HUMAN_MARKER);
+    },
+  );
 
   it.each([
     {
@@ -191,23 +191,23 @@ describe("concurrent structural mutation matrix", () => {
       content: "# One heading",
       expectedSurvivors: 1,
     },
-  ])("$operation preserves $expectedSurvivors of 3 concurrent markers", async ({
-    content,
-    expectedSurvivors,
-  }) => {
-    const ctx = matrixHarnessWithHumanEditsAfterAppend();
-    const result = await ctx.core.write(
-      { command: "create", file: DOC_ID, content, overwrite: true },
-      {
-        ...context,
-        turnId: "turn-residual-window",
-      },
-    );
-    expectOutcome(result, "success");
+  ])(
+    "$operation preserves $expectedSurvivors of 3 concurrent markers",
+    async ({ content, expectedSurvivors }) => {
+      const ctx = matrixHarnessWithHumanEditsAfterAppend();
+      const result = await ctx.core.write(
+        { command: "create", file: DOC_ID, content, overwrite: true },
+        {
+          ...context,
+          turnId: "turn-residual-window",
+        },
+      );
+      expectOutcome(result, "success");
 
-    const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
-    expect(BLOCK_MARKERS.filter((marker) => visibleText.includes(marker))).toHaveLength(
-      expectedSurvivors,
-    );
-  });
+      const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
+      expect(BLOCK_MARKERS.filter((marker) => visibleText.includes(marker))).toHaveLength(
+        expectedSurvivors,
+      );
+    },
+  );
 });

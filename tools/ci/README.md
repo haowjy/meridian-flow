@@ -171,6 +171,13 @@ every unit and DB run and compares the **expanded case count per test file**
   far more than file count, so deleting tests won't lower it. Measured on a
   24-core host: unit 3.0 GB at 8 workers, 4.0 GB at 12, 6.7 GB and a flake at
   24; DB 3.5 GB at 4 fork workers, 6.0 GB and a settlement flake at 8.
+- Vitest 5 does not pass the root config's `test` options to projects that are
+  config files, and a project's own `maxWorkers` default is every core. Every
+  project config spreads `sharedTest` from `tools/ci/vitest-shared.ts` (worker cap,
+  pool, shuffle); a new project config must do the same. One that forgets stops the
+  run: `Projects "b" and "a" have different 'maxWorkers' but same 'sequence.groupOrder'`.
+  `apps/server/vitest.db.config.ts` does not spread it: it needs `pool: "forks"` and
+  its own hooks, and takes only `databaseWorkers` from the same file.
 - Contracts, markup and DB suites reuse worker module caches: no module or
   global mocks there. Keep test data and connections instance-owned; DB
   rollback/FK resets, not fresh module loading, isolate persisted state.
