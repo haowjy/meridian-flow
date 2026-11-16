@@ -130,6 +130,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       headSchemaVersion: async () => null,
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
+      draftStates: hocuspocusPersistence.draftStates,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,

@@ -25,6 +25,8 @@ guards them. Recipe and the last run's results.
   document was removed. Holds.
 - Acknowledged exit: an offline edit, document left, back online: the session was held, then
   retired once the server had the text.
+- 2026-11-16 (keep for undo): the same run now ends with the session kept, detached, because its
+  history holds the typing; it retires when that history empties or past `KEPT_FOR_UNDO_CAP`.
 
 ## Other phase 0 probes
 

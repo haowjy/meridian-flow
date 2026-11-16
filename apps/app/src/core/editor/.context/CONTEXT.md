@@ -80,6 +80,16 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
   read) and keep `refreshProseMirrorDoc`, `sameBlock` and the forced-render selection
   resolver (until upstream resolves valid selections there too).
+- `updateYText` places a typed or deleted run where the transaction put it (`placeByStep`). `simpleDiff`
+  puts an edit at the far end of any run of equal characters, so a space typed before a space, or
+  a letter beside the same letter, became the item at the other end of the run: the word's
+  characters then sat in the wrong item order, and the Copy notice for unsent typing read them
+  split and out of order (`Second\nunsent `). The sync plugin's `apply` records the range of a
+  local transaction with one changed step inside a text-only block (`binding.edit`, with the block
+  node); `updateYText` uses it only for that node and only when it reproduces the new text, after trimming the
+  characters the replacement shares at both ends so only the changed ones get new or deleted items. A split,
+  a join or a multi-step transaction records nothing and the plain diff stands. To drop it,
+  upstream's diff must take the steps' range.
 - The binding’s forced render replaces the editor’s document before restoring its selection.
   It resolves offsets from the previous document to a valid selection in the rendered one,
   a text selection when text is available. A clamped offset alone can land at a table
@@ -132,7 +142,7 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
   the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
-  text-run grouping, the id pairing with `movedIds`, the empty-fragment guard, the forced-render
+  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the forced-render
   selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
   capture and restore (`resolveRelativeCellSelection`), and `recoverSelectionEndpoint` trusting a
   position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`; upstream
@@ -550,8 +560,15 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Live session teardown
 
-- A session holds the writer's undo (`session.history`), so teardown ends it. The registry's
-  3 s grace therefore applies to documents no open tab keeps (see `useOpenTabSessions`).
+- A session holds the writer's undo (`session.history`), so teardown ends it. When no host holds
+  a live session whose room still takes writes (`canDeliverUnsentEdits()`) and its history has
+  entries, the registry keeps it, off its socket, wherever it was shown: a side document whose
+  review just ended, a closed tab, a phone sheet. An ended or read-only room's session retires,
+  so the writer comes back to a fresh one. A band or card Apply puts an entry in that history, so
+  this is what keeps an Apply's Ctrl+Z. An Apply hidden while an Un-Apply sent from elsewhere is
+  out counts as an entry: the Un-Apply can fail and bring it back, however long it takes. At most
+  `KEPT_FOR_UNDO_CAP` (8) are kept, the least recently changed retired first; a history that
+  empties ends its session, and a host that takes the session back reattaches it.
 - A retained session's socket is open when some owner wants it (a host is on screen, reported
   through `setHosted` / `retain`'s `detachedDocumentIds`) or it has unsent edits it can still
   deliver. One function, `DocumentSessionRegistry.reconcileRetainedSessions`, applies that on every
@@ -559,8 +576,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   Nothing else attaches or detaches a retained live session. `DocumentSession.detachTransport`
   also cancels an attach still waiting for local persistence.
 - When the last host releases a live document, the registry retires its session after a
-  3 s grace. A session with unacknowledged edits is held instead, so edits made offline
-  reach the server without the writer reopening the document. Reopening takes the
+  3 s grace, unless it is kept for its undo (above). A session with unacknowledged edits is
+  held first, so edits made offline reach the server without the writer reopening the
+  document; once they are acknowledged it is kept for its undo or retired. Reopening takes the
   same session back and cancels the hold.
 - `DocumentSession.canDeliverUnsentEdits()` says whether the wait can still end in
   delivery. It is false for a reset, unauthorized, terminal, destroyed or read-only room
@@ -720,8 +738,24 @@ from the wire alone, with nothing stored between handshakes.
 - Terminal `4205` (`closed`) and `4208` (`removed`) end the session's transport; its cache
   stays, and a retained session stays readable until its owner releases it or a restore
   restarts it. Once its last owner releases it, it retires on the next task, not after the
-  grace: it can never reopen, and its retirement is what hands back typing that just left the
-  screen. The account command owner asks the server what each close means (fresh
+  grace, and its retirement hands back typing that just left the screen. Handing back never
+  deletes the copy: Undo Discard reopens the same draft row, and the restarted session replays the
+  copy into it, so the writer may see a Copy notice and also get the words back; losing them is the
+  failure. The copy goes with the document's purge. `closeDraftRoom` lets the session the pool
+  holds retire with the close's cause (`closed` or `removed`) (the pool's `closed` set overrides whatever ended its socket)
+  and, with no session, hands the copy back itself. A draft copy no page opened is
+  found at start: once at idle after the account lifetime opens (cancelled if the lifetime
+  closes), `sweepDraftCopies` lists the draft copies not yet swept and asks `POST /api/drafts/states`
+  for each draft's state. A closed draft's copy has its words beyond the server's mark handed back
+  (`closed` for a Discard, `removed` when the document went). An open draft's copy that holds typing
+  beyond its mark (an Apply left the draft with no changes, so nothing lists it and nothing
+  reopens its room) has its room opened through the draft pool under a `sweep:` owner until the
+  server acknowledges, then released, so the typing is delivered and shows as a change by the
+  writer. An older copy version's words come back as an `owner-closed` notice instead (a notice
+  that can't be stored is retried at the next open). A copy another tab has open is left to that
+  tab, and a copy a page in this tab opened during the sweep stays unswept. At most four copies are handled at a time. A swept copy is recorded (`meridian:copy-swept:<name>` in local storage) and
+  skipped without loading at later starts until a session opens it (`hold`, a restore). A copy
+  with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server what each close means (fresh
   metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
   whichever arrives first; see Draft end and reopen in the
   [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the

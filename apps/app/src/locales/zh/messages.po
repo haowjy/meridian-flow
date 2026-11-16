@@ -6423,6 +6423,10 @@ msgstr ""
 msgid "Restoring"
 msgstr ""
 
+#: src/features/editor/RescuedText.tsx
+msgid "Restoring the draft from Trash brings it back too."
+msgstr ""
+
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Restoring the drafts."
 msgstr ""
@@ -7588,6 +7592,10 @@ msgstr ""
 msgid "The document could not be created. Try again."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
+msgstr ""
+
 #: src/features/draft-review/UnsentDraftTextNotice.tsx
 #~ msgid "The draft was discarded before your latest typing reached it."
 #~ msgstr ""
@@ -7683,6 +7691,10 @@ msgstr ""
 #: src/core/editor/images/RemoteImagePlaceholder.tsx
 #: src/features/connections/connection-status.ts
 msgid "The server didn't answer."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
 msgstr ""
 
 #: src/features/connections/ConnectionPanel.tsx

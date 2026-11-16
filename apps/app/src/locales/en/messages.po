@@ -6423,6 +6423,10 @@ msgstr "Restored just now."
 msgid "Restoring"
 msgstr "Restoring"
 
+#: src/features/editor/RescuedText.tsx
+msgid "Restoring the draft from Trash brings it back too."
+msgstr "Restoring the draft from Trash brings it back too."
+
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Restoring the drafts."
 msgstr "Restoring the drafts."
@@ -7588,6 +7592,10 @@ msgstr "The destination was deleted. Trying again adds it at the area root."
 msgid "The document could not be created. Try again."
 msgstr "The document could not be created. Try again."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
+msgstr "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
+
 #: src/features/draft-review/UnsentDraftTextNotice.tsx
 #~ msgid "The draft was discarded before your latest typing reached it."
 #~ msgstr "The draft was discarded before your latest typing reached it."
@@ -7684,6 +7692,10 @@ msgstr "The server couldn't do that. Try again."
 #: src/features/connections/connection-status.ts
 msgid "The server didn't answer."
 msgstr "The server didn't answer."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
+msgstr "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
 
 #: src/features/connections/ConnectionPanel.tsx
 msgid "The server didn't list its tools."
