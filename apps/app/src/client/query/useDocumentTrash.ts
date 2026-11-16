@@ -8,9 +8,10 @@ import { projectReadEnabled } from "./project-read-gate";
 import { listIsComplete, useTreeList } from "./useProjectTree";
 
 /**
- * What is in Trash is a fact of the lists: an entry shows while the replay has a delete of its
- * node in force, so a restore leaves Trash at once and a refused one comes back. A deleted folder
- * that something brought back stands in the tree and stays an entry for the rest of what it took.
+ * What is in Trash is a fact of the lists: an entry shows while the replay holds its node in
+ * Trash, so a restore leaves Trash at once and a refused one comes back. A deleted folder that
+ * something kept standing shows in the tree, and each node its delete still hides is an entry of
+ * its own, as the server lists it.
  * The query keeps what the server owns (the entry's time and retention) and is read again
  * whenever the list changes.
  */
@@ -44,7 +45,8 @@ export function useDocumentTrash(projectId: string) {
       entries: listed.filter((entry) => {
         const list = entry.scheme === "user" ? account : project;
         if (!list.session || !list.snapshot || !listIsComplete(list.snapshot.status)) return true;
-        return list.session.replay().trash.some((each) => each.node === entry.nodeId);
+        const node = list.session.replay().nodes.get(entry.nodeId);
+        return node?.trashed === true && !node.purged;
       }),
     };
     // `version` is the replay's input

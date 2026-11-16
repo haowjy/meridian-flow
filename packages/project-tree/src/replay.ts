@@ -1045,7 +1045,7 @@ function hidesSomething(entry: DeleteInForce, standing: ReadonlyMap<string, Stan
 
 const hidden = (standing: ReadonlyMap<string, Standing>, id: string) => {
   const state = standing.get(id);
-  return state !== undefined && state.deleted && !state.keptByChild;
+  return state?.deleted === true && !state.keptByChild;
 };
 
 /** `TreeProjection.standingDeletes`. */
