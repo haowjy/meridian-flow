@@ -223,6 +223,11 @@ export type DocumentSessionTransportProvider = {
   /** On a read-admitted connection, one more handshake; the server's answer is the verdict. */
   requestHandshake?: () => void;
   /**
+   * On a draft room: settles once the server has pulled Live's committed text into the draft and
+   * this document holds the result, or at once when the socket is not connected (and on its close).
+   */
+  catchUpWithLive?: () => Promise<void>;
+  /**
    * Every scope the server names for this room, and on subscribe the one it
    * last named. Nothing until it names one: a transport never invents a scope.
    */
@@ -612,6 +617,35 @@ export class DocumentSession {
         (error: Error) => finish(error),
       );
     });
+  }
+
+  /**
+   * Settles once the server holds what this room holds now, or at once while the room is not
+   * synced, and when it stops being: a caller deciding from the server's state never waits on a
+   * reconnect.
+   */
+  whenServerHoldsLocalChanges(): Promise<void> {
+    if (this.getSnapshot().status !== "synced") return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let stop: (() => void) | null = null;
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        stop?.();
+        resolve();
+      };
+      stop = this.subscribe((snapshot) => {
+        if (snapshot.status !== "synced") done();
+      });
+      if (settled) stop();
+      this.whenCurrentChangesAcknowledged().then(done, done);
+    });
+  }
+
+  /** On a draft room: the server pulls Live's committed text into it now (`catchUpWithLive`). */
+  catchUpWithLive(): Promise<void> {
+    return this.transportProvider?.catchUpWithLive?.() ?? Promise.resolve();
   }
 
   /**

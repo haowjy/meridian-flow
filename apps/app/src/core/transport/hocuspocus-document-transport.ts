@@ -61,6 +61,7 @@ import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   accessChangedWhy,
   type ChangeEventWsMessage,
+  encodeCatchUpWsMessage,
   isAccessChangedClose,
   parseYjsStatelessMessage,
   WS_CLOSE,
@@ -408,6 +409,7 @@ export function createHocuspocusDocumentTransport({
     document.off("update", handleDocumentUpdate);
     stopHints();
     acknowledgement.terminate();
+    endCatchUps();
     publish(state);
     provider.destroy();
     websocket.destroy();
@@ -417,7 +419,10 @@ export function createHocuspocusDocumentTransport({
     if (terminal || destroyed) return;
     // Cleared before the status goes out so no subscriber sees "offline" with a
     // stale "saved". The tracker restarts on the next socket open.
-    if (status !== WebSocketStatus.Connected) acknowledgement.endConnection();
+    if (status !== WebSocketStatus.Connected) {
+      acknowledgement.endConnection();
+      endCatchUps();
+    }
     publish(mapStatus(status));
   }
 
@@ -514,9 +519,29 @@ export function createHocuspocusDocumentTransport({
       publishTerminal({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: event.code });
   }
 
+  // Each `catch_up` sent on this connection, by id, until its answer or the socket's end.
+  const catchUps = new Map<number, () => void>();
+  let catchUpId = 0;
+  function endCatchUps(): void {
+    for (const settle of catchUps.values()) settle();
+    catchUps.clear();
+  }
+  function catchUpWithLive(): Promise<void> {
+    if (terminal || destroyed || websocket.status !== WebSocketStatus.Connected || !provider.synced)
+      return Promise.resolve();
+    const id = ++catchUpId;
+    return new Promise<void>((resolve) => {
+      catchUps.set(id, resolve);
+      provider.sendStateless(encodeCatchUpWsMessage(id));
+    });
+  }
+
   function handleStateless({ payload }: onStatelessParameters): void {
     const message = parseYjsStatelessMessage(payload);
-    if (message?.type === "read_only") publishAccess("read", message.why ?? null);
+    if (message?.type === "caught_up") {
+      catchUps.get(message.id)?.();
+      catchUps.delete(message.id);
+    } else if (message?.type === "read_only") publishAccess("read", message.why ?? null);
     else if (message?.type === "change_event")
       for (const listener of changeEventListeners) listener(message);
   }
@@ -561,6 +586,7 @@ export function createHocuspocusDocumentTransport({
   return {
     serverOrigin: provider,
     requestHandshake,
+    catchUpWithLive,
     unacknowledgedUpdates: () => outbox,
     whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     get synced() {
@@ -610,6 +636,7 @@ export function createHocuspocusDocumentTransport({
       stopHints();
       document.off("update", handleDocumentUpdate);
       acknowledgement.terminate();
+      endCatchUps();
       provider.destroy();
       websocket.destroy();
       listeners.clear();

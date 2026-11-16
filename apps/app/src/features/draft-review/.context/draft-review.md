@@ -330,7 +330,13 @@ A room's share of a notice's Undo holds while what the Discard wrote and deleted
 left it, checked when Undo is pressed (`touchedSince`, against the room's state vector right after
 the Discard): an edit since that deletes text the Discard wrote, writes into or beside text it
 wrote or deleted, or deletes the block holding either means undoing would restore nothing (the
-block is gone) or the same text twice (the model drafted it again), so it doesn't run. A Discard is
+block is gone) or the same text twice (the model drafted it again), so it doesn't run. Typing in
+Live reaches the draft only on the server's debounced pull (about 2 s), so before it checks, the
+notice's Undo waits for the server to hold this tab's Live typing (`whenLiveHeld`) and asks the
+draft room to pull Live in now (`catchUpWithLive`, a `catch_up` stateless message the server
+answers `caught_up` after the pull's update on the same socket). Typing over the Discard's word in
+Live then counts as an edit since, however soon Undo is pressed. A socket that isn't connected
+decides from what the room holds; Ctrl+Z, which can't wait, does too. A Discard is
 one Yjs step per room, so one such edit to any of a document's discarded changes ends that
 document's whole Undo. Edits elsewhere in the draft leave it standing: Live typing that reaches the
 draft while a Discard all is in flight must not cost a document its Undo. The notice's Undo always

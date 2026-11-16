@@ -6,7 +6,9 @@ import { draftOwnerKey } from "@meridian/contracts/branches";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   accessChangedClose,
+  encodeCaughtUpWsMessage,
   encodeReadOnlyWsMessage,
+  parseYjsClientStatelessMessage,
   parseYjsRoomName,
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
@@ -600,6 +602,17 @@ export function createHocuspocus(
   rooms: YjsRoomAccessIndex,
   treeRooms: TreeRooms = createTreeRooms(services),
 ): Hocuspocus<YjsConnectionContext> {
+  /** Brings Live's committed text into the draft's base and prose; a failure is logged, not thrown. */
+  const pullLiveIntoDraft = (target: Extract<YjsAdmissionTarget, { kind: "draft" }>) =>
+    services.documentSync.flushDraftLivePull(target.documentId).catch((cause: unknown) => {
+      emitEvent(services.eventSink, {
+        level: "warn",
+        source: "collab.hocuspocus",
+        name: "draft_review.live_pull_failed",
+        correlation: { documentId: target.documentId, draftId: target.draftId },
+        payload: unknownToEventPayload(cause),
+      });
+    });
   const hocuspocus = new Hocuspocus<YjsConnectionContext>({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -653,20 +666,21 @@ export function createHocuspocus(
             // Do not delay room admission: a cold room may briefly render its persisted
             // state before this pull arrives. A pull that commits while the room loads is
             // brought in by the room's enrollment once Hocuspocus registers it.
-            void services.documentSync
-              .flushDraftLivePull(target.documentId)
-              .catch((cause: unknown) => {
-                emitEvent(services.eventSink, {
-                  level: "warn",
-                  source: "collab.hocuspocus",
-                  name: "draft_review.live_pull_failed",
-                  correlation: { documentId: target.documentId, draftId: target.draftId },
-                  payload: unknownToEventPayload(cause),
-                });
-              });
+            void pullLiveIntoDraft(target);
           }
         });
       });
+    },
+    // A draft room's `catch_up`: Live's committed text is pulled into the draft now, rather than
+    // after the pull's debounce, and the answer follows the pull's update on this socket.
+    async onStateless({ document, connection, payload }) {
+      const message = parseYjsClientStatelessMessage(payload);
+      if (!message) return;
+      const target = connection.context.admissionTarget;
+      if (target?.kind === "draft") await pullLiveIntoDraft(target);
+      // Batched room updates go out first, so the answer never overtakes the pull's.
+      document.flush();
+      connection.sendStateless(encodeCaughtUpWsMessage(message.id));
     },
     async beforeHandleMessage({ context }) {
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {

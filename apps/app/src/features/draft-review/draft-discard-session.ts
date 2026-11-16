@@ -5,6 +5,7 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Editor } from "@tiptap/core";
 import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -194,7 +195,7 @@ export function startDraftDiscardSession(input: {
   };
   const handle: DiscardUndo = {
     end: () => end(),
-    undo: () => {
+    undo: async () => {
       const none = Promise.resolve();
       if (!active) return { answer: "gone", landed: none };
       if (pending) {
@@ -205,6 +206,13 @@ export function startDraftDiscardSession(input: {
         end();
         return { answer: "ok", landed: none };
       }
+      // Live typing reaches the draft on the server's debounced pull, so `touchedSince` would miss
+      // typing over the Discard's text in Live pressed within it. The server takes this tab's Live
+      // typing and pulls it into the room first, so the answer doesn't depend on when Undo is pressed.
+      await input.registry.whenLiveHeld(entry.ref.documentId as DocumentId);
+      await binding.session.catchUpWithLive();
+      // Meanwhile Ctrl+Z may have taken it back, or the notice ended.
+      if (!active) return { answer: "gone", landed: none };
       if (
         !item ||
         !input.active() ||

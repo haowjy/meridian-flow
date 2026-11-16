@@ -248,6 +248,12 @@ export class DocumentSessionRegistry {
     return session ? Y.encodeStateVector(session.document) : null;
   }
 
+  whenLiveHeld(documentId: DocumentId): Promise<void> {
+    return (
+      this.liveRooms.get(documentId)?.session?.whenServerHoldsLocalChanges() ?? Promise.resolve()
+    );
+  }
+
   history(roomKey: string): DocumentHistory | null {
     return (
       this.liveRooms.get(roomKey as DocumentId)?.session?.history ??

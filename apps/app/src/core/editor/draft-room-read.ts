@@ -32,6 +32,7 @@ export type DraftRoomRegistry = Pick<
   | "getDraftRoom"
   | "rebuildDraftRoom"
   | "observeReplacement"
+  | "whenLiveHeld"
 >;
 
 export type DraftRoomState =
