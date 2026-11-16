@@ -101,6 +101,3 @@ export interface McpPinRequest {
 export interface McpConnectionResponse {
   connection: McpConnectionView;
 }
-
-/** The hint on a project's subscription when a connection's status or list changed: ask again. */
-export type McpConnectionsHint = { type: "mcp-connections-hint"; projectId: ProjectId };
