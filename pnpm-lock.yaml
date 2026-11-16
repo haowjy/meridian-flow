@@ -306,8 +306,8 @@ importers:
         specifier: ^6.12.0
         version: 6.12.0(@babel/core@8.1.2)(babel-plugin-macros@3.1.0)(react@19.3.1)
       '@meridian-flow/mars-schema':
-        specifier: 0.34.5
-        version: 0.34.5
+        specifier: 0.34.1
+        version: 0.34.1
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -2576,9 +2576,6 @@ packages:
 
   '@meridian-flow/mars-schema@0.34.1':
     resolution: {integrity: sha512-/5bJ7TjK9TtWAp04iRvDJ8ioG+w1bM28LYlWaxGSJpxtn0nv7bDN6z0UOU2UPez7RmgzdBB1WsFnHHGgeabGvw==}
-
-  '@meridian-flow/mars-schema@0.34.5':
-    resolution: {integrity: sha512-f0BMCOCb2m2KeqTBw8SpD6YL1HfCH0hAXfLMyvLuZnTfUojwHISPWYS6DYSSJNYo/TLxY9P3OmjVWUGnduvkHQ==}
 
   '@meridian-flow/runtime@0.2.0':
     resolution: {integrity: sha512-MT/kv9oz73sc9V9Wd4m8CXTkBE+VtfKWrBr1yfTiBn6JgEEnkFsJKGyHgJdoUhPpcD7rnRxxtxez84z1+RNQdQ==}
@@ -5081,6 +5078,10 @@ packages:
     resolution: {integrity: sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==}
     engines: {node: '>=0.12'}
 
+  entities@8.1.0:
+    resolution: {integrity: sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==}
+    engines: {node: '>=20.19.0'}
+
   entities@9.0.0:
     resolution: {integrity: sha512-oJFNDJg3kTPwAD1cNn2+WmUq4wFoo09npc3Ydf1D7ED4smRiWrsKnaLxykrTWgyGEcusc87P5dxlAleol9kpkg==}
     engines: {node: '>=20.19.0'}
@@ -5303,8 +5304,8 @@ packages:
   hast-util-embedded@3.0.0:
     resolution: {integrity: sha512-naH8sld4Pe2ep03qqULEtvYr7EjrLK2QHY8KJR6RJkTUjPGObe1vnx585uzem2hGra+s1q08DZZpfgDVYRbaXA==}
 
-  hast-util-from-html@2.1.0:
-    resolution: {integrity: sha512-873p9AuH93gBnATbH8rU3YvjTKxyrIeWd/M9tiLMzn3G82Os0xhQurctfnbYUSrDXoyjbJGpJ2qmTpefMw7ZaQ==}
+  hast-util-from-html@2.0.3:
+    resolution: {integrity: sha512-CUSRHXyKjzHov8yKsQjGOElXy/3EKpyX56ELnkHH34vDVw1N1XSQ1ZcAvTyAPtGqLTuKP/uxM+aLkSPqF/EtMw==}
 
   hast-util-from-parse5@8.0.3:
     resolution: {integrity: sha512-3kxEVkEKt0zvcZ3hCRYI8rqrgwtlIOFMWkbclACvjlDw8Li9S2hk/d51OI0nr/gIpdMHNepwgOKqZ/sy0Clpyg==}
@@ -8370,8 +8371,6 @@ snapshots:
 
   '@meridian-flow/mars-schema@0.34.1': {}
 
-  '@meridian-flow/mars-schema@0.34.5': {}
-
   '@meridian-flow/runtime@0.2.0(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(ws@8.23.0)':
     dependencies:
       '@anthropic-ai/sdk': 1.8.0(zod@4.6.7)
@@ -10724,7 +10723,7 @@ snapshots:
     dependencies:
       domelementtype: 3.0.0
       domhandler: 6.0.1
-      entities: 8.0.0
+      entities: 8.1.0
 
   domelementtype@3.0.0: {}
 
@@ -10788,6 +10787,8 @@ snapshots:
       tapable: 2.3.3
 
   entities@6.0.1: {}
+
+  entities@8.1.0: {}
 
   entities@9.0.0: {}
 
@@ -11074,12 +11075,12 @@ snapshots:
       '@types/hast': 3.0.4
       hast-util-is-element: 3.0.0
 
-  hast-util-from-html@2.1.0:
+  hast-util-from-html@2.0.3:
     dependencies:
       '@types/hast': 3.0.4
       devlop: 1.1.0
       hast-util-from-parse5: 8.0.3
-      parse5: 8.0.1
+      parse5: 7.3.0
       vfile: 6.0.3
       vfile-message: 4.0.3
 
@@ -11224,7 +11225,7 @@ snapshots:
       domelementtype: 3.0.0
       domhandler: 6.0.1
       domutils: 4.0.2
-      entities: 8.0.0
+      entities: 8.1.0
 
   https-proxy-agent@7.0.6(supports-color@7.2.0):
     dependencies:
@@ -12575,7 +12576,7 @@ snapshots:
   rehype-parse@9.0.1:
     dependencies:
       '@types/hast': 3.0.4
-      hast-util-from-html: 2.1.0
+      hast-util-from-html: 2.0.3
       unified: 11.0.5
 
   rehype-raw@7.0.0:

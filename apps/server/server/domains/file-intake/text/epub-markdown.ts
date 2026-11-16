@@ -10,7 +10,7 @@
  */
 import path from "node:path";
 import { type Unzipped, unzipSync } from "fflate";
-import { DomUtils, parseDocument } from "htmlparser2";
+import { Parser } from "htmlparser2";
 import { createHtmlToMarkdown } from "../html-markdown.js";
 import { CONVERSION_LIMITS, ConversionRefused, createTextBuilder } from "./limits.js";
 
@@ -67,19 +67,51 @@ function xmlText(data: Uint8Array): string {
   return text;
 }
 
-type Xml = ReturnType<typeof parseDocument>;
+type Scan = {
+  rootfile?: string;
+  items: Map<string, { href: string; type: string }>;
+  itemrefs: string[];
+  title?: string;
+};
 
 /**
- * The container and package files go through a lenient XML parser: `<item/>` closes itself, CDATA
- * is text, and an unclosed or mismatched tag, a duplicate attribute or an unquoted value still
- * reads instead of throwing. Names keep their case, as XML does.
+ * One streaming pass over the container or package file, with no tree: a lookup per tag name over
+ * a tree of unclosed `<item>`s nests as deep as the file is long and costs the square of it. The
+ * parser is lenient XML: `<item/>` closes itself, CDATA is text, and an unclosed or mismatched
+ * tag, a duplicate attribute or an unquoted value still reads instead of throwing. Names keep
+ * their case, as XML does. The first `rootfile` and the first `dc:title` win.
  */
-const parseXml = (text: string): Xml => parseDocument(text, { xmlMode: true });
-
-const elementsNamed = (xml: Xml, name: string) => DomUtils.getElementsByTagName(name, xml);
-
-const attr = (element: ReturnType<typeof elementsNamed>[number] | undefined, name: string) =>
-  element && DomUtils.getAttributeValue(element, name);
+function scanXml(text: string): Scan {
+  const scan: Scan = { items: new Map(), itemrefs: [] };
+  let titleDepth = 0;
+  let titleText = "";
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        if (titleDepth > 0) titleDepth++;
+        else if (name === "dc:title" && scan.title === undefined) titleDepth = 1;
+        else if (name === "rootfile") scan.rootfile ??= attribs["full-path"];
+        else if (name === "item")
+          scan.items.set(attribs.id ?? "", {
+            href: attribs.href ?? "",
+            type: attribs["media-type"] ?? "",
+          });
+        else if (name === "itemref") scan.itemrefs.push(attribs.idref ?? "");
+      },
+      ontext(data) {
+        if (titleDepth > 0) titleText += data;
+      },
+      onclosetag() {
+        if (titleDepth > 0 && --titleDepth === 0)
+          scan.title = titleText.trim().replace(/\s+/g, " ");
+      },
+    },
+    { xmlMode: true },
+  );
+  parser.write(text);
+  parser.end();
+  return scan;
+}
 
 function resolveEntry(from: string, href: string): string {
   const target = decodeURIComponent(href.split("#")[0] ?? "");
@@ -90,22 +122,14 @@ export async function epubToMarkdown(bytes: Uint8Array): Promise<string> {
   const names = new Set(listEntries(bytes).map((entry) => entry.name));
   const container = inflate(bytes, new Set(["META-INF/container.xml"]))["META-INF/container.xml"];
   if (!container) throw new ConversionRefused("unreadable", "The EPUB has no container.xml.");
-  const rootfile = elementsNamed(parseXml(xmlText(container)), "rootfile")[0];
-  const packagePath = attr(rootfile, "full-path");
+  const packagePath = scanXml(xmlText(container)).rootfile;
   if (!packagePath || !names.has(packagePath))
     throw new ConversionRefused("unreadable", "The EPUB names no package file.");
 
   const packageData = inflate(bytes, new Set([packagePath]))[packagePath];
-  const pkg = parseXml(xmlText(packageData));
-  const manifest = new Map<string, { href: string; type: string }>();
-  for (const item of elementsNamed(pkg, "item")) {
-    manifest.set(attr(item, "id") ?? "", {
-      href: attr(item, "href") ?? "",
-      type: attr(item, "media-type") ?? "",
-    });
-  }
-  const chapters = elementsNamed(pkg, "itemref").flatMap((ref) => {
-    const item = manifest.get(attr(ref, "idref") ?? "");
+  const { items: manifest, itemrefs, title } = scanXml(xmlText(packageData));
+  const chapters = itemrefs.flatMap((idref) => {
+    const item = manifest.get(idref);
     if (!item || !CONTENT_TYPES.has(item.type)) return [];
     const entry = resolveEntry(packagePath, item.href);
     return names.has(entry) ? [entry] : [];
@@ -115,8 +139,6 @@ export async function epubToMarkdown(bytes: Uint8Array): Promise<string> {
   const files = inflate(bytes, new Set(chapters));
   const htmlToMarkdown = createHtmlToMarkdown({ textOnly: true });
   const out = createTextBuilder();
-  const titleElement = elementsNamed(pkg, "dc:title")[0];
-  const title = titleElement && DomUtils.textContent(titleElement).trim().replace(/\s+/g, " ");
   let titled = false;
   for (const [index, entry] of chapters.entries()) {
     const data = files[entry];
