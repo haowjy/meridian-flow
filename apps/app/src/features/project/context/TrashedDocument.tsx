@@ -17,6 +17,7 @@ import type {
 import { ArchiveRestore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
+import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import {
   useAccountContextSources,
   useProjectContextSources,
@@ -36,7 +37,7 @@ import { useAccountId } from "./account-feature-context";
 import { schemeLocation } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
-import { type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
+import { type ChatTitles, type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
 import { useDocumentStanding } from "./use-document-standing";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
@@ -51,6 +52,7 @@ export function TrashedDocument({
 }) {
   const { i18n } = useLingui();
   const accountId = useAccountId();
+  const chats = useCachedChatTitles();
   const standing = useDocumentStanding(projectId, documentId);
   const trashed = standing.kind === "in-trash";
   const file = trashed && standing.node.kind === "file" ? standing.node : null;
@@ -115,7 +117,7 @@ export function TrashedDocument({
                 </Button>
               }
             >
-              {details ? trashSentence(details, i18n.locale, accountId) : null}
+              {details ? trashSentence(details, i18n.locale, accountId, chats) : null}
             </DocumentNotice>
           </div>
           {file ? (
@@ -204,9 +206,14 @@ function useTrashedDetails(
   };
 }
 
-function trashSentence(details: TrashedDetails, locale: string, accountId: string): string {
+function trashSentence(
+  details: TrashedDetails,
+  locale: string,
+  accountId: string,
+  chats: ChatTitles,
+): string {
   const place = schemeLocation(details.scheme, details.folders);
-  if (!details.kept) return deletedSentence(details.actor, place, null, accountId);
+  if (!details.kept) return deletedSentence(details.actor, place, null, accountId, chats);
   const time = new Date(details.kept.time);
   const deleted = new Intl.DateTimeFormat(
     locale,
@@ -214,7 +221,7 @@ function trashSentence(details: TrashedDetails, locale: string, accountId: strin
       ? { month: "short", day: "numeric" }
       : { dateStyle: "medium" },
   ).format(time);
-  return `${deletedSentence(details.actor, place, deleted, accountId)} ${retentionSentence(details.kept.retention, locale)}`;
+  return `${deletedSentence(details.actor, place, deleted, accountId, chats)} ${retentionSentence(details.kept.retention, locale)}`;
 }
 
 /**
@@ -226,12 +233,13 @@ function deletedSentence(
   place: string,
   deleted: string | null,
   accountId: string,
+  chats: ChatTitles,
 ): string {
   if (actor?.kind === "user" && actor.userId === accountId)
     return deleted
       ? t`Deleted from ${place} by you on ${deleted}.`
       : t`Deleted from ${place} by you.`;
-  const voice: RemovalVoice = removalVoice({ reason: "deleted", actor, time: "" });
+  const voice: RemovalVoice = removalVoice({ reason: "deleted", actor, time: "" }, chats);
   switch (voice.kind) {
     case "person": {
       const { name } = voice;

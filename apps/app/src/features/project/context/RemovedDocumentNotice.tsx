@@ -10,6 +10,7 @@ import { useLingui } from "@lingui/react";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { Info, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import { Chip } from "@/components/ui/chip";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
@@ -30,12 +31,26 @@ export type RemovalVoice =
   | { kind: "agent"; chat: string | null }
   | { kind: "anonymous"; reason: DocumentRemovalRecord["reason"] };
 
-export function removalVoice(record: DocumentRemovalRecord | null): RemovalVoice {
+/** A chat's title by its id, null when it has none (`useCachedChatTitles`). */
+export type ChatTitles = (chatId: string) => string | null;
+
+/**
+ * A chat's AI is named by its chat: the record's title when the server sent one, else the chat
+ * list's title for the chat the record names.
+ */
+export function removalVoice(
+  record: DocumentRemovalRecord | null,
+  chats: ChatTitles,
+): RemovalVoice {
   const reason = record?.reason ?? "deleted";
   const actor = record?.actor;
   if (actor?.kind === "user" && actor.displayName)
     return { kind: "person", name: actor.displayName, reason };
-  if (actor?.kind === "agent") return { kind: "agent", chat: actor.chatTitle };
+  if (actor?.kind === "agent")
+    return {
+      kind: "agent",
+      chat: actor.chatTitle ?? (actor.chatId ? chats(actor.chatId) : null),
+    };
   return { kind: "anonymous", reason };
 }
 
@@ -109,8 +124,8 @@ function manySentence(count: number, names: string, voice: RemovalVoice | null):
 }
 
 /** The one sentence for removed documents, wherever it is said; a null title reads "this document". */
-export function removalSentence(documents: readonly Removal[]): string {
-  const voices = documents.map((document) => removalVoice(document.record));
+export function removalSentence(documents: readonly Removal[], chats: ChatTitles): string {
+  const voices = documents.map((document) => removalVoice(document.record, chats));
   const [first] = voices;
   if (!first) return "";
   if (documents.length === 1) {
@@ -135,8 +150,9 @@ export function deletedLiveSentence(
   title: string,
   area: string | null,
   record: DocumentRemovalRecord | null,
+  chats: ChatTitles,
 ): string {
-  const voice = removalVoice(record);
+  const voice = removalVoice(record, chats);
   if (voice.kind === "person") {
     const { name } = voice;
     return area
@@ -162,10 +178,9 @@ export function deletedLiveSentence(
 function shortRemovalSentence(documents: readonly Removal[]): string {
   const count = documents.length;
   const reasons = new Set(
-    documents.map((document) => {
-      const voice = removalVoice(document.record);
-      return voice.kind === "agent" ? "deleted" : voice.reason;
-    }),
+    documents.map((document) =>
+      document.record?.actor?.kind === "agent" ? "deleted" : (document.record?.reason ?? "deleted"),
+    ),
   );
   const [reason] = reasons;
   if (reasons.size === 1 && reason === "deleted")
@@ -175,9 +190,15 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
   return plural(count, { one: "# document removed", other: "# documents removed" });
 }
 
-export function RemovedDocumentSentence({ documents }: { documents: readonly Removal[] }) {
+/** `removalSentence` in the reader's language, naming a chat's AI by the chat's current title. */
+export function useRemovalSentence(): (documents: readonly Removal[]) => string {
   useLingui();
-  return <>{removalSentence(documents)}</>;
+  const chats = useCachedChatTitles();
+  return (documents) => removalSentence(documents, chats);
+}
+
+export function RemovedDocumentSentence({ documents }: { documents: readonly Removal[] }) {
+  return <>{useRemovalSentence()(documents)}</>;
 }
 
 const EMPTY_NOTICE: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };
@@ -269,8 +290,7 @@ function RemovedChip({
   projectId: string;
   documents: readonly ShownRemoval[];
 }) {
-  useLingui();
-  const sentence = removalSentence(documents);
+  const sentence = useRemovalSentence()(documents);
   return (
     <Chip
       dashed
@@ -330,8 +350,7 @@ function LandingNotice({
   documents: readonly ShownRemoval[];
   className?: string;
 }) {
-  useLingui();
-  const sentence = removalSentence(documents);
+  const sentence = useRemovalSentence()(documents);
   return (
     <div
       role="status"
@@ -359,10 +378,10 @@ function PhoneNotice({
   projectId: string;
   documents: readonly ShownRemoval[];
 }) {
-  useLingui();
+  const sentence = useRemovalSentence()(documents);
   return (
     <div role="status" data-removed-document-notice className="flex items-start gap-2 py-1.5">
-      <p className="min-w-0 flex-1 py-1 text-foreground text-sm">{removalSentence(documents)}</p>
+      <p className="min-w-0 flex-1 py-1 text-foreground text-sm">{sentence}</p>
       <DismissNotice projectId={projectId} className="shrink-0" />
     </div>
   );
