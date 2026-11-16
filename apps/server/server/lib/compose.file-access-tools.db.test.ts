@@ -199,6 +199,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const context = await resolveAgentThreadTurnContext({
         thread,
         agentRevisions: script.runtime.ports.agentRevisions,
+        agentCatalog: { followRemovedModel: async (_userId, _projectId, _thread, bound) => bound },
         threads: script.runtime.ports.threadRepos.threads,
         toolRegistry: script.runtime.app.toolRegistry,
         baseTools: script.runtime.app.toolExecutor.getDefinitions?.(),

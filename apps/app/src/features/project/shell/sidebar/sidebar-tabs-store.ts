@@ -13,11 +13,17 @@ type SidebarTabs = {
   shown: readonly TreeTab[];
   toggle: (source: TreeTab) => void;
   show: (source: TreeTab) => void;
-  /** The latest ask from outside the sidebar to put a tab on screen; the sidebar follows it. */
-  asked: { source: TreeTab; at: number } | null;
-  /** Shows the tab in the strip and on screen (the picker's "unsaved Agent changes"). */
-  reveal: (source: TreeTab) => void;
+  /**
+   * An ask from outside the sidebar to put a pane on screen: the shell opens the sidebar (the
+   * phone's drawer), and the sidebar shows the pane and settles the ask.
+   */
+  asked: { source: AskedSource } | null;
+  /** Shows the pane on screen, a tree tab in the strip too ("Manage Agents", the chat strip's "more"). */
+  reveal: (source: AskedSource) => void;
+  settle: () => void;
 };
+
+export type AskedSource = TreeTab | "changes";
 
 /** Which tree sources the sidebar's strip shows: the writer's choice, kept on this device. */
 export const useSidebarTabs = create<SidebarTabs>()(
@@ -37,11 +43,13 @@ export const useSidebarTabs = create<SidebarTabs>()(
       asked: null,
       reveal: (source) =>
         set((state) => ({
-          shown: state.shown.includes(source)
-            ? state.shown
-            : inStripOrder([...state.shown, source]),
-          asked: { source, at: (state.asked?.at ?? 0) + 1 },
+          shown:
+            source === "changes" || state.shown.includes(source)
+              ? state.shown
+              : inStripOrder([...state.shown, source]),
+          asked: { source },
         })),
+      settle: () => set({ asked: null }),
     }),
     {
       name: "meridian.sidebar-tabs.v1",

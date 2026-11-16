@@ -106,6 +106,11 @@ export function apiProjectDraftsPath(projectId: string, owner: string): string {
   return `${apiProjectPath(projectId)}/drafts?owner=${encodeURIComponent(owner)}`;
 }
 
+/** The authorship evidence of an owner's drafts, many in one request. */
+export function apiProjectDraftsProvenancePath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/drafts/provenance`;
+}
+
 /** Commands address the branch; the server reads its owner from the branch row. */
 export function apiProjectBranchPath(projectId: string, branchId: string): string {
   return `${apiProjectPath(projectId)}/branches/${branchId}`;

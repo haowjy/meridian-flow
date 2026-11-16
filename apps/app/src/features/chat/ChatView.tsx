@@ -112,6 +112,7 @@ import { useChatStop } from "./useChatStop";
 import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useCommittedEvent } from "./useCommittedEvent";
+import { useEditStopped } from "./useEditStopped";
 import { useHandBack } from "./useHandBack";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useQueueControls } from "./useQueueControls";
@@ -387,6 +388,13 @@ export function ChatView({
     ],
   );
   const handBack = useHandBack({ threadId, accountId, scope: stopScope });
+  const editStopped = useEditStopped({
+    threadId,
+    accountId,
+    turns,
+    scope: stopScope,
+    composer: composerRef,
+  });
   const subagentStopScope = useMemo(
     () => ({ accountId, scope: stopScope }),
     [accountId, stopScope],
@@ -771,6 +779,7 @@ export function ChatView({
                           chatStop={chatStop}
                           queue={queue}
                           brief={brief}
+                          onEditStopped={editStopped}
                           isStandIn={isStandIn}
                           busy={running}
                           inherited={inheritedView}

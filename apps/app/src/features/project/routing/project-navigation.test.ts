@@ -40,35 +40,38 @@ function setup(initial: string, restore?: () => undefined | Promise<boolean>) {
 }
 
 describe("project navigation", () => {
-  it.each([
-    true,
-    false,
-  ])("revalidates competing intents after native restoration (restored: %s)", async (restored) => {
-    let finish!: (restored: boolean) => void;
-    const restoration = new Promise<boolean>((resolve) => {
-      finish = resolve;
-    });
-    const { navigation, changes, history } = setup(
-      "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      () => restoration,
-    );
-    const first = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
-      replace: false,
-    });
-    const second = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000/chats"), {
-      replace: false,
-    });
-    expect(changes).toEqual([]);
-    finish(restored);
-    await expect(first).resolves.toEqual({ kind: "superseded" });
-    await expect(second).resolves.toEqual({ kind: restored ? "applied" : "superseded" });
-    expect(history.location.pathname).toBe(
-      restored
-        ? "/p/550e8400-e29b-41d4-a716-446655440000/chats"
-        : "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-    );
-    navigation.dispose();
-  });
+  it.each([true, false])(
+    "revalidates competing intents after native restoration (restored: %s)",
+    async (restored) => {
+      let finish!: (restored: boolean) => void;
+      const restoration = new Promise<boolean>((resolve) => {
+        finish = resolve;
+      });
+      const { navigation, changes, history } = setup(
+        "/p/550e8400-e29b-41d4-a716-446655440000/editor",
+        () => restoration,
+      );
+      const first = navigation.transition(address("/p/550e8400-e29b-41d4-a716-446655440000"), {
+        replace: false,
+      });
+      const second = navigation.transition(
+        address("/p/550e8400-e29b-41d4-a716-446655440000/chats"),
+        {
+          replace: false,
+        },
+      );
+      expect(changes).toEqual([]);
+      finish(restored);
+      await expect(first).resolves.toEqual({ kind: "superseded" });
+      await expect(second).resolves.toEqual({ kind: restored ? "applied" : "superseded" });
+      expect(history.location.pathname).toBe(
+        restored
+          ? "/p/550e8400-e29b-41d4-a716-446655440000/chats"
+          : "/p/550e8400-e29b-41d4-a716-446655440000/editor",
+      );
+      navigation.dispose();
+    },
+  );
   it("rejects an effect rendered for a different entry, including equal-href history entries", () => {
     const { history, navigation } = setup("/p/550e8400-e29b-41d4-a716-446655440000/editor");
     const rendered = { href: history.location.href, key: history.location.state.__TSR_key ?? "" };

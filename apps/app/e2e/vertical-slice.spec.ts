@@ -25,7 +25,7 @@ test.describe("vertical slice", () => {
       await expect(
         page.locator(`[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`),
       ).toBeVisible();
-      await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
+      await page.goto(`/p/${fixture.projectId}/editor/kb/alpha`);
 
       const editor = page.locator('[data-editor-surface="live"] .ProseMirror');
       const dockComposer = page.locator(
@@ -83,8 +83,8 @@ test.describe("vertical slice", () => {
       await expect(
         page.locator(`[data-debug-composer="${fixture.threadId}"] [aria-label="Message"]`),
       ).toBeVisible();
-      await page.goto(`/p/${fixture.projectId}/editor/kb/alpha.md`);
-      await expect(page).toHaveURL(new RegExp(`/p/${fixture.projectId}/editor/kb/alpha\\.md`));
+      await page.goto(`/p/${fixture.projectId}/editor/kb/alpha`);
+      await expect(page).toHaveURL(new RegExp(`/p/${fixture.projectId}/editor/kb/alpha`));
 
       const editor = page.locator('[data-editor-surface="live"] .ProseMirror');
       await expect(editor).toBeVisible();

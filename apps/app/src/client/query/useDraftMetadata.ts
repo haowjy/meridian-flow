@@ -1,9 +1,10 @@
-/** Addressed SQL metadata only. Empty active drafts remain open independently of the pending list. */
-import type { DraftMetadataResponse } from "@meridian/contracts/branches";
-import { type QueryClient, useQueries } from "@tanstack/react-query";
+/** Addressed SQL metadata, from the owner's list where it holds the draft. Empty active drafts remain open independently of the pending list. */
+import type { DraftMetadataResponse, ThreadDraftListItem } from "@meridian/contracts/branches";
+import { draftRoomName } from "@meridian/contracts/protocol";
+import { type QueryClient, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 import { getDraftMetadata } from "@/client/api/branches-api";
 import type { DraftRef } from "@/features/draft-review/review-command-types";
-import { createdDraftMetadata } from "./created-drafts";
 import { projectQueryKeys } from "./project-query-keys";
 import { useOwnerDraftList } from "./useOwnerDrafts";
 
@@ -19,7 +20,7 @@ async function readDraftMetadata(draft: DraftRef, signal?: AbortSignal) {
   return { ...(await getDraftMetadata(draft, signal)), readAt } as DraftMetadataAnswer;
 }
 
-export function draftMetadataQueryOptions(draft: DraftRef) {
+function draftMetadataQueryOptions(draft: DraftRef) {
   return {
     queryKey: projectQueryKeys.ownerDraftMetadata(
       draft.projectId,
@@ -31,29 +32,93 @@ export function draftMetadataQueryOptions(draft: DraftRef) {
     staleTime: 15_000,
   };
 }
+/** A listed row's metadata: the row names its draft, so it needs no read of its own. */
+function listedMetadata(item: ThreadDraftListItem, readAt: number): DraftMetadataAnswer {
+  return item.draftId
+    ? {
+        status: "active",
+        draftId: item.draftId,
+        reviewRoomName: draftRoomName(item.draftId),
+        item,
+        readAt,
+      }
+    : { status: "tree-only", item, readAt };
+}
+
 /**
- * One owner's drafts' metadata. A draft the owner's pending creates make answers from the list
- * (`useCreatedDrafts`) until the server has made it: the server may not have heard of the create.
+ * One owner's drafts' metadata. A draft the owner's list holds answers from its row, so a review
+ * of many drafts reads one list, not one address per draft; only a draft the list doesn't hold
+ * (an empty draft, or one the list dropped) reads its own address. A row the owner's pending
+ * creates make (`useCreatedDrafts`) speaks for no read time: it never reopens a draft this tab
+ * saw end.
+ *
+ * Each row's answer is also stored as the draft's own answer, which every surface shares: when
+ * the list drops the row, a surface that mounts then still finds its room, and the draft's own
+ * read, older than the list that dropped it, is asked again.
  */
 export function useDraftMetadata(drafts: readonly DraftRef[]) {
-  const results = useQueries({ queries: drafts.map(draftMetadataQueryOptions) });
   const owner = drafts[0];
-  const { created } = useOwnerDraftList(
+  const queryClient = useQueryClient();
+  const list = useOwnerDraftList(
     owner?.projectId ?? "",
     owner?.ownerKey ?? "",
     owner !== undefined,
   );
+  const rows = useMemo(
+    () => new Map((list.data?.items ?? []).map((row) => [row.itemKey, row])),
+    [list.data],
+  );
+  const listedAnswer = (draft: DraftRef) => {
+    const item = rows.get(draft.itemKey);
+    return item && list.data
+      ? listedMetadata(item, list.created.includes(item) ? 0 : list.data.readAt)
+      : null;
+  };
+  const results = useQueries({
+    queries: drafts.map((draft) => ({
+      ...draftMetadataQueryOptions(draft),
+      enabled: !rows.has(draft.itemKey),
+    })),
+  });
+  const draftsKey = JSON.stringify(drafts.map((draft) => draft.itemKey));
+  useEffect(() => {
+    const listReadAt = list.data?.readAt;
+    if (listReadAt === undefined) return;
+    for (const draft of drafts) {
+      const { queryKey } = draftMetadataQueryOptions(draft);
+      const answer = listedAnswer(draft);
+      const held = queryClient.getQueryData<DraftMetadataAnswer>(queryKey);
+      if (answer) {
+        if (!held || answer.readAt >= held.readAt)
+          queryClient.setQueryData(queryKey, answer, { updatedAt: answer.readAt });
+      } else if (held && held.readAt < listReadAt)
+        void queryClient.invalidateQueries({ queryKey, exact: true });
+    }
+  }, [list.data, draftsKey, queryClient]);
   return results.map((result, index) => {
-    const item = created.find((row) => row.itemKey === drafts[index]?.itemKey);
-    if (!item || result.data?.status === "active") return result;
+    const answer = listedAnswer(drafts[index]);
+    if (!answer) {
+      // Older than the list that dropped its row: asked again from this render on (the effect),
+      // so a surface waits for that answer instead of taking the draft for unavailable. A failed
+      // re-read shows as its error.
+      const awaitingReread =
+        result.data !== undefined &&
+        list.data !== undefined &&
+        result.data.readAt < list.data.readAt &&
+        !result.isError;
+      return awaitingReread ? ({ ...result, isFetching: true } as typeof result) : result;
+    }
     return {
       ...result,
-      // The list's own word, read at no time: it never reopens a draft this tab saw end.
-      data: { ...createdDraftMetadata(item), readAt: 0 },
+      data: answer,
+      dataUpdatedAt: list.dataUpdatedAt,
+      // The row is re-read with its list.
+      isFetching: list.isFetching,
       error: null,
       isError: false,
       status: "success",
-    } as typeof result;
+      refetch: list.refetch,
+    } as unknown as typeof result;
   });
 }
 

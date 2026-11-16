@@ -287,6 +287,8 @@ export interface ThreadDraftListItem {
   /** `${branchId}:${documentId}`: the review identity for list rows, address, commands and queries. */
   itemKey: DraftItemKey;
   documentId: string;
+  /** The text draft's id, whose room the review opens; null when the item has no text draft. */
+  draftId: string | null;
   /** Whether the item has a text draft (an empty create or image may not). */
   hasDraft: boolean;
   origin: "created" | "edited";

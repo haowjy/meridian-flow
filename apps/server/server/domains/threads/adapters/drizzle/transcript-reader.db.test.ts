@@ -155,52 +155,52 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return { root, nodes, text: JSON.stringify(root) };
     }
 
-    it.each([
-      "newest_first",
-      "oldest_first",
-    ] as const)("uses bounded unique-index plans for %s reads on 5,000 turns with a 500-block turn", async (order) => {
-      const span = { threadId: THREAD_ID, afterPosition: 0, throughPosition: 5000 };
-      const query = transcriptItemKeysSql({
-        spans: [span],
-        order,
-        unit: "item",
-        limit: 20,
-        after: { position: 1, sequence: 249 },
-        through: { position: 5000, sequence: 499 },
-      });
-      const plan = await explain(query);
-      if (process.env.REPORT_TRANSCRIPT_EXPLAIN === "1") {
-        console.info(`transcript EXPLAIN ${order} after cursor: ${JSON.stringify(plan.root)}`);
-      }
-      expect(
-        plan.nodes.some(
-          (node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === "turns",
-        ),
-      ).toBe(false);
-      expect(plan.text).toContain("turns_thread_position_unique");
-      expect(plan.text).toContain("turn_blocks_turn_sequence");
-      expect(
-        plan.nodes.some(
-          (node) =>
-            typeof node["Index Cond"] === "string" &&
-            node["Index Cond"].includes("sequence") &&
-            node["Index Cond"].includes("CASE"),
-        ),
-      ).toBe(true);
-      const output = await readTranscriptPage(
-        repos,
-        (await repos.threads.findById(THREAD_ID)) as never,
-        {
+    it.each(["newest_first", "oldest_first"] as const)(
+      "uses bounded unique-index plans for %s reads on 5,000 turns with a 500-block turn",
+      async (order) => {
+        const span = { threadId: THREAD_ID, afterPosition: 0, throughPosition: 5000 };
+        const query = transcriptItemKeysSql({
+          spans: [span],
           order,
           unit: "item",
-          limit: 3,
-        },
-      );
-      expect(output.entries.length).toBeGreaterThan(0);
-      if (order === "oldest_first") {
-        expect(output.entries[0]?.blocks).toHaveLength(3);
-      }
-    });
+          limit: 20,
+          after: { position: 1, sequence: 249 },
+          through: { position: 5000, sequence: 499 },
+        });
+        const plan = await explain(query);
+        if (process.env.REPORT_TRANSCRIPT_EXPLAIN === "1") {
+          console.info(`transcript EXPLAIN ${order} after cursor: ${JSON.stringify(plan.root)}`);
+        }
+        expect(
+          plan.nodes.some(
+            (node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === "turns",
+          ),
+        ).toBe(false);
+        expect(plan.text).toContain("turns_thread_position_unique");
+        expect(plan.text).toContain("turn_blocks_turn_sequence");
+        expect(
+          plan.nodes.some(
+            (node) =>
+              typeof node["Index Cond"] === "string" &&
+              node["Index Cond"].includes("sequence") &&
+              node["Index Cond"].includes("CASE"),
+          ),
+        ).toBe(true);
+        const output = await readTranscriptPage(
+          repos,
+          (await repos.threads.findById(THREAD_ID)) as never,
+          {
+            order,
+            unit: "item",
+            limit: 3,
+          },
+        );
+        expect(output.entries.length).toBeGreaterThan(0);
+        if (order === "oldest_first") {
+          expect(output.entries[0]?.blocks).toHaveLength(3);
+        }
+      },
+    );
 
     it("uses the unsettled and epoch-boundary partial indexes", async () => {
       const bake = await repos.promptBakes.create({

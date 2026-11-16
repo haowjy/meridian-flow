@@ -831,7 +831,7 @@ export class DraftCommandOwner {
         })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
     if (scheduled.handle && history)
-      entry.item.applyEntries.add(history.captureApply(scheduled.handle));
+      entry.item.applyEntries.add(history.captureApply(scheduled.handle).remove);
     binding.runtime.projectNow();
     const outcome = scheduled.outcome.then((answer) =>
       this.settled(ref, entry.draftId, answer, restore),

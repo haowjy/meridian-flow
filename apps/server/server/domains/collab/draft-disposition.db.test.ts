@@ -159,14 +159,13 @@ it("reads applied and discarded historical parts after close, independent of pla
     );
     const visibleClosed = await f.ai(23, "The bright mountain glows.");
     await f.save("closed");
-    const historical = await review(f.draftId, { writerRanges: [[99, 0, 100]] });
+    const historical = await review(f.draftId);
     expect(historical.draft.status).toBe("closed");
     expect(historical.parts.map((p) => [p.editId, p.disposition])).toEqual([
       [visibleClosed, "discarded"],
       [discarded, "discarded"],
       [applied, "applied"],
     ]);
-    expect(historical.provenance?.writers).toBeUndefined();
     expect(historical.projection?.hasChanges).toBe(true);
     await db.delete(schema.turns).where(eq(schema.turns.id, TURN_ID));
     const orphaned = await review(f.draftId);

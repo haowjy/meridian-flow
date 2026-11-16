@@ -7,6 +7,7 @@ import { NO_OVERRIDES, type ThreadOverrides } from "@meridian/contracts/threads"
 import { Settings2 } from "lucide-react";
 import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
+import { useThreadAgent } from "@/client/query/useAgentFiles";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +18,6 @@ import {
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
-import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
@@ -103,7 +103,32 @@ export function AgentPickerPanel({
   const choicesRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const openAgentFile = useOpenAgentFile(projectId);
-  const agents = (status.agents ?? []).filter((agent) => agent.primary);
+  // A started chat runs its Agent as bound until it compacts, so its own row is the binding's,
+  // whatever the catalog's newest save now says (another model, renamed, not primary, clashing).
+  const bound = useThreadAgent(mode.kind === "chat" ? mode.threadId : null);
+  const currentSlug =
+    mode.kind === "chat" ? (bound.data?.selection.slug ?? current.slug) : current.slug;
+  const catalogOwn = status.agents?.find((agent) => agent.slug === currentSlug);
+  const own: AgentCatalogItem | undefined =
+    mode.kind !== "chat"
+      ? undefined
+      : bound.data
+        ? {
+            ...(catalogOwn ?? { path: null, level: "builtin", shadows: [] }),
+            selection: bound.data.selection,
+            slug: bound.data.selection.slug,
+            name: bound.data.name,
+            description: bound.data.description,
+            model: bound.data.model,
+            effort: bound.data.effort,
+            primary: true,
+            unavailableReasons: bound.data.unavailableReasons,
+          }
+        : catalogOwn;
+  const agents = [
+    ...(own ? [own] : []),
+    ...(status.agents ?? []).filter((agent) => agent.primary && agent.slug !== own?.slug),
+  ];
   if (status.status !== "ready" || agents.length === 0)
     return (
       <Picker>
@@ -125,8 +150,6 @@ export function AgentPickerPanel({
       </Picker>
     );
 
-  const own =
-    mode.kind === "chat" ? agents.find((agent) => agent.slug === current.slug) : undefined;
   const needle = query.trim().toLowerCase();
   const listed = agents.filter(
     (agent) =>
@@ -136,7 +159,7 @@ export function AgentPickerPanel({
         agent.description.toLowerCase().includes(needle)),
   );
   const shown =
-    [...(own ? [own] : []), ...listed].find((agent) => agent.slug === (pointed ?? current.slug)) ??
+    [...(own ? [own] : []), ...listed].find((agent) => agent.slug === (pointed ?? currentSlug)) ??
     own ??
     listed[0] ??
     agents[0];
@@ -145,8 +168,11 @@ export function AgentPickerPanel({
   );
   const handsOff = (agent: AgentCatalogItem) =>
     mode.kind === "turn" || (mode.kind === "chat" && agent !== own);
-  const rows = Math.min(Math.max(agents.length, MIN_ROWS), VISIBLE_ROWS);
-  const headings = (own ? 1 : 0) + (mode.kind === "new" ? 0 : 1);
+  const rows = Math.min(
+    Math.max(agents.length + (mode.kind === "chat" && !own ? 1 : 0), MIN_ROWS),
+    VISIBLE_ROWS,
+  );
+  const headings = (mode.kind === "chat" ? 1 : 0) + (mode.kind === "new" ? 0 : 1);
   // The search, the rows and the footer: the one height, whatever is pointed at.
   const height = SEARCH_PX + rows * ROW_PX + headings * LINE_PX + LINE_PX + 24;
 
@@ -159,7 +185,7 @@ export function AgentPickerPanel({
       ? handoffDraft?.slug === agent.slug
         ? handoffDraft.overrides
         : NO_OVERRIDES
-      : agent.slug === current.slug
+      : agent.slug === currentSlug
         ? current.overrides
         : NO_OVERRIDES;
   const pick = (agent: AgentCatalogItem, next = overridesFor(agent)) => {
@@ -170,14 +196,14 @@ export function AgentPickerPanel({
       onClose();
       return;
     }
-    if (agent.slug === current.slug && sameOverrides(next, current.overrides)) return;
+    if (agent.slug === currentSlug && sameOverrides(next, current.overrides)) return;
     if (mode.kind !== "turn") mode.onChoose(choice);
   };
   /** A model or level: picked at once, except for a handoff, which it only sets up. */
   const adjust = (agent: AgentCatalogItem, next: ThreadOverrides) =>
     handsOff(agent) ? setHandoffDraft({ slug: agent.slug, overrides: next }) : pick(agent, next);
   const row = (agent: AgentCatalogItem) => {
-    const isCurrent = agent.slug === current.slug;
+    const isCurrent = agent.slug === currentSlug;
     return (
       <li
         key={agent.slug}
@@ -221,6 +247,8 @@ export function AgentPickerPanel({
   const runsOn = overrides.model ?? shown.model;
   const option = (id: string | null) => (id ? models?.find((model) => model.id === id) : undefined);
   const runsOnOption = option(runsOn);
+  const awaitsBinding = shown === own && bound.isPending;
+  const bindingFailed = shown === own && bound.isError;
   // Reasoning as the gateway settles it on the model: the Agent's own level, and the one it runs at.
   const ownLevel = settledReasoning(shown.effort, runsOnOption);
   const thinksAt = overrides.effort ? settledReasoning(overrides.effort, runsOnOption) : ownLevel;
@@ -263,12 +291,23 @@ export function AgentPickerPanel({
                 label={t`Search Agents`}
               />
             </div>
-            {own ? (
+            {mode.kind === "chat" ? (
               <section aria-label={t`This chat`} className="shrink-0">
                 <h3 className={dropdownGroupLabelClass}>
                   <Trans>This chat</Trans>
                 </h3>
-                <ul className="flex flex-col">{row(own)}</ul>
+                {own ? (
+                  <ul className="flex flex-col">{row(own)}</ul>
+                ) : bound.isError ? (
+                  <InlineErrorRow
+                    message={t`Couldn't load what this chat runs.`}
+                    onRetry={() => void bound.refetch()}
+                  />
+                ) : (
+                  <ListLine density="menu" status>
+                    <Trans>Loading…</Trans>
+                  </ListLine>
+                )}
               </section>
             ) : null}
             <section
@@ -304,7 +343,6 @@ export function AgentPickerPanel({
                     onOpen={() => {
                       onClose();
                       useSidebarTabs.getState().reveal("agents");
-                      useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
                     }}
                   />
                 </li>
@@ -324,7 +362,7 @@ export function AgentPickerPanel({
                 action={
                   handsOff(shown)
                     ? { label: t`Hand off to ${shown.name}`, touchOnly: false }
-                    : shown.slug === current.slug
+                    : shown.slug === currentSlug
                       ? null
                       : { label: t`Use ${shown.name}`, touchOnly: true }
                 }
@@ -352,7 +390,16 @@ export function AgentPickerPanel({
               }}
               className="flex min-h-0 min-w-0 flex-1 flex-col"
             >
-              {pickable(shown) ? (
+              {bindingFailed ? (
+                <InlineErrorRow
+                  message={t`Couldn't load what this chat runs.`}
+                  onRetry={() => void bound.refetch()}
+                />
+              ) : awaitsBinding ? (
+                <ListLine density="menu" status>
+                  <Trans>Loading models…</Trans>
+                </ListLine>
+              ) : pickable(shown) ? (
                 <>
                   <ModelChoices
                     agent={shown}

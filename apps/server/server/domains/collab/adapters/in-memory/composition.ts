@@ -200,7 +200,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     checkpoints,
     draftAttribution: {
       async readDraftProvenance() {
-        return null;
+        return new Map();
       },
     },
     attribution: {

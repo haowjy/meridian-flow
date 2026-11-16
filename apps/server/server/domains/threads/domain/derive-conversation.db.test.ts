@@ -77,8 +77,9 @@ else
         store: revisions,
         levelFiles: levels,
         builtins: [],
-        defaultModel: () => "gpt-5.6-luna",
+        modelFor: (name) => name ?? "gpt-5.6-luna",
         unavailableReasons: () => [],
+        modelUnavailable: () => [],
       });
       const slug = `fork-agent-${crypto.randomUUID()}`;
       levels.write(
@@ -953,25 +954,25 @@ else
       expect(await repos.threads.findByIdIncludingDeleted(id as never)).toBeNull();
     });
 
-    it.each([
-      "cancelled",
-      "error",
-    ] as const)("accepts a %s turn as a settled cutoff", async (status) => {
-      const fixture = await setupSource();
-      const settledTurn = await repos.turns.create({
-        threadId: fixture.source.id,
-        role: "assistant",
-        origin: "assistant",
-        status,
-        prevTurnId: fixture.firstTurn.id,
-      });
+    it.each(["cancelled", "error"] as const)(
+      "accepts a %s turn as a settled cutoff",
+      async (status) => {
+        const fixture = await setupSource();
+        const settledTurn = await repos.turns.create({
+          threadId: fixture.source.id,
+          role: "assistant",
+          origin: "assistant",
+          status,
+          prevTurnId: fixture.firstTurn.id,
+        });
 
-      const { thread: fork } = await createFork(fixture.source, fixture.deps, {
-        originTurnId: settledTurn.id,
-      });
+        const { thread: fork } = await createFork(fixture.source, fixture.deps, {
+          originTurnId: settledTurn.id,
+        });
 
-      expect(fork.originTurnId).toBe(settledTurn.id);
-    });
+        expect(fork.originTurnId).toBe(settledTurn.id);
+      },
+    );
 
     it("rejects a selection whose prefix has no settled turns", async () => {
       const fixture = await setupSource();
