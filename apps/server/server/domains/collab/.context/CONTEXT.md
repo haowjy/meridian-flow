@@ -235,7 +235,10 @@ and the result says the earlier draft closed and this edit opened a new one. The
 the current text. The core resolves the write's selectors in the model's view of the closed draft
 (`supersededWorkDraftId`) and carries the result onto the new draft by block hash
 (`resolver/carry.ts`): blocks it lacks get their words after the nearest block both hold, and a
-remove of them changes nothing; the Discard's restored text is never in scope. A removed document, an archived or deleted Work's draft
+remove of them changes nothing; the Discard's restored text is never in scope. The day-30 purge
+rewrites the draft's frontier rows to `superseded:<documentId>` with the cut dropped, so a write
+planned on a purged draft still finds it superseded, has no view, and lands its words at the end
+with nothing deleted. A removed document, an archived or deleted Work's draft
 return the write instead: a `done` row with `settled: returned`, and the document as that chat
 reads it now, its evidence stored in the row so the model's next write plans on it. A block the
 writer deleted, merged or moved in a draft that is still open is returned too (`block_gone`, from

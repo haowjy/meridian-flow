@@ -477,7 +477,8 @@ export function createWriteCommands(deps: {
     use: (carry: CarryFrom | undefined) => Promise<T>,
   ): Promise<T> {
     const prior = context.supersededWorkDraftId;
-    if (!prior) return use(undefined);
+    if (prior === undefined) return use(undefined);
+    if (prior === null) return use({ view: null });
     const planning = context.frontiers?.planning;
     const opened = planning
       ? await openRoom(options.coordinator, { docId, commandName: "replace", workDraftId: prior })

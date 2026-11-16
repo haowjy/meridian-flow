@@ -31,7 +31,7 @@ import { runWithInversePrincipal } from "./inverse-principal.js";
 import { runInLockedWrite } from "./locked-write.js";
 import type { ModelEdits, ModelEditWriteContext } from "./model-edit.js";
 import type { ModelEvidence } from "./model-evidence.js";
-import { draftRoom } from "./observation-rooms.js";
+import { draftRoom, supersededRoom } from "./observation-rooms.js";
 import { projectedFrontiers } from "./seed-frontier.js";
 
 /** A write's context without its grant, which the router takes apart. */
@@ -78,17 +78,25 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   /**
    * How the draft the model last saw closed, when it has: that edit was planned on text that is
    * no longer a draft. A Discard closed it as discarded, a Restore's swap as replaced; the
-   * document's removal, an Apply of its delete or its purge as a removed document.
+   * document's removal or an Apply of its delete as a removed document. After the purge the
+   * model's observation is the document's superseded room: the draft and its cut are gone, so
+   * `draftId` is null and the write takes the no-view rule.
    */
   async function closedDraftSeen(
+    documentId: DocumentId,
     { liveRoom: live, drafts }: Awaited<ReturnType<ModelEditWriteDeps["roomsOf"]>>,
     creditedBlockIds: readonly string[] | undefined,
-  ): Promise<{ draftId: string; closedAs: "discarded" | "replaced" | "document_removed" } | null> {
+  ): Promise<{
+    draftId: string | null;
+    closedAs: "discarded" | "replaced" | "purged" | "document_removed";
+  } | null> {
     if (!creditedBlockIds) return null;
+    const purged = supersededRoom(documentId);
     const latest = await deps.evidence.latestRoom(
-      [...(live ? [live] : []), ...drafts.map((draft) => draftRoom(draft.draftId))],
+      [...(live ? [live] : []), purged, ...drafts.map((draft) => draftRoom(draft.draftId))],
       creditedBlockIds,
     );
+    if (latest === purged) return { draftId: null, closedAs: "purged" };
     const seen = drafts.find((draft) => draftRoom(draft.draftId) === latest);
     return seen?.status === "closed"
       ? { draftId: seen.draftId, closedAs: seen.closedAs ?? "document_removed" }
@@ -156,11 +164,16 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   }
 
   /** The model is told its earlier draft closed and that this edit opened a new one. */
-  function withNewDraftNote(outcome: WriteOutcome, closed: "discarded" | "replaced"): WriteOutcome {
-    const earlier =
-      closed === "discarded"
-        ? "Your earlier draft of this file was discarded by the writer."
-        : "Your earlier draft of this file was replaced when the writer restored another.";
+  function withNewDraftNote(
+    outcome: WriteOutcome,
+    closed: "discarded" | "replaced" | "purged",
+  ): WriteOutcome {
+    const earlier = {
+      discarded: "Your earlier draft of this file was discarded by the writer.",
+      replaced: "Your earlier draft of this file was replaced when the writer restored another.",
+      purged:
+        "Your earlier draft of this file was closed by the writer and has since been cleared.",
+    }[closed];
     const note = `${earlier} This edit opened a new draft.`;
     const { message } = outcome.result;
     return {
@@ -183,7 +196,11 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     if (documentId) {
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
-      const closed = await closedDraftSeen(await deps.roomsOf(documentId), given.creditedBlockIds);
+      const closed = await closedDraftSeen(
+        documentId,
+        await deps.roomsOf(documentId),
+        given.creditedBlockIds,
+      );
       if (closed?.closedAs === "document_removed")
         return returnedEdit(command, given, grant, "document_removed");
     }
@@ -206,7 +223,8 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     await deps.enterDraftSeam();
     // Before anything opens: an edit that is going to be returned makes no branch and no draft.
     const rooms = documentId ? await deps.roomsOf(documentId) : null;
-    const closed = rooms && (await closedDraftSeen(rooms, given.creditedBlockIds));
+    const closed =
+      documentId && rooms ? await closedDraftSeen(documentId, rooms, given.creditedBlockIds) : null;
     if (closed?.closedAs === "document_removed")
       return returnedEdit(command, given, grant, "document_removed");
     approveBranchWriteJoin();

@@ -34,6 +34,7 @@ import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DraftDispositionView } from "../domain/draft-disposition.js";
+import { draftRoom, supersededRoom } from "../domain/observation-rooms.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { ENTRY_KINDS } from "./drizzle-discard-entries.js";
 
@@ -93,12 +94,10 @@ export function createDrizzleDiscardPurge(
         const documents = [...new Set((await closedDrafts(ids)).map((draft) => draft.documentId))];
         for (const id of documents.sort()) await lockDocumentMutation(tx, id);
         // Re-read under the keys: a Restore may have taken some of them.
-        const doomed = (await closedDrafts(ids))
-          .filter((draft) => !created.has(draft.documentId))
-          .map((draft) => draft.id);
+        const doomed = (await closedDrafts(ids)).filter((draft) => !created.has(draft.documentId));
         if (doomed.length > 0) {
           // The turn's card reads what became of each part from here once the bytes are gone.
-          for (const id of doomed)
+          for (const { id } of doomed)
             for (const part of dispositions.get(id) ?? [])
               if (part.disposition !== "pending")
                 await tx
@@ -110,14 +109,39 @@ export function createDrizzleDiscardPurge(
                       eq(documentEditParts.ordinal, part.ordinal),
                     ),
                   );
-          await tx.delete(documentDrafts).where(inArray(documentDrafts.id, doomed));
-          // A frontier has no draft foreign key; its room key is the only ownership.
-          await tx.delete(observationFrontiers).where(
+          await tx.delete(documentDrafts).where(
             inArray(
-              observationFrontiers.roomKey,
-              doomed.map((id) => `draft:${id}`),
+              documentDrafts.id,
+              doomed.map((draft) => draft.id),
             ),
           );
+          // A frontier has no draft foreign key; its room key is the only ownership. The row
+          // stays as the record that the model's view was of a closed draft, without the cut.
+          for (const draft of doomed) {
+            const room = draftRoom(draft.id);
+            // A block's rows are one per room, so a second draft of the document in the same
+            // block would collide on the rewrite: the first one's record already says it.
+            await tx.delete(observationFrontiers).where(
+              and(
+                eq(observationFrontiers.roomKey, room),
+                inArray(
+                  observationFrontiers.sourceBlockId,
+                  tx
+                    .select({ id: observationFrontiers.sourceBlockId })
+                    .from(observationFrontiers)
+                    .where(eq(observationFrontiers.roomKey, supersededRoom(draft.documentId))),
+                ),
+              ),
+            );
+            await tx
+              .update(observationFrontiers)
+              .set({
+                roomKey: supersededRoom(draft.documentId),
+                snapshot: Buffer.alloc(0),
+                journalPosition: null,
+              })
+              .where(eq(observationFrontiers.roomKey, room));
+          }
         }
         await tx.delete(commands).where(inArray(commands.id, [...ids] as CommandId[]));
       },
