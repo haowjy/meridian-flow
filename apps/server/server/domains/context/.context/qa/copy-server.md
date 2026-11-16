@@ -46,11 +46,11 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
 3. **Draft source.** The same chat overwrites `manuscript://Outside/Sheet` in its
    draft. Copy it with `--draft-work w1`: the copy holds the draft text and
    `metadata.copiedFrom.version` is `draft`. Copy without the flag: the live text,
-   `live`. A folder with a draft view is refused (`invalid_operation`). The draft is the
+   `live`. A folder with a draft view copies each document as the Work shows it: the draft text
+   where the Work holds a draft, otherwise the live text. The draft is the
    Work's, whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1`
    still copies Work w1's draft. A Work that holds no draft of the document (`--draft-work`
-   a second Work) is refused with `invalid_operation` reason `no_draft`, never the
-   live text.
+   a second Work) copies the live text: `copiedFrom.version` `live`.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any
    lock), the ring closes inside the copy, and concurrent copies into one folder get

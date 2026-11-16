@@ -294,6 +294,7 @@ function DockFileLine({
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
+            notice={summary ? undefined : <DeletedLiveTag item={file.row.draft} />}
             view={{ ...view, items, locked: view.locked || dock.generating }}
             touch={touch}
             onSelect={(change) => dock.review(file, change)}

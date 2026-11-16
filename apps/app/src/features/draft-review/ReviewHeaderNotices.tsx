@@ -73,26 +73,48 @@ export function ReviewFailureNotices({
   );
 }
 
-/** The desktop's state stays inside the identity row's 22px box. */
+/**
+ * The desktop's state stays inside the identity row's 22px box. Once no change is left, nothing
+ * else shows the draft's failure (a Ctrl+Z that couldn't take a Discard back), so it takes the
+ * place of "No changes left" and wraps.
+ */
 export function ReviewStateInline({
   touch = false,
+  itemKey,
   ...state
-}: ReviewStateProps & { touch?: boolean }) {
+}: ReviewStateProps & { itemKey: string; touch?: boolean }) {
+  const { failure } = useDraftCommandState(itemKey);
   if (!state.finished && !state.completing) return null;
+  const failed = state.finished && failure;
   return (
     <span
       role="status"
       aria-busy={!!state.completing}
-      className="flex min-w-0 items-center gap-2 font-sans text-xs"
+      className={cn(
+        "flex min-w-0 items-center gap-2 font-sans text-xs",
+        // The desktop band's controls take the line once finished; this keeps to its end.
+        !touch && "ml-auto",
+        // Next draft wraps under a failure that can't get 10rem beside it.
+        failed && "flex-1 flex-wrap justify-end gap-y-1",
+      )}
     >
-      <span
-        className={cn(
-          "text-muted-foreground",
-          "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
-        )}
-      >
-        <ReviewStatusContent {...state} />
-      </span>
+      {failed ? (
+        <ReviewFailureNotices
+          itemKey={itemKey}
+          commandError={failure}
+          onOpenNext={state.onOpenNext}
+          className="min-w-0 grow basis-40 p-0"
+        />
+      ) : (
+        <span
+          className={cn(
+            "text-muted-foreground",
+            "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
+          )}
+        >
+          <ReviewStatusContent {...state} />
+        </span>
+      )}
       {state.finished ? (
         <ReviewNextAction {...state} className={touch ? "h-11 px-2" : "h-6"} />
       ) : null}

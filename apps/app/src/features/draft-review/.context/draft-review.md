@@ -280,12 +280,30 @@ the page as discarded ("This destination is unavailable"). If the server never l
 the retries, main stays where it is. A room that turned read-only (its Work archived) ends the notice. An Undo
 that throws keeps the notice with Retry, and Retry takes back only the rooms that failed.
 
-A notice's Undo holds while the draft's prose is as the Discard left it. Any other transaction on
-the `prosemirror` fragment (writer typing, a model write), the room closing or resetting
-(`binding.notices`), or Ctrl+Z popping the item from the reviewing editor ends it silently. So
-the notice and Ctrl+Z can never undo the same Discard twice. While the reviewing editor lives and
-the item is on top of its stack, the notice's Undo is that editor's Undo; once the editor is gone
-the item is undone alone through a short-lived manager.
+A room's share of a notice's Undo holds while what the Discard wrote and deleted is as the Discard
+left it, checked when Undo is pressed (`touchedSince`, against the room's state vector right after
+the Discard): an edit since that deletes text the Discard wrote, writes into or beside text it
+wrote or deleted, or deletes the block holding either means undoing would restore nothing (the
+block is gone) or the same text twice (the model drafted it again), so it doesn't run. A Discard is
+one Yjs step per room, so one such edit to any of a document's discarded changes ends that
+document's whole Undo. Edits elsewhere in the draft leave it standing: Live typing that reaches the
+draft while a Discard all is in flight must not cost a document its Undo. The notice's Undo always
+takes this Discard's own step out of whatever history holds it and undoes it alone through a
+short-lived manager, so it can never pop another step. Ctrl+Z in the reviewing editor applies the
+same check: the step is guarded (`DocumentHistory.guard`, which carries the guard through Redo),
+so when it is next and was touched it is dropped unrun. A dropped step ends its notice share and
+says "N changes couldn't come back" on the draft's failure line (`undo-left-out`), where Ctrl+Z's
+other results show, so the press is never spent silently when the notice is already gone. When the
+document has no change left, no card or strip row is there to carry that line, so the review's
+status line (`ReviewStateInline`) shows the draft's failure in place of "No changes left", and
+`useReviewFailures` leaves it out of the notices under the row so it shows once. Touched means an
+edit since deleted the step's text, wrote beside it, or deleted its block; the writer's own typing
+right after it counts too, though Yjs merges it into the Discard's struct (`touchedSince` checks the
+struct's end, not its start). A share that can't come back (touched, the room closing, resetting or turning read-only
+through `binding.notices`, or a `gone` answer) stays in the notice's sentence, which names the
+whole action the writer took, and the notice says how many of its changes couldn't come back
+(`partEnded(handle, leftOut)`, counted in changes, not documents). A share whose Discard was
+refused or taken back by Ctrl+Z leaves the sentence.
 Both paths record restorations, so marks after an Undo match marks before the Discard. Each Undo
 handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
 kept open; `DraftCommandOwner.close()` ends every notice.
