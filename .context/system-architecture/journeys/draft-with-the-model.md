@@ -36,7 +36,7 @@ Sees: the chat opens at once with the message. The send does not wait for the se
 
 Does: reads the reply as it streams.
 
-Sees: tool and helper (subagent) cards appear where the turn started them. A reply that only wrote drafts ends with "Drafted 1 document" (or "Drafted N documents").
+Sees: tool and helper (subagent) cards appear where the turn started them. A reply that only wrote drafts ends with "Drafted 1 document" (or "Drafted N documents"). Stop in the message box ends the reply; the message above a stopped reply then has Edit, which puts its words and chips back in the box, above anything typed there, to fix and send again.
 
 - Map: [server](../system.md#server), [threads](../server-conversation.md#threads), [runtime](../server-conversation.md#runtime), [thread-client](../code.md#thread-client)
 - Machines: [Turn status](../../../apps/server/server/domains/runtime/.context/state-machines.md), [Thread socket](../../../packages/thread-client/.context/state-machines.md)
@@ -52,9 +52,9 @@ Sees: the Work's drafted documents with a pending count, and "Apply all" and "Di
 
 ## See the Work's tree
 
-Does: presses the Draft view toggle, the framed icon beside Changes (offered while the Work has pending changes).
+Does: picks the Work's draft in the sidebar's version chip beside Changes, which reads "Live" (offered while the Work has pending changes).
 
-Sees: every sidebar source turns to the Work's tree on a grey review ground, at once (the browser replays it from its copy of the list), and the open page switches to its draft if it has one. A click opens a document on its draft; a rename, move or new document goes into the Work's draft. Pressing the toggle again brings back live, and the page with it. On Live, a jade dot marks each row the Work changes, and a page the Work drafts opens live with one sentence saying what the draft does to it and Show draft; its chip is neutral with a jade dot. Picking a version in the chip, or opening a change from Changes, moves the toggle with it. Ctrl+Z in the sidebar takes back the writer's latest tree change in the source on screen, made in the view on screen; a change someone has changed since is skipped with a notice.
+Sees: every sidebar source turns to the Work's tree on a grey review ground, at once (the browser replays it from its copy of the list), and the open page switches to its draft if it has one. A click opens a document on its draft; a rename, move or new document goes into the Work's draft. The chip now reads "Draft"; picking Live in it brings back live, and the page with it. On Live, a jade dot marks each row the Work changes, and a page the Work drafts opens live with one sentence saying what the draft does to it and Show draft; its chip is neutral with a jade dot. Picking a version in the chip, or opening a change from Changes, moves the toggle with it. Ctrl+Z in the sidebar takes back the writer's latest tree change in the source on screen, made in the view on screen; a change someone has changed since is skipped with a notice.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
 - Machines: [Draft and branch](../../../apps/server/server/domains/collab/.context/state-machines.md), [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md)

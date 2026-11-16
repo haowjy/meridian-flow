@@ -13,6 +13,7 @@ import {
   installObservabilityShutdownHooks,
   registerProcessShutdownCallback,
 } from "../lib/observability";
+import { installOutboundHttp1 } from "../lib/outbound-http1";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
 import { getYjsGateway } from "../routes/ws/yjs";
@@ -21,6 +22,7 @@ import { installTestHookController } from "../shared/test-hook-controller";
 const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 let yjsGateway: ReturnType<typeof getYjsGateway> | undefined;
 
+installOutboundHttp1();
 installApiProcessCrashPolicy({ eventSink });
 installTestHookController();
 installObservabilityShutdownHooks();

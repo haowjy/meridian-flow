@@ -521,9 +521,10 @@ export async function resolveActiveFolderUri(
   projectId: string,
   userId: string,
   folderId: string,
+  view: TreeView = LIVE_TREE,
 ): Promise<string | null> {
   const tx = currentDrizzleDb(db) as Database;
-  const [row] = (await loadPlacedRows(tx, LIVE_TREE, [folderId])).folders;
+  const [row] = (await loadPlacedRows(tx, view, [folderId])).folders;
   if (
     !row?.source ||
     row.folder.deleted ||
@@ -533,7 +534,7 @@ export async function resolveActiveFolderUri(
     row.work?.archivedAt
   )
     return null;
-  const ancestors = await loadIdentityFolderClosure(tx, LIVE_TREE, [folderId]);
+  const ancestors = await loadIdentityFolderClosure(tx, view, [folderId]);
   const classification = classifySourceIdentity({
     row: { ...row, node: { parentId: row.folder.parentId, deleted: false } },
     requestProjectId: projectId,

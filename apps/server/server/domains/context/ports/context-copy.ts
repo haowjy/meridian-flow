@@ -1,3 +1,4 @@
+import type { BranchId } from "@meridian/contracts";
 /**
  * What one tree must tell a Copy about itself, and what it must do with what a Copy made.
  *
@@ -17,8 +18,9 @@ import type {
   Filetype,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
-import type { CopyIdentityMap } from "../../collab/index.js";
+import type { BoundWrite, CopyIdentityMap } from "../../collab/index.js";
 import type { CopiedFrom } from "../document-metadata.js";
+import type { TreeView } from "../tree/tree-view.js";
 import type { AdapterFault } from "./context-adapter.js";
 
 /** One tracked or binary file in a source tree: what a copy hands on. */
@@ -62,9 +64,8 @@ export type CopySourceEntry = CopySourceFolder | CopySourceFile;
 
 /** Content for one copied document, bound for the address its copy lands at. */
 export interface CopiedContent {
-  /** The copy's first Yjs state; null for a source with no text, whose copy is empty. */
+  content?: BoundWrite | null;
   state: Uint8Array | null;
-  /** Absent for newly authored text. */
   copiedFrom?: CopiedFrom;
 }
 
@@ -141,7 +142,7 @@ export interface ContextCopyAdapter {
    * order (empty folders included), or the one file there. Read once; the copy works from
    * this and never re-lists.
    */
-  snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>>;
+  snapshotSource(path: string, view: TreeView): Promise<Result<CopySourceEntry, AdapterFault>>;
   /**
    * Plan `roots` under the scheme-relative folder `dir`: mint every identity, writing nothing
    * and holding no lock. A selected root that carries the device's `copyId` takes it; every
@@ -161,6 +162,7 @@ export interface ContextCopyAdapter {
     dir: readonly string[];
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
+    branchId: BranchId | null;
     position?: ContextSiblingPosition;
   }): Promise<Result<CopyOutcome, AdapterFault>>;
 }

@@ -1,3 +1,4 @@
+import type { DraftOwnerKey } from "@meridian/contracts";
 /** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -5,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OpenDocumentOwner } from "@/client/stores";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
 import { focusWhenFree } from "@/lib/focus-follow";
+import { useShellTreeVersion } from "../tree-version";
 import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath } from "./context-entry-name";
@@ -82,7 +84,21 @@ export function useEntryInteraction({
   const [picking, setPicking] = useState<"move" | "copy" | null>(null);
   // Set while the picker moves a selection rather than this row alone.
   const [pickedSelection, setPickedSelection] = useState<readonly DragEntry[] | null>(null);
-  const entry = useMemo(() => dragEntry(node), [node]);
+  const shell = useShellTreeVersion();
+  const entry = useMemo(
+    () => ({
+      ...dragEntry(node),
+      ...(shell?.showing === "draft"
+        ? {
+            view: {
+              kind: "draft" as const,
+              owner: shell.ownerKey as DraftOwnerKey,
+            },
+          }
+        : {}),
+    }),
+    [node, shell],
+  );
   const id = node.entryId;
   const kind: "file" | "folder" = node.kind === "file" ? "file" : "folder";
   const parsed = parseContextUri(node.uri);

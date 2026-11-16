@@ -6,6 +6,7 @@
 
 import { compareCatalogSiblings } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import type { DraftPeerShadowAccess } from "../../../collab/index.js";
 import { joinPath, renderFilename } from "../../context/paths.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -19,21 +20,24 @@ import type {
   ContextDocumentStore,
   ContextFolder,
 } from "../../ports/context-document-store.js";
-import { LIVE_TREE } from "../../tree/tree-view.js";
+import type { TreeView } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree.js";
 
-export interface ContextFsCopyDeps extends CopyTreeDeps {
+type ContextFsCopyDeps = CopyTreeDeps & {
   store: ContextDocumentStore;
-  /** Why this placement cannot take a copy (a draft placement), or null. */
-  refuseReceive(): AdapterFault | null;
-}
+  documentSync: CopyTreeDeps["documentSync"] &
+    Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
+};
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
   const { store, holderUri, folderUri } = deps;
 
   /** The source subtree at one path: the folder with every descendant, or one file. */
-  async function snapshotSource(path: string): Promise<Result<CopySourceEntry, AdapterFault>> {
+  async function snapshotSource(
+    path: string,
+    view: TreeView,
+  ): Promise<Result<CopySourceEntry, AdapterFault>> {
     const clean = path.replace(/\/+$/, "");
     if (!clean) {
       return Err({
@@ -41,19 +45,23 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
         message: "The source root cannot be copied; copy a file or a folder in it.",
       });
     }
-    const folder = await store.resolveFolderAt(LIVE_TREE, clean);
+    const folder = await store.resolveFolderAt(view, clean);
     if (folder.kind === "found" && folder.node) {
-      return Ok(await folderSnapshot(clean, folder.node));
+      return Ok(await folderSnapshot(clean, folder.node, view));
     }
-    const document = await store.resolveDocumentAt(LIVE_TREE, clean);
+    const document = await store.resolveDocumentAt(view, clean);
     if (document.kind === "found") return Ok(fileSnapshot(clean, document.node));
     return Err({ code: "not_found" });
   }
 
-  async function folderSnapshot(path: string, folder: ContextFolder): Promise<CopySourceFolder> {
+  async function folderSnapshot(
+    path: string,
+    folder: ContextFolder,
+    view: TreeView,
+  ): Promise<CopySourceFolder> {
     const [folders, documents] = await Promise.all([
-      store.listFolders(LIVE_TREE, folder.id),
-      store.listDocuments(LIVE_TREE, folder.id),
+      store.listFolders(view, folder.id),
+      store.listDocuments(view, folder.id),
     ]);
     const siblings = [
       ...folders.map((child) => ({
@@ -74,7 +82,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
     for (const sibling of siblings) {
       children.push(
         "folder" in sibling
-          ? await folderSnapshot(joinPath(path, sibling.folder.segment), sibling.folder)
+          ? await folderSnapshot(joinPath(path, sibling.folder.segment), sibling.folder, view)
           : fileSnapshot(joinPath(path, sibling.document.segment), sibling.document),
       );
     }
@@ -109,13 +117,17 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   return {
     sourceId: () => store.existingContextSourceId(),
     snapshotSource,
-    planCopy: async (input) => {
-      const refused = deps.refuseReceive();
-      return refused ? Err(refused) : Ok(planCopyTree(deps, input));
-    },
+    planCopy: async (input) => Ok(planCopyTree(deps, input)),
     copyInto: async (input) =>
       input.plan.dir.join("/") !== input.dir.join("/")
         ? Ok({ kind: "replan" })
-        : insertPlannedTrees(deps, [input], input.position),
+        : insertPlannedTrees(
+            deps,
+            [input],
+            input.position,
+            input.branchId
+              ? { branchId: input.branchId, documentSync: deps.documentSync }
+              : undefined,
+          ),
   };
 }

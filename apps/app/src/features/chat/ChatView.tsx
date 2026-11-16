@@ -22,6 +22,7 @@ import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/pr
 import {
   answeredControlIds,
   isHandoffSeed,
+  NO_OVERRIDES,
   type PendingInboxItem,
   readCompactionFacts,
 } from "@meridian/contracts/threads";
@@ -44,6 +45,7 @@ import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useR
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
+import { useSetThreadOverrides, useThreadOverrides } from "@/client/query/useSetThreadOverrides";
 import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
@@ -59,9 +61,9 @@ import {
   useFileDrop,
 } from "@/components/app/composer";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
+import type { AgentChoice } from "@/features/agents/AgentPicker";
 import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
 import { DEFAULT_AGENT_NAME } from "@/features/agents/constants";
-import type { CreationAgent } from "@/features/agents/creation-agent";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { LinkFollowDialog } from "@/features/links";
 import {
@@ -110,6 +112,7 @@ import { useChatStop } from "./useChatStop";
 import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useCommittedEvent } from "./useCommittedEvent";
+import { useEditStopped } from "./useEditStopped";
 import { useHandBack } from "./useHandBack";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useQueueControls } from "./useQueueControls";
@@ -385,6 +388,13 @@ export function ChatView({
     ],
   );
   const handBack = useHandBack({ threadId, accountId, scope: stopScope });
+  const editStopped = useEditStopped({
+    threadId,
+    accountId,
+    turns,
+    scope: stopScope,
+    composer: composerRef,
+  });
   const subagentStopScope = useMemo(
     () => ({ accountId, scope: stopScope }),
     [accountId, stopScope],
@@ -557,6 +567,8 @@ export function ChatView({
     canOpen: openThread !== null,
   });
   const inheritedView = inherited.view;
+  // A fork or the composer shows a pick at once, before the server has it.
+  const overrides = useThreadOverrides(threadId, activeThread?.overrides ?? NO_OVERRIDES);
   const forkTurn = useCommittedEvent((originTurnId: string) => {
     if (!activeThread || !openThread) return;
     const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
@@ -574,6 +586,7 @@ export function ChatView({
         originTurnId,
         agent: null,
         agentName: activeThread.agentName,
+        overrides,
       },
       {
         ...deps,
@@ -588,23 +601,28 @@ export function ChatView({
       },
     );
   });
-  const handoffTurn = useCommittedEvent(
-    (originTurnId: string, agent: Parameters<NonNullable<TurnDerivation>["handoff"]>[1]) => {
-      if (!activeThread || !openThread) return;
-      const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
-      const base = {
-        projectId,
-        sourceThreadId: threadId,
-        sourceTitle: activeThread.title,
-        workId: activeWork?.id ?? activeThread.workId,
-        aiWriteMode: activeThread.aiWriteMode,
-      };
-      startDerivation(
-        { ...base, kind: "handoff", originTurnId, agent, agentName: agent.name },
-        { ...deps, source: activeThread, inherited: null, open: openThread },
-      );
-    },
-  );
+  const handoffTurn = useCommittedEvent((originTurnId: string, choice: AgentChoice) => {
+    if (!activeThread || !openThread) return;
+    const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
+    const base = {
+      projectId,
+      sourceThreadId: threadId,
+      sourceTitle: activeThread.title,
+      workId: activeWork?.id ?? activeThread.workId,
+      aiWriteMode: activeThread.aiWriteMode,
+    };
+    startDerivation(
+      {
+        ...base,
+        kind: "handoff",
+        originTurnId,
+        agent: choice.agent,
+        agentName: choice.agent.name,
+        overrides: choice.overrides,
+      },
+      { ...deps, source: activeThread, inherited: null, open: openThread },
+    );
+  });
   const turnDerivation = useMemo<TurnDerivation | null>(() => {
     if (!canDerive || !activeThread || !openThread) return null;
     return {
@@ -634,9 +652,10 @@ export function ChatView({
         (turn) => turn.status === "complete" && !queuedWriterTurnIds.has(turn.id),
       )?.id ?? null)
     : null;
-  const handoffFromLatest = useCommittedEvent((agent: CreationAgent) => {
-    if (handoffCutoff) handoffTurn(handoffCutoff, agent);
+  const handoffFromLatest = useCommittedEvent((choice: AgentChoice) => {
+    if (handoffCutoff) handoffTurn(handoffCutoff, choice);
   });
+  const setOverrides = useSetThreadOverrides(threadId);
   const agentName = activeThread?.agentName ?? null;
   const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
   // Busy only while the server has yet to accept the chat's first send; a chat with nothing to
@@ -645,19 +664,23 @@ export function ChatView({
     () =>
       handoffCutoff || pendingCreation
         ? {
-            mode: "handoff",
+            mode: "started",
             projectId,
             threadId,
             bound: { name: agentName, definitionRevisionId: agentRevisionId },
+            overrides,
+            onOverridesChange: setOverrides,
             onHandoff: handoffCutoff ? handoffFromLatest : null,
           }
-        : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME },
+        : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME, overrides },
     [
       agentName,
       agentRevisionId,
       handoffCutoff,
       handoffFromLatest,
+      overrides,
       pendingCreation,
+      setOverrides,
       projectId,
       threadId,
     ],
@@ -756,6 +779,7 @@ export function ChatView({
                           chatStop={chatStop}
                           queue={queue}
                           brief={brief}
+                          onEditStopped={editStopped}
                           isStandIn={isStandIn}
                           busy={running}
                           inherited={inheritedView}

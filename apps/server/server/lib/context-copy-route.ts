@@ -14,7 +14,7 @@ import type {
   CopyContextEntryView,
 } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { decodeStateVector } from "yjs";
 import {
@@ -77,6 +77,7 @@ interface ParsedCopy {
   operationId: string;
   sources: ParsedCopySource[];
   destination: CopyDestinationLocator;
+  destinationView: CopyContextEntryView;
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;
 }
@@ -102,6 +103,7 @@ export function parseContextCopy(input: { body: unknown }): ParsedCopy {
     operationId: requireRequestId(body.operationId, "operationId"),
     sources,
     destination: parseDestination(body),
+    destinationView: parseView(body.destinationView),
     ...(body.destinationParent === undefined
       ? {}
       : { destinationParent: parseDestinationParent(body.destinationParent) }),
@@ -320,6 +322,12 @@ export async function handleContextCopyRequest(
 
   const sources: ResolvedSource[] = [];
   const workIds = new Set<string>();
+  const destinationView = copyView(copy.destinationView, input.projectId as ProjectId);
+  // The port's own Work is the destination's: a copy reads its sources and writes only there,
+  // so a source Work that has ended must not make the destination unavailable.
+  let destinationWorkId: string | null = null;
+  if (destinationView.kind === "draft" && destinationView.owner.kind === "work")
+    destinationWorkId = destinationView.owner.workId;
   for (const source of copy.sources) {
     if (source.locator.scope === "chat") {
       const chat = await deps.contextPorts.chats.byRef(input.projectId, source.locator.chatRef);
@@ -359,7 +367,9 @@ export async function handleContextCopyRequest(
       ...(source.stateVector ? { stateVector: source.stateVector } : {}),
       target:
         source.expected.kind === "file"
-          ? documentTarget(source.expected.nodeId)
+          ? draftOwner
+            ? { kind: "draft", documentId: source.expected.nodeId as DocumentId, owner: draftOwner }
+            : documentTarget(source.expected.nodeId)
           : containerOf(resolved, input.projectId),
       workId: workId ?? (draftOwner?.kind === "work" ? draftOwner.workId : null),
     });
@@ -373,8 +383,10 @@ export async function handleContextCopyRequest(
     createFolders = copy.destination.createFolders ?? [];
   } else {
     destinationLocator = await resolveLocator(copy.destination, { destination: true });
-    if (destinationLocator.scope === "work") workIds.add(destinationLocator.authority.workId);
+    if (destinationLocator.scope === "work")
+      destinationWorkId = destinationLocator.authority.workId;
   }
+  if (destinationWorkId) workIds.add(destinationWorkId);
 
   const port = await contextPortForProjectAuthorities({
     deps: {
@@ -384,12 +396,14 @@ export async function handleContextCopyRequest(
     projectId: input.projectId,
     userId: input.userId,
     workIds,
-    primaryWorkId: [...workIds][0] ?? null,
+    primaryWorkId: destinationWorkId,
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
 
   const folderUri =
-    destinationFolderId === null ? null : await resolveFolderUri(port, destinationFolderId);
+    destinationFolderId === null
+      ? null
+      : await resolveFolderUri(port, destinationFolderId, destinationView);
   // A folder named by identity can live in Uploads too, and is refused like the path form.
   if (folderUri !== null) {
     const parsed = parseUnifiedContextUri(folderUri);
@@ -431,6 +445,16 @@ export async function handleContextCopyRequest(
         ...(source.stateVector ? { stateVector: source.stateVector } : {}),
       })),
       destinationUri,
+      ...(destinationView.kind === "draft"
+        ? {
+            destinationBranch: {
+              mode: "ensure" as const,
+              owner: destinationView.owner,
+              threadId: null,
+              userId: input.userId as UserId,
+            },
+          }
+        : {}),
       ...(copy.destinationParent ? { destinationParent: copy.destinationParent } : {}),
       ...(copy.position ? { position: copy.position } : {}),
       ...(folderUri === null ? {} : { authorizeDestination: canEditContextUri(deps, input) }),
@@ -441,8 +465,12 @@ export async function handleContextCopyRequest(
   return result.value;
 }
 
-async function resolveFolderUri(port: ContextPort, folderId: string): Promise<string> {
-  const resolved = await port.resolveFolderUri(folderId);
+async function resolveFolderUri(
+  port: ContextPort,
+  folderId: string,
+  view: CopySourceView,
+): Promise<string> {
+  const resolved = await port.resolveFolderUri(folderId, view);
   if (!resolved.ok) contextErrorToHttp(resolved.error);
   return resolved.value.uri;
 }

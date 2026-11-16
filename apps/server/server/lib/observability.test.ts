@@ -73,12 +73,12 @@ async function withChild(
         cleanup();
         reject(error);
       };
-      // The signal fixture boots the whole in-memory runtime, which takes seconds on a loaded
-      // machine; stay under the 30 s test timeout so cleanup still kills the child.
+      // The signal fixture imports and boots the whole in-memory runtime: 20 s of transpiling on
+      // a machine at load 60. Stay under the signal test's 90 s timeout so cleanup still kills the child.
       const timeout = setTimeout(() => {
         cleanup();
         reject(new Error(`Shutdown fixture never reported ${message}\n${stderr}`));
-      }, 25_000);
+      }, 80_000);
       child.stdout?.on("data", onData);
       child.on("exit", onExit);
       child.on("error", onError);
@@ -121,7 +121,7 @@ describe("process shutdown hooks", () => {
       expect(trace).toContain("acknowledge-adopted-message:true");
       expect(trace.at(-1)).toBe("flush");
     });
-  });
+  }, 90_000);
 
   it("forces exit on a second signal while a drain is still running", async () => {
     await withChild("deadline", 60_000, async ({ child, exited, tracePath, waitFor }) => {

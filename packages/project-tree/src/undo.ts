@@ -77,7 +77,7 @@ function turn(
   const shows = labelOf(node.kind, history.born, label);
   const extra = { undoes };
   if (!placed && (named || !base.sets.place))
-    return writer.author(
+    return writer.prepare(
       view,
       actor,
       {
@@ -96,7 +96,7 @@ function turn(
     // The folder it would return to has gone inside it since: the replay would skip the record.
     if (wouldLoop(projection.nodes, node.id, parent)) return "changed_since";
   }
-  return writer.author(
+  return writer.prepare(
     view,
     actor,
     {
@@ -153,6 +153,19 @@ export function undoChange(
   actor: Actor,
   recordId: string,
 ): TreeRecord | NotUndone {
+  const prepared = prepareUndo(writer, asked, actor, recordId);
+  if (typeof prepared === "string") return prepared;
+  writer.append(prepared);
+  return prepared;
+}
+
+/** The Undo record `undoChange` would append, not yet written, so a caller can judge it first. */
+export function prepareUndo(
+  writer: TreeWriter,
+  asked: View,
+  actor: Actor,
+  recordId: string,
+): TreeRecord | NotUndone {
   const named = lastOfFamily(writer.doc, asked, recordId);
   if (named === "unknown") return named;
   if (!named) return "already";
@@ -188,7 +201,7 @@ export function undoChange(
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "purged";
   const extra = { undoes: record.carries ?? record.id };
-  const author = (made: TreeRecordInput) => writer.author(view, actor, made, extra);
+  const author = (made: TreeRecordInput) => writer.prepare(view, actor, made, extra);
   switch (record.type) {
     case "create":
       if (node.trashed) return "already";

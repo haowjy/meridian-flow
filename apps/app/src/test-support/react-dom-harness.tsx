@@ -29,6 +29,17 @@ export type WithReactRootOptions = {
   drainMacrotask?: boolean;
 };
 
+// Under a jsdom test environment `document` is an accessor, so assigning it
+// throws; defining the property replaces it either way.
+function defineGlobal(name: "window" | "document", descriptor: PropertyDescriptor) {
+  Object.defineProperty(globalThis, name, { configurable: true, writable: true, ...descriptor });
+}
+
+function restoreGlobal(name: "window" | "document", previous: PropertyDescriptor | undefined) {
+  if (previous) Object.defineProperty(globalThis, name, previous);
+  else delete (globalThis as Partial<typeof globalThis>)[name];
+}
+
 export async function withReactRoot(
   node: ReactNode,
   run?: () => Promise<void> | void,
@@ -41,11 +52,11 @@ export async function withReactRoot(
   // Element/Range, so nodes created here need the fallbacks applied to this
   // window's prototypes.
   installJsdomLayoutFallbacks(dom.window as unknown as typeof globalThis);
-  const previousWindow = globalThis.window;
-  const previousDocument = globalThis.document;
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
   const previousActEnvironment = (globalThis as ActGlobal).IS_REACT_ACT_ENVIRONMENT;
-  globalThis.window = dom.window;
-  globalThis.document = dom.window.document;
+  defineGlobal("window", { value: dom.window });
+  defineGlobal("document", { value: dom.window.document });
   (globalThis as ActGlobal).IS_REACT_ACT_ENVIRONMENT = true;
   const rootNode = dom.window.document.getElementById("root");
   if (!rootNode) throw new Error("missing root");
@@ -60,8 +71,8 @@ export async function withReactRoot(
     if (options.drainMacrotask) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    globalThis.window = previousWindow;
-    globalThis.document = previousDocument;
+    restoreGlobal("window", previousWindow);
+    restoreGlobal("document", previousDocument);
     (globalThis as ActGlobal).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
     dom.window.close();
   }

@@ -139,15 +139,15 @@ it("keeps the characters of an HTML-only clipboard pasted into code, by key or f
   expect(menu.state.doc.textContent).toContain("see [[Lin Feng]] here");
 });
 
-it.each([
-  "%%\n\n[[Hidden]]\n\n%% [[Visible]]",
-  "%% **secret** [[Hidden]] %% [[Visible]]",
-])("keeps comment context through Markdown paste: %s", (source) => {
-  const target = editor(DOCUMENTS);
-  paste(target, { "text/plain": source });
-  expect(links(target).map(([text]) => text)).toEqual(["Visible"]);
-  expect(target.state.doc.textContent).toContain("[[Hidden]]");
-});
+it.each(["%%\n\n[[Hidden]]\n\n%% [[Visible]]", "%% **secret** [[Hidden]] %% [[Visible]]"])(
+  "keeps comment context through Markdown paste: %s",
+  (source) => {
+    const target = editor(DOCUMENTS);
+    paste(target, { "text/plain": source });
+    expect(links(target).map(([text]) => text)).toEqual(["Visible"]);
+    expect(target.state.doc.textContent).toContain("[[Hidden]]");
+  },
+);
 
 it("uses HTML node semantics rather than Markdown indentation for pasted prose", () => {
   const target = editor(DOCUMENTS);

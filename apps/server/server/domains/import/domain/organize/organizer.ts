@@ -410,7 +410,14 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         const claim = await deps.queue.claim();
         if (!claim) break;
         let retryAfterMs: number | undefined;
-        const heartbeat = setInterval(() => void deps.queue.heartbeat(claim), 30_000);
+        let beating: Promise<unknown> = Promise.resolve();
+        const heartbeat = setInterval(() => {
+          beating = deps.queue
+            .heartbeat(claim)
+            .catch((cause) =>
+              deps.diagnostic(cause, { importId: claim.importId, token: claim.token }),
+            );
+        }, 30_000);
         heartbeat.unref();
         try {
           total += await organize(claim, signal);
@@ -423,6 +430,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
           if (attempts) retryAfterMs = retryDelayMs(attempts);
         } finally {
           clearInterval(heartbeat);
+          await beating;
           await deps.queue.release(claim, retryAfterMs);
         }
       }

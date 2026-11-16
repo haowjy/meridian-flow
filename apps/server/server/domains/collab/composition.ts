@@ -64,6 +64,7 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
+import { createDrizzleCreatedDrafts } from "./adapters/drizzle-created-drafts.js";
 import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
@@ -143,10 +144,7 @@ import { createThreadCores } from "./thread-cores.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
 
-import type { DetachedWorkTracker } from "../../shared/detached-work.js";
-
 type CollabDomainDeps = {
-  backgroundTasks?: DetachedWorkTracker;
   db: Database;
   /** How links and image sources spell, loaded per document operation (contract §4.4). */
   links: DocumentLinkScopes;
@@ -177,7 +175,11 @@ type CollabDomainDeps = {
   /** What took a document out of live (its Trash entry), for a pin or a room that lost it. */
   removals: DocumentRemovals;
   /** A live document's text changed, through its room or a direct write (the AI, Apply). */
-  onLiveTextChanged?(documentId: DocumentId): void;
+  liveTextHints?: {
+    hint(documentId: DocumentId): void;
+    /** Cancels what is pending; the composition's `dispose` calls it. */
+    stop(): void;
+  };
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -296,7 +298,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     derivations.derive,
   );
   const documentWriteHook: typeof projectionHook = async (event) => {
-    deps.onLiveTextChanged?.(event.documentId);
+    deps.liveTextHints?.hint(event.documentId);
     await projectionHook(event);
   };
   const runDocumentWriteHook = createDocumentWriteHookRunner({
@@ -410,7 +412,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
-    backgroundTasks: deps.backgroundTasks,
     journal: persistence.journal,
     draftStore: drafts,
     draftCoordinator,
@@ -425,7 +426,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     onLiveUpdatePersisted: (documentId) => {
       draftPulls.scheduleLivePull(documentId);
       derivations.schedule(documentId);
-      deps.onLiveTextChanged?.(documentId);
+      deps.liveTextHints?.hint(documentId);
     },
     onDraftWriterUpdateAdmitted: (draftId) => draftAheads.schedule(draftId),
   });
@@ -582,6 +583,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     deps.links,
+    createDrizzleCreatedDrafts(deps.db, { documents: runtime.markdownDocuments, drafts }),
   );
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
@@ -619,6 +621,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     lifecycle: {
       dispose: async () => {
         await Promise.all([draftAheads.shutdown(), draftPulls.shutdown(), draftEffects.dispose()]);
+        deps.liveTextHints?.stop();
+        liveCoordinator.stop();
       },
     },
     transport: {

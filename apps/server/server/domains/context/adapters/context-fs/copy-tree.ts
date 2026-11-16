@@ -1,3 +1,4 @@
+import type { BranchId } from "@meridian/contracts";
 /**
  * Copy's destination half in one ContextFS source: naming and identity, planned without a
  * lock, and the insertion of a plan inside the caller's command transaction.
@@ -22,6 +23,7 @@ import {
   type CollabDomain,
   createCopyIdentityMap,
   type DocumentCreationAggregate,
+  type DraftPeerShadowAccess,
 } from "../../../collab/index.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -35,7 +37,7 @@ import type {
 } from "../../ports/context-copy.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { NodeIdRefusedError } from "../tree-list-rows.js";
-import type { NewNode, SourceTree } from "./tree-writes.js";
+import { type NewNode, type SourceTree, viewOfBranch } from "./tree-writes.js";
 
 export interface CopyTreeDeps {
   writes: SourceTree;
@@ -101,7 +103,48 @@ export async function insertPlannedTrees(
   deps: CopyTreeDeps,
   inputs: readonly { plan: CopyPlan; contents: ReadonlyMap<string, CopiedContent> }[],
   position?: ContextSiblingPosition,
+  draft?: {
+    branchId: BranchId;
+    documentSync: Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
+  },
 ): Promise<Result<CopyOutcome, AdapterFault>> {
+  if (draft) {
+    const { branchId } = draft;
+    const { plan, contents } = inputs[0];
+    const tree = toNewTree(plan.roots, contents);
+    if (!tree.ok) return tree;
+    try {
+      const inserted = await deps.writes.insertTree(
+        { view: viewOfBranch(branchId), actor: deps.actor },
+        {
+          trees: [{ dir: plan.dir, roots: tree.value.roots }],
+          ...(position ? { position: position } : {}),
+        },
+      );
+      if (!inserted.ok) return inserted;
+      await draft.documentSync.writeCreatedDraftContent(
+        [...tree.value.contents].flatMap(([documentId, content]) =>
+          content.content
+            ? [
+                {
+                  documentId: documentId as DocumentId,
+                  branchId: branchId as BranchId,
+                  content: content.content,
+                },
+              ]
+            : [],
+        ),
+      );
+      return Ok({
+        kind: "copied",
+        entries: entriesOf(plan.roots, inserted.value.landed),
+        folders: inserted.value.folders,
+      });
+    } catch (error) {
+      if (error instanceof NodeIdRefusedError) return Err({ code: "conflict" });
+      throw error;
+    }
+  }
   const trees: { dir: readonly string[]; roots: readonly NewNode[] }[] = [];
   const states = new Map<string, Uint8Array | null>();
   const ids: string[] = [];
@@ -111,7 +154,7 @@ export async function insertPlannedTrees(
     const tree = toNewTree(plan.roots, contents);
     if (!tree.ok) return tree;
     trees.push({ dir: plan.dir, roots: tree.value.roots });
-    for (const [id, state] of tree.value.states) states.set(id, state);
+    for (const [id, content] of tree.value.contents) states.set(id, content.state);
     ids.push(...tree.value.ids);
     binaryIds.push(...tree.value.binaryIds);
   }
@@ -184,10 +227,15 @@ function toNewTree(
   roots: readonly PlannedCopyNode[],
   contents: ReadonlyMap<string, CopiedContent>,
 ): Result<
-  { roots: NewNode[]; states: Map<string, Uint8Array | null>; ids: string[]; binaryIds: string[] },
+  {
+    roots: NewNode[];
+    contents: Map<string, CopiedContent>;
+    ids: string[];
+    binaryIds: string[];
+  },
   AdapterFault
 > {
-  const states = new Map<string, Uint8Array | null>();
+  const contentsById = new Map<string, CopiedContent>();
   const ids: string[] = [];
   const binaryIds: string[] = [];
   const convert = (node: PlannedCopyNode): Result<NewNode, AdapterFault> => {
@@ -227,7 +275,7 @@ function toNewTree(
     }
     const content = contents.get(source.documentId);
     if (!content) throw new Error(`No content was bound for ${source.path}`);
-    states.set(node.id, content.state);
+    contentsById.set(node.id, content);
     return Ok({
       kind: "document",
       id: node.id,
@@ -242,7 +290,7 @@ function toNewTree(
     if (!node.ok) return node;
     converted.push(node.value);
   }
-  return Ok({ roots: converted, states, ids, binaryIds });
+  return Ok({ roots: converted, contents: contentsById, ids, binaryIds });
 }
 
 /** The identities a copy created, each folder before what it holds, at the paths that landed. */

@@ -68,7 +68,7 @@ document again.
 
 **Hand-back is the inverse** (`message/hand-back.ts`). `composerDocFromHandedBack` turns handed-back
 `UserMessageBlock`s into one composer document (serializing it again gives the same blocks), and
-every prepend uses `prependMessageDoc`, failed-send Edit included. `chatReferenceResolver(scope)`
+every prepend uses `prependMessageDoc`, failed-send Edit and Edit after Stop included. `chatReferenceResolver(scope)`
 builds a document chip only when the URI proves the owner against this chat; anything else comes
 back as link text. The limit and its fix are in [FUTURE](FUTURE).
 

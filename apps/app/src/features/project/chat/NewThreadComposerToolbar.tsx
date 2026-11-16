@@ -1,6 +1,7 @@
 /** Prospective Agent, write-mode, and Work controls for a not-yet-created chat. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
 import {
@@ -15,6 +16,7 @@ import {
   useWriteModeToolbarControl,
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
+import type { AgentChoice } from "@/features/agents/AgentPicker";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { workDisplayName } from "@/lib/work-name";
@@ -27,6 +29,7 @@ export function NewThreadComposerToolbar({
   noWork,
   worksStatus,
   agent: selectedAgent,
+  overrides,
   writeMode,
   onAgentChange,
   onWorkChange,
@@ -40,9 +43,10 @@ export function NewThreadComposerToolbar({
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   agent: CreationAgent | null;
+  overrides: ThreadOverrides;
   /** The selected Work's default, or the mode the writer chose in this composer. */
   writeMode: AiWriteMode;
-  onAgentChange(agent: CreationAgent): void;
+  onAgentChange(choice: AgentChoice): void;
   onWorkChange(work: Work): void;
   onWriteModeChange(mode: AiWriteMode): void;
   onRetryWorks(): void;
@@ -51,7 +55,8 @@ export function NewThreadComposerToolbar({
     mode: "interactive",
     projectId,
     selectedAgent,
-    onSelectedAgentChange: onAgentChange,
+    overrides,
+    onChoose: onAgentChange,
   });
   const workControl = useProspectiveWorkControl({
     work,

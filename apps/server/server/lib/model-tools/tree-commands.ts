@@ -7,7 +7,7 @@
  */
 import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import { modelResult } from "@meridian/agent-edit/integration";
-import type { ThreadId, TurnId } from "@meridian/contracts";
+import type { BranchId, ThreadId, TurnId } from "@meridian/contracts";
 import { addressScheme } from "@meridian/contracts/context-uri";
 import { contextPortForThread } from "../../domains/context/index.js";
 import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
@@ -107,6 +107,7 @@ export async function runTreeToolCommand(
   // The file policy decides per source whether the change is the chat's draft or live.
   const grants: FileGrant<"edit">[] = [];
   let draftArea: string | undefined;
+  let primaryDestination: FileGrant<"edit">["destination"] | undefined;
   for (const area of areas as string[]) {
     const path = paths.find((candidate) => areaOfPath(candidate)?.area === area) as string;
     const target = await threadContainerTarget(call.context.resolution, path);
@@ -114,17 +115,13 @@ export async function runTreeToolCommand(
     const granted = await deps.fileAccess.authorize(call.principal, target, "edit");
     if (isFileAccessDenied(granted)) return fileAccessDeniedError(input.command, granted, path);
     grants.push(granted);
+    if (area === primary) primaryDestination = granted.destination;
     if (granted.destination.kind === "draft") draftArea ??= area;
   }
   const leaving =
     command.command === "move"
       ? command.from.filter((from) => crossesLists(areaOfPath(from)?.area ?? primary, primary))
       : [];
-  if (leaving.length > 0 && draftArea !== undefined)
-    return writeToolError(
-      input.command,
-      "A change in a Work's draft can't copy files between a project and the account's files.",
-    );
   // A source in the destination's list moves; one in the other list is copied and stays. The
   // call has one answer.
   const across = command.command === "move" && leaving.length > 0 ? command : undefined;
@@ -180,7 +177,7 @@ export async function runTreeToolCommand(
             ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
             ...(scope.view.draft
               ? {
-                  draftBranchId: scope.view.draft as import("@meridian/contracts").BranchId,
+                  draftBranchId: scope.view.draft as BranchId,
                 }
               : {}),
             shownAt: uriOfWritten(result.shownAt),
@@ -238,7 +235,7 @@ export async function runTreeToolCommand(
 
   // Copy reads its sources outside any transaction, so it runs before the call's command.
   const copies = across
-    ? await copyAcross(deps, call, ctx, grants, { ...across, from: leaving })
+    ? await copyAcross(deps, call, ctx, grants, { ...across, from: leaving }, destination)
     : undefined;
   if (copies && "refused" in copies) return copies.refused;
 
@@ -248,7 +245,14 @@ export async function runTreeToolCommand(
       const only = stayed as InList;
       return "refused" in only ? only.refused : answerOf(input.command, only.payload, only.delta);
     }
-    const copied = await recordCopies(deps, call, ctx, port, copies as Copies);
+    const copied = await recordCopies(
+      deps,
+      call,
+      ctx,
+      port,
+      copies as Copies,
+      primaryDestination?.kind === "draft",
+    );
     const notMoved = [
       ...(stayed === undefined
         ? []
@@ -269,7 +273,7 @@ export async function runTreeToolCommand(
       {
         ...(kept?.payload ?? {}),
         ...(!across.many && copied.landed[0] ? { path: copied.landed[0].to } : {}),
-        destination: "live",
+        destination: primaryDestination?.kind ?? "live",
         ...(handle ? { write: { id: handle } } : {}),
         tree: {
           ...(kept?.payload.tree ?? {}),

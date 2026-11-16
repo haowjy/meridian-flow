@@ -21,6 +21,8 @@ export type MenuArea = {
   tree: TreeView | null;
   /** Unlisted areas are reachable (the open document lives there) but not offered at the root. */
   listed: boolean;
+  /** Whether the area takes changes: a destination picker offers only one that does. */
+  writable: boolean;
   /** A chat rebound onto a Work keeps its lineage's notes under one folder. */
   earlier?: { tree: TreeView | null; rootThreadId: string };
 };

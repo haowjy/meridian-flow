@@ -430,7 +430,6 @@ export function ContextTreePanel({
       drop={drop}
       search={
         <SettledSearchField
-          quiet
           label={t`Find in ${schemeLabel(scheme)}`}
           value={search}
           onSettle={setSearch}

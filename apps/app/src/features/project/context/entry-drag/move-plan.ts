@@ -20,6 +20,7 @@ export type MoveArea = {
   scheme: ProjectContextTreeScheme;
   owner: ContextOwner;
   tree: TreeView;
+  view?: CopyContextEntryView;
   /**
    * The owner takes changes: arrivals by move or copy, and its rows moved out. An archived or
    * deleted Work's Scratch takes none (`useWorkSourceWritable`): it can be copied from.

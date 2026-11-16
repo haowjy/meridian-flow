@@ -2,6 +2,7 @@
 import { type HandBackCommand, type MessageDoc, prependMessageDoc } from "@meridian/thread-client";
 import type { ComposerDraftChange, ComposerDraftSnapshot } from "@/components/app/composer";
 import {
+  composerDocEnd,
   parseRestorableComposerDraft,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
@@ -118,8 +119,7 @@ export class ComposerSessionDraft {
     if (snapshots.every((_, index) => recordIds[index] && this.hasReceived(recordIds[index])))
       return true;
     const recovered = snapshots.some((snapshot) => snapshot.ownedUploads.length > 0);
-    const typed =
-      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
+    const typed = this.typed();
     const park = recovered && typed !== null && typed.ownedUploads.length > 0;
     const before = { current: this.current, chatId: this.chatId, parked: this.parked };
     if (park && typed) {
@@ -164,24 +164,8 @@ export class ComposerSessionDraft {
       (_, index) => !recordIds[index] || !this.hasReceived(recordIds[index]),
     );
     if (!pending.length) return true;
-    snapshots = pending;
-    const first = snapshots[0];
-    if (!first) return false;
-    const all = [...snapshots];
-    const typed =
-      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
-    if (typed) all.push(typed);
-    // The package's rule: each earlier message above the rest, one empty paragraph between.
-    const doc = all.reduceRight<MessageDoc | null>(
-      (below, snapshot) => prependMessageDoc(snapshot.doc as MessageDoc, below),
-      null,
-    ) as ComposerDraftSnapshot["doc"];
-    const edited = {
-      ...first,
-      revision: Math.max(...all.map((snapshot) => snapshot.revision)) + 1,
-      doc,
-      ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
-    };
+    const edited = this.withReturned(pending);
+    if (!edited) return false;
     const received = new Set([...this.received, ...recordIds]);
     const notices = notice
       ? [...this.notices.filter((item) => item.threadId !== notice.threadId), notice]
@@ -233,24 +217,59 @@ export class ComposerSessionDraft {
    */
   receiveHandBack(requestId: string, returned: MessageDoc): boolean {
     if (this.hasReceivedHandBack(requestId)) return this.dropHandBack(requestId);
-    const typed =
-      this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
-    const doc = prependMessageDoc(
-      returned,
-      typed ? (typed.doc as MessageDoc) : null,
-    ) as ComposerDraftSnapshot["doc"];
-    const edited = {
-      revision: (this.current?.revision ?? 0) + 1,
-      selection: typed?.selection ?? { anchor: 1, head: 1 },
-      ownedUploads: typed?.ownedUploads ?? [],
-      doc,
-    };
-    if (!parseRestorableComposerDraft(edited)) return false;
+    const edited = this.withReturned([sentWords(returned)]);
+    if (!edited) return false;
     return this.commit(edited, {
       received: new Set([...this.received, handBackReceipt(requestId)]),
       notices: this.notices,
       handBacks: this.handBacksPending.filter((known) => known.requestId !== requestId),
     });
+  }
+
+  /**
+   * A sent message back above what is typed, for the writer to change and send again (Edit after
+   * Stop). It carries no receipt: each press puts the words back once more. False when the write
+   * failed or the merged document wouldn't restore.
+   */
+  putBack(returned: MessageDoc): boolean {
+    const edited = this.withReturned([sentWords(returned)]);
+    if (!edited) return false;
+    return this.commit(edited, {
+      received: this.received,
+      notices: this.notices,
+      handBacks: this.handBacksPending,
+    });
+  }
+
+  /** What the writer has typed in this box, or null when it holds no words. */
+  private typed(): ComposerDraftSnapshot | null {
+    return this.current && serializeComposerDraft(this.current.doc).text ? this.current : null;
+  }
+
+  /**
+   * The one way words come back into the box: each returned message above the next, then what is
+   * typed, one empty paragraph between, with every upload they own and the caret at the end of the
+   * returned words. Null when the result wouldn't restore after a reload.
+   */
+  private withReturned(returned: readonly ComposerDraftSnapshot[]): ComposerDraftSnapshot | null {
+    const typed = this.typed();
+    const stack = (snapshots: readonly ComposerDraftSnapshot[]) =>
+      snapshots.reduceRight<MessageDoc | null>(
+        (below, snapshot) => prependMessageDoc(snapshot.doc as MessageDoc, below),
+        null,
+      ) as ComposerDraftSnapshot["doc"];
+    const all = typed ? [...returned, typed] : returned;
+    const edited: ComposerDraftSnapshot = {
+      revision:
+        Math.max(this.current?.revision ?? 0, ...all.map((snapshot) => snapshot.revision)) + 1,
+      selection: { anchor: 1, head: 1 },
+      ownedUploads: all.flatMap((snapshot) => snapshot.ownedUploads),
+      doc: stack(all),
+    };
+    if (!parseRestorableComposerDraft(edited)) return null;
+    // The returned words open the document that just parsed, so they parse too.
+    const end = composerDocEnd(stack(returned));
+    return { ...edited, selection: { anchor: end, head: end } };
   }
 
   /** One checked write of the draft with its receipts, notices and pending commands. */
@@ -404,6 +423,14 @@ export class ComposerSessionDraft {
     if (saved) this.dirty = false;
   };
 }
+
+/** Words the server already holds, as a returned snapshot: their uploads were adopted at admission. */
+const sentWords = (doc: MessageDoc): ComposerDraftSnapshot => ({
+  revision: 0,
+  selection: { anchor: 1, head: 1 },
+  ownedUploads: [],
+  doc: doc as ComposerDraftSnapshot["doc"],
+});
 
 const sessionDrafts = new Map<string, ComposerSessionDraft>();
 

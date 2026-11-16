@@ -40,7 +40,7 @@ export type ComposerToolbarPanelFocus = {
 
 export type ComposerToolbarPanel = {
   ariaLabel: string;
-  size: "compact" | "identity" | "catalog";
+  size: "compact" | "identity" | "catalog" | "split";
   focus: ComposerToolbarPanelFocus;
   render(context: ComposerToolbarPanelContext): ReactNode;
 };

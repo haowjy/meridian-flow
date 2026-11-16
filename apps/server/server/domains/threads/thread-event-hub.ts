@@ -15,6 +15,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
+import { processDetachedWork } from "../../shared/detached-work.js";
 import { recordFailureAfterCommit } from "../../shared/failure-records.js";
 import type { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 import {
@@ -337,14 +338,17 @@ export function createThreadEventHub(
   }
 
   function invalidateCommittedJournal(threadId: ThreadId): void {
-    void drainCommittedJournal(threadId).catch((error) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "threads.event-hub",
-        name: "journal.drain.failed",
-        payload: unknownToEventPayload(error),
-      });
-    });
+    processDetachedWork.track(
+      drainCommittedJournal(threadId).catch((error) => {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "threads.event-hub",
+          name: "journal.drain.failed",
+          payload: unknownToEventPayload(error),
+        });
+      }),
+      "thread-event-journal-drain",
+    );
   }
 
   async function readCatchup(

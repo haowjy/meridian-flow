@@ -629,6 +629,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
       await Promise.all([draftPulls.shutdown(), draftEffects.dispose()]);
+      liveCoordinator.stop();
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
       hocuspocus.broadcasts.length = 0;

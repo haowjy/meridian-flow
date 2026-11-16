@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
  *
@@ -349,6 +350,7 @@ else
       });
       const forkAtRequest = (
         await rig.repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
@@ -374,6 +376,7 @@ else
 
       const firstFork = (
         await rig.repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
@@ -393,6 +396,7 @@ else
       });
       const secondFork = (
         await rig.repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source: firstFork,
@@ -1192,7 +1196,7 @@ else
         expect(record?.createdAt).toEqual(divider?.createdAt);
         expect(record?.payload).toMatchObject({ runState: { mode: "draft" } });
         expect(
-          (record?.payload as { runState: { items: { id: string }[] } }).runState.items.map(
+          (record!.payload as { runState: { items: { id: string }[] } }).runState.items.map(
             (item) => item.id,
           ),
         ).not.toContain(queued.response.id);
@@ -2095,41 +2099,41 @@ else
       it.each([
         { first: "assistant", threshold: 100000 },
         { first: "compaction", threshold: 2500 },
-      ])("runs a Retry whose answer read fails after it reserved its $first", async ({
-        first,
-        threshold,
-      }) => {
-        const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
-        const rig = await manualFixture({ gateway });
-        const failedTurnId = await failedReply(rig, `retry-describe-${first}`);
-        rig.setThreshold(threshold);
-        const replyTurnId = crypto.randomUUID() as never;
-        // The replay lookup reads the reply first; the next read describes the answer.
-        const findById = rig.repos.turns.findById.bind(rig.repos.turns);
-        let replyReads = 0;
-        rig.repos.turns.findById = async (id) => {
-          if (id === replyTurnId && ++replyReads === 2) throw new Error("turn read unavailable");
-          return findById(id);
-        };
-        const answer = await rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId,
-          replyTurnId,
-        });
-        rig.repos.turns.findById = findById;
-        expect(answer.executionId).toEqual(expect.any(String));
-        const reservation = await rig.repos.turns.findRetryReservation(rig.threadId, replyTurnId);
-        expect(reservation).toMatchObject({ role: first, executionId: answer.executionId });
+      ])(
+        "runs a Retry whose answer read fails after it reserved its $first",
+        async ({ first, threshold }) => {
+          const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
+          const rig = await manualFixture({ gateway });
+          const failedTurnId = await failedReply(rig, `retry-describe-${first}`);
+          rig.setThreshold(threshold);
+          const replyTurnId = crypto.randomUUID() as never;
+          // The replay lookup reads the reply first; the next read describes the answer.
+          const findById = rig.repos.turns.findById.bind(rig.repos.turns);
+          let replyReads = 0;
+          rig.repos.turns.findById = async (id) => {
+            if (id === replyTurnId && ++replyReads === 2) throw new Error("turn read unavailable");
+            return findById(id);
+          };
+          const answer = await rig.orchestrator.retryReply({
+            threadId: rig.threadId,
+            failedTurnId,
+            replyTurnId,
+          });
+          rig.repos.turns.findById = findById;
+          expect(answer.executionId).toEqual(expect.any(String));
+          const reservation = await rig.repos.turns.findRetryReservation(rig.threadId, replyTurnId);
+          expect(reservation).toMatchObject({ role: first, executionId: answer.executionId });
 
-        await processDetachedWork.drain();
-        expect(await rig.repos.turns.findById(replyTurnId)).toMatchObject({
-          status: "complete",
-          executionId: answer.executionId,
-        });
-        expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
-        expect(await ended(answer.executionId)).toBe(true);
-        expect(await leaseRow(rig.threadId)).toBeUndefined();
-      });
+          await processDetachedWork.drain();
+          expect(await rig.repos.turns.findById(replyTurnId)).toMatchObject({
+            status: "complete",
+            executionId: answer.executionId,
+          });
+          expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+          expect(await ended(answer.executionId)).toBe(true);
+          expect(await leaseRow(rig.threadId)).toBeUndefined();
+        },
+      );
 
       it("answers an accepted same-id Retry replay after shutdown starts", async () => {
         const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });

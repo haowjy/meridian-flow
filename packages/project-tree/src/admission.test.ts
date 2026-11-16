@@ -25,7 +25,7 @@ const ROOT = source("manuscript");
 const ME = "user:me";
 const connection: Connection = {
   drafts: new Set(["my-work"]),
-  closedSources: new Set(["old-scratch"]),
+  closed: (source) => source === "old-scratch",
 };
 
 /** The server's list: two sources the account may write, one it may not, some nodes. */
@@ -211,6 +211,76 @@ describe("a create raced into a closed Work is stamped dropped", () => {
     expect(replayView(doc, LIVE).nodes.has((live as { node: string }).node)).toBe(true);
   });
 
+  it("drops independent records in the same closed source", () => {
+    const doc = server();
+    const first = record({ parent: source("old-scratch"), source: "old-scratch" });
+    const second = record({ parent: source("old-scratch"), source: "old-scratch" });
+    const { update } = client(doc, push(first, second));
+    expect(admit(doc, update, connection).dropped).toEqual([first.id, second.id]);
+  });
+
+  it("keeps an open folder but drops a move from a closed source into it", () => {
+    const doc = server();
+    new TreeWriter(doc).create(LIVE, "system", {
+      kind: "folder",
+      name: "X",
+      parent: source("old-scratch"),
+      node: "x",
+    });
+    const folder = record({ kind: "folder", filetype: undefined, node: "f" });
+    const move = record({
+      type: "move",
+      node: "x",
+      parent: "f",
+      rank: "a5",
+      from: { parent: source("old-scratch"), rank: "a0" },
+      kind: undefined,
+      filetype: undefined,
+      name: undefined,
+      source: undefined,
+    });
+    const { update } = client(doc, push(folder, move));
+    expect(admit(doc, update, connection).dropped).toEqual([move.id]);
+    expect(replayView(doc, LIVE).nodes.get("x")?.source).toBe("old-scratch");
+    expect(replayView(doc, LIVE).nodes.has("f")).toBe(true);
+  });
+
+  it("drops an inserted folder that enables a held move out of a closed source", () => {
+    const doc = server();
+    new TreeWriter(doc).create(LIVE, "system", {
+      kind: "folder",
+      name: "X",
+      parent: source("old-scratch"),
+      node: "x",
+    });
+    const folder = record({ kind: "folder", filetype: undefined, node: "f" });
+    const offline = client(doc, push(folder), 1000);
+    doc.clientID = 2000;
+    const move = record({
+      type: "move",
+      node: "x",
+      parent: "f",
+      rank: "a5",
+      from: { parent: source("old-scratch"), rank: "a0" },
+      kind: undefined,
+      filetype: undefined,
+      name: undefined,
+      source: undefined,
+    });
+    recordsOf(doc).push([move]);
+    expect(admit(doc, offline.update, connection).dropped).toEqual([folder.id]);
+    expect(
+      recordsOf(doc)
+        .toArray()
+        .findIndex((r) => r.id === folder.id),
+    ).toBeLessThan(
+      recordsOf(doc)
+        .toArray()
+        .findIndex((r) => r.id === move.id),
+    );
+    expect(replayView(doc, LIVE).nodes.get("x")?.source).toBe("old-scratch");
+  });
+
   it("a stale Undo of a move counts where the changes in force put the node, not the place it carries", () => {
     const doc = server();
     new TreeWriter(doc).create(LIVE, "system", {
@@ -225,7 +295,7 @@ describe("a create raced into a closed Work is stamped dropped", () => {
       parent: ROOT,
       node: "p",
     });
-    const open: Connection = { drafts: connection.drafts, closedSources: new Set() };
+    const open: Connection = { drafts: connection.drafts, closed: () => false };
     // Two copies of one list, neither seeing the other's move of Ch1; the server orders a's first.
     const a = client(doc, (copy) => new TreeWriter(copy).move(LIVE, ME, "ch1", "kept"), 5000);
     const offline = new Y.Doc({ gc: false });
@@ -267,4 +337,31 @@ describe("a create raced into a closed Work is stamped dropped", () => {
       [folder.id, inside.id, stray.id].sort(),
     );
   });
+  it.each(["rename", "create"] as const)(
+    "drops an offline %s placed before a folder moves into a closed source",
+    (kind) => {
+      const doc = server();
+      const offline = client(
+        doc,
+        (copy) => {
+          const w = new TreeWriter(copy);
+          if (kind === "rename") w.rename(LIVE, ME, "arc", "Renamed");
+          else w.create(LIVE, ME, { kind: "folder", name: "New", parent: "arc" });
+        },
+        1000,
+      );
+      const moving = client(
+        doc,
+        (copy) => new TreeWriter(copy).move(LIVE, ME, "arc", source("old-scratch")),
+        2000,
+      );
+      Y.applyUpdate(doc, moving.update);
+      const result = admit(doc, offline.update, connection);
+      expect(result.dropped).toHaveLength(1);
+      const ops = recordsOf(doc).toArray();
+      const inserted = ops.findIndex((op) => op.id === result.dropped[0]);
+      const moved = ops.findIndex((op) => op.type === "move" && op.node === "arc");
+      expect(inserted).toBeLessThan(moved);
+    },
+  );
 });

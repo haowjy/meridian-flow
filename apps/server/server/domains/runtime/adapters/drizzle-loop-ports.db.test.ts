@@ -730,77 +730,85 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await delivery.close(terminal)).kind).toBe("completed");
         expect(await remote.withExclusiveThread(THREAD_A, async () => true)).toBe(true);
       });
-      it.each([
-        "mismatch",
-        "expiry",
-      ])("keeps response ack tied to the held receipt (%s)", async (variant) => {
-        const { repos, turn } = await assistant();
-        const runClaim = createDrizzleRunClaim(db);
-        const lease = required(await runClaim.startExecution(THREAD_A, "receipt", async () => {}));
-        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
-        try {
-          const row = await delivery.enqueue(message("receipt"));
-          await delivery.adoptBatch(lease, async () => ({
-            value: undefined,
-            turnKind: "assistant" as const,
-            turnId: turn.id,
-            messageIds: [row.id],
-          }));
-          if (variant === "mismatch") {
-            await expect(
-              delivery.ackWithResponse(lease, [crypto.randomUUID()], turn, async () => "response"),
-            ).rejects.toThrow();
-            expect((await delivery.readPendingProjection(THREAD_A)).run?.messageIds).toEqual([
-              row.id,
-            ]);
-          } else {
-            await db
-              .update(schema.threadRunLeases)
-              .set({ expiresAt: new Date(0) })
-              .where(eq(schema.threadRunLeases.threadId, THREAD_A));
-            await expect(
-              delivery.ackWithResponse(lease, [row.id], turn, async () => "paid response"),
-            ).resolves.toBe("paid response");
-            expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
-          }
-        } finally {
-          await releaseLeaseUnderLock(db, runClaim, lease);
-        }
-      });
-      it.each([
-        true,
-      ])("honors a remote cancel before terminal close (pending followup: %s)", async (hasPending) => {
-        const { repos, turn } = await assistant();
-        const runClaim = createDrizzleRunClaim(db);
-        const remote = createDrizzleRunClaim(db);
-        const lease = required(
-          await runClaim.startExecution(THREAD_A, "remote-cancel", async () => {}),
-        );
-        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
-        try {
-          await delivery.adoptBatch(lease, async () => ({
-            value: undefined,
-            turnKind: "assistant" as const,
-            turnId: turn.id,
-            messageIds: [],
-          }));
-          const pending = hasPending ? await delivery.enqueue(message("next-run")) : null;
-          expect(await remote.cancelExecution(THREAD_A, turn.id)).toBe(true);
-          const closed = await delivery.close({
-            lease,
-            turnId: turn.id,
-            cause: { kind: "success", finishReason: "end_turn" },
-            continueOnPending: true,
-          });
-          expect(closed.kind).toBe("completed");
-          expect((await repos.turns.findById(turn.id))?.status).toBe("cancelled");
-          expect((await delivery.selectPending(THREAD_A)).map((row) => row.id)).toEqual(
-            pending ? [pending.id] : [],
+      it.each(["mismatch", "expiry"])(
+        "keeps response ack tied to the held receipt (%s)",
+        async (variant) => {
+          const { repos, turn } = await assistant();
+          const runClaim = createDrizzleRunClaim(db);
+          const lease = required(
+            await runClaim.startExecution(THREAD_A, "receipt", async () => {}),
           );
-        } finally {
-          await releaseLeaseUnderLock(db, runClaim, lease);
-        }
-      });
+          const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+          try {
+            const row = await delivery.enqueue(message("receipt"));
+            await delivery.adoptBatch(lease, async () => ({
+              value: undefined,
+              turnKind: "assistant" as const,
+              turnId: turn.id,
+              messageIds: [row.id],
+            }));
+            if (variant === "mismatch") {
+              await expect(
+                delivery.ackWithResponse(
+                  lease,
+                  [crypto.randomUUID()],
+                  turn,
+                  async () => "response",
+                ),
+              ).rejects.toThrow();
+              expect((await delivery.readPendingProjection(THREAD_A)).run?.messageIds).toEqual([
+                row.id,
+              ]);
+            } else {
+              await db
+                .update(schema.threadRunLeases)
+                .set({ expiresAt: new Date(0) })
+                .where(eq(schema.threadRunLeases.threadId, THREAD_A));
+              await expect(
+                delivery.ackWithResponse(lease, [row.id], turn, async () => "paid response"),
+              ).resolves.toBe("paid response");
+              expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
+            }
+          } finally {
+            await releaseLeaseUnderLock(db, runClaim, lease);
+          }
+        },
+      );
+      it.each([true])(
+        "honors a remote cancel before terminal close (pending followup: %s)",
+        async (hasPending) => {
+          const { repos, turn } = await assistant();
+          const runClaim = createDrizzleRunClaim(db);
+          const remote = createDrizzleRunClaim(db);
+          const lease = required(
+            await runClaim.startExecution(THREAD_A, "remote-cancel", async () => {}),
+          );
+          const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+          try {
+            await delivery.adoptBatch(lease, async () => ({
+              value: undefined,
+              turnKind: "assistant" as const,
+              turnId: turn.id,
+              messageIds: [],
+            }));
+            const pending = hasPending ? await delivery.enqueue(message("next-run")) : null;
+            expect(await remote.cancelExecution(THREAD_A, turn.id)).toBe(true);
+            const closed = await delivery.close({
+              lease,
+              turnId: turn.id,
+              cause: { kind: "success", finishReason: "end_turn" },
+              continueOnPending: true,
+            });
+            expect(closed.kind).toBe("completed");
+            expect((await repos.turns.findById(turn.id))?.status).toBe("cancelled");
+            expect((await delivery.selectPending(THREAD_A)).map((row) => row.id)).toEqual(
+              pending ? [pending.id] : [],
+            );
+          } finally {
+            await releaseLeaseUnderLock(db, runClaim, lease);
+          }
+        },
+      );
       it("serializes a racing enqueue after terminal commit and leaves it recoverable", async () => {
         const { repos, turn } = await assistant();
         const writer = createQuietDrizzleJournalWriter(db);

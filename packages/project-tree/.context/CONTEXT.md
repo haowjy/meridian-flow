@@ -87,26 +87,24 @@ the replay uses them (package `AGENTS.md`).
   (`clientMayWrite`: `purge`, a file create, `carries`, `blob`), more than
   `MAX_RECORDS` records. It throws `CopyFault`; nothing is stored, and the room closes the
   connection with the one terminal code. Names, sources, drafts and types are not its business.
-- **`admit` stamps `dropped`** (`Admission.dropped`, settled by `system`, reason "Work was
-  closed") on every client record that changes a closed Work, raced or not (owner decisions 5
-  and 7: what changes the closed Work bounces, what changes live lands): one drafted in a draft
-  that is not open, and a create, move, rename, delete or restore of a node in a closed Work's
-  source (a move counts its destination's source too) or of a node made inside a dropped one.
-  A node's source is where it stands at the record's place in the update: the server's list
-  before it, then the update's own moves and creates in order (a move rule 1 would skip, or one
-  stamped, doesn't count). An Undo of any type goes where the replay of the list, update
-  included, has the node at it (`Change.parent`), not to the place it carries. So a folder moved out of a closed Work and then written into keeps
-  its chapter, and an honest catch-up gets the same stamps however it is cut into parts. With no
-  closed source nothing is replayed for it. The server's arrival order is the only true order of
-  "raced the close", so this one verdict is the server's. The server's own records (Apply, a
-  restored Discard's copies, the AI's tree commands) are never admitted, so never stamped. The
-  replay needs no rule: `viewValues` leaves a settled drafted record out and filters `dropped` in
-  the live branch, so the node stands as it was. The projection's `dropped` list (`droppedRecords`:
-  each record with the reason) comes from the settle log, for the browser's row to say so; a
-  dropped record stays dropped after the Work is restored. `Connection` is
-  `{ drafts, closedSources }`.
+- **`admit` stamps `dropped`** on a record in a closed draft, on a record of a dropped node or
+  a create inside a dropped folder, and on a record whose addition changes a closed source. The
+  server decides: its arrival order is the one shared by all clients. Admission compares the held
+  tree with the tree after the whole update and checks the added records' reported sources. If
+  that gate fails, it doubles prefixes and bisects to find the next record to judge, leaving each
+  dropped record out of later projections. A reported source can be a no-op, so the candidate is
+  checked against its own full projection before it is dropped. The diff counts both sources of a
+  move and changes to name, place, kind and shown state. In an in-process 300-record update against
+  25,000 held records, no drop took 1.53 s and two replays; one closed-draft drop took 12.29 s
+  and 24 replays. These single runs shared the machine with other workloads. Fallback replay cost
+  grows with the number and positions of rejected or conservatively flagged records, with roughly
+  logarithmically many gate checks per candidate, each replaying the touched views twice.
+  A source with no database row is closed. The
+  server's own records are never admitted. `viewValues` leaves dropped records out;
+  `droppedRecords` reads their reason from the settle log for the browser.
 - **Parts of one client's offline history** arrive in causal order and are admitted in order
   (the room queues a connection's messages); an honest client's parts are never a fault.
+- **An Undo settles only its own node.** Replay skips an Undo whose target is a change on another node. Each taken change reports `sources`: the node's sources before and after that record, for Apply and Un-Apply, which append records.
 - **A record is in force unless a later record in force undoes it** (`standingOf`;
   `projection.inForce`). An Undo names the root (`carries ?? id`) of the record it takes back in
   `undoes`, and takes out every record of that root. So a change with any Undo in force is out,
@@ -130,8 +128,7 @@ the replay uses them (package `AGENTS.md`).
   gives back the arrival it had, and a change back in force arrives at its own place.
 - **Readers of an Undo ask what it turned, not its type.** `projection.changes` has every record
   the replay took by its id; `Change.base` is the change at the bottom of its chain of `undoes`,
-  whose `sets` say which facts it sets, and on an Undo `Change.parent` is where the replay has the
-  node at it. Admission reads `Change.parent` for any Undo; Apply's `factsIn` gives an Undo its
+  whose `sets` say which facts it sets. Apply's `factsIn` gives an Undo its
   base change's facts; the review row reads the Work's tree against live after one.
 - **`undoChange` on a move or rename, or on an Undo about one**, works out what taking it out does
   to the change it is about (`base`): out of force, back in, or neither, when another Undo of it

@@ -58,6 +58,7 @@ export type SkipReason =
   | "missing-parent"
   | "parent-not-folder"
   | "duplicate"
+  | "undo-other-node"
   | "purged"
   /** Rule 11: a document create or rename to a type that is not a tracked document. */
   | "type-not-editable"
@@ -108,8 +109,8 @@ export type Change = {
   base: Change;
   /** On a move or rename that is no Undo: what it says of each fact it sets, in force or not. */
   sets?: Sets;
-  /** On an Undo: the parent the replay has the node under at it, which the Undo's own `parent` need not be. */
-  parent?: string;
+  /** Sources changed at this record, before and after its settlement. */
+  sources: readonly string[];
 };
 
 export type TreeProjection = {
@@ -338,13 +339,15 @@ export function replay(
   };
   const take = (record: TreeRecord, index: number, sets?: Sets, flips = flipsOf(record)) => {
     const target = record.undoes === undefined ? undefined : families.get(record.undoes);
-    const change = {
+    const change: Change = {
       id: record.id,
       root: record.carries ?? record.id,
       node: record.node,
       index,
       inForce: true,
-    } as Change;
+      sources: [],
+      base: target?.base as Change,
+    };
     if (record.undoes !== undefined) change.undoes = record.undoes;
     change.base = target?.base ?? change;
     if (sets) change.sets = sets;
@@ -421,7 +424,7 @@ export function replay(
         return false;
       }
     }
-    take(record, index, undefined, flips).parent = node.parent;
+    take(record, index, undefined, flips);
     return true;
   };
   // Why a node cannot be put under `parent`, if it cannot.
@@ -434,7 +437,28 @@ export function replay(
     return wouldLoop(nodes, node, parent) ? "cycle" : undefined;
   };
 
+  const sourceAt = (id: string): string | undefined => {
+    let at: string | undefined = nodes.get(id)?.parent;
+    for (let guard = 0; at !== undefined && guard <= nodes.size; guard += 1) {
+      if (isSourceRoot(at)) return sourceIdOf(at);
+      at = nodes.get(at)?.parent;
+    }
+    return undefined;
+  };
+  let open: { id: string; node: string; before: string | undefined } | undefined;
+  const close = () => {
+    if (!open) return;
+    const change = changes.get(open.id);
+    if (change)
+      change.sources = [
+        ...new Set([open.before, sourceAt(open.node)].filter((s): s is string => s !== undefined)),
+      ];
+    open = undefined;
+  };
   for (const [index, read] of reads.entries()) {
+    close();
+    if (read.ok && !changes.has(read.record.id))
+      open = { id: read.record.id, node: read.record.node, before: sourceAt(read.record.node) };
     if (!read.ok) {
       const id = (values[index] as { id?: unknown } | null)?.id;
       skipped.push({ record: typeof id === "string" ? id : "", reason: "unreadable" });
@@ -442,6 +466,11 @@ export function replay(
     }
     const record = read.record;
     const skip = (reason: SkipReason) => skipped.push({ record: record.id, reason });
+    const target = record.undoes === undefined ? undefined : families.get(record.undoes);
+    if (target && target.node !== record.node) {
+      skip("undo-other-node");
+      continue;
+    }
     if (record.type === "create") {
       const existing = nodes.get(record.node);
       if (existing) {
@@ -617,6 +646,7 @@ export function replay(
     }
   }
 
+  close();
   if (purgedAt.size > 0) rescueFromPurged(nodes, purgedAt);
   return {
     ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),

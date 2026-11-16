@@ -31,6 +31,7 @@ const area = (id: string, name: string, extra: Partial<MenuArea> = {}): MenuArea
   icon: (() => null) as never,
   tree: null,
   listed: true,
+  writable: true,
   ...extra,
 });
 

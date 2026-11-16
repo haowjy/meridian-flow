@@ -10,7 +10,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const BASELINE_PATH = resolve(ROOT, "tools/ci/slop-lint-baseline.json");

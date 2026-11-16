@@ -3,7 +3,7 @@
  * fields. Public HTTP create uses normalizeThreadCreate, which rejects them.
  */
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { SpawnStatus, Thread } from "@meridian/contracts/threads";
+import { NO_OVERRIDES, type SpawnStatus, type Thread } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { toIsoString } from "./contract-serialization.js";
 
@@ -39,6 +39,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
+    overrides: NO_OVERRIDES,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: input.parentThreadId,

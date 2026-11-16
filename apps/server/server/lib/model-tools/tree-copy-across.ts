@@ -1,3 +1,5 @@
+import type { BranchId } from "@meridian/contracts";
+import type { FileDestination } from "../../domains/file-policy/index.js";
 /**
  * The sources of a model's `move` that are in another list (a project's files and the account's
  * `user://` files are two lists): each is copied, with the writer's Copy (`port.copy`), and the
@@ -58,6 +60,7 @@ export async function copyAcross(
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
   command: { from: readonly string[]; path: string; many: boolean },
+  destination?: FileDestination,
 ): Promise<{ refused: unknown } | Copies> {
   const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const shown = await shownNamesOf(ctx);
@@ -105,8 +108,21 @@ export async function copyAcross(
       sources: sources.map((source) => ({
         uri: source.uri,
         expected: { kind: source.kind, nodeId: source.nodeId },
+        ...(destination?.kind === "draft"
+          ? { view: { kind: "draft" as const, owner: destination.owner } }
+          : {}),
       })),
       destinationUri: joinContextUri(to.area, into),
+      ...(destination?.kind === "draft"
+        ? {
+            destinationBranch: {
+              mode: "ensure" as const,
+              owner: destination.owner,
+              threadId: ctx.threadId as ThreadId,
+              userId: call.principal.accountId,
+            },
+          }
+        : {}),
     }),
   );
   if (!copy.ok)
@@ -153,10 +169,12 @@ export async function recordCopies(
   ctx: ToolHandlerContext,
   port: ContextPort,
   { area, roots, folders, notCopied, name }: Copies,
+  drafted: boolean,
 ): Promise<CopiedAcross> {
   // The copy's records: the folders it made, each root's create and every create below it, and
   // the rename to the name the path gave, which the same Undo takes back first.
   const made = await port.treeCommand(area, {
+    drafted,
     make: (scope) => {
       const creates = new Map(
         listRecords(scope.writer.doc).flatMap((record) =>
@@ -177,7 +195,7 @@ export async function recordCopies(
         const shown = scope.writer.view(scope.view).nodes.get(entry.id);
         return shown && segmentOf(shown);
       });
-      return { result: { records, names } };
+      return { result: { records, names, draftBranchId: scope.view.draft } };
     },
   });
   if (!made.ok) throw new Error(`The copy's tree did not write: ${made.error.code}`);
@@ -204,6 +222,9 @@ export async function recordCopies(
         })),
         records: made.value.records,
         op: "create",
+        ...(made.value.draftBranchId
+          ? { draftBranchId: made.value.draftBranchId as BranchId }
+          : {}),
         threadId: ctx.threadId as ThreadId,
         ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
         ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
