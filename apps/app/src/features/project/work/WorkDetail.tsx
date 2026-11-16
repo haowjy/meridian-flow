@@ -86,6 +86,7 @@ export function WorkDetail({
           )}
           <WorkActionsMenu
             work={work}
+            handle={handleOf(work)}
             onToggleArchive={() => void toggleArchive(work)}
             onDelete={() => {
               deletion.remove(work);

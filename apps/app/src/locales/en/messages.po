@@ -1225,7 +1225,7 @@ msgstr "Account settings."
 msgid "Account: {label}"
 msgstr "Account: {label}"
 
-#. placeholder {0}: work.name
+#. placeholder {0}: nameWithHandle(work.name, handle)
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Actions for {0}"
 msgstr "Actions for {0}"
@@ -5190,17 +5190,15 @@ msgid "Open \"{name}\""
 msgstr "Open \"{name}\""
 
 #. placeholder {0}: fileName(agent)
-#. placeholder {0}: work.name
 #: src/features/agents/AgentPicker.tsx
-#: src/features/project/work/WorkRow.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
 
 #. placeholder {0}: work.name
 #. placeholder {1}: work.status
 #: src/features/project/work/WorkRow.tsx
-msgid "Open {0} ({1})"
-msgstr "Open {0} ({1})"
+#~ msgid "Open {0} ({1})"
+#~ msgstr "Open {0} ({1})"
 
 #. placeholder {0}: documentDisplayName(path)
 #. placeholder {1}: excerptText(excerpt)
@@ -5217,6 +5215,15 @@ msgstr "Open {0} in {1}"
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
+
+#: src/features/project/work/WorkRow.tsx
+msgid "Open {named}"
+msgstr "Open {named}"
+
+#. placeholder {0}: work.status
+#: src/features/project/work/WorkRow.tsx
+msgid "Open {named} ({0})"
+msgstr "Open {named} ({0})"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
@@ -5759,7 +5766,7 @@ msgstr "Response complete"
 msgid "Restore"
 msgstr "Restore"
 
-#. placeholder {0}: entry.work.name
+#. placeholder {0}: nameWithHandle(entry.work.name, handleOf(entry.work))
 #. placeholder {0}: scoped.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/DeletedWorkList.tsx

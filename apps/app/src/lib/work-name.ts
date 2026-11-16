@@ -37,3 +37,7 @@ export function repeatedNameHandles(
     if (work.handle && (seen.get(key(work.name)) ?? 0) > 1) handles.set(work.id, work.handle);
   return (work) => handles.get(work.id) ?? null;
 }
+
+/** A Work's name with its handle where it shows one, for an accessible name or a sentence. */
+export const nameWithHandle = (name: string, handle: string | null | undefined): string =>
+  handle ? `${name} ${handle}` : name;

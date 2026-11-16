@@ -13,7 +13,7 @@ import {
   deriveWorkPickerViewModel,
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
-import { workDisplayName } from "@/lib/work-name";
+import { nameWithHandle, workDisplayName } from "@/lib/work-name";
 import { useComposerWorkBinding } from "./useComposerWorkBinding";
 
 export function useComposerWorkToolbarControl({
@@ -34,7 +34,8 @@ export function useComposerWorkToolbarControl({
   const view = deriveWorkPickerViewModel(controller.catalog, query, controller.busy);
   const pageId = view.status;
   const noneSelected = work.isNoWork;
-  const name = workDisplayName(work);
+  const handle = controller.catalog.status === "ready" ? controller.catalog.handleOf(work) : null;
+  const name = nameWithHandle(workDisplayName(work), handle);
   return {
     kind: "panel",
     id: "work",
@@ -50,11 +51,7 @@ export function useComposerWorkToolbarControl({
         binding={trigger}
         ariaLabel={t`Change work for this chat, currently ${name}`}
       >
-        <WorkIdentity
-          work={work}
-          handle={controller.catalog.status === "ready" ? controller.catalog.handleOf(work) : null}
-          unavailableLabel={t`Unavailable`}
-        />
+        <WorkIdentity work={work} handle={handle} unavailableLabel={t`Unavailable`} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {

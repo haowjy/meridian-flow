@@ -8,6 +8,7 @@ import type { Work } from "@meridian/contracts/works";
 import type { ReactNode } from "react";
 import { WorkHandle } from "@/components/app/WorkIdentity";
 import { ListRow } from "@/components/ui/list-row";
+import { nameWithHandle } from "@/lib/work-name";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
 
@@ -36,6 +37,7 @@ export function WorkRow({
   /** What just happened to the Work (`RowWord`), in the age's place. */
   notice?: ReactNode;
 }) {
+  const named = nameWithHandle(work.name, handle);
   return (
     // The row's inset hangs in the list's gutter, so names stay on the page's edge.
     <div className="px-0.5">
@@ -44,7 +46,7 @@ export function WorkRow({
         gone={gone}
         notice={notice}
         controlProps={{
-          "aria-label": work.status ? t`Open ${work.name} (${work.status})` : t`Open ${work.name}`,
+          "aria-label": work.status ? t`Open ${named} (${work.status})` : t`Open ${named}`,
           ...(work.id && !gone ? { "data-work-id": work.id } : {}),
         }}
         title={

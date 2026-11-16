@@ -15,6 +15,7 @@ import { role } from "@/components/ui/roles";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { nameWithHandle } from "@/lib/work-name";
 import { RuledList } from "../RuledList";
 import { DeletedWorkList } from "./DeletedWorkList";
 import { GoneWord } from "./GoneWord";
@@ -130,7 +131,7 @@ export function WorkCollection({
           />
         );
       case "undo": {
-        const { name } = work;
+        const name = nameWithHandle(work.name, shared.handle);
         const line = failure ? workFailureLine(failure, { name }) : null;
         return (
           <WorkRow
@@ -166,6 +167,7 @@ export function WorkCollection({
               actions={
                 <WorkActionsMenu
                   work={work}
+                  handle={shared.handle}
                   onToggleArchive={() =>
                     archiveFocus.follow(
                       work.id,

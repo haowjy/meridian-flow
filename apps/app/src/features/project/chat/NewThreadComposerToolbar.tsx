@@ -19,7 +19,7 @@ import {
 import type { AgentChoice } from "@/features/agents/AgentPicker";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { type WorkHandleOf, workDisplayName } from "@/lib/work-name";
+import { nameWithHandle, type WorkHandleOf, workDisplayName } from "@/lib/work-name";
 
 export function NewThreadComposerToolbar({
   projectId,
@@ -112,7 +112,8 @@ function useProspectiveWorkControl({
   const view = deriveWorkPickerViewModel(catalog, query, false);
 
   const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`None`;
-  const name = work ? workDisplayName(work) : unavailableLabel;
+  const handle = work ? handleOf(work) : null;
+  const name = work ? nameWithHandle(workDisplayName(work), handle) : unavailableLabel;
   const label = t`Choose Work for new chat, currently ${name}`;
   return {
     kind: "panel",
@@ -126,11 +127,7 @@ function useProspectiveWorkControl({
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger binding={trigger} ariaLabel={label}>
-        <WorkIdentity
-          work={work}
-          handle={work ? handleOf(work) : null}
-          unavailableLabel={unavailableLabel}
-        />
+        <WorkIdentity work={work} handle={handle} unavailableLabel={unavailableLabel} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {

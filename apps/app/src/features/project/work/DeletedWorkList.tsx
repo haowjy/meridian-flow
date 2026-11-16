@@ -9,7 +9,7 @@ import type { Work } from "@meridian/contracts/works";
 import { withGone } from "@/components/app/RowWord";
 import { WorkHandle } from "@/components/app/WorkIdentity";
 import { ListLine } from "@/components/ui/list-row";
-import type { WorkHandleOf } from "@/lib/work-name";
+import { nameWithHandle, type WorkHandleOf } from "@/lib/work-name";
 import { RuledList } from "../RuledList";
 import { GoneWord } from "./GoneWord";
 import { type WorkPlace, workPlace } from "./useWorkDeletion";
@@ -72,7 +72,7 @@ export function DeletedWorkList({
                         after: ids.slice(0, ids.indexOf(entry.work.id)).reverse(),
                       })
                     }
-                    aria-label={t`Restore ${entry.work.name}`}
+                    aria-label={t`Restore ${nameWithHandle(entry.work.name, handleOf(entry.work))}`}
                     className="text-button shrink-0 text-sm coarse:min-h-11"
                   >
                     <Trans>Restore</Trans>
