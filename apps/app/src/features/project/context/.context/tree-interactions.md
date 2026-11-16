@@ -128,11 +128,12 @@ above it, else on the list's heading (`useTreeNoticeWords`, `NoticePlace`). Off 
 delete also shows a line in `DraftNotices` under `deleteNoticeKey(projectId)`: on Recently opened
 for a delete made there, and on the page main goes back to when the delete took main's document;
 the sidebar's rows say it themselves, so it has no sidebar entry. Its Undo and the sidebar's
-Ctrl+Z are one step (`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo
-no longer applies: once none of the delete's records has its Trash entry left (a Trash Restore of
-all of it, a peer's, a purge, or an Apply that brought back everything it took while its folder
-stands holding them: the fact `deleteStands` reads, as the Undo and Trash do) the step leaves the
-stack (`endWhenRestored`). A delete across the project and account lists is one step per list, each
+Ctrl+Z are one step (`core/project-tree/tree-undo.ts`). The step ends when what it offers to
+undo is gone: once none of the delete's records is in force (a Trash Restore of all of it, a
+peer's, a purge: `deleteStands`) the step leaves the stack (`endWhenRestored`). While its records
+stand but hide nothing (an Apply brought back everything it took, or a create keeps its folder
+standing), the rows show no Undo and Ctrl+Z passes over it; both come back when the delete hides
+something again (`deleteHides`, the fact Trash lists by). A delete across the project and account lists is one step per list, each
 with its Undo on its own rows.
 
 Inline create puts its naming row at the end of the folder, where the create appends, so nothing

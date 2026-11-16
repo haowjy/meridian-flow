@@ -56,7 +56,7 @@ import {
 import {
   AppliedCommand,
   AppliedCommands,
-  type LiveHistories,
+  type Histories,
   queuePort,
   serverBandPort,
 } from "./apply-history";
@@ -192,7 +192,7 @@ export type StartedApply = {
   band?: AppliedCommand;
 };
 /** A band's Apply: the editors its Ctrl+Z goes in, and which owners are closed now. */
-export type BandHistories = { histories: LiveHistories; closed: ClosedOwners };
+export type BandHistories = { histories: Histories; closed: ClosedOwners };
 /**
  * A Discard's answer for the documents it was sent. `done` when it took something, `settled` when
  * each item was settled before it, `returned` when a closed owner changed nothing. `untaken`: the

@@ -22,7 +22,7 @@ import { itemOf, unappliedOf } from "./draft-notices";
  * The histories this tab holds for the Apply's documents, read now: each one's live session, and
  * the draft rooms it applied from.
  */
-export type LiveHistories = () => readonly (DocumentHistory | null)[];
+export type Histories = () => readonly (DocumentHistory | null)[];
 
 export type Answer = Unapplied | { taken: "failed" };
 
@@ -112,7 +112,7 @@ class SharedApply {
   private ended = false;
 
   constructor(
-    private readonly histories: LiveHistories,
+    private readonly histories: Histories,
     private readonly apply: AppliedCommand,
   ) {
     this.enter();
@@ -202,7 +202,7 @@ export class AppliedCommand implements ApplyStep {
   constructor(
     init: ApplyInit,
     private port: ApplyPort,
-    histories: LiveHistories,
+    histories: Histories,
     private readonly hooks: {
       closed: ClosedOwners;
       seat: Seat | null;

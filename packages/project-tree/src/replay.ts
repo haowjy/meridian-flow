@@ -129,14 +129,21 @@ export type TreeProjection = {
   skipped: Array<{ record: string; reason: SkipReason }>;
   /** Creates whose folder was never created in this view: put at the top of their source (rule 6). */
   rescued: string[];
-  /** Trash: the deletes still in force that hide something. Per view, like the tree. */
+  /** Trash: the deletes in force that hide something (`hidingDeletes`). Per view, like the tree. */
   trash: TrashEntry[];
   /**
-   * The root ids of the deletes Undo may still take back: each Trash entry's own while something
-   * it took is still hidden, and a delete that took a restore back (its entries and cascade
-   * members are in Trash again) while one of those is.
+   * The root ids of the deletes in force (not lifted by a restore or an Undo, not purged): each
+   * delete's own, and a delete that took a restore back while one of the deletes it put back is
+   * in force. Undo may take these back, and only these.
    */
   standingDeletes: ReadonlySet<string>;
+  /**
+   * Those of `standingDeletes` that hide something now, by the same ids: what Trash lists. A
+   * delete in force whose nodes all show (an Apply brought back what it took, or a create keeps
+   * its folder standing) is out of this set until they leave again, and in `standingDeletes`
+   * throughout.
+   */
+  hidingDeletes: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
   gone: ReadonlySet<string>;
   /** Records the server dropped at admission (from the settle log; `replayView` fills it, `replay` has no log). */
@@ -765,7 +772,7 @@ export function startReplay(
           );
         },
         changes,
-        standingDeletes: standingDeletesOf(nodes, deletes, standing),
+        standingDeletes: rootsOf(inForce(nodes, deletes), (put) => put.size > 0),
         descendants: (id) => descendantsOf({ children: { get: kidsOf } }, id),
       };
       cached = { count, tree };
@@ -1024,43 +1031,38 @@ function stand(
   return { children, standing };
 }
 
+const inForce = (nodes: Map<string, Working>, deletes: DeleteInForce[]) =>
+  deletes.filter((entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged);
+
+/**
+ * The deletes in force that still hide something: their node or a member of their cascade. An
+ * entry whose nodes all show has nothing in Trash and nothing for an Undo to bring back now, and
+ * hides them again once what keeps them standing leaves.
+ */
 const deletesInTrash = (
   nodes: Map<string, Working>,
   deletes: DeleteInForce[],
   standing: ReadonlyMap<string, Standing>,
 ) =>
-  deletes.filter(
-    (entry) =>
-      nodes.has(entry.node) && !nodes.get(entry.node)?.purged && hidesSomething(entry, standing),
+  inForce(nodes, deletes).filter((entry) =>
+    [entry.node, ...entry.cascade].some((id) => hidden(standing, id)),
   );
-
-/**
- * Whether the delete still hides something: its node or a member of its cascade. An entry whose
- * nodes all show (an Apply brought back what it took, and they keep its folder standing) has
- * nothing in Trash and nothing for an Undo to bring back.
- */
-function hidesSomething(entry: DeleteInForce, standing: ReadonlyMap<string, Standing>): boolean {
-  return [entry.node, ...entry.cascade].some((id) => hidden(standing, id));
-}
 
 const hidden = (standing: ReadonlyMap<string, Standing>, id: string) => {
   const state = standing.get(id);
   return state?.deleted === true && !state.keptByChild;
 };
 
-/** `TreeProjection.standingDeletes`. */
-const standingDeletesOf = (
-  nodes: Map<string, Working>,
-  deletes: DeleteInForce[],
-  standing: ReadonlyMap<string, Standing>,
-) =>
+/**
+ * The root ids an Undo reaches `entries` by (`standingDeletes`, `hidingDeletes`): each entry's
+ * own, and each restore's Undo that put it back while what it put back `counts`.
+ */
+const rootsOf = (entries: DeleteInForce[], counts: (put: ReadonlySet<string>) => boolean) =>
   new Set(
-    deletesInTrash(nodes, deletes, standing).flatMap((entry) => [
+    entries.flatMap((entry) => [
       entry.id,
       entry.from ?? entry.id,
-      ...[...entry.putBackBy].flatMap(([root, put]) =>
-        [...put].some((id) => hidden(standing, id)) ? [root] : [],
-      ),
+      ...[...entry.putBackBy].flatMap(([root, put]) => (counts(put) ? [root] : [])),
     ]),
   );
 
@@ -1147,7 +1149,8 @@ function derive(
       node: entry.node,
       cascade: covered(entry),
     })),
-    standingDeletes: standingDeletesOf(nodes, deletes, standing),
+    standingDeletes: rootsOf(inForce(nodes, deletes), (put) => put.size > 0),
+    hidingDeletes: rootsOf(inTrash, (put) => [...put].some((id) => hidden(standing, id))),
   };
 }
 

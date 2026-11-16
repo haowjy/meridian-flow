@@ -117,7 +117,6 @@ export function useWorkBranchCommands({
     };
     const row = (draft: DraftReviewSelection) =>
       listed()?.find((item) => item.itemKey === draft.itemKey);
-    const liveHistory = (documentId: string) => registry.history(documentId);
     // The Work's list re-reads with the touched documents' own reads: the route reads a
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
@@ -359,7 +358,10 @@ export function useWorkBranchCommands({
       let { branchId, drafts } = data;
       const historiesOf = (documentId: string) => {
         const draftId = drafts[documentId];
-        return [liveHistory(documentId), draftId ? registry.history(draftRoomName(draftId)) : null];
+        return [
+          registry.history(documentId),
+          draftId ? registry.history(draftRoomName(draftId)) : null,
+        ];
       };
       const port = serverPort({
         commandId: data.commandId,
@@ -435,7 +437,7 @@ export function useWorkBranchCommands({
               ? {
                   histories: () => [
                     editorHistoryOf(reviewEditor?.(draft)),
-                    liveHistory(draft.documentId),
+                    registry.history(draft.documentId),
                   ],
                   closed,
                 }

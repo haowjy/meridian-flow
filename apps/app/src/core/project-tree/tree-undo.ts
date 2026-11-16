@@ -6,7 +6,9 @@
  * by the changes in force), and one that no longer fits is skipped for the one before it. An Apply
  * is asked of the server, and its press is spent once the server answers, whatever it took back. A
  * step that waits for a closed owner (an archived or deleted Work, a chat in Trash) keeps its place,
- * and a press passes over it until the owner reopens (`waitsForClosed`). A notice's Undo
+ * and a press passes over it until the owner reopens (`waitsForClosed`). So does a delete that hides
+ * nothing now (`rests`: what it took shows again, kept standing by an Apply or a create), until it
+ * hides something again. A notice's Undo
  * (`undoStep`) takes back the same step a press would. There is no Redo: an Undo's own records go
  * on no stack.
  *
@@ -20,6 +22,7 @@ import type { ClosedOwnerWhy, LeftOutWhy } from "@meridian/contracts/commands";
 import {
   appliedNodes,
   type DroppedRecord,
+  deleteHides,
   deleteStands,
   isSourceRoot,
   LIVE,
@@ -248,8 +251,10 @@ let revision = 0;
 /** Changes whenever any list's notice does. */
 export const treeNoticeRevision = () => revision;
 
+/** The list's notice; a delete's step that rests shows none until it hides something again. */
 export function treeNotice(session: TreeListSession | null): TreeNotice | null {
-  return (session && notices.get(session)) ?? null;
+  const notice = (session && notices.get(session)) ?? null;
+  return session && notice?.kind === "step" && rests(session, notice.step) ? null : notice;
 }
 
 export function subscribeTreeNotices(listener: () => void): () => void {
@@ -473,6 +478,7 @@ async function takeLatest(
       }
       continue;
     }
+    if (step.kind === "tree" && rests(session, step)) continue;
     if (step.kind === "apply") {
       if (!step.inForce()) continue;
       const answer = await step.ask();
@@ -514,7 +520,7 @@ export async function undoStep(
   if (step.kind === "apply") return (await step.press(null)).taken !== "failed";
   const stack = stackOf(session);
   const at = stack.indexOf(step);
-  if (at < 0) return false;
+  if (at < 0 || rests(session, step)) return false;
   stack.splice(at, 1);
   actedIn(session);
   show(session, null);
@@ -635,15 +641,33 @@ export function endWhenTakenBack(lists: readonly TreeListSession[], step: ApplyS
 }
 
 /**
- * Ends the delete `step` when none of its records can be undone any more (their Trash entries
- * are gone: restored by anyone, or purged): a notice offers an Undo that no longer applies. A
- * folder's other children still in the entry keep it standing. Returns the stop for the watch.
+ * A delete's step whose records are in force but hide nothing now: what it took shows again,
+ * kept standing by an Apply or a create in its folder. A press passes over it, and its rows offer
+ * no Undo, until one of them hides something again.
+ */
+function rests(session: TreeListSession, step: TreeStep): boolean {
+  if (step.gesture !== "delete") return false;
+  const view: View = step.draft === null ? LIVE : { draft: step.draft };
+  const writer = writerOf(session, view);
+  return !step.records.some((record) => deleteHides(writer, view, record));
+}
+
+/**
+ * Ends the delete `step` when none of its records is in force any more (lifted by anyone's
+ * restore or Undo, or purged): a notice offers an Undo that no longer applies. While it stands, a
+ * change in whether it rests shows on its rows. Returns the stop for the watch.
  */
 export function endWhenRestored(session: TreeListSession, step: TreeStep): () => void {
   const view: View = step.draft === null ? LIVE : { draft: step.draft };
+  let resting = rests(session, step);
   const stop = session.subscribe(() => {
     const writer = writerOf(session, view);
-    if (step.records.some((record) => deleteStands(writer, view, record))) return;
+    if (step.records.some((record) => deleteStands(writer, view, record))) {
+      if (rests(session, step) === resting) return;
+      resting = !resting;
+      changed();
+      return;
+    }
     stop();
     const stack = stackOf(session);
     const at = stack.indexOf(step);
