@@ -261,7 +261,9 @@ identity in anchors or holds.
   capture at each Apply boundary, so nearby typing stays in separate native
   segments. History traversal is synchronous: Apply entries enqueue owner-held
   commands, while Yjs Undo/Redo never waits on the network or crosses an Apply
-  boundary while skipping native no-ops. Undo gives back the text or cell range a change
+  boundary while skipping native no-ops. An Apply's undo resolves whether it
+  happened; when it didn't (a refused or failed Un-Apply), the entry goes back to
+  the undo side at its place, unless it was redone or cleared since. Undo gives back the text or cell range a change
   started from (a drag, a cut, typing over a selection), captured by
   `editor-history.ts` on `beforeTransaction` and carried through the stack items
   that UndoManager generates. It is never read from y-tiptap's copy, which a

@@ -289,7 +289,7 @@ export async function undoStep(
   actor: string,
   pendingText?: ReadonlySet<string>,
 ): Promise<boolean> {
-  if (step.kind === "apply") return undoApply(session, step);
+  if (step.kind === "apply") return (await undoApply(session, step)) === "unapplied";
   const stack = stackOf(session);
   const at = stack.indexOf(step);
   if (at < 0) return false;
@@ -311,12 +311,16 @@ export async function undoStep(
 
 /**
  * An applied row's Undo: the server's Un-Apply of `step`, if it is still on the stack, as Ctrl+Z
- * would take it, said on its rows as a press says it.
+ * would take it, said on its rows as a press says it. Its answer, or null when a press took it
+ * first.
  */
-export async function undoApply(session: TreeListSession, step: ApplyStep): Promise<boolean> {
+export async function undoApply(
+  session: TreeListSession,
+  step: ApplyStep,
+): Promise<"unapplied" | "skipped" | "failed" | null> {
   const stack = stackOf(session);
   const at = stack.indexOf(step);
-  if (at < 0) return false;
+  if (at < 0) return null;
   stack.splice(at, 1);
   show(session, null);
   const { answer } = await step.unapply();
@@ -331,7 +335,7 @@ export async function undoApply(session: TreeListSession, step: ApplyStep): Prom
           : { kind: "undone", skipped: [], nodes: step.nodes },
     ),
   );
-  return answer === "unapplied";
+  return answer;
 }
 
 /**

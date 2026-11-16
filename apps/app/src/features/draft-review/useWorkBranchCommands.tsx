@@ -265,10 +265,7 @@ export function useWorkBranchCommands({
       pushUndoStep(session, step);
       handle.release();
       if (entry) entry.follow(step);
-      else {
-        const history = sharedHistory(documentIds.map(liveHistory));
-        if (history) entry = new AppliedEntry(session, step, history, again);
-      }
+      else entry = new AppliedEntry(session, step, () => documentIds.map(liveHistory), again);
       // The applied rows' Undo is this step, the one Ctrl+Z takes.
       return { undo: () => void undoApply(session, step), count: nodes.length };
     };
@@ -289,7 +286,7 @@ export function useWorkBranchCommands({
             isDeletedFromManuscript(item),
             (tree && item?.tree) || undefined,
             surface === "band"
-              ? sharedHistory([
+              ? sharedHistory(() => [
                   editorHistoryOf(reviewEditor?.(draft)),
                   liveHistory(draft.documentId),
                 ])

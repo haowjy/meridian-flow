@@ -340,11 +340,15 @@ with its notice. A band's Apply has its editor's Undo instead.
 Either Apply also enters the Undo history of every live session this tab holds for its
 documents (`registry.liveHistory`: a shown editor or an open tab), so Ctrl+Z there takes the
 Apply back instead of the writer's typing under it. One entry spans those histories
-(`sharedHistory`, `apply-history.ts`): Ctrl+Z in any of them takes back the whole Apply once, and
-the others drop it. A sidebar or strip Apply's entry is the step's (`AppliedEntry`): its Ctrl+Z
-is the step's Un-Apply, an Un-Apply from the sidebar or a notice ends the entry, and its Redo
-sends the same Apply again as a new command whose step the entry follows. A band's entry is its
-queue's Un-Apply and Redo, as before, and still ends when the queue item is released.
+(`SharedApply`, `apply-history.ts`) for as long as the Apply is in force: Ctrl+Z in any of them
+takes back the whole Apply once, and the others drop it. Whenever it comes back into force (a
+Redo, an Un-Apply that failed or was refused), every live history without it gets it again, and
+the history that pressed puts it back at its place. A sidebar or strip Apply's entry is the
+step's (`AppliedEntry`): its Ctrl+Z is the step's Un-Apply, its Redo sends the same Apply again
+as a new command whose step the entry follows, and an Un-Apply from the sidebar or a notice takes
+it out of every history until it answers: `unapplied` or `skipped` ends it, `failed` brings it
+back. A band's entry is its queue's Un-Apply and Redo, and ends when the queue item is
+released.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

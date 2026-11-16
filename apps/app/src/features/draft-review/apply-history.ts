@@ -2,46 +2,84 @@ import type { EditorHistoryHandle } from "@/core/editor/editor-history";
 import { type ApplyStep, undoApply } from "@/core/project-tree/tree-undo";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 
+type ApplyAction = Parameters<EditorHistoryHandle["captureApply"]>[0];
+/** The histories of the live sessions this tab holds for the Apply's documents, read now. */
+type LiveHistories = () => readonly (EditorHistoryHandle | null)[];
+
 /**
- * One Apply in the history of every editor open on its documents. Ctrl+Z in any of them takes it
- * back, and the others let go of it: no second Un-Apply goes, and a later press there takes that
- * editor's own step.
+ * One Apply in the history of every live session of its documents while it is in force. Ctrl+Z
+ * in any of them takes it back and the others let go of it: no second Un-Apply goes, and a later
+ * press there takes that history's own step. Whenever it comes back into force (a Redo, an
+ * Un-Apply that didn't happen), every live history without it gets it again.
  */
-export function sharedHistory(
-  histories: readonly (EditorHistoryHandle | null)[],
-): EditorHistoryHandle | null {
-  const open = [...new Set(histories.filter((history) => history !== null))];
-  if (open.length < 2) return open[0] ?? null;
+class SharedApply {
+  private readonly held = new Map<EditorHistoryHandle, () => void>();
+  private ended = false;
+
+  constructor(
+    private readonly histories: LiveHistories,
+    private readonly action: ApplyAction,
+  ) {
+    this.enter();
+  }
+
+  enter(): void {
+    if (this.ended) return;
+    const live = new Set(this.histories().filter((history) => history !== null));
+    for (const [history, remove] of this.held) {
+      if (live.has(history)) continue;
+      remove();
+      this.held.delete(history);
+    }
+    for (const history of live) {
+      if (this.held.has(history)) continue;
+      this.held.set(
+        history,
+        history.captureApply({
+          undo: () => {
+            this.release(history);
+            return this.action.undo().then((happened) => {
+              if (!happened) this.enter();
+              return happened;
+            });
+          },
+          redo: () => {
+            this.action.redo();
+            this.enter();
+          },
+        }),
+      );
+    }
+  }
+
+  release(kept: EditorHistoryHandle | null = null): void {
+    for (const [history, remove] of this.held) {
+      if (history === kept) continue;
+      remove();
+      this.held.delete(history);
+    }
+  }
+
+  end(): void {
+    this.ended = true;
+    this.release();
+  }
+}
+
+/** A band's Apply, its queue's Un-Apply and Redo, in every live history of its document. */
+export function sharedHistory(histories: LiveHistories): EditorHistoryHandle {
   return {
     captureApply(action) {
-      const entries = new Map<EditorHistoryHandle, () => void>();
-      const release = (kept: EditorHistoryHandle | null) => {
-        for (const [history, remove] of entries) {
-          if (history === kept) continue;
-          remove();
-          entries.delete(history);
-        }
-      };
-      for (const history of open)
-        entries.set(
-          history,
-          history.captureApply({
-            undo: () => {
-              release(history);
-              action.undo();
-            },
-            redo: () => action.redo(),
-          }),
-        );
-      return () => release(null);
+      const shared = new SharedApply(histories, action);
+      return () => shared.end();
     },
   };
 }
 
 /**
- * A card's Apply in the open editors' histories. Its Ctrl+Z is the card's Undo, the step's
- * Un-Apply, so the two take back the one command once; its Redo applies the same changes again
- * as a new command (`again`), whose step `follow` hands over.
+ * A card's Apply in the live histories of its documents. Its Ctrl+Z is the card's Undo, the
+ * step's Un-Apply, so the two take back the one command once; its Redo applies the same changes
+ * again as a new command (`again`), whose step `follow` hands over.
  */
 export class AppliedEntry {
   private undone: Promise<boolean> = Promise.resolve(false);
@@ -49,20 +87,22 @@ export class AppliedEntry {
   private reapplied: Promise<void> = Promise.resolve();
   /** The step this entry's own press is taking back, which keeps the entry for its Redo. */
   private pressed: ApplyStep | null = null;
-  private readonly remove: () => void;
+  private readonly shared: SharedApply;
 
   constructor(
     session: TreeListSession,
     private step: ApplyStep,
-    history: EditorHistoryHandle,
+    histories: LiveHistories,
     again: (entry: AppliedEntry) => Promise<void>,
   ) {
-    this.remove = history.captureApply({
+    this.shared = new SharedApply(histories, {
       undo: () => {
-        this.undone = this.reapplied.then(() => {
+        const said = this.reapplied.then(() => {
           this.pressed = this.step;
           return undoApply(session, this.step);
         });
+        this.undone = said.then((answer) => answer === "unapplied");
+        return said.then((answer) => answer !== "failed");
       },
       redo: () => {
         this.reapplied = this.undone.then((back) => (back ? again(this) : undefined));
@@ -70,22 +110,31 @@ export class AppliedEntry {
     });
   }
 
-  /** The step's Un-Apply starts: one sent from elsewhere (the card, the sidebar) ends the entry. */
+  /**
+   * The step's Un-Apply starts: while one sent from elsewhere (the card, the sidebar) is out, no
+   * history holds the entry.
+   */
   leaving(step: ApplyStep): void {
-    if (this.pressed !== step) this.retire();
+    if (this.pressed !== step) this.shared.release();
   }
 
-  /** The Un-Apply's answer: anything but `unapplied` leaves nothing for a Redo to bring back. */
-  answered(step: ApplyStep, answer: string): void {
-    if (this.pressed === step) this.pressed = null;
-    if (answer !== "unapplied") this.retire();
+  /**
+   * The Un-Apply's answer. `failed` leaves the Apply in force, so it is back in every history; any
+   * other answer from elsewhere, or a refusal, leaves nothing for a Redo to bring back.
+   */
+  answered(step: ApplyStep, answer: "unapplied" | "skipped" | "failed"): void {
+    const own = this.pressed === step;
+    if (own) this.pressed = null;
+    if (answer === "failed") this.shared.enter();
+    else if (answer === "skipped" || !own) this.retire();
   }
 
   follow(step: ApplyStep): void {
     this.step = step;
+    this.shared.enter();
   }
 
   retire(): void {
-    this.remove();
+    this.shared.end();
   }
 }

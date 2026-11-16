@@ -44,12 +44,18 @@ it("preserves native history order across Apply boundaries when a remote write m
   try {
     text.insert(0, "A");
     editorHistory(editor)?.captureApply({
-      undo: () => callbacks.push("undo first Apply"),
+      undo: () => {
+        callbacks.push("undo first Apply");
+        return Promise.resolve(true);
+      },
       redo: () => callbacks.push("redo first Apply"),
     });
     text.insert(1, "B");
     editorHistory(editor)?.captureApply({
-      undo: () => callbacks.push("undo second Apply"),
+      undo: () => {
+        callbacks.push("undo second Apply");
+        return Promise.resolve(true);
+      },
       redo: () => callbacks.push("redo second Apply"),
     });
     text.insert(2, "C");

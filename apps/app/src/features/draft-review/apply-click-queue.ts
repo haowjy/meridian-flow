@@ -61,7 +61,8 @@ export type UnapplyCommand = {
 type Command = ApplyCommand | UnapplyCommand;
 
 export type ApplyCommandHandle = {
-  undo(): void;
+  /** Resolves false when the Un-Apply was refused, and the Apply stands. */
+  undo(): Promise<boolean>;
   redo(): void;
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
@@ -142,7 +143,7 @@ export class ApplyClickQueue {
         handle.pendingReplay = null;
         if (this.cancel(handle.current.body.commandId)) {
           handle.reversal = Promise.resolve({ status: "cancelled" });
-          return;
+          return Promise.resolve(true);
         }
         handle.replaySelection = [...handle.current.body.groupIds];
         const inverse = this.queueUnapply({
@@ -166,9 +167,10 @@ export class ApplyClickQueue {
           },
         });
         handle.reversal = inverse.outcome;
-        void inverse.outcome.then((answer) => {
-          if (answer.status !== "unapplied" && answer.status !== "cancelled")
-            input.unapplyRefused(answer);
+        return inverse.outcome.then((answer) => {
+          const happened = answer.status === "unapplied" || answer.status === "cancelled";
+          if (!happened) input.unapplyRefused(answer);
+          return happened;
         });
       },
       redo: () => {

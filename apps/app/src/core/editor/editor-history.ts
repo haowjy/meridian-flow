@@ -20,7 +20,11 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 type StackItem = Y.UndoManager["undoStack"][number];
 
 type EditorHistoryAction = {
-  undo(): void;
+  /**
+   * Resolves false when the undo didn't happen: the entry goes back to the undo side at its
+   * place, unless it was redone or cleared since.
+   */
+  undo(): Promise<boolean>;
   redo(): void;
 };
 export type EditorHistoryHandle = {
@@ -30,7 +34,7 @@ export type EditorHistoryHandle = {
 
 type Entry =
   | { kind: "yjs"; sequence: number; item: StackItem }
-  | { kind: "apply"; sequence: number; action: EditorHistoryAction };
+  | { kind: "apply"; sequence: number; action: EditorHistoryAction; presses: number };
 
 /** The history each mounted editor is attached to. */
 const histories = new WeakMap<Editor, DocumentHistory>();
@@ -137,7 +141,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   captureApply(action: EditorHistoryAction): () => void {
     if (!this.active) return noop;
     this.manager.stopCapturing();
-    const entry: Entry = { kind: "apply", sequence: ++this.sequence, action };
+    const entry: Entry = { kind: "apply", sequence: ++this.sequence, action, presses: 0 };
     this.undo.push(entry);
     this.clearRedo();
     this.changed();
@@ -177,12 +181,26 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (entry.kind === "apply") {
       source.splice(direction === "undo" ? source.length - 1 : 0, 1);
       insert(direction === "undo" ? this.redo : this.undo, entry);
-      entry.action[direction]();
+      const press = ++entry.presses;
+      if (direction === "redo") entry.action.redo();
+      else
+        void entry.action.undo().then((happened) => {
+          if (!happened && entry.presses === press) this.reinstate(entry);
+        });
     } else {
       this.runNative(direction, source, editor);
     }
     this.changed();
     return true;
+  }
+
+  /** Puts an Apply whose undo didn't happen back on the undo side, if it still waits for redo. */
+  private reinstate(entry: Entry): void {
+    const at = this.redo.indexOf(entry);
+    if (!this.active || at < 0) return;
+    this.redo.splice(at, 1);
+    insert(this.undo, entry);
+    this.changed();
   }
 
   /** Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary. */
