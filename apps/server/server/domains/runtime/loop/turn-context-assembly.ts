@@ -14,10 +14,16 @@
  *   execution. Later gateway failure or cancellation does not undo that bake.
  */
 
-import type { ToolPolicy } from "@meridian/contracts/agents";
+import type { ReasoningChoice, ToolPolicy } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
-import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
+import type {
+  Gateway,
+  GenerateRequest,
+  ModelInfo,
+  ReasoningSupport,
+  Tool,
+} from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import {
@@ -32,7 +38,7 @@ import type {
   ThreadMediaInclusionRepository,
 } from "../../threads/ports/repositories.js";
 import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
-import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
+import { reasoningOfChoice, resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
   resolveThreadModelAvailableSkills,
   resolveThreadPreloadedSkills,
@@ -182,15 +188,27 @@ interface PreparedNextTurnContext
 
 /**
  * The chat's model override replaces the Agent's model while the gateway lists it. An id it no
- * longer lists runs on the Agent's model, and the turn's recorded model says so. The Agent's
- * effort carries over: the gateway clamps it to what the resolved model accepts.
+ * longer lists runs on the Agent's model, and the turn's recorded model says so. The chat's effort
+ * override replaces the Agent's effort while the resolved model accepts it, and falls back to the
+ * Agent's the same way; the gateway then clamps whichever runs to what the model accepts.
  */
 function turnGatewayParams(
   gateway: AssembleNextTurnContextInput["gateway"],
-  thread: Pick<Thread, "modelOverride">,
+  thread: Pick<Thread, "modelOverride" | "effortOverride">,
   agentParams: Pick<GenerateRequest, "model" | "reasoning">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
-  return { ...agentParams, model: threadModelId(gateway, thread, agentParams.model) };
+  const model = threadModelId(gateway, thread, agentParams.model);
+  const support = modelOf(gateway, { model })?.reasoning;
+  const effort = thread.effortOverride;
+  return effort && support && acceptsReasoningChoice(support, effort)
+    ? { ...agentParams, model, reasoning: reasoningOfChoice(effort) }
+    : { ...agentParams, model };
+}
+
+function acceptsReasoningChoice(support: ReasoningSupport, choice: ReasoningChoice): boolean {
+  if (choice === "adaptive") return true;
+  if (choice === "disabled") return support.canDisable === true;
+  return support.efforts.includes(choice);
 }
 
 /**

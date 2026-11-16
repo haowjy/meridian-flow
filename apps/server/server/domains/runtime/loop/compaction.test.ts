@@ -94,6 +94,7 @@ function thread(ref: string | null = "c12"): Thread {
     agentDefinitionRevisionId: null,
     agentName: null,
     modelOverride: null,
+    effortOverride: null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: null,

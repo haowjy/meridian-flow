@@ -12,6 +12,7 @@ import type {
   ResolvedAgentConfiguration,
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
+import { AGENT_EFFORT_CHOICE } from "@meridian/contracts/agents";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type {
   AgentRevision,
@@ -191,6 +192,9 @@ export function createBoundAgentCatalog(input: {
       description: found?.description ?? "",
       model: found?.definition
         ? (found.definition.metadata.model ?? input.defaultModel() ?? null)
+        : null,
+      effort: found?.definition?.metadata.effort
+        ? AGENT_EFFORT_CHOICE[found.definition.metadata.effort]
         : null,
       primary: found?.definition ? isPrimary(found.definition) : true,
       level: entry.level,

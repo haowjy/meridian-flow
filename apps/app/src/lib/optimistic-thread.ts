@@ -1,4 +1,5 @@
 /** Build a navigate-first destination before the server creates it. */
+import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { CreationAgent } from "@/features/agents/creation-agent";
@@ -13,6 +14,7 @@ export function makeOptimisticThread(input: {
   aiWriteMode: AiWriteMode;
   agent?: CreationAgent;
   modelOverride?: string | null;
+  effortOverride?: ReasoningChoice | null;
 }): Thread {
   return {
     id: input.id,
@@ -21,6 +23,7 @@ export function makeOptimisticThread(input: {
     aiWriteMode: input.aiWriteMode,
     effectiveAiWriteMode: input.aiWriteMode,
     modelOverride: input.modelOverride ?? null,
+    effortOverride: input.effortOverride ?? null,
     userId: OPTIMISTIC_OWNER_ID,
     kind: "primary",
     title: input.title,

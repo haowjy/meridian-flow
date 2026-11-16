@@ -7,6 +7,7 @@
  * relationship itself is carried by `originTurnId` (the anchor turn lives on
  * the source thread), never by `parentThreadId`.
  */
+import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type {
   ProjectId,
   PromptBakeId,
@@ -32,6 +33,7 @@ export interface CreateDerivedPrimaryThreadInput {
   originTurnId?: TurnId | null;
   /** A fork copies its source's; a handoff takes the writer's pick, else none. */
   modelOverride?: string | null;
+  effortOverride?: ReasoningChoice | null;
   title?: string | null;
   initialPromptBakeId?: PromptBakeId | null;
 }
@@ -52,6 +54,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     agentDefinitionRevisionId: null,
     agentName: null,
     modelOverride: input.modelOverride ?? null,
+    effortOverride: input.effortOverride ?? null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: input.source.parentThreadId,

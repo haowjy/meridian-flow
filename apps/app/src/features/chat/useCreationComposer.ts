@@ -1,5 +1,6 @@
 /** Send a new project chat in the current pane before background persistence. */
 
+import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
@@ -41,6 +42,7 @@ export function useCreationComposer(projectId: string) {
         aiWriteMode?: AiWriteMode;
         agent: CreationAgent;
         modelOverride: string | null;
+        effortOverride?: ReasoningChoice | null;
       },
     ) {
       const sent =
@@ -55,6 +57,7 @@ export function useCreationComposer(projectId: string) {
           activatedSkillSlugs: submission.activatedSkillSlugs,
           agent: context.agent,
           modelOverride: context.modelOverride,
+          effortOverride: context.effortOverride,
           workId: context.workId,
           workAiWriteMode: context.workAiWriteMode,
           ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),

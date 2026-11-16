@@ -29,6 +29,7 @@ export function thread(): Thread {
     agentDefinitionRevisionId: null,
     agentName: "General",
     modelOverride: null,
+    effortOverride: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: THREAD_ID,

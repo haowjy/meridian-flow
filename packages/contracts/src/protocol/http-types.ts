@@ -5,7 +5,13 @@
  */
 
 import { z } from "zod";
-import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
+import {
+  type AgentSelection,
+  agentSelectionSchema,
+  REASONING_LEVELS,
+  type ReasoningChoice,
+  reasoningChoiceSchema,
+} from "../agents/index.js";
 import type { DraftOwnerKey } from "../branches/owner.js";
 import {
   CONTEXT_URI_SCHEMES,
@@ -478,6 +484,8 @@ export type CreateThreadRequest = {
   aiWriteMode?: AiWriteMode;
   /** The model the new chat runs on instead of its Agent's; omitted or null runs the Agent's own. */
   modelOverride?: string | null;
+  /** The reasoning setting the new chat runs at instead of its Agent's; omitted or null runs the Agent's own. */
+  effortOverride?: ReasoningChoice | null;
 };
 
 export type CreateThreadResponse = Thread;
@@ -498,17 +506,22 @@ export const modelListSchema = z.object({
       name: z.string(),
       /** False when this deployment can't run it (no provider key): a chat set to it falls back to its Agent's model. */
       available: z.boolean(),
+      /** The levels it accepts, in the order a picker shows them. */
+      efforts: z.array(z.enum(REASONING_LEVELS)),
+      /** Whether reasoning can be switched off (`disabled`); otherwise `disabled` runs at the lowest level. */
+      canDisable: z.boolean(),
     }),
   ),
 });
 export type ModelList = z.infer<typeof modelListSchema>;
 
-/** `PATCH /api/threads/:threadId/model`: `model: null` clears the override. */
-export const setThreadModelRequestSchema = z.strictObject({
+/** `PATCH /api/threads/:threadId/overrides`: sets both; `null` clears one, so the Agent's own applies. */
+export const setThreadOverridesRequestSchema = z.strictObject({
   commandId: z.uuid(),
   model: z.string().min(1).nullable(),
+  effort: reasoningChoiceSchema.nullable(),
 });
-export type SetThreadModelRequest = z.infer<typeof setThreadModelRequestSchema>;
+export type SetThreadOverridesRequest = z.infer<typeof setThreadOverridesRequestSchema>;
 
 export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
@@ -516,6 +529,8 @@ export const handoffThreadRequestSchema = z.strictObject({
   agentSelection: agentSelectionSchema,
   /** The model the new chat runs on instead of its Agent's. */
   modelOverride: z.string().min(1).nullish(),
+  /** The reasoning setting the new chat runs at instead of its Agent's. */
+  effortOverride: reasoningChoiceSchema.nullish(),
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 

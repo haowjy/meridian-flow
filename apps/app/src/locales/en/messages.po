@@ -853,8 +853,12 @@ msgid "{name}, renamed"
 msgstr "{name}, renamed"
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "{name}; {modelLabel} isn't available, so it runs on its own model"
-msgstr "{name}; {modelLabel} isn't available, so it runs on its own model"
+msgid "{name}; {modelLabel} isn't available, so it runs on its default model"
+msgstr "{name}; {modelLabel} isn't available, so it runs on its default model"
+
+#: src/features/agents/ComposerAgentControl.tsx
+#~ msgid "{name}; {modelLabel} isn't available, so it runs on its own model"
+#~ msgstr "{name}; {modelLabel} isn't available, so it runs on its own model"
 
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
@@ -1954,13 +1958,17 @@ msgstr "Changes in {name} discarded."
 msgid "Changes in this chat"
 msgstr "Changes in this chat"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Changing it rebuilds the chat's cache."
+msgstr "Changing it rebuilds the chat's cache."
+
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changing position"
 msgstr "Changing position"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Changing the model rebuilds this chat's cache on the next reply."
-msgstr "Changing the model rebuilds this chat's cache on the next reply."
+#~ msgid "Changing the model rebuilds this chat's cache on the next reply."
+#~ msgstr "Changing the model rebuilds this chat's cache on the next reply."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Changing the position of {source}…"
@@ -3010,6 +3018,10 @@ msgstr "Cut"
 #: src/features/account/SettingsDialog.tsx
 msgid "Dark"
 msgstr "Dark"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Default"
+msgstr "Default"
 
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Default alignment"
@@ -4104,8 +4116,8 @@ msgid "Its folder is gone"
 msgstr "Its folder is gone"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "its own"
-msgstr "its own"
+#~ msgid "its own"
+#~ msgstr "its own"
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
@@ -4443,6 +4455,7 @@ msgstr "Missing figure source"
 msgid "missing kind"
 msgstr "missing kind"
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
@@ -4764,6 +4777,10 @@ msgstr "No Agent named {name} is in this package."
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr "No agents available."
+
+#: src/features/agents/AgentPicker.tsx
+msgid "No Agents match."
+msgstr "No Agents match."
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "No Agents or skills in this project yet."
@@ -5890,8 +5907,8 @@ msgid "Running"
 msgstr "Running"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Runs on"
-msgstr "Runs on"
+#~ msgid "Runs on"
+#~ msgstr "Runs on"
 
 #: src/features/agents/PackageSave.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -6020,6 +6037,10 @@ msgstr "Scratch for this chat"
 #: src/features/chat/TurnList.tsx
 msgid "Scroll to latest"
 msgstr "Scroll to latest"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Search Agents"
+msgstr "Search Agents"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Search chats"
@@ -7050,8 +7071,8 @@ msgid "This chat now uses {0}."
 msgstr "This chat now uses {0}."
 
 #: src/features/agents/AgentPicker.tsx
-msgid "This chat runs on"
-msgstr "This chat runs on"
+#~ msgid "This chat runs on"
+#~ msgstr "This chat runs on"
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx

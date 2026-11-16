@@ -56,6 +56,7 @@ export function mapThread(
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
     modelOverride: row.modelOverride,
+    effortOverride: row.effortOverride,
     nextSeq: String(row.nextSeq),
     activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,

@@ -1,4 +1,5 @@
 /** Shared root-creation request validation and definite-refusal transport mapping. */
+import { type ReasoningChoice, reasoningChoiceSchema } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -30,6 +31,17 @@ export function parseCreationModelOverride(value: unknown): string | null {
   if (typeof value !== "string" || !value)
     throw createError({ statusCode: 400, message: "modelOverride must be a string or null" });
   return value;
+}
+
+export function parseCreationEffortOverride(value: unknown): ReasoningChoice | null {
+  if (value == null) return null;
+  const parsed = reasoningChoiceSchema.safeParse(value);
+  if (!parsed.success)
+    throw createError({
+      statusCode: 400,
+      message: "effortOverride must be a reasoning setting or null",
+    });
+  return parsed.data;
 }
 
 export function throwThreadCreationError(error: unknown): never {

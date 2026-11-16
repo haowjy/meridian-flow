@@ -1,4 +1,5 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
+import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { NewChatSubmission } from "@/client/chat-submissions";
@@ -22,6 +23,7 @@ export type SendProjectChatArgs = {
   agent: CreationAgent;
   /** The model this chat runs on instead of the Agent's, if the writer picked one. */
   modelOverride?: string | null;
+  effortOverride?: ReasoningChoice | null;
   workId: string;
   /** The selected Work's default: the new chat's mode unless the writer chose one. */
   workAiWriteMode: AiWriteMode;
@@ -51,6 +53,7 @@ export function sendProjectChat({
   activatedSkillSlugs,
   agent,
   modelOverride,
+  effortOverride,
   workId,
   workAiWriteMode,
   aiWriteMode,
@@ -85,6 +88,7 @@ export function sendProjectChat({
         workAiWriteMode,
         ...(aiWriteMode ? { aiWriteMode } : {}),
         ...(modelOverride ? { modelOverride } : {}),
+        ...(effortOverride ? { effortOverride } : {}),
         agentSelection: agent.selection,
         agentName: agent.name,
         agentSlug: agent.slug,

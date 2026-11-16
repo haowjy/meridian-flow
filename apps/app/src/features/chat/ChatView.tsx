@@ -46,7 +46,7 @@ import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { rememberStartedAgent } from "@/client/query/useAgentCatalog";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
-import { useSetThreadModel, useThreadModel } from "@/client/query/useSetThreadModel";
+import { useSetThreadOverrides, useThreadOverrides } from "@/client/query/useSetThreadOverrides";
 import { useTopChat } from "@/client/query/useTopChat";
 import {
   useIsThreadPendingCreation,
@@ -561,7 +561,11 @@ export function ChatView({
   });
   const inheritedView = inherited.view;
   // A fork or the composer shows a pick at once, before the server has it.
-  const projectedModel = useThreadModel(threadId, activeThread?.modelOverride ?? null);
+  const overrides = useThreadOverrides(
+    threadId,
+    activeThread?.modelOverride ?? null,
+    activeThread?.effortOverride ?? null,
+  );
   const forkTurn = useCommittedEvent((originTurnId: string) => {
     if (!activeThread || !openThread) return;
     const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
@@ -579,7 +583,8 @@ export function ChatView({
         originTurnId,
         agent: null,
         agentName: activeThread.agentName,
-        modelOverride: projectedModel,
+        modelOverride: overrides.model,
+        effortOverride: overrides.effort,
       },
       {
         ...deps,
@@ -613,6 +618,7 @@ export function ChatView({
         agent: choice.agent,
         agentName: choice.agent.name,
         modelOverride: choice.model,
+        effortOverride: null,
       },
       { ...deps, source: activeThread, inherited: null, open: openThread },
     );
@@ -650,8 +656,13 @@ export function ChatView({
   const handoffFromLatest = useCommittedEvent((choice: AgentChoice) => {
     if (handoffCutoff) handoffTurn(handoffCutoff, choice);
   });
-  const setThreadModel = useSetThreadModel(threadId);
-  const modelOverride = projectedModel;
+  const setOverrides = useSetThreadOverrides(threadId);
+  const modelOverride = overrides.model;
+  const effortOverride = overrides.effort;
+  const setThreadModel = useCallback(
+    (model: string | null) => setOverrides({ model, effort: effortOverride }),
+    [setOverrides, effortOverride],
+  );
   const agentName = activeThread?.agentName ?? null;
   const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
   // Busy only while the server has yet to accept the chat's first send; a chat with nothing to

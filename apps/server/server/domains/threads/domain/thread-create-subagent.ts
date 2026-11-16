@@ -40,6 +40,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     agentDefinitionRevisionId: null,
     agentName: null,
     modelOverride: null,
+    effortOverride: null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: input.parentThreadId,

@@ -3,7 +3,7 @@
  * asserting ownership and resolving its work attachment. App-layer glue tying
  * the projects + threads + packages domains together.
  */
-import type { AgentSelection } from "@meridian/contracts/agents";
+import type { AgentSelection, ReasoningChoice } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import {
@@ -67,6 +67,7 @@ export interface CreateThreadForProjectArgs {
   /** The writer's explicit mode; it also becomes the Work's default. Omitted, the chat copies it. */
   aiWriteMode?: AiWriteMode;
   modelOverride?: string | null;
+  effortOverride?: ReasoningChoice | null;
 }
 
 /**
@@ -130,6 +131,7 @@ export async function createThreadForProject(
           title: args.title ?? null,
           aiWriteMode: args.aiWriteMode ?? work.defaultAiWriteMode,
           modelOverride: args.modelOverride ?? null,
+          effortOverride: args.effortOverride ?? null,
         });
       },
       resolveWork: async (created) => {

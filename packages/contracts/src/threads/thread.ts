@@ -1,6 +1,10 @@
 /** Stored chat identity and its HTTP response validator. Run state lives on the live record. */
 import { z } from "zod";
+import { type ReasoningChoice, reasoningChoiceSchema } from "../agents/execution-knobs.js";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
+
+/** What a chat runs on instead of its Agent's own; `null` leaves that part to the Agent. */
+export type ThreadOverrides = { model: string | null; effort: ReasoningChoice | null };
 
 export const threadSchema = z.object({
   id: z.string().min(1),
@@ -24,6 +28,8 @@ export const threadSchema = z.object({
   agentName: z.string().nullable(),
   /** The model id this chat runs on instead of its Agent's; null runs the Agent's own. */
   modelOverride: z.string().nullable(),
+  /** The reasoning setting this chat runs at instead of its Agent's; null runs the Agent's own. */
+  effortOverride: reasoningChoiceSchema.nullable(),
   nextSeq: z
     .string()
     .regex(/^(0|[1-9]\d*)$/)
