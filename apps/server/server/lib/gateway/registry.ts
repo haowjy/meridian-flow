@@ -1,14 +1,12 @@
 /**
- * Model/provider registry: static source of truth for provider endpoints, wire
- * formats, model metadata, default model, and pinned launch pricing.
- * Key decisions: JSON-natural registry data, provider enablement from each
- * provider's apiKeyEnv. A provider lists offerings: a model plus what that
- * provider charges for it and how it caches it, since the same model can cache
- * and bill differently per provider. Adapter-specific wire checks (cache lifetimes) live in
+ * Model/provider registry, built from `models-snapshot.json` (models.dev rows), `families.ts`
+ * (which models Flow offers) and `provider-rows.ts` (wire, key, cache lifetimes, long-write rates).
+ * Key decisions: provider enablement from each provider's apiKeyEnv. A provider lists offerings:
+ * a model plus what that provider charges for it and how it caches it, since the same model can
+ * cache and bill differently per provider. Adapter-specific wire checks (cache lifetimes) live in
  * the adapters (`assertModelsOnWire`) and run over every row when a gateway is created from env.
  */
 
-import type { ModelMaker } from "@meridian/contracts/protocol";
 import {
   type BuiltinAdapter,
   DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
@@ -18,6 +16,7 @@ import {
   type PromptCacheDescriptor,
   type ProviderConfig,
   type ProviderModel,
+  REASONING_EFFORTS,
   type ReasoningSupport,
   type TokenizerFamily,
 } from "@meridian-flow/runtime/gateway";
@@ -28,15 +27,17 @@ import {
   type ModelTokenRate,
   type ModelTokenRateSource,
 } from "../../domains/runtime/costing/pricing.js";
+import { DEFAULT_MODEL_ID, findFamily, MODEL_FAMILIES, type ModelFamily } from "./families.js";
+import snapshotJson from "./models-snapshot.json" with { type: "json" };
+import { PROVIDER_ROWS, type ProviderRow } from "./provider-rows.js";
 
 export interface RegisteredModel {
   id: string;
-  maker: ModelMaker;
   tokenizer: TokenizerFamily;
   displayName: string;
   contextWindow: number;
   maxOutputTokens: number;
-  /** Copied from models.dev `modalities.input` (`pnpm check:models` reports drift). */
+  /** Copied from models.dev `modalities.input`. */
   inputModalities: readonly InputModality[];
   /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
   maxLinkBytes?: number;
@@ -72,282 +73,195 @@ export interface ModelRegistry {
   defaultModel: string;
 }
 
-const OPENAI_PRICING_SOURCE = "https://developers.openai.com/api/docs/pricing (pinned 2026-11-05)";
-const ANTHROPIC_PRICING_SOURCE =
-  "https://platform.claude.com/docs/en/about-claude/pricing (pinned 2026-11-05)";
-const DEEPSEEK_PRICING_SOURCE =
-  "https://api-docs.deepseek.com/quick_start/pricing (peak fallback pinned 2026-11-05)";
-// Pinned at the standard rates. Google's intro rates ($2 in, $0.10 cached, $10 out) end on
-// 2026-11-30, and the registry has no effective dates, so billing from 2026-12-01 is correct
-// and billing before then slightly over-charges.
-const GEMINI_PRICING_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing (pinned 2026-11-05)";
+/** The slice of a models.dev model row that Flow reads, keyed in the snapshot by Flow's provider id then model id. */
+export interface SnapshotModel {
+  name: string;
+  tool_call: boolean;
+  limit: { context: number; output: number };
+  modalities: { input: readonly InputModality[] };
+  reasoning_options: readonly (
+    | { type: "toggle" }
+    | { type: "effort"; values: readonly string[] }
+    | { type: "budget_tokens"; min?: number }
+  )[];
+  /** USD per million tokens. */
+  cost: {
+    input: number;
+    output: number;
+    cache_read?: number;
+    cache_write?: number;
+    tiers?: readonly {
+      input: number;
+      output: number;
+      cache_read?: number;
+      cache_write?: number;
+      tier: { type: string; size: number };
+    }[];
+  };
+}
 
-// GPT-5.6+ caches automatically: `prompt_cache_options.ttl` is "30m" (default) or "12h". A long
-// request takes the shortest option of at least 1 hour, which is 12h.
-const OPENAI_PROMPT_CACHE: PromptCacheDescriptor = {
-  kind: "automatic",
-  shortTtlSeconds: 30 * 60,
-  longTtlSeconds: 12 * 60 * 60,
-};
-// DeepSeek documents the cache as cleared "usually within a few hours to a few days". One hour
-// is the lower bound of that and an estimate; Flow sends no cache_control and has no lifetime
-// choice, so both chat kinds get it.
-const DEEPSEEK_PROMPT_CACHE: PromptCacheDescriptor = {
-  kind: "automatic",
-  shortTtlSeconds: 60 * 60,
-  longTtlSeconds: 60 * 60,
-};
-// The Gemini API documents no lifetime for implicit caching, so prediction reads it as cold.
-const GEMINI_PROMPT_CACHE: PromptCacheDescriptor = {
-  kind: "automatic",
-  shortTtlSeconds: null,
-  longTtlSeconds: null,
-};
+export interface ModelsSnapshot {
+  /** ISO date the snapshot was taken from models.dev. */
+  takenAt: string;
+  providers: Readonly<Record<string, Readonly<Record<string, SnapshotModel>>>>;
+}
 
-// OpenAI bills cache writes by TTL too: 30m at 1.25x input, 12h at 2.5x. Above 272K input
-// tokens the whole request is billed at 2x input and cache rates and 1.5x output; the same
-// threshold drives compaction planning.
-const OPENAI_LONG_CONTEXT = {
-  inputTierTokens: 272_000,
-  aboveTierMultipliers: { input: 2, output: 1.5 },
-};
+// Money stays decimal: nano-dollars as bigint, printed with at least two places.
+function toNano(usd: number): bigint {
+  return BigInt(Math.round(usd * 1e9));
+}
 
-// Reasoning rows are copied from models.dev `reasoning_options`, minus `xhigh`, which Flow never
-// requests. `canDisable` is a `toggle` option or a `none` effort.
-//
-// Claude's Messages API takes `output_config.effort`. Opus 5.5, Sonnet 5.5 and Fable 5.1 have no
-// toggle and think adaptively, and `thinking: disabled` or a `budget_tokens` is a 400 on them, so
-// Flow sends neither: no registered model needs a budget.
-const CLAUDE_REASONING: ReasoningSupport = { efforts: ["low", "medium", "high", "max"] };
-// OpenAI lists `none` for GPT-6.1 Terra and GPT-5.6 Luna, not for GPT-6.1 Sol.
-const GPT_REASONING: ReasoningSupport = { efforts: ["low", "medium", "high", "max"] };
-const GPT_REASONING_CAN_DISABLE: ReasoningSupport = { ...GPT_REASONING, canDisable: true };
-const CLAUDE_OPUS_5_5_MODEL = {
-  id: "claude-opus-5-5",
-  maker: "anthropic",
-  tokenizer: "anthropic",
-  displayName: "Claude Opus 5.5",
-  contextWindow: 1_000_000,
-  maxOutputTokens: 128_000,
-  inputModalities: ["text", "image", "pdf"],
-  reasoning: CLAUDE_REASONING,
-} satisfies RegisteredModel;
+function formatUsd(nano: bigint): string {
+  const whole = nano / 1_000_000_000n;
+  const fraction = (nano % 1_000_000_000n).toString().padStart(9, "0").replace(/0+$/, "");
+  return `${whole}.${fraction.padEnd(2, "0")}`;
+}
 
-const CLAUDE_SONNET_5_5_MODEL = {
-  id: "claude-sonnet-5-5",
-  maker: "anthropic",
-  tokenizer: "anthropic",
-  displayName: "Claude Sonnet 5.5",
-  contextWindow: 1_000_000,
-  maxOutputTokens: 128_000,
-  inputModalities: ["text", "image", "pdf"],
-  reasoning: CLAUDE_REASONING,
-} satisfies RegisteredModel;
+function usd(price: number, multiplier = 1): string {
+  return formatUsd((toNano(price) * BigInt(Math.round(multiplier * 100))) / 100n);
+}
 
-const CLAUDE_FABLE_5_1_MODEL = {
-  id: "claude-fable-5-1",
-  maker: "anthropic",
-  tokenizer: "anthropic",
-  displayName: "Claude Fable 5.1",
-  contextWindow: 1_000_000,
-  maxOutputTokens: 128_000,
-  inputModalities: ["text", "image", "pdf"],
-  reasoning: CLAUDE_REASONING,
-} satisfies RegisteredModel;
+function toReasoning(model: SnapshotModel, family: ModelFamily): ReasoningSupport {
+  const effort = model.reasoning_options.find((option) => option.type === "effort");
+  const values = effort?.type === "effort" ? effort.values : [];
+  const canDisable =
+    model.reasoning_options.some((option) => option.type === "toggle") || values.includes("none");
+  return {
+    efforts: REASONING_EFFORTS.filter((level) => values.includes(level)),
+    ...(canDisable ? { canDisable: true as const } : {}),
+    ...(family.thinksByDefault ? { thinksByDefault: true as const } : {}),
+  };
+}
 
-// OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate.
-const GPT_6_1_SOL_MODEL = {
-  id: "gpt-6.1-sol",
-  maker: "openai",
-  tokenizer: "o200k",
-  displayName: "GPT-6.1 Sol",
-  contextWindow: 1_050_000,
-  maxOutputTokens: 128_000,
-  inputModalities: ["text", "image", "pdf"],
-  reasoning: GPT_REASONING,
-} satisfies RegisteredModel;
+/**
+ * The single above-tier step as the multipliers `ModelPricing` carries. models.dev gives the
+ * tier's own prices, so this holds only when every input-side rate scales by one factor.
+ */
+function toTier(
+  id: string,
+  { cost }: SnapshotModel,
+): Pick<ModelPricing, "inputTierTokens" | "aboveTierMultipliers"> {
+  const [step, ...rest] = cost.tiers ?? [];
+  if (!step) return {};
+  const ratios = [
+    step.input / cost.input,
+    ...(cost.cache_read === undefined || step.cache_read === undefined
+      ? []
+      : [step.cache_read / cost.cache_read]),
+    ...(cost.cache_write === undefined || step.cache_write === undefined
+      ? []
+      : [step.cache_write / cost.cache_write]),
+  ];
+  if (
+    rest.length > 0 ||
+    step.tier.type !== "context" ||
+    ratios.some((ratio) => Math.abs(ratio - ratios[0]) > 1e-9)
+  ) {
+    throw new Error(
+      `${id}: models.dev cost tiers do not fit one context threshold with one input-side multiplier`,
+    );
+  }
+  const round = (value: number) => Math.round(value * 1e6) / 1e6;
+  return {
+    inputTierTokens: step.tier.size,
+    aboveTierMultipliers: { input: round(ratios[0]), output: round(step.output / cost.output) },
+  };
+}
 
-const GPT_6_1_TERRA_MODEL = {
-  id: "gpt-6.1-terra",
-  maker: "openai",
-  tokenizer: "o200k",
-  displayName: "GPT-6.1 Terra",
-  contextWindow: 1_050_000,
-  maxOutputTokens: 128_000,
-  inputModalities: ["text", "image", "pdf"],
-  reasoning: GPT_REASONING_CAN_DISABLE,
-} satisfies RegisteredModel;
+function toPricing(
+  row: ProviderRow,
+  snapshot: ModelsSnapshot,
+  id: string,
+  model: SnapshotModel,
+): ModelPricing {
+  const { cost } = model;
+  const factor = row.rateMultiplier?.multiplier ?? 1;
+  const rate = (price: number | undefined) =>
+    price === undefined ? undefined : usd(price, factor);
+  const cacheRead = rate(cost.cache_read);
+  const cacheWrite = rate(cost.cache_write);
+  const notes = [
+    `models.dev snapshot ${snapshot.takenAt}`,
+    ...(row.rateMultiplier
+      ? [
+          `${row.rateMultiplier.multiplier}x models.dev's rates per ${row.rateMultiplier.source} (checked ${row.rateMultiplier.checked})`,
+        ]
+      : []),
+    ...(row.longCacheWrite
+      ? [
+          `long-TTL cache write ${row.longCacheWrite.multiplier}x input per ${row.longCacheWrite.source} (checked ${row.longCacheWrite.checked})`,
+        ]
+      : []),
+  ];
+  return {
+    inputUsdPerMillionTokens: usd(cost.input, factor),
+    ...(cacheRead === undefined ? {} : { cachedInputUsdPerMillionTokens: cacheRead }),
+    ...(cacheWrite === undefined ? {} : { cacheWriteUsdPerMillionTokens: cacheWrite }),
+    ...(row.longCacheWrite
+      ? {
+          cacheWriteLongUsdPerMillionTokens: usd(
+            cost.input,
+            factor * row.longCacheWrite.multiplier,
+          ),
+        }
+      : {}),
+    outputUsdPerMillionTokens: usd(cost.output, factor),
+    ...toTier(id, model),
+    source: notes.join("; "),
+  };
+}
 
-const GPT_5_6_LUNA_MODEL = {
-  id: "gpt-5.6-luna",
-  maker: "openai",
-  tokenizer: "o200k",
-  displayName: "GPT-5.6 Luna",
-  contextWindow: 1_050_000,
-  maxOutputTokens: 128_000,
-  inputModalities: ["text", "image", "pdf"],
-  reasoning: GPT_REASONING_CAN_DISABLE,
-} satisfies RegisteredModel;
+/** The registry the snapshot, the families and the provider rows describe. Throws on a row Flow cannot serve. */
+export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
+  const providers = PROVIDER_ROWS.map((row): RegisteredProvider => {
+    const rows = snapshot.providers[row.id] ?? {};
+    const families = MODEL_FAMILIES[row.id] ?? [];
+    for (const id of Object.keys(rows)) {
+      if (!findFamily(row.id, id)) throw new Error(`Snapshot ${row.id}/${id} matches no family`);
+    }
+    const offerings = families.flatMap((family) =>
+      Object.keys(rows)
+        .filter((id) => findFamily(row.id, id) === family)
+        .map((id): RegisteredOffering => {
+          const model = rows[id];
+          if (!model.tool_call) throw new Error(`${row.id}/${id} does not support tool calls`);
+          return {
+            model: {
+              id,
+              tokenizer: family.tokenizer,
+              displayName: model.name,
+              contextWindow: model.limit.context,
+              maxOutputTokens: model.limit.output,
+              inputModalities: model.modalities.input,
+              ...(family.maxLinkBytes === undefined ? {} : { maxLinkBytes: family.maxLinkBytes }),
+              reasoning: toReasoning(model, family),
+            },
+            pricing: toPricing(row, snapshot, id, model),
+            promptCache: row.promptCache.descriptor,
+          };
+        }),
+    );
+    return {
+      id: row.id,
+      adapter: row.adapter,
+      apiKeyEnv: row.apiKeyEnv,
+      ...(row.baseUrl === undefined ? {} : { baseUrl: row.baseUrl }),
+      ...(row.projectToolSchema ? { projectToolSchema: true as const } : {}),
+      offerings,
+    };
+  });
+  const registry = { providers, defaultModel: DEFAULT_MODEL_ID };
+  if (
+    !providers.some((provider) =>
+      provider.offerings.some(({ model }) => model.id === DEFAULT_MODEL_ID),
+    )
+  ) {
+    throw new Error(`The snapshot has no default model ${DEFAULT_MODEL_ID}`);
+  }
+  return registry;
+}
 
-const DEEPSEEK_FLASH_MODEL = {
-  id: "deepseek-flash",
-  maker: "deepseek",
-  tokenizer: "deepseek",
-  displayName: "DeepSeek V4.1 Flash",
-  contextWindow: 1_048_576,
-  maxOutputTokens: 393_216,
-  inputModalities: ["text", "image"],
-  // models.dev: a thinking toggle, and low/high/max (no medium).
-  reasoning: { efforts: ["low", "high", "max"], canDisable: true, thinksByDefault: true },
-} satisfies RegisteredModel;
-
-const GEMINI_4_ARGON_MODEL = {
-  id: "gemini-4-argon",
-  maker: "google",
-  tokenizer: "gemini",
-  displayName: "Gemini 4 Argon",
-  contextWindow: 1_048_576,
-  maxOutputTokens: 32_768,
-  // The native API takes the effort as `thinkingConfig.thinkingLevel`.
-  reasoning: { efforts: ["low", "medium", "high"] },
-  inputModalities: ["text", "image", "video", "audio", "pdf"],
-  // Gemini fetches a link up to 15 MB (ai.google.dev file-input docs).
-  maxLinkBytes: 15_000_000,
-} satisfies RegisteredModel;
-
-export const MODEL_REGISTRY: ModelRegistry = {
-  defaultModel: "deepseek-flash",
-  providers: [
-    {
-      id: "anthropic",
-      adapter: "anthropic",
-      apiKeyEnv: "FLOW_ANTHROPIC_API_KEY",
-      projectToolSchema: true,
-      offerings: [
-        // Claude bills cache writes by the TTL written: 5m at 1.25x input, 1h at 2x. Anthropic's
-        // usage reports the split, so `cacheWriteUsdPerMillionTokens` is the 5m rate and
-        // `cacheWriteLongUsdPerMillionTokens` the 1h one.
-        {
-          model: CLAUDE_OPUS_5_5_MODEL,
-          pricing: {
-            inputUsdPerMillionTokens: "4.00",
-            cachedInputUsdPerMillionTokens: "0.20",
-            cacheWriteUsdPerMillionTokens: "5.00",
-            cacheWriteLongUsdPerMillionTokens: "8.00",
-            outputUsdPerMillionTokens: "20.00",
-            source: ANTHROPIC_PRICING_SOURCE,
-          },
-        },
-        {
-          model: CLAUDE_SONNET_5_5_MODEL,
-          pricing: {
-            inputUsdPerMillionTokens: "2.00",
-            cachedInputUsdPerMillionTokens: "0.10",
-            cacheWriteUsdPerMillionTokens: "2.50",
-            cacheWriteLongUsdPerMillionTokens: "4.00",
-            outputUsdPerMillionTokens: "10.00",
-            source: ANTHROPIC_PRICING_SOURCE,
-          },
-        },
-        {
-          model: CLAUDE_FABLE_5_1_MODEL,
-          pricing: {
-            inputUsdPerMillionTokens: "10.00",
-            cachedInputUsdPerMillionTokens: "0.25",
-            cacheWriteUsdPerMillionTokens: "12.50",
-            cacheWriteLongUsdPerMillionTokens: "20.00",
-            outputUsdPerMillionTokens: "50.00",
-            source: ANTHROPIC_PRICING_SOURCE,
-          },
-        },
-      ],
-    },
-    {
-      id: "openai",
-      adapter: "openai",
-      apiKeyEnv: "FLOW_OPENAI_API_KEY",
-      offerings: [
-        {
-          model: GPT_6_1_SOL_MODEL,
-          pricing: {
-            inputUsdPerMillionTokens: "2.00",
-            cachedInputUsdPerMillionTokens: "0.10",
-            cacheWriteUsdPerMillionTokens: "2.50",
-            cacheWriteLongUsdPerMillionTokens: "5.00",
-            outputUsdPerMillionTokens: "10.00",
-            ...OPENAI_LONG_CONTEXT,
-            source: OPENAI_PRICING_SOURCE,
-          },
-          promptCache: OPENAI_PROMPT_CACHE,
-        },
-        {
-          model: GPT_6_1_TERRA_MODEL,
-          pricing: {
-            inputUsdPerMillionTokens: "1.00",
-            cachedInputUsdPerMillionTokens: "0.05",
-            cacheWriteUsdPerMillionTokens: "1.25",
-            cacheWriteLongUsdPerMillionTokens: "2.50",
-            outputUsdPerMillionTokens: "5.00",
-            ...OPENAI_LONG_CONTEXT,
-            source: OPENAI_PRICING_SOURCE,
-          },
-          promptCache: OPENAI_PROMPT_CACHE,
-        },
-        {
-          model: GPT_5_6_LUNA_MODEL,
-          pricing: {
-            inputUsdPerMillionTokens: "0.20",
-            cachedInputUsdPerMillionTokens: "0.02",
-            cacheWriteUsdPerMillionTokens: "0.25",
-            cacheWriteLongUsdPerMillionTokens: "0.50",
-            outputUsdPerMillionTokens: "1.20",
-            ...OPENAI_LONG_CONTEXT,
-            source: OPENAI_PRICING_SOURCE,
-          },
-          promptCache: OPENAI_PROMPT_CACHE,
-        },
-      ],
-    },
-    {
-      id: "deepseek",
-      adapter: "anthropic",
-      apiKeyEnv: "FLOW_DEEPSEEK_API_KEY",
-      baseUrl: "https://api.deepseek.com/anthropic",
-      offerings: [
-        {
-          model: DEEPSEEK_FLASH_MODEL,
-          // Peak rates; off-peak is half.
-          pricing: {
-            inputUsdPerMillionTokens: "0.30",
-            cachedInputUsdPerMillionTokens: "0.006",
-            outputUsdPerMillionTokens: "1.20",
-            source: DEEPSEEK_PRICING_SOURCE,
-          },
-          promptCache: DEEPSEEK_PROMPT_CACHE,
-        },
-      ],
-    },
-    {
-      id: "gemini",
-      adapter: "gemini",
-      apiKeyEnv: "FLOW_GEMINI_API_KEY",
-      baseUrl: "https://generativelanguage.googleapis.com",
-      offerings: [
-        {
-          model: GEMINI_4_ARGON_MODEL,
-          // Implicit cache only: no write fee.
-          pricing: {
-            inputUsdPerMillionTokens: "4.00",
-            cachedInputUsdPerMillionTokens: "0.20",
-            outputUsdPerMillionTokens: "20.00",
-            source: GEMINI_PRICING_SOURCE,
-          },
-          promptCache: GEMINI_PROMPT_CACHE,
-        },
-      ],
-    },
-  ],
-};
+export const MODEL_REGISTRY: ModelRegistry = buildModelRegistry(snapshotJson as ModelsSnapshot);
 
 /** The descriptor `ModelInfo` carries; the validator checks this same value. */
 // Every offering starts from explicit breakpoints and the two default lifetimes (Anthropic's).
