@@ -15,7 +15,7 @@ import {
   type ScriptResult,
   type ScriptRunner,
 } from "@meridian-flow/runtime/script";
-import type { ConnectionCall, ConnectionTools } from "./connection-tools.js";
+import { type ConnectionCall, type ConnectionTools, DO_NOT_REPEAT } from "./connection-tools.js";
 import { createLimiter, type Limiter } from "./limiter.js";
 import { prepareScript } from "./script-code.js";
 
@@ -48,9 +48,6 @@ const LIST_CHARS = 12_000;
 
 const MEDIA_LEFT_OUT = (count: number) =>
   `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply. Call this tool with mcp_call to see ${count === 1 ? "it" : "them"}.]`;
-
-const DO_NOT_REPEAT =
-  "These calls ran and are not undone. Do not repeat answered calls: their effects already happened. Continue only with calls that failed or have not yet run.";
 
 export interface ScriptRunRequest {
   thread: { id: string; userId: UserId };

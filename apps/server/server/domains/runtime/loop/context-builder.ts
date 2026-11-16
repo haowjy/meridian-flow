@@ -280,16 +280,17 @@ function completeToolResultGroups(
     }
     index = nextIndex - 1;
 
-    const missingResultMessage =
+    const unfinished =
       sourceTurn?.status === "cancelled"
-        ? "Tool call cancelled; no result recorded. Side effects unknown — re-read state before retrying."
-        : "Tool call did not finish; no result recorded. Side effects unknown — re-read state before retrying.";
+        ? "Tool call cancelled; no result recorded."
+        : "Tool call did not finish; no result recorded.";
+    const missingResultMessage = `${unfinished} Side effects unknown — re-read state before retrying.`;
     for (const toolCallId of missingResultIds) {
       const recorded = sourceTurn
         ? recordedCalls.get(connectionCallKey(sourceTurn.id, toolCallId))
         : undefined;
       const stub = recorded?.length
-        ? `${missingResultMessage}\nRecorded calls to connections:\n${recorded.join("\n")}`
+        ? `${unfinished}\n${recorded.join("\n")}`
         : missingResultMessage;
       completed.push(toolResult(toolCallId, [text(stub)], true));
     }
