@@ -35,7 +35,7 @@ import {
   useOptionalDraftOnlyPresentations,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
-import { AppliedEntry, sharedHistory } from "./apply-history";
+import { AppliedEntry } from "./apply-history";
 import { isDeletedFromManuscript } from "./deleted-drafts";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import type {
@@ -286,10 +286,7 @@ export function useWorkBranchCommands({
             isDeletedFromManuscript(item),
             (tree && item?.tree) || undefined,
             surface === "band"
-              ? sharedHistory(() => [
-                  editorHistoryOf(reviewEditor?.(draft)),
-                  liveHistory(draft.documentId),
-                ])
+              ? () => [editorHistoryOf(reviewEditor?.(draft)), liveHistory(draft.documentId)]
               : null,
           );
       if (!started) {
