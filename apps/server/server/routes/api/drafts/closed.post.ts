@@ -14,6 +14,6 @@ export default defineEventHandler(async (event): Promise<ClosedDraftsResponse> =
   if (!parsed.success)
     throw createError({ statusCode: 400, message: "Invalid closed-drafts request" });
   return {
-    closed: await app.documentSync.draftReview.closedDraftIds(user.userId, parsed.data.draftIds),
+    closed: await app.documentSync.closedDraftIds(user.userId, parsed.data.draftIds),
   };
 });

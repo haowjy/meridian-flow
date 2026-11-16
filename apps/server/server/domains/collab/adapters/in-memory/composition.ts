@@ -130,6 +130,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       headSchemaVersion: async () => null,
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
+      closedDraftIds: hocuspocusPersistence.closedDraftIds,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
@@ -322,9 +323,6 @@ function createInMemoryBranchStub(): CollabBranches {
       },
       async listItems() {
         return { branchId: null, items: [], folders: [], threadTitles: new Map() };
-      },
-      async closedDraftIds() {
-        return [];
       },
       async pendingDocumentCount() {
         return 0;

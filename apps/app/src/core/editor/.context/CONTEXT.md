@@ -720,8 +720,16 @@ from the wire alone, with nothing stored between handshakes.
 - Terminal `4205` (`closed`) and `4208` (`removed`) end the session's transport; its cache
   stays, and a retained session stays readable until its owner releases it or a restore
   restarts it. Once its last owner releases it, it retires on the next task, not after the
-  grace: it can never reopen, and its retirement is what hands back typing that just left the
-  screen. A room that ended another way (a schema reset, a terminal close) retires with no cause, so `closeDraftRoom` hands back what the draft's copy holds beyond the server's mark: the closed draft's copy never opens again. A draft that closed while no page was open is found at start: once at idle after the account lifetime opens, `handBackClosedDraftCopies` lists the draft copies, asks `POST /api/drafts/closed` which of those drafts are closed, hands back each closed copy's words as `closed` and deletes it. The account command owner asks the server what each close means (fresh
+  grace, and its retirement hands back typing that just left the screen. Handing back never
+  deletes the copy: Undo Discard reopens the same draft row, and the restarted session replays the
+  copy into it, so the writer may see a Copy notice and also get the words back; losing them is the
+  failure. The copy goes with the document's purge. `closeDraftRoom` lets the session the pool
+  holds retire with cause `closed` (the pool's `closed` set overrides whatever ended its socket)
+  and, with no session, hands the copy back itself. A draft that closed while no page was open is
+  found at start: once at idle after the account lifetime opens (cancelled if the lifetime
+  closes), `handBackClosedDraftCopies` lists the draft copies, asks `POST /api/drafts/closed` which
+  of those drafts are closed, and hands back each closed copy's words beyond the server's mark as
+  `closed`. A copy with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server what each close means (fresh
   metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
   whichever arrives first; see Draft end and reopen in the
   [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the

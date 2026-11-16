@@ -6,7 +6,10 @@
  *
  * A copy is deleted only on a fact that is final (`list-removal-observer`: the node's purge, its
  * Work or chat purged, the account removed from the project) or when the account signs out here.
- * A session closing, a draft's Discard or an access the account lost for now never deletes one.
+ * A session closing, a draft's Discard or an access the account lost for now never deletes one: a
+ * closed draft's copy is handed back as a notice (`DocumentSessionRegistry.handBackClosedDraftCopies`)
+ * and kept, because Undo Discard reopens the same draft and replays the copy into it. A copy with
+ * no mark is not offered there, since it proves nothing undelivered.
  *
  * One Web Lock per database keeps a tab from deleting a database another tab has open: a session
  * holds it shared while it lives, a deletion takes it exclusive. A deletion that finds a hold
@@ -118,10 +121,11 @@ export type BeyondMark = { update: Uint8Array; lacking: Ranges };
 
 function markedBeyond(
   loaded: { update: Uint8Array; mark: Uint8Array | null } | null,
+  requireMark = false,
 ): BeyondMark | null {
-  if (!loaded) return null;
+  if (!loaded || (requireMark && !loaded.mark)) return null;
   // No mark proves nothing the server holds (a copy written before marks, or a first write lost):
-  // the whole copy is offered.
+  // the whole copy is offered, unless the caller needs a mark to claim that anything lacks.
   const lacking = beyondMark(loaded.update, loaded.mark ?? NO_MARK);
   return lacking.size > 0 ? { update: loaded.update, lacking } : null;
 }
@@ -321,17 +325,27 @@ export class LocalDocumentCopies {
 
   /**
    * What the copy `name` holds beyond its mark, read under a shared hold; null when it is gone or
-   * holds nothing beyond it.
+   * holds nothing beyond it. `requireMark`: a copy with no mark holds nothing beyond it.
    */
-  async beyondMark(name: string): Promise<BeyondMark | null> {
+  async beyondMark(name: string, requireMark = false): Promise<BeyondMark | null> {
     const idb = this.idb;
     if (!idb) return null;
     const hold = await this.hold(name);
     try {
-      return markedBeyond(await load(idb, name));
+      return markedBeyond(await load(idb, name), requireMark);
     } finally {
       hold.release();
     }
+  }
+
+  /** The names of this account's draft copies (every incarnation) with the draft room each belongs to. */
+  async draftCopies(): Promise<{ name: string; roomKey: string }[]> {
+    const head = `${DRAFT_PREFIX}${encodeURIComponent(this.accountId)}/`;
+    return (await this.names()).flatMap((name) => {
+      if (!name.startsWith(head)) return [];
+      const [, , roomKey] = parseName(name).key.slice(DRAFT_PREFIX.length).split("/");
+      return roomKey ? [{ name, roomKey: decodeURIComponent(roomKey) }] : [];
+    });
   }
 
   /**
@@ -344,42 +358,7 @@ export class LocalDocumentCopies {
     documentId: DocumentId,
     claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
   ): Promise<boolean> {
-    return this.claimAndDelete(documentId, await this.namesOf(documentId), claim, true);
-  }
-
-  /** The names of this account's draft copies (every incarnation) with the draft room and document each belongs to. */
-  async draftCopies(): Promise<{ name: string; roomKey: string; documentId: DocumentId }[]> {
-    const head = `${DRAFT_PREFIX}${encodeURIComponent(this.accountId)}/`;
-    return (await this.names()).flatMap((name) => {
-      if (!name.startsWith(head)) return [];
-      const [, documentId, roomKey] = parseName(name).key.slice(DRAFT_PREFIX.length).split("/");
-      return documentId && roomKey
-        ? [
-            {
-              name,
-              roomKey: decodeURIComponent(roomKey),
-              documentId: decodeURIComponent(documentId) as DocumentId,
-            },
-          ]
-        : [];
-    });
-  }
-
-  /** `clear` for the draft copies `names` of one document: the document's other copies stay. */
-  async clearDraftCopies(
-    documentId: DocumentId,
-    names: readonly string[],
-    claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
-  ): Promise<boolean> {
-    return this.claimAndDelete(documentId, names, claim, false);
-  }
-
-  private async claimAndDelete(
-    documentId: DocumentId,
-    names: readonly string[],
-    claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
-    whole: boolean,
-  ): Promise<boolean> {
+    const names = await this.namesOf(documentId);
     const run = async () => {
       const claimed = await Promise.all(
         names.map(async (name) => {
@@ -387,12 +366,11 @@ export class LocalDocumentCopies {
           return !beyond || (await claim(name, beyond));
         }),
       );
-      const every = claimed.every(Boolean);
-      const deleted = names.filter((_, index) => claimed[index]);
-      await this.deleteCopies(documentId, deleted, whole && every);
-      if (!whole && every)
-        for (const { key } of deleted.map(parseName))
-          this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
+      await this.deleteCopies(
+        documentId,
+        names.filter((_, index) => claimed[index]),
+        claimed.every(Boolean),
+      );
       return true;
     };
     if (!this.locks) return run();

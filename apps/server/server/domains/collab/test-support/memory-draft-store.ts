@@ -1,4 +1,5 @@
 /** The checkpoint + tail draft store in memory, for unit tests whose flows write a draft. */
+import type { UserId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
@@ -90,6 +91,10 @@ export class MemoryDraftStore implements DraftStore {
   async getDraft(draftId: string): Promise<DraftSnapshot | null> {
     const documentDraft = this.drafts.get(draftId);
     return documentDraft ? rowOf(documentDraft) : null;
+  }
+
+  async closedDraftIds(_userId: UserId, draftIds: readonly string[]): Promise<string[]> {
+    return draftIds.filter((id) => this.drafts.get(id)?.status === "closed");
   }
 
   /** One observation: the row, checkpoint and tail are taken together, with no await between. */

@@ -45,7 +45,9 @@ const SESSION_TEARDOWN_GRACE_MS = 3_000;
 /**
  * The resets that end a room for good: its unsent typing is handed back when the session retires,
  * not at the reset. A session kept on screen still shows that text, and a restore that restarts it
- * delivers it, so handing it back earlier would offer text the document then gets too.
+ * delivers it, so handing it back earlier would offer text the document then gets too. Handing
+ * back never deletes the copy: Undo Discard reopens a closed draft and replays the copy into it, so
+ * the writer may see the notice and also get the words back; losing them is the failure.
  */
 const UNSENT_CAUSE_OF_RESET: Readonly<
   Record<ResetDisposition | "none", UnsentTypingCause | undefined>
@@ -80,7 +82,10 @@ export class DocumentSessionRegistry {
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
     (session) => {
-      const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
+      // A draft the server closed hands back as `closed` whatever ended the session's socket first.
+      const cause = this.draftRooms.isClosed(session.roomKey)
+        ? "closed"
+        : UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
       if (cause) void this.handBackUnsent(session, cause).catch(reportError);
     },
   );
@@ -301,48 +306,43 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * The server closed the draft. A room that ended earlier (a schema reset, a terminal close) is
-   * retired without handing anything back, or retires now with no cause, and its copy may still hold
-   * typing the draft never took: the closed draft never opens again, so its copy's words are handed
-   * back here. A session that retires with the `closed` cause does it too; claiming twice stores
-   * one notice.
+   * The server closed the draft. A session the pool holds retires with the `closed` cause, which
+   * hands its copy back at the right time: when nothing shows its text any more. With no session
+   * (the room ended earlier, by a schema reset or a terminal close, or never opened here) the copy
+   * is handed back now. The copy stays either way: Undo Discard reopens the same draft.
    */
   async closeDraftRoom(roomKey: string): Promise<void> {
     const documentId = this.draftRooms.documentOf(roomKey);
+    const held = this.draftRooms.peek(roomKey);
     await this.draftRooms.close(roomKey);
-    if (documentId) {
+    if (documentId && !held) {
       const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
       await this.handBackCopy(incarnationName(key, this.copies.current(key)), "closed");
     }
   }
 
   /**
-   * Hands back, as `closed`, what the copies of drafts the server closed hold beyond its mark, then
-   * lets them go. This covers a draft that closed while no page was open: no draft owner ran
-   * `closeDraftRoom` for it. A room open in this tab and a copy another tab holds are left to their
-   * own tab; a copy whose claim fails stays for the next start.
+   * Hands back, as `closed`, what the copies of drafts the server has closed hold beyond their
+   * mark. This covers a draft that closed while no page was open: no draft owner ran
+   * `closeDraftRoom` for it. The copies stay (see `closeDraftRoom`) and go with the document's
+   * purge; a notice is stored once per item, so a later start offers nothing twice. A room open in
+   * this tab is left to its own close, and a copy with no mark proves nothing undelivered.
    */
   async handBackClosedDraftCopies(
     closedOf: (draftIds: string[]) => Promise<ReadonlySet<string>>,
   ): Promise<void> {
-    const copies = (await this.copies.draftCopies()).flatMap((copy) => {
-      const room = parseYjsRoomName(copy.roomKey);
-      return room?.kind === "draft" && !this.draftRooms.peek(copy.roomKey)
-        ? [{ ...copy, draftId: room.draftId }]
+    const copies = (await this.copies.draftCopies()).flatMap(({ name, roomKey }) => {
+      const room = parseYjsRoomName(roomKey);
+      return room?.kind === "draft" && !this.draftRooms.peek(roomKey)
+        ? [{ name, draftId: room.draftId }]
         : [];
     });
     if (copies.length === 0) return;
     const closed = await closedOf([...new Set(copies.map(({ draftId }) => draftId))]);
-    const byDocument = new Map<DocumentId, string[]>();
-    for (const { draftId, documentId, name } of copies)
-      if (closed.has(draftId))
-        byDocument.set(documentId, [...(byDocument.get(documentId) ?? []), name]);
     await Promise.all(
-      [...byDocument].map(([documentId, names]) =>
-        this.copies.clearDraftCopies(documentId, names, (name, { update, lacking }) =>
-          readCopy(update, (document) => this.handBack("closed", name, document, lacking)),
-        ),
-      ),
+      copies
+        .filter(({ draftId }) => closed.has(draftId))
+        .map(({ name }) => this.handBackCopy(name, "closed", true).catch(reportError)),
     );
   }
 
@@ -665,8 +665,12 @@ export class DocumentSessionRegistry {
     return handing;
   }
 
-  private async handBackCopy(name: string, cause: UnsentTypingCause): Promise<void> {
-    const beyond = await this.copies.beyondMark(name);
+  private async handBackCopy(
+    name: string,
+    cause: UnsentTypingCause,
+    requireMark = false,
+  ): Promise<void> {
+    const beyond = await this.copies.beyondMark(name, requireMark);
     if (beyond)
       await readCopy(beyond.update, (document) =>
         this.handBack(cause, name, document, beyond.lacking),

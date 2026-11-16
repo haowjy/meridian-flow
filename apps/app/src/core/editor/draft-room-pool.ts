@@ -4,8 +4,11 @@
  * they reset, and rebuilt on request. Draft rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
  *
- * A closed room keeps its local copy: a Discard can be undone, so the copy goes with its document
- * (`LocalDocumentCopies`), never with the room. It stays closed until a restore reopens it; a
+ * A closed room keeps its local copy: a Discard can be undone (Undo Discard reopens the same draft
+ * row, and the restarted session replays the copy into it), so the copy goes with its document
+ * (`LocalDocumentCopies`), never with the room. Its session retires with the `closed` cause
+ * (`isClosed`), which hands the copy's unsent words back as a notice and keeps the copy. It stays
+ * closed until a restore reopens it; a
  * reader that comes to it meanwhile reads the session an owner still shows, if one does.
  *
  * A room whose updates the server kept refusing (`updatesRefused`), or whose draft the server
@@ -58,6 +61,11 @@ export class DraftRoomPool {
   /** The document a retained room drafts; it stays known after the room retires. */
   documentOf(roomKey: string): string | undefined {
     return this.documents.get(roomKey);
+  }
+
+  /** The server closed this room's draft, and no restore has reopened it. */
+  isClosed(roomKey: string): boolean {
+    return this.closed.has(roomKey);
   }
 
   retain(ownerId: string, rooms: readonly DraftRoomRef[]): void {

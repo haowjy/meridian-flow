@@ -426,6 +426,9 @@ export function createHocuspocusDocumentTransport({
     if (terminal || destroyed) return;
     const vector = readServerStateVector(frame);
     if (vector) reportServerHas(vector, true);
+    // What the server sent, it holds: without this a mark stops at the handshake's vector until
+    // this client's own typing is acknowledged, and the copy then offers the server's own words.
+    else reportServerHas(serverHas.shown, false);
     // A read admission's socket drops every update; its handshakes report the difference instead.
     if (acknowledgement.readOnly) return;
     const lacking = serverHas.lacking(document);

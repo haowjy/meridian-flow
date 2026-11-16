@@ -16,10 +16,12 @@ import { contextRootUri, isContextUriScheme } from "@meridian/contracts/context-
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  branches as branchRows,
   commands,
   documentDrafts,
   documentEditParts,
   draftWriteJournal,
+  projects,
   threads,
   threadWorks,
   works,
@@ -29,7 +31,7 @@ import {
   createCollabYDoc,
   packCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { chatOwner } from "../../../shared/draft-owner.js";
@@ -607,6 +609,23 @@ export function createDrizzleDraftStore(
         .where(eq(documentDrafts.id, draftId))
         .limit(1);
       return row ? mapDraft(row) : null;
+    },
+
+    async closedDraftIds(userId, draftIds) {
+      if (draftIds.length === 0) return [];
+      const rows = await currentDrizzleDb(db)
+        .select({ id: documentDrafts.id })
+        .from(documentDrafts)
+        .innerJoin(branchRows, eq(branchRows.id, documentDrafts.branchId))
+        .innerJoin(projects, eq(projects.id, branchRows.projectId))
+        .where(
+          and(
+            inArray(documentDrafts.id, [...draftIds]),
+            eq(documentDrafts.status, "closed"),
+            eq(projects.userId, userId),
+          ),
+        );
+      return rows.map((row) => row.id);
     },
 
     readDraftAt(draftId, since) {

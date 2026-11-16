@@ -35,9 +35,14 @@ export class SignOutIncomplete extends Error {
   }
 }
 
-function afterFirstPaint(run: () => void) {
-  if ("requestIdleCallback" in window) window.requestIdleCallback(run);
-  else setTimeout(run, 2_000);
+/** Runs `run` once the page is idle; the returned function cancels it. */
+function afterFirstPaint(run: () => void): () => void {
+  if ("requestIdleCallback" in window) {
+    const handle = window.requestIdleCallback(run);
+    return () => window.cancelIdleCallback(handle);
+  }
+  const handle = setTimeout(run, 2_000);
+  return () => clearTimeout(handle);
 }
 
 const UNSENT_EDITS_WAIT_MS = 8_000;
@@ -66,6 +71,7 @@ export class AccountFeatureLifetime {
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signOutChannel: BroadcastChannel | null;
+  private cancelClosedDraftSweep: () => void = () => {};
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
@@ -155,7 +161,7 @@ export class AccountFeatureLifetime {
     this.registry.observeUnsentTyping(unsentTypingToasts);
     // Typing a draft never took, left in a copy no draft owner will close: found once, after load.
     if (typeof window !== "undefined")
-      afterFirstPaint(() =>
+      this.cancelClosedDraftSweep = afterFirstPaint(() =>
         this.registry.handBackClosedDraftCopies(listClosedDrafts).catch(reportError),
       );
     dropRetiredTabSession(accountId);
@@ -197,6 +203,7 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
+    this.cancelClosedDraftSweep();
     this.stopTreeListDebugHook();
     this.treeLists.close();
     this.draftCommands.close();

@@ -122,6 +122,8 @@ export type CollabTransport = {
   } | null>;
   /** Whether the draft was ever made, closed or not: a created document's draft is named before it is. */
   draftExists(draftId: string): Promise<boolean>;
+  /** Which of these draft ids are closed drafts in the user's projects; any other id is left out. */
+  closedDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
@@ -491,8 +493,6 @@ export type DraftReviewApi = {
     folders: { id: string; revision: string }[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
-  /** Which of these draft ids are closed drafts of the account's projects; any other id is left out. */
-  closedDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   /** Pending documents summed over the project's active branches. */
   pendingDocumentCount(projectId: ProjectId): Promise<number>;
   /** Every active branch in the project with changes to the document, oldest first. */

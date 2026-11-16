@@ -71,6 +71,7 @@ export type HocuspocusPersistenceService = Pick<
   CollabTransport,
   | "resolveDraftHocuspocusRoom"
   | "draftExists"
+  | "closedDraftIds"
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraftState"
   | "admitLiveWriterUpdate"
@@ -320,6 +321,10 @@ export function createHocuspocusPersistenceService(
 
     async draftExists(draftId) {
       return (await requireDraftStore().getDraft(draftId)) !== null;
+    },
+
+    async closedDraftIds(userId, draftIds) {
+      return requireDraftStore().closedDraftIds(userId, draftIds);
     },
 
     async loadHocuspocusDocument(documentId, document) {
