@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { editHandle } from "@meridian/agent-edit/integration";
 import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
-import { testFileGrant } from "../../../test-support/file-grants.js";
+import { grantInProject, testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
   type createHarness,
@@ -100,11 +100,7 @@ export function responseContext(responseId: string) {
 
 /** The grant names this project and its owner, as the file policy would, so a write can make a draft. */
 export function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
-  return {
-    ...grant,
-    principal: { ...grant.principal, accountId: USER_ID },
-    facts: { ...grant.facts, projectId: PROJECT_ID, ownerAccountId: USER_ID },
-  } as T;
+  return grantInProject(grant, PROJECT_ID, USER_ID);
 }
 export async function setupResponseDraft(
   db: ReturnType<typeof createTestDatabase>,

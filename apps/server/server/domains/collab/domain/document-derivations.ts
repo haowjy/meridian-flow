@@ -15,7 +15,6 @@ import { type DocumentLinkRow, deriveDocumentLinkRows } from "./document-link-ro
 import { isCodeDocument } from "./document-schema-type.js";
 import { grepBlocksOf } from "./grep-blocks.js";
 import type {
-  DerivationScope,
   DerivedBlock,
   DocumentDerivationCut,
   DocumentDerivationOutputs,
@@ -104,25 +103,12 @@ export function createDocumentDerivationService(input: {
     },
     sweep() {
       return input.outsideTransaction(async () => {
-        const ids = await input.store.stale(undefined, { after: sweepCursor, limit: 100 });
+        const ids = await input.store.stale({ after: sweepCursor, limit: 100 });
         sweepCursor = ids.length === 100 ? ids.at(-1) : undefined;
         await recover(ids);
         // Bounded and fair: resumes after the last ref attempted, so failing refs rotate through.
         aheadCursor = (await input.store.recoverAheads(aheadCursor)).next ?? undefined;
         return ids.length;
-      });
-    },
-    flush(scope: DerivationScope) {
-      return input.outsideTransaction(async () => {
-        let after: DocumentId | undefined;
-        while (true) {
-          const ids = await input.store.stale(scope, { after, limit: 100 });
-          await recover(ids);
-          if (ids.length < 100) break;
-          after = ids.at(-1);
-        }
-        // A move waits for this: every certified ahead ref is registered before it locks.
-        await input.store.drainAheads(scope);
       });
     },
     async stop() {

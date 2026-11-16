@@ -29,6 +29,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { accountUserSource } from "../../test-support/branch-tree-seeds.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
@@ -374,22 +375,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     });
 
     it("applies a drafted create into the account's user:// list, not the project's", async () => {
-      const personal = randomUUID();
-      const userSource = randomUUID();
-      await db.insert(projects).values({
-        id: personal,
-        userId: USER,
-        name: "Personal",
-        slug: "personal",
-        isPersonal: true,
-      });
-      await db.insert(contextSources).values({
-        id: userSource,
-        projectId: personal,
-        name: "User",
-        slug: "user",
-        scope: "project",
-      });
+      const userSource = await accountUserSource(db, USER as never);
       const id = (await seed.document(userSource, "notes.md", {
         view: viewOf(),
         actor: AGENT,

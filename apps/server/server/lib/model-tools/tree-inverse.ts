@@ -178,7 +178,7 @@ async function reverseReceipt(
   const parts = areaOfPath(input.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const history = deps.documentSync.treeHistory();
   const threadId = ctx.threadId as ThreadId;
-  const target = await threadContainerTarget(deps.works, call.context.resolution, input.path);
+  const target = await threadContainerTarget(call.context.resolution, input.path);
   const grant = target ? await deps.fileAccess.authorize(call.principal, target, "edit") : null;
   if (grant && "denied" in grant) return fileAccessDeniedError(input.command, grant, input.path);
   const drafted = receipt.draftBranchId !== null;

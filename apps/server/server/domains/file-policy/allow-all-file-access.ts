@@ -4,7 +4,7 @@
  * and tests where access isn't the subject.
  */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
-import type { FileFacts } from "./domain/types.js";
+import { type FileFacts, ownerNode } from "./domain/types.js";
 import { createFileAccess, type FileAccess } from "./file-access.js";
 import type { FileFactsRequest } from "./ports/file-facts.js";
 
@@ -16,7 +16,7 @@ function openFacts(request: FileFactsRequest): FileFacts {
   const scheme = target.kind === "container" ? target.scheme : "manuscript";
   return {
     target,
-    projectId: OPEN_PROJECT,
+    owner: { kind: "project", projectId: OPEN_PROJECT },
     ownerAccountId: "" as UserId,
     projectDeleted: false,
     ownerWork: null,
@@ -61,7 +61,7 @@ export function createAllowAllFileAccess(): FileAccess {
     },
     grants: {
       async personGrants(_accountId, facts) {
-        return [{ node: { kind: "project", id: facts.projectId }, level: "edit" }];
+        return [{ node: ownerNode(facts.owner), level: "edit" }];
       },
     },
     readAgentChain: async () => [],

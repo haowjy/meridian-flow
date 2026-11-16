@@ -10,7 +10,10 @@ export interface ContextSources {
   /** The account's own `user://` source. */
   ofUser(userId: UserId): Promise<ContextSource[]>;
   /** One owner's sources in a project: where a link's address lands. */
-  ownedBy(projectId: ProjectId, owner: ContextSourceOwner): Promise<ContextSource[]>;
+  ownedBy(
+    projectId: ProjectId,
+    owner: Exclude<ContextSourceOwner, { kind: "account" }>,
+  ): Promise<ContextSource[]>;
   /** The documents a source's live tree places, each with its source-relative path (filename included). */
   liveDocuments(sourceId: ContextSourceId): Promise<{ id: DocumentId; path: string }[]>;
 }

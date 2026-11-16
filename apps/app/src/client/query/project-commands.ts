@@ -65,7 +65,6 @@ export function pendingProject(
     slug: "",
     description: null,
     settings: {},
-    isPersonal: false,
     lastActivityAt: now,
     createdAt: now,
     updatedAt: now,

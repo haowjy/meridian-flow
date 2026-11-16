@@ -1,41 +1,30 @@
-import { type Actor, isSourceRoot, type TreeRecord } from "./record.js";
-import { placeIn, type Setter, type TreeProjection } from "./replay.js";
-import { descendantsOf, nameAmong } from "./shape.js";
+import { type Actor, isSourceRoot, type TreeRecord, type TreeRecordInput } from "./record.js";
+import {
+  type Change,
+  labelOf,
+  type NodeHistory,
+  placeIn,
+  type Sets,
+  standingOf,
+  type TreeNode,
+  type TreeProjection,
+  withTurned,
+  wouldLoop,
+} from "./replay.js";
+import { descendantsOf } from "./shape.js";
 import { LIVE, lastOfFamily, type View, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
-
-/** Whether the record is the one that last set the fact `setter` stands for. */
-const lastSetBy = <Before>(setter: Setter<Before> | undefined, record: TreeRecord) =>
-  setter?.id === record.id ? setter : undefined;
-
-/** Whether a later record in the view moved or renamed the same node as this kind of record. */
-function movedAfter(writer: TreeWriter, view: View, record: TreeRecord): boolean {
-  const records = viewRecords(writer.doc, view);
-  return records
-    .slice(records.findIndex((other) => other.id === record.id) + 1)
-    .some((other) => other.type === record.type && other.node === record.node);
-}
 
 /**
  * What a restore brought back below its node: the nodes whose place was last set before the
  * restore. What was put in the folder after it (a create or a move into it) is not the restore's.
  */
-function liftedBy(writer: TreeWriter, view: View, projection: TreeProjection, record: TreeRecord) {
-  const order = new Map<string, number>();
-  const created = new Map<string, number>();
-  for (const [at, other] of viewRecords(writer.doc, view).entries()) {
-    order.set(other.id, at);
-    if (other.type === "create") created.set(other.node, at);
-  }
-  const at = order.get(record.id) ?? 0;
+function liftedBy(projection: TreeProjection, record: TreeRecord) {
+  const at = projection.changes.get(record.id)?.index ?? 0;
   return descendantsOf(projection, record.node).filter((id) => {
     if (projection.nodes.get(id)?.trashed) return false;
-    const placed = projection.setters.get(id)?.place?.id;
-    const arrived = Math.max(
-      created.get(id) ?? -1,
-      placed === undefined ? -1 : (order.get(placed) ?? -1),
-    );
-    return arrived < at;
+    const history = projection.history.get(id);
+    return Math.max(history?.createdAt ?? -1, history?.place.at(-1)?.index ?? -1) < at;
   });
 }
 
@@ -54,56 +43,102 @@ export function deleteStands(writer: TreeWriter, asked: View, recordId: string):
   return standsIn(writer.view(record.draft === null ? LIVE : asked), record);
 }
 
+/** A move's fact that stays where a later change holds it, when its Undo turns the other. */
+export type Kept = "name" | "place";
+
 /**
- * The ids of the records in force in a view's records, in order: a record is in force while no
- * later record that is itself in force undoes its root (`carries ?? id`). So an Undo takes a record
- * out of force, and a Redo (an undo of the Undo) puts it back. One pass from the end; the rule
- * `undoChange` and the Apply's copies both read.
+ * The Undo of `named`, a move or rename or an Undo about one. Taking `named` out flips which
+ * records about its change are in force (`flips`, as the replay will read them): the change goes
+ * out or comes back, or nothing flips but `named`, when another Undo keeps the change out. Then the
+ * record changes nothing shown, and is written all the same, so `named` stays out when that other
+ * Undo is taken back. The record says what the node then shows, as this copy has it; the replay
+ * works that out again from the records in force, so a copy that had not seen an earlier change
+ * settles on the same tree. It is a move when the place turns, a rename when only the name does
+ * (Trash reads that: a rename leaves what the move lifted lifted), else of the change's type.
+ * `kept` names a fact of a move that set a name which a later change holds, when it turns the
+ * other.
  */
-export function recordsInForce(records: readonly TreeRecord[]): Set<string> {
-  const undone = new Set<string>();
-  const standing = new Set<string>();
-  for (const record of records.toReversed()) {
-    if (undone.has(record.carries ?? record.id)) continue;
-    standing.add(record.id);
-    if (record.undoes !== undefined) undone.add(record.undoes);
+function turn(
+  writer: TreeWriter,
+  view: View,
+  actor: Actor,
+  projection: TreeProjection,
+  history: NodeHistory,
+  node: TreeNode,
+  base: Change & { sets: Sets },
+  flips: readonly Change[],
+  undoes: string,
+): { record: TreeRecord; kept?: Kept } | NotUndone {
+  let place = history.place;
+  let label = history.label;
+  for (const each of flips)
+    if (each.sets && each.node === node.id) {
+      place = withTurned(place, each.sets.place, !each.inForce);
+      label = withTurned(label, each.sets.label, !each.inForce);
+    }
+  const placed = place.at(-1) !== history.place.at(-1);
+  const named = label.at(-1) !== history.label.at(-1);
+  if (flips.length > 0 && !placed && !named) return "changed_since";
+  const both = base.sets.place !== undefined && base.sets.label !== undefined;
+  const shows = labelOf(node.kind, history.born, label);
+  const extra = { undoes };
+  if (!placed && (named || !base.sets.place))
+    return {
+      record: writer.author(
+        view,
+        actor,
+        {
+          type: "rename",
+          node: node.id,
+          name: shows.name,
+          fromName: node.name,
+          ...(shows.filetype && shows.filetype !== node.filetype
+            ? { filetype: shows.filetype }
+            : {}),
+        },
+        extra,
+      ),
+      ...(both && named ? { kept: "place" as const } : {}),
+    };
+  const { parent, rank } = place.at(-1)?.says ?? history.born;
+  if (placed) {
+    const back = projection.nodes.get(parent);
+    if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
+    // The folder it would return to has gone inside it since: the replay would skip the record.
+    if (wouldLoop(projection.nodes, node.id, parent)) return "changed_since";
   }
-  return standing;
-}
-
-/** Whether `undoer` put back what `record` changed: an Undo drafted elsewhere may have gone elsewhere. */
-function reverses(undoer: TreeRecord, record: TreeRecord): boolean {
-  if (record.type === "move") {
-    // A move that set a name is also undone as a rename of that name, which leaves its place.
-    if (undoer.type === "rename")
-      return record.name !== undefined && undoer.fromName === record.name;
-    return (
-      undoer.type === "move" &&
-      undoer.parent === record.from.parent &&
-      undoer.rank === record.from.rank
-    );
-  }
-  if (record.type === "rename") return undoer.type === "rename" && undoer.name === record.fromName;
-  return true;
+  return {
+    record: writer.author(
+      view,
+      actor,
+      {
+        type: "move",
+        node: node.id,
+        parent,
+        rank,
+        from: { parent: node.parent, rank: node.rank },
+        ...(named && shows.name !== node.name ? { name: shows.name } : {}),
+      },
+      extra,
+    ),
+    ...(both && placed && !named ? { kept: "name" as const } : {}),
+  };
 }
 
 /**
- * The record an Undo of `record` acts on: the last record in force of the chain that undid it and
- * redid it, which is the later setter of its fact. Only a chain whose every Undo put back what it
- * undid stands for `record`; otherwise `record` itself, and the Undo finds a later setter.
+ * The record an Undo of a create, delete or restore acts on: the last record in force of the
+ * chain that undid it and redid it.
  */
 function redoneAs(
   records: readonly TreeRecord[],
   standing: ReadonlySet<string>,
   record: TreeRecord,
 ): TreeRecord {
-  const chain = new Map([[record.carries ?? record.id, record]]);
+  const chain = new Set([record.carries ?? record.id]);
   let head = record;
   for (const later of records.slice(records.indexOf(record) + 1)) {
-    const undone = later.undoes === undefined ? undefined : chain.get(later.undoes);
-    if (!undone) continue;
-    if (!reverses(later, undone)) return record;
-    chain.set(later.carries ?? later.id, later);
+    if (later.undoes === undefined || !chain.has(later.undoes)) continue;
+    chain.add(later.carries ?? later.id);
     if (standing.has(later.id)) head = later;
   }
   return head;
@@ -114,18 +149,18 @@ export type NotUndone = "changed_since" | "purged" | "already" | "unknown";
 
 /**
  * Undo of one change in the view it belongs to: appends the opposite record (move back, rename
- * back, restore what was deleted, delete what was created). A move or rename goes back to the
- * values its fact had just before the record, and is allowed only while the record is still
- * the one that last set it: by history, never by comparing today's value, which a later author
- * may have set to the same. A move that also set a name takes back whichever of its two facts it
- * still holds (a move without the name, or a rename). The answer when it appends nothing: `changed_since` (something later
- * changed the same fact), `purged` (the node, or the folder a move would return to, is gone from
- * the view, where the replay would skip the opposite record), `already` (the change is not in
- * force: a later record in force undid it, or its opposite already stands), or `unknown` (no such record). A move back into a folder
- * in Trash needs no answer: the node stands in it, and rule 3 keeps the folder standing.
- * A drafted change an Apply landed is taken back in live, where its copy now stands: the
- * opposite record's `draft` says which view it went to. A change that was undone and redone is
- * taken back by undoing the Redo (`redoneAs`).
+ * back, restore what was deleted, delete what was created). Every record is in force unless a
+ * later record in force undoes it (`standingOf`), and Undo answers `already` for one that is not.
+ * A move or rename, and any Undo about one, goes by what taking it out does to the change it is
+ * about (`turn`): `changed_since` when a later change in force holds every fact that would turn,
+ * or the place it would go back to is inside the node now, and nothing is written then. A create,
+ * delete or restore goes by the record in force: `already` when its opposite already stands; a
+ * change that was undone and redone is taken back by undoing the Redo (`redoneAs`). `purged`:
+ * the node, or the folder a move would return to, is gone from the view, where the replay would
+ * skip the opposite record. `unknown`: no such record. A move back into a folder in Trash needs
+ * no answer: the node stands in it, and rule 3 keeps the folder standing. A drafted change an
+ * Apply landed is taken back in live, where its copy now stands: the opposite record's `draft`
+ * says which view it went to.
  */
 export function undoChange(
   writer: TreeWriter,
@@ -133,131 +168,71 @@ export function undoChange(
   actor: Actor,
   recordId: string,
 ): TreeRecord | NotUndone {
+  const done = undoFacts(writer, asked, actor, recordId);
+  return typeof done === "string" ? done : done.record;
+}
+
+/** `undoChange`, saying which fact of a move that set a name stays (`kept`), when one does. */
+export function undoFacts(
+  writer: TreeWriter,
+  asked: View,
+  actor: Actor,
+  recordId: string,
+): { record: TreeRecord; kept?: Kept } | NotUndone {
   const named = lastOfFamily(writer.doc, asked, recordId);
   if (named === "unknown") return named;
   if (!named) return "already";
   const view = named.draft === null ? LIVE : asked;
-  const records = viewRecords(writer.doc, view);
-  const standing = recordsInForce(records);
-  if (!standing.has(named.id)) return "already";
-  const record = redoneAs(records, standing, named);
   const projection = writer.view(view);
+  if (!projection.inForce.has(named.id)) return "already";
+  const change = projection.changes.get(named.id);
+  const base = change?.base;
+  if (change && base?.sets) {
+    const node = placeIn(projection.nodes, named.node);
+    const history = node && projection.history.get(node.id);
+    if (!node || !history) return "purged";
+    // The moves and renames about `base`'s change whose being in force undoing `named` flips.
+    const chain = [...projection.changes.values()].filter((each) => each.base.root === base.root);
+    const after = standingOf([
+      ...chain.map((each) => ({ id: each.id, carries: each.root, undoes: each.undoes })),
+      { id: "", undoes: change.root },
+    ]);
+    const flips = chain.filter((each) => each.sets && after.has(each.id) !== each.inForce);
+    return turn(
+      writer,
+      view,
+      actor,
+      projection,
+      history,
+      node,
+      base as Change & { sets: Sets },
+      flips,
+      change.root,
+    );
+  }
+  const record = redoneAs(viewRecords(writer.doc, view), projection.inForce, named);
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "purged";
   const extra = { undoes: record.carries ?? record.id };
+  const author = (made: TreeRecordInput) => ({
+    record: writer.author(view, actor, made, extra),
+  });
   switch (record.type) {
     case "create":
       if (node.trashed) return "already";
       // Only the node the create made: what others put in a folder since stands, and keeps it standing.
-      return writer.author(view, actor, { type: "delete", node: record.node, cascade: [] }, extra);
-    case "move": {
-      if (record.undoes !== undefined) {
-        // An Undo's own move taken back is a redo: the original move again, unless the node was moved since.
-        if (movedAfter(writer, view, record)) return "changed_since";
-        const named =
-          record.name === undefined
-            ? undefined
-            : lastSetBy(projection.setters.get(record.node)?.label, record);
-        const { parent, rank } = record.from;
-        const back = projection.nodes.get(parent);
-        if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
-        // Back at the place the original went to, under the name that place shows free.
-        const arrives = nameAmong(projection, parent, node.kind, node.name, node.id);
-        return writer.author(
-          view,
-          actor,
-          {
-            type: "move",
-            node: record.node,
-            parent,
-            rank,
-            from: { parent: node.parent, rank: node.rank },
-            ...(named
-              ? { name: named.before.name }
-              : arrives === node.name
-                ? {}
-                : { name: arrives }),
-          },
-          extra,
-        );
-      }
-      // A move that carried a name set two facts, and each goes back while the move still holds
-      // it: a later rename keeps its name and the place still goes back, and the other way round.
-      const placed = lastSetBy(projection.setters.get(record.node)?.place, record);
-      const named =
-        record.name === undefined
-          ? undefined
-          : lastSetBy(projection.setters.get(record.node)?.label, record);
-      if (!placed && !named) return "changed_since";
-      if (!placed && named)
-        return writer.author(
-          view,
-          actor,
-          { type: "rename", node: record.node, name: named.before.name, fromName: node.name },
-          extra,
-        );
-      const { parent, rank } = (placed as NonNullable<typeof placed>).before;
-      const back = projection.nodes.get(parent);
-      if (back?.purged || (!back && !isSourceRoot(parent))) return "purged";
-      return writer.author(
-        view,
-        actor,
-        {
-          type: "move",
-          node: record.node,
-          parent,
-          rank,
-          from: { parent: node.parent, rank: node.rank },
-          ...(named ? { name: named.before.name } : {}),
-        },
-        extra,
-      );
-    }
-    case "rename": {
-      if (record.undoes !== undefined) {
-        // The same for a rename: the Undo's name taken back is the original name again. An Undo of
-        // a type change does not say the type it changed from, so it is not redone.
-        if (record.filetype !== undefined || movedAfter(writer, view, record))
-          return "changed_since";
-        return writer.author(
-          view,
-          actor,
-          { type: "rename", node: record.node, name: record.fromName, fromName: node.name },
-          extra,
-        );
-      }
-      const last = lastSetBy(projection.setters.get(record.node)?.label, record);
-      if (!last) return "changed_since";
-      // A rename that changed the type takes the type back with the name, or it is not undone.
-      if (record.filetype !== undefined && last.before.filetype === undefined)
-        return "changed_since";
-      return writer.author(
-        view,
-        actor,
-        {
-          type: "rename",
-          node: record.node,
-          name: last.before.name,
-          fromName: node.name,
-          ...(record.filetype !== undefined ? { filetype: last.before.filetype } : {}),
-        },
-        extra,
-      );
-    }
-    case "delete": {
+      return author({ type: "delete", node: record.node, cascade: [] });
+    case "delete":
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.
       if (!standsIn(projection, record)) return "already";
-      return writer.author(view, actor, { type: "restore", node: record.node }, extra);
-    }
+      return author({ type: "restore", node: record.node });
     case "restore":
       if (node.trashed) return "already";
-      return writer.author(
-        view,
-        actor,
-        { type: "delete", node: record.node, cascade: liftedBy(writer, view, projection, record) },
-        extra,
-      );
+      return author({ type: "delete", node: record.node, cascade: liftedBy(projection, record) });
     case "purge":
       return "purged";
+    // A move or rename the replay skipped, or an Undo of one whose change is not in the view.
+    default:
+      return "changed_since";
   }
 }
