@@ -18,7 +18,7 @@ export type DockFile = {
   whole: boolean;
   /**
    * A `whole` file other chats wrote in too. The list counts the draft, not this chat's share, so
-   * it shows no count, and Discard, which ends the server's whole draft, is not offered.
+   * it shows no count, and its Discard opens a room to cut this chat's groups (`useDraftDock`).
    */
   shared: boolean;
   /** The changes it counts: the listed ones, or for a `whole` file the list's own count; null for a `shared` one. */

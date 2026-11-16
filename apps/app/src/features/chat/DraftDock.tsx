@@ -268,7 +268,7 @@ function DockFileLine({
               discard: t`Discard this chat's changes to ${file.name}`,
             }}
             disabled={!dock.canCommand}
-            onDiscard={file.shared ? undefined : () => dock.discardFile(file)}
+            onDiscard={() => dock.discardFile(file)}
             onApply={() => dock.applyFile(file)}
           />
         </div>

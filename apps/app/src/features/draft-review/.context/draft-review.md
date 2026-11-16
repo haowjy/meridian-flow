@@ -165,8 +165,11 @@ and a ×, and a whole-draft command (`{ kind: "draft", threadId }`, which `withD
 The strip is chat-scoped whether or not a row has a room: the server cuts a `whole` text cut that names
 `threadId` to the groups that chat wrote and those no chat owns (`compileClick`), as a room row does with
 `members`. The list holds only the draft's whole `textChanges`, so a row other chats wrote in too
-(`shared`) shows no count and no ×: the server's Discard ends the whole draft, and a chat's share of it
-can only be written back in a room. Apply all stays one command over both kinds. A chat that touched
+(`shared`) shows no count. Its × promotes it to a room row, for the same pending look a room row has
+while it reads (`discardQueue`), then runs the room Discard of this chat's changes and lets the room go
+(the server's Discard ends the whole draft, and a chat's share can only be written back in a room).
+Discard all queues every shared listed row this way, eight rooms at a time, one command per batch, and
+sends the other rows at once. Apply all stays one command over both kinds. A chat that touched
 hundreds of drafts therefore holds eight sockets, not one per draft.
 
 An Apply of several items (Apply all in Changes or the dock, a folder's ✓) is one command,
