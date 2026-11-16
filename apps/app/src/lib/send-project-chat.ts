@@ -1,6 +1,6 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
-import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { NewChatSubmission } from "@/client/chat-submissions";
 import { recordAndProjectSubmission } from "@/client/chat-submissions/owner";
@@ -21,9 +21,8 @@ export type SendProjectChatArgs = {
   draft?: ComposerDraftSnapshot;
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
-  /** The model this chat runs on instead of the Agent's, if the writer picked one. */
-  modelOverride?: string | null;
-  effortOverride?: ReasoningChoice | null;
+  /** What this chat runs on instead of the Agent's, if the writer picked any. */
+  overrides: ThreadOverrides;
   workId: string;
   /** The selected Work's default: the new chat's mode unless the writer chose one. */
   workAiWriteMode: AiWriteMode;
@@ -52,8 +51,7 @@ export function sendProjectChat({
   draft,
   activatedSkillSlugs,
   agent,
-  modelOverride,
-  effortOverride,
+  overrides,
   workId,
   workAiWriteMode,
   aiWriteMode,
@@ -87,8 +85,7 @@ export function sendProjectChat({
         workId,
         workAiWriteMode,
         ...(aiWriteMode ? { aiWriteMode } : {}),
-        ...(modelOverride ? { modelOverride } : {}),
-        ...(effortOverride ? { effortOverride } : {}),
+        overrides,
         agentSelection: agent.selection,
         agentName: agent.name,
         agentSlug: agent.slug,

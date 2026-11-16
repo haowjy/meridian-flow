@@ -4,7 +4,6 @@
  * transactional ThreadRepositories aggregate. The boundary both adapter sets implement.
  */
 
-import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { Project } from "@meridian/contracts/projects";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
@@ -255,8 +254,8 @@ export interface CreateThreadInput {
   workId?: WorkId | null;
   /** No default: every creation path chooses the chat's mode. */
   aiWriteMode: AiWriteMode;
-  modelOverride?: string | null;
-  effortOverride?: ReasoningChoice | null;
+  /** Omitted runs the Agent's own: a subagent, or a test fixture. */
+  overrides?: ThreadOverrides;
   kind?: ThreadKind;
   title?: string | null;
   parentThreadId?: ThreadId | null;
@@ -286,8 +285,6 @@ export interface PromptBakeRepository {
 }
 
 export interface ThreadRepository {
-  /** The Agent slug of the project's newest primary chat this writer started, or null. */
-  lastStartedAgentSlug(userId: UserId, projectId: ProjectId): Promise<string | null>;
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;

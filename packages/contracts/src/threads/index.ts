@@ -269,9 +269,9 @@ export type JournalEventType =
   | "notification.delivered"
   | "file.written";
 
-/** JSON-natural thread — survives JSON.parse/stringify unchanged. */
 export type { Thread, ThreadOverrides } from "./thread.js";
-export { threadSchema } from "./thread.js";
+/** JSON-natural thread — survives JSON.parse/stringify unchanged. */
+export { NO_OVERRIDES, threadOverridesSchema, threadSchema } from "./thread.js";
 export type { Block, ModelResponse, Turn, TurnDelivery, TurnUsage } from "./turn.js";
 export { blockSchema, modelResponseSchema, turnSchema, turnUsageSchema } from "./turn.js";
 

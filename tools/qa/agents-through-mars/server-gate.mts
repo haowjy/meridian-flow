@@ -100,6 +100,7 @@ try {
         id: randomUUID(),
         projectId,
         agentSelection: listed.selection,
+        overrides: { model: null, effort: null },
       });
       assert.ok(created.status >= 400, `thread creation was not refused: ${created.status}`);
     } finally {

@@ -8,6 +8,7 @@
  * the adapters (`assertModelsOnWire`) and run over every row when a gateway is created from env.
  */
 
+import type { ModelMaker } from "@meridian/contracts/protocol";
 import {
   type BuiltinAdapter,
   DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
@@ -27,9 +28,6 @@ import {
   type ModelTokenRate,
   type ModelTokenRateSource,
 } from "../../domains/runtime/costing/pricing.js";
-
-/** Who made a model, whoever serves it: the picker shows the maker's mark from models.dev `/logos/`. */
-export type ModelMaker = "anthropic" | "openai" | "deepseek" | "google";
 
 export interface RegisteredModel {
   id: string;

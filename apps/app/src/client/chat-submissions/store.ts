@@ -9,17 +9,18 @@
  * Canonical history stays in the server admission/turn records.
  */
 
-import {
-  type AgentSelection,
-  type ReasoningChoice,
-  reasoningChoiceSchema,
-} from "@meridian/contracts/agents";
+import type { AgentSelection } from "@meridian/contracts/agents";
 import {
   readRunState,
   type SubmittedReference,
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import type { RunState } from "@meridian/contracts/threads";
+import {
+  NO_OVERRIDES,
+  type RunState,
+  type ThreadOverrides,
+  threadOverridesSchema,
+} from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Occurrence } from "@meridian/thread-client";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -98,10 +99,8 @@ export type ChatSubmission = {
     workAiWriteMode: AiWriteMode;
     /** The writer's explicit choice, sent with the creation request. */
     aiWriteMode?: AiWriteMode;
-    /** Sent with the creation request: the model the chat runs on instead of its Agent's. */
-    modelOverride?: string;
-    /** Sent with the creation request: the reasoning setting the chat runs at instead of its Agent's. */
-    effortOverride?: ReasoningChoice;
+    /** Sent with the creation request. */
+    overrides: ThreadOverrides;
     agentSelection: AgentSelection;
     agentName: string;
     agentSlug: string;
@@ -189,9 +188,6 @@ function parseSubmission(value: unknown): ChatSubmission | null {
       (creation.workId !== null && typeof creation.workId !== "string") ||
       !isAiWriteMode(creation.workAiWriteMode) ||
       (creation.aiWriteMode !== undefined && !isAiWriteMode(creation.aiWriteMode)) ||
-      (creation.modelOverride !== undefined && typeof creation.modelOverride !== "string") ||
-      (creation.effortOverride !== undefined &&
-        !reasoningChoiceSchema.safeParse(creation.effortOverride).success) ||
       !isAgentSelection(creation.agentSelection) ||
       typeof creation.agentName !== "string" ||
       typeof creation.agentSlug !== "string")
@@ -225,7 +221,15 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     ...(value.answer ? { answer: parseAnswer(value.answer) } : {}),
     ...(value.posted ? { posted: true as const } : {}),
     ...(draft ? { draft } : {}),
-    ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
+    ...(creation
+      ? {
+          creation: {
+            ...(creation as Omit<NonNullable<ChatSubmission["creation"]>, "overrides">),
+            // A record from before the pair was one field parses to no overrides.
+            overrides: threadOverridesSchema.safeParse(creation.overrides).data ?? NO_OVERRIDES,
+          },
+        }
+      : {}),
   };
 }
 

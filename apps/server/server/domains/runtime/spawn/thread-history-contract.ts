@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
 
 import { randomUUID } from "node:crypto";
@@ -209,6 +210,7 @@ export function defineThreadHistoryContract(
 
       // A handoff starts its own lineage but may still read its direct source.
       const { thread: handoff } = await f.repos.threads.createDerivedPrimary({
+        overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
         id: randomUUID() as ThreadId,
         userId: f.thread.userId,

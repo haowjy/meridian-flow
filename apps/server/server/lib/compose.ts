@@ -951,7 +951,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       ]);
       const modelId =
         (thread
-          ? threadModelId(ports.gateway, thread, binding?.configuration.model)
+          ? threadModelId(ports.gateway, thread.overrides, binding?.configuration.model)
           : binding?.configuration.model) ?? ports.gateway.getDefaultModel();
       const model = ports.gateway.listModels().find((model) => model.id === modelId);
       if (!model)
@@ -1138,6 +1138,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       gateway: ports.gateway,
       eventSink: ports.eventSink,
       agentRevisions: ports.agentRevisions,
+      threads: ports.threadRepos.threads,
       prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
         .prefixCacheStateFor,
       modelRequestDebug: ports.modelRequestDebug,

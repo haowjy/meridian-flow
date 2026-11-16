@@ -15,7 +15,7 @@ import { threadQueryKeys } from "./thread-query-keys";
 export const THREAD_SET_OVERRIDES_KIND = "thread_set_overrides";
 
 /** Each command sets both: `null` clears one, so the Agent's own applies. */
-export type ThreadSetOverridesBody = { threadId: string } & ThreadOverrides;
+export type ThreadSetOverridesBody = { threadId: string; overrides: ThreadOverrides };
 
 /** Lane of one chat's set-overrides commands, so the last one the writer made is the last one stored. */
 export const threadOverridesLane = (threadId: string) => `thread-overrides:${threadId}`;
@@ -31,9 +31,14 @@ export function projectThreadOverrides(
 ): ThreadOverrides {
   for (let i = records.length - 1; i >= 0; i--) {
     const record = records[i];
-    if (record?.kind !== THREAD_SET_OVERRIDES_KIND || record.state === "never") continue;
+    if (
+      record?.kind !== THREAD_SET_OVERRIDES_KIND ||
+      record.state === "never" ||
+      (record.state === "done" && record.observed)
+    )
+      continue;
     const body = record.body as ThreadSetOverridesBody;
-    if (body.threadId === threadId) return { model: body.model, effort: body.effort };
+    if (body.threadId === threadId) return body.overrides;
   }
   return server;
 }
@@ -55,12 +60,8 @@ export function threadOverridesDomain(client: QueryClient): CommandDomain {
       version: 1,
       migrate: (body) => body as ThreadSetOverridesBody,
       request: ({ body }) => {
-        const { threadId, model, effort } = body as ThreadSetOverridesBody;
-        return {
-          method: "PATCH",
-          path: apiThreadOverridesPath(threadId),
-          body: { model, effort },
-        };
+        const { threadId, overrides } = body as ThreadSetOverridesBody;
+        return { method: "PATCH", path: apiThreadOverridesPath(threadId), body: { overrides } };
       },
       onSettled: (record) => {
         const { threadId } = record.body as ThreadSetOverridesBody;

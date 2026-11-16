@@ -10,18 +10,16 @@
     "slug": "critic",
     "definitionRevisionId": "agent-revision-uuid"
   },
-  "modelOverride": "model-id",
-  "effortOverride": "high"
+  "overrides": { "model": "model-id", "effort": "high" }
 }
 ```
 
 `agentSelection` is the `selection` of an item of `GET /api/agents`: the name the picker shows and the
 revision it showed. The destination binds that revision, and keeps the source's bake when it is the
-revision the source runs. `modelOverride` (optional, null for none) is the model the destination runs
-on instead of its Agent's; it is stored as given, and a model the gateway does not list falls back to
-the Agent's at turn time. `effortOverride` (optional, null for none) is the reasoning setting it runs at,
-one of `low`, `medium`, `high`, `max`, `disabled`, `adaptive`; a setting the model does not accept falls
-back to the Agent's at turn time. A fork copies its source's overrides.
+revision the source runs. `overrides` (required) is what the destination runs on instead of its Agent's:
+`model` is a model id, stored as given (a model the gateway does not list falls back to the Agent's
+at turn time), and `effort` is one of `low`, `medium`, `high`, `max`, `disabled`, `adaptive`, which the
+gateway clamps to what the model accepts. Each is `null` to run the Agent's own. A fork copies its source's overrides.
 
 The body is strict: `summary`, missing/null cutoff and extra fields return 400.
 The selected turn is the cutoff. Every effective transcript turn through it must

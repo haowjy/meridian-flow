@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * PostgreSQL contract for an independent brief settling outside the source run.
  *
@@ -60,6 +61,7 @@ else
       const source = required(await repos.threads.findById(ids.caller));
       const cutoff = required(await repos.turns.findById(ids.callerTurn));
       const { thread: destination } = await repos.threads.createDerivedPrimary({
+        overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.user,

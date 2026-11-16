@@ -16,10 +16,10 @@ command and never part of the binding, so a compaction's binding refresh keeps t
 lists it, else the Agent's model, else the default. An id the gateway no longer lists runs on the
 Agent's model, and `turns.model` records what ran; a client tells "fell back" from "chosen" by
 comparing the override with the newest turn's model, or with `GET /api/models` (`available`) for the
-turn about to run. The effort override replaces the Agent's effort while the resolved model accepts it
-(a listed level, `disabled` only where the model can switch off, `adaptive` always); one it doesn't
-accept runs the Agent's, as an unlisted model does. The gateway then clamps whichever runs to the
-resolved model. The wire vocabulary is the gateway's (`low|medium|high|max` plus `disabled` and
+turn about to run. The effort override always replaces the Agent's effort; the server never drops it. The
+gateway's `resolveReasoning` clamps whichever runs to the nearest level the resolved model accepts,
+as it does for the Agent's own level. Every reader of the chat's model goes through `threadModelId`,
+which takes the gateway. The wire vocabulary is the gateway's (`low|medium|high|max` plus `disabled` and
 `adaptive`); an Agent file's `xhigh`/`none` read as `max`/`disabled` (`AGENT_EFFORT_CHOICE`).
 `LIVE_TEST_MODEL` redirects at the gateway, so an override cannot bypass it. A change costs a
 cache rebuild, already predicted as `model_changed`.

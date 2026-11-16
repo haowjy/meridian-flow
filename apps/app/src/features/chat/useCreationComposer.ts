@@ -1,10 +1,8 @@
 /** Send a new project chat in the current pane before background persistence. */
 
-import type { ReasoningChoice } from "@meridian/contracts/agents";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { rememberStartedAgent } from "@/client/query/useAgentCatalog";
 import { useThreadActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import type { CreationAgent, CreationChoices } from "@/features/agents/creation-agent";
@@ -23,7 +21,6 @@ export function useCreationComposer(projectId: string) {
   } as const;
   const draft = useComposerSessionDraft(accountId, draftScope);
   const threadActions = useThreadActions();
-  const queryClient = useQueryClient();
   const [choices, setChoices] = useState<CreationChoices>({});
   const updateChoices = useCallback(
     (next: CreationChoices) => setChoices((current) => ({ ...current, ...next })),
@@ -41,11 +38,10 @@ export function useCreationComposer(projectId: string) {
         workAiWriteMode: AiWriteMode;
         aiWriteMode?: AiWriteMode;
         agent: CreationAgent;
-        modelOverride: string | null;
-        effortOverride: ReasoningChoice | null;
+        overrides: ThreadOverrides;
       },
     ) {
-      const sent =
+      return (
         sendProjectChat({
           accountId,
           projectId,
@@ -56,8 +52,7 @@ export function useCreationComposer(projectId: string) {
           draft: submission.draft,
           activatedSkillSlugs: submission.activatedSkillSlugs,
           agent: context.agent,
-          modelOverride: context.modelOverride,
-          effortOverride: context.effortOverride,
+          overrides: context.overrides,
           workId: context.workId,
           workAiWriteMode: context.workAiWriteMode,
           ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),
@@ -70,9 +65,8 @@ export function useCreationComposer(projectId: string) {
             draft.handoffCreated(threadId);
             acceptCreatedChat(threadId);
           },
-        }) !== null;
-      if (sent) rememberStartedAgent(queryClient, accountId, projectId, context.agent.slug);
-      return sent;
+        }) !== null
+      );
     },
   };
 }

@@ -93,6 +93,7 @@ function setup(
     eventSink,
     prefixCacheStateFor,
     agentRevisions: createTestAgentBinding(threadModel.id, "", () => ["thread"]),
+    threads: { findById: async () => null },
     modelRequestDebug,
     toolRegistry: createToolRegistry(),
     config: { model: cheapModel.id },

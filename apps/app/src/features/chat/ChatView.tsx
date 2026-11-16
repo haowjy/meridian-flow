@@ -22,6 +22,7 @@ import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/pr
 import {
   answeredControlIds,
   isHandoffSeed,
+  NO_OVERRIDES,
   type PendingInboxItem,
   readCompactionFacts,
 } from "@meridian/contracts/threads";
@@ -40,10 +41,8 @@ import {
   viewTranscript,
   waitingWriterMessages,
 } from "@meridian/thread-client";
-import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
-import { rememberStartedAgent } from "@/client/query/useAgentCatalog";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useSetThreadOverrides, useThreadOverrides } from "@/client/query/useSetThreadOverrides";
@@ -561,11 +560,7 @@ export function ChatView({
   });
   const inheritedView = inherited.view;
   // A fork or the composer shows a pick at once, before the server has it.
-  const overrides = useThreadOverrides(
-    threadId,
-    activeThread?.modelOverride ?? null,
-    activeThread?.effortOverride ?? null,
-  );
+  const overrides = useThreadOverrides(threadId, activeThread?.overrides ?? NO_OVERRIDES);
   const forkTurn = useCommittedEvent((originTurnId: string) => {
     if (!activeThread || !openThread) return;
     const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
@@ -583,8 +578,7 @@ export function ChatView({
         originTurnId,
         agent: null,
         agentName: activeThread.agentName,
-        modelOverride: overrides.model,
-        effortOverride: overrides.effort,
+        overrides,
       },
       {
         ...deps,
@@ -599,7 +593,6 @@ export function ChatView({
       },
     );
   });
-  const queryClient = useQueryClient();
   const handoffTurn = useCommittedEvent((originTurnId: string, choice: AgentChoice) => {
     if (!activeThread || !openThread) return;
     const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
@@ -617,12 +610,10 @@ export function ChatView({
         originTurnId,
         agent: choice.agent,
         agentName: choice.agent.name,
-        modelOverride: choice.overrides.model,
-        effortOverride: choice.overrides.effort,
+        overrides: choice.overrides,
       },
       { ...deps, source: activeThread, inherited: null, open: openThread },
     );
-    rememberStartedAgent(queryClient, accountId, projectId, choice.agent.slug);
   });
   const turnDerivation = useMemo<TurnDerivation | null>(() => {
     if (!canDerive || !activeThread || !openThread) return null;

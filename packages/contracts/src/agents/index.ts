@@ -50,8 +50,6 @@ export interface AgentCatalogItem {
 }
 export interface AgentCatalog {
   agents: AgentCatalogItem[];
-  /** The Agent slug of the project's newest writer-started chat: a new chat starts on it. Null with no chat yet or no project. */
-  lastStartedSlug: string | null;
 }
 
 const agentLevelSchema = z.enum(["builtin", "user", "project"]);
@@ -71,7 +69,6 @@ export const agentCatalogSchema = z.object({
       unavailableReasons: z.array(z.string()),
     }),
   ),
-  lastStartedSlug: z.string().nullable(),
 }) satisfies z.ZodType<AgentCatalog>;
 
 /**

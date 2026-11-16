@@ -181,8 +181,8 @@ export function createDrizzleThreadRepository(
         createdByUserId: input.userId as string,
         kind: normalized.kind,
         aiWriteMode: input.aiWriteMode,
-        modelOverride: input.modelOverride ?? null,
-        effortOverride: input.effortOverride ?? null,
+        modelOverride: input.overrides?.model ?? null,
+        effortOverride: input.overrides?.effort ?? null,
         title: normalized.title,
         parentThreadId: normalized.parentThreadId,
         rootThreadId: threadId,
@@ -229,8 +229,8 @@ export function createDrizzleThreadRepository(
           originTurnId: thread.originTurnId,
           originType: thread.originType,
           spawnDepth: thread.spawnDepth,
-          modelOverride: thread.modelOverride,
-          effortOverride: thread.effortOverride,
+          modelOverride: thread.overrides.model,
+          effortOverride: thread.overrides.effort,
         },
         { ignoreIdConflict: true },
       );
@@ -542,30 +542,6 @@ export function createDrizzleThreadRepository(
         .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-    },
-    async lastStartedAgentSlug(userId, projectId) {
-      const [row] = await currentDrizzleDb(db)
-        .select({ slug: schema.agentDefinitionRevisions.slug })
-        .from(schema.threads)
-        .innerJoin(
-          schema.threadAgentBindings,
-          eq(schema.threadAgentBindings.threadId, schema.threads.id),
-        )
-        .innerJoin(
-          schema.agentDefinitionRevisions,
-          eq(schema.agentDefinitionRevisions.id, schema.threadAgentBindings.definitionRevisionId),
-        )
-        .where(
-          and(
-            eq(schema.threads.projectId, projectId),
-            eq(schema.threads.createdByUserId, userId),
-            eq(schema.threads.kind, "primary"),
-            isNull(schema.threads.deletedAt),
-          ),
-        )
-        .orderBy(desc(schema.threads.createdAt), desc(schema.threads.id))
-        .limit(1);
-      return row?.slug ?? null;
     },
     async setOverrides(id, overrides) {
       const [row] = await currentDrizzleDb(db)

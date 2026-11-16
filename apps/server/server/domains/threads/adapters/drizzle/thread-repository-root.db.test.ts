@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * PostgreSQL coverage: every thread-create path persists an authoritative rootThreadId.
  *
@@ -74,6 +75,7 @@ else
         status: "complete",
       });
       const { thread: fork } = await repos.threads.createDerivedPrimary({
+        overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
@@ -98,6 +100,7 @@ else
 
       // A handoff keeps the sibling provenance but starts its own lineage (and so its own Scratch).
       const { thread: handoff } = await repos.threads.createDerivedPrimary({
+        overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,

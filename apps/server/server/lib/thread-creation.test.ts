@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** Exact root binding, ownership create-or-get, and atomic failure in the app transaction.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
@@ -56,6 +57,7 @@ async function fixture() {
     title: "Branch a scene",
     workId: null,
     agentSelection: general.selection,
+    overrides: NO_OVERRIDES,
   };
   return { app, deps, args, projects };
 }
@@ -153,7 +155,11 @@ describe("exact thread creation", () => {
     await createThreadForProject(deps, args);
     const strangerProject = await projects.create({ userId: "stranger", title: "Stranger" });
     await expect(
-      createThreadForProject(deps, { ...args, projectId: strangerProject.id, userId: "stranger" }),
+      createThreadForProject(deps, {
+        ...args,
+        projectId: strangerProject.id,
+        userId: "stranger",
+      }),
     ).rejects.toBeInstanceOf(ThreadCreationNotFoundError);
   });
 

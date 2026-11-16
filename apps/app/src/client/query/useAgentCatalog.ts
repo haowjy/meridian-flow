@@ -1,6 +1,6 @@
 /** Account/system Agent choices with Project-scoped availability and cache ownership. */
-import type { AgentCatalog, AgentCatalogItem } from "@meridian/contracts/agents";
-import { type QueryClient, queryOptions, useQuery } from "@tanstack/react-query";
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { listAgentCatalog } from "@/client/api/agents-api";
 import {
   useAccountEpochSignal,
@@ -16,8 +16,6 @@ export const agentCatalogQueryKey = (accountId: string, projectId?: string) =>
     : (["agent-catalog", accountId] as const);
 export type AgentCatalogStatus = ListQueryStatus<AgentCatalogItem> & {
   agents: AgentCatalogItem[] | null;
-  /** The Agent of the newest chat started in the project: a new chat starts on it. */
-  lastStartedSlug: string | null;
 };
 
 export function agentCatalogQueryOptions(
@@ -40,18 +38,5 @@ export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalo
     enabled: projectReadEnabled(enabled),
   });
   const result = unwrapListQuery({ ...query, data: query.data?.agents });
-  return { ...result, agents: result.data, lastStartedSlug: query.data?.lastStartedSlug ?? null };
-}
-
-/** A chat just started on this Agent: the next new chat starts on it, as the server will say. */
-export function rememberStartedAgent(
-  client: QueryClient,
-  accountId: string,
-  projectId: string,
-  slug: string,
-): void {
-  client.setQueryData<AgentCatalog>(
-    agentCatalogQueryKey(accountId, projectId),
-    (catalog) => catalog && { ...catalog, lastStartedSlug: slug },
-  );
+  return { ...result, agents: result.data };
 }

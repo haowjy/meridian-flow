@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** Connected listing follows spawn and cutoff-owner edges, with bounded pages. */
 
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
@@ -37,6 +38,7 @@ export function defineThreadLsContract(
     async function fork(source = root, originType: "fork" | "handoff" = "fork") {
       return (
         await repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           ...identity,
           id: crypto.randomUUID() as never,

@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * In-memory shown-link storage matches the document side's contract.
  *
@@ -68,6 +69,7 @@ async function rig(): Promise<ShownLinksRig> {
     async derive(originType, origin, from = source) {
       return (
         await repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source: from,

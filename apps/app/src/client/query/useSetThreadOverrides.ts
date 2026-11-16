@@ -1,5 +1,4 @@
 /** The model and reasoning a chat runs its Agent at, and setting or clearing them as a command that survives reloads. */
-import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import { useCallback, useMemo } from "react";
 
@@ -13,15 +12,11 @@ import {
 } from "./thread-overrides-command";
 
 /** The chat's overrides as the writer last set them, before the server has them, else the server's. */
-export function useThreadOverrides(
-  threadId: string,
-  serverModel: string | null,
-  serverEffort: ReasoningChoice | null,
-): ThreadOverrides {
+export function useThreadOverrides(threadId: string, server: ThreadOverrides): ThreadOverrides {
   const records = useCommands();
   return useMemo(
-    () => projectThreadOverrides(records, threadId, { model: serverModel, effort: serverEffort }),
-    [records, threadId, serverModel, serverEffort],
+    () => projectThreadOverrides(records, threadId, server),
+    [records, threadId, server],
   );
 }
 
@@ -31,7 +26,7 @@ export function useSetThreadOverrides(threadId: string): (overrides: ThreadOverr
   return useCallback(
     (overrides) => {
       if (!driver) return;
-      const body: ThreadSetOverridesBody = { threadId, ...overrides };
+      const body: ThreadSetOverridesBody = { threadId, overrides };
       void submitCommand(driver, {
         kind: THREAD_SET_OVERRIDES_KIND,
         lanes: [threadOverridesLane(threadId)],

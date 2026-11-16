@@ -9,8 +9,8 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type { ReasoningChoice } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -38,10 +38,8 @@ export type DerivationIntent = {
   /** The destination's Agent: the source's for a fork, the writer's pick for a handoff. */
   agent: CreationAgent | null;
   agentName: string | null;
-  /** The model the destination runs on instead of its Agent's: the writer's pick for a handoff, the source's for a fork (the server copies it). */
-  modelOverride: string | null;
-  /** The reasoning setting it runs at instead of its Agent's, with the same owner as `modelOverride`. */
-  effortOverride: ReasoningChoice | null;
+  /** What the destination runs on instead of its Agent's: the writer's pick for a handoff, the source's for a fork (the server copies it). */
+  overrides: ThreadOverrides;
   createdAt: string;
 };
 
@@ -149,8 +147,7 @@ function optimisticThread(intent: DerivationIntent, source: Thread | null): Thre
     timestamp: intent.createdAt,
     workId: intent.workId,
     aiWriteMode: intent.aiWriteMode,
-    modelOverride: intent.modelOverride,
-    effortOverride: intent.effortOverride,
+    overrides: intent.overrides,
     ...(intent.agent ? { agent: intent.agent } : {}),
   });
   return {
@@ -176,8 +173,7 @@ function request(intent: DerivationIntent): Promise<Thread> {
     id: intent.threadId,
     originTurnId: intent.originTurnId,
     agentSelection: intent.agent.selection,
-    modelOverride: intent.modelOverride,
-    effortOverride: intent.effortOverride,
+    overrides: intent.overrides,
   });
 }
 

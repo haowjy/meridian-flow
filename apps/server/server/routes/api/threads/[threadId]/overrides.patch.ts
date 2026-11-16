@@ -1,7 +1,7 @@
 /** PATCH /api/threads/:threadId/overrides: sets or clears the chat's model and reasoning overrides, as a command. */
 import type { CommandId, ProjectId } from "@meridian/contracts";
-import type { ReasoningChoice } from "@meridian/contracts/agents";
 import { serializeTransport, setThreadOverridesRequestSchema } from "@meridian/contracts/protocol";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireThreadOwner } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
@@ -29,8 +29,7 @@ export default defineEventHandler(async (event) => {
   const result = await runRouteCommand<{
     status: "done";
     threadId: string;
-    model: string | null;
-    effort: ReasoningChoice | null;
+    overrides: ThreadOverrides;
   }>(
     app.commands,
     {
@@ -42,22 +41,10 @@ export default defineEventHandler(async (event) => {
       body,
     },
     async () => {
-      const updated = await app.threadRepos.threads.setOverrides(thread.id, {
-        model: parsed.data.model,
-        effort: parsed.data.effort,
-      });
-      return {
-        status: "done",
-        threadId: updated.id,
-        model: updated.modelOverride,
-        effort: updated.effortOverride,
-      };
+      const updated = await app.threadRepos.threads.setOverrides(thread.id, parsed.data.overrides);
+      return { status: "done", threadId: updated.id, overrides: updated.overrides };
     },
     () => undefined,
   );
-  return serializeTransport({
-    threadId: result.threadId,
-    model: result.model,
-    effort: result.effort,
-  });
+  return serializeTransport({ threadId: result.threadId, overrides: result.overrides });
 });

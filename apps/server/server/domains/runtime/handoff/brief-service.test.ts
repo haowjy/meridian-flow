@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * Handoff brief orchestration releases ownership when settlement cannot start.
  *
@@ -31,6 +32,7 @@ describe("handoff brief service", () => {
       status: "complete",
     });
     const { thread: destination } = await repos.threads.createDerivedPrimary({
+      overrides: NO_OVERRIDES,
       aiWriteMode: "direct",
       id: crypto.randomUUID(),
       userId,

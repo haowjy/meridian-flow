@@ -303,6 +303,7 @@ export async function prepareCompactionSuccessor(args: {
       turns: allTurns,
       blocks: allBlocks,
       agentRevisions: successorDeps.agentRevisions,
+      gateway: successorDeps.gateway,
       threads: deps.repos.threads,
       toolRegistry: deps.toolRegistry,
       baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),

@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * Control queue ordering, start consumption, and withdrawal against PostgreSQL.
  *
@@ -349,6 +350,7 @@ else
       });
       const forkAtRequest = (
         await rig.repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
@@ -374,6 +376,7 @@ else
 
       const firstFork = (
         await rig.repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
@@ -393,6 +396,7 @@ else
       });
       const secondFork = (
         await rig.repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source: firstFork,

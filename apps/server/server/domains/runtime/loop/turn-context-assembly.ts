@@ -14,16 +14,10 @@
  *   execution. Later gateway failure or cancellation does not undo that bake.
  */
 
-import type { ReasoningChoice, ToolPolicy } from "@meridian/contracts/agents";
+import type { ToolPolicy } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
-import type {
-  Gateway,
-  GenerateRequest,
-  ModelInfo,
-  ReasoningSupport,
-  Tool,
-} from "@meridian-flow/runtime/gateway";
+import type { Block, PromptBake, Thread, ThreadOverrides, Turn } from "@meridian/contracts/threads";
+import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import {
@@ -88,7 +82,7 @@ export interface AssembleNextTurnContextInput {
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
   threads: Parameters<typeof resolveAgentThreadTurnContext>[0]["threads"];
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
-  gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
+  gateway: Pick<Gateway, "getDefaultModel" | "listModels">;
   mediaResolver?: MediaResolverPort;
   /** Overrides the model's cache lifetime as the span a signed media link stays identical for. */
   mediaLinkWindowSeconds?: number;
@@ -189,26 +183,19 @@ interface PreparedNextTurnContext
 /**
  * The chat's model override replaces the Agent's model while the gateway lists it. An id it no
  * longer lists runs on the Agent's model, and the turn's recorded model says so. The chat's effort
- * override replaces the Agent's effort while the resolved model accepts it, and falls back to the
- * Agent's the same way; the gateway then clamps whichever runs to what the model accepts.
+ * override replaces the Agent's effort always; the gateway clamps whichever runs to the nearest
+ * level the model accepts.
  */
 function turnGatewayParams(
   gateway: AssembleNextTurnContextInput["gateway"],
-  thread: Pick<Thread, "modelOverride" | "effortOverride">,
+  thread: Pick<Thread, "overrides">,
   agentParams: Pick<GenerateRequest, "model" | "reasoning">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
-  const model = threadModelId(gateway, thread, agentParams.model);
-  const support = modelOf(gateway, { model })?.reasoning;
-  const effort = thread.effortOverride;
-  return effort && support && acceptsReasoningChoice(support, effort)
+  const model = threadModelId(gateway, thread.overrides, agentParams.model);
+  const effort = thread.overrides.effort;
+  return effort
     ? { ...agentParams, model, reasoning: reasoningOfChoice(effort) }
     : { ...agentParams, model };
-}
-
-function acceptsReasoningChoice(support: ReasoningSupport, choice: ReasoningChoice): boolean {
-  if (choice === "adaptive") return true;
-  if (choice === "disabled") return support.canDisable === true;
-  return support.efforts.includes(choice);
 }
 
 /**
@@ -216,12 +203,12 @@ function acceptsReasoningChoice(support: ReasoningSupport, choice: ReasoningChoi
  * Every reader of a chat's model goes through here, so none of them ignores the override.
  */
 export function threadModelId(
-  gateway: Pick<Gateway, "listModels"> | undefined,
-  thread: Pick<Thread, "modelOverride">,
+  gateway: Pick<Gateway, "listModels">,
+  overrides: ThreadOverrides,
   agentModel: string | undefined,
 ): string | undefined {
-  const override = thread.modelOverride;
-  return override && gateway?.listModels().some((model) => model.id === override)
+  const override = overrides.model;
+  return override && gateway.listModels().some((model) => model.id === override)
     ? override
     : agentModel;
 }
@@ -230,8 +217,8 @@ function modelOf(
   gateway: AssembleNextTurnContextInput["gateway"],
   params: Pick<GenerateRequest, "model">,
 ): ModelInfo | undefined {
-  const modelId = params.model ?? gateway?.getDefaultModel?.();
-  return gateway?.listModels().find((model) => model.id === modelId);
+  const modelId = params.model ?? gateway.getDefaultModel();
+  return gateway.listModels().find((model) => model.id === modelId);
 }
 
 /**
