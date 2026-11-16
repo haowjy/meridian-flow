@@ -6,9 +6,8 @@
  * this one. A create the server dropped, discarded or applied is no longer pending, and leaves.
  */
 import { createdDraftId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
-import type { DraftMetadataResponse, ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import { draftRoomName } from "@meridian/contracts/protocol";
 import { pendingCreates, pendingRecords, replayView } from "@meridian/project-tree";
 import { useCallback, useMemo } from "react";
 import type * as Y from "yjs";
@@ -61,7 +60,9 @@ export function useCreatedDrafts(
         branchId,
         itemKey: draftItemKey(branchId, documentId),
         documentId,
+        draftId: createdDraftId(documentId),
         hasDraft: true,
+        textChanges: 0,
         origin: "created",
         isNew: true,
         binary: false,
@@ -114,10 +115,4 @@ export function useCreatesDraft(projectId: string): (itemKey: string) => boolean
     },
     [lists, projectId, accountId],
   );
-}
-
-/** A created draft's metadata, as the server answers it once it has made the draft. */
-export function createdDraftMetadata(item: ThreadDraftListItem): DraftMetadataResponse {
-  const draftId = createdDraftId(item.documentId);
-  return { status: "active", draftId, reviewRoomName: draftRoomName(draftId), item };
 }

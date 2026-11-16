@@ -45,6 +45,7 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "se
   const selectChat = vi.fn<(href: string) => void>();
   const result = sendProjectChat({
     accountId: ACCOUNT,
+    overrides: { model: null, effort: null },
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     text: "Draft the fight scene tonight",
     blocks: [{ type: "text", text: "Draft the fight scene tonight" }],

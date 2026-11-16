@@ -1,5 +1,6 @@
 /** Writer receipt and failed-response policies over immutable forward-inverse parts. */
 import { randomUUID } from "node:crypto";
+import { setImmediate } from "node:timers/promises";
 import { editHandle, type InversePart } from "@meridian/agent-edit/integration";
 import type {
   BranchId,
@@ -27,6 +28,7 @@ import type { DraftSnapshot } from "./draft-store.js";
 import { partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
+import { INVERSE_WORKERS } from "./inverse-worker.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
@@ -163,15 +165,21 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
  * on what the steps before it leave. A part an Undo already took out (the planner's `takenBy`)
  * is neither a step nor a skip: the card's own Undo is done with it, and the model's undo in the
  * same chat is part of what the chat did. `undoneByWriter` says the card's Undo was among them.
+ * A `preview` plan has the steps and skips of the real one, but its steps carry no parts: the
+ * chip needs the answer, not the Undo.
  */
-function prepare(
+async function prepare(
   store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
   actionId: string,
-): { plans: PreparedDocumentInverse[]; undoneByWriter: boolean } {
+  { preview = false }: { preview?: boolean } = {},
+): Promise<{ plans: PreparedDocumentInverse[]; undoneByWriter: boolean }> {
   let undoneByWriter = false;
-  const plans = documents.map((document) => {
+  const planOf = async (document: InverseDocument): Promise<PreparedDocumentInverse> => {
+    // A preview plans in-process, a document's lineage at a time: the server answers its other
+    // requests between documents.
+    await setImmediate();
     const entryPlanner = createCapturedReversalPlanner(document, query);
     const targets = document.history.filter((part) => {
       if (!targetsTurn(part, query)) return false;
@@ -243,10 +251,16 @@ function prepare(
     // Each destination's parts compute as one selection in step order over that destination's
     // view; one edit lands in one destination. Review membership does not decide inverse
     // eligibility.
-    const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
-      [...selection].map(([destination, parts]) => {
-        return [destination, entryPlanner.compute(destination, parts, actionId)];
-      }),
+    const computed = new Map(
+      await Promise.all(
+        [...selection].map(
+          async ([destination, parts]) =>
+            [
+              destination,
+              await entryPlanner.compute(destination, parts, actionId, { preview }),
+            ] as const,
+        ),
+      ),
     );
     const classifiedKeys = new Set(
       [...computed.values()].flatMap((result) =>
@@ -283,7 +297,27 @@ function prepare(
         : [];
     });
     return { document, steps, skips };
-  });
+  };
+  // As many documents at once as the worker pool has threads. A planner keeps its lineage until
+  // its document is done, so a preview, which builds it here, would hold every document's if
+  // they all started at once.
+  const plans: PreparedDocumentInverse[] = [];
+  let next = 0;
+  // One failed document ends every lane, so no more jobs go to the pool for a failed command.
+  let failed = false;
+  await Promise.all(
+    Array.from({ length: Math.min(INVERSE_WORKERS, documents.length) }, async () => {
+      while (next < documents.length && !failed) {
+        const at = next++;
+        try {
+          plans[at] = await planOf(documents[at] as InverseDocument);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
+    }),
+  );
   return { plans, undoneByWriter };
 }
 
@@ -297,11 +331,7 @@ function inSequence(plans: readonly PreparedDocumentInverse[]) {
     .flatMap((plan) => plan.steps.map((step) => ({ plan, step })))
     .sort((a, b) => b.step.at - a.step.at);
 }
-const countAccepted = (plans: PreparedDocumentInverse[]) =>
-  plans.reduce(
-    (count, plan) => count + plan.steps.reduce((n, step) => n + step.edit.parts.length, 0),
-    0,
-  );
+const hasSteps = (plans: PreparedDocumentInverse[]) => plans.some((plan) => plan.steps.length > 0);
 
 /**
  * What became of this reply's text in each drafted document: still a draft while a waiting
@@ -357,14 +387,22 @@ export function createTurnInverseService(store: TurnInverseStore) {
         );
         const treeStates = await store.treeDraftStates(query);
         const trees = Object.keys(treeStates).length ? treeStates : undefined;
-        const { plans: undo, undoneByWriter } = prepare(store, documents, query, randomUUID());
+        const { plans: undo, undoneByWriter } = await prepare(
+          store,
+          documents,
+          query,
+          randomUUID(),
+          {
+            preview: true,
+          },
+        );
         // Text the writer discarded is gone: an Undo has nothing to take out.
         const allDiscarded =
           drafts !== undefined &&
           documents.every(({ documentId }) => drafts[documentId] === "discarded");
         // A part an Undo took out has no skip, so the skips are the parts that stay.
         const skips = [...undo.flatMap((plan) => plan.skips), ...tree.stayed];
-        if ((countAccepted(undo) && !allDiscarded) || tree.acting)
+        if ((hasSteps(undo) && !allDiscarded) || tree.acting)
           return { state: "live-active", control: "undo", drafts, trees, skips };
         const state =
           tree.taken || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
@@ -384,13 +422,13 @@ export function createTurnInverseService(store: TurnInverseStore) {
       query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
-        const { plans, undoneByWriter } = prepare(store, documents, query, randomUUID());
+        const { plans, undoneByWriter } = await prepare(store, documents, query, randomUUID());
         const tree = await store.treeSteps(query);
         const treeSteps = tree.acting + tree.taken + tree.stayed.length;
         if (!query.documentIds && !plans.length && !treeSteps)
           return { status: "nothing_to_undo", documents: [] };
         const committed =
-          countAccepted(plans) || treeSteps
+          hasSteps(plans) || treeSteps
             ? await store.commit({
                 plans,
                 sequence: inSequence(plans),

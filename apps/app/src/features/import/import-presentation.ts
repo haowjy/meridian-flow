@@ -2,7 +2,8 @@
 import { plural, t } from "@lingui/core/macro";
 import type { ImportEntryStatus, ImportScheme, ImportSummary } from "@meridian/contracts";
 import { addressScheme } from "@meridian/contracts/context-uri";
-import { areaLabel, type ImportDestination } from "./destination";
+import { schemeLabel } from "@/features/project/context/context-schemes";
+import type { ImportDestination } from "./destination";
 import type { LocalUpload, TrackedImport } from "./import-coordinator";
 
 export type ImportState =
@@ -109,7 +110,7 @@ export function importPresentation(summary: ImportSummary, local: LocalUpload) {
     summary.label.kind === "files" && files > 0
       ? plural(files, { one: "# file", other: "# files" })
       : summary.label.name;
-  const area = areaLabel(
+  const area = schemeLabel(
     addressScheme(summary.destination.folderUri) as ImportDestination["scheme"],
   );
   const progress = bytes

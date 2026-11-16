@@ -5,6 +5,7 @@
  */
 
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
+import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { Project } from "@meridian/contracts/projects";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type {
@@ -40,6 +41,7 @@ import type {
   ThreadKind,
   ThreadLeaseState,
   ThreadListItem,
+  ThreadOverrides,
   ThreadStatus,
   Turn,
   TurnDelivery,
@@ -253,6 +255,8 @@ export interface CreateThreadInput {
   workId?: WorkId | null;
   /** No default: every creation path chooses the chat's mode. */
   aiWriteMode: AiWriteMode;
+  /** Every route passes one; omitted (test fixtures) runs the Agent's own. */
+  overrides?: ThreadOverrides;
   kind?: ThreadKind;
   title?: string | null;
   parentThreadId?: ThreadId | null;
@@ -269,6 +273,7 @@ export interface PromptBakeContent {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
   bakedTools: JsonValue;
+  bakedConnections: McpBakedConnection[];
   contentHash: string;
 }
 
@@ -329,6 +334,8 @@ export interface ThreadRepository {
   ): Promise<WorkThreadSummary[]>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
+  /** Sets or clears the model and reasoning setting this chat runs on instead of its Agent's. Not activity: `updatedAt` stays. */
+  setOverrides(id: ThreadId, overrides: ThreadOverrides): Promise<Thread>;
   /** Sets the chat's AI write mode; only an applied write-mode switch calls it, under the run claim. */
   setAiWriteMode(id: ThreadId, mode: AiWriteMode): Promise<void>;
   /** Locks, inserts, and points at the first bake; contenders receive the winner. */

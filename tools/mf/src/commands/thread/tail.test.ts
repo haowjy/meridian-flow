@@ -110,56 +110,53 @@ describe("tail --until-idle", () => {
       outcome: "failed",
       reason: null,
     },
-  ])("counts $name with membership from the proving read", async ({
-    gap,
-    failure,
-    code,
-    outcome,
-    reason,
-  }) => {
-    if (gap) wire.publish(frames.started("B"));
-    if (failure) wire.publish(frames.failed("B failed"));
-    // The journal's retention starts at seq 1: a cursor below it is told what was skipped.
-    if (gap)
-      wire.onSubscribe = (cursor) =>
-        BigInt(cursor.lastSeq) < 1n
-          ? {
-              type: "gap",
-              requestId: cursor.requestId,
-              threadId: THREAD_ID,
-              cause: "replay_limit_exceeded",
-              fromSeq: cursor.lastSeq,
-              toSeq: "1",
-            }
-          : undefined;
-    const B = replyTurn("B", 2, failure ? { status: "error", error: "B failed" } : {});
-    // The first read, taken before the evidence, sees A open; every later read sees the chat idle.
-    wire.snapshot = (read) =>
-      read === 1
-        ? snapshotOf({
-            seq: 0,
-            turns: [replyTurn("A", 1, { status: "streaming" })],
-            record: { execution: { executionId: "exec-A", currentTurnId: "A" } },
-          })
-        : snapshotOf({ seq: wire.head, turns: [replyTurn("A", 1), B] });
-    const result = await tail("--until-idle", "--timeout", "1s", "--json");
-    expect(result.code).toBe(code);
-    const records = ndjson(result.stdout);
-    expect(records.some((record) => record.type === "gap")).toBe(gap);
-    expect(records.some((record) => record.type === "turn.failed")).toBe(failure);
-    expect(records.some((record) => record.type === "turn.started")).toBe(false);
-    expect(records.at(-1)).toMatchObject({
-      type: "result",
-      command: "thread.tail",
-      outcome,
-      reason,
-      idle: true,
-      turns: [
-        { turnId: "A", status: "complete" },
-        { turnId: "B", status: failure ? "error" : "complete" },
-      ],
-      // A replay gap leaves nothing fair to compare.
-      ...(gap ? { liveView: "not_observed" } : {}),
-    });
-  });
+  ])(
+    "counts $name with membership from the proving read",
+    async ({ gap, failure, code, outcome, reason }) => {
+      if (gap) wire.publish(frames.started("B"));
+      if (failure) wire.publish(frames.failed("B failed"));
+      // The journal's retention starts at seq 1: a cursor below it is told what was skipped.
+      if (gap)
+        wire.onSubscribe = (cursor) =>
+          BigInt(cursor.lastSeq) < 1n
+            ? {
+                type: "gap",
+                requestId: cursor.requestId,
+                threadId: THREAD_ID,
+                cause: "replay_limit_exceeded",
+                fromSeq: cursor.lastSeq,
+                toSeq: "1",
+              }
+            : undefined;
+      const B = replyTurn("B", 2, failure ? { status: "error", error: "B failed" } : {});
+      // The first read, taken before the evidence, sees A open; every later read sees the chat idle.
+      wire.snapshot = (read) =>
+        read === 1
+          ? snapshotOf({
+              seq: 0,
+              turns: [replyTurn("A", 1, { status: "streaming" })],
+              record: { execution: { executionId: "exec-A", currentTurnId: "A" } },
+            })
+          : snapshotOf({ seq: wire.head, turns: [replyTurn("A", 1), B] });
+      const result = await tail("--until-idle", "--timeout", "1s", "--json");
+      expect(result.code).toBe(code);
+      const records = ndjson(result.stdout);
+      expect(records.some((record) => record.type === "gap")).toBe(gap);
+      expect(records.some((record) => record.type === "turn.failed")).toBe(failure);
+      expect(records.some((record) => record.type === "turn.started")).toBe(false);
+      expect(records.at(-1)).toMatchObject({
+        type: "result",
+        command: "thread.tail",
+        outcome,
+        reason,
+        idle: true,
+        turns: [
+          { turnId: "A", status: "complete" },
+          { turnId: "B", status: failure ? "error" : "complete" },
+        ],
+        // A replay gap leaves nothing fair to compare.
+        ...(gap ? { liveView: "not_observed" } : {}),
+      });
+    },
+  );
 });

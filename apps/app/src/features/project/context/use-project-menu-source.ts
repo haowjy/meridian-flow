@@ -53,6 +53,8 @@ export type ProjectMenuSource = {
   /** The own area's tree and its opening trails. */
   own: {
     tree: TreeView | null;
+    /** Whether the own area takes changes. */
+    writable: boolean;
     /** Opens in the list holding the entry at `path`. */
     openAt(path: string): DrillNode[];
     /** Opens inside the folder at `folders` (names from the area root). */
@@ -249,6 +251,7 @@ export function useProjectMenuSource({
     areaWritable: (areaId) => areas.find((area) => area.id === areaId)?.writable ?? false,
     own: {
       tree: ownArea?.tree ?? null,
+      writable: ownArea?.writable ?? false,
       openAt: (path) => (ownArea ? trailAlong(ownArea, pathSegments(path).slice(0, -1)) : []),
       openInside: (folders) => (ownArea ? trailAlong(ownArea, folders) : []),
       crumbTrail: (path, depth) => crumbTrailFor(ownArea, path, depth),
@@ -261,13 +264,13 @@ export function useOwnAreaHeading(
   projectId: string,
   own: { scheme: ProjectContextTreeScheme; owner: ContextOwner } | null,
 ): string {
-  const { works } = useWorks(projectId);
+  const { works, nameOf } = useWorks(projectId);
   const workId = own?.owner.workId;
   const rootThreadId = own?.owner.rootThreadId;
   const work = workId ? works?.find((candidate) => candidate.id === workId) : undefined;
   // A document's owner names its own area: the Work, or the chat whose Scratch it is.
   const lineageTitle = useLineageTitle(projectId, rootThreadId ? { rootThreadId } : null);
-  const ownerName = work?.name ?? lineageTitle;
+  const ownerName = work ? nameOf(work) : lineageTitle;
   if (!own) return "";
   return ownerName ? t`${schemeLabel(own.scheme)} for ${ownerName}` : schemeLabel(own.scheme);
 }

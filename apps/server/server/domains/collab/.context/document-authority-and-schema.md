@@ -34,7 +34,7 @@ A head and its first checkpoint are written by one initialize-only primitive,
 proves the document is living (`requireLivingDocument`), writes nothing when any
 checkpoint or update exists, and otherwise calls `initializeHead` and installs
 the first checkpoint. Two kinds of caller reach it: the create's own
-transaction (live create, a Work's drafted create, bootstrap and seeds
+transaction (live create, an exceptional Work drafted create, bootstrap and seeds
 through `seedFromMarkdown`, or `ensureDocumentAuthority` for an empty create),
 and explicit repair of a living document whose authority is absent (the same
 `ensureDocumentAuthority`, seeded as an empty document: it reads first and
@@ -58,6 +58,12 @@ the seed checkpoint refuse a document that already has one. The state is encoded
 `encodeSeed` (the same insertion `seedFromMarkdown` makes) and installed through
 `installSeeds`, which derives nothing: the caller refreshes projections after its
 transaction commits.
+
+A drafted tree create classifies its documents under sorted mutation keys. Only an ID
+without a head, checkpoint, update, named draft or active draft uses `installSeeds`
+with empty state and a shared empty draft seed. Existing or occupied IDs follow the
+single-document authority and draft paths, so restored creates and pre-seeded content survive.
+The list key fences the branch lifecycle until commit; ownership and liveness still apply.
 
 `allocateAdmission` is the one live-write boundary (journal): a
 removal that won the mutation lock refuses every later frame, model write

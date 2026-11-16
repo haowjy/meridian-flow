@@ -1220,7 +1220,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({
           projectId: PROJECT_ID,
           chatThreadId: THREAD_ID,
-          name: "Uploads",
           slug: "uploads",
           scope: "chat",
         })
@@ -1282,7 +1281,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           rootThreadId: THREAD_ID,
           scope: "lineage",
-          name: "Scratch",
           slug: "scratch",
         })
         .returning();

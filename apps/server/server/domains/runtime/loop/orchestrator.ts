@@ -94,6 +94,7 @@ import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { AskService } from "../asks/ask-service.js";
 import type { ModelTokenRateSource } from "../costing/pricing.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
+import type { ConnectionsPort } from "../ports/connections.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { DocumentEvidence } from "../ports/document-evidence.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
@@ -273,9 +274,11 @@ export interface OrchestratorDeps {
     | "recordInvokedSkill"
     | "replaceThreadBinding"
   >;
-  agentCatalog: Pick<BoundAgentCatalog, "resolveSkill" | "refreshBinding">;
+  agentCatalog: Pick<BoundAgentCatalog, "resolveSkill" | "refreshBinding" | "followRemovedModel">;
   toolRegistry: ToolRegistry;
   workContext: WorkContextReader;
+  /** The writer's MCP connections: the prompt's catalogue and the tools' calls. Absent: none. */
+  connections?: ConnectionsPort;
   billingUsage: BillingUsagePolicy;
   rateSource: ModelTokenRateSource;
   childRunCoordinator: ChildRunCoordinator;
@@ -730,11 +733,19 @@ async function runDrainTurn(
             input.threadId,
             selection.activeLeafTurnId,
             async () => {
-              if (preflight)
+              if (preflight) {
                 await persistPreparedPromptBake(
                   preflight.assembled,
                   deps.repos.threads.bakeInitialPrompt.bind(deps.repos.threads),
                 );
+                // A rolled-back bake starts no check.
+                deps.afterCommit(() =>
+                  deps.connections?.saved(
+                    preflight.assembled.thread,
+                    preflight.assembled.bakedConnections,
+                  ),
+                );
+              }
               // A reply holds the run claim, so the chat's mode can't change under it.
               reservedTurn.writeMode = setupThread.aiWriteMode;
               return {
@@ -1165,6 +1176,7 @@ async function prepareReferenceReads(input: {
     model: lazyThreadModel({
       thread: input.thread,
       agentRevisions: input.deps.agentRevisions,
+      agentCatalog: input.deps.agentCatalog,
       threads: input.deps.repos.threads,
       toolRegistry: input.deps.toolRegistry,
       gateway: input.deps.gateway,
@@ -2176,13 +2188,20 @@ async function executeLoop({
               // If denied, we still persist a tool_result block (with isError: true)
               // so the model sees the rejection in the next turn's context build.
               if (!built.policy.has(call.name)) {
+                // A connection's tool called by its own name: say how to call it, not that it is missing.
+                const ownName = built.policy.has("mcp_call")
+                  ? await deps.connections?.ownNameRefusal(thread, call.name)
+                  : null;
                 const persistedRejection = await persistToolOutcome({
                   deps,
                   lease: input.lease,
                   threadId: input.threadId,
                   turn: currentTurn,
                   call,
-                  outcome: { kind: "permission_denied", reason: missingToolRefusal(call.name) },
+                  outcome: {
+                    kind: "permission_denied",
+                    reason: ownName ?? missingToolRefusal(call.name),
+                  },
                   blockSeq,
                 });
                 blockSeq = persistedRejection.nextBlockSeq;

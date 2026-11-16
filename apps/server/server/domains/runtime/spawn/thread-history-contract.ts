@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
 
 import { randomUUID } from "node:crypto";
@@ -48,6 +49,7 @@ export function defineThreadHistoryContract(
       composedSystemPrompt: "INITIAL PROMPT",
       bakedTools: [],
       bakedSkillSlugs: [],
+      bakedConnections: [],
       contentHash: "initial-hash",
     });
     const registry = createToolRegistry();
@@ -209,6 +211,7 @@ export function defineThreadHistoryContract(
 
       // A handoff starts its own lineage but may still read its direct source.
       const { thread: handoff } = await f.repos.threads.createDerivedPrimary({
+        overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
         id: randomUUID() as ThreadId,
         userId: f.thread.userId,
@@ -266,6 +269,7 @@ export function defineThreadHistoryContract(
         composedSystemPrompt: "NEW PROMPT",
         bakedTools: [],
         bakedSkillSlugs: [],
+        bakedConnections: [],
         contentHash: "new-hash",
       });
       const c = await f.repos.turns.create({
@@ -316,50 +320,52 @@ export function defineThreadHistoryContract(
       expect(output(await f.read({ expand: 3 }))).toContain("[3] user\n3.1 after");
     });
 
-    it.each([
-      "oldest_first",
-      "newest_first",
-    ] as const)("pages %s over hidden calls with no gaps and no repeats", async (order) => {
-      const f = await fixture();
-      for (let turn = 1; turn <= 12; turn++) {
-        const t = await f.turn();
-        await f.tool(t, "read", { path: `manuscript://a${turn}.md` }, "copy");
-        await f.text(t, `reply ${turn}`);
-        await f.tool(t, "grep", { pattern: "x" }, []);
-      }
-      const seen: number[] = [];
-      let hidden = 0;
-      let next: string | undefined;
-      do {
-        const page = structured(await f.read({ order, limit: 5, cursor: next }));
-        for (const turn of page.turns) {
-          seen.push(turn.number ?? 0);
-          hidden += turn.hiddenCount;
-          expect(turn.items).toEqual([expect.objectContaining({ text: `reply ${turn.number}` })]);
+    it.each(["oldest_first", "newest_first"] as const)(
+      "pages %s over hidden calls with no gaps and no repeats",
+      async (order) => {
+        const f = await fixture();
+        for (let turn = 1; turn <= 12; turn++) {
+          const t = await f.turn();
+          await f.tool(t, "read", { path: `manuscript://a${turn}.md` }, "copy");
+          await f.text(t, `reply ${turn}`);
+          await f.tool(t, "grep", { pattern: "x" }, []);
         }
-        next = page.next?.call.cursor;
-      } while (next);
-      expect([...seen].sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
-      expect(hidden).toBe(24);
-    });
-    it.each([
-      "oldest_first",
-      "newest_first",
-    ] as const)("CJK token-cap resumes inside a turn without gaps in %s", async (order) => {
-      const f = await fixture();
-      const t = await f.turn();
-      for (let i = 0; i < 20; i++) await f.text(t, `${i}: ${"龍".repeat(600)}`);
-      const seen: string[] = [];
-      let next: string | undefined;
-      do {
-        const text = output(await f.read({ order, cursor: next }));
-        expect(text).toContain("[1] assistant\n");
-        seen.push(...[...text.matchAll(/^(\d+): 龍/gmu)].map((m) => m[1] as string));
-        next = cursor(text);
-      } while (next);
-      expect(seen).toHaveLength(20);
-      expect(new Set(seen).size).toBe(20);
-    });
+        const seen: number[] = [];
+        let hidden = 0;
+        let next: string | undefined;
+        do {
+          const page = structured(await f.read({ order, limit: 5, cursor: next }));
+          for (const turn of page.turns) {
+            seen.push(turn.number ?? 0);
+            hidden += turn.hiddenCount;
+            expect(turn.items).toEqual([expect.objectContaining({ text: `reply ${turn.number}` })]);
+          }
+          next = page.next?.call.cursor;
+        } while (next);
+        expect([...seen].sort((a, b) => a - b)).toEqual(
+          Array.from({ length: 12 }, (_, i) => i + 1),
+        );
+        expect(hidden).toBe(24);
+      },
+    );
+    it.each(["oldest_first", "newest_first"] as const)(
+      "CJK token-cap resumes inside a turn without gaps in %s",
+      async (order) => {
+        const f = await fixture();
+        const t = await f.turn();
+        for (let i = 0; i < 20; i++) await f.text(t, `${i}: ${"龍".repeat(600)}`);
+        const seen: string[] = [];
+        let next: string | undefined;
+        do {
+          const text = output(await f.read({ order, cursor: next }));
+          expect(text).toContain("[1] assistant\n");
+          seen.push(...[...text.matchAll(/^(\d+): 龍/gmu)].map((m) => m[1] as string));
+          next = cursor(text);
+        } while (next);
+        expect(seen).toHaveLength(20);
+        expect(new Set(seen).size).toBe(20);
+      },
+    );
     it("shows a failed turn's kept text and calls but never its failure, and keeps Stop's marker", async () => {
       const f = await fixture();
       const failed = async (t: Turn, reason: string) => {
@@ -452,77 +458,78 @@ export function defineThreadHistoryContract(
       expect(expanded).toContain("SAVED LINE 25");
       expect(expanded).not.toContain("ARGUMENT SUMMARY");
     });
-    it.each([
-      { include: ["routine_calls", "tool_results"] },
-    ] as ThreadHistoryInput[])("stubs copies, and a write line carries edit evidence: %j", async (input) => {
-      const f = await fixture();
-      const t = await f.turn();
-      await f.tool(t, "read", { path: "manuscript://chapter.md" }, "COPY SENTINEL");
-      await f.tool(
-        t,
-        "grep",
-        { pattern: "Dragon" },
-        {
-          files: [
-            {
-              uri: "manuscript://chapter.md",
-              matches: [{ excerpt: "COPY SENTINEL", line: 1 }],
-              matchCount: 1,
-            },
-          ],
-          totalFiles: 1,
-          exact: true,
-        },
-      );
-      await f.tool(
-        t,
-        "write",
-        {
-          command: "replace",
-          path: "manuscript://chapter.md",
-          find: "old",
-          content: "EDIT SENTINEL",
-        },
-        "COPY SENTINEL",
-      );
-      const writer = await f.turn("user", null, "complete", "writer");
-      await f.block(writer, "text", {
-        type: "reference",
-        kind: "document",
-        documentId: "11111111-1111-4111-8111-111111111111",
-        uri: "manuscript://chapter.md",
-        text: "@chapter",
-        read: { result: "COPY SENTINEL", revision: "y2:reference-revision" },
-      } as JsonObject);
-      const result = await f.read(input);
-      const text = output(result);
-      expect(text).not.toContain("COPY SENTINEL");
-      expect(text).not.toContain("y2:");
-      expect(text).not.toContain('"revision"');
-      // The call line quotes the edit's inputs, so the page carries their evidence.
-      expect(text).toContain(
-        'write({"command":"replace","path":"manuscript://chapter.md","content":"EDIT SENTINEL","find":"old"})',
-      );
-      expect(text).not.toContain("edit record from");
-      expect(result).toMatchObject({
-        metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
-      });
-      expect(await f.read({ expand: 1 })).toMatchObject({
-        metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
-      });
-      if (input.include?.includes("tool_results")) {
-        expect(text).toContain("[grep passages omitted; read a file for its current text]");
-        expect(text).toContain("manuscript://chapter.md (1 match)");
-      }
-      for (const handle of ["1.1", "1.2", "1.3"])
-        expect(output(await f.read({ expand: handle }))).not.toContain("COPY SENTINEL");
-      const edit = await f.read({ expand: "1.3" });
-      expect(output(edit)).toContain("EDIT SENTINEL");
-      expect(output(edit)).toContain("edit record from");
-      expect(edit).toMatchObject({
-        metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
-      });
-    });
+    it.each([{ include: ["routine_calls", "tool_results"] }] as ThreadHistoryInput[])(
+      "stubs copies, and a write line carries edit evidence: %j",
+      async (input) => {
+        const f = await fixture();
+        const t = await f.turn();
+        await f.tool(t, "read", { path: "manuscript://chapter.md" }, "COPY SENTINEL");
+        await f.tool(
+          t,
+          "grep",
+          { pattern: "Dragon" },
+          {
+            files: [
+              {
+                uri: "manuscript://chapter.md",
+                matches: [{ excerpt: "COPY SENTINEL", line: 1 }],
+                matchCount: 1,
+              },
+            ],
+            totalFiles: 1,
+            exact: true,
+          },
+        );
+        await f.tool(
+          t,
+          "write",
+          {
+            command: "replace",
+            path: "manuscript://chapter.md",
+            find: "old",
+            content: "EDIT SENTINEL",
+          },
+          "COPY SENTINEL",
+        );
+        const writer = await f.turn("user", null, "complete", "writer");
+        await f.block(writer, "text", {
+          type: "reference",
+          kind: "document",
+          documentId: "11111111-1111-4111-8111-111111111111",
+          uri: "manuscript://chapter.md",
+          text: "@chapter",
+          read: { result: "COPY SENTINEL", revision: "y2:reference-revision" },
+        } as JsonObject);
+        const result = await f.read(input);
+        const text = output(result);
+        expect(text).not.toContain("COPY SENTINEL");
+        expect(text).not.toContain("y2:");
+        expect(text).not.toContain('"revision"');
+        // The call line quotes the edit's inputs, so the page carries their evidence.
+        expect(text).toContain(
+          'write({"command":"replace","path":"manuscript://chapter.md","content":"EDIT SENTINEL","find":"old"})',
+        );
+        expect(text).not.toContain("edit record from");
+        expect(result).toMatchObject({
+          metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
+        });
+        expect(await f.read({ expand: 1 })).toMatchObject({
+          metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
+        });
+        if (input.include?.includes("tool_results")) {
+          expect(text).toContain("[grep passages omitted; read a file for its current text]");
+          expect(text).toContain("manuscript://chapter.md (1 match)");
+        }
+        for (const handle of ["1.1", "1.2", "1.3"])
+          expect(output(await f.read({ expand: handle }))).not.toContain("COPY SENTINEL");
+        const edit = await f.read({ expand: "1.3" });
+        expect(output(edit)).toContain("EDIT SENTINEL");
+        expect(output(edit)).toContain("edit record from");
+        expect(edit).toMatchObject({
+          metadata: { documentRevisions: [{ documentId: "doc", revision: null }] },
+        });
+      },
+    );
     it("isError write output is verbatim and quoted edits clear at compaction, empty evidence stays", async () => {
       const quiet = await fixture();
       await quiet.text(await quiet.turn(), "no edits here");

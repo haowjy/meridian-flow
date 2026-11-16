@@ -1,7 +1,20 @@
-# Frozen text Apply
+# Text Apply
 
-[Frozen Apply clicks][frozen] and [later action wins][later] hold the click contract.
+[What a click carries][frozen] and [later action wins][later] hold the click contract.
 `adapters/drizzle-apply-click.ts` owns the atomic storage operation.
+
+A text cut (`ApplyTextCut`) is frozen or whole. A frozen cut is the writer's click on an open
+room: snapshot, `baseViewDelta`, `groupIds`; the server refuses `unsynced` when its replica
+lacks the snapshot, and `malformed` for a group the cut's projection doesn't have. A whole cut
+(`{draftId, whole: true}`) is what a tab with no room open sends (Changes rows, folders, Apply
+all): `compileClick` cuts at the replica `loadBase` returned, with an empty `baseViewDelta`, and
+takes every group of that projection. A whole cut with no group compiles to an empty click; the
+adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
+the Un-Apply records are the same for both.
+
+The projection job (`domain/draft-projection.ts`) stores `text_changes`, the review groups of
+the draft against its base, with `has_effect`; the owner draft list carries it as the row's
+count, so Changes needs no room to say "N text changes".
 
 `domain/apply-click.ts` keeps the schema with the frozen optimistic base and patched
 blocks: independently built schemas have distinct node and mark types, which the merge
@@ -38,6 +51,17 @@ turned away before the transaction stores nothing: a malformed click (a bad snap
 account that sent it; `POST /api/commands/:id/resolve` (`lib/command-route.ts`) waits on a held key and
 answers the stored outcome, or stores `never` where there is no row (a late request under the id then
 answers `command_conflict` on an old-shape route).
+
+A resend of an Apply or Un-Apply that arrives while the first request is still committing (an
+Apply all of a few hundred documents outlasts the client's 10 s timeout) waits on that request's
+claim before resolving or compiling anything (`awaitCommand` in `shared/commands/drizzle-commands.ts`):
+an uncommitted claim can't be read, so an insert on its key waits on it and is rolled back. It
+waits 5 s, under the client's timeout, and answers the stored outcome, or `running` while the
+first still holds the claim; the client sends again on `running`. Without it each resend compiled
+every document again before finding the claim taken.
+While it runs, a slow Apply holds two pooled connections: the first request's, and one resend's
+parked for up to 5 s. The pool is 10 per instance, so about five slow Apply alls at once would
+starve every other request.
 
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta

@@ -117,8 +117,10 @@ binding removes it and shows a live repair notice with the recovered prose.
 ## Frozen Apply FIFO
 
 Each document has one FIFO and one in-flight command; documents are independent.
-Work Apply all freezes one click per text draft, each in its own FIFO, and sends them as one
-command (`POST …/branches/:branchId/apply`) once every member is its queue's head.
+Work Apply all makes one click per text draft, each in its own FIFO, and sends them as one
+command (`POST …/branches/:branchId/apply`) once every member is its queue's head. A draft with
+its room open (an editor on it) sends a frozen cut; every other draft sends a whole cut the
+server resolves on receipt.
 
 | Controlled schedule | Required result |
 |---|---|
@@ -159,10 +161,12 @@ command (`POST …/branches/:branchId/apply`) once every member is its queue's h
 ## Attribution and provenance
 
 Use a mock-model write to an existing manuscript draft and open it from Work
-Files. Capture the `draft/provenance` request: its body is exactly `roomName`
-and `writerRanges`; the response supplies the snapshot and writers needed to
-cover the visible write. A wrong Work or file cannot return evidence, and a
-malformed room or clock range returns 400.
+Files. Capture the `drafts/provenance` request: its body is the `owner` and
+the `drafts` (`draftId`, `documentId`) whose rooms asked; the response supplies,
+by draft id, the snapshot and writers needed to cover the visible write. A draft
+of another owner or document is left out of the answer, and a malformed body
+returns 400. A review of many drafts sends a few of these requests, not one per
+row.
 
 Type locally inside and beside a change: “You” appears without one provenance
 request per keystroke. A new unresolved remote range requests evidence; an
@@ -220,8 +224,16 @@ Open a draft with two separated changes and a move.
    settle in order, typing remains enabled, and the review does not flash back
    before its authoritative room update.
 6. Refuse Un-Apply. The restored change shows the error and Retry with the same
-   command id. Chat-side, tree-only, and delete-short-circuit Apply do not enter
-   editor history.
+   command id, and the next Ctrl+Z tries the Un-Apply again rather than undoing
+   the typing under it. Tree-only and delete-short-circuit Apply do not enter
+   editor history; a chat or sidebar Apply does (see `draft-review.md`).
+7. Apply a chat's change, block `**/unapply` and press Ctrl+Z: the next Ctrl+Z
+   sends the Un-Apply again. Apply all over two open tabs, Ctrl+Z and
+   Ctrl+Shift+Z in one, then Ctrl+Z in the other: it takes the re-applied Apply
+   back.
+8. Apply all over two open tabs, type in the second, then make the Un-Apply fail
+   from the first. Ctrl+Z in the second undoes the typing first, then sends the
+   Un-Apply. Undo typing in the second before the failure: its Redo stays.
 
 After each case, inspect the draft room and live document with `./mf`. Reversed
 Apply records are absent, skipped records remain, and replaying either command

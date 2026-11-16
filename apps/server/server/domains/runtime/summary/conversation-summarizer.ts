@@ -1,6 +1,7 @@
 /** Warm prefix reuse and rolling cold summaries, with every attempted call returned for settlement. */
 
-import type { Usage } from "@meridian/contracts/runtime";
+import type { ThreadId, Usage } from "@meridian/contracts/runtime";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import type {
   Gateway,
   GenerateRequest,
@@ -9,11 +10,13 @@ import type {
 } from "@meridian-flow/runtime/gateway";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
+import type { ThreadRepository } from "../../threads/ports/repositories.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.js";
 import { estimateRequestTokens, outputReserveTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
+import { threadModelId } from "../loop/turn-context-assembly.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type {
   ConversationSummarizer,
@@ -29,6 +32,7 @@ export interface ConversationSummarizerDeps {
   gateway: Gateway;
   eventSink: EventSink;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
+  threads: Pick<ThreadRepository, "findById">;
   prefixCacheStateFor(input: PrefixCacheStateRequest): Promise<PrefixCacheState>;
   modelRequestDebug: ModelRequestDebugStore;
   toolRegistry: ToolRegistry;
@@ -151,13 +155,18 @@ export function createConversationSummarizer(
         input.signal.throwIfAborted();
         const models = gateway.listModels();
         const cheapModel = models.find((model) => model.id === config.model);
-        const threadModelId =
+        const threadModelName =
           input.requestInHand?.model ??
           (!input.requestInHand && cheapModel
             ? cheapModel.id
-            : ((await deps.agentRevisions.readThreadBinding(input.source.threadId))?.configuration
-                .model ?? gateway.getDefaultModel()));
-        const threadModel = models.find((model) => model.id === threadModelId);
+            : threadModelId(
+                gateway,
+                (await deps.threads.findById(input.source.threadId as ThreadId))?.overrides ??
+                  NO_OVERRIDES,
+                (await deps.agentRevisions.readThreadBinding(input.source.threadId))?.configuration
+                  .model ?? gateway.getDefaultModel(),
+              ));
+        const threadModel = models.find((model) => model.id === threadModelName);
         if (!threadModel) throw new Error("Summary thread model is unavailable");
         const prediction: PrefixCacheState =
           input.requestInHand && !input.knownTooLarge

@@ -303,11 +303,14 @@ export async function prepareCompactionSuccessor(args: {
       turns: allTurns,
       blocks: allBlocks,
       agentRevisions: successorDeps.agentRevisions,
+      agentCatalog: deps.agentCatalog,
+      gateway: successorDeps.gateway,
       threads: deps.repos.threads,
       toolRegistry: deps.toolRegistry,
       baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
       promptBakes: deps.repos.promptBakes,
       workContext: deps.workContext,
+      connections: deps.connections,
     };
     const agentContext = await resolveAgentThreadTurnContext(contextInput);
     const composition = await composeLivePromptBake(contextInput, agentContext);
@@ -508,6 +511,9 @@ export async function completeCompactionCurrent(input: {
         afterEvents: async () => {
           const thread = await deps.repos.threads.findById(threadId);
           if (!thread) throw new Error("Compacted thread disappeared");
+          deps.afterCommit(() =>
+            deps.connections?.saved(thread, prepared.composition.bakeContent.bakedConnections),
+          );
           await recordReferenceEvidence(
             deps,
             { projectId: thread.projectId as ProjectId, threadId, turnId: placeholder.id },

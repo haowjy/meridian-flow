@@ -11,6 +11,7 @@ export function createTestDraftCoordinator(
   db: Database,
   deps: {
     close: DraftStoreDeps["close"];
+    treeLists: DraftStoreDeps["treeLists"];
     workProjection: DraftStoreDeps["workProjection"];
     branches: ReturnType<typeof createDrizzleBranchStore>;
   },

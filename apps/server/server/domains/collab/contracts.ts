@@ -517,6 +517,8 @@ export type DraftReviewApi = {
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
+  /** `lookupCommand` for a resend: waits a while on a first request still running under the id. */
+  awaitCommand(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
   discardItem(input: {
     /** The item as the route resolved it; a document the branch holds nothing on has no row to resolve. */
     item: Pick<DraftReviewItem, "branchId" | "itemKey" | "documentId" | "origin">;

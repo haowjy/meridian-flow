@@ -17,7 +17,6 @@ import {
 import { and, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
-import { processDetachedWork } from "../../shared/detached-work.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { deleteAt, entryAt, moveTo } from "../../test-support/entry-ref.js";
 import { createNoopEventSink } from "../observability/index.js";
@@ -50,11 +49,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
     await db.insert(contextSources).values([
       {
         projectId,
-        name: "Manuscript",
         slug: "manuscript",
         scope: "project",
       },
-      { workId, name: "Scratch", slug: "scratch", scope: "work" },
+      { workId, slug: "scratch", scope: "work" },
     ]);
     const chatId = randomUUID();
     await db.insert(threads).values({
@@ -65,7 +63,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       ref: "c1",
     });
     const ports = await createProductionAppPorts({
-      backgroundTasks: processDetachedWork,
       db,
       eventSink: createNoopEventSink(),
       environment: { FLOW_OPENAI_API_KEY: "sk-test-ahead-arrivals" },

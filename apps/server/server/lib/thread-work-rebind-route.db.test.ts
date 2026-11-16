@@ -68,127 +68,127 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    it.each([
-      "writer",
-      "rebind",
-    ] as const)("commits concurrent writer enqueue and Work rebind with %s first", async (first) => {
-      const { createDrizzleEventJournalReader } = await import("../domains/threads/index.js");
-      const { persistWriterEnqueue } = await import("../domains/runtime/loop/writer-enqueue.js");
-      const { createDrizzleTopPrimaryChatResolver } = await import(
-        "../domains/threads/adapters/drizzle/top-primary-chat.js"
-      );
-      const { createWorkContextReader } = await import("../domains/runtime/loop/work-context.js");
-      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
-      const untouchedAt = new Date("2000-01-01T00:00:00.000Z");
-      const schema = await import("@meridian/database/schema");
-      await db.update(schema.works).set({ updatedAt: untouchedAt });
-      const delivery = createTestDrizzleDelivery(db, {
-        workContext: createWorkContextReader({
-          threads: threads.threads,
-          threadWorks: threads.threadWorks,
-          works,
-          topPrimaryChats: createDrizzleTopPrimaryChatResolver(db),
-          readChainPermission: async () => "edit" as const,
-        }),
-      });
-      const control = postgres(DATABASE_URL, { max: 1 });
-      const key = 748210499;
-      const table = first === "writer" ? "turns" : "thread_works";
-      const event = first === "writer" ? "INSERT" : "UPDATE";
-      await control.unsafe(`
+    it.each(["writer", "rebind"] as const)(
+      "commits concurrent writer enqueue and Work rebind with %s first",
+      async (first) => {
+        const { createDrizzleEventJournalReader } = await import("../domains/threads/index.js");
+        const { persistWriterEnqueue } = await import("../domains/runtime/loop/writer-enqueue.js");
+        const { createDrizzleTopPrimaryChatResolver } = await import(
+          "../domains/threads/adapters/drizzle/top-primary-chat.js"
+        );
+        const { createWorkContextReader } = await import("../domains/runtime/loop/work-context.js");
+        await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+        const untouchedAt = new Date("2000-01-01T00:00:00.000Z");
+        const schema = await import("@meridian/database/schema");
+        await db.update(schema.works).set({ updatedAt: untouchedAt });
+        const delivery = createTestDrizzleDelivery(db, {
+          workContext: createWorkContextReader({
+            threads: threads.threads,
+            threadWorks: threads.threadWorks,
+            works,
+            topPrimaryChats: createDrizzleTopPrimaryChatResolver(db),
+            readChainPermission: async () => "edit" as const,
+          }),
+        });
+        const control = postgres(DATABASE_URL, { max: 1 });
+        const key = 748210499;
+        const table = first === "writer" ? "turns" : "thread_works";
+        const event = first === "writer" ? "INSERT" : "UPDATE";
+        await control.unsafe(`
           CREATE FUNCTION test_pause_send_rebind() RETURNS trigger LANGUAGE plpgsql AS $$
           BEGIN PERFORM pg_advisory_xact_lock(${key}); RETURN NEW; END; $$;
           CREATE TRIGGER test_pause_send_rebind BEFORE ${event} ON ${table}
           FOR EACH ROW EXECUTE FUNCTION test_pause_send_rebind();
         `);
-      await control`SELECT pg_advisory_lock(${key})`;
-      async function waitForLock(wait: string) {
-        await waitForPostgresLock(`PostgreSQL ${wait} lock`, async () => {
-          const rows = await control`
+        await control`SELECT pg_advisory_lock(${key})`;
+        async function waitForLock(wait: string) {
+          await waitForPostgresLock(`PostgreSQL ${wait} lock`, async () => {
+            const rows = await control`
               SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
               AND wait_event = ${wait} AND pid <> pg_backend_pid()
             `;
-          return rows.length ? true : undefined;
-        });
-      }
-      const turnId = crypto.randomUUID();
-      const writer = () =>
-        persistWriterEnqueue({
-          persistence: { repos: threads, eventWriter: createQuietDrizzleJournalWriter(db) },
-          hub: createDrizzleEventJournalReader(db),
-          threadId: THREAD_ID,
-          userTurnId: turnId,
-          userBlocks: [{ type: "text", text: "Keep writing" }],
-          delivery,
-          draft: {
-            id: turnId,
+            return rows.length ? true : undefined;
+          });
+        }
+        const turnId = crypto.randomUUID();
+        const writer = () =>
+          persistWriterEnqueue({
+            persistence: { repos: threads, eventWriter: createQuietDrizzleJournalWriter(db) },
+            hub: createDrizzleEventJournalReader(db),
             threadId: THREAD_ID,
-            intent: "message",
-            provenance: { kind: "writer", actorId: USER_ID },
-            body: { kind: "text", text: "Keep writing" },
-            idempotencyKey: turnId,
-          },
-          settle: async () => "accepted",
-        });
-      const rebind = () =>
-        handleRebindThreadWorkRequest(
-          {
-            threads: threads.threads,
-            threadWorks: threads.threadWorks,
-            works,
-            notices,
-            workContextNotices: {
-              threadChanged: delivery.threadChanged,
-              materializeIdle: async () => "pending",
+            userTurnId: turnId,
+            userBlocks: [{ type: "text", text: "Keep writing" }],
+            delivery,
+            draft: {
+              id: turnId,
+              threadId: THREAD_ID,
+              intent: "message",
+              provenance: { kind: "writer", actorId: USER_ID },
+              body: { kind: "text", text: "Keep writing" },
+              idempotencyKey: turnId,
             },
-            transaction: threads.transaction,
-            runClaim: createDrizzleRunClaim(db),
-          },
-          { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
-        );
-      const pending: Promise<unknown>[] = [];
-      try {
-        pending.push(first === "writer" ? writer() : rebind());
-        await waitForLock("advisory");
-        pending.push(first === "writer" ? rebind() : writer());
-        const results = Promise.allSettled(pending);
-        await waitForLock("transactionid");
-        await control`SELECT pg_advisory_unlock(${key})`;
-        expect(await results).toEqual([
-          expect.objectContaining({ status: "fulfilled" }),
-          expect.objectContaining({ status: "fulfilled" }),
-        ]);
-        expect(await threads.threadWorks.listByThread(THREAD_ID)).toEqual(
-          expect.arrayContaining([
-            { workId: WORK_ID, isPrimary: false },
-            { workId: TARGET_WORK_ID, isPrimary: true },
-          ]),
-        );
-        const touched = await works.findById(first === "writer" ? WORK_ID : TARGET_WORK_ID);
-        const untouched = await works.findById(first === "writer" ? TARGET_WORK_ID : WORK_ID);
-        expect(touched?.updatedAt).not.toBe(untouchedAt.toISOString());
-        expect(untouched?.updatedAt).toBe(untouchedAt.toISOString());
-        expect(await threads.turns.findById(turnId)).toMatchObject({
-          role: "user",
-          status: "complete",
-        });
-        expect(await threads.threads.findById(THREAD_ID)).toMatchObject({
-          activeLeafTurnId: turnId,
-        });
-        expect(await delivery.selectPending(THREAD_ID)).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ id: turnId, body: { kind: "text", text: "Keep writing" } }),
-          ]),
-        );
-      } finally {
-        await control`SELECT pg_advisory_unlock(${key})`;
-        await Promise.allSettled(pending);
-        await control.unsafe(
-          `DROP TRIGGER test_pause_send_rebind ON ${table}; DROP FUNCTION test_pause_send_rebind();`,
-        );
-        await control.end();
-      }
-    });
+            settle: async () => "accepted",
+          });
+        const rebind = () =>
+          handleRebindThreadWorkRequest(
+            {
+              threads: threads.threads,
+              threadWorks: threads.threadWorks,
+              works,
+              notices,
+              workContextNotices: {
+                threadChanged: delivery.threadChanged,
+                materializeIdle: async () => "pending",
+              },
+              transaction: threads.transaction,
+              runClaim: createDrizzleRunClaim(db),
+            },
+            { threadId: THREAD_ID, userId: USER_ID, body: { workId: TARGET_WORK_ID } },
+          );
+        const pending: Promise<unknown>[] = [];
+        try {
+          pending.push(first === "writer" ? writer() : rebind());
+          await waitForLock("advisory");
+          pending.push(first === "writer" ? rebind() : writer());
+          const results = Promise.allSettled(pending);
+          await waitForLock("transactionid");
+          await control`SELECT pg_advisory_unlock(${key})`;
+          expect(await results).toEqual([
+            expect.objectContaining({ status: "fulfilled" }),
+            expect.objectContaining({ status: "fulfilled" }),
+          ]);
+          expect(await threads.threadWorks.listByThread(THREAD_ID)).toEqual(
+            expect.arrayContaining([
+              { workId: WORK_ID, isPrimary: false },
+              { workId: TARGET_WORK_ID, isPrimary: true },
+            ]),
+          );
+          const touched = await works.findById(first === "writer" ? WORK_ID : TARGET_WORK_ID);
+          const untouched = await works.findById(first === "writer" ? TARGET_WORK_ID : WORK_ID);
+          expect(touched?.updatedAt).not.toBe(untouchedAt.toISOString());
+          expect(untouched?.updatedAt).toBe(untouchedAt.toISOString());
+          expect(await threads.turns.findById(turnId)).toMatchObject({
+            role: "user",
+            status: "complete",
+          });
+          expect(await threads.threads.findById(THREAD_ID)).toMatchObject({
+            activeLeafTurnId: turnId,
+          });
+          expect(await delivery.selectPending(THREAD_ID)).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ id: turnId, body: { kind: "text", text: "Keep writing" } }),
+            ]),
+          );
+        } finally {
+          await control`SELECT pg_advisory_unlock(${key})`;
+          await Promise.allSettled(pending);
+          await control.unsafe(
+            `DROP TRIGGER test_pause_send_rebind ON ${table}; DROP FUNCTION test_pause_send_rebind();`,
+          );
+          await control.end();
+        }
+      },
+    );
 
     it("excludes a writer rebind while another server instance owns the run", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);

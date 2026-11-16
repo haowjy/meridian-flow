@@ -66,7 +66,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     await db.insert(contextSources).values({
       id: SOURCE,
       projectId: PROJECT,
-      name: "Manuscript",
       slug: "manuscript",
       scope: "project",
     });
@@ -165,6 +164,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     const discard = createDrizzleBranchDiscard(db, {
       coordinator: createTestDraftCoordinator(db, {
         close: draftClose,
+        treeLists,
         workProjection,
         branches: branchStore,
       }),

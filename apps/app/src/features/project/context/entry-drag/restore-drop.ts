@@ -10,7 +10,7 @@ import type { TreeDestination } from "@/core/project-tree/tree-view";
 import { schemeLabel } from "../context-schemes";
 import type { TreeDropTarget } from "../tree-drop/tree-drop";
 import { entrySystem } from "./entry";
-import { indexAt, type PlacementView } from "./move-plan";
+import type { PlacementView } from "./move-plan";
 
 export type RestorePlan =
   | { kind: "none" }
@@ -54,13 +54,12 @@ export function planRestore(
   if (!position)
     return { kind: "ready", entries, destination: { parentId: into }, destinationName };
   if (!("siblingId" in position)) return { kind: "none" };
-  const index = indexAt(area, into, position, new Set());
   const anchor = area.tree.children(into).find((child) => child.entryId === position.siblingId);
-  if (index === null || !anchor) return { kind: "none" };
+  if (!anchor) return { kind: "none" };
   return {
     kind: "ready",
     entries,
-    destination: { parentId: into, index },
+    destination: { parentId: into, position },
     destinationName,
     beside: { kind: position.kind, name: anchor.name },
   };

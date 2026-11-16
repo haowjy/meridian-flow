@@ -10,6 +10,8 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import type { ReasoningChoice } from "@meridian/contracts/agents";
+import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type {
   CurrentToolCall,
   JsonValue,
@@ -83,6 +85,10 @@ export const threads = pgTable(
     nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
     // The chat's write mode: copied at creation, changed only by an applied switch.
     aiWriteMode: text("ai_write_mode").$type<AiWriteMode>().notNull().default("direct"),
+    /** The model this chat runs on instead of its Agent's; survives binding refreshes. Not checked against the gateway: an unlisted id falls back at turn time. */
+    modelOverride: text("model_override"),
+    /** The reasoning setting this chat runs at instead of its Agent's, as a wire `ReasoningChoice`. A level the model doesn't accept falls back at turn time. */
+    effortOverride: text("effort_override").$type<ReasoningChoice>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -448,6 +454,10 @@ export const promptBakes = pgTable(
     composedSystemPrompt: text("composed_system_prompt").notNull(),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[]>().notNull(),
     bakedTools: jsonb("baked_tools").notNull(),
+    bakedConnections: jsonb("baked_connections")
+      .$type<McpBakedConnection[]>()
+      .notNull()
+      .default([]),
     contentHash: text("content_hash").notNull(),
     createdAt: createdAt(),
   },

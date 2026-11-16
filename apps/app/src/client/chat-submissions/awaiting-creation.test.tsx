@@ -46,6 +46,7 @@ it("reads creation synchronously on reload and updates on local writes, storage 
       agentSelection: { slug: "agent", definitionRevisionId: "rev" },
       agentName: "Agent",
       agentSlug: "agent",
+      overrides: { model: null, effort: null },
     },
   };
   recordChatSubmission("awaiting-account", entry);

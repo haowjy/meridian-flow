@@ -108,6 +108,10 @@ msgstr ""
 msgid "“{name}” doesn't exist yet"
 msgstr ""
 
+#: src/features/connections/AddConnectionForm.tsx
+msgid "(if the server asks for one)"
+msgstr ""
+
 #. placeholder {0}: held.length
 #: src/features/agents/AgentSavesReceipt.tsx
 #~ msgid "{0, plural, one {{label}: # edit not in use} other {{label}: # edits not in use}}"
@@ -129,6 +133,8 @@ msgid "{0, plural, one {# document, deleted from {location}} other {# documents,
 msgstr ""
 
 #. placeholder {0}: counted(false)
+#. placeholder {0}: dock.files.length
+#: src/features/chat/DraftDock.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
 msgstr ""
@@ -334,6 +340,12 @@ msgstr ""
 msgid "{0} is text, so it was added as a document in assets. The chip links to it."
 msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 
+#. placeholder {0}: modelName(models, runsOn)
+#. placeholder {1}: agent.model ? modelName(models, agent.model) : t`the default model`
+#: src/features/agents/AgentPicker.tsx
+msgid "{0} isn't available now, so replies use {1}."
+msgstr ""
+
 #. placeholder {0}: finding.file
 #. placeholder {1}: finding.message
 #: src/features/agents/PackageSave.tsx
@@ -343,6 +355,16 @@ msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0} items deleted."
+msgstr ""
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more in this Work"
+msgstr ""
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more to review"
 msgstr ""
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
@@ -465,10 +487,26 @@ msgstr ""
 msgid "{changes, plural, one {Discard this chat's change to {name}} other {Discard this chat's # changes to {name}}}"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "{count, plural, =0 {Read connection tools} one {Read how to use # connection tool} other {Read how to use # connection tools}}"
+msgstr ""
+
+#: src/features/chat/script-copy.ts
+msgid "{count, plural, =0 {Script failed before its first call:} one {Script failed after # call:} other {Script failed after # calls:}}"
+msgstr ""
+
+#: src/features/chat/script-copy.ts
+msgid "{count, plural, =0 {Script stopped before its first call:} one {Script stopped after # call:} other {Script stopped after # calls:}}"
+msgstr ""
+
 #. placeholder {0}: <> {name} can't be saved: {count} problem </>
 #. placeholder {1}: <> {name} can't be saved: {count} problems </>
 #: src/features/agents/PackageSave.tsx
 msgid "{count, plural, one {{0}} other {{1}}}"
+msgstr ""
+
+#: src/features/chat/script-copy.ts
+msgid "{count, plural, one {# call} other {# calls}}"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
@@ -539,9 +577,13 @@ msgstr "{count, plural, other {# 个问题：}}"
 msgid "{count, plural, one {# text change} other {# text changes}}"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
-msgid "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
+#: src/features/connections/connection-status.ts
+msgid "{count, plural, one {# tool} other {# tools}}"
 msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+#~ msgid "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{count, plural, one {Applied before your Discard reached it, so it stays applied.} other {# changes were applied before your Discard reached them, so they stay applied.}}"
@@ -618,6 +660,10 @@ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{documents, plural, one {At least # document} other {At least # documents}}"
+msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{effortLabel} reasoning"
 msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
@@ -774,8 +820,16 @@ msgstr "{name}（@{handle}）"
 msgid "{name} (in the trash)"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "{name} answers now. Ask the AI to try again."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} can't be changed."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "{name} couldn't be reached."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -783,12 +837,20 @@ msgid "{name} deleted {count} documents ({names})."
 msgstr "{name} 删除了 {count} 份文档（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {title} from the manuscript. Applying brings it back."
+msgid "{name} deleted {title} from {area}. Applying brings it back."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "{name} deleted {title} from the manuscript. Applying brings it back."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted {title}."
 msgstr "{name} 删除了{title}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted {title}. Applying brings it back."
+msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
@@ -822,6 +884,18 @@ msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
 msgid "{name} is unavailable"
 msgstr ""
 
+#: src/features/chat/tool-failure.tsx
+msgid "{name} needs a valid token."
+msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{name} on {runsAt}"
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "{name} refused the request."
+msgstr ""
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr ""
@@ -840,6 +914,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was discarded from the draft before this change could be made."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "{name} was removed from your connections."
 msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
@@ -866,6 +944,11 @@ msgstr ""
 msgid "{name}, renamed"
 msgstr ""
 
+#. placeholder {0}: modelLabel ?? ""
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{name}; {0} isn't available, so it runs on its default model"
+msgstr ""
+
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
 msgstr ""
@@ -889,11 +972,27 @@ msgid "{named} and {more} more"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} are back in the manuscript."
+msgid "{names} are back in {area}."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} is back in the manuscript."
+#~ msgid "{names} are back in the manuscript."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} are back."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} is back in {area}."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "{names} is back in the manuscript."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} is back."
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
@@ -990,8 +1089,12 @@ msgid "{title} restored"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted from the manuscript. Applying brings it back."
+msgid "{title} was deleted from {area}. Applying brings it back."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "{title} was deleted from the manuscript. Applying brings it back."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #~ msgid "{title} was deleted with the Work {name}."
@@ -999,6 +1102,10 @@ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was deleted. Applying brings it back."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -1084,6 +1191,19 @@ msgstr ""
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
 msgstr "<0.1 秒"
+
+#: src/features/connections/NewChatConnectionMarks.tsx
+msgid "<0>{name}</0> can't be reached."
+msgstr ""
+
+#: src/features/connections/NewChatConnectionMarks.tsx
+msgid "<0>{name}</0> has no tools chosen, so this chat won't have it."
+msgstr ""
+
+#. placeholder {0}: standing.reason
+#: src/features/connections/NewChatConnectionMarks.tsx
+msgid "<0>{name}</0>: {0}"
+msgstr ""
 
 #: src/features/chat/DeletedChatCard.tsx
 msgid "<0>{title}</0> was deleted."
@@ -1240,10 +1360,11 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkActionsMenu.tsx
-msgid "Actions for {0}"
-msgstr ""
+#~ msgid "Actions for {0}"
+#~ msgstr ""
 
 #: src/components/ui/list-row.tsx
+#: src/features/project/work/WorkActionsMenu.tsx
 msgid "Actions for {name}"
 msgstr ""
 
@@ -1263,16 +1384,33 @@ msgstr ""
 msgid "Actually…"
 msgstr "其实…"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Adaptive"
+msgstr ""
+
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
+msgstr ""
+
+#: src/features/connections/AddConnectionForm.tsx
+msgid "Add a connection"
 msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Add a goal for this Work"
 msgstr ""
 
+#: src/features/connections/connection-status.ts
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Add a token"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Add column"
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Add connection"
 msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -1316,6 +1454,11 @@ msgstr ""
 msgid "Adding {name} to {area}"
 msgstr ""
 
+#: src/features/connections/AddConnectionForm.tsx
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Address"
+msgstr ""
+
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent"
 msgstr ""
@@ -1338,9 +1481,14 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Agent: {name}"
+#~ msgid "Agent: {name}"
+#~ msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Agent: {value}"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Agents"
@@ -1378,6 +1526,10 @@ msgstr ""
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr ""
 
+#: src/features/connections/AddConnectionForm.tsx
+msgid "All my projects"
+msgstr ""
+
 #: src/features/project/shell/MainTabStrip.tsx
 msgid "All open chats"
 msgstr ""
@@ -1409,6 +1561,10 @@ msgstr "已允许"
 #: src/features/chat/ask/AskReceipt.tsx
 msgid "Allowed always"
 msgstr "已始终允许"
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Already applied"
+msgstr ""
 
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryDestinationPicker.tsx
@@ -1485,19 +1641,35 @@ msgid "Applied first"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied just now: its changes are in the manuscript."
+msgid "Applied just now: its changes are in {area}."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "Applied just now: its changes are in the manuscript."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied just now."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Applied to the manuscript"
-msgstr ""
+#~ msgid "Applied to the manuscript"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied with the others: {from} → {to}."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied. It is back in the manuscript."
+msgid "Applied. It is back in {area}."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "Applied. It is back in the manuscript."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied. It is back."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
@@ -1553,11 +1725,27 @@ msgid "Applying"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}, which was deleted from the manuscript."
+msgid "Applying brings back {names}, which was deleted from {area}."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}, which were deleted from the manuscript."
+#~ msgid "Applying brings back {names}, which was deleted from the manuscript."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying brings back {names}, which was deleted."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying brings back {names}, which were deleted from {area}."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "Applying brings back {names}, which were deleted from the manuscript."
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying brings back {names}, which were deleted."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
@@ -1576,6 +1764,10 @@ msgstr ""
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.archived"
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Asking the server for its tools…"
 msgstr ""
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
@@ -1624,8 +1816,12 @@ msgid "Back from {0}"
 msgstr ""
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Back in the manuscript"
+msgid "Back in {area}"
 msgstr ""
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+#~ msgid "Back in the manuscript"
+#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Back online (all changes saved)"
@@ -1727,8 +1923,27 @@ msgid "Cache resets"
 msgstr "缓存重置"
 
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/chat/mcp-renderers.tsx
 msgid "Calls"
 msgstr "调用"
+
+#: src/features/connections/ConnectionRow.tsx
+msgid "Can't be reached"
+msgstr ""
+
+#. placeholder {0}: standing.reason
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Can't be reached. {0}"
+msgstr ""
+
+#. placeholder {0}: standing.reason
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Can't be reached. {0} Tried {checked}."
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Can't be used right now."
+msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "Can't copy these"
@@ -1836,6 +2051,9 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/connections/AddConnectionForm.tsx
+#: src/features/connections/ConnectionPanel.tsx
+#: src/features/connections/ToolChooser.tsx
 #: src/features/creation/CreationDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/export/ExportProjectDialog.tsx
@@ -1885,6 +2103,10 @@ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Change to {name} discarded."
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Change tools"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -1995,7 +2217,7 @@ msgstr ""
 msgid "Changing work"
 msgstr ""
 
-#. placeholder {0}: workDisplayName(target)
+#. placeholder {0}: naming.current(target)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Changing work to {0}"
 msgstr ""
@@ -2046,12 +2268,28 @@ msgstr ""
 msgid "Checked Work"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Checking {name}…"
+msgstr ""
+
+#: src/features/connections/NewChatConnectionMarks.tsx
+msgid "Checking <0>{name}</0>…"
+msgstr ""
+
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Checking links…"
 msgstr ""
 
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Checking that it answers…"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
+msgstr ""
+
+#: src/features/connections/ConnectionRow.tsx
+msgid "Checking…"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2080,11 +2318,24 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Choose agent, currently {name}"
+#~ msgid "Choose agent, currently {name}"
+#~ msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose agent, currently {value}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "Choose tabs"
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Choose the tools the AI can use"
+msgstr ""
+
+#: src/features/connections/connection-status.ts
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Choose tools"
 msgstr ""
 
 #: src/features/project/side/SidePicker.tsx
@@ -2105,6 +2356,10 @@ msgstr ""
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {name}"
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Clear"
 msgstr ""
 
 #: src/components/ui/search-field.tsx
@@ -2263,6 +2518,27 @@ msgstr ""
 msgid "Confirming your purchase…"
 msgstr ""
 
+#: src/features/connections/AddConnectionForm.tsx
+msgid "Connect"
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Connected, checked {checked}."
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Connected."
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Connecting…"
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Connections"
+msgstr ""
+
 #: src/features/import/ImportPanel.tsx
 msgid "Continue…"
 msgstr ""
@@ -2403,6 +2679,10 @@ msgstr ""
 msgid "Copying from {source} into"
 msgstr ""
 
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Couldn't add the connection."
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply this draft."
 msgstr ""
@@ -2448,6 +2728,10 @@ msgstr ""
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "Couldn't bring back the draft of {0}."
 #~ msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Couldn't bring it back."
+msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "Couldn't bring it back. Retry tries again."
@@ -2579,9 +2863,12 @@ msgstr "这一步没能完成"
 msgid "Couldn't load"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Couldn't load agents."
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't load Agents."
 msgstr ""
 
 #: src/features/project/chat/RecentChatsLanding.tsx
@@ -2642,8 +2929,16 @@ msgstr ""
 msgid "Couldn't load Trash."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't load what this chat runs."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Couldn't load your connections."
 msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
@@ -2723,6 +3018,10 @@ msgstr ""
 msgid "Couldn't queue the compaction."
 msgstr ""
 
+#: src/features/connections/ConnectionRow.tsx
+msgid "Couldn't reach Flow to check it."
+msgstr ""
+
 #: src/features/agents/PackageSave.tsx
 msgid "Couldn't reach the server, so nothing was saved. Retry tries again."
 msgstr ""
@@ -2743,6 +3042,10 @@ msgstr ""
 msgid "Couldn't read"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't read a connection's tools"
+msgstr ""
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
@@ -2753,6 +3056,10 @@ msgstr "无法读取来自 {line} 的报告"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
+msgstr ""
+
+#: src/features/connections/ConnectionRow.tsx
+msgid "Couldn't remove it."
 msgstr ""
 
 #: src/features/chat/ChatThreadTitle.tsx
@@ -2824,6 +3131,10 @@ msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
 msgid "Couldn't retry. Another reply started first."
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't run a script"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -2956,6 +3267,14 @@ msgstr ""
 msgid "Couldn't update that Work"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Couldn't use"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't use a connection"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't write"
 msgstr ""
@@ -3035,6 +3354,10 @@ msgstr ""
 msgid "Dark"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Default"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Default alignment"
 msgstr ""
@@ -3086,6 +3409,7 @@ msgstr ""
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/draft-review/DraftCommandStatus.tsx
+#: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3114,7 +3438,15 @@ msgstr ""
 
 #. placeholder {0}: schemeLabel(scheme)
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Deleted from {0}. Apply brings it back."
+#~ msgid "Deleted from {0}. Apply brings it back."
+#~ msgstr ""
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Deleted from {area}. Apply brings it back."
+msgstr ""
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Deleted from {from}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
@@ -3170,8 +3502,8 @@ msgid "Deleted from {place}."
 msgstr ""
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Deleted from the manuscript"
-msgstr ""
+#~ msgid "Deleted from the manuscript"
+#~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 #~ msgid "Deleted from the manuscript. Apply brings it back."
@@ -3263,6 +3595,10 @@ msgstr ""
 
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "Didn't run: {calls}."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Didn't run: {label}"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
@@ -3543,6 +3879,10 @@ msgstr ""
 msgid "Edit goal"
 msgstr ""
 
+#: src/features/chat/UserTurn.tsx
+msgid "Edit in the message box"
+msgstr ""
+
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
 msgstr ""
@@ -3801,6 +4141,14 @@ msgstr ""
 msgid "Fix these and save {label} again."
 msgstr ""
 
+#: src/features/connections/connection-status.ts
+msgid "Flow connects only to https addresses, so the address must start with https://."
+msgstr ""
+
+#: src/features/connections/connection-status.ts
+msgid "Flow connects only to port 443, so take the port out of the address."
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "flowchart"
 msgstr ""
@@ -3821,6 +4169,10 @@ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Folders can't be attached"
+msgstr ""
+
+#: src/features/connections/ToolChooser.tsx
+msgid "For now the AI can use only tools that read."
 msgstr ""
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
@@ -3882,12 +4234,15 @@ msgstr ""
 msgid "Hand off from here"
 msgstr ""
 
-#: src/features/agents/ComposerAgentControl.tsx
-#: src/features/chat/derivation/DeriveTurnActions.tsx
+#: src/features/agents/AgentPicker.tsx
 msgid "Hand off to"
 msgstr ""
 
-#: src/features/agents/ComposerAgentControl.tsx
+#. placeholder {0}: shown.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Hand off to {0}"
+msgstr ""
+
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to an Agent"
 msgstr ""
@@ -3951,6 +4306,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "High"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -4176,6 +4535,10 @@ msgstr ""
 msgid "Its chat is in Trash."
 msgstr ""
 
+#: src/features/chat/script-copy.ts
+msgid "its code didn't parse"
+msgstr ""
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its document wasn't restored"
 msgstr ""
@@ -4199,6 +4562,10 @@ msgstr ""
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
 msgstr "跳转到聊天中的位置"
+
+#: src/features/connections/connection-status.ts
+msgid "just now"
+msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "Just now"
@@ -4228,7 +4595,6 @@ msgstr ""
 msgid "Kept while {works} have changes to it."
 msgstr ""
 
-#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge"
 msgstr ""
@@ -4274,12 +4640,20 @@ msgstr ""
 msgid "Let's work on it"
 msgstr "我们开始吧"
 
+#: src/features/connections/AddConnectionForm.tsx
+msgid "Letters, digits, - or _, with no spaces."
+msgstr ""
+
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "LF line ending"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
+msgstr ""
+
+#: src/features/chat/mcp-renderers.tsx
+msgid "Line {where}: "
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -4335,17 +4709,21 @@ msgstr ""
 msgid "Loading"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "Loading Agents…"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Loading changes…"
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Loading connections…"
 msgstr ""
 
 #: src/features/project/context/TrashedDocument.tsx
@@ -4359,6 +4737,10 @@ msgstr ""
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "Loading image"
 msgstr "正在加载图片"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Loading models…"
+msgstr ""
 
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -4415,6 +4797,7 @@ msgid "Loading Works…"
 msgstr ""
 
 #: src/features/agents/AgentFileDialog.tsx
+#: src/features/agents/AgentPicker.tsx
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/billing/UsageCard.tsx
 #: src/features/project/context/FolderMenu.tsx
@@ -4437,6 +4820,14 @@ msgstr ""
 msgid "Looking for the document this link names."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Low"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Manage Agents"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Manage billing"
 msgstr ""
@@ -4449,7 +4840,6 @@ msgstr ""
 msgid "Manage Works…"
 msgstr ""
 
-#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
 msgstr ""
@@ -4472,12 +4862,17 @@ msgstr ""
 msgid "mars.toml needs schema = 1 under [package]."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Max"
+msgstr ""
+
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
+#: src/features/agents/AgentPicker.tsx
 msgid "Medium"
 msgstr ""
 
@@ -4524,6 +4919,11 @@ msgstr ""
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
 msgstr "模型"
+
+#. placeholder {0}: agent.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Model for {0}"
+msgstr ""
 
 #: src/features/agents/findings.ts
 msgid "model must be a model's name, like model: sonnet."
@@ -4695,6 +5095,10 @@ msgstr ""
 msgid "Moving to the top"
 msgstr ""
 
+#: src/features/connections/AddConnectionForm.tsx
+msgid "Name"
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Name and location"
 msgstr ""
@@ -4822,6 +5226,10 @@ msgstr ""
 msgid "New skill"
 msgstr ""
 
+#: src/features/connections/ConnectionPanel.tsx
+msgid "New token"
+msgstr ""
+
 #: src/features/project/work/WorkCollection.tsx
 msgid "New Work"
 msgstr ""
@@ -4847,7 +5255,16 @@ msgid "No Agent named {name} is in this package."
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "No agents available."
+#~ msgid "No agents available."
+#~ msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "No Agents available."
+msgstr ""
+
+#. placeholder {0}: query.trim()
+#: src/features/agents/AgentPicker.tsx
+msgid "No Agents match “{0}”."
 msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
@@ -4941,8 +5358,8 @@ msgid "No matches found before the search stopped"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "No model"
-msgstr ""
+#~ msgid "No model"
+#~ msgstr ""
 
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "No newline at end of file"
@@ -4977,6 +5394,10 @@ msgstr ""
 msgid "No subagents match “{search}”."
 msgstr "没有匹配“{search}”的子代理。"
 
+#: src/features/connections/ConnectionRow.tsx
+msgid "No tools chosen, so it isn't in your chats."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work yet."
 msgstr ""
@@ -4987,6 +5408,7 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/ask/permission-request.ts
+#: src/features/connections/ConnectionPanel.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/lib/work-name.ts
@@ -4995,6 +5417,26 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "None of your own yet. Yours show in every project."
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "None yet."
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "None yet. A connection here is in every project's chats."
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "None yet. A connection here is only in this project's chats."
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "None yet. Add a research index, your notes or a story wiki, and the AI can use its tools in your chats."
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "None yet. Its tools can be chosen once it answers."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -5106,6 +5548,11 @@ msgstr ""
 msgid "Not undone."
 msgstr ""
 
+#. placeholder {0}: shadowName ?? connection.name
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Not used in this project: this project's own {0} stands in for it."
+msgstr ""
+
 #. placeholder {0}: whose(trouble.by, name)
 #: src/features/agents/AgentFileState.tsx
 msgid "Not used: {0} hides it"
@@ -5122,6 +5569,10 @@ msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Notes the AI kept, grouped by Work."
+msgstr ""
+
+#: src/features/chat/mcp-renderers.tsx
+msgid "Nothing"
 msgstr ""
 
 #: src/features/import/import-presentation.ts
@@ -5202,6 +5653,10 @@ msgstr ""
 msgid "Numbered list"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Off"
+msgstr ""
+
 #: src/client/providers/TransportProvider.tsx
 msgid "Offline"
 msgstr ""
@@ -5234,16 +5689,16 @@ msgstr ""
 msgid "Open \"{name}\""
 msgstr "打开“{name}”"
 
-#. placeholder {0}: work.name
-#: src/features/project/work/WorkRow.tsx
+#. placeholder {0}: fileName(agent)
+#: src/features/agents/AgentPicker.tsx
 msgid "Open {0}"
 msgstr ""
 
 #. placeholder {0}: work.name
 #. placeholder {1}: work.status
 #: src/features/project/work/WorkRow.tsx
-msgid "Open {0} ({1})"
-msgstr ""
+#~ msgid "Open {0} ({1})"
+#~ msgstr ""
 
 #. placeholder {0}: documentDisplayName(path)
 #. placeholder {1}: excerptText(excerpt)
@@ -5259,6 +5714,15 @@ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Open {name}"
+msgstr ""
+
+#: src/features/project/work/WorkRow.tsx
+msgid "Open {named}"
+msgstr ""
+
+#. placeholder {0}: work.status
+#: src/features/project/work/WorkRow.tsx
+msgid "Open {named} ({0})"
 msgstr ""
 
 #: src/features/chat/DocumentName.tsx
@@ -5476,6 +5940,10 @@ msgstr ""
 msgid "Previous change"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Printed"
+msgstr ""
+
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Profile"
@@ -5551,13 +6019,29 @@ msgstr "突然想到"
 msgid "Quote"
 msgstr ""
 
+#: src/features/chat/script-copy.ts
+msgid "Ran a script"
+msgstr ""
+
+#: src/features/chat/script-copy.ts
+msgid "Ran a script:"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Read"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+msgid "Read {name}’s tools"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
 msgid "Read file"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Read how to use"
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
@@ -5576,6 +6060,18 @@ msgstr "阅读中"
 msgid "Reading {name}"
 msgstr ""
 
+#: src/features/chat/command-descriptor.ts
+msgid "Reading {name}’s tools…"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Reading connection tools…"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Reading how to use"
+msgstr ""
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Reading report from {line}"
 msgstr "正在读取来自 {line} 的报告"
@@ -5587,6 +6083,11 @@ msgstr ""
 #. placeholder {0}: report.reason
 #: src/features/chat/ReportContent.tsx
 msgid "Reason: {0}"
+msgstr ""
+
+#. placeholder {0}: model.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Reasoning on {0}"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -5678,6 +6179,10 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Remove connection"
+msgstr ""
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
@@ -5689,6 +6194,10 @@ msgstr ""
 
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "Removed: "
+msgstr ""
+
+#: src/features/connections/ConnectionRow.tsx
+msgid "Removed. Undo brings it back with its tools and token."
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -5751,6 +6260,10 @@ msgstr ""
 msgid "Reopens the documents you had open when you switch devices."
 msgstr "切换设备时，会重新打开你之前打开的文档。"
 
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Replace"
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
 msgstr ""
@@ -5769,6 +6282,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Replaced by a restore in {workName}"
+msgstr ""
+
+#: src/features/chat/mcp-renderers.tsx
+msgid "Reply"
 msgstr ""
 
 #: src/features/chat/SpawnReportCard.tsx
@@ -5805,11 +6322,13 @@ msgstr "回复完成"
 msgid "Restore"
 msgstr ""
 
-#. placeholder {0}: entry.work.name
-#. placeholder {0}: scoped.name
-#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+#. placeholder {0}: nameOf(entry.work)
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
+msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Restore {scopedName}"
 msgstr ""
 
 #: src/features/project/context/entry-drag/restore-drop.ts
@@ -5971,6 +6490,10 @@ msgstr ""
 msgid "Returned from the billing portal."
 msgstr ""
 
+#: src/features/chat/script-copy.ts
+msgid "returned more than the AI can read ({kilobytes} KB)"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
@@ -5993,7 +6516,16 @@ msgstr ""
 msgid "Running"
 msgstr "运行中"
 
+#: src/features/chat/script-copy.ts
+msgid "Running a script:"
+msgstr ""
+
+#: src/features/chat/script-copy.ts
+msgid "Running a script…"
+msgstr ""
+
 #: src/features/agents/PackageSave.tsx
+#: src/features/connections/ConnectionPanel.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Save"
 msgstr ""
@@ -6081,16 +6613,14 @@ msgstr ""
 msgid "Saving. New chats will use it; chats already running keep the version they started with."
 msgstr ""
 
-#: src/features/project/work/WorkDetail.tsx
-#: src/features/project/work/WorkMetadata.tsx
-#~ msgid "Saving…"
-#~ msgstr ""
+#: src/features/connections/ToolChooser.tsx
+msgid "Saving…"
+msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "scene break"
 msgstr ""
 
-#: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
@@ -6119,8 +6649,20 @@ msgstr ""
 msgid "Scratch for this chat"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Script"
+msgstr ""
+
+#: src/features/chat/script-copy.ts
+msgid "Script couldn't run:"
+msgstr ""
+
 #: src/features/chat/TurnList.tsx
 msgid "Scroll to latest"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Search Agents"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -6208,8 +6750,20 @@ msgstr "正在发送"
 msgid "Sending now"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Sent"
+msgstr ""
+
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
+msgstr ""
+
+#: src/features/connections/ConnectionsSection.tsx
+msgid "Services the AI can look things up in while you write."
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Set"
 msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
@@ -6245,6 +6799,10 @@ msgstr ""
 msgid "Show {sheetName}"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Show all"
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Show changes"
@@ -6259,6 +6817,7 @@ msgstr ""
 msgid "Show less"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 #: src/features/project/side/SidePicker.tsx
@@ -6496,6 +7055,10 @@ msgstr "已停止"
 msgid "Stopped"
 msgstr "已取消"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Stopped: {label}"
+msgstr ""
+
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "Stopped."
 msgstr ""
@@ -6639,8 +7202,12 @@ msgid "Talk it out"
 msgstr "说出来理一理"
 
 #: src/features/project/mobile/MobileChangeSheet.tsx
-msgid "Tap a change to go to it in the manuscript."
+msgid "Tap a change to go to it in the document."
 msgstr ""
+
+#: src/features/project/mobile/MobileChangeSheet.tsx
+#~ msgid "Tap a change to go to it in the manuscript."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "task"
@@ -6849,12 +7416,20 @@ msgid "The AI in {chat} deleted {name} before this change could be made."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
+msgid "The AI in {chat} deleted {title} from {area}. Applying brings it back."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {title}."
 msgstr "{chat} 中的 AI 删除了{title}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {title}. Applying brings it back."
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in {chat} deleted this document before this change could be made."
@@ -6873,12 +7448,20 @@ msgid "The AI in a chat deleted {name} before this change could be made."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
+msgid "The AI in a chat deleted {title} from {area}. Applying brings it back."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {title}."
 msgstr "某个对话中的 AI 删除了{title}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {title}. Applying brings it back."
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in a chat deleted this document before this change could be made."
@@ -6939,6 +7522,10 @@ msgstr ""
 
 #: src/core/project-tree/tree-left-sentence.ts
 msgid "The change to this folder"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "the default model"
 msgstr ""
 
 #: src/core/project-tree/tree-left-sentence.ts
@@ -7021,6 +7608,14 @@ msgstr ""
 msgid "The rename"
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "The reply was cut short: this is the part the AI read."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The reply was too large to keep."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage in {name} wasn't specific enough."
 msgstr ""
@@ -7037,12 +7632,38 @@ msgstr ""
 msgid "The review updated. Choose the change again."
 msgstr ""
 
+#: src/features/chat/script-copy.ts
+msgid "the script runner failed"
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The server couldn't be reached."
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "The server couldn't do that. Try again."
 msgstr ""
 
 #: src/core/editor/images/RemoteImagePlaceholder.tsx
+#: src/features/connections/connection-status.ts
 msgid "The server didn't answer."
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "The server didn't list its tools."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+#: src/features/connections/connection-status.ts
+msgid "The server needs a valid token."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The server refused the request."
+msgstr ""
+
+#: src/features/connections/AddConnectionForm.tsx
+msgid "The server sees what the AI sends it and can steer what the AI does. Add only servers you trust."
 msgstr ""
 
 #: src/core/editor/images/RemoteImagePlaceholder.tsx
@@ -7061,6 +7682,10 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 #~ msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "The tool ran and reported a problem."
+msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "The upload didn’t start."
@@ -7090,6 +7715,7 @@ msgstr ""
 msgid "The Work did not change. Try again."
 msgstr ""
 
+#: src/features/project/context/entry-drag/entry-failure.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "The Work was closed."
 msgstr ""
@@ -7170,6 +7796,10 @@ msgstr ""
 msgid "This browser will not turn that into an image."
 msgstr ""
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "This call failed."
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This cell is not merged."
 msgstr ""
@@ -7199,12 +7829,17 @@ msgstr ""
 msgid "This chapter is temporarily unavailable"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/project/shell/sidebar/SourcesBody.tsx
 msgid "This chat"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "This chat has no connection tool by that name."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -7216,7 +7851,7 @@ msgstr ""
 msgid "This chat is in Trash. Restore it to edit or apply its drafts."
 msgstr ""
 
-#. placeholder {0}: workDisplayName(commit.work)
+#. placeholder {0}: naming.current(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
 msgstr ""
@@ -7227,6 +7862,10 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {name} on {runsAt}."
+msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat uses {name}."
 msgstr ""
 
@@ -7234,13 +7873,17 @@ msgstr ""
 msgid "This chat was deleted."
 msgstr ""
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat's Agent"
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's current Work could not be found. Refresh the page and try again."
 msgstr ""
 
-#. placeholder {0}: workDisplayName(outcome.currentWork)
-#. placeholder {0}: workDisplayName(work)
+#. placeholder {0}: naming.current(outcome.currentWork)
+#. placeholder {0}: naming.current(work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's Work changed to {0}"
 msgstr ""
@@ -7251,6 +7894,10 @@ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "This compaction already started."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "This connection was removed."
 msgstr ""
 
 #: src/features/chat/chat-card-copy.ts
@@ -7372,6 +8019,10 @@ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document's Work was deleted, so this change can't be reversed."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -7502,6 +8153,10 @@ msgstr ""
 msgid "This passage couldn't be recovered."
 msgstr ""
 
+#: src/features/connections/AddConnectionForm.tsx
+msgid "This project"
+msgstr ""
+
 #: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr ""
@@ -7516,6 +8171,10 @@ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "this project's {slug}"
+msgstr ""
+
+#: src/features/connections/ConnectionRow.tsx
+msgid "This project's own {shadowName} is used here."
 msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
@@ -7536,6 +8195,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This selection holds blocks that keep their own block type."
+msgstr ""
+
+#: src/features/connections/ToolChooser.tsx
+msgid "This server lists no tools."
 msgstr ""
 
 #: src/core/editor/asset-image-render-state.ts
@@ -7560,6 +8223,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This was discarded before Apply reached it. Restore it to apply it."
+msgstr ""
+
+#: src/features/chat/tool-failure.tsx
+msgid "This was stopped before it finished."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -7643,6 +8310,11 @@ msgstr ""
 msgid "Today"
 msgstr "今天"
 
+#: src/features/connections/AddConnectionForm.tsx
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Token"
+msgstr ""
+
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens after"
 msgstr ""
@@ -7659,6 +8331,18 @@ msgstr ""
 msgid "Too large to show"
 msgstr ""
 
+#: src/features/chat/script-copy.ts
+msgid "took longer than {seconds} seconds"
+msgstr ""
+
+#: src/features/connections/ToolChooser.tsx
+msgid "Tools that can change things"
+msgstr ""
+
+#: src/features/connections/ConnectionPanel.tsx
+msgid "Tools the AI can use"
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
@@ -7672,6 +8356,7 @@ msgstr ""
 
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
+#: src/features/connections/connection-status.ts
 #: src/features/editor/InTrashStatus.tsx
 #: src/features/editor/SyncStatus.tsx
 #: src/features/import/ImportPanel.tsx
@@ -7740,7 +8425,11 @@ msgstr ""
 
 #. placeholder {0}: scoped.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "Unarchive {0}"
+#~ msgid "Unarchive {0}"
+#~ msgstr ""
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Unarchive {scopedName}"
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -7781,7 +8470,11 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undid change to Work {0}."
+#~ msgid "Undid change to Work {0}."
+#~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undid change to Work {name}."
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
@@ -7791,6 +8484,7 @@ msgstr ""
 #: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/connections/ConnectionRow.tsx
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
@@ -7844,6 +8538,11 @@ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo move of {name}"
+msgstr ""
+
+#. placeholder {0}: connection.name
+#: src/features/connections/ConnectionRow.tsx
+msgid "Undo remove of {0}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
@@ -7913,7 +8612,6 @@ msgstr ""
 msgid "Undone. Back to the previous saved version, with its text merged into your files. What you changed since is kept."
 msgstr ""
 
-#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
 msgstr ""
@@ -7971,6 +8669,10 @@ msgstr ""
 
 #: src/components/app/AppStatus.tsx
 msgid "Update"
+msgstr ""
+
+#: src/features/connections/connection-status.ts
+msgid "Update the token"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -8046,8 +8748,6 @@ msgstr ""
 msgid "Uploading in another window"
 msgstr ""
 
-#: src/features/chat/ChatFilesMenu.tsx
-#: src/features/export/ExportProjectDialog.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
 msgstr ""
@@ -8059,6 +8759,31 @@ msgstr ""
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
 msgid "Usage"
+msgstr ""
+
+#. placeholder {0}: shown.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Use {0}"
+msgstr ""
+
+#: src/features/connections/AddConnectionForm.tsx
+msgid "Use in"
+msgstr ""
+
+#: src/features/connections/ToolChooser.tsx
+msgid "Use these tools"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Used a connection"
+msgstr ""
+
+#: src/features/chat/script-copy.ts
+msgid "used more than {seconds} seconds of its own running time"
+msgstr ""
+
+#: src/features/chat/command-descriptor.ts
+msgid "Using a connection…"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -8284,6 +9009,10 @@ msgstr ""
 msgid "You left checkout. No purchase was confirmed."
 msgstr ""
 
+#: src/features/chat/script-copy.ts
+msgid "you stopped it"
+msgstr ""
+
 #: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
@@ -8424,9 +9153,17 @@ msgstr ""
 #~ msgid "Your skill, in every project"
 #~ msgstr ""
 
-#: src/features/export/ExportProjectDialog.tsx
-msgid "your User files"
+#: src/features/chat/DeletedChatCard.tsx
+msgid "Your unsent words from <0>{title}</0> are below."
 msgstr ""
+
+#: src/features/chat/DeletedChatCard.tsx
+msgid "Your unsent words from the chat you deleted are below."
+msgstr ""
+
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "your User files"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."

@@ -136,7 +136,6 @@ export async function branchTreeWorld(
           .insert(contextSources)
           .values({
             projectId,
-            name: slug,
             slug,
             sortOrder: index,
           })

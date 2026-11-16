@@ -6,10 +6,12 @@
  */
 import {
   type CanonicalContextAuthority,
+  CONTEXT_URI_SCHEME_NAMES,
   canonicalContextUri,
   matchDocumentAddress,
 } from "@meridian/contracts";
 import {
+  type ContextSiblingPosition,
   type ContextSource,
   classifyFiletype,
   type DocumentFileType,
@@ -30,8 +32,8 @@ import {
 export type TreeDestination = Readonly<{
   /** A folder's id, or the id of a source (the top of its tree). */
   parentId: string;
-  /** Where among the siblings, when the writer chose a place. */
-  index?: number;
+  /** Where among its children, when the writer chose a place; the end otherwise. */
+  position?: ContextSiblingPosition;
 }>;
 
 type TreeFileBase = {
@@ -84,16 +86,6 @@ export type TreeView = {
   entry(id: string): TreeEntry | null;
   /** The ids of the folders and files below `id`. */
   descendants(id: string): readonly string[];
-};
-
-const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
-  manuscript: "Manuscript",
-  kb: "Knowledge",
-  user: "User Files",
-  unfiled: "Unfiled",
-  scratch: "Scratch",
-  uploads: "Uploads",
-  agents: ".agents",
 };
 
 function extensionOf(node: TreeNode): string {
@@ -151,7 +143,7 @@ export function buildTreeView(input: {
     kind: "dir",
     entryId: sourceId,
     parentId: null,
-    name: ROOT_NAMES[scheme],
+    name: CONTEXT_URI_SCHEME_NAMES[scheme],
     path: "/",
     uri: uriOf(""),
   };

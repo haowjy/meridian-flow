@@ -1,5 +1,8 @@
 /** Shared pinned new-chat composer for the main, the side, and the phone. */
+
 import { t } from "@lingui/core/macro";
+import type { ThreadListItem } from "@meridian/contracts/protocol";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { JSONContent } from "@tiptap/core";
 import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
@@ -7,11 +10,14 @@ import { chatUploadPort } from "@/client/api/context-upload-api";
 import type { AttachedAbout } from "@/client/composer-drafts";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { Composer, type ComposerDraftChange, type ComposerHandle } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { DEFAULT_AGENT_SLUG, pickableAgents } from "@/features/agents";
+import { boundAgentRow } from "@/features/agents/creation-agent";
+import { useNewChatConnectionMarks } from "@/features/connections/NewChatConnectionMarks";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
@@ -19,6 +25,14 @@ import { useOpenPlacedDocument } from "@/features/project/review-launch";
 import { useWorkScope } from "@/features/project/use-work-scope";
 import { DeletedChatCard } from "./DeletedChatCard";
 import { useCreationComposer } from "./useCreationComposer";
+
+function newestPrimaryThread(threads: ThreadListItem[] | null): ThreadListItem | null {
+  let newest: ThreadListItem | null = null;
+  for (const thread of threads ?? [])
+    if (thread.kind === "primary" && (!newest || thread.createdAt > newest.createdAt))
+      newest = thread;
+  return newest;
+}
 
 export function CreationComposer({
   projectId,
@@ -51,11 +65,21 @@ export function CreationComposer({
     onNewChatFocusHandled?.(newChatFocusRequestId);
   }, [newChatFocusRequestId, onNewChatFocusHandled]);
   const works = useWorks(projectId);
+  const connectionMarks = useNewChatConnectionMarks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
-  const defaultAgent = pickableAgents(agents.agents ?? []).find(
-    (agent) => agent.slug === DEFAULT_AGENT_SLUG,
-  );
+  // A new chat starts on the Agent of the project's newest chat (a send, handoff or fork shows
+  // in the list at once), on its own model.
+  const pickable = pickableAgents(agents.agents ?? []);
+  const { threads } = useProjectThreads(projectId);
+  const newest = newestPrimaryThread(threads);
+  const defaultAgent =
+    (newest &&
+      boundAgentRow(pickable, {
+        name: newest.agentName,
+        definitionRevisionId: newest.agentDefinitionRevisionId,
+      })) ??
+    pickable.find((agent) => agent.slug === DEFAULT_AGENT_SLUG);
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   // A new chat takes the Work scope unless the writer picked another Work for this draft.
@@ -95,6 +119,7 @@ export function CreationComposer({
           workAiWriteMode: work.defaultAiWriteMode,
           ...(choices?.aiWriteMode ? { aiWriteMode: choices.aiWriteMode } : {}),
           agent,
+          overrides: choices?.overrides ?? NO_OVERRIDES,
         }
       : undefined;
   const unavailableWork =
@@ -116,15 +141,18 @@ export function CreationComposer({
     <FolderMenuContext.Provider value={folders}>
       <Composer
         cards={
-          creation.draft.notices.length > 0
-            ? creation.draft.notices.map((notice) => (
+          creation.draft.notices.length > 0 || connectionMarks ? (
+            <>
+              {creation.draft.notices.map((notice) => (
                 <DeletedChatCard
                   key={notice.threadId}
                   notice={notice}
                   onDismiss={() => creation.draft.dismissNotice(notice.threadId)}
                 />
-              ))
-            : undefined
+              ))}
+              {connectionMarks}
+            </>
+          ) : undefined
         }
         key={creation.draft.key}
         initialDraft={creation.draft.initialDraft}
@@ -164,8 +192,11 @@ export function CreationComposer({
             noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
+            overrides={choices?.overrides ?? NO_OVERRIDES}
             writeMode={writeMode}
-            onAgentChange={(next) => creation.updateChoices({ agent: next })}
+            onAgentChange={(next) =>
+              creation.updateChoices({ agent: next.agent, overrides: next.overrides })
+            }
             // Picking a Work never changes the mode on screen: the mode shown becomes the pick.
             // A Work's default shows only for the Work the composer opened with.
             onWorkChange={(selected) =>

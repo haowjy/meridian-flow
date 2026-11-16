@@ -9,6 +9,21 @@ cache warmth.
 
 ## Bound Agent and prompt
 
+A chat can run on another model and at another reasoning setting than its Agent's:
+`threads.model_override` and `threads.effort_override`, set together by the `thread_set_overrides`
+command and never part of the binding, so a compaction's binding refresh keeps them.
+`turnGatewayParams` (turn-context-assembly) resolves it per request: the override while the gateway
+lists it, else the Agent's model, else the default. An id the gateway no longer lists runs on the
+Agent's model, and `turns.model` records what ran; a client tells "fell back" from "chosen" by
+comparing the override with the newest turn's model, or with `GET /api/models` (`available`) for the
+turn about to run. The effort override always replaces the Agent's effort; the server never drops it. The
+gateway's `resolveReasoning` clamps whichever runs to the nearest level the resolved model accepts,
+as it does for the Agent's own level. Every reader of the chat's model goes through `threadModelId`,
+which takes the gateway. The wire vocabulary is the gateway's (`low|medium|high|max` plus `disabled` and
+`adaptive`); an Agent file's `xhigh`/`none` read as `max`/`disabled` (`AGENT_EFFORT_CHOICE`).
+`LIVE_TEST_MODEL` redirects at the gateway, so an override cannot bypass it. A change costs a
+cache rebuild, already predicted as `model_changed`.
+
 The immutable thread binding supplies the retained Agent body, resolved model,
 tools, effort, and invocation overlay. A spawn-time `appendSystemPrompt` is
 additive, never a replacement. Missing binding fails before gateway dispatch;
@@ -28,7 +43,9 @@ starts unbaked.
 
 The composed prompt layers the Agent body, additive overlay, frozen Work
 context, available skills/descriptions, preloaded skill bodies, named spawn
-roster, document dialect, runtime URI guidance, and the subagent report
+roster, the connections' catalogue (only when the thread's policy has `mcp_call`; its
+connections are saved in the bake as `bakedConnections`, and a subagent takes its parent's bake in
+effect), document dialect, runtime URI guidance, and the subagent report
 instruction last. Bound `skills.load` bodies are baked into the first prompt;
 model-invocable availability controls `skills://` visibility, not preloading.
 Slash inventory is separate from the bound Agent package and includes eligible

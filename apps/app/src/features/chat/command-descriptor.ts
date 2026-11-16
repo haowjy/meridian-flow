@@ -1,5 +1,5 @@
 /** Maps tool commands to their transcript labels and metadata. */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
@@ -7,6 +7,8 @@ import {
   documentToolFailed,
   documentToolReturned,
   humanizeSkillSlug,
+  mcpCall,
+  mcpDescribed,
   sourcePath,
   stringInput,
   type ToolCommand,
@@ -16,6 +18,7 @@ import {
 } from "@meridian/thread-client";
 import {
   BookOpen,
+  Code,
   Copy,
   FilePlus2,
   FolderInput,
@@ -24,6 +27,7 @@ import {
   List,
   type LucideIcon,
   PenLine,
+  Plug,
   Save,
   Search,
   Sparkles,
@@ -37,6 +41,7 @@ import {
   folderDisplayName,
   type OwnerNames,
 } from "./document-display-name";
+import { scriptPhrase } from "./script-copy";
 import { workReceiptLine } from "./work-receipt-copy";
 
 export type ToolActivityPhrase = {
@@ -90,9 +95,14 @@ function truncatePattern(pattern: string): string {
   return pattern.length <= 60 ? pattern : `${pattern.slice(0, 59).trimEnd()}…`;
 }
 
-function workTenses(tool: ToolView, active: string, complete: string): ToolActivityVocabulary {
+function workTenses(
+  tool: ToolView,
+  names: OwnerNames | undefined,
+  active: string,
+  complete: string,
+): ToolActivityVocabulary {
   const receipt = workReceipt(tool);
-  const line = receipt ? workReceiptLine(receipt) : null;
+  const line = receipt ? workReceiptLine(receipt, names) : null;
   return { active: { verb: active }, complete: { verb: line || complete } };
 }
 
@@ -224,28 +234,28 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
   "work-create": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Creating a Work…`, t`Created a Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Creating a Work…`, t`Created a Work`),
     failureVerb: () => t`Couldn't create a Work`,
     pathlessTitle: null,
     expand: "renderer",
   },
   "work-update": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Updating a Work…`, t`Updated a Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Updating a Work…`, t`Updated a Work`),
     failureVerb: () => t`Couldn't update that Work`,
     pathlessTitle: null,
     expand: "renderer",
   },
   "work-delete": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Deleting a Work…`, t`Deleted a Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Deleting a Work…`, t`Deleted a Work`),
     failureVerb: () => t`Couldn't delete that Work`,
     pathlessTitle: null,
     expand: "renderer",
   },
   "work-switch": {
     Icon: Layers,
-    phrases: (tool) => workTenses(tool, t`Switching Work…`, t`Switched Work`),
+    phrases: (tool, names) => workTenses(tool, names, t`Switching Work…`, t`Switched Work`),
     failureVerb: () => t`Couldn't switch Work`,
     pathlessTitle: null,
     expand: "renderer",
@@ -265,6 +275,64 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
       return tenses(t`Saving Agents…`, complete);
     },
     failureVerb: () => t`Couldn't save Agents`,
+    pathlessTitle: null,
+    expand: "none",
+  },
+  // A connection's tools are the writer's services, so the row names the connection and the tool
+  // the way the writer's settings do: "pubmed: search articles".
+  "mcp-call": {
+    Icon: Plug,
+    phrases: (tool) => {
+      const { connection, tool: name } = mcpCall(tool);
+      if (!connection || !name) return tenses(t`Using a connection…`, t`Used a connection`);
+      const label = mcpToolLabel(connection, name);
+      return {
+        active: { verb: `${connection}:`, parameter: `${label}…` },
+        complete: { verb: `${connection}:`, parameter: label },
+      };
+    },
+    failureVerb: () => t`Couldn't use a connection`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
+  // A script's row is worded from its typed result (`scriptPhrase`): its calls and why it stopped.
+  "mcp-run": {
+    Icon: Code,
+    phrases: (tool) => {
+      const active = scriptPhrase(tool);
+      return { active, complete: active };
+    },
+    failureVerb: () => t`Couldn't run a script`,
+    pathlessTitle: null,
+    expand: "renderer",
+  },
+  "mcp-describe": {
+    Icon: Plug,
+    phrases: (tool) => {
+      const asked = mcpDescribed(tool);
+      const [only] = asked;
+      if (asked.length === 1 && only?.connection && !only.tool) {
+        const name = only.connection;
+        return tenses(t`Reading ${name}’s tools…`, t`Read ${name}’s tools`);
+      }
+      if (asked.length === 1 && only?.connection && only.tool) {
+        const named = `${only.connection}: ${mcpToolLabel(only.connection, only.tool)}`;
+        return {
+          active: { verb: t`Reading how to use`, parameter: `${named}…` },
+          complete: { verb: t`Read how to use`, parameter: named },
+        };
+      }
+      const count = asked.length;
+      return tenses(
+        t`Reading connection tools…`,
+        plural(count, {
+          0: "Read connection tools",
+          one: "Read how to use # connection tool",
+          other: "Read how to use # connection tools",
+        }),
+      );
+    },
+    failureVerb: () => t`Couldn't read a connection's tools`,
     pathlessTitle: null,
     expand: "none",
   },
@@ -385,6 +453,13 @@ export function descriptorFor(tool: ToolView): CommandDescriptor {
   return COMMAND_DESCRIPTORS[toolCommand(tool)];
 }
 
+/** A server's tool name as words, without the connection's name it often starts with: `pubmed_search_articles` reads "search articles". */
+export function mcpToolLabel(connection: string, tool: string): string {
+  const prefix = new RegExp(`^${connection.replace(/[^A-Za-z0-9]/g, "[_-]?")}[_-]+`, "i");
+  const bare = tool.replace(prefix, "") || tool;
+  return bare.replace(/[_-]+/g, " ").trim();
+}
+
 /** Arguments are developer detail and never enter a title. */
 export function humanizeToolName(toolName: string): string {
   const words = toolName.replaceAll("_", " ");
@@ -415,6 +490,7 @@ export function liveToolActivityLabel(toolName: string, input: unknown): string 
     isError: false,
     message: null,
     streamedOutput: null,
+    connectionCalls: null,
     metadata: null,
     keyBlock: {} as ToolView["keyBlock"],
   };

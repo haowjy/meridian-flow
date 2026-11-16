@@ -1,8 +1,10 @@
 import { configDefaults, defineConfig } from "vitest/config";
+import { sharedTest } from "../../tools/ci/vitest-shared";
 import { asVitestGlob, mockedServerTests } from "./vitest.mocked-files";
 
 export default defineConfig({
   test: {
+    ...sharedTest,
     name: "@meridian/server",
     // Reuse the module graph across files. mockedServerTests stay in
     // vitest.isolated.config.ts; a shared worker would leak those mocks.

@@ -55,6 +55,7 @@ export function mapThread(
     initialPromptBakeId: row.initialPromptBakeId,
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
+    overrides: { model: row.modelOverride, effort: row.effortOverride },
     nextSeq: String(row.nextSeq),
     activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,
@@ -121,6 +122,7 @@ export function mapPromptBake(row: typeof schema.promptBakes.$inferSelect): Prom
     composedSystemPrompt: row.composedSystemPrompt,
     bakedSkillSlugs: row.bakedSkillSlugs,
     bakedTools: row.bakedTools as PromptBake["bakedTools"],
+    bakedConnections: row.bakedConnections,
     contentHash: row.contentHash,
     createdAt: toIsoString(row.createdAt),
   };

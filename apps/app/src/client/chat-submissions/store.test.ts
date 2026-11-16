@@ -163,6 +163,7 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
       agentSelection: { slug: "agent", definitionRevisionId: "rev" },
       agentName: "Agent",
       agentSlug: "agent",
+      overrides: { model: null, effort: null },
     },
   });
   journal.record("account", entry);

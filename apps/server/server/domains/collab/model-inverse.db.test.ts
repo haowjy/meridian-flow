@@ -168,59 +168,59 @@ describe("model document stack", () => {
       await harness.dispose();
     }
   });
-  it.each([
-    "stepwise",
-    "count",
-  ] as const)("overlapping replacements compose %s undo", async (schedule) => {
-    const { harness, view, context } = await fixture();
-    try {
-      for (const [index, [find, content]] of [
-        ["Beta", "Gold"],
-        ["Gold", "Silver"],
-        ["Silver", "Azure"],
-      ].entries())
-        expect(
-          await view.collab.agentEdit().write(
+  it.each(["stepwise", "count"] as const)(
+    "overlapping replacements compose %s undo",
+    async (schedule) => {
+      const { harness, view, context } = await fixture();
+      try {
+        for (const [index, [find, content]] of [
+          ["Beta", "Gold"],
+          ["Gold", "Silver"],
+          ["Silver", "Azure"],
+        ].entries())
+          expect(
+            await view.collab.agentEdit().write(
+              {
+                command: "replace",
+                documentId: ALPHA_ID,
+                file: "alpha.md",
+                find,
+                content,
+                tool_use_id: `entry-${index}`,
+              },
+              context,
+            ),
+          ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
+        const draftId = await readDraftId(db, ALPHA_ID);
+        let call = 0;
+        const write = async (count?: number) =>
+          view.collab.agentEdit().write(
             {
-              command: "replace",
+              command: "undo",
               documentId: ALPHA_ID,
               file: "alpha.md",
-              find,
-              content,
-              tool_use_id: `entry-${index}`,
+              ...(count ? { count } : {}),
+              tool_use_id: `inverse-${++call}`,
             },
             context,
-          ),
-        ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
-      const draftId = await readDraftId(db, ALPHA_ID);
-      let call = 0;
-      const write = async (count?: number) =>
-        view.collab.agentEdit().write(
-          {
-            command: "undo",
-            documentId: ALPHA_ID,
-            file: "alpha.md",
-            ...(count ? { count } : {}),
-            tool_use_id: `inverse-${++call}`,
-          },
-          context,
-        );
-      expect(await write(4)).toMatchObject({ status: "insufficient_undo" });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
-      if (schedule === "count") {
-        expect(await write(3)).toMatchObject({ status: "success" });
-        expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
-      } else {
-        for (const text of ["Silver", "Gold", "Beta"]) {
-          expect(await write()).toMatchObject({ status: "success" });
-          expect(await view.draftMarkdown(draftId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
+          );
+        expect(await write(4)).toMatchObject({ status: "insufficient_undo" });
+        expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
+        if (schedule === "count") {
+          expect(await write(3)).toMatchObject({ status: "success" });
+          expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+        } else {
+          for (const text of ["Silver", "Gold", "Beta"]) {
+            expect(await write()).toMatchObject({ status: "success" });
+            expect(await view.draftMarkdown(draftId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
+          }
         }
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+      } finally {
+        await harness.dispose();
       }
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
-    } finally {
-      await harness.dispose();
-    }
-  });
+    },
+  );
   it("reverts applied text, and a card Undo racing an Apply reverts it forward", async () => {
     const { harness, view, context, responseId } = await fixture();
     try {

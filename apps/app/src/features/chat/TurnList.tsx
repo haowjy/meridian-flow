@@ -71,6 +71,8 @@ export type TurnListProps = {
   queue?: TurnQueueControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
+  /** Edit on the writer's message above a stopped reply: put its words back in the message box. */
+  onEditStopped?: ((turnId: string) => void) | null;
   /** Whether a reply is a Retry's stand-in the server doesn't have yet: nothing to read or act on. */
   isStandIn?: ((turnId: string) => boolean) | null;
   /** Something holds this chat (a reply, a compaction, a brief): a brief card's Retry waits. */
@@ -120,6 +122,7 @@ export function TurnList({
   chatStop = null,
   queue = null,
   brief = null,
+  onEditStopped = null,
   isStandIn = null,
   busy = false,
   inherited = null,
@@ -134,6 +137,7 @@ export function TurnList({
   // While a run is active, usage belongs to that live row. Once it settles,
   // keep the final aggregate on the latest settled action row. This avoids
   // moving the snapshot through historical model-step rows at each boundary.
+  const stoppedMessageId = useMemo(() => findStoppedMessageId(rows), [rows]);
   const usageAssistantIdx = busy ? findLatestLocalLiveAssistantIndex(rows) : lastAssistantIdx;
   // Cancel queue and Send now sit on the last queued row; Cancel queue needs two to differ from the x.
   const { lastQueuedTurnId, queuedCount } = useMemo(() => {
@@ -321,6 +325,7 @@ export function TurnList({
           submissionRecovery={local ? submissionRecoveryByTurnId?.get(row.turn.id) : undefined}
           queue={queuedWriter ? queue : null}
           lastQueued={queuedWriter && row.turn.id === lastQueuedTurnId}
+          onEdit={row.turn.id === stoppedMessageId ? onEditStopped : null}
           queuedCount={queuedWriter ? queuedCount : 0}
           isLatestAssistant={rowIndex === lastAssistantIdx}
           standIn={local && (isStandIn?.(row.turn.id) ?? false)}
@@ -351,10 +356,12 @@ export function TurnList({
       isStandIn,
       lastAssistantIdx,
       lastQueuedTurnId,
+      onEditStopped,
       onRetryInherited,
       queue,
       queuedCount,
       rowIndexOf,
+      stoppedMessageId,
       submissionRecoveryByTurnId,
       threadId,
       threadUsage,
@@ -475,6 +482,7 @@ const TranscriptRow = memo(function TranscriptRow({
   queue,
   lastQueued,
   queuedCount,
+  onEdit,
   isLatestAssistant,
   standIn,
   stopping,
@@ -492,6 +500,7 @@ const TranscriptRow = memo(function TranscriptRow({
   queue?: TurnQueueControls | null;
   lastQueued: boolean;
   queuedCount: number;
+  onEdit: ((turnId: string) => void) | null;
   isLatestAssistant: boolean;
   standIn: boolean;
   stopping: boolean;
@@ -538,6 +547,7 @@ const TranscriptRow = memo(function TranscriptRow({
         queueControls={queue}
         lastQueued={lastQueued}
         queuedCount={queuedCount}
+        onEdit={onEdit}
       />
     );
   } else if (items && row.response) {
@@ -590,6 +600,24 @@ function InheritedRow({
       {mark.endsInherited ? <ForkPointRule /> : null}
     </div>
   );
+}
+
+/**
+ * The writer's message above the chat's latest reply when the writer stopped that reply and the
+ * chat hasn't moved past it: the one message Edit puts back. A fork's inherited rows never count.
+ */
+function findStoppedMessageId(rows: readonly ViewRow[]): string | null {
+  const replyAt = rows.findLastIndex((row) => row.kind === "turn" && row.turn.role === "assistant");
+  const reply = rows[replyAt];
+  if (!reply || reply.inherited || reply.turn.status !== "cancelled" || reply.movedPast)
+    return null;
+  for (let i = replyAt - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (!row || row.inherited) return null;
+    if (row.kind === "turn" && row.turn.role === "user" && row.turn.origin === "writer")
+      return row.queued ? null : row.turn.id;
+  }
+  return null;
 }
 
 /** Index of this thread's own last settled assistant turn, or -1 if none; inherited rows never count. */

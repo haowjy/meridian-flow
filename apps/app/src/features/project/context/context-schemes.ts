@@ -6,6 +6,7 @@
 import { t } from "@lingui/core/macro";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import {
+  CONTEXT_URI_SCHEME_NAMES,
   CONTEXT_URI_SCHEMES,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
@@ -57,8 +58,14 @@ export function documentPlace(scheme: ProjectContextTreeScheme, path: string) {
   return schemeLocation(scheme, path.split("/").filter(Boolean).slice(0, -1));
 }
 
-export function schemeLabel(scheme: ProjectContextTreeScheme): string {
+/** The area's name, as the sidebar shows it; null for a source that is unknown. */
+export function schemeLabel(scheme: ProjectContextTreeScheme): string;
+export function schemeLabel(scheme: ProjectContextTreeScheme | null | undefined): string | null;
+export function schemeLabel(scheme: ProjectContextTreeScheme | null | undefined): string | null {
   switch (scheme) {
+    case null:
+    case undefined:
+      return null;
     case "manuscript":
       return t`Manuscript`;
     case "kb":
@@ -72,8 +79,7 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
     case "uploads":
       return t`Uploads`;
     case "agents":
-      // The writer, the model and stored text spell the project's Agents folder this way.
-      return ".agents";
+      return CONTEXT_URI_SCHEME_NAMES.agents;
   }
 }
 

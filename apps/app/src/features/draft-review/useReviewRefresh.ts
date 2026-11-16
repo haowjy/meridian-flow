@@ -57,18 +57,12 @@ export function useReviewRefresh({
       }
       refreshing = true;
       void Promise.all([
-        queryClient.invalidateQueries(
-          {
-            queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
-          },
-          { cancelRefetch: false },
-        ),
-        queryClient.invalidateQueries(
-          {
-            queryKey: projectQueryKeys.ownerDraftMetadata(projectId, ownerKey, documentId, itemKey),
-          },
-          { cancelRefetch: false },
-        ),
+        queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.ownerDraftMetadata(projectId, ownerKey, documentId, itemKey),
+        }),
       ]).finally(() => {
         refreshing = false;
         if (active && trailing) {

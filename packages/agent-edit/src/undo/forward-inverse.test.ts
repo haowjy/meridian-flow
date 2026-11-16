@@ -191,25 +191,25 @@ describe("forward inverse on cold Yjs replicas", () => {
       v.doc.destroy();
     }
   });
-  it.each([
-    false,
-    true,
-  ])("inverse entries themselves invert, preserving deletion ownership (replacement=%s)", (replacement) => {
-    const initial = replacement ? "red" : "abcdef",
-      edited = replacement ? "gold" : "af";
-    const v = base([initial]),
-      original = write(v, [(v) => (replacement ? swap(v, "red", "gold") : text(v).delete(1, 4))]);
-    inverse(v, original);
-    expect(content(v)).toEqual([initial]);
-    const revert = [v.history[v.history.length - 1]];
-    revert[0].kind = "revert";
-    inverse(v, revert);
-    expect(content(v)).toEqual([edited]);
-    expect(states(v, original)).toEqual(["active"]);
-    inverse(v, original);
-    expect(content(v)).toEqual([initial]);
-    v.doc.destroy();
-  });
+  it.each([false, true])(
+    "inverse entries themselves invert, preserving deletion ownership (replacement=%s)",
+    (replacement) => {
+      const initial = replacement ? "red" : "abcdef",
+        edited = replacement ? "gold" : "af";
+      const v = base([initial]),
+        original = write(v, [(v) => (replacement ? swap(v, "red", "gold") : text(v).delete(1, 4))]);
+      inverse(v, original);
+      expect(content(v)).toEqual([initial]);
+      const revert = [v.history[v.history.length - 1]];
+      revert[0].kind = "revert";
+      inverse(v, revert);
+      expect(content(v)).toEqual([edited]);
+      expect(states(v, original)).toEqual(["active"]);
+      inverse(v, original);
+      expect(content(v)).toEqual([initial]);
+      v.doc.destroy();
+    },
+  );
   it("a restoration in a cold draft does not restore its live replica twice", () => {
     const live = base(["abcdef"]),
       e = write(live, [(v) => text(v).delete(1, 4)]);

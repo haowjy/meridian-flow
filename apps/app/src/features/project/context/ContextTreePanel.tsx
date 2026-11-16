@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { addressScheme, isWorkScopedScheme } from "@meridian/contracts/context-uri";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, Folder, FolderPlus } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,11 +13,7 @@ import { ListLine, ListRow } from "@/components/ui/list-row";
 import { SettledSearchField } from "@/components/ui/search-field";
 import type { TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { destinationOf, isImportScheme } from "@/features/import/destination";
-import {
-  type PickKind,
-  useImportsSnapshot,
-  useOptionalImports,
-} from "@/features/import/ImportProvider";
+import { type PickKind, useOptionalImports } from "@/features/import/ImportProvider";
 import { canPickFolders } from "@/features/import/SelectionPicker";
 import { rowId, rowKind } from "@/features/import/tree-rows";
 import { useImportedTree } from "@/features/import/use-imported-tree";
@@ -33,7 +29,7 @@ import { matchFileSuggestions, treeFileSuggestions } from "./file-suggestions/fi
 import { ImportHeaderAction } from "./ImportHeaderAction";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { treeFolderIds } from "./tree-expansion-state";
-import { subscribeFolderReveal } from "./tree-reveal";
+import { revealPlaced, subscribePlacedReveal } from "./tree-reveal";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
 import type { EntryCapabilities } from "./use-entry-interaction";
 import { useTreeExpansion } from "./use-tree-expansion";
@@ -155,23 +151,9 @@ export function useContextTree({
     [tree, revealPath, setExpandedEntryIds],
   );
 
-  useEffect(() => subscribeFolderReveal(openFolder), [openFolder]);
-
-  // An import landing here opens its destination folder, once.
-  const importSnapshot = useImportsSnapshot(imports?.coordinator ?? null);
-  const arrived = useRef(new Set<string>());
-  useEffect(() => {
-    for (const { importId, summary } of importSnapshot.imports) {
-      if (
-        summary.projectId !== projectId ||
-        addressScheme(summary.destination.folderUri) !== scheme ||
-        arrived.current.has(importId)
-      )
-        continue;
-      arrived.current.add(importId);
-      if (summary.destination.folderId) openFolder(summary.destination.folderId);
-    }
-  }, [importSnapshot, projectId, scheme, openFolder]);
+  const openPlaced = useRef(openFolder);
+  openPlaced.current = openFolder;
+  useEffect(() => subscribePlacedReveal((folderId) => openPlaced.current(folderId)), []);
 
   useEffect(() => {
     if (!activeLocationPath) {
@@ -257,7 +239,10 @@ export function useContextTree({
                   folders: canPickFolders(),
                   start: (folder, kind) => {
                     const destination = destinationOf(scheme, folder);
-                    if (destination) pickImport?.(destination, kind);
+                    if (!destination || !pickImport) return;
+                    pickImport(destination, kind);
+                    // The imported rows' ids come from the server: the folder opens for them.
+                    if (folder) revealPlaced(folder.entryId, [], null);
                   },
                 }
               : undefined,
@@ -431,7 +416,6 @@ export function ContextTreePanel({
       drop={drop}
       search={
         <SettledSearchField
-          quiet
           label={t`Find in ${schemeLabel(scheme)}`}
           value={search}
           onSettle={setSearch}
