@@ -352,7 +352,14 @@ the transaction; `55P03` is `contended` and retried on backoff, a moved revision
 is re-judged at once, so the badge converges within the max wait once typing
 pauses and eventually while typing. That is the contract, not a bound to
 tighten: the job's write must never bump `revision`, and the badge must not move back onto the append. Every writer of `has_effect` (the seed or projection job) writes the watermark with it; `-1` is stale
-whatever the revision. A sweep (the `draft-effects` recovery lane, every 30 s)
+whatever the revision.
+Lists' rows read that answer (`has_effect OR has_effect_revision < revision`) only for a
+document live does not show (rule 7). `writeTextAnswer` is the one writer of the answer on a
+judgement or an Un-Apply: it resyncs the document's list, under the list's key taken before the
+draft row's, only when the document is in Trash and the answer differs from what the rows may
+hold (a different stored answer, or a stale draft judged false). Un-Apply writes `true` with the
+stale watermark in its own transaction, so its row is right at its commit.
+A sweep (the `draft-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
 crash inside the debounce converges without another key. Review readers
 (`isEdited` and the Works badge) may lag a key by that second;

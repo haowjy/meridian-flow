@@ -70,7 +70,6 @@ import {
 } from "../domain/draft-store.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
-import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
@@ -82,6 +81,7 @@ import {
   readDraftAt,
   selectDraft,
 } from "./drizzle-draft-storage.js";
+import { writeTextAnswer } from "./drizzle-text-answer.js";
 
 export type RewriteCommitted = {
   draftId: string;
@@ -490,32 +490,14 @@ export function createDrizzleDraftStore(
     rootThreadId: ThreadId | null;
   }): Promise<"written" | "moved" | "contended"> {
     const write = async () => {
-      const tx = currentDrizzleDb(db);
-      // A list's rows read whether the draft holds text: the last judgement's answer, or yes when
-      // a write came after it. Rows are brought to it whenever the judged answer changes, which
-      // is also the first moment a write that revived an emptied draft shows. The list's key
-      // comes before the draft row's.
-      const [before] = await tx
-        .select({ documentId: documentDrafts.documentId, hasEffect: documentDrafts.hasEffect })
-        .from(documentDrafts)
-        .where(
-          and(eq(documentDrafts.id, input.draftId), eq(documentDrafts.revision, input.revision)),
-        );
-      const list =
-        before && before.hasEffect !== input.hasEffect
-          ? await treeListOfNode(tx, before.documentId)
-          : null;
-      if (list) await treeLists.lock([list]);
-      const [row] = await tx
-        .update(documentDrafts)
-        .set({ hasEffect: input.hasEffect, hasEffectRevision: input.revision })
-        .where(
-          and(eq(documentDrafts.id, input.draftId), eq(documentDrafts.revision, input.revision)),
-        )
-        .returning({ id: documentDrafts.id });
+      const written = await writeTextAnswer(db, treeLists, {
+        draftId: input.draftId,
+        revision: input.revision,
+        hasEffect: input.hasEffect,
+        hasEffectRevision: input.revision,
+      });
       // The judgement no longer holds: the Work is not touched for it.
-      if (!row) throw new DraftWriteRollback({ status: "moved" });
-      if (list) await treeLists.resync([list]);
+      if (!written) throw new DraftWriteRollback({ status: "moved" });
     };
     const { workId, rootThreadId } = input;
     try {

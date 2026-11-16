@@ -66,6 +66,7 @@ import { branchRowRevisions } from "./drizzle-branch-tree-state.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
+import { writeTextAnswer } from "./drizzle-text-answer.js";
 import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
 import { asLifecycleRefusal } from "./lifecycle-refusal.js";
 
@@ -510,6 +511,13 @@ export function createDrizzleApplyClick(
                   } finally {
                     write.dispose();
                   }
+                  // The take-back puts the draft's text back, so its row is right at this commit.
+                  // Its watermark stays stale: the projection judges it again.
+                  await writeTextAnswer(db, deps.treeLists, {
+                    draftId: currentBase.snapshot.draftId,
+                    hasEffect: true,
+                    hasEffectRevision: -1,
+                  });
                   deps.merged({ commandId, kind: "unapply", ...unapplyMerged });
                   await tx
                     .update(applyCommandEffects)
