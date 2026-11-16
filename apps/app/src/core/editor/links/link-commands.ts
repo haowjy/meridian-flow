@@ -9,14 +9,13 @@
  * serves the right-click menu, which must act on the link the pointer hit
  * rather than on wherever the caret happened to be.
  */
+
 import type { DocumentRef, FolderRef } from "@meridian/contracts";
 import { type Editor, getMarkRange } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import type { Mark } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
-
 import {
   anchorRange,
   type EditorAnchor,
@@ -24,6 +23,7 @@ import {
   resolveAnchor,
   resolveAnchorIn,
 } from "../anchors";
+import { endUndoStep } from "../editor-history";
 import { assignWrittenHref } from "./link-assignment";
 import { linkKeyOfMark } from "./link-resolution";
 import { getLinkAnswerCache } from "./link-storage";
@@ -313,7 +313,7 @@ export function removeLinkAt(editor: Editor, range: { from: number; to: number }
 /** A summoned link action is one undo unit, separate from typing on either side. */
 function runLinkEdit(editor: Editor, apply: () => boolean): boolean {
   const boundary = () => {
-    yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
+    endUndoStep(editor.state);
     editor.view.dispatch(closeHistory(editor.state.tr));
   };
   boundary();

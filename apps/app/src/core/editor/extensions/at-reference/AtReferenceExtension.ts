@@ -1,7 +1,6 @@
 import type { Range } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import type {
   ReferenceBrowserOpenContext,
   ReferenceCatalogPort,
@@ -10,6 +9,7 @@ import type {
   SuggestionMenu,
 } from "@/core/completion";
 import { createReferenceBrowserController } from "@/core/completion";
+import { endUndoStep } from "../../editor-history";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
 import { allowsAtTrigger } from "./at-trigger";
 import {
@@ -89,7 +89,7 @@ const lane = createSuggestionLane<
       label: () => catalog()?.label ?? "References",
       linkAhead: (name) => catalog()?.linkAhead?.(name) ?? null,
       onLinkAhead: ({ row, triggerRange }) => {
-        yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
+        endUndoStep(editor.state);
         editor.view.dispatch(closeHistory(editor.state.tr));
         insertLinkAhead(editor, triggerRange, { label: row.label, uri: row.uri });
       },
@@ -97,7 +97,7 @@ const lane = createSuggestionLane<
         editor.chain().focus().insertContentAt(triggerRange, prefix).run();
       },
       onSelect: ({ row, triggerRange }) => {
-        yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
+        endUndoStep(editor.state);
         editor.view.dispatch(closeHistory(editor.state.tr));
         const current = catalog();
         const node = current?.referenceNode(editor.schema, row);
