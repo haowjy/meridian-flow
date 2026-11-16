@@ -9,6 +9,7 @@ flowchart LR
   import["import<br/><small>pick files, upload, follow the import</small>"]:::feature
   export["export<br/><small>the project ZIP dialog</small>"]:::feature
   account["account<br/><small>the account menu and settings</small>"]:::feature
+  connections["connections<br/><small>the writer's MCP connections</small>"]:::feature
   billing["billing<br/><small>usage and credits</small>"]:::feature
   routes["routes<br/><small>the pages</small>"]:::context
   project["project<br/><small>the workspace shell</small>"]:::context
@@ -21,6 +22,9 @@ flowchart LR
   project -->|"opens the import menu"| import
   project -->|"opens the export dialog"| export
   home -->|"shows the account menu from"| account
+  account -->|"shows the Connections section from"| connections
+  connections -->|"adds, checks and removes connections through"| client
+  project -->|"marks a connection that isn't working in a new chat with"| connections
   routes -->|"mounts the usage page"| billing
 ```
 
@@ -70,6 +74,20 @@ The menu, the settings dialog (with a phone variant) and the provider that cache
 
 - Kind: feature
 - Paths: `apps/app/src/features/account`
+
+## connections
+
+The writer's connections to MCP servers, in settings and in a new chat.
+
+The Connections section of the settings dialog: inside a project, "All my projects" and "This
+project"; adding, choosing tools, status with Try again and Update the token, the shadow note,
+and remove with Undo. A new chat's composer shows a card for a connection that isn't working. The
+list is one query (`client/query/useMcpConnections.ts`): reading it starts the server's checks, so
+it is read at app open, on return, and once a minute while a screen shows one that can't be
+reached; the server's `mcp-connections-hint` makes it stale.
+
+- Kind: feature
+- Paths: `apps/app/src/features/connections`
 
 ## billing
 
