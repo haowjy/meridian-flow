@@ -5,6 +5,7 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import type { AssistantView, ViewItem, ViewRow, ViewRun } from "@meridian/thread-client";
 import { memo, useMemo } from "react";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
+import { Button } from "@/components/ui/button";
 import { AgentSavesReceipt } from "@/features/agents/AgentSavesReceipt";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { AskReceipt } from "./ask/AskReceipt";
@@ -156,15 +157,32 @@ const TurnLineageReceipt = memo(function TurnLineageReceipt({
   // Gated on settlement like document lineage: a receipt is a record of a
   // finished turn, and mid-stream it would offer Undo on a turn still writing.
   const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
-  return hasTurnEditsReceiptContent(editedDocuments, workReceipts) ? (
-    <TurnEditsReceipt
-      threadId={threadId}
-      turn={turn}
-      documents={editedDocuments}
-      receipt={liveLineage.receipt}
-      workReceipts={workReceipts}
-    />
-  ) : null;
+  // A failed read is not an empty turn: the writer's Undo for the documents this reply wrote is
+  // somewhere unread. It shows beside any Work receipts, which say nothing about those documents.
+  const readFailed = liveLineage.isError && view.wroteDocuments && editedDocuments.length === 0;
+  return (
+    <>
+      {hasTurnEditsReceiptContent(editedDocuments, workReceipts) ? (
+        <TurnEditsReceipt
+          threadId={threadId}
+          turn={turn}
+          documents={editedDocuments}
+          receipt={liveLineage.receipt}
+          workReceipts={workReceipts}
+        />
+      ) : null}
+      {readFailed ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+          <span>
+            <Trans>This reply’s edits couldn’t load.</Trans>
+          </span>
+          <Button variant="outline" size="sm" onClick={liveLineage.refetch}>
+            <Trans>Retry loading</Trans>
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
 });
 TurnLineageReceipt.displayName = "TurnLineageReceipt";
 
