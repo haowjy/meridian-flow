@@ -37,13 +37,15 @@ export function useNewDocument(
       provisional: true,
       kind: "document",
     });
+    const { path } = made;
+    if (!path) throw new Error("The new document is not in Unfiled");
     const document = {
       documentId,
-      contextLocation: { scheme: "unfiled" as const, path: made.path },
+      contextLocation: { scheme: "unfiled" as const, path },
     };
     await openCreated(document, async () => {
       const result = await open(
-        { scheme: "unfiled", path: made.path.slice(1), documentId },
+        { scheme: "unfiled", path: path.slice(1), documentId },
         {
           isCurrent,
           focus: true,

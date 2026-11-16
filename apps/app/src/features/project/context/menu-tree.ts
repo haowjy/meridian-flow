@@ -30,6 +30,7 @@ function listChildren(tree: TreeView, parentId: string | null): DrillNode[] {
     id: node.entryId,
     documentId: node.kind === "dir" ? undefined : node.documentId,
     name: node.name,
+    ...(node.suffix ? { suffix: node.suffix } : {}),
     folder: node.kind === "dir",
     icon: node.kind === "dir" ? Folder : fileKindIcon(node),
     editable: node.kind === "dir" ? undefined : node.editable,
@@ -100,9 +101,17 @@ export function trailAlong(area: MenuArea, folders: readonly string[]): DrillNod
   const { tree } = area;
   const nodes = tree
     ? folders.flatMap((_, index) => {
-        const folder = tree.findPath(`/${folders.slice(0, index + 1).join("/")}`);
-        return folder?.kind === "dir"
-          ? [{ id: folder.entryId, name: folder.name, folder: true, icon: Folder }]
+        const folder = tree.findFolder(folders.slice(0, index + 1).join("/"));
+        return folder
+          ? [
+              {
+                id: folder.entryId,
+                name: folder.name,
+                ...(folder.suffix ? { suffix: folder.suffix } : {}),
+                folder: true,
+                icon: Folder,
+              },
+            ]
           : [];
       })
     : [];

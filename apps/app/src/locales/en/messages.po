@@ -1573,7 +1573,7 @@ msgid "Back"
 msgstr "Back"
 
 #. placeholder {0}: choosing.label
-#. placeholder {0}: folder.title ?? folder.name
+#. placeholder {0}: folder.title ?? entrySegment(folder.name, folder.suffix)
 #: src/components/app/DrillInMenu.tsx
 #: src/features/project/side/SideExplorer.tsx
 msgid "Back from {0}"

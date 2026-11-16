@@ -133,12 +133,12 @@ export function useContextTree({
       if (segments.length === 0) return;
       setExpandedEntryIds((current) => {
         const next = { ...current };
-        let ancestor = "";
-        for (const segment of segments) {
-          ancestor += `/${segment}`;
-          const entry = tree.findPath(ancestor);
-          if (entry?.kind === "dir") next[entry.entryId] = true;
+        for (let at = 1; at < segments.length; at += 1) {
+          const folder = tree.findFolder(segments.slice(0, at).join("/"));
+          if (folder) next[folder.entryId] = true;
         }
+        const entry = tree.findPath(path);
+        if (entry?.kind === "dir") next[entry.entryId] = true;
         return next;
       });
     },
@@ -302,9 +302,8 @@ export function useContextTree({
       : activeLocationPath && parentContextEntryPath(activeLocationPath);
   const inRoot = (path: string | null): path is string =>
     path !== null && (rootPath === "" || path === rootPath || path.startsWith(`${rootPath}/`));
-  const here = inRoot(placed) && tree?.findPath(placed)?.kind === "dir" ? placed : rootPath;
-  const root = rootPath === "" ? tree?.root : tree?.findPath(rootPath);
-  const rootFolder = root?.kind === "dir" ? root : null;
+  const here = inRoot(placed) && tree?.findFolder(placed) ? placed : rootPath;
+  const rootFolder = tree?.findFolder(rootPath) ?? null;
   const empty = Boolean(
     env &&
       isComplete &&
@@ -500,6 +499,7 @@ function FoundEntries({
               key={entry.entryId}
               icon={Folder}
               title={entry.name}
+              suffix={entry.suffix}
               meta={match.parents.at(-1)}
               onOpen={() => onOpenFolder(entry.entryId)}
             />
@@ -509,6 +509,7 @@ function FoundEntries({
             key={entry.documentId}
             icon={fileKindIcon(entry)}
             title={entry.name}
+            suffix={entry.suffix}
             meta={match.parents.at(-1)}
             current={entry.documentId === activeDocumentId}
             onOpen={() => onOpen(entry)}

@@ -26,6 +26,7 @@ import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
+import { twinSuffix } from "@/core/project-tree/tree-view";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { focusMain } from "@/features/editor/focus-on-open";
@@ -241,6 +242,7 @@ function RecentDocumentRow({
       menu={menu}
       icon={fileKindIcon(item.name)}
       title={item.name}
+      suffix={address ? twinSuffix(address.path) : undefined}
       detail={address ? documentPlace(address.scheme, address.path) : null}
       // The age is for the eye; the row's name is the document and where it lives.
       meta={<span aria-hidden>{relativeTime(item.openedAt, now)}</span>}

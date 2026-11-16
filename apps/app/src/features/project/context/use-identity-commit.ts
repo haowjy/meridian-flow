@@ -117,14 +117,12 @@ export function useIdentityCommit({
     try {
       const destination = plan.desired.destination;
       const current = location.scheme;
-      const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       const actions = destination.scheme === "user" ? accountActions : projectActions;
       const from = trees[current as (typeof EDITOR_SCHEMES)[number]].tree;
       const into = trees[destination.scheme as (typeof EDITOR_SCHEMES)[number]].tree;
       const file = from?.findDocument(document.documentId);
       if (!from || !into || !file) throw new Error("Document is not in the list");
-      const parentId =
-        destination.parentId ?? (folder ? into.findPath(`/${folder}`)?.entryId : into.root.entryId);
+      const parentId = destination.parentId ?? into.findFolder(destination.folderPath)?.entryId;
       if (!parentId) throw new Error("Destination folder is unavailable");
 
       const moved = parentId !== file.parentId;
@@ -138,11 +136,13 @@ export function useIdentityCommit({
               (stored.ok ? stored.filename.filetype : null) ?? undefined,
             )
           : { name: file.name };
+      const path = actions.pathOf(file.entryId);
+      if (!path) throw new Error("Document is not in the list");
       onCommitted(
         document.documentId,
         {
           scheme: destination.scheme,
-          path: `/${[folder, renamed.name].filter(Boolean).join("/")}`,
+          path,
           name: renamed.name,
           ...replaceOwner(destination),
         },

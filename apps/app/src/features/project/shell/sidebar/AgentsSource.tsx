@@ -37,7 +37,7 @@ import {
 import { ListSectionHeader } from "@/components/ui/list-section";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useInlineEdit } from "@/components/ui/use-inline-edit";
-import type { TreeActions } from "@/core/project-tree/tree-actions";
+import { makeFolders, type TreeActions } from "@/core/project-tree/tree-actions";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { agentFileAt } from "@/features/agents/AgentFileState";
 import { writeFirstAgentText } from "@/features/agents/agent-file-template";
@@ -542,19 +542,6 @@ function makeLevelFile(
   rootPath: string,
   at: { folders: string[]; leaf: string },
 ): { node: string } {
-  let parentId = view.root.entryId;
-  let path: string | null = "";
-  for (const folder of [...rootPath.split("/").filter(Boolean), ...at.folders]) {
-    // Below a folder made here, nothing exists yet to find.
-    const found: TreeFile | TreeDirectory | null =
-      path === null ? null : view.findPath(`${path}/${folder}`);
-    if (found?.kind === "dir") {
-      parentId = found.entryId;
-      path = found.path;
-      continue;
-    }
-    parentId = list.create({ parentId, kind: "folder", name: folder }).node;
-    path = null;
-  }
+  const parentId = makeFolders(view, list, [rootPath, ...at.folders].join("/"));
   return list.create({ parentId, kind: "document", name: at.leaf, filetype: "source" });
 }

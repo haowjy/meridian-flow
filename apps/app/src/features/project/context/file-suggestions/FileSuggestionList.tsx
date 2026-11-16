@@ -81,6 +81,7 @@ export const FileSuggestionList = forwardRef<
                         : fileKindIcon(suggestion.name)
                   }
                   title={root ? schemeLabel(suggestion.scheme) : suggestion.name}
+                  suffix={suggestion.suffix}
                   meta={
                     suggestion.hint ??
                     (hideParents || root

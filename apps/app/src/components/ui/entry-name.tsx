@@ -17,15 +17,23 @@ export function EntryName({
 }) {
   if (!suffix) return name;
   const faint = <span className={`shrink-0 ${role.secondary}`}>~{suffix}</span>;
-  return truncate ? (
-    <span className="flex min-w-0">
-      <span className="truncate">{name}</span>
-      {faint}
-    </span>
-  ) : (
+  if (!truncate)
+    return (
+      <>
+        {name}
+        {faint}
+      </>
+    );
+  // The flex parts would read aloud as two words ("Kael ~2db3"); it is one name, as a chip says it.
+  return (
     <>
-      {name}
-      {faint}
+      <span aria-hidden className="flex min-w-0">
+        <span className="truncate">{name}</span>
+        {faint}
+      </span>
+      <span className="sr-only">
+        {name}~{suffix}
+      </span>
     </>
   );
 }

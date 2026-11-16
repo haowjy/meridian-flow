@@ -7,7 +7,6 @@
 
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { readSegment } from "@meridian/contracts/protocol";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { type Ref, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -30,6 +29,7 @@ import {
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { linkChipAttributes, referenceChip } from "@/core/editor/links";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
+import { twinSuffix } from "@/core/project-tree/tree-view";
 import { ReferenceSuggestionMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { FolderMenu, useFolderMenuHost } from "@/features/project/context/FolderMenu";
@@ -59,7 +59,9 @@ export function ComposerReferenceMenu({
   const changeAfterClose = useRef<"destination" | "label" | null>(null);
   const label = reference.displayText ?? reference.label;
   // Words the writer gave the chip are theirs; its own label is the name, which a twin's `~id` ends.
-  const suffix = reference.displayText === undefined ? twinSuffix(reference.uri) : undefined;
+  const parsed = parseContextUri(reference.uri);
+  const suffix =
+    reference.displayText === undefined && parsed.ok ? twinSuffix(parsed.value.path) : undefined;
   const spoken = suffix ? `${label}~${suffix}` : label;
   const runtime = readRuntime();
   const follow =
@@ -313,11 +315,4 @@ function ReferenceDisplayText({
       <Button type="submit" disabled={!text.trim()}>{t`Save changes`}</Button>
     </form>
   );
-}
-
-/** The `~id` that ends the address's last segment: a twin's, which its label doesn't carry. */
-function twinSuffix(uri: string): string | undefined {
-  const parsed = parseContextUri(uri);
-  const leaf = parsed.ok ? parsed.value.path.split("/").at(-1) : undefined;
-  return leaf ? readSegment(leaf).suffix : undefined;
 }
