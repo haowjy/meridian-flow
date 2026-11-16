@@ -107,9 +107,9 @@ export type TextTarget =
   | { kind: "groups"; frame: ReviewFrame; groupIds: string[]; tree?: true }
   /**
    * Every change of the draft. `draftId` is the list's: with no room open, the server applies
-   * that draft's changes as it holds them on receipt.
+   * that draft's changes as it holds them on receipt, only `threadId`'s when given.
    */
-  | { kind: "draft"; draftId?: string };
+  | { kind: "draft"; draftId?: string; threadId?: string };
 /** Some of a draft's changes, which a Discard writes back in the draft's room. */
 export type GroupsTarget = Extract<TextTarget, { kind: "groups" }>;
 export type ChangeTarget = TextTarget | { kind: "tree" };

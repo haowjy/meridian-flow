@@ -111,7 +111,7 @@ export function useDraftDock({
     const isWhole =
       row.draft.hasDraft && row.draft.tree?.deleted !== true && roomIndex(row.draft.itemKey) < 0;
     if (isWhole) {
-      const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
+      const file = wholeDockFile(row, reviewFileTargetName(row, untitled), threadId);
       return controller.owner.state(row.draft.itemKey).discarding
         ? { ...file, count: 0, actionable: [] }
         : file;
@@ -157,7 +157,7 @@ export function useDraftDock({
       : Math.max(0, workCount - drafted.filter((file) => file.alone).length);
 
   const actionableFiles = files.filter((file) =>
-    file.whole ? file.count > 0 : file.actionable.length > 0,
+    file.whole ? file.count !== 0 : file.actionable.length > 0,
   );
 
   const review = useCallback(
@@ -185,10 +185,13 @@ export function useDraftDock({
   const discardItems = (files: readonly DockFile[]) => {
     // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
     const whole = controller.frozen;
-    return files.map((file) => ({
-      draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-      target: whole || file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
-    }));
+    return files
+      .filter((file) => whole || !file.shared)
+      .map((file) => ({
+        draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+        target:
+          whole || file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
+      }));
   };
   /**
    * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
@@ -203,7 +206,12 @@ export function useDraftDock({
           ? discardItems(files)
           : files.map((file) => ({
               draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-              target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
+              target: file.whole
+                ? ({
+                    kind: "draft",
+                    ...(file.row.draft.wholeItem ? {} : { threadId }),
+                  } as const)
+                : targetOfChanges(file.actionable),
             }));
       if (items.length === 0) return Promise.resolve([]);
       // An Apply is one command over every file; a Discard is one notice with one Undo.
@@ -217,7 +225,7 @@ export function useDraftDock({
         () => [],
       );
     },
-    [actionableFiles, applicable, runner, controller.frozen],
+    [actionableFiles, applicable, runner, controller.frozen, threadId],
   );
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
@@ -266,7 +274,7 @@ export function useDraftDock({
     deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
     apply: (restore: ReadonlySet<string>) => send("apply", restore),
     discard: () => void send("discard"),
-    /** A listed (`whole`) row's own commands: its whole draft, as the row has no changes to pick. */
+    /** A listed (`whole`) row's own commands: this chat's changes, which the server picks, as the row has none to pick. */
     applyFile: (file: DockFile) => void send("apply", new Set(), file),
     discardFile: (file: DockFile) => void send("discard", new Set(), file),
   };

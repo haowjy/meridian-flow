@@ -32,7 +32,10 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
 import type { DraftBase } from "./draft-runtime.js";
-import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
+import type {
+  DraftDispositionCapture,
+  DraftDispositionStore,
+} from "./ports/draft-disposition-store.js";
 
 export type ApplyCommand = Parameters<CollabBranches["draftReview"]["apply"]>[0];
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
@@ -127,10 +130,7 @@ function decodeClickedSnapshot(encoded: string): Y.Snapshot {
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
-  provenance: {
-    userId: string;
-    parts: import("@meridian/agent-edit/diff").Provenance["parts"];
-  },
+  provenance: Pick<DraftDispositionCapture, "userId" | "parts">,
 ): CompiledClick {
   const current = Y.snapshot(doc);
   // A whole cut is the replica as received: no click froze it, so nothing can be unsynced.
@@ -155,9 +155,27 @@ export function compileClick(
     const projection = projectReview(
       diffBlocks(optimistic, readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema)),
     );
-    if ("whole" in request && projection.groups.length === 0) return { schema, groups: [] };
+    const classifications = classifyChanges(
+      cut,
+      projection,
+      { ...provenance, snapshot },
+      { record: true },
+    );
+    // A chat's whole cut takes what a room's strip row takes for it: groups it wrote, and groups
+    // the evidence names no one for.
+    const mine = (id: string) => {
+      const attributed = classifications.get(id);
+      return (
+        !("whole" in request && request.threadId) ||
+        !attributed ||
+        attributed.members.some((i) => provenance.parts[i].owner?.threadId === request.threadId)
+      );
+    };
     const groupIds =
-      "whole" in request ? projection.groups.map((group) => group.id) : request.groupIds;
+      "whole" in request
+        ? projection.groups.map((group) => group.id).filter(mine)
+        : request.groupIds;
+    if ("whole" in request && groupIds.length === 0) return { schema, groups: [] };
     const known = new Set(projection.groups.map((group) => group.id));
     if (
       !groupIds.length ||
@@ -165,12 +183,6 @@ export function compileClick(
       groupIds.some((id) => !known.has(id))
     )
       throw new ApplyClickRefused("malformed");
-    const classifications = classifyChanges(
-      cut,
-      projection,
-      { ...provenance, snapshot },
-      { record: true },
-    );
     const chosen: Hunk[] = [];
     let before = optimistic;
     const groups = groupIds.map((groupId): CompiledApplyGroup => {

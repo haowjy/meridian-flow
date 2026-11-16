@@ -253,9 +253,11 @@ function DockFileLine({
           >
             <span className="min-w-0 truncate">{fileLabel(file)}</span>
             <DeletedLiveTag item={file.row.draft} />
-            <span className="ml-auto shrink-0 text-muted-foreground">
-              <ChangeCount count={file.count} />
-            </span>
+            {file.count === null ? null : (
+              <span className="ml-auto shrink-0 text-muted-foreground">
+                <ChangeCount count={file.count} />
+              </span>
+            )}
           </button>
           <ReviewActions
             scope="change"
@@ -266,7 +268,7 @@ function DockFileLine({
               discard: t`Discard this chat's changes to ${file.name}`,
             }}
             disabled={!dock.canCommand}
-            onDiscard={() => dock.discardFile(file)}
+            onDiscard={file.shared ? undefined : () => dock.discardFile(file)}
             onApply={() => dock.applyFile(file)}
           />
         </div>

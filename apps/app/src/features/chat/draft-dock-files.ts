@@ -12,12 +12,17 @@ export type DockFile = {
   /** Read, and every change its draft holds is this chat's: the strip's Apply leaves nothing of it. */
   alone: boolean;
   /**
-   * Read from the owner list, with no room: its text changes are not listed, only counted, and
-   * the strip's commands take its whole draft.
+   * Read from the owner list, with no room: its text changes are not listed. Apply names this
+   * chat and the server takes the groups it wrote.
    */
   whole: boolean;
-  /** The changes it counts: the listed ones, or for a `whole` file the list's own count. */
-  count: number;
+  /**
+   * A `whole` file other chats wrote in too. The list counts the draft, not this chat's share, so
+   * it shows no count, and Discard, which ends the server's whole draft, is not offered.
+   */
+  shared: boolean;
+  /** The changes it counts: the listed ones, or for a `whole` file the list's own count; null for a `shared` one. */
+  count: number | null;
 };
 export function dockFile(
   row: ReviewFileTarget,
@@ -39,12 +44,16 @@ export function dockFile(
     actionable: view?.status === "ready" ? changes : [],
     alone: read && changes.length === items.length,
     whole: false,
+    shared: false,
     count: changes.length,
   };
 }
-/** A drafted row the strip holds no room for. The list says what changed; the server cuts the draft. */
-export function wholeDockFile(row: ReviewFileTarget, name: string): DockFile {
+/** A drafted row the strip holds no room for. The list says what changed; the server cuts this chat's groups. */
+export function wholeDockFile(row: ReviewFileTarget, name: string, threadId: string): DockFile {
   const changes = listedItemChanges(row.draft, []);
+  // A creation or picture is one change that Apply lands whole, whoever wrote in it.
+  const shared =
+    !row.draft.wholeItem && row.draft.actorThreads.some((chat) => chat.threadId !== threadId);
   const texts = row.draft.wholeItem ? 0 : row.draft.textChanges;
   return {
     row,
@@ -53,13 +62,16 @@ export function wholeDockFile(row: ReviewFileTarget, name: string): DockFile {
     retry: null,
     changes,
     actionable: changes,
-    alone: true,
+    alone: !shared,
     whole: true,
-    count: changes.length + texts,
+    shared,
+    count: shared ? null : changes.length + texts,
   };
 }
-export const isOnStrip = (file: DockFile) => file.status !== "ready" || file.count > 0;
+export const isOnStrip = (file: DockFile) => file.status !== "ready" || file.count !== 0;
 export const totalChanges = (files: readonly DockFile[]) =>
   files.some((file) => file.status !== "ready")
     ? null
-    : files.reduce((sum, file) => sum + file.count, 0);
+    : files.some((file) => file.count === null)
+      ? null
+      : files.reduce((sum, file) => sum + (file.count ?? 0), 0);

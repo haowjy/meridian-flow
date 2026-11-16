@@ -8,7 +8,9 @@ room: snapshot, `baseViewDelta`, `groupIds`; the server refuses `unsynced` when 
 lacks the snapshot, and `malformed` for a group the cut's projection doesn't have. A whole cut
 (`{draftId, whole: true}`) is what a tab with no room open sends (Changes rows, folders, Apply
 all): `compileClick` cuts at the replica `loadBase` returned, with an empty `baseViewDelta`, and
-takes every group of that projection. A whole cut with no group compiles to an empty click; the
+takes every group of that projection, or with `threadId` the groups attributed to that chat (by the
+receipts' owner thread) and those the evidence names no one for, which is what the chat strip's
+room rows take. A whole cut with no group, or none of that chat's, compiles to an empty click; the
 adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
 the Un-Apply records are the same for both.
 

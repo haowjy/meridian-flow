@@ -34,6 +34,8 @@ export type ApplyClick = {
    * cut), with no snapshot and empty `groupIds` and `baseViewDelta`.
    */
   whole?: true;
+  /** With `whole`: only the groups this chat wrote, not the draft's others. */
+  threadId?: string;
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
   /**
@@ -127,7 +129,8 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
- * is skipped, not refused.
+ * is skipped, not refused. With `threadId`, only the groups that chat wrote and those no chat
+ * owns, as a room's strip row takes them.
  */
 export type ApplyTextCut =
   | {
@@ -137,7 +140,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true };
+  | { draftId: string; whole: true; threadId?: string };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree

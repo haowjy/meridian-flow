@@ -184,6 +184,7 @@ const ApplyClickBody = z
     commandId: CommandIdSchema,
     snapshot: z.string().min(1).optional(),
     whole: z.literal(true).optional(),
+    threadId: z.string().min(1).max(128).optional(),
     baseViewDelta: BaseViewDeltaBody,
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
     restore: z.literal(true).optional(),
@@ -202,7 +203,7 @@ const ApplyClickBody = z
         !body.snapshot &&
         body.groupIds.length === 0 &&
         body.baseViewDelta.length === 0
-      : Boolean(body.snapshot) === Boolean(body.draftId),
+      : !body.threadId && Boolean(body.snapshot) === Boolean(body.draftId),
   );
 type ApplyClickRequest = z.infer<typeof ApplyClickBody>;
 const UnapplyClickBody = z.strictObject({
@@ -219,7 +220,11 @@ const ApplyTextBody = z.union([
       .min(1)
       .refine((ids) => new Set(ids).size === ids.length),
   }),
-  z.strictObject({ draftId: z.string().min(1).max(128), whole: z.literal(true) }),
+  z.strictObject({
+    draftId: z.string().min(1).max(128),
+    whole: z.literal(true),
+    threadId: z.string().min(1).max(128).optional(),
+  }),
 ]);
 const ApplyItemsBody = z.strictObject({
   commandId: CommandIdSchema,
@@ -642,7 +647,11 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ApplyIt
   if (!frozen && !click.whole && !click.tree) return null;
   if (frozen && (!click.draftId || !click.snapshot || click.groupIds.length === 0)) return null;
   const text: ApplyTextCut | null = click.whole
-    ? { draftId: click.draftId as string, whole: true }
+    ? {
+        draftId: click.draftId as string,
+        whole: true,
+        ...(click.threadId ? { threadId: click.threadId } : {}),
+      }
     : frozen
       ? {
           draftId: click.draftId as string,

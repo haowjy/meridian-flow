@@ -137,7 +137,7 @@ export function useWorkBranchCommands({
       target: ChangeTarget,
       item: ThreadDraftListItem | undefined,
     ): ChangeTarget =>
-      target.kind === "draft" && item?.draftId ? { kind: "draft", draftId: item.draftId } : target;
+      target.kind === "draft" && item?.draftId ? { ...target, draftId: item.draftId } : target;
     const blocked = (): CommandStart => ({
       sent: false,
       outcome: Promise.resolve({ kind: "blocked" }),
