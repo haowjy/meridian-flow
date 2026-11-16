@@ -70,6 +70,11 @@ export type TreeStep = {
   waits?: readonly string[];
   /** Hears the step leave the stack, taken back or skipped: a notice holding its Undo ends. */
   ended?: () => void;
+  /**
+   * Hears a delete's step start to rest: a notice away from its rows, which can't hide its Undo
+   * for now, ends; the rows and a press keep it.
+   */
+  rested?: () => void;
 };
 
 /** An archived or deleted Work, or a chat in Trash, named when the tab knows its name. */
@@ -649,13 +654,17 @@ function rests(session: TreeListSession, step: TreeStep): boolean {
   if (step.gesture !== "delete") return false;
   const view: View = step.draft === null ? LIVE : { draft: step.draft };
   const writer = writerOf(session, view);
-  return !step.records.some((record) => deleteHides(writer, view, record));
+  return (
+    step.records.some((record) => deleteStands(writer, view, record)) &&
+    !step.records.some((record) => deleteHides(writer, view, record))
+  );
 }
 
 /**
  * Ends the delete `step` when none of its records is in force any more (lifted by anyone's
  * restore or Undo, or purged): a notice offers an Undo that no longer applies. While it stands, a
- * change in whether it rests shows on its rows. Returns the stop for the watch.
+ * change in whether it rests shows on its rows, and its start ends a notice away from them
+ * (`rested`). Returns the stop for the watch.
  */
 export function endWhenRestored(session: TreeListSession, step: TreeStep): () => void {
   const view: View = step.draft === null ? LIVE : { draft: step.draft };
@@ -665,6 +674,7 @@ export function endWhenRestored(session: TreeListSession, step: TreeStep): () =>
     if (step.records.some((record) => deleteStands(writer, view, record))) {
       if (rests(session, step) === resting) return;
       resting = !resting;
+      if (resting) step.rested?.();
       changed();
       return;
     }

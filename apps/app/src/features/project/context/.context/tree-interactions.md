@@ -133,8 +133,10 @@ undo is gone: once none of the delete's records is in force (a Trash Restore of 
 peer's, a purge: `deleteStands`) the step leaves the stack (`endWhenRestored`). While its records
 stand but hide nothing (an Apply brought back everything it took, or a create keeps its folder
 standing), the rows show no Undo and Ctrl+Z passes over it; both come back when the delete hides
-something again (`deleteHides`, the fact Trash lists by). A delete across the project and account lists is one step per list, each
-with its Undo on its own rows.
+something again (`deleteHides`, the fact Trash lists by). The `DraftNotices` line has no such
+pause: it ends when the step starts to rest (`TreeStep.rested`), and the rows and Ctrl+Z keep the
+Undo. A delete across the project and account lists is one step per list, each with its Undo on
+its own rows.
 
 Inline create puts its naming row at the end of the folder, where the create appends, so nothing
 moves on Enter. The source header's New file and New folder name the folder the writer last
