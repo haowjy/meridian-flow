@@ -544,7 +544,7 @@ export async function syncRows(
   listId: string,
   doc: Y.Doc,
   added: readonly TreeRecord[],
-): Promise<{ created: CreateRecord[]; changedBranches: string[] }> {
+): Promise<{ created: CreateRecord[]; changedBranches: string[]; liveChangedUnder: string[] }> {
   const tx = currentDrizzleDb(db as Database);
   const live = replayView(doc, LIVE);
   const liveRows = shownRows(live);
@@ -593,6 +593,19 @@ export async function syncRows(
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);
+  // A branch row reads live's rows on its node and its parent (`deletedLive`, a move's place),
+  // so a live change there changes the owner's list even when the branch's own rows don't.
+  // `writeLive` names every node under a changed folder, so the parent covers deeper folders.
+  const liveIds = new Set(changed);
+  const liveChangedUnder = [...new Set([...prev.keys(), ...next.keys()])].filter((branchId) =>
+    [prev.get(branchId), next.get(branchId)].some(
+      (rows) =>
+        rows &&
+        [...rows].some(
+          ([id, row]) => liveIds.has(id) || (row.parentId !== null && liveIds.has(row.parentId)),
+        ),
+    ),
+  );
   const changedBranches: string[] = [];
   for (const branchId of new Set([...prev.keys(), ...next.keys()])) {
     const written = await writeBranch(
@@ -606,5 +619,5 @@ export async function syncRows(
     changed.push(...written);
   }
   await markUnviewed(tx, changed);
-  return { created, changedBranches };
+  return { created, changedBranches, liveChangedUnder };
 }

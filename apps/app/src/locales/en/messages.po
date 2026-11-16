@@ -813,12 +813,20 @@ msgid "{name} deleted {count} documents ({names})."
 msgstr "{name} deleted {count} documents ({names})."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {title} from the manuscript. Applying brings it back."
-msgstr "{name} deleted {title} from the manuscript. Applying brings it back."
+msgid "{name} deleted {title} from {area}. Applying brings it back."
+msgstr "{name} deleted {title} from {area}. Applying brings it back."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "{name} deleted {title} from the manuscript. Applying brings it back."
+#~ msgstr "{name} deleted {title} from the manuscript. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted {title}."
 msgstr "{name} deleted {title}."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted {title}. Applying brings it back."
+msgstr "{name} deleted {title}. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
@@ -944,12 +952,28 @@ msgid "{named} and {more} more"
 msgstr "{named} and {more} more"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} are back in the manuscript."
-msgstr "{names} are back in the manuscript."
+msgid "{names} are back in {area}."
+msgstr "{names} are back in {area}."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} is back in the manuscript."
-msgstr "{names} is back in the manuscript."
+#~ msgid "{names} are back in the manuscript."
+#~ msgstr "{names} are back in the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} are back."
+msgstr "{names} are back."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} is back in {area}."
+msgstr "{names} is back in {area}."
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "{names} is back in the manuscript."
+#~ msgstr "{names} is back in the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{names} is back."
+msgstr "{names} is back."
 
 #: src/features/import/import-presentation.ts
 msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
@@ -1041,8 +1065,12 @@ msgid "{title} restored"
 msgstr "{title} restored"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted from the manuscript. Applying brings it back."
-msgstr "{title} was deleted from the manuscript. Applying brings it back."
+msgid "{title} was deleted from {area}. Applying brings it back."
+msgstr "{title} was deleted from {area}. Applying brings it back."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "{title} was deleted from the manuscript. Applying brings it back."
+#~ msgstr "{title} was deleted from the manuscript. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #~ msgid "{title} was deleted with the Work {name}."
@@ -1051,6 +1079,10 @@ msgstr "{title} was deleted from the manuscript. Applying brings it back."
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
 msgstr "{title} was deleted."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was deleted. Applying brings it back."
+msgstr "{title} was deleted. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was discarded from the draft."
@@ -1302,12 +1334,13 @@ msgstr "Account settings."
 msgid "Account: {label}"
 msgstr "Account: {label}"
 
-#. placeholder {0}: work.name
+#. placeholder {0}: nameWithHandle(work.name, handle)
 #: src/features/project/work/WorkActionsMenu.tsx
-msgid "Actions for {0}"
-msgstr "Actions for {0}"
+#~ msgid "Actions for {0}"
+#~ msgstr "Actions for {0}"
 
 #: src/components/ui/list-row.tsx
+#: src/features/project/work/WorkActionsMenu.tsx
 msgid "Actions for {name}"
 msgstr "Actions for {name}"
 
@@ -1505,6 +1538,10 @@ msgstr "Allowed"
 msgid "Allowed always"
 msgstr "Allowed always"
 
+#: src/features/chat/turn-receipt-copy.ts
+msgid "Already applied"
+msgstr "Already applied"
+
 #. placeholder {0}: folder.name
 #: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Already in {0}"
@@ -1572,20 +1609,36 @@ msgid "Applied as {name}: the name was taken."
 msgstr "Applied as {name}: the name was taken."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied just now: its changes are in the manuscript."
-msgstr "Applied just now: its changes are in the manuscript."
+msgid "Applied just now: its changes are in {area}."
+msgstr "Applied just now: its changes are in {area}."
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "Applied just now: its changes are in the manuscript."
+#~ msgstr "Applied just now: its changes are in the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied just now."
+msgstr "Applied just now."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Applied to the manuscript"
-msgstr "Applied to the manuscript"
+#~ msgid "Applied to the manuscript"
+#~ msgstr "Applied to the manuscript"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied with the others: {from} → {to}."
 msgstr "Applied with the others: {from} → {to}."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied. It is back in the manuscript."
-msgstr "Applied. It is back in the manuscript."
+msgid "Applied. It is back in {area}."
+msgstr "Applied. It is back in {area}."
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "Applied. It is back in the manuscript."
+#~ msgstr "Applied. It is back in the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied. It is back."
+msgstr "Applied. It is back."
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied. Now in {place}."
@@ -1636,12 +1689,28 @@ msgid "Applying"
 msgstr "Applying"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}, which was deleted from the manuscript."
-msgstr "Applying brings back {names}, which was deleted from the manuscript."
+msgid "Applying brings back {names}, which was deleted from {area}."
+msgstr "Applying brings back {names}, which was deleted from {area}."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}, which were deleted from the manuscript."
-msgstr "Applying brings back {names}, which were deleted from the manuscript."
+#~ msgid "Applying brings back {names}, which was deleted from the manuscript."
+#~ msgstr "Applying brings back {names}, which was deleted from the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying brings back {names}, which was deleted."
+msgstr "Applying brings back {names}, which was deleted."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying brings back {names}, which were deleted from {area}."
+msgstr "Applying brings back {names}, which were deleted from {area}."
+
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "Applying brings back {names}, which were deleted from the manuscript."
+#~ msgstr "Applying brings back {names}, which were deleted from the manuscript."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applying brings back {names}, which were deleted."
+msgstr "Applying brings back {names}, which were deleted."
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applying deletes {deletes}."
@@ -1711,8 +1780,12 @@ msgid "Back from {0}"
 msgstr "Back from {0}"
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Back in the manuscript"
-msgstr "Back in the manuscript"
+msgid "Back in {area}"
+msgstr "Back in {area}"
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+#~ msgid "Back in the manuscript"
+#~ msgstr "Back in the manuscript"
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Back online (all changes saved)"
@@ -2108,7 +2181,7 @@ msgstr "Changing the position of {source}…"
 msgid "Changing work"
 msgstr "Changing work"
 
-#. placeholder {0}: workDisplayName(target)
+#. placeholder {0}: naming.current(target)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Changing work to {0}"
 msgstr "Changing work to {0}"
@@ -3292,6 +3365,7 @@ msgstr "deleted"
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/chat/command-descriptor.ts
 #: src/features/draft-review/DraftCommandStatus.tsx
+#: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3317,6 +3391,18 @@ msgstr "Deleted a document"
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
 msgstr "Deleted a Work"
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+#~ msgid "Deleted from {area}"
+#~ msgstr "Deleted from {area}"
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Deleted from {area}. Apply brings it back."
+msgstr "Deleted from {area}. Apply brings it back."
+
+#: src/features/editor/ManuscriptStateNotice.tsx
+msgid "Deleted from {from}"
+msgstr "Deleted from {from}"
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
@@ -3371,12 +3457,12 @@ msgid "Deleted from {place}."
 msgstr "Deleted from {place}."
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Deleted from the manuscript"
-msgstr "Deleted from the manuscript"
+#~ msgid "Deleted from the manuscript"
+#~ msgstr "Deleted from the manuscript"
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Deleted from the manuscript. Apply brings it back."
-msgstr "Deleted from the manuscript. Apply brings it back."
+#~ msgid "Deleted from the manuscript. Apply brings it back."
+#~ msgstr "Deleted from the manuscript. Apply brings it back."
 
 #: src/features/draft-review/tree-groups.ts
 msgid "Deleted in live. Restore it to keep this change."
@@ -3412,6 +3498,10 @@ msgstr "Deleted Work can be restored."
 #: src/features/project/context/TrashedDocument.tsx
 #~ msgid "Deleted."
 #~ msgstr "Deleted."
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Deleted. Apply brings it back."
+msgstr "Deleted. Apply brings it back."
 
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Deletes this document"
@@ -5488,17 +5578,15 @@ msgid "Open \"{name}\""
 msgstr "Open \"{name}\""
 
 #. placeholder {0}: fileName(agent)
-#. placeholder {0}: work.name
 #: src/features/agents/AgentPicker.tsx
-#: src/features/project/work/WorkRow.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
 
 #. placeholder {0}: work.name
 #. placeholder {1}: work.status
 #: src/features/project/work/WorkRow.tsx
-msgid "Open {0} ({1})"
-msgstr "Open {0} ({1})"
+#~ msgid "Open {0} ({1})"
+#~ msgstr "Open {0} ({1})"
 
 #. placeholder {0}: documentDisplayName(path)
 #. placeholder {1}: excerptText(excerpt)
@@ -5515,6 +5603,15 @@ msgstr "Open {0} in {1}"
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
+
+#: src/features/project/work/WorkRow.tsx
+msgid "Open {named}"
+msgstr "Open {named}"
+
+#. placeholder {0}: work.status
+#: src/features/project/work/WorkRow.tsx
+msgid "Open {named} ({0})"
+msgstr "Open {named} ({0})"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/home/ProjectLibrary.tsx
@@ -5918,8 +6015,12 @@ msgstr "Redid"
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Redid change to Work {0}."
-msgstr "Redid change to Work {0}."
+#~ msgid "Redid change to Work {0}."
+#~ msgstr "Redid change to Work {0}."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Redid change to Work {name}."
+msgstr "Redid change to Work {name}."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -5931,8 +6032,12 @@ msgid "Redo didn't go through. Try again."
 msgstr "Redo didn't go through. Try again."
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Redo is no longer available because the manuscript changed."
-msgstr "Redo is no longer available because the manuscript changed."
+msgid "Redo is no longer available because the documents changed."
+msgstr "Redo is no longer available because the documents changed."
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Redo is no longer available because the manuscript changed."
+#~ msgstr "Redo is no longer available because the manuscript changed."
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -6105,12 +6210,14 @@ msgstr "Response complete"
 msgid "Restore"
 msgstr "Restore"
 
-#. placeholder {0}: entry.work.name
-#. placeholder {0}: scoped.name
-#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+#. placeholder {0}: nameOf(entry.work)
 #: src/features/project/work/DeletedWorkList.tsx
 msgid "Restore {0}"
 msgstr "Restore {0}"
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Restore {scopedName}"
+msgstr "Restore {scopedName}"
 
 #: src/features/project/context/entry-drag/restore-drop.ts
 msgid "Restore after {sibling}"
@@ -6980,8 +7087,12 @@ msgid "Talk it out"
 msgstr "Talk it out"
 
 #: src/features/project/mobile/MobileChangeSheet.tsx
-msgid "Tap a change to go to it in the manuscript."
-msgstr "Tap a change to go to it in the manuscript."
+msgid "Tap a change to go to it in the document."
+msgstr "Tap a change to go to it in the document."
+
+#: src/features/project/mobile/MobileChangeSheet.tsx
+#~ msgid "Tap a change to go to it in the manuscript."
+#~ msgstr "Tap a change to go to it in the manuscript."
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "task"
@@ -7180,12 +7291,20 @@ msgid "The AI in {chat} deleted {name} before this change could be made."
 msgstr "The AI in {chat} deleted {name} before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
-msgstr "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
+msgid "The AI in {chat} deleted {title} from {area}. Applying brings it back."
+msgstr "The AI in {chat} deleted {title} from {area}. Applying brings it back."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
+#~ msgstr "The AI in {chat} deleted {title} from the manuscript. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {title}."
 msgstr "The AI in {chat} deleted {title}."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {title}. Applying brings it back."
+msgstr "The AI in {chat} deleted {title}. Applying brings it back."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in {chat} deleted this document before this change could be made."
@@ -7204,12 +7323,20 @@ msgid "The AI in a chat deleted {name} before this change could be made."
 msgstr "The AI in a chat deleted {name} before this change could be made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
-msgstr "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
+msgid "The AI in a chat deleted {title} from {area}. Applying brings it back."
+msgstr "The AI in a chat deleted {title} from {area}. Applying brings it back."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
+#~ msgstr "The AI in a chat deleted {title} from the manuscript. Applying brings it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {title}."
 msgstr "The AI in a chat deleted {title}."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {title}. Applying brings it back."
+msgstr "The AI in a chat deleted {title}. Applying brings it back."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI in a chat deleted this document before this change could be made."
@@ -7568,7 +7695,7 @@ msgstr "This chat is in the trash, so its drafts are frozen. Restore the chat to
 msgid "This chat is in Trash. Restore it to edit or apply its drafts."
 msgstr "This chat is in Trash. Restore it to edit or apply its drafts."
 
-#. placeholder {0}: workDisplayName(commit.work)
+#. placeholder {0}: naming.current(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat now uses {0}."
 msgstr "This chat now uses {0}."
@@ -7599,8 +7726,8 @@ msgstr "This chat's Agent"
 msgid "This chat's current Work could not be found. Refresh the page and try again."
 msgstr "This chat's current Work could not be found. Refresh the page and try again."
 
-#. placeholder {0}: workDisplayName(outcome.currentWork)
-#. placeholder {0}: workDisplayName(work)
+#. placeholder {0}: naming.current(outcome.currentWork)
+#. placeholder {0}: naming.current(work)
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's Work changed to {0}"
 msgstr "This chat's Work changed to {0}"
@@ -7691,8 +7818,8 @@ msgid "This document was deleted before this change could be made."
 msgstr "This document was deleted before this change could be made."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document was deleted from the manuscript. Apply again to bring it back."
-msgstr "This document was deleted from the manuscript. Apply again to bring it back."
+#~ msgid "This document was deleted from the manuscript. Apply again to bring it back."
+#~ msgstr "This document was deleted from the manuscript. Apply again to bring it back."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #~ msgid "This document was deleted with the Work {name}."
@@ -7705,6 +7832,10 @@ msgstr "This document was deleted from the manuscript. Apply again to bring it b
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted."
 msgstr "This document was deleted."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was deleted. Apply again to bring it back."
+msgstr "This document was deleted. Apply again to bring it back."
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document was discarded from the draft"
@@ -8118,8 +8249,12 @@ msgstr "Unarchive"
 
 #. placeholder {0}: scoped.name
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
-msgid "Unarchive {0}"
-msgstr "Unarchive {0}"
+#~ msgid "Unarchive {0}"
+#~ msgstr "Unarchive {0}"
+
+#: src/features/project/shell/sidebar/WorkScopePicker.tsx
+msgid "Unarchive {scopedName}"
+msgstr "Unarchive {scopedName}"
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -8159,8 +8294,12 @@ msgstr "Undid"
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undid change to Work {0}."
-msgstr "Undid change to Work {0}."
+#~ msgid "Undid change to Work {0}."
+#~ msgstr "Undid change to Work {0}."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undid change to Work {name}."
+msgstr "Undid change to Work {name}."
 
 #: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts

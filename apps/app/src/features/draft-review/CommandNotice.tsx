@@ -7,6 +7,7 @@ import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
@@ -18,6 +19,7 @@ import {
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
+import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { type Removal, removalSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { removalAnswer } from "@/features/project/context/removal-answer";
@@ -142,8 +144,8 @@ export function DraftNoticeLine({
       return [];
     });
     const landed = facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
-    const named = (kind: "renamed" | "restored") =>
-      facts.flatMap((fact) => (fact.kind === kind ? [fact.name] : []));
+    const renamed = facts.flatMap((fact) => (fact.kind === "renamed" ? [fact.name] : []));
+    const restored = facts.flatMap((fact) => (fact.kind === "restored" ? [fact] : []));
     const also = facts.flatMap((fact) =>
       fact.kind === "also" ? [`${fact.from} → ${fact.to}`] : [],
     );
@@ -155,7 +157,7 @@ export function DraftNoticeLine({
     // once per place, so the line holds at sidebar width.
     const sentence = [
       ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
-      appliedSentence(named("restored"), named("renamed"), also),
+      appliedSentence(restored, renamed, also),
       removalSentence([...removed.values()]),
     ]
       .filter(Boolean)
@@ -445,10 +447,14 @@ function factSentence(fact: AppliedFact): string {
       const name = fact.name;
       return t`Applied as ${name}: the name was taken.`;
     }
-    case "applied":
-      return t`Applied just now: its changes are in the manuscript.`;
-    case "restored":
-      return t`Applied. It is back in the manuscript.`;
+    case "applied": {
+      const area = schemeLabel(fact.scheme);
+      return area ? t`Applied just now: its changes are in ${area}.` : t`Applied just now.`;
+    }
+    case "restored": {
+      const area = schemeLabel(fact.scheme);
+      return area ? t`Applied. It is back in ${area}.` : t`Applied. It is back.`;
+    }
     case "also": {
       const { from, to } = fact;
       return t`Applied with the others: ${from} → ${to}.`;
@@ -473,43 +479,69 @@ export const noticeAction = (container: HTMLElement) =>
   container.querySelector<HTMLElement>("[data-command-notice] [data-row-word]:not(:disabled)") ??
   container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
 
+/** A document named in a sentence, with the source it is (or was) in. */
+export type InArea = { name: string; scheme: ProjectContextTreeScheme | null | undefined };
+
+/** The names joined per area, in the order each area first appears. */
+function byArea(
+  documents: readonly InArea[],
+): { area: string | null; names: string; count: number }[] {
+  const groups = new Map<string | null, string[]>();
+  for (const { name, scheme } of documents) {
+    const area = schemeLabel(scheme);
+    groups.set(area, [...(groups.get(area) ?? []), name]);
+  }
+  const list = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" });
+  return [...groups].map(([area, names]) => ({
+    area,
+    names: list.format(names),
+    count: names.length,
+  }));
+}
+
 /**
- * The question an Apply all asks first, naming every document it will delete from the
- * manuscript and every one it brings back.
+ * The question an Apply all asks first, naming every document it will delete and every one it
+ * brings back, with the area it was deleted from.
  */
 export function ApplyAllQuestion({
   deleting,
   restoring,
 }: {
   deleting: readonly string[];
-  restoring: readonly string[];
+  restoring: readonly InArea[];
 }) {
   useLingui();
-  const list = (titles: readonly string[]) =>
-    new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(titles);
-  const deletes = list(deleting);
-  const names = list(restoring);
-  return (
-    <>
-      {deleting.length > 0 ? <Trans>Applying deletes {deletes}.</Trans> : null}
-      {deleting.length > 0 && restoring.length > 0 ? " " : null}
-      {restoring.length === 0 ? null : restoring.length === 1 ? (
-        <Trans>Applying brings back {names}, which was deleted from the manuscript.</Trans>
-      ) : (
-        <Trans>Applying brings back {names}, which were deleted from the manuscript.</Trans>
-      )}
-    </>
+  const deletes = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
+    deleting,
   );
+  const sentences = [
+    ...(deleting.length > 0 ? [t`Applying deletes ${deletes}.`] : []),
+    ...byArea(restoring).map(({ area, names, count }) =>
+      area
+        ? count === 1
+          ? t`Applying brings back ${names}, which was deleted from ${area}.`
+          : t`Applying brings back ${names}, which were deleted from ${area}.`
+        : count === 1
+          ? t`Applying brings back ${names}, which was deleted.`
+          : t`Applying brings back ${names}, which were deleted.`,
+    ),
+  ];
+  return <>{sentences.join(" ")}</>;
 }
 
-/** "‹title› is back in the manuscript.", with every name when an Apply all brought back several. */
-function restoredSentence(titles: readonly string[]): string {
-  const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
-    titles,
-  );
-  return titles.length === 1
-    ? t`${names} is back in the manuscript.`
-    : t`${names} are back in the manuscript.`;
+/** "‹title› is back in Knowledge.": one sentence per area an Apply brought documents back to. */
+function restoredSentence(restored: readonly InArea[]): string {
+  return byArea(restored)
+    .map(({ area, names, count }) =>
+      area
+        ? count === 1
+          ? t`${names} is back in ${area}.`
+          : t`${names} are back in ${area}.`
+        : count === 1
+          ? t`${names} is back.`
+          : t`${names} are back.`,
+    )
+    .join(" ");
 }
 
 /** "Ch 3 and Outline are now in Manuscript/Arc 3.": one sentence per place, in landing order. */
@@ -534,7 +566,7 @@ function placeOf(uri: string): string {
 }
 
 export function appliedSentence(
-  restored: readonly string[],
+  restored: readonly InArea[],
   renamed: readonly string[],
   alsoApplied: readonly string[] = [],
 ): string {

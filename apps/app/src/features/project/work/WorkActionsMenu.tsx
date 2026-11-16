@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { useWorks } from "@/client/query/useWorks";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 
@@ -18,8 +19,9 @@ export function WorkActionsMenu({
   triggerClassName?: string;
 }) {
   const archived = isWorkArchived(work);
+  const name = useWorks(work.projectId).nameOf(work);
   return (
-    <OverflowMenu label={t`Actions for ${work.name}`} triggerClassName={triggerClassName}>
+    <OverflowMenu label={t`Actions for ${name}`} triggerClassName={triggerClassName}>
       <DropdownMenuItem onSelect={onToggleArchive}>
         {archived ? (
           <ArchiveRestore className="size-3.5 text-muted-foreground" aria-hidden />

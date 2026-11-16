@@ -38,15 +38,14 @@ export function useScratchTrees(projectId: string, source: ScratchSource | null)
  */
 export function useScopeScratchSource(projectId: string): ScratchSource | null {
   const { workId } = useWorkScopeState(projectId);
-  const { works, deleted, creations, noWork } = useWorks(projectId);
+  const { works, deleted, creations, noWork, nameOf } = useWorks(projectId);
   const named = workId && noWork && workId !== noWork.id ? workId : null;
-  const name = named
-    ? ((
-        works?.find((candidate) => candidate.id === named) ??
-        deleted.find((candidate) => candidate.id === named) ??
-        creations.get(named)?.work
-      )?.name ?? null)
-    : null;
+  const work = named
+    ? (works?.find((candidate) => candidate.id === named) ??
+      deleted.find((candidate) => candidate.id === named) ??
+      creations.get(named)?.work)
+    : undefined;
+  const name = work ? nameOf(work) : null;
   return useMemo(
     () =>
       named
