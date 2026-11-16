@@ -29,8 +29,8 @@ export type ChangeGroup<T> = {
     name: string;
     change: FolderChange;
     fault: LandingFault | null;
-    /** Live deleted it, and the Work's change to it stands: Apply restores it first. */
-    deletedLive: boolean;
+    /** The source it is in, when live deleted it and the Work's change to it stands: Apply restores it first. */
+    deletedLive: string | null;
     /** Every changed folder the group takes: this one and the changed folders inside it. */
     folders: string[];
   } | null;
@@ -165,7 +165,9 @@ export function groupByChangedFolder<T extends { documentId: string }>(
         name: work.nodes.get(id)?.displayName ?? "",
         change: folderChange({ work, live }, records),
         fault: faults.get(id) ?? null,
-        deletedLive: work.nodes.get(id)?.keptByPending === true,
+        deletedLive: work.nodes.get(id)?.keptByPending
+          ? (work.nodes.get(id)?.source ?? null)
+          : null,
         folders: [id],
       },
       files: [],

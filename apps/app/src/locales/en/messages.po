@@ -3112,6 +3112,11 @@ msgstr "Deleted a document"
 msgid "Deleted a Work"
 msgstr "Deleted a Work"
 
+#. placeholder {0}: schemeLabel(scheme)
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Deleted from {0}. Apply brings it back."
+msgstr "Deleted from {0}. Apply brings it back."
+
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
 msgstr "Deleted from {location}"
@@ -3169,8 +3174,8 @@ msgid "Deleted from the manuscript"
 msgstr "Deleted from the manuscript"
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Deleted from the manuscript. Apply brings it back."
-msgstr "Deleted from the manuscript. Apply brings it back."
+#~ msgid "Deleted from the manuscript. Apply brings it back."
+#~ msgstr "Deleted from the manuscript. Apply brings it back."
 
 #: src/features/draft-review/tree-groups.ts
 #~ msgid "Deleted in live. Restore it to keep this change."
@@ -3206,6 +3211,10 @@ msgstr "Deleted Work can be restored."
 #: src/features/project/context/TrashedDocument.tsx
 #~ msgid "Deleted."
 #~ msgstr "Deleted."
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Deleted. Apply brings it back."
+msgstr "Deleted. Apply brings it back."
 
 #: src/features/editor/DocumentVersionMenu.tsx
 msgid "Deletes this document"
