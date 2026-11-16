@@ -148,7 +148,8 @@ export function DraftNoticeLine({
       fact.kind === "also" ? [`${fact.from} → ${fact.to}`] : [],
     );
     const [only] = landed;
-    const single = only && landed.length === 1;
+    // The bare "Now in X." only when the Apply landed one document: with others it needs its name.
+    const single = only && notice.facts.filter((fact) => fact.kind === "landed").length === 1;
     const name = only ? documentDisplayName(only.uri) : "";
     // One landing names the document on its Open; the line says where it went. Several say it
     // once per place, so the line holds at sidebar width.
