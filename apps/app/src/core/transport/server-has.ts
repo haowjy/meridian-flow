@@ -32,6 +32,9 @@ export type ServerHasTracker = {
   /** A frame was written to the open socket. */
   noteFrameSent(frame: Uint8Array): void;
   readonly vector: Uint8Array;
+  /** What the server itself has sent on this socket (its SyncStep1 and its updates), never what this
+   *  client wrote: the server holds these whether or not it has acknowledged anything of ours. */
+  readonly received: Uint8Array;
   /** The update of what `document` holds that the server lacks; null when it lacks no item or
    *  this socket's SyncStep1 has not arrived. */
   lacking(document: Y.Doc): Uint8Array | null;
@@ -39,41 +42,51 @@ export type ServerHasTracker = {
 
 export function createServerHasTracker(): ServerHasTracker {
   let clocks = new Map<number, number>();
+  let received = new Map<number, number>();
   let handshaken = false;
-  const grow = (vector: Map<number, number>) => {
+  const grow = (into: Map<number, number>, vector: Map<number, number>) => {
     for (const [client, clock] of vector)
-      if ((clocks.get(client) ?? 0) < clock) clocks.set(client, clock);
+      if ((into.get(client) ?? 0) < clock) into.set(client, clock);
   };
   // Structs come per client in clock order; a Skip marks a gap.
-  const holds = (payload: Uint8Array) => {
+  const holds = (payload: Uint8Array, into: Map<number, number>) => {
     for (const struct of Y.decodeUpdate(payload).structs) {
       if (struct instanceof Y.Skip) continue;
       const { client, clock } = struct.id;
-      const held = clocks.get(client) ?? 0;
-      if (clock <= held && held < clock + struct.length) clocks.set(client, clock + struct.length);
+      const held = into.get(client) ?? 0;
+      if (clock <= held && held < clock + struct.length) into.set(client, clock + struct.length);
     }
   };
   return {
     reset() {
       clocks = new Map();
+      received = new Map();
       handshaken = false;
     },
     noteFrameReceived(frame) {
       const sync = readSyncFrame(frame);
       if (!sync) return false;
       if (sync.syncType === messageYjsSyncStep1) {
-        grow(Y.decodeStateVector(sync.payload));
+        const vector = Y.decodeStateVector(sync.payload);
+        grow(clocks, vector);
+        grow(received, vector);
         handshaken = true;
-      } else holds(sync.payload);
+      } else {
+        holds(sync.payload, clocks);
+        holds(sync.payload, received);
+      }
       return true;
     },
     noteFrameSent(frame) {
       const sync = readSyncFrame(frame);
       // This client's own SyncStep1 is its state, not the server's.
-      if (sync && sync.syncType !== messageYjsSyncStep1) holds(sync.payload);
+      if (sync && sync.syncType !== messageYjsSyncStep1) holds(sync.payload, clocks);
     },
     get vector() {
       return Y.encodeStateVector(clocks);
+    },
+    get received() {
+      return Y.encodeStateVector(received);
     },
     lacking(document) {
       if (!handshaken) return null;

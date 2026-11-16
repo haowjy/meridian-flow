@@ -7,9 +7,11 @@
  * The mark only grows, per client, in one transaction, except when a handshake's state vector does
  * not cover it: the server no longer holds items it counts (a room restored from a checkpoint or
  * reseeded), and that handshake's vector replaces it. A mark too low offers words the server has;
- * one too high would lose words, so only the server's own vector and, once it has acknowledged
- * everything, what the socket's frames showed (`transport/server-has.ts`) are written; never the
- * document's, which can hold a local peer's items no frame carried.
+ * one too high would lose words, so only what the server itself sent (its handshake vector and
+ * each update it sends) and, once it has acknowledged everything, what this client wrote to the
+ * socket (`transport/server-has.ts`) are written; never the document's, which can hold a local
+ * peer's items no frame carried. What is unsent is what this client wrote that the server has not
+ * acknowledged, never what differs from what the copy last saw.
  */
 import * as Y from "yjs";
 

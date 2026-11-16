@@ -426,6 +426,8 @@ export function createHocuspocusDocumentTransport({
     if (terminal || destroyed) return;
     const vector = readServerStateVector(frame);
     if (vector) reportServerHas(vector, true);
+    // What the server sent is the server's, so what this copy holds of it is never unsent typing.
+    reportServerHas(serverHas.received, false);
     // A read admission's socket drops every update; its handshakes report the difference instead.
     if (acknowledgement.readOnly) return;
     const lacking = serverHas.lacking(document);
