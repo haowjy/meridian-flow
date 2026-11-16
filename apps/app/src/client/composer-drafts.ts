@@ -162,15 +162,11 @@ export class ComposerSessionDraft {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
   private version = 0;
-  /** Counts the writes that change the document from outside the editor, which the box must take in. */
-  private externalWrites = 0;
+  /** The latest write that changes the document from outside the editor, numbered so a box applies each once. */
+  private external: { seq: number; draft: ComposerDraftSnapshot | null } = { seq: 0, draft: null };
   private listeners = new Set<() => void>();
   getVersion = () => this.version;
-  /** The document as the last outside write left it, numbered so a box applies each once. */
-  externalChange = (): { seq: number; draft: ComposerDraftSnapshot | null } => ({
-    seq: this.externalWrites,
-    draft: this.initialDraft,
-  });
+  externalChange = () => this.external;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -330,10 +326,14 @@ export class ComposerSessionDraft {
       ...this.chatField(),
     };
     if (!this.record.write(stored)) return false;
-    if (draft !== this.current) this.externalWrites += 1;
     this.notices = next.notices;
     this.received = next.received;
     this.handBacksPending = next.handBacks;
+    if (draft !== this.current)
+      this.external = {
+        seq: this.external.seq + 1,
+        draft: draft && parseRestorableComposerDraft(draft),
+      };
     this.current = draft;
     this.dirty = false;
     this.publish();

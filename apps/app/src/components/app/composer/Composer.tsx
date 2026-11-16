@@ -405,7 +405,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     // Tiptap `flushSync`es a chip's React node view, which React forbids inside a commit.
     queueMicrotask(() => {
       if (editor.isDestroyed) return;
-      if (draft) revision.current = Math.max(revision.current, draft.revision);
       const { state } = editor;
       const next = editor.schema.nodeFromJSON(
         draft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
@@ -422,6 +421,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       suppressDraftChangeRef.current = true;
       editor.view.dispatch(tr);
       suppressDraftChangeRef.current = false;
+      // The editor now holds exactly the owner's document; the dispatch's own revision bump would make `holds()` fail.
+      if (draft) revision.current = draft.revision;
     });
   }, [editor, external]);
   const snapshot = useCallback((): ComposerDraftSnapshot => {
