@@ -18,6 +18,9 @@ export const INVERSE_WORKERS = 2;
 const pool = createWorkerPool<InverseJob, InverseWorkerReply>({
   entry: new URL("./inverse-worker-entry.ts", import.meta.url),
   size: INVERSE_WORKERS,
+  // Run from source (a test or a script), the worker imports TypeScript that plain Node can't
+  // resolve; the server's build bundles it into a `.mjs` that needs nothing.
+  execArgv: import.meta.url.endsWith(".ts") ? ["--import", "tsx"] : undefined,
   maxOldGenerationSizeMb: 1024,
 });
 
