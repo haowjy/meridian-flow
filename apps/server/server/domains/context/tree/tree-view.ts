@@ -6,11 +6,16 @@
  * (project-tree rule 14), so every path reaches one node. A document the view does not place (in Trash, deleted in the Work, or in no view) is never visible,
  * and one in no view has no place at all.
  */
-import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
+import {
+  type ContextSourceId,
+  type DocumentId,
+  type FolderId,
+  matchOmittedExtension,
+} from "@meridian/contracts";
 import { addressCandidates, readSegment } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { inArray, type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
@@ -257,6 +262,8 @@ type PathOccupancy = {
   path: string;
   documents: DocumentId[];
   folders: FolderId[];
+  /** The folder the path's directory reaches (null: the source root); empty when it reaches none. */
+  parents: (FolderId | null)[];
   /** A segment reached its node by a fallback (a `~id` that reached none, a folder of the name): `path` is not how the tree spells it. */
   respelled: boolean;
 };
@@ -374,6 +381,7 @@ export function createTreeReader(db: Database): TreeReader {
       path: walk.path,
       documents: leaves.idsFor(owner, documentHits) as DocumentId[],
       folders: leaves.idsFor(owner, folderHits) as FolderId[],
+      parents: walk.parents,
       respelled:
         walk.respelled ||
         respelled(walk.filename, [
@@ -604,7 +612,23 @@ export function createTreeReader(db: Database): TreeReader {
       const found = await resolvePath(view, { ...at, path: at.path.slice(0, slash + 1) + leaf });
       if (found.kind === "found" && found.node.kind === "document") return found;
     }
-    return { kind: "not_found" };
+    // A link may leave off the extension: the one document under the reached folder that differs
+    // only by it.
+    const [occupancy] = await pathOccupants(view, [at]);
+    const parent = occupancy?.parents[0];
+    if (parent === undefined || !isUuid(at.contextSourceId)) return { kind: "not_found" };
+    const siblings = await documentRows(view, (vd) =>
+      and(
+        eq(vd.contextSourceId, at.contextSourceId),
+        parent === null ? isNull(vd.folderId) : eq(vd.folderId, parent),
+      ),
+    );
+    const row = matchOmittedExtension(siblings, at.path.slice(slash + 1), (each) => each.segment);
+    if (!row) return { kind: "not_found" };
+    const document = await findById(view, row.id);
+    return document.kind === "found"
+      ? { kind: "found", node: { kind: "document", document: document.document } }
+      : { kind: "not_found" };
   }
 
   return {
