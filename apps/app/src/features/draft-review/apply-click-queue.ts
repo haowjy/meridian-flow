@@ -19,8 +19,11 @@ export type FrozenApply = {
    * server has it, rejected when the room ended first. Either way the click is then sent.
    */
   acknowledged: Promise<void>;
-  /** The same click as the server's whole cut of its draft, sent instead if its room ends first. */
-  wholeCut?: ApplyClick;
+  /**
+   * The click to send instead if its room ends before it is sent: the same choice cut from the
+   * draft as the server holds it. Undefined keeps the frozen click; null leaves nothing to send.
+   */
+  roomEndedCut?: () => Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | undefined;
   /** A member of a several-item Apply sends through its group (`GroupApply`), not on its own. */
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
@@ -347,24 +350,24 @@ export class ApplyClickQueue {
 
   /**
    * The draft's room ended, so it delivers and records nothing more. Its clicks still go: one not
-   * yet sent goes as its whole cut when it has one (the draft as the server holds it; typing the
-   * room never delivered comes back through the hand-back), else as frozen. An applied answer
-   * settles without the record.
+   * yet sent is cut again from the draft as the server holds it (`roomEndedCut`); typing the room
+   * never delivered comes back through the hand-back. An applied answer settles without the record.
    */
   roomEnded(draftId: string): void {
     for (const command of this.clicks) {
       if (!frozenOn(command, draftId)) continue;
       command.roomEnded = true;
-      if (!command.sent && command.wholeCut) {
-        command.body = command.wholeCut;
-        command.optimistic = [];
-        command.patched = [];
-      }
+      if (command.sent) continue;
+      const cut = command.roomEndedCut?.();
+      if (cut === null) {
+        this.commands.splice(this.commands.indexOf(command), 1);
+        command.finish({ status: "cancelled" });
+      } else if (cut) Object.assign(command, cut);
     }
     const head = this.commands[0];
     if (head?.kind === "apply" && head.roomEnded && head.answer?.status === "applied")
       this.settle(head, head.answer);
-    else this.port.changed();
+    else this.moveOn();
   }
 
   close(draftId?: string): void {

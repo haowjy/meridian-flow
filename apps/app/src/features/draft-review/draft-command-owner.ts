@@ -52,6 +52,7 @@ import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import { readBase } from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
+import { cutWithoutUndelivered } from "./room-ended-cut";
 
 export type DraftCommandState = {
   applying: boolean;
@@ -423,8 +424,9 @@ export class DraftCommandOwner {
         connection?.kind === "terminal" ||
         (connection?.kind === "unauthorized" && !isSignInLapse(connection))
       ) {
-        this.detach(entry);
+        // Before the detach: the cut reads the room's undelivered typing.
         entry.item.queue.roomEnded(entry.draftId);
+        this.detach(entry);
       }
       // A released room is kept while it holds typing it can still send; this lets it go.
       this.releaseIdle(entry);
@@ -822,26 +824,48 @@ export class DraftCommandOwner {
       ...(restore ? { restore: true as const } : {}),
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
-    const acknowledged = binding.session.whenCurrentChangesAcknowledged();
+    const { session } = binding;
+    const acknowledged = session.whenCurrentChangesAcknowledged();
     this.setState(ref.itemKey, { failure: null });
+    /** Chosen changes a room-ended cut found nothing of on the server: they stay in the draft. */
+    let stayed: string[] = [];
+    const roomEndedCut: FrozenApply["roomEndedCut"] = () => {
+      // The whole draft is the server's whole cut: every change as it holds them.
+      if (target.kind === "draft")
+        return {
+          body: {
+            commandId: body.commandId,
+            draftId: entry.draftId,
+            whole: true as const,
+            groupIds: [],
+            baseViewDelta: [],
+            ...(restore ? { restore: true as const } : {}),
+            ...(tree ? { tree: { revision: tree.revision } } : {}),
+          },
+          optimistic: [],
+          patched: [],
+        };
+      const undelivered = session.unacknowledgedUpdates();
+      if (!undelivered) return undefined;
+      const cut = cutWithoutUndelivered({
+        document: session.document,
+        undelivered,
+        body: { ...body, snapshot: body.snapshot ?? "" },
+        optimistic,
+        chosen: frame.groups.filter((group) => ids.includes(group.id)),
+        schema,
+      });
+      stayed = cut?.stayed ?? [...ids];
+      return cut?.body.groupIds.length
+        ? { body: cut.body, optimistic, patched: cut.patched }
+        : null;
+    };
     const frozen: FrozenApply = {
       body,
       optimistic,
       patched,
       acknowledged,
-      ...(target.kind === "draft"
-        ? {
-            wholeCut: {
-              commandId: body.commandId,
-              draftId: entry.draftId,
-              whole: true as const,
-              groupIds: [],
-              baseViewDelta: [],
-              ...(restore ? { restore: true as const } : {}),
-              ...(tree ? { tree: { revision: tree.revision } } : {}),
-            },
-          }
-        : {}),
+      roomEndedCut,
       ...(joint ? { send: joint.send } : {}),
     };
     const scheduled = histories
@@ -872,7 +896,14 @@ export class DraftCommandOwner {
     binding.runtime.projectNow();
     const outcome = scheduled.outcome.then((answer) => {
       joint?.answered(answer);
-      return this.settled(ref, entry.draftId, answer, restore);
+      const settled = this.settled(ref, entry.draftId, answer, restore);
+      if (stayed.length && settled.kind !== "change-refused")
+        this.setState(
+          ref.itemKey,
+          { failure: { code: "apply-refused", serverCode: "left_out_changed_since" } },
+          entry.draftId,
+        );
+      return settled;
     });
     return { sent: true, outcome };
   }
