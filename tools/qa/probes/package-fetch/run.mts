@@ -2,7 +2,8 @@
  * The package fetch port's shared budgets: each aborts with its own name when its limit is
  * lowered, and the tar reader counts bytes as they stream (a 4 MB repository trips a 1 MB expanded
  * limit without reading the rest). GitHub is an in-process fake serving a generated repository, so
- * the probe makes no network calls; `./mf package fetch <url>` reads live GitHub.
+ * the probe makes no network calls; `./mf package fetch <url>` reads live GitHub. The fake's body
+ * ignores the abort signal, so a download that stalls with no chunks arriving is checked only live.
  *
  *   pnpm exec tsx tools/qa/probes/package-fetch/run.mts
  *
@@ -25,7 +26,7 @@ const url = "https://github.com/example/pack";
 const FILES = 200;
 const FILE_BYTES = 20_000;
 
-/** One ustar header block; GitHub wraps every entry in `<repo>-<sha>/`. */
+/** One ustar header block; GitHub wraps every entry in `<owner>-<repo>-<shortsha>/`. */
 function header(name: string, size: number, type: "0" | "5"): Buffer {
   const block = Buffer.alloc(512);
   const field = (value: string, offset: number, length: number) =>
@@ -85,15 +86,27 @@ assert.equal(whole.commit, sha);
 assert.equal(Object.keys(whole.files).length, FILES);
 console.log(`unlimited: ${FILES} files at ${sha.slice(0, 7)}`);
 
+/** A clock that advances 1 s per reading, so the 60 s limit runs out mid-stream on every machine and its real timer never fires. */
+function tickingClock(): () => number {
+  let ms = 0;
+  return () => {
+    ms += 1000;
+    return ms;
+  };
+}
+
 const trips: [string, Partial<FetchLimits>][] = [
   ["download", { downloadBytes: 100_000 }],
   ["expanded", { expandedBytes: 1_000_000 }],
   ["entries", { entries: 100 }],
-  ["wall-time", { wallTimeMs: 1 }],
+  ["wall-time", {}],
 ];
 
 for (const [name, limits] of trips) {
-  const budget = createFetchBudget({ ...FETCH_LIMITS, ...limits });
+  const budget = createFetchBudget(
+    { ...FETCH_LIMITS, ...limits },
+    name === "wall-time" ? tickingClock() : Date.now,
+  );
   const error = await fetcher.fetchTree({ url }, budget).then(
     () => undefined,
     (caught: unknown) => caught,
@@ -101,8 +114,7 @@ for (const [name, limits] of trips) {
   assert.ok(error instanceof FetchBudgetError, `${name}: expected a budget error, got ${error}`);
   assert.equal(error.budget, name);
   const used = budget.used();
-  if (name !== "wall-time") {
-    assert.ok(used.downloadBytes < tarball.length, `${name}: read the whole archive first`);
-  }
+  assert.ok(used.downloadBytes > 0, `${name}: tripped before the download started`);
+  assert.ok(used.downloadBytes < tarball.length, `${name}: read the whole archive first`);
   console.log(`${name}: ${error.message}`, used);
 }

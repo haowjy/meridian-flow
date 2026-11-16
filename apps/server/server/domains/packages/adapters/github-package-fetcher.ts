@@ -268,7 +268,7 @@ export function createGithubPackageFetcher(
         (chunks: AsyncIterable<Buffer>) =>
           readTar(chunks, async (entry) => {
             budget.entry();
-            // GitHub wraps every entry in `<repo>-<sha>/`.
+            // GitHub wraps every entry in `<owner>-<repo>-<shortsha>/`.
             const [, ...inRepo] = normalizeSegments(entry.name, "An archive entry");
             const key = inRepo.join("/");
             if (entry.type === "directory" || inRepo.length === 0) {
