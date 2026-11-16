@@ -7,6 +7,7 @@
  * the adapters (`assertModelsOnWire`) and run over every row when a gateway is created from env.
  */
 
+import type { ModelMaker } from "@meridian/contracts/protocol";
 import {
   type BuiltinAdapter,
   type GatewayConfig,
@@ -25,6 +26,7 @@ import {
   type ModelTokenRate,
   type ModelTokenRateSource,
 } from "../../domains/runtime/costing/pricing.js";
+import type { ModelFor } from "../../domains/runtime/spawn/resolve-child-invocation.js";
 import {
   DEFAULT_MODEL_ID,
   findFamily,
@@ -37,6 +39,7 @@ import { PROVIDER_ROWS, type ProviderRow } from "./provider-rows.js";
 
 export interface RegisteredModel {
   id: string;
+  maker: ModelMaker;
   tokenizer: TokenizerFamily;
   /** The picker name: the family alias for its newest model, "alias version" for an older one. */
   displayName: string;
@@ -183,13 +186,6 @@ export function unservableReason(model: Partial<SnapshotModel>): string | undefi
   return typeof tier === "string" ? tier : undefined;
 }
 
-/** Thrown when a provider's price overrides do not cover what its families admit; one line per gap. */
-export class PriceOverrideGaps extends Error {
-  constructor(readonly lines: readonly string[]) {
-    super(lines.join("\n"));
-  }
-}
-
 /**
  * Where a provider's price overrides stop short: a model in a family that overrides another of
  * its models but has no override itself, and a rate models.dev lists that an override leaves
@@ -223,6 +219,12 @@ export function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
         );
     });
   });
+}
+
+/** The registry refuses a snapshot with a gap; the refresh report lists the gaps and builds anyway. */
+export function assertNoPriceOverrideGaps(snapshot: ModelsSnapshot): void {
+  const gaps = priceOverrideGaps(snapshot);
+  if (gaps.length > 0) throw new Error(gaps.join("\n"));
 }
 
 /** What Flow charges for a row: the provider's override when it has one, else models.dev's cost. */
@@ -273,8 +275,10 @@ function toPricing(
 
 /**
  * Picker names for one family's models: the alias for the newest, "alias version" for the rest.
- * The version is the first number in models.dev's name ("5.1" from "Claude Fable 5.1"); where
- * that doesn't tell two models apart, it is the id past the prefix the family's ids share.
+ * The version is the first number in models.dev's name ("5.1" from "Claude Fable 5.1"). Of
+ * several older models with one version, the shortest id keeps "alias version" and each other
+ * is marked with what its id adds to that one ("fable 5.1 20261201"), so a name once shown
+ * never changes when a sibling arrives.
  */
 function pickerNames(
   family: ModelFamily,
@@ -282,24 +286,23 @@ function pickerNames(
   rows: Readonly<Record<string, SnapshotModel>>,
   ids: readonly string[],
 ): Map<string, string> {
-  if (ids.length === 0) return new Map();
   const version = (id: string) => /\d+(\.\d+)*/.exec(rows[id].name)?.[0] ?? id;
   const older = ids.filter((id) => id !== newest);
-  let shared = 0;
-  while (shared < ids[0].length && ids.every((id) => id[shared] === ids[0][shared])) shared += 1;
   const names = new Map<string, string>(newest === null ? [] : [[newest, family.id]]);
   for (const id of older) {
     const same = older.filter((other) => version(other) === version(id));
-    const tag = same.length === 1 ? version(id) : id.slice(shared).replace(/^[-_.]/, "") || id;
-    names.set(id, `${family.id} ${tag}`);
+    const base = same.reduce((a, b) =>
+      b.length < a.length || (b.length === a.length && b < a) ? b : a,
+    );
+    const mark =
+      id === base ? "" : id.startsWith(base) ? id.slice(base.length).replace(/^[-_.]/, "") : id;
+    names.set(id, [family.id, version(id), mark].filter(Boolean).join(" "));
   }
   return names;
 }
 
 /** The registry the snapshot, the families and the provider rows describe. Throws on a row Flow cannot serve. */
 export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
-  const gaps = priceOverrideGaps(snapshot);
-  if (gaps.length > 0) throw new PriceOverrideGaps(gaps);
   const providers = PROVIDER_ROWS.map((row): RegisteredProvider => {
     const rows = snapshot.providers[row.id] ?? {};
     // A snapshot row the allowlist no longer admits stays in the file until the next refresh
@@ -318,6 +321,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
         return {
           model: {
             id,
+            maker: family.maker,
             tokenizer: family.tokenizer,
             displayName: names.get(id) as string,
             ...(model.release_date === undefined ? {} : { releaseDate: model.release_date }),
@@ -345,7 +349,13 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
     provider.offerings.map(({ model }) => model.displayName),
   );
   const repeated = names.find((name, at) => names.indexOf(name) !== at);
-  if (repeated !== undefined) throw new Error(`Two models are named "${repeated}" in the picker`);
+  if (repeated !== undefined) {
+    const clash = providers
+      .flatMap((provider) => provider.offerings)
+      .filter(({ model }) => model.displayName === repeated)
+      .map(({ model }) => model.id);
+    throw new Error(`Two models are named "${repeated}" in the picker: ${clash.join(", ")}`);
+  }
   const registry = { providers, defaultModel: DEFAULT_MODEL_ID };
   if (
     !providers.some((provider) =>
@@ -357,6 +367,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
   return registry;
 }
 
+assertNoPriceOverrideGaps(snapshotJson as ModelsSnapshot);
 export const MODEL_REGISTRY: ModelRegistry = buildModelRegistry(snapshotJson as ModelsSnapshot);
 
 /**
@@ -374,13 +385,18 @@ export function resolveModelName(name: string, available: readonly { id: string 
 }
 
 /** The one port that names a model: the gateway's default for no name, else `resolveModelName` over what it offers. */
-export function modelFor(
-  gateway: { getDefaultModel(): string | undefined; listModels(): readonly { id: string }[] },
-  named?: string,
-): string | undefined {
-  return named === undefined
-    ? gateway.getDefaultModel()
-    : resolveModelName(named, gateway.listModels());
+export function modelFor(gateway: {
+  getDefaultModel(): string | undefined;
+  listModels(): readonly { id: string }[];
+}): ModelFor {
+  function name(named: string): string;
+  function name(named?: string): string | undefined;
+  function name(named?: string): string | undefined {
+    return named === undefined
+      ? gateway.getDefaultModel()
+      : resolveModelName(named, gateway.listModels());
+  }
+  return name;
 }
 
 /** Adapter-neutral registry checks, run as soon as a registry is loaded. */

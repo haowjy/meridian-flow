@@ -16,10 +16,11 @@ import { parseArgs } from "node:util";
 import { findFamily } from "../server/lib/gateway/families.js";
 import { PROVIDER_ROWS } from "../server/lib/gateway/provider-rows.js";
 import {
+  assertNoPriceOverrideGaps,
   buildModelRegistry,
   type ModelRegistry,
   type ModelsSnapshot,
-  PriceOverrideGaps,
+  priceOverrideGaps,
   type SnapshotModel,
   unservableReason,
 } from "../server/lib/gateway/registry.js";
@@ -309,16 +310,17 @@ const snapshotChanged = JSON.stringify(providers) !== JSON.stringify(before.prov
 const after: ModelsSnapshot = { takenAt: snapshotChanged ? today : before.takenAt, providers };
 
 // Building the registry checks the new rows (default model present, tiers that fit) before anything is written.
+// Report mode lists the price-override gaps and builds the registry anyway, so every other change still shows.
 const oldRegistry = buildModelRegistry(before);
 let newRegistry = oldRegistry;
 let buildError: string | undefined;
-let overrideGaps: readonly string[] = [];
+const overrideGaps = priceOverrideGaps(after);
+if (!dryRun) assertNoPriceOverrideGaps(after);
 try {
   newRegistry = buildModelRegistry(after);
 } catch (error) {
   if (!dryRun) throw error;
-  if (error instanceof PriceOverrideGaps) overrideGaps = error.lines;
-  else buildError = (error as Error).message;
+  buildError = (error as Error).message;
 }
 const changed =
   snapshotChanged || unservable.length > 0 || buildError !== undefined || overrideGaps.length > 0;

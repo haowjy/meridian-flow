@@ -26,12 +26,18 @@ import {
 } from "../tools/invalid-arguments.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
+/** Naming a model: a given name always resolves, no name gives the default. */
+export interface ModelFor {
+  (named: string): string;
+  (named?: string): string | undefined;
+}
+
 export interface ResolveChildInvocationDeps {
   agentRevisions: Pick<
     AgentRevisionStore,
     "readRevision" | "readSource" | "readPackageDefinitions"
   >;
-  modelFor(named?: string): string | undefined;
+  modelFor: ModelFor;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   modelUnavailable(model: string): string[];
 }
@@ -139,7 +145,7 @@ export async function resolveChildInvocation(
     configuration =
       input.overrides.model === undefined
         ? patched
-        : { ...patched, model: deps.modelFor(patched.model) ?? patched.model };
+        : { ...patched, model: deps.modelFor(patched.model) };
   }
 
   const extra = toolsBeyond(parentAgent.configuration, configuration);

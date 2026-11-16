@@ -37,10 +37,12 @@ export interface ProviderRow {
   /**
    * Prices Flow charges where models.dev lists another, by model id: a rate models.dev has not
    * updated yet, or one that is not the rate Flow pays. An override replaces every rate models.dev
-   * lists for the model. The registry refuses to build when a family has an override for one of
+   * lists for the model. The registry refuses to load when a family has an override for one of
    * its models and another model it admits has none, or when models.dev lists a rate (cache read
    * or write) the override leaves unset. The refresh report prints both numbers and says an
-   * override can go once models.dev agrees. Not for a model with context tiers.
+   * override can go once models.dev agrees. Not for a model with context tiers. The check covers
+   * families that already hold an override: a provider's new family in `families.ts` is not
+   * covered, so add its override by hand when the provider's rates differ from models.dev's.
    */
   priceOverrides?: Readonly<Record<string, PriceOverride>>;
 }

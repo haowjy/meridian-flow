@@ -30,9 +30,11 @@ when the registry is built, not in the deployment that holds that provider's key
   date; a refresh report flags one older than 90 days, prints models.dev's number beside the billed one, and says
   "models.dev now agrees: delete the override" once they match. An override replaces every rate models.dev lists for
   its model, and it is absolute (no multiplier, which would double-charge once models.dev catches up). Because a
-  family can admit a model its override was not written for, the build fails when a family has an override for any
+  family can admit a model its override was not written for, loading the registry fails when a family has an override for any
   model and another model it admits has none, or when models.dev lists a cache rate the override leaves unset; the
-  refresh report shows each as "Price overrides that do not cover the snapshot", naming the family and the rates.
+  refresh report shows each as "Price overrides that do not cover the snapshot", naming the family and the rates. The report mode (`--dry-run`) lists the gaps and builds the new
+  registry anyway, so the daily issue still shows every other change; write mode refuses. The check covers families that
+  hold an override, not a provider's new family.
 
 `registry.ts` joins them (`buildModelRegistry`) and keeps the exported registry types. Billing charges the snapshot's
 prices, never live data; a charge's `pricingSnapshot.source` reads `models.dev snapshot <date>`, plus the provider
@@ -42,16 +44,18 @@ allowlist no longer admits (a new `exclude`) gets no offering and stays in the f
 
 **Names.** `RegisteredModel.displayName` is the picker name: the family alias on the newest model of a family (by
 `resolveAlias`), "alias version" on an older one (`fable 5.1`, the version being the first number in models.dev's name,
-or the id's suffix where that number doesn't tell two older models apart). Picker names are unique: the build fails on
-two offerings with the same name.
+so two older models can share it). Of those, the shorter id keeps "alias version" and each other is marked with what its
+id adds (`fable 5.1 20261201`): a name once shown never changes when a sibling arrives. Picker names are unique: the
+build fails, naming the models, on two offerings with the same name.
 An Agent file's `model` may be a picker name: `resolveModelName` turns a family alias into its newest available
 model and an "alias version" into that model; an id stays as written. `modelFor(gateway, named?)` is the one port that
 names a model: the default for no name, else `resolveModelName`. It runs when a chat starts
 (`resolveAgentConfiguration`), for the catalog's availability check, and on a spawn's `overrides.model`
 (`resolveChildInvocation`), and the binding stores the id. A running chat
-keeps it: each turn reads the binding, and the one place that re-resolves is `refreshBinding` at a compaction, which
-keeps the bound model while the Agent's `model` line is unchanged and the model is still offered; otherwise the chat
-follows the Agent's current model.
+keeps it: each turn reads the binding in `resolveAgentThreadTurnContext`, and a model still offered is never moved. A
+binding whose model the host no longer offers moves, at that read and for a child thread too, to the Agent's current
+model (`followRemovedModel`, which stores the new binding). `refreshBinding` at a compaction keeps the bound model while
+the Agent's `model` line is unchanged and the model is still offered; otherwise the chat follows the Agent's current model.
 
 Provider keys are read only from `FLOW_`-prefixed variables (`FLOW_ANTHROPIC_API_KEY`,
 `FLOW_DEEPSEEK_API_KEY`, …), never the vendors' unprefixed names. The owner's machine sets the unprefixed

@@ -673,7 +673,7 @@ export async function createProductionAppPorts(input: {
         }
       }),
     builtins: await readBuiltinPackages(defaultModel),
-    modelFor: (named) => modelFor(gateway, named),
+    modelFor: modelFor(gateway),
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
   });
@@ -1121,7 +1121,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
-    modelFor: (named) => modelFor(ports.gateway, named),
+    modelFor: modelFor(ports.gateway),
     repos: {
       threads: ports.threadRepos.threads,
       turns: ports.threadRepos.turns,

@@ -27,7 +27,7 @@ import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/in
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
-import { resolveChildInvocation } from "./resolve-child-invocation.js";
+import { type ModelFor, resolveChildInvocation } from "./resolve-child-invocation.js";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
 import {
   invocationAgentName,
@@ -107,7 +107,7 @@ export interface ChildRunCoordinatorDeps {
     AgentRevisionStore,
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
   >;
-  modelFor(named?: string): string | undefined;
+  modelFor: ModelFor;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   /** Host-availability check for a model id, used when the child has no definition. */
   modelUnavailable(model: string): string[];

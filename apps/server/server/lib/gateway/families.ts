@@ -1,3 +1,4 @@
+import type { ModelMaker } from "@meridian/contracts/protocol";
 import type { TokenizerFamily } from "@meridian-flow/runtime/gateway";
 
 /**
@@ -10,6 +11,8 @@ export interface ModelFamily {
   id: string;
   match: readonly string[];
   exclude?: readonly string[];
+  /** Who made the model, whoever serves it. */
+  maker: ModelMaker;
   tokenizer: TokenizerFamily;
   /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
   maxLinkBytes?: number;
@@ -28,18 +31,21 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
   anthropic: [
     {
       id: "opus",
+      maker: "anthropic",
       match: ["claude-opus-*"],
       exclude: ["claude-opus-4*", "claude-opus-5"],
       tokenizer: "anthropic",
     },
     {
       id: "sonnet",
+      maker: "anthropic",
       match: ["claude-sonnet-*"],
       exclude: ["claude-sonnet-4*", "claude-sonnet-5"],
       tokenizer: "anthropic",
     },
     {
       id: "fable",
+      maker: "anthropic",
       match: ["claude-fable-*"],
       exclude: ["claude-fable-5"],
       tokenizer: "anthropic",
@@ -47,16 +53,35 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
   ],
   // OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate.
   openai: [
-    { id: "sol", match: ["gpt-*-sol"], exclude: ["gpt-6-sol", "gpt-5.6-sol"], tokenizer: "o200k" },
-    { id: "terra", match: ["gpt-*-terra"], exclude: ["gpt-5.6-terra"], tokenizer: "o200k" },
-    { id: "luna", match: ["gpt-*-luna"], tokenizer: "o200k" },
+    {
+      id: "sol",
+      maker: "openai",
+      match: ["gpt-*-sol"],
+      exclude: ["gpt-6-sol", "gpt-5.6-sol"],
+      tokenizer: "o200k",
+    },
+    {
+      id: "terra",
+      maker: "openai",
+      match: ["gpt-*-terra"],
+      exclude: ["gpt-5.6-terra"],
+      tokenizer: "o200k",
+    },
+    { id: "luna", maker: "openai", match: ["gpt-*-luna"], tokenizer: "o200k" },
   ],
   deepseek: [
-    { id: "deepseek", match: ["deepseek-flash*"], tokenizer: "deepseek", thinksByDefault: true },
+    {
+      id: "deepseek",
+      maker: "deepseek",
+      match: ["deepseek-flash*"],
+      tokenizer: "deepseek",
+      thinksByDefault: true,
+    },
   ],
   gemini: [
     {
       id: "argon",
+      maker: "google",
       match: ["gemini-4-argon*"],
       tokenizer: "gemini",
       // Gemini fetches a link up to 15 MB (ai.google.dev file-input docs).
