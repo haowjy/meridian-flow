@@ -18,7 +18,7 @@ when the registry is built, not in the deployment that holds that provider's key
   own field names, and the date it was taken. Never edit it by hand; `pnpm models:refresh` rewrites it.
 - `families.ts`: which models Flow offers, per provider, as `[models.<family>]`-style `match` and `exclude` globs (as in
   meridian-base's `mars.toml`), plus per-family facts models.dev lacks: tokenizer, `maxLinkBytes`, `thinksByDefault`.
-  A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`, `sol`, `terra`, `luna`, `deepseek`, `argon`),
+  A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`, `sol`, `terra`, `luna`, `deepseek`, `argon`, `hydrogen`),
   kept equal by hand: nothing in CI reads `mars.toml`. Flow has no family Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others).
   Also the default model; the build fails when the snapshot lacks it. A new version in a listed family appears at the
   next refresh; an `exclude` entry is a dated, deprecated or older-generation id Flow does not offer. `newestInFamily`

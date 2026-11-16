@@ -88,6 +88,13 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
       // Gemini fetches a link up to 15 MB (ai.google.dev file-input docs).
       maxLinkBytes: 15_000_000,
     },
+    {
+      id: "hydrogen",
+      maker: "google",
+      match: ["gemini-4-hydrogen*"],
+      tokenizer: "gemini",
+      maxLinkBytes: 15_000_000,
+    },
   ],
 };
 
