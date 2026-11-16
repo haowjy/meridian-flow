@@ -6,7 +6,7 @@
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { ThreadContextResolution } from "../domains/context/context-port-resolution.js";
 import type { FileTarget } from "../domains/file-policy/index.js";
@@ -17,13 +17,15 @@ export function documentTarget(documentId: string): FileTarget {
 }
 
 /**
- * The container a project route's scheme names: the project's for a
- * project-scoped source, else the named Work's, or No Work's when none is.
+ * The container a project route's scheme names: the account's for the home folder, the
+ * project's for a project-scoped source, else the named Work's, or No Work's when none is.
  */
 export async function containerTarget(
   works: Pick<WorkRepository, "findNoWork">,
   input: {
     projectId: string;
+    /** The account the request acts for: the home folder's owner. */
+    userId: string;
     scheme: ContextUriScheme;
     workId: string | null;
     /** The chat that owns uploads; its row may not exist yet. */
@@ -41,6 +43,12 @@ export async function containerTarget(
       },
     };
   }
+  if (input.scheme === "user")
+    return {
+      kind: "container",
+      scheme: input.scheme,
+      owner: { scope: "account", userId: input.userId as UserId },
+    };
   if (isProjectScopedScheme(input.scheme)) {
     return {
       kind: "container",
@@ -58,12 +66,11 @@ export async function containerTarget(
 }
 
 /**
- * The container a thread-addressed path makes its file in: the project's for
- * a project-scoped source, else the Work its authority names (the thread's
- * own when it names none). Null when the path names no Work.
+ * The container a thread-addressed path makes its file in: the thread's account's for the home
+ * folder, the project's for a project-scoped source, else the Work its authority names (the
+ * thread's own when it names none). Null when the path names no Work.
  */
 export async function threadContainerTarget(
-  works: Pick<WorkRepository, "findNoWork">,
   resolution: Pick<
     ThreadContextResolution,
     | "thread"
@@ -80,6 +87,12 @@ export async function threadContainerTarget(
   if (!parsed.ok) return null;
   const { scheme, authority } = parsed.value;
   const { thread, primaryWorkId, workAuthorities } = resolution;
+  if (scheme === "user")
+    return {
+      kind: "container",
+      scheme,
+      owner: { scope: "account", userId: thread.userId as UserId },
+    };
   if (isProjectScopedScheme(scheme)) {
     return {
       kind: "container",

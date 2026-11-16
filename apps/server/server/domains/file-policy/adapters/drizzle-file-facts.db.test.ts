@@ -72,7 +72,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const ch1 = await facts.load({ target: { kind: "document", documentId: chapter } });
       expect(ch1).toMatchObject({
-        projectId: p,
+        owner: { kind: "project", projectId: p },
         ownerAccountId: u,
         projectDeleted: false,
         ownerWork: null,

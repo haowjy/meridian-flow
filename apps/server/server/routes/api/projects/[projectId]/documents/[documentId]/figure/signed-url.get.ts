@@ -5,6 +5,7 @@ import { serializeTransport } from "@meridian/contracts/protocol";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { H3Event } from "nitro/h3";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
+import { ownedByRequest } from "../../../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../../../domains/projects/index.js";
 import type { AppServices } from "../../../../../../../lib/app.js";
 import { requireAppUser } from "../../../../../../../lib/auth-gate.js";
@@ -47,7 +48,7 @@ export function createFigureSignedUrlHandler(
         : documentTarget(assetDocumentId),
       "read",
     );
-    if (asset.facts.projectId !== projectId) {
+    if (!ownedByRequest(asset.facts.owner, { projectId, accountId: user.userId })) {
       throw createError({ statusCode: 404, message: "Document not found" });
     }
     const result = await app.figureAssets.getSignedFigureUrl({ projectId, assetDocumentId, view });

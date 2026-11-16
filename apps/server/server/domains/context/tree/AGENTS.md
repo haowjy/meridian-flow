@@ -13,8 +13,12 @@ Contract: [local contract](.context/CONTEXT.md). The writer of the tree's rows:
 - A node's `name` is its filename as shown, extension included. Never build a filename with
   `renderFilename(name, extension)`; the stem and extension of a name come from
   `parseDocumentFilename` where a caller needs them (export).
-- A document's owner is `documents.project_id`. Its source, folder, name and type come from a
-  view's relations; `loadDocumentPlacement` reads them from any row that places it.
+- A document's owner is a project or, in the home folder, the account (`documents.project_id` or
+  `user_id`, exactly one; `ownerOfDocument`). A source's owner comes from `source-owner.ts`,
+  never a `projects` join through the source: an account's source has no project. Whether a row
+  belongs to a request is `ownedByRequest` (its project, or its account's home folder). Its source,
+  folder, name and type come from a view's relations; `loadDocumentPlacement` reads them from
+  any row that places it.
 - Path walks go one level at a time with `LATERAL ... OFFSET 0` probes (`nodesAt` in
   `tree-view.ts`); a folder chain is `loadFolderChains(db, ids, view)`.
 - A document in no view (in Trash, or its drafted create was discarded) is readable by the server

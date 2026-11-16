@@ -80,7 +80,7 @@ export function sourceFor(
 ): ContextSource | null {
   const owns = (source: ContextSource): boolean => {
     const by = source.owner;
-    if (by.kind === "project") return true;
+    if (by.kind === "project" || by.kind === "account") return true;
     if (by.kind === "work")
       return scheme === "scratch" && !owner.rootThreadId && by.workId === owner.workId;
     if (by.kind === "lineage")
