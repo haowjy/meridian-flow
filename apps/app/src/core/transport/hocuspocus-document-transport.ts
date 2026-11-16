@@ -107,6 +107,10 @@ const SOCKET_OPEN = 1;
 // The server's close for a draft frame it would not admit (policy violation).
 const DRAFT_UPDATE_REFUSED_CODE = 1008;
 const MAX_DRAFT_UPDATE_REFUSALS = 3;
+// No signal says a `catch_up` will go unanswered: a server older than the message ignores it, and
+// a pull can wait on the draft's row lock. A normal answer takes under 100 ms; past this bound the
+// Undo decides from what the room holds, as it does offline.
+const CATCH_UP_WAIT_MS = 3000;
 
 function isDraftRoom(roomName: string): boolean {
   return roomName.startsWith("draft:");
@@ -519,29 +523,33 @@ export function createHocuspocusDocumentTransport({
       publishTerminal({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: event.code });
   }
 
-  // Each `catch_up` sent on this connection, by id, until its answer or the socket's end.
+  // Each `catch_up` sent on this connection, by id, until its answer, the socket's end, or
+  // CATCH_UP_WAIT_MS.
   const catchUps = new Map<number, () => void>();
   let catchUpId = 0;
   function endCatchUps(): void {
     for (const settle of catchUps.values()) settle();
-    catchUps.clear();
   }
   function catchUpWithLive(): Promise<void> {
     if (terminal || destroyed || websocket.status !== WebSocketStatus.Connected || !provider.synced)
       return Promise.resolve();
     const id = ++catchUpId;
     return new Promise<void>((resolve) => {
-      catchUps.set(id, resolve);
+      const timer = setTimeout(settle, CATCH_UP_WAIT_MS);
+      function settle(): void {
+        clearTimeout(timer);
+        catchUps.delete(id);
+        resolve();
+      }
+      catchUps.set(id, settle);
       provider.sendStateless(encodeCatchUpWsMessage(id));
     });
   }
 
   function handleStateless({ payload }: onStatelessParameters): void {
     const message = parseYjsStatelessMessage(payload);
-    if (message?.type === "caught_up") {
-      catchUps.get(message.id)?.();
-      catchUps.delete(message.id);
-    } else if (message?.type === "read_only") publishAccess("read", message.why ?? null);
+    if (message?.type === "caught_up") catchUps.get(message.id)?.();
+    else if (message?.type === "read_only") publishAccess("read", message.why ?? null);
     else if (message?.type === "change_event")
       for (const listener of changeEventListeners) listener(message);
   }

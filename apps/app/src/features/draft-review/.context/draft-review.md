@@ -335,8 +335,10 @@ Live reaches the draft only on the server's debounced pull (about 2 s), so befor
 notice's Undo waits for the server to hold this tab's Live typing (`whenLiveHeld`) and asks the
 draft room to pull Live in now (`catchUpWithLive`, a `catch_up` stateless message the server
 answers `caught_up` after the pull's update on the same socket). Typing over the Discard's word in
-Live then counts as an edit since, however soon Undo is pressed. A socket that isn't connected
-decides from what the room holds; Ctrl+Z, which can't wait, does too. A Discard is
+Live then counts as an edit since, however soon Undo is pressed. A socket that isn't connected,
+a Live room the server admitted read-only, or a `caught_up` that hasn't come within 3 s (a server
+older than the message ignores it; a pull can wait on the draft's row lock) decides from what the
+room holds, so the Undo never stays on "undoing". Ctrl+Z decides from the room too (see TODO.md). A Discard is
 one Yjs step per room, so one such edit to any of a document's discarded changes ends that
 document's whole Undo. Edits elsewhere in the draft leave it standing: Live typing that reaches the
 draft while a Discard all is in flight must not cost a document its Undo. The notice's Undo always

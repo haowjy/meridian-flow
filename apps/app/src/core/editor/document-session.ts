@@ -224,7 +224,8 @@ export type DocumentSessionTransportProvider = {
   requestHandshake?: () => void;
   /**
    * On a draft room: settles once the server has pulled Live's committed text into the draft and
-   * this document holds the result, or at once when the socket is not connected (and on its close).
+   * this document holds the result; at once when the socket is not connected, and on its close or
+   * when no answer comes within a bound.
    */
   catchUpWithLive?: () => Promise<void>;
   /**
@@ -621,25 +622,25 @@ export class DocumentSession {
 
   /**
    * Settles once the server holds what this room holds now, or at once while the room is not
-   * synced, and when it stops being: a caller deciding from the server's state never waits on a
-   * reconnect.
+   * synced or is read-admitted, and when it stops being synced or becomes read: the server will
+   * never take a read room's typing, and a caller deciding from the server's state never waits on
+   * a reconnect.
    */
   whenServerHoldsLocalChanges(): Promise<void> {
-    if (this.getSnapshot().status !== "synced") return Promise.resolve();
     return new Promise<void>((resolve) => {
-      let stop: (() => void) | null = null;
+      let stop = () => {};
       let settled = false;
       const done = () => {
         if (settled) return;
         settled = true;
-        stop?.();
+        stop();
         resolve();
       };
       stop = this.subscribe((snapshot) => {
-        if (snapshot.status !== "synced") done();
+        if (snapshot.status !== "synced" || snapshot.access === "read") done();
       });
       if (settled) stop();
-      this.whenCurrentChangesAcknowledged().then(done, done);
+      else this.whenCurrentChangesAcknowledged().then(done, done);
     });
   }
 
