@@ -76,8 +76,9 @@ export type ClosedOwner = { why: ClosedOwnerWhy; owner?: string };
  * Which owners this tab reads as closed now, from the Works and chats it holds. A step something
  * of which is held waits for them: a press passes over it while they are all closed. A held
  * answer is evidence the step keeps until a read of the owner that started after it lands
- * (`readAt`); from then on the tab's read decides, and an owner it can't tell about (never read,
- * or its list dropped from the cache) reads open, so a stale read costs one answered press.
+ * (`readAt`); from then on the tab's read decides, and an owner it can't tell about (its list
+ * dropped from the cache) reads open, so a stale read costs one answered press. A press that
+ * passes over the step reads again an owner with no read landed since (`reread`).
  */
 export type ClosedOwners = {
   /** The closed owner of a source's notes; null when it is open or the tab can't tell. */
@@ -165,6 +166,8 @@ export type ApplyStep = {
   readonly held: readonly Held[];
   /** Something is held and every owner it waits for is closed: a press passes over it. */
   waits(): boolean;
+  /** A press passed over it: reads again each owner it waits for that the tab hasn't read since. */
+  reread(): void;
   /** Its changes stand: false while an Un-Apply or Redo of it is out. */
   inForce(): boolean;
   /** A row's Undo: `ask`, with the answer said on its rows (`sayUnapplied`). */
@@ -462,6 +465,7 @@ async function takeLatest(
     const step = stack[at] as UndoStep;
     if (!fits(step, source, view)) continue;
     if (waitsForClosed(step, closed)) {
+      if (step.kind === "apply") step.reread();
       const left = passedOverLeft(step, closed);
       if (left) {
         passed.push(left);

@@ -266,6 +266,7 @@ export class AppliedCommand implements ApplyStep {
    * now, that editor's document says who it waits for (`firstPassOver`).
    */
   passedBy(from: DocumentHistory): void {
+    this.reread();
     if (!firstPassOver(this)) return;
     this.say({ from, answer: { taken: "nothing", treeLeft: [], held: this.held }, step: this });
   }
@@ -306,8 +307,25 @@ export class AppliedCommand implements ApplyStep {
     if (state.kind === "reapplying") return state.done.then(() => this.ask(from));
     if (state.kind === "unapplying") return state.answer;
     if (state.kind === "taken" || state.kind === "ended") return Promise.resolve(SPENT);
-    if (this.waits()) return Promise.resolve({ taken: "nothing", treeLeft: [], held: this.held });
+    if (this.waits()) {
+      this.reread();
+      return Promise.resolve({ taken: "nothing", treeLeft: [], held: this.held });
+    }
     return this.unapply(from);
+  }
+
+  /**
+   * A press passed over it: each owner it waits for with no read landed since the held answer is
+   * read again, so one read that failed doesn't leave it passed over until a reload.
+   */
+  reread(): void {
+    const held = this.current;
+    if (held.kind !== "held") return;
+    const { closed } = this.hooks;
+    const unread = held.parts
+      .filter((part) => closed.readAt(part.ownerKey) < held.askedAt)
+      .map((part) => part.ownerKey);
+    if (unread.length > 0) closed.refresh([...new Set(unread)]);
   }
 
   /** The server's Un-Apply of what is in force: one attempt, whose answer moves the state. */
@@ -522,8 +540,9 @@ const replayLanded = (outcome: ApplyClickOutcome, node: string): Reapplied => {
 
 /**
  * A band's Apply through its item queue while the review shows the draft's room, so the review
- * shows its Un-Apply and Redo at once. A refused Un-Apply leaves nothing to take back; one the
- * queue never sent the Apply for took it all.
+ * shows its Un-Apply and Redo at once. An Un-Apply the queue never sent (`unsent`: its id is
+ * another command's) took nothing, as the server's `conflict` does: the press failed and the
+ * Apply stands. One the queue cancelled because it never sent the Apply took it all.
  */
 export function queuePort(handle: ApplyCommandHandle, node: string): ApplyPort {
   return {
@@ -536,7 +555,7 @@ export function queuePort(handle: ApplyCommandHandle, node: string): ApplyPort {
             ? unappliedOf(answer)
             : answer.status === "cancelled"
               ? { ...SPENT, taken: "all" as const }
-              : SPENT,
+              : { taken: "failed" as const },
         ),
     reapply: (answer) => {
       const replay = handle.redo();

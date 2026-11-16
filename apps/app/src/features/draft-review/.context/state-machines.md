@@ -78,7 +78,7 @@ stateDiagram-v2
   in_force --> unapplying: a press (any surface), attempt n
   failed --> unapplying: a press
   held --> unapplying: a press while an owner it waits for reads open
-  unapplying --> failed: no answer reached the server
+  unapplying --> failed: no answer reached the server, or it was refused (conflict)
   unapplying --> held: something held for a closed owner, whatever else went
   unapplying --> taken: taken back, pressed in an editor that still has its Redo
   unapplying --> ended: taken back from elsewhere, already taken, or only left out
@@ -112,7 +112,9 @@ stateDiagram-v2
   history. It waits while every owner it waits for reads closed. The held answer is evidence the
   Apply keeps until a read of that owner lands that started after the press was sent (`readAt`
   against `askedAt`); from then on the tab's read decides, and an owner the tab can't tell about
-  (never read, or its list dropped from the cache) reads open. `ClosedOwners` keeps each read's
+  (its list dropped from the cache) reads open. A press that passes over it reads each owner
+  again that has no read landed since (`reread`), so one failed read doesn't leave it passed
+  over until a reload. `ClosedOwners` keeps each read's
   start itself, so a cache that drops a list can't make the evidence come back. Owner changes
   re-derive every surface at once.
 - **A late answer names its own press.** An editor's entry goes back to Undo after a press that
@@ -122,7 +124,8 @@ stateDiagram-v2
   change (`joinStack`, `placeOn`), since tree changes are undone there.
 - **One server port** (`serverPort`): the sidebar's, a band's once its review let go of the room,
   and a card's own. A `conflict` answer (the Un-Apply's id is another command's) took nothing:
-  the press failed, and the next one sends a new id.
+  the press failed, and the next one sends a new id. The queue's port reads its `unsent` Un-Apply
+  the same way.
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
