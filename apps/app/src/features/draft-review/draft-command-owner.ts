@@ -887,13 +887,9 @@ export class DraftCommandOwner {
     const ids = chosen.going.map((pair) => pair.read);
     if (!ids.length) {
       if (!chosen.stayed.length) return null;
-      this.setState(ref.itemKey, {
-        failure: { code: "apply-refused", serverCode: "left_out_not_on_server" },
-      });
-      return {
-        sent: false,
-        outcome: Promise.resolve({ kind: "change-refused", code: "left_out_not_on_server" }),
-      };
+      const lines: ApplyLine[] = [{ half: "text", code: "left_out_not_on_server" }];
+      this.setState(ref.itemKey, { failure: { code: "apply-left-out", landed: false, lines } });
+      return { sent: false, outcome: Promise.resolve({ kind: "settled", lines }) };
     }
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
@@ -1014,8 +1010,8 @@ export class DraftCommandOwner {
    * already left out).
    * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
    * it applies (the read's own blocks are another schema's). A room that
-   * can't be read sends the click as it was frozen, and the server says why; `needsReload` when
-   * only a reload of this tab could read it.
+   * can't be read sends the click as it was frozen, and the server says why; one this build can't
+   * read settles unsent without a send, `needsReload`, since only a reload of this tab could read it.
    */
   private rebuilder(
     draftId: string,
@@ -1041,10 +1037,11 @@ export class DraftCommandOwner {
             patched: [],
           };
         const fresh = await readRoomOnce(draftRoomName(draftId), signal);
-        if (!(fresh instanceof Y.Doc)) {
-          result.needsReload = fresh === "schema";
-          return undefined;
+        if (fresh === "schema") {
+          result.needsReload = true;
+          return "reload" as const;
         }
+        if (!(fresh instanceof Y.Doc)) return undefined;
         try {
           const content = roomContent(fresh);
           const schema = content.doc.type.schema;
@@ -1092,7 +1089,7 @@ export class DraftCommandOwner {
       joint?.answered(answer);
       const settled = this.settled(ref, draftId, answer);
       // The server can't take a click from this build until the tab reloads: say that, not "try again".
-      if (rebuilt.needsReload && answer.status === "unsent")
+      if (rebuilt.needsReload)
         this.setState(
           ref.itemKey,
           { failure: { code: "apply-refused", serverCode: "needs_reload" } },

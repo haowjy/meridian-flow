@@ -50,11 +50,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return (
-    serverCode === "unsynced" ||
-    serverCode === "left_out_not_on_server" ||
-    serverCode === "left_out_not_in_draft"
-  );
+  return serverCode === "unsynced" || serverCode === "left_out_not_in_draft";
 }
 
 /**

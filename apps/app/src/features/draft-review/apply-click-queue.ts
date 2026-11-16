@@ -24,23 +24,29 @@ export type FrozenApply = {
   madeAfterRoomEnded?: true;
   /**
    * The click again, from the draft as the server holds it when this click is the head: what to
-   * send, null when none of its changes is there, undefined to send it as it is. Rejects when
+   * send, null when none of its changes is there, undefined to send it as it is, "reload" when
+   * this build can't read the draft, so the server can't take the click either. Rejects when
    * `signal` aborts: the read was not answered in time, or the queue closed.
    */
   rebuild?: (
     signal: AbortSignal,
-  ) => Promise<Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | undefined>;
+  ) => Promise<Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | "reload" | undefined>;
   /** A member of a several-item Apply sends through its group (`GroupApply`), not on its own. */
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
 
 /** A click frozen on `draftId`'s room: the room folds it into its base until it records it. */
+/** Whether `answer` says this item's text cut landed: text that never landed has nothing to fold. */
+function textLanded(answer: ApplyClickResult, node: string): boolean {
+  return itemOf(answer, node)?.text?.landed === true;
+}
+
 export function frozenOn(command: { body: ApplyClick }, draftId: string): boolean {
   return command.body.snapshot !== undefined && command.body.draftId === draftId;
 }
 
 export type ApplyClickLanded = { status: "landed"; commandId: string };
-/** The click never reached the server: its room could not acknowledge it, or its id is another command's. */
+/** The click never reached the server: this build can't read its draft (`rebuild` said "reload"), or its id is another command's. */
 export type ClickUnsent = { status: "unsent"; commandId: string };
 export type ApplyClickOutcome =
   | ApplyClickResult
@@ -210,7 +216,7 @@ export class ApplyClickQueue {
           patchFor: input.patchFor,
           ready: handle.current.outcome.then((answer) => {
             // Text that never landed has nothing to fold back while the Un-Apply is out.
-            if (answer.status === "applied" && !itemOf(answer, this.port.node)?.text?.landed) {
+            if (answer.status === "applied" && !textLanded(answer, this.port.node)) {
               inverse.groupIds.clear();
               inverse.patched = inverse.optimistic;
             }
@@ -508,6 +514,10 @@ export class ApplyClickQueue {
         this.settle(command, { status: "cancelled" });
         return;
       }
+      if (rebuilt === "reload") {
+        this.settle(command, { status: "unsent", commandId: command.body.commandId });
+        return;
+      }
       if (rebuilt) Object.assign(command, rebuilt);
     }
     this.request = command;
@@ -539,7 +549,7 @@ export class ApplyClickQueue {
         !command.body.snapshot ||
         command.closed ||
         command.roomEnded ||
-        itemOf(answer, this.port.node)?.text?.landed !== true ||
+        !textLanded(answer, this.port.node) ||
         this.isRecorded(command)
       )
         this.settle(command, answer);
@@ -693,7 +703,12 @@ export class ApplyClickQueue {
   private settle(command: Command, result: ApplyClickOutcome | UnapplyClickOutcome): void {
     if (this.commands[0] !== command) return;
     // Folded before the release publishes, so the change doesn't flash back.
-    if (command.kind === "apply" && command.roomEnded && result.status === "applied") {
+    if (
+      command.kind === "apply" &&
+      command.roomEnded &&
+      result.status === "applied" &&
+      textLanded(result, this.port.node)
+    ) {
       const draftId = command.body.draftId;
       if (draftId && frozenOn(command, draftId))
         this.landedUnrecorded.set(draftId, [

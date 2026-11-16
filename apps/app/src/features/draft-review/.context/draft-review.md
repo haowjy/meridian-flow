@@ -137,9 +137,9 @@ by another client) stays in the draft, shown as `left_out_not_on_server`: a choi
 The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
 the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
 server won't open (closed, access ended) sends the frame's own cut and the server says why. A room
-this build can't open (schema stale or superseded) can't be read either: when the server then
-answers `unsynced`, the item says `needs_reload` with the deploy notice's own words
-(`ReloadWords`), since only a reload lets the click succeed. The ended room stays bound for its
+this build can't open (schema stale or superseded) can't be read either, so the click isn't sent:
+it settles `unsent` in the client, freeing the draft's queue, and the item says `needs_reload`
+with the deploy notice's own words (`ReloadWords`), since only a reload lets the click succeed. The ended room stays bound for its
 projection only (`Entry.ended`): its rows fold the click while it runs, as any Apply's do, and
 keep folding it once it lands (`landedUnrecorded`), since no record will show, until a room opens
 on the draft again. No lease opens a room for such a click. A click
