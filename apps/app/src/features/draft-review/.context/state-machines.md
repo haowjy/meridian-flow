@@ -59,10 +59,12 @@ The pattern:
 ## An Apply's Undo
 
 One Apply as one state machine (`AppliedCommand` in `apply-history.ts`, its `state`). Every Undo
-of it presses it: the sidebar's step, an applied row's or a chat card's Undo, and Ctrl+Z in each
-editor showing one of its documents; every Redo is that editor's. Each surface derives what it shows
-from the state and keeps none: the history entries and `canUndo`, the Changes row's Undo, the card's
-control and line, the held lines, and session retention (`hasEntries`).
+of it is `ask`: the sidebar's Ctrl+Z asks it, and an applied row's or a chat card's Undo and
+Ctrl+Z in each editor showing one of its documents `press` it, which says the answer on the
+sidebar's rows too. Every Redo is that editor's. Nothing reaches the Apply except through its
+state: each surface derives what it shows from the state and keeps none (the history entries and
+`canUndo`, the sidebar's stack, the Changes row's Undo, the card's control and line, the held
+lines, and session retention).
 
 ```mermaid
 stateDiagram-v2
@@ -72,35 +74,49 @@ stateDiagram-v2
   held --> unapplying: a press while an owner it waits for reads open
   unapplying --> failed: no answer reached the server
   unapplying --> held: something held for a closed owner, whatever else went
-  unapplying --> taken: taken back, pressed in an editor (its Redo)
+  unapplying --> taken: taken back, pressed in an editor that still has its Redo
   unapplying --> ended: taken back from elsewhere, already taken, or only left out
   unapplying --> reapplying: Redo before the answer (chained on attempt n)
   taken --> reapplying: Redo
+  taken --> ended: the editor dropped its Redo (new typing, or its session closed)
+  reapplying --> reapplying: attempt n took it back (only the Redo is out now)
   reapplying --> in_force: the Redo landed, as a new command
   reapplying --> held: attempt n held something (the Redo is cancelled)
   reapplying --> failed: attempt n didn't reach the server (cancelled)
   reapplying --> ended: attempt n found nothing, or the Redo didn't land
-  in_force --> ended: a watch saw it taken back elsewhere, or its draft ended (a band's)
+  in_force --> ended: a watch saw its tree half taken back elsewhere, or its draft ended (a band's)
+  held --> ended: as in_force
+  failed --> ended: as in_force
   ended --> [*]
 ```
 
 - **One answer moves the state once.** Un-Apply attempt `n`'s answer is applied by the attempt
   (`answered`); a Redo chained on `n` goes on only when the answer took the Apply back
-  (`takenBack`), and otherwise is cancelled and the answer decides. The command in force keeps
-  its id until the Redo's command lands: a queue replay that is cancelled or refused gives
-  `handle.current` back to the original.
+  (`takenBack`), and otherwise is cancelled and the answer decides.
+- **The command in force keeps its id until the Redo's command lands.** The queue's handle names
+  its latest click for the next Un-Apply (`current`) and publishes the Apply in force
+  (`inForce`, which `replay()` and the port's `commandId` read) only once a replay lands, so
+  `AppliedCommands.find` reaches the same owner throughout and a card can't make a second one.
+- **The state places it on the sidebar's stack** (`Seat`): it sits there from in force until it
+  is taken back or ends, and through an Un-Apply of it that is out, which a sidebar press goes
+  past. Leaving ends every registration with it: the step, the watch on its tree half, the
+  account list it read, and its notice. A Redo that lands sits it again, on top, a band's that
+  joined the stack too. So a press after `ended` reaches nothing.
 - **`held` is in force, with no Redo.** It keeps its place on the sidebar's stack and in every
-  history. It waits while every owner it waits for reads closed: in the tab's lists, or by the
-  answer's evidence when the tab hasn't read the owner since the press was sent (`readAt` before
-  `askedAt`). Owner changes re-derive every surface at once.
-- **Re-entry is the owner's.** A Redo that lands shows the entry again in every live history at
-  its place (taken hides the other histories' entries rather than removing them) and puts the
-  sidebar's step back on the stack (`entered`); ports return data only.
+  history. It waits while every owner it waits for reads closed. The held answer is evidence the
+  Apply keeps until a read of that owner lands that started after the press was sent (`readAt`
+  against `askedAt`); from then on the tab's read decides, and an owner the tab can't tell about
+  (never read, or its list dropped from the cache) reads open. `ClosedOwners` keeps each read's
+  start itself, so a cache that drops a list can't make the evidence come back. Owner changes
+  re-derive every surface at once.
 - **A late answer names its own press.** An editor's entry goes back to Undo after a press that
   left the Apply in force only if it is still the Redo entry that press made
   (`DocumentHistory`'s `presses`).
 - **A band's Apply** joins the sidebar's stack as the same object when it is held with a tree
-  change (`joinStack`), since tree changes are undone there.
+  change (`joinStack`, `placeOn`), since tree changes are undone there.
+- **One server port** (`serverPort`): the sidebar's, a band's once its review let go of the room,
+  and a card's own. A `conflict` answer (the Un-Apply's id is another command's) took nothing:
+  the press failed, and the next one sends a new id.
 
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).

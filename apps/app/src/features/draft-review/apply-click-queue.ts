@@ -80,13 +80,16 @@ export type ApplyCommandHandle = {
   /** Queues the Redo at once; resolves with what became of it. */
   redo(): Promise<ApplyClickOutcome>;
   /**
-   * Once nothing is outstanding: the Apply an Un-Apply takes back, and the click a Redo sends
+   * The Apply in force, which a Redo replaces only once it lands, and the click a Redo sends
    * again (a new command id to fill).
    */
   replay(): { applyCommandId: string; again: ApplyClick };
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
+  /** The latest Apply queued: the one an Un-Apply names, or cancels before it is sent. */
   current: ApplyCommand;
+  /** The Apply in force: the first, or the latest Redo that landed. */
+  inForce: ApplyCommand;
   reversal: Promise<UnapplyClickOutcome>;
   replaySelection: string[];
   /** The Un-Apply took this item's tree change back, so a Redo carries the tree cut again. */
@@ -165,6 +168,7 @@ export class ApplyClickQueue {
     let handle!: ScheduledApplyHandle;
     handle = {
       current: initial,
+      inForce: initial,
       reversal: Promise.resolve({ status: "cancelled" }),
       replaySelection: [...initial.body.groupIds],
       replayTree: initial.body.tree === true,
@@ -224,7 +228,7 @@ export class ApplyClickQueue {
           if (answer.status !== "cancelled" && answer.status !== "unapplied")
             throw new Error("Un-Apply did not land");
         });
-        const before = handle.current;
+        const before = handle.inForce;
         const replay = this.queueApply({
           body: {
             ...handle.current.body,
@@ -241,9 +245,10 @@ export class ApplyClickQueue {
         this.startFeedback();
         this.port.changed();
         return replay.outcome.then((answer) => {
+          if (landed(answer)) handle.inForce = replay;
           // A replay that never reached the server leaves the Apply it would have replaced as the
           // one in force, the one the next Un-Apply names.
-          if (
+          else if (
             (answer.status === "cancelled" || answer.status === "unsent") &&
             handle.current === replay
           )
@@ -253,8 +258,8 @@ export class ApplyClickQueue {
         });
       },
       replay: () => ({
-        applyCommandId: handle.current.body.commandId,
-        again: { ...handle.current.body, groupIds: [...handle.replaySelection], tree: undefined },
+        applyCommandId: handle.inForce.body.commandId,
+        again: { ...handle.inForce.body, groupIds: [...handle.replaySelection], tree: undefined },
       }),
     };
 

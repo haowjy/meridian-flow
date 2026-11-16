@@ -962,7 +962,7 @@ export class DraftCommandOwner {
         histories.histories,
         {
           closed: histories.closed,
-          stack: null,
+          seat: null,
           said: ({ answer, step }) =>
             this.notices.showPress({
               projectId: ref.projectId,

@@ -20,7 +20,12 @@ import {
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename, type ReviewFileTarget } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
-import { endWhenTakenBack, pushUndoStep, shownSourceOf } from "@/core/project-tree/tree-undo";
+import {
+  dropUndoStep,
+  endWhenTakenBack,
+  pushUndoStep,
+  shownSourceOf,
+} from "@/core/project-tree/tree-undo";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
@@ -31,7 +36,7 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { useClosedOwners } from "@/features/project/context/closed-owners";
-import { AppliedCommand, type ApplyInit, type ApplyPort, takenBack } from "./apply-history";
+import { AppliedCommand, type ApplyInit, type Seat, serverPort } from "./apply-history";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import {
   type AppliedFact,
@@ -311,73 +316,29 @@ export function useWorkBranchCommands({
       };
     };
     /**
-     * Puts `step` on the sidebar's stack, with a watch that ends its tree half once nothing of it
-     * stands (a card's Undo of its rename). Leaving the stack ends the watch and the step's notice;
-     * a newer Apply's notice stays.
+     * The sidebar stack's seat for an Apply: on it, with a watch that ends its tree half once
+     * nothing of it stands (a card's Undo of its rename). `account()`: a node of it is in the
+     * account's list, which the watch reads too. Leaving ends the watch and the step's notice; a
+     * newer Apply's notice stays.
      */
-    const enterStack = (step: AppliedCommand, session: TreeListSession, account: boolean) => {
-      const accountList = account && treeLists ? treeLists.acquire(treeLists.account) : null;
-      pushUndoStep(session, step);
-      const stopWatch = endWhenTakenBack(
-        session,
-        accountList ? [session, accountList.session] : [session],
-        step,
-      );
-      step.leftStack = () => {
-        step.leftStack = () => {};
-        stopWatch();
-        accountList?.release();
-        if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step?.command === step))
-          endNotice();
-      };
-    };
-    /**
-     * The server's Un-Apply and Redo of an Apply. A resend after a lost answer names the same
-     * Un-Apply, which the server answers once; a press after an answer is a new one. Its Redo is
-     * `again`, the same changes applied as a new command, whose data it answers with.
-     */
-    const serverPort = (
-      data: StepData,
-      documentIds: () => readonly string[],
-      again: () => Promise<(StepData & { init: ApplyInit }) | null>,
-    ): ApplyPort => {
-      let { commandId, branchId } = data;
-      let unapplyId: string | null = null;
-      return {
-        commandId: () => commandId,
-        unapply: async () => {
-          unapplyId ??= crypto.randomUUID();
-          try {
-            const answer = await unapplyCommand(projectId, branchId, {
-              commandId: unapplyId,
-              applyCommandId: commandId,
-            });
-            unapplyId = null;
-            if (answer.status === "conflict") return { taken: "failed" };
-            refresh(documentIds());
-            const unapplied = unappliedOf(answer);
-            // The Apply's notice ends once the list has the Work's row back: the list the Apply
-            // left has none, so ending it earlier leaves the writer no row until the read lands.
-            await queryClient.refetchQueries(
-              { queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) },
-              { cancelRefetch: false },
-            );
-            if (unapplied.taken !== "nothing")
-              for (const documentId of documentIds()) owner.forgetApplyFacts(projectId, documentId);
-            return unapplied;
-          } catch {
-            return { taken: "failed" };
-          }
-        },
-        reapply: async (answer) => {
-          if (!takenBack(await answer)) return { kind: "cancelled" };
-          const landed = await again();
-          if (!landed) return { kind: "lost" };
-          ({ commandId, branchId } = landed);
-          return { kind: "landed", init: landed.init };
-        },
-      };
-    };
+    const seatOn = (session: TreeListSession, account: () => boolean): Seat => ({
+      session,
+      enter: (step) => {
+        const accountList = account() && treeLists ? treeLists.acquire(treeLists.account) : null;
+        pushUndoStep(session, step);
+        const stopWatch = endWhenTakenBack(
+          accountList ? [session, accountList.session] : [session],
+          step,
+        );
+        return () => {
+          stopWatch();
+          accountList?.release();
+          dropUndoStep(session, step);
+          if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step?.command === step))
+            endNotice();
+        };
+      },
+    });
     /**
      * An Apply goes on the sidebar's Undo stack as one step (`AppliedCommand`): its Undo is the
      * server's Un-Apply of the whole command, fact by fact: what changed since stays, what a closed
@@ -393,24 +354,36 @@ export function useWorkBranchCommands({
       const made = stepOf(data);
       if (!made) return null;
       let { documentIds, account } = made;
-      const port = serverPort(
-        data,
-        () => documentIds,
-        async () => {
+      let { branchId } = data;
+      const port = serverPort({
+        commandId: data.commandId,
+        unapply: (body) => unapplyCommand(projectId, branchId, body),
+        heard: async (answer) => {
+          refresh(documentIds);
+          // The Apply's notice ends once the list has the Work's row back: the list the Apply
+          // left has none, so ending it earlier leaves the writer no row until the read lands.
+          await queryClient.refetchQueries(
+            { queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) },
+            { cancelRefetch: false },
+          );
+          if (unappliedOf(answer).taken !== "nothing")
+            for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
+        },
+        again: async () => {
           const landed = await again(step);
           const next = landed && stepOf(landed);
           if (!landed || !next) return null;
-          ({ documentIds, account } = next);
-          return { ...landed, init: next.init };
+          ({ documentIds, account, branchId } = { ...next, branchId: landed.branchId });
+          return { commandId: landed.commandId, init: next.init };
         },
-      );
+      });
       const step: AppliedCommand = new AppliedCommand(
         made.init,
         port,
         () => documentIds.map(liveHistory),
         {
           closed,
-          stack: made.session,
+          seat: seatOn(made.session, () => account),
           said: ({ from, answer, step }) =>
             notices.showPress({
               projectId,
@@ -421,11 +394,9 @@ export function useWorkBranchCommands({
               answer,
             }),
           over: () => owner.applied.delete(step),
-          entered: () => enterStack(step, made.session, account),
         },
       );
       owner.applied.add(step);
-      enterStack(step, made.session, account);
       return step;
     };
     /** The applied rows' Undo: `step`, the one Ctrl+Z takes, over the changes it landed. */
@@ -487,8 +458,10 @@ export function useWorkBranchCommands({
             });
             if (!made) return;
             const { tree, sources, facts } = made.init;
-            band.placeOn(made.session, { tree, sources, facts });
-            enterStack(band, made.session, made.account);
+            band.placeOn(
+              seatOn(made.session, () => made.account),
+              { tree, sources, facts },
+            );
           };
         }
         const data: StepData | null =

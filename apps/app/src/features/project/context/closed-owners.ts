@@ -7,6 +7,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextSourceFacts, useProjectContextSources } from "@/client/query/useContextSources";
 import { ownerDraftsQueryOptions } from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
+import { worksReadAt } from "@/client/query/works-projection-acquisition";
 import type { ClosedOwner, ClosedOwners } from "@/core/project-tree/tree-undo";
 
 type Read = {
@@ -30,9 +31,10 @@ const projects = new WeakMap<QueryClient, Map<string, Shared>>();
  * Which owners this tab reads as closed, read at each press from what it holds now: the Works
  * list as this tab's own archive and unarchive left it, each lineage's draft list (`frozen`: every
  * chat in Trash), and the sources that ended. `readAt` is when the tab last learned an owner's
- * state: the list's fetch, or this tab's own change to that Work. One object per project for the
- * tab's life, kept current by every component that calls this: an Apply holds it long after the
- * component that applied it is gone.
+ * state: when the latest read of its list that landed started, or this tab's own change to that
+ * Work. It is kept here, not read from the cache, which drops a list nothing shows. One object
+ * per project for the tab's life, kept current by every component that calls this: an Apply
+ * holds it long after the component that applied it is gone.
  */
 export function useClosedOwners(projectId: string): ClosedOwners {
   const queryClient = useQueryClient();
@@ -57,6 +59,8 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
   const listeners = new Set<() => void>();
   // Each Work's lifecycle as last read, and when the read last changed.
   const lifecycles = new Map<string, { state: string; at: number }>();
+  // When the latest read of each lineage's draft list that landed started.
+  const lineageReads = new Map<string, number>();
   const shared: Shared = {
     read: null,
     tell: () => {
@@ -83,15 +87,9 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
       readAt: (ownerKey) => {
         const parsed = parseDraftOwnerKey(ownerKey);
         if (!parsed) return 0;
-        const fetched =
-          queryClient.getQueryState(
-            parsed.kind === "work"
-              ? projectQueryKeys.works(projectId)
-              : projectQueryKeys.ownerDrafts(projectId, ownerKey),
-          )?.dataUpdatedAt ?? 0;
         return parsed.kind === "work"
-          ? Math.max(fetched, lifecycles.get(parsed.id)?.at ?? 0)
-          : fetched;
+          ? Math.max(worksReadAt(queryClient, projectId), lifecycles.get(parsed.id)?.at ?? 0)
+          : (lineageReads.get(ownerKey) ?? 0);
       },
       refresh: (ownerKeys) => {
         for (const ownerKey of ownerKeys) {
@@ -136,13 +134,17 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
   queryClient.getQueryCache().subscribe((event) => {
     const [, project, kind, owner] = event.query.queryKey as unknown[];
     if (
-      event.type === "updated" &&
-      project === projectId &&
-      kind === "drafts" &&
-      typeof owner === "string" &&
-      owner.startsWith("lineage:")
+      event.type !== "updated" ||
+      project !== projectId ||
+      kind !== "drafts" ||
+      typeof owner !== "string" ||
+      !owner.startsWith("lineage:")
     )
-      shared.tell();
+      return;
+    const read = (event.query.state.data as { readAt?: number } | undefined)?.readAt;
+    if (event.action.type === "success" && read !== undefined)
+      lineageReads.set(owner, Math.max(lineageReads.get(owner) ?? 0, read));
+    shared.tell();
   });
   byProject.set(projectId, shared);
   return shared;

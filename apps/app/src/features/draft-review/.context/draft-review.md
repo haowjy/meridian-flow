@@ -254,7 +254,7 @@ showed it when the writer pressed (the list is held at the press, per owner, so 
 keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedFact.step`): the
 sentence says it was applied, with where it is now (read by id from the tree, the removal sentence once it is in Trash or purged), the name a clash gave it or that it came back
 to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
-takes (`undoApply`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
+takes (`AppliedCommand.press`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
 answers ends the applied notice, so its result shows on the rows as a press's does: nothing, when it
 took everything back; "Partly undone" or "Not undone", when a tree change stayed because it was
 changed since or has writing in it since (`unappliedOf`, in `draft-notices.ts`, the one reading of an Un-Apply answer); "Retry", when it
@@ -416,25 +416,28 @@ Each Apply is one state machine, `AppliedCommand` (`apply-history.ts`, drawn in
 Redo in flight, or ended is one value (`state`), and every surface derives from it: the sidebar's
 step, each editor history's entry and its Undo button, the Changes row's "Undo applying", a chat
 card's control and line, the held lines, and session retention. No surface keeps a copy of what an
-answer said. Every Undo of it calls its `press` (the sidebar's Ctrl+Z, an applied row's Undo, a chat
-card's Undo through `card-unapply.ts`, Ctrl+Z in an editor showing one of its documents), and every
-Redo its `redo`. Its port carries the requests and their data and decides nothing: the server's by
-the command id, or, for a band's Apply while the review shows the draft's room, its item queue's, so
-the review shows both at once. When the review lets go of the room (Draft view to Live) the band's
-Apply switches to the server's port (`serverBandPort`): the queue settles an Un-Apply only by
-watching that room. `owner.applied` (`AppliedCommands`) holds every Apply of the tab, found by its
+answer said. Every Undo of it is its `ask` (the sidebar's Ctrl+Z), or its `press`, which asks and
+says the answer on the sidebar's rows (an applied row's Undo, a chat card's Undo through
+`card-unapply.ts`, Ctrl+Z in an editor showing one of its documents), and every Redo its `redo`. Its
+port carries the requests and their data and decides nothing: the server's by the command id
+(`serverPort`, the one every surface uses), or, for a band's Apply while the review shows the
+draft's room, its item queue's, so the review shows both at once. When the review lets go of the
+room (Draft view to Live) the band's Apply switches to the server's port (`serverBandPort`): the
+queue settles an Un-Apply only by watching that room. `owner.applied` (`AppliedCommands`) holds every Apply of the tab, found by its
 command in force, and tells readers when any of them changes.
 
 **Redo during an Un-Apply** chains on that attempt's answer: it goes on only when the answer took the
 Apply back (`takenBack`: something went, nothing held), and otherwise the Apply still in force is the
 one the answer says (held, failed, or ended). The command in force keeps its id until its replacement
-lands; a queue replay cancelled or refused leaves the original as the one the next Un-Apply names. A
-Redo that lands puts the Apply back in force, and the owner, not the port, shows it again in every
-live history at its place and puts the sidebar's step back on the stack.
+lands (the queue's `inForce`), so every lookup by that id finds the same owner while the Redo is
+out. A Redo that lands puts the Apply back in force, and the owner, not the port, shows it again in
+every live history at its place and puts it back on the sidebar's stack. Taken back, it ends when its
+editor drops the Redo (new typing clears it).
 
 An Apply made in the sidebar, a chat's strip or Changes is also the sidebar's step
-(`rememberApply`, `core/project-tree/tree-undo.ts`): its press is spent once the server answers,
-whatever it took back, and what it couldn't take back (text edited since, a tree change named by a
+(`rememberApply`, `core/project-tree/tree-undo.ts`). Its state puts it on the stack and takes it off
+(`Seat`): there while in force or asked, gone once taken back or ended, with its watches and its
+notice. Its press is spent once the server answers, whatever it took back, and what it couldn't take back (text edited since, a tree change named by a
 `left_out` line) is said on the rows it stayed on (`unappliedOf`). A band's Apply is on no stack
 until it holds a tree change (below).
 
@@ -452,9 +455,11 @@ whatever else it took, leaves the Apply in force (`held`) at its place, in the s
 every history, with no Redo: a held part can't be redone over. A press passes over it while every
 owner it waits for is closed (`waits`), then takes it once one reopens. Closed is read in the tab
 (`useClosedOwners`: the Works list, each lineage's `frozen`, the sources that ended; one reader per
-project, since an Apply outlives the component that applied it). The answer is evidence too: an
-owner reads closed while the tab hasn't read it since the press was sent (`readAt`), so a stale list
-costs one answered press, and the reader is asked to read those owners again. Owner changes and
+project, since an Apply outlives the component that applied it). The answer is evidence too, which
+the Apply keeps until a read of that owner lands that started after the press was sent (`readAt`, the
+read's start, which the reader keeps itself: the cache drops a lineage's list nothing shows). After
+that the tab's read decides, and an owner it can't tell about reads open, so a stale list costs one
+answered press. The reader is asked to read those owners again. Owner changes and
 answers both re-derive every surface at once: the toolbar's Undo, the Changes row's "Undo applying"
 (hidden while it waits, so the sidebar's held line shows on the row), the card's line, and the held
 lines, which never show when the owner reopened while the press was out. A band's held Apply with a

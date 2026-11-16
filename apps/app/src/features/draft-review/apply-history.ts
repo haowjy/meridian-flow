@@ -3,6 +3,7 @@ import type {
   ApplyClickAnswer,
   UnapplyClick,
   UnapplyClickAnswer,
+  UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import type { DocumentApplyEntry, DocumentHistory } from "@/core/editor/editor-history";
 import {
@@ -10,8 +11,8 @@ import {
   type ClosedOwners,
   firstPassOver,
   type Held,
+  sayUnapplied,
   type Unapplied,
-  undoApply,
 } from "@/core/project-tree/tree-undo";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import type { ApplyClickOutcome, ApplyCommandHandle } from "./apply-click-queue";
@@ -53,12 +54,22 @@ export type ApplyPort = {
 };
 
 /**
+ * The sidebar list whose Undo stack holds an Apply, and how it takes its place there with what
+ * watches it; `enter` returns how it leaves.
+ */
+export type Seat = {
+  session: TreeListSession;
+  enter(step: AppliedCommand): () => void;
+};
+
+/**
  * One Apply's state, the one every surface reads:
  * - `in_force`: its Undo would ask the server; `failed` too, after a press that didn't reach it;
  * - `held`: in force, with parts a closed owner keeps (`parts`), asked at `askedAt`;
  * - `unapplying`: Un-Apply attempt `attempt` is out, pressed in `from` (null: no editor);
  * - `taken`: taken back, with its Redo in the editor that pressed;
- * - `reapplying`: Redo attempt `attempt` is out, chained on Un-Apply attempt `after` (-1: none);
+ * - `reapplying`: Redo attempt `attempt` is out, chained on Un-Apply attempt `after` (-1: none,
+ *   or it answered and took the Apply back);
  * - `ended`: nothing is left for its Undo or Redo.
  */
 export type ApplyState =
@@ -119,6 +130,7 @@ class SharedApply {
           redo: () => this.apply.redo(),
           passedOver: () => this.apply.waits(),
           passed: () => this.apply.passedBy(history),
+          dropped: () => this.apply.redoDropped(history),
         }),
       );
     }
@@ -153,11 +165,13 @@ class SharedApply {
 }
 
 /**
- * One Apply and the one state machine of its Undo (`ApplyState`). Every Undo of it is `press`: the
- * sidebar's Ctrl+Z, an applied row's or a chat card's Undo, and Ctrl+Z in an editor showing one of
- * its documents; every Redo is `redo`. The sidebar's stack holds it as its step while it is in
- * force, each live history of its documents shows it (`SharedApply`), and the rows, the cards and
- * the band's line read `state` and `waits` and keep no copy.
+ * One Apply and the one state machine of its Undo (`ApplyState`). Every Undo of it is `ask`: the
+ * sidebar's Ctrl+Z asks it, and an applied row's or a chat card's Undo and Ctrl+Z in an editor
+ * showing one of its documents `press` it, which says the answer on its rows too; every Redo is
+ * `redo`. Its state alone places it: the sidebar's stack holds it (`Seat`) from when it is in
+ * force until it is taken back or ends, each live history of its documents shows it
+ * (`SharedApply`), and the rows, the cards and the band's line read `state` and `waits` and keep
+ * no copy.
  */
 export class AppliedCommand implements ApplyStep {
   readonly kind = "apply";
@@ -171,17 +185,15 @@ export class AppliedCommand implements ApplyStep {
   revision = 0;
   private current: ApplyState = { kind: "in_force" };
   private attempts = 0;
-  /** The history whose press `unapply` is about to send. */
-  private pressedIn: DocumentHistory | null = null;
   private readonly listeners = new Set<() => void>();
   /** While held: hears the tab's view of its owners change. */
   private stopHearing = noop;
   private readonly shared: SharedApply;
-  /** The sidebar list whose stack holds it; null for a band's until it holds a tree change. */
-  private stack: TreeListSession | null;
-  /** Hears it leave the sidebar's stack: the watch on its tree half and its notice end. */
-  leftStack: () => void = noop;
-  /** A band's Apply came to hold a tree change: the sidebar's stack, where tree changes are undone, takes it. */
+  /** The sidebar's stack it sits on while in force; null for a band's until it holds a tree change. */
+  private seat: Seat | null;
+  /** Its way off the seat while it sits there. */
+  private leave: (() => void) | null = null;
+  /** A band's Apply came to hold a tree change: the sidebar's stack, where tree changes are undone, takes it (`placeOn`). */
   joinStack: () => void = noop;
 
   constructor(
@@ -190,13 +202,11 @@ export class AppliedCommand implements ApplyStep {
     histories: LiveHistories,
     private readonly hooks: {
       closed: ClosedOwners;
-      stack: TreeListSession | null;
+      seat: Seat | null;
       /** A press from an editor answered: say it where the writer pressed. Returns its end. */
       said?(said: PressSaid): () => void;
       /** It ended. */
       over?(): void;
-      /** A Redo landed: it is back in force, and the sidebar's stack holds it again. */
-      entered?(): void;
     },
   ) {
     this.text = init.text;
@@ -205,8 +215,9 @@ export class AppliedCommand implements ApplyStep {
     this.name = init.name;
     this.nodes = init.nodes;
     this.facts = init.facts;
-    this.stack = hooks.stack;
+    this.seat = hooks.seat;
     this.shared = new SharedApply(histories, this);
+    this.sit();
   }
 
   get state(): ApplyState {
@@ -265,38 +276,49 @@ export class AppliedCommand implements ApplyStep {
   }
 
   /** It holds a tree change of a band's: the sidebar's stack holds it from now on. */
-  placeOn(stack: TreeListSession, init: Partial<ApplyInit>): void {
+  placeOn(seat: Seat, init: Partial<ApplyInit>): void {
     Object.assign(this, init);
-    this.stack = stack;
+    this.seat = seat;
+    this.sit();
   }
 
   /**
-   * Takes the Apply back, pressed in `from` (an editor's Ctrl+Z) or elsewhere. Only in force does
-   * a press ask the server; a press while a Redo is out waits for it, one while an Un-Apply is
-   * out hears its answer, and one on an Apply passed over answers what holds it without asking.
+   * Takes the Apply back, as `ask` does, pressed in `from` (an editor's Ctrl+Z) or elsewhere (a
+   * row's or a card's Undo). A press that asks the server says the answer on the sidebar's rows
+   * too, as the sidebar's own Ctrl+Z does.
    */
   press(from: DocumentHistory | null): Promise<Answer> {
     const state = this.current;
     if (state.kind === "reapplying") return state.done.then(() => this.press(from));
+    const sends = this.offersUndo();
+    const answer = this.ask(from);
+    if (sends && this.seat) void sayUnapplied(this.seat.session, this, answer, this.hooks.closed);
+    return answer;
+  }
+
+  /**
+   * Every Undo of the Apply. Only in force does it ask the server; one while a Redo is out waits
+   * for it, one while an Un-Apply is out hears its answer, and one on an Apply passed over answers
+   * what holds it without asking.
+   */
+  ask(from: DocumentHistory | null = null): Promise<Answer> {
+    const state = this.current;
+    if (state.kind === "reapplying") return state.done.then(() => this.ask(from));
     if (state.kind === "unapplying") return state.answer;
     if (state.kind === "taken" || state.kind === "ended") return Promise.resolve(SPENT);
     if (this.waits()) return Promise.resolve({ taken: "nothing", treeLeft: [], held: this.held });
-    this.pressedIn = from;
-    // On the sidebar's stack it goes as the stack's press, so the rows say what it answered.
-    return this.stack ? undoApply(this.stack, this, this.hooks.closed) : this.unapply();
+    return this.unapply(from);
   }
 
   /** The server's Un-Apply of what is in force: one attempt, whose answer moves the state. */
-  async unapply(): Promise<Answer> {
-    const from = this.pressedIn;
-    this.pressedIn = null;
+  private async unapply(from: DocumentHistory | null): Promise<Answer> {
     const attempt = ++this.attempts;
     const askedAt = Date.now();
     const answer = this.port.unapply();
     this.shared.hide(from);
     this.set({ kind: "unapplying", attempt, from, answer, askedAt });
     const said = await answer;
-    this.answered(said, attempt, from, askedAt);
+    this.answered(said, attempt, askedAt);
     if (from) this.say({ from, answer: said, step: this });
     return said;
   }
@@ -304,13 +326,9 @@ export class AppliedCommand implements ApplyStep {
   /**
    * Un-Apply attempt `attempt` answered. A Redo pressed before the answer goes on only when the
    * answer took the Apply back; otherwise the Apply that is still in force is the one it says.
+   * Taken back, its Redo is in the editor that pressed, unless that editor dropped it meanwhile.
    */
-  private answered(
-    answer: Answer,
-    attempt: number,
-    from: DocumentHistory | null,
-    askedAt: number,
-  ): void {
+  private answered(answer: Answer, attempt: number, askedAt: number): void {
     const state = this.current;
     const chained = state.kind === "reapplying" && state.after === attempt;
     if (!chained && !(state.kind === "unapplying" && state.attempt === attempt)) return;
@@ -323,12 +341,28 @@ export class AppliedCommand implements ApplyStep {
       this.set({ kind: "held", parts: answer.held, askedAt });
       this.hooks.closed.refresh([...new Set(answer.held.map((part) => part.ownerKey))]);
       this.shared.enter();
-      if (!this.stack && answer.held.some((part) => part.tree)) this.joinStack();
+      if (!this.seat && answer.held.some((part) => part.tree)) this.joinStack();
       return;
     }
-    if (chained && takenBack(answer)) return;
-    if (takenBack(answer) && from) this.set({ kind: "taken", from, answer });
+    // The Redo pressed before the answer goes on: only it is out now.
+    if (chained && takenBack(answer)) {
+      this.set({ ...state, after: -1 });
+      return;
+    }
+    const redoIn = state.kind === "unapplying" ? state.from : null;
+    if (takenBack(answer) && redoIn) this.set({ kind: "taken", from: redoIn, answer });
     else this.end();
+  }
+
+  /**
+   * `history` dropped its Redo of the Apply (the writer typed, or its session closed): taken
+   * back, nothing is left of it; still asked, its answer leaves no Redo.
+   */
+  redoDropped(history: DocumentHistory): void {
+    const state = this.current;
+    if (state.kind === "taken" && state.from === history) this.end();
+    else if (state.kind === "unapplying" && state.from === history)
+      this.current = { ...state, from: null };
   }
 
   /** The Redo of the press that took it back: the same changes applied again as a new command. */
@@ -346,7 +380,10 @@ export class AppliedCommand implements ApplyStep {
     });
   }
 
-  /** Back in force as a new command: every live history shows it again at its place. */
+  /**
+   * Back in force as a new command: every live history shows it again at its place, and the
+   * sidebar's stack holds it again (`sit`).
+   */
   private reapplied(attempt: number, result: Reapplied): void {
     const state = this.current;
     // Cancelled: the Un-Apply's answer already said what is in force (`answered`).
@@ -359,19 +396,18 @@ export class AppliedCommand implements ApplyStep {
     if (result.init) Object.assign(this, result.init);
     this.set({ kind: "in_force" });
     this.shared.enter();
-    this.hooks.entered?.();
   }
 
   /**
-   * It left the sidebar's stack: a press answered, or a watch saw it taken back elsewhere (a
-   * card's Undo of its rename). Still in force, nothing of it is left for an editor's Undo either.
+   * A watch saw its tree half taken back elsewhere (a card's Undo of its rename). With no text,
+   * nothing of it is left in force; while its own Un-Apply is out, that answer says what is.
    */
-  ended = (): void => {
-    this.leftStack();
-    if (this.inForce()) this.end();
-  };
+  treeTaken(): void {
+    this.tree = null;
+    if (!this.text && this.inForce()) this.end();
+  }
 
-  /** Nothing is left for its Undo or Redo: every history lets it go. */
+  /** Nothing is left for its Undo or Redo: the sidebar's stack and every history let it go. */
   end(): void {
     if (this.current.kind === "ended") return;
     this.set({ kind: "ended" });
@@ -379,8 +415,28 @@ export class AppliedCommand implements ApplyStep {
     this.hooks.over?.();
   }
 
+  /**
+   * Sits on its seat while in force or while an Un-Apply of it is out, and leaves it once taken
+   * back or ended, so a press there never reaches an Apply with nothing left to undo. A Redo that
+   * lands sits it again, on top.
+   */
+  private sit(): void {
+    const state = this.current;
+    const sits =
+      state.kind === "reapplying"
+        ? state.after !== -1
+        : state.kind !== "taken" && state.kind !== "ended";
+    if (sits && this.seat && !this.leave) this.leave = this.seat.enter(this);
+    else if (!sits && this.leave) {
+      const leave = this.leave;
+      this.leave = null;
+      leave();
+    }
+  }
+
   private set(next: ApplyState): void {
     this.current = next;
+    this.sit();
     this.stopHearing();
     this.stopHearing =
       next.kind === "held"
@@ -497,45 +553,71 @@ export type BandPort = {
 };
 
 /**
+ * An Apply taken back by the server's answer alone, from any surface. A resend after no answer
+ * names the same Un-Apply, which the server answers once; a press after an answer, or after
+ * `conflict` (its id is another command's), is a new one, and nothing of the Apply went.
+ * `heard`: what the answer changes besides the Apply, read before its state moves. `again`: what
+ * a Redo sends, as the Apply in force once it lands, or null when nothing of it did; without it a
+ * Redo is lost.
+ */
+export function serverPort(input: {
+  commandId: string;
+  unapply(body: UnapplyClick): Promise<UnapplyClickAnswer>;
+  heard?(answer: UnapplyClickResult): Promise<void>;
+  again?(answer: UnapplyClickResult): Promise<{ commandId: string; init?: ApplyInit } | null>;
+}): ApplyPort {
+  let { commandId } = input;
+  let unapplyId: string | null = null;
+  let last: UnapplyClickResult | null = null;
+  return {
+    commandId: () => commandId,
+    unapply: async () => {
+      unapplyId ??= crypto.randomUUID();
+      let answer: UnapplyClickAnswer;
+      try {
+        answer = await input.unapply({ commandId: unapplyId, applyCommandId: commandId });
+      } catch {
+        return { taken: "failed" };
+      }
+      unapplyId = null;
+      if (answer.status !== "unapplied") return { taken: "failed" };
+      last = answer;
+      await input.heard?.(answer);
+      return unappliedOf(answer);
+    },
+    reapply: async (answer) => {
+      if (!takenBack(await answer)) return CANCELLED;
+      const landed = input.again && last ? await input.again(last) : null;
+      if (!landed) return LOST;
+      commandId = landed.commandId;
+      return { kind: "landed", init: landed.init };
+    },
+  };
+}
+
+/**
  * A band's Apply once its review let go of the room: the queue settles an Un-Apply only by
  * watching that room, so from here the server's answer alone settles it. `replay` is what the
- * queue last held: the Apply in force and the click a Redo sends again.
+ * queue last held: the Apply in force and the click a Redo sends again, with what the last
+ * Un-Apply took back.
  */
 export function serverBandPort(
   port: BandPort,
   replay: { applyCommandId: string; again: ApplyClick },
 ): ApplyPort {
-  let { applyCommandId, again } = replay;
-  // A press after a lost answer resends the same Un-Apply: the server answers it once.
-  let unapplyId: string | null = null;
-  return {
-    commandId: () => applyCommandId,
-    unapply: async () => {
-      unapplyId ??= crypto.randomUUID();
-      let answer: UnapplyClickAnswer;
-      try {
-        answer = await port.unapply({ commandId: unapplyId, applyCommandId });
-      } catch {
-        return { taken: "failed" };
-      }
-      unapplyId = null;
-      if (answer.status !== "unapplied") return SPENT;
+  let { again } = replay;
+  return serverPort({
+    commandId: replay.applyCommandId,
+    unapply: port.unapply,
+    again: async (answer) => {
       if (answer.reversedGroupIds.length) again = { ...again, groupIds: answer.reversedGroupIds };
-      return unappliedOf(answer);
-    },
-    reapply: async (answer) => {
-      if (!takenBack(await answer)) return CANCELLED;
       const body = { ...again, commandId: crypto.randomUUID() };
-      let landed: boolean;
       try {
-        landed = (await port.send(body)).status === "applied";
+        if ((await port.send(body)).status !== "applied") return null;
       } catch {
         // Lost on the way: the next Un-Apply asks the server, which answers for one never applied.
-        landed = true;
       }
-      if (!landed) return LOST;
-      applyCommandId = body.commandId;
-      return { kind: "landed" };
+      return { commandId: body.commandId };
     },
-  };
+  });
 }

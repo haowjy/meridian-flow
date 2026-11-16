@@ -33,6 +33,8 @@ type EditorHistoryAction = {
   passedOver?(): boolean;
   /** An undo just passed over it: the writer pressed Undo and an older step went instead. */
   passed?(): void;
+  /** Its redo is gone: new edits cleared the redo side, or the history closed with it there. */
+  dropped?(): void;
 };
 /** An Apply boundary in a history. `remove` ends it when its action can no longer run. */
 type ApplyEntry = { remove(): void };
@@ -149,9 +151,10 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.manager.off("stack-item-added", this.managerAdded);
     this.manager.off("stack-cleared", this.managerCleared);
     this.manager.destroy();
+    const redone = this.redo.splice(0);
     this.undo.length = 0;
-    this.redo.length = 0;
     this.listeners.clear();
+    for (const entry of redone) if (entry.kind === "apply") entry.action.dropped?.();
   }
 
   captureApply(action: EditorHistoryAction): DocumentApplyEntry {
@@ -419,7 +422,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   }
 
   private clearRedo(): void {
-    this.redo.length = 0;
+    for (const entry of this.redo.splice(0)) if (entry.kind === "apply") entry.action.dropped?.();
     if (this.manager.redoStack.length > 0) {
       this.suppressManagerEvents = true;
       try {

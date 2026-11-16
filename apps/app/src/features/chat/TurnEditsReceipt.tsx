@@ -24,7 +24,7 @@ import { FoldToggle } from "@/components/ui/fold-toggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
 import { unappliedSentence } from "@/core/project-tree/tree-left-sentence";
-import type { Unapplied } from "@/core/project-tree/tree-undo";
+import type { TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
 import { useAppliedCommands } from "@/features/draft-review/CommandNotice";
@@ -96,7 +96,9 @@ export function TurnEditsReceipt({
   const unapply = useCardUnapply(projectId);
   const appliedCommands = useAppliedCommands();
   // What the card's last Undo of its applied changes left standing for good, said where pressed.
-  const [left, setLeft] = useState<(Unapplied & { count: number }) | null>(null);
+  const [left, setLeft] = useState<
+    (Unapplied & { count: number; facts: ReadonlyMap<string, TreeFact> }) | null
+  >(null);
 
   const drafts = receipt?.drafts;
   const trees = receipt?.trees;
@@ -137,6 +139,14 @@ export function TurnEditsReceipt({
   const reversible = reverses || applies.length > 0;
   const appliedCount = applies.reduce((sum, apply) => sum + apply.count, 0);
   const wholeApply = applies.length > 1 || (applies[0] !== undefined && !applies[0].onlyThisTurn);
+  // What each listed Apply did to a node, as the Changes row names it: this tab's own Applies
+  // read it from the tree, and one the card made an owner for, from the card's tree lines.
+  const cardFacts = treeFactsOf(documents, trees);
+  const factsNow = () =>
+    new Map([
+      ...cardFacts,
+      ...listed.flatMap(({ command }) => (command ? [...command.facts] : [])),
+    ]);
   const heldParts = waiting.flatMap((command) => command.held);
   const said = heldParts.length
     ? {
@@ -144,6 +154,7 @@ export function TurnEditsReceipt({
         treeLeft: left?.treeLeft ?? [],
         held: heldParts,
         count: listed.reduce((sum, { apply }) => sum + apply.count, 0),
+        facts: factsNow(),
       }
     : left;
 
@@ -192,13 +203,14 @@ export function TurnEditsReceipt({
       // One press: the reversal of what no Apply took, then each Apply's Un-Apply. In this order
       // the reversal never sees a part the Un-Apply drafted again, so the draft keeps it.
       const outcome = reverses ? await turnMutation.mutateAsync({ turnId: turn.id }) : null;
-      const taken = applies.length ? await unapply(applies) : null;
+      const facts = factsNow();
+      const taken = applies.length ? await unapply(applies, cardFacts) : null;
       if (outcome) answered(outcome);
       if (taken?.taken === "failed") {
         setCommandRefusal({ status: "request_failed" });
         setExpanded(true);
       } else if (taken && (taken.taken === "partly" || taken.taken === "nothing")) {
-        setLeft(taken.treeLeft.length ? { ...taken, held: [], count: appliedCount } : null);
+        setLeft(taken.treeLeft.length ? { ...taken, held: [], count: appliedCount, facts } : null);
         setExpanded(true);
       }
     } catch {
@@ -304,7 +316,6 @@ export function TurnEditsReceipt({
                     ...said.held.map((one) => one.node),
                   ]),
                 ],
-                facts: new Map(),
               })}
             </p>
           ) : null}
@@ -481,6 +492,26 @@ function useDocumentRowDrag(document: TurnEditDocument) {
 
 /** What became of a row's drafted text (`text`) and tree change (`tree`), each when the turn drafted it. */
 type Halves = { text?: TurnDraftState; tree?: TurnTreeState };
+
+/** What each node's drafted tree change on the card did, named as its line names it. */
+function treeFactsOf(
+  documents: readonly TurnEditDocument[],
+  trees: TurnReceiptChip["trees"],
+): Map<string, TreeFact> {
+  return new Map(
+    documents.flatMap((document) =>
+      trees?.[document.documentId]
+        ? [[document.documentId, { did: didOf(document.tree), folder: !!document.folder }]]
+        : [],
+    ),
+  );
+}
+
+function didOf(line: TurnTreeLine | undefined): TreeFact["did"] {
+  if (!line || line.op === "copy") return "created";
+  if (line.op === "delete") return "deleted";
+  return describeModelMove(line.from, line.to).kind === "rename" ? "renamed" : "moved";
+}
 
 function halvesOf(
   document: TurnEditDocument,

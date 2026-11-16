@@ -4,34 +4,40 @@ import { useCallback } from "react";
 import { unapplyCommand } from "@/client/api/branches-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
-import type { Unapplied } from "@/core/project-tree/tree-undo";
+import type { TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { useClosedOwners } from "@/features/project/context/closed-owners";
-import { type Answer, AppliedCommand, type ApplyPort } from "./apply-history";
-import { unappliedOf } from "./draft-notices";
+import { type Answer, AppliedCommand, serverPort } from "./apply-history";
 
 /**
  * A chat card's Undo of its applied changes: each Apply that took them, taken back whole, as
  * Ctrl+Z and the sidebar take it, through its one owner (`AppliedCommand`). An Apply this tab
  * doesn't hold yet (made in another tab, or before a reload) gets an owner of its own here, with
- * no editor or sidebar step, so every card listing it reads what became of it. Resolves once the
- * cards have read the server again, with each answer joined.
+ * no editor or sidebar step, so every card listing it reads what became of it; `facts` is what
+ * the card's tree lines say each change did. Resolves once the cards have read the server again,
+ * with each answer joined.
  */
 export function useCardUnapply(projectId: string | null) {
   const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
   const closed = useClosedOwners(projectId ?? "");
   return useCallback(
-    async (applies: readonly TurnAppliedCommand[]): Promise<Answer> => {
+    async (
+      applies: readonly TurnAppliedCommand[],
+      facts: ReadonlyMap<string, TreeFact>,
+    ): Promise<Answer> => {
       if (!projectId) return { taken: "failed" };
       const commandOf = (apply: TurnAppliedCommand) => {
         const held = owner.applied.find(apply.commandId);
         if (held) return held;
         const made: AppliedCommand = new AppliedCommand(
-          { text: true, tree: null, sources: [], name: "", nodes: [], facts: new Map() },
-          serverUnapply(projectId, apply),
+          { text: true, tree: null, sources: [], name: "", nodes: [...facts.keys()], facts },
+          serverPort({
+            commandId: apply.commandId,
+            unapply: (body) => unapplyCommand(projectId, apply.branchId, body),
+          }),
           () => [],
-          { closed, stack: null, over: () => owner.applied.delete(made) },
+          { closed, seat: null, over: () => owner.applied.delete(made) },
         );
         owner.applied.add(made);
         return made;
@@ -43,29 +49,6 @@ export function useCardUnapply(projectId: string | null) {
     },
     [owner, queryClient, projectId, closed],
   );
-}
-
-/** The server's Un-Apply of an Apply no surface here can Redo. */
-function serverUnapply(projectId: string, apply: TurnAppliedCommand): ApplyPort {
-  // A press after a lost answer resends the same Un-Apply: the server answers it once.
-  let unapplyId: string | null = null;
-  return {
-    commandId: () => apply.commandId,
-    unapply: async () => {
-      unapplyId ??= crypto.randomUUID();
-      try {
-        const answer = await unapplyCommand(projectId, apply.branchId, {
-          commandId: unapplyId,
-          applyCommandId: apply.commandId,
-        });
-        unapplyId = null;
-        return answer.status === "unapplied" ? unappliedOf(answer) : { taken: "failed" };
-      } catch {
-        return { taken: "failed" };
-      }
-    },
-    reapply: async () => ({ kind: "lost" }),
-  };
 }
 
 /**
