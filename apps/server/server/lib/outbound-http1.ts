@@ -11,6 +11,10 @@
  * `installOutboundHttp1` covers the global `fetch`. An undici `Agent` with its own `connect`
  * ignores the global dispatcher, so it builds its connector with `OUTBOUND_CONNECT_OPTIONS`.
  *
+ * Installing this dispatcher replaces Node's env-proxy dispatcher (`NODE_USE_ENV_PROXY` /
+ * `--use-env-proxy`). A future proxy setup has to wrap it, for example with `EnvHttpProxyAgent`
+ * and the same connect options.
+ *
  * Delete this module, its call in `plugins/startup.ts` and its use in
  * `public-address-dispatcher.ts` when a release with the fix ships and the `undici` pin moves to it.
  */
