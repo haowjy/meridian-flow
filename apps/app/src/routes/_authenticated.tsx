@@ -14,6 +14,7 @@ import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { projectDomain } from "@/client/query/project-commands";
+import { useMcpConnectionsAtOpen } from "@/client/query/useMcpConnections";
 import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
 import { loadProjectList, ProjectStoreProvider, ThreadStoreProvider } from "@/client/stores";
@@ -186,6 +187,7 @@ function AuthenticatedProviderTree({
                     <Outlet />
                   </div>
                   <SettingsDialog />
+                  <McpConnectionsAtOpen />
                   <FailureToaster />
                   {DebugOverlay ? (
                     <Suspense fallback={null}>
@@ -200,4 +202,10 @@ function AuthenticatedProviderTree({
       </ProjectStoreProvider>
     </FailureLogProvider>
   );
+}
+
+/** Reading the connections starts their checks: when the app opens and when the writer comes back. */
+function McpConnectionsAtOpen() {
+  useMcpConnectionsAtOpen();
+  return null;
 }
