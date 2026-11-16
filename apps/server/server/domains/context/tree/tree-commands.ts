@@ -883,8 +883,9 @@ export function runTreeCommand(
       }
       const kept = keptTrashed(cx, projection, folder.destination.trashed);
       const after = cx.scope.writer.view(cx.scope.view);
-      const subject = (after.nodes.get(movedNode) as TreeNode).parent;
-      const folderNode = after.nodes.get(subject);
+      const folderNode = after.nodes.get((after.nodes.get(movedNode) as TreeNode).parent);
+      // The receipt hangs on a node: at a source's top there is no folder, so it hangs on a moved one.
+      const subject = folderNode ? folderNode.id : movedNode;
       const landedAt = folderNode ? nodeUri(cx, after, folderNode) : uriOf(to.area, [], true);
       return finish({
         ok: true,

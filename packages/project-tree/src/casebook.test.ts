@@ -1347,10 +1347,9 @@ describe("Undo and Redo of names and places read the changes in force", () => {
     expect(nameOf(a, node)).toBe("Earlier");
   });
 
-  it("a move that set a name, renamed since: Undo takes the place back and keeps the name", () => {
+  it("a move, renamed since: Undo takes the place back and keeps the name", () => {
     const a = replica(1000);
     const into = folder(a, "Into");
-    folder(a, "Name", into);
     const node = folder(a, "Name");
     const move = a.move(LIVE, W, node, into);
     a.rename(LIVE, W, node, "Mine");

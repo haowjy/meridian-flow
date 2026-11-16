@@ -15,31 +15,19 @@ export function createInMemoryLevelFiles(): InMemoryLevelFiles {
     async read({ level }) {
       return { files: { ...levels[level] }, problems: {} };
     },
-    async prepareFiles({ level, files, create, delete: remove }) {
+    async prepareFiles({ level, files }) {
       return {
         async applyFiles() {
           const results: FileChanges = {};
           for (const [path, { base, target }] of Object.entries(files)) {
             const live = levels[level][path];
-            if (base === undefined && target === undefined) {
+            if (live === undefined || target === undefined) {
               results[path] = { outcome: "skipped", clashes: 0 };
-            } else if (live === undefined && target !== undefined && create) {
-              levels[level][path] = target;
-              results[path] = { outcome: "created", text: target, clashes: 0 };
-            } else if (live !== undefined && target === undefined && remove && live === base) {
-              delete levels[level][path];
-              results[path] = { outcome: "deleted", clashes: 0 };
-            } else if (live !== undefined && target !== undefined) {
-              const merged = mergeCodeText({ base: base ?? "", live, target });
-              levels[level][path] = merged.text;
-              results[path] = { ...merged, outcome: merged.text === live ? "unchanged" : "merged" };
-            } else if (live !== undefined && target === undefined && remove) {
-              results[path] = { outcome: "unchanged", text: live, clashes: 1 };
-            } else
-              results[path] = {
-                outcome: "skipped",
-                clashes: 0,
-              };
+              continue;
+            }
+            const merged = mergeCodeText({ base: base ?? "", live, target });
+            levels[level][path] = merged.text;
+            results[path] = { ...merged, outcome: merged.text === live ? "unchanged" : "merged" };
           }
           return results;
         },

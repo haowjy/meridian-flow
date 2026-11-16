@@ -652,7 +652,6 @@ export async function createProductionAppPorts(input: {
       db,
       documentSync,
       treeLists,
-      arrivals,
       links: documentLinks,
     }),
     onSaved: (userId, projectId, level) =>
