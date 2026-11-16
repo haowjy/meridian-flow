@@ -231,8 +231,7 @@ A model edit as a command records its own, in its transaction ([model edits](mod
 
 A write to a Work draft that a Discard or a restore closed after the model last read it lands in
 a new draft (`closedDraftSeen` in `model-edit-write.ts`), seeded from the document as it stands,
-and the result says the earlier draft closed and this edit opened a new one. The core plans on
-the current text. The core resolves the write's selectors in the model's view of the closed draft
+and the result says the earlier draft closed and this edit opened a new one. The core resolves the write's selectors in the model's view of the closed draft
 (`supersededWorkDraftId`) and carries the result onto the new draft by block hash
 (`resolver/carry.ts`): blocks it lacks get their words after the nearest block both hold, and a
 remove of them changes nothing; the Discard's restored text is never in scope. The day-30 purge

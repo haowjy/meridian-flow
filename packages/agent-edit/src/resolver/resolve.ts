@@ -194,9 +194,15 @@ function planCarried(
   if (!view) {
     // Nothing says where the model aimed: its words land at the end, and nothing is removed.
     if (params.command === "remove") return { steps: [] };
+    // The address's heading fragment is a selector too: `sectionChecked` would resolve it
+    // against the current text, where a purged draft's heading does not exist.
+    const { fragment: _fragment, ...address } = params.documentAddress;
     const landed = planInsert(ctx, {
       ...params,
+      documentAddress: address,
       command: "insert",
+      all: undefined,
+      wholeDocument: undefined,
       after: undefined,
       before: undefined,
       find: undefined,
