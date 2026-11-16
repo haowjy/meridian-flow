@@ -4,7 +4,6 @@ import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,
@@ -161,14 +160,18 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         ))}
       </div>
       {dock.more > 0 ? (
-        <div className="flex px-[calc(var(--chat-card-pad-x)-0.5rem)] pb-1 @max-[25rem]/dock:px-0">
-          <Button variant="quiet" size="meta" className="font-normal" onClick={dock.showChanges}>
+        <div className="flex pr-2 pb-1 pl-[var(--chat-card-pad-x)] @max-[25rem]/dock:pl-1">
+          <button
+            type="button"
+            className="text-button flex items-center text-xs coarse:min-h-11"
+            onClick={dock.showChanges}
+          >
             {dock.inWork ? (
               <Trans>{dock.more} more in this Work</Trans>
             ) : (
               <Trans>{dock.more} more to review</Trans>
             )}
-          </Button>
+          </button>
         </div>
       ) : null}
       <CommandNotice notice={dock.notice} question={question} />
