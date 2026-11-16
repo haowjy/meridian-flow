@@ -6,9 +6,12 @@ import type { IndexeddbPersistence } from "y-indexeddb";
 import { type Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as sync from "y-protocols/sync";
 import * as Y from "yjs";
+import type { UnsentEdits } from "./unsent-edits";
 
 type PeerMessage =
   | { kind: "hello" | "sync" | "awareness"; payload: Uint8Array }
+  /** A single Update the editor binding wrote while drawing: the receiver must not count it as the writer's. */
+  | { kind: "display"; payload: Uint8Array }
   | { kind: "query-awareness" };
 
 type AwarenessChanges = { added: number[]; updated: number[]; removed: number[] };
@@ -33,6 +36,7 @@ export class LocalDocumentPeers {
     private readonly document: Y.Doc,
     private readonly persistence: IndexeddbPersistence,
     private readonly awareness: Awareness,
+    private readonly unsent: UnsentEdits,
   ) {
     this.channel = new BroadcastChannel(
       `meridian:document-peers:v1:${collabSchemaKeyTag()}:${encodeURIComponent(persistence.name)}`,
@@ -66,6 +70,12 @@ export class LocalDocumentPeers {
       applyAwarenessUpdate(this.awareness, data.payload, this);
       return;
     }
+    if (data.kind === "display") {
+      // Known before anything is decided; applied under the origin that says it is not the writer's.
+      this.unsent.noteDisplayUpdate(data.payload);
+      Y.applyUpdate(this.document, data.payload, this.unsent.relayedOrigin);
+      return;
+    }
     const decoder = decoding.createDecoder(data.payload);
     const reply = encoding.createEncoder();
     while (decoding.hasContent(decoder)) sync.readSyncMessage(decoder, reply, this.document, this);
@@ -75,8 +85,17 @@ export class LocalDocumentPeers {
     this.send("sync", reply);
   };
 
-  private sendUpdate = (update: Uint8Array, origin: unknown): void => {
-    if (this.stopped || origin === this) return;
+  private sendUpdate = (
+    update: Uint8Array,
+    origin: unknown,
+    _document: Y.Doc,
+    transaction: Y.Transaction,
+  ): void => {
+    if (this.stopped || origin === this || origin === this.unsent.relayedOrigin) return;
+    if (this.unsent.isDisplayWrite(transaction)) {
+      this.channel.postMessage({ kind: "display", payload: update } satisfies PeerMessage);
+      return;
+    }
     const encoder = encoding.createEncoder();
     sync.writeUpdate(encoder, update);
     this.send("sync", encoder);
@@ -119,7 +138,10 @@ export class LocalDocumentPeers {
         this.replayRequested = false;
         const database = this.persistence.db;
         if (!database) throw new Error("Local document persistence is unavailable");
+        // The copy's updates first, its display records after: a record is written in the task of
+        // the update it names, so no repair is read without its record.
         const updates = await readPersistedUpdates(database);
+        await this.unsent.readRecords();
         if (this.stopped) return;
         Y.transact(
           this.document,

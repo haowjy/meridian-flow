@@ -1,7 +1,7 @@
 /** Plans the pinned request and longest tool-group-aligned retained suffix. */
 
 import type { Block, Turn } from "@meridian/contracts/threads";
-import type { TokenizerFamily } from "@meridian-flow/gateway";
+import type { TokenizerFamily } from "@meridian-flow/runtime/gateway";
 import {
   CompactionPlanMetadataCodec,
   classifyHistoryItem,

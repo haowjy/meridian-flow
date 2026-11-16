@@ -120,7 +120,7 @@ export function createSaveAgentsRegistration(
       type: "function",
       name: "save_agents",
       description:
-        "Save Agent packages so new chats use them. Edits to Agent files are not used until saved. An Agent or skill with an error keeps its last saved version (or is not in use if it never had one) and the result says what to fix; save again after fixing. Chats already running keep the version they started with.",
+        "Save Agent packages so new chats use them. Edits to Agent files are not used until saved. An Agent or skill with an error keeps its last saved version (or is not in use if it never had one) and the result says what to fix; save again after fixing. Chats already running keep the version they started with. Only an Agent whose frontmatter says `mode: primary` can start a chat; leave `mode` out, or write `mode: subagent`, for one other Agents call.",
       inputSchema: modelToolSchema(SaveAgentsInputSchema),
     },
     input: SaveAgentsInputSchema,
@@ -148,6 +148,7 @@ export function createSaveAgentsRegistration(
           };
         }
         const outcomes = await deps.agentCatalog.savePackages(thread.userId, {
+          by: "ai",
           projectId: thread.projectId,
           packages: targets.flatMap((item) => item.target ?? []),
         });

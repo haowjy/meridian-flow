@@ -64,6 +64,8 @@ export type Refused = {
   status: "invalid_write" | "document_not_found";
   path: string;
   message: string;
+  /** A move of several that moved none: each source and why, as the message lists them. */
+  notMoved?: string[];
   delta: ShownDelta;
 };
 
@@ -218,6 +220,19 @@ function unresolved(
 
 const isFolderPath = (path: string) => path.endsWith("/");
 
+/**
+ * Whether one node's `move` goes into the folder `path` names, under its own name, or lands at
+ * `path` itself, its name included: into for a document, and for a folder only when `path` names
+ * another folder that exists. A copy between lists reads `path` by the same rule.
+ */
+export function movesInto(
+  path: string,
+  movingFolder: boolean,
+  namesAnotherFolder: () => boolean,
+): boolean {
+  return isFolderPath(path) && (!movingFolder || namesAnotherFolder());
+}
+
 type Located = { segments: string[]; folder: boolean; area: string; root: string };
 
 /** A path the model wrote, in the area and tree it names. */
@@ -248,7 +263,7 @@ function noteChanges(
   writtenUri: string,
 ) {
   const writtenLeaf = written.segments[written.segments.length - 1] ?? "";
-  const setters = projection.setters.get(node.id);
+  const history = projection.history.get(node.id);
   // Names, not segments: a twin's suffix that came or went since is no rename or move.
   const sameName =
     node.name === nameOf(writtenLeaf) ||
@@ -256,7 +271,7 @@ function noteChanges(
   if (!sameName)
     noteConcurrent(
       cx,
-      actorOfRecord(cx, setters?.label?.id),
+      actorOfRecord(cx, history?.label.at(-1)?.id),
       `renamed: ${writtenUri} → ${segmentOf(node)}`,
     );
   const writtenParent = written.segments.slice(0, -1).map(nameOf);
@@ -264,7 +279,7 @@ function noteChanges(
   if (writtenParent.join("/") !== nowParent.map(nameOf).join("/"))
     noteConcurrent(
       cx,
-      actorOfRecord(cx, setters?.place?.id),
+      actorOfRecord(cx, history?.place.at(-1)?.id),
       `moved: ${writtenUri} → ${uriOf(areaOfNode(cx, node), nowParent, true)}`,
     );
 }
@@ -438,7 +453,7 @@ function noteLoopCause(
   const named = uriOf(written.area, written.segments.slice(0, along + 1), true);
   noteConcurrent(
     cx,
-    actorOfRecord(cx, projection.setters.get(inside.id)?.place?.id),
+    actorOfRecord(cx, projection.history.get(inside.id)?.place.at(-1)?.id),
     `moved: ${named} into ${nodeUri(cx, projection, node)}`,
   );
 }
@@ -673,19 +688,11 @@ function keptStanding(
   const first = kept[0];
   if (!holder || first === undefined) return undefined;
   const placer =
-    actorOfRecord(cx, after.setters.get(first)?.place?.id) ?? after.nodes.get(first)?.createdBy;
+    actorOfRecord(cx, after.history.get(first)?.place.at(-1)?.id) ??
+    after.nodes.get(first)?.createdBy;
   return `${nodeUri(cx, after, holder)} with ${kept
     .map((id) => nodeUri(cx, after, after.nodes.get(id) as TreeNode))
     .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;
-}
-
-/** The folder a several-move went into, now that the call has made it. */
-function destinationNode(cx: Context, to: Located): string | undefined {
-  const found = resolveShown(cx.scope.writer.view(cx.scope.view), cx.shown, to.root, {
-    segments: to.segments,
-    folder: true,
-  });
-  return found.kind === "node" ? found.node.id : undefined;
 }
 
 /** The path the node had in Trash, matched against what the model wrote for it. */
@@ -785,22 +792,16 @@ export function runTreeCommand(
       if (!command.many) {
         const from = command.from[0] as string;
         const fromPath = pathFrom(cx, from);
-        // A `path` that names a folder (a trailing `/`) is the folder the node goes into, under
-        // its own name: always for a document, and for a folder when that folder exists. Else
-        // `path` is where the node itself ends up, its name included.
-        const into =
-          isFolderPath(command.path) &&
-          (!fromPath.folder ||
-            (() => {
-              const there = resolveShown(projection, shown, to.root, to);
-              const self = resolveShown(projection, shown, fromPath.root, fromPath);
-              // The folder named is another folder: the same path with a position is a reorder.
-              return (
-                there.kind === "node" &&
-                there.node.kind === "folder" &&
-                !(self.kind === "node" && self.node.id === there.node.id)
-              );
-            })());
+        const into = movesInto(command.path, fromPath.folder, () => {
+          const there = resolveShown(projection, shown, to.root, to);
+          const self = resolveShown(projection, shown, fromPath.root, fromPath);
+          // The folder named is another folder: the same path with a position is a reorder.
+          return (
+            there.kind === "node" &&
+            there.node.kind === "folder" &&
+            !(self.kind === "node" && self.node.id === there.node.id)
+          );
+        });
         const leaf = fromPath.segments.at(-1) ?? "";
         const target: Located = into
           ? { ...to, segments: [...to.segments, leaf], folder: fromPath.folder }
@@ -841,6 +842,7 @@ export function runTreeCommand(
       const arrived: string[] = [];
       let nothingToMake: string | undefined;
       let made = 0;
+      let movedNode = "";
       for (const from of command.from) {
         const fromPath = pathFrom(cx, from);
         const leaf = fromPath.segments.at(-1) ?? "";
@@ -865,6 +867,7 @@ export function runTreeCommand(
           nothingToMake ??= result.skip.node;
         } else if (result.done) {
           made += 1;
+          movedNode = result.done.subject;
           arrived.push(...result.done.arrived);
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
@@ -872,19 +875,24 @@ export function runTreeCommand(
         // Everything was already there or left out: the call is done. Anything else named nothing.
         if (nothingToMake !== undefined && notMoved.length + leftOut.length === command.from.length)
           return finish(nothingDone(nothingToMake, command.path, { notMoved, leftOut }));
-        return refuse(
-          "invalid_write",
-          toUri,
-          `Nothing moved: ${[...notMoved, ...leftOut.map((left) => left.path)].join("; ")}`,
-        );
+        const none = [...notMoved, ...leftOut.map((left) => left.path)];
+        return {
+          ...refuse("invalid_write", toUri, `Nothing moved: ${none.join("; ")}`),
+          notMoved: none,
+        };
       }
       const kept = keptTrashed(cx, projection, folder.destination.trashed);
+      const after = cx.scope.writer.view(cx.scope.view);
+      const folderNode = after.nodes.get((after.nodes.get(movedNode) as TreeNode).parent);
+      // The receipt hangs on a node: at a source's top there is no folder, so it hangs on a moved one.
+      const subject = folderNode ? folderNode.id : movedNode;
+      const landedAt = folderNode ? nodeUri(cx, after, folderNode) : uriOf(to.area, [], true);
       return finish({
         ok: true,
-        subject: destinationNode(cx, to) ?? (cx.made[0]?.node as string),
+        subject,
         made: [],
-        shownAt: command.path,
-        landedAt: uriOf(to.area, to.segments, true),
+        shownAt: landedAt,
+        landedAt,
         moved: { made, of: command.from.length },
         notMoved,
         ...(leftOut.length > 0 ? { leftOut } : {}),
@@ -1095,7 +1103,8 @@ export function runTreeUndo(
     outcomes,
     made: cx.made,
     inLive,
-    landedAt: here ? nodeUri(cx, after, here) : asked,
+    // A create taken back leaves its node in Trash: the answer names the path it was asked by.
+    landedAt: here && !here.trashed ? nodeUri(cx, after, here) : asked,
     ...(standing[0] ? { kept: keptStanding(cx, after, standing[0].id, standing[0].children) } : {}),
     touched,
     delta: {

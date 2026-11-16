@@ -3,7 +3,7 @@
  * the list as it stands at the reveal, in the transaction that marks the import finished. The texts are already in the journal under the
  * ids the nodes carry; the `documents` rows are written by the admission, like any create's.
  */
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { type CreateInput, LIVE, sourceRoot } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
@@ -17,9 +17,6 @@ import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import { resolveCanonicalAddresses } from "./document-address.js";
 
 const BATCH = 500;
-
-const byName = (a: ImportRevealNode, b: ImportRevealNode) =>
-  a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1;
 
 export function createDrizzleContextImportReveal(deps: {
   db: Database;
@@ -53,11 +50,9 @@ export function createDrizzleContextImportReveal(deps: {
         lists: [{ kind: "project", projectId }],
         make: ([{ writer }]) => {
           const inputs: CreateInput[] = [];
-          // A parent comes before its children; the top level arrives after what the folder
-          // already holds, a new folder's children in name order. The writer numbers each name
-          // against the list as it stands now, so a name taken since the plan is renumbered.
+          // Preserve the plan’s sibling arrival order so predicted segments match replay.
           const place = (kids: ImportRevealNode[], parent: string, source: string) => {
-            for (const node of kids.sort(byName)) {
+            for (const node of kids) {
               const base = { node: node.id, name: node.name, parent };
               inputs.push(
                 node.kind === "folder"
@@ -120,7 +115,7 @@ export function createDrizzleContextImportReveal(deps: {
         node.kind === "document"
           ? node.aheadMints.map((mint) => ({
               aheadId: mint.ref.slice("ahead:".length),
-              holderProjectId: mint.holderProjectId as AheadRegistration["holderProjectId"],
+              holderProjectId: mint.holderProjectId as ProjectId,
               address: mint.address,
             }))
           : [],

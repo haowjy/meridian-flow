@@ -103,7 +103,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     });
   }
 
-  /** A document at `path`, its folders made as needed. A taken name is numbered, as any create's is. */
+  /** A document at `path`, its folders made as needed. A taken name creates a twin. */
   async function document(sourceId: string, path: string, options: SeedDocumentOptions = {}) {
     const segments = segmentsOf(path);
     const leaf = segments.pop();

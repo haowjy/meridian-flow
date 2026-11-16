@@ -1,14 +1,7 @@
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { branches } from "@meridian/database/schema";
-import {
-  admit,
-  isListRoot,
-  readRecords,
-  recordsOf,
-  type TreeRecord,
-  TreeWriter,
-} from "@meridian/project-tree";
+import { admit, readRecords, recordsOf, type TreeRecord, TreeWriter } from "@meridian/project-tree";
 import { inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -33,7 +26,7 @@ import type {
   TreeListStore,
 } from "../ports/tree-list-store.js";
 import { listIdOf, readConnection } from "./tree-list-facts.js";
-import { arriveNodes, claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
+import { claimNodeIds, claimNodeIdsEach, syncRows } from "./tree-list-rows.js";
 
 /**
  * This process's copy of one list, brought to the journal's head under the list's lock and
@@ -275,8 +268,7 @@ export function createDrizzleTreeListStore(deps: {
   /**
    * Journals what the copy gained since `before` (the copy has changed), writes the rows, and
    * queues the hand-off. `created` are the creates whose documents get their `documents` rows;
-   * `claimed` are the creates whose node ids this list claims; `arrived`
-   * the nodes that came from another list in the same change, whose claims move instead.
+   * `claimed` are the creates whose node ids this list claims.
    */
   async function commitChange(
     tx: DrizzleDb,
@@ -286,10 +278,8 @@ export function createDrizzleTreeListStore(deps: {
     before: Uint8Array,
     created: readonly TreeRecord[],
     claimed: readonly TreeRecord[],
-    arrived: ReadonlySet<string> = new Set(),
   ): Promise<CommittedTreeUpdate | null> {
     await claimNodeIds(tx, listId, claimed);
-    await arriveNodes(tx, list, listId, arrived);
     const update = Y.encodeStateAsUpdate(copy.doc, before);
     // The system path: a person's path would read the whole list under the lock to record an
     // edit, and a list's receipt is the record itself.
@@ -298,14 +288,7 @@ export function createDrizzleTreeListStore(deps: {
     // Delivered at the commit, to every instance: a room on another process catches up from it.
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
-    // An arrived node has its `documents` row already: only the creates of new nodes make one.
-    const { created: made, changedBranches } = await syncRows(
-      tx,
-      list,
-      listId,
-      copy.doc,
-      created.filter((record) => !arrived.has(record.node)),
-    );
+    const { created: made, changedBranches } = await syncRows(tx, list, listId, copy.doc, created);
     if (changedBranches.length > 0 && deps.recountAfterCommit) {
       const owners = await tx
         .select({ work: branches.originWorkId, root: branches.originRootThreadId })
@@ -415,32 +398,13 @@ export function createDrizzleTreeListStore(deps: {
         // Marked in this tick, before the first await: a read in this process then reloads
         // instead of seeing a copy ahead of the journal.
         for (const { held: each } of changes) each.copy.pending = owner;
-        // A node that leaves a list for another in this change is claimed by the other list
-        // when its create is written; the list it leaves writes first, so its row is gone.
-        const leaving = new Set(
-          changes.flatMap(({ added }) =>
-            added.flatMap((record) =>
-              record.type === "move" && isListRoot(record.parent) ? [record.node] : [],
-            ),
-          ),
-        );
-        const arrivedIn = (added: readonly TreeRecord[]) =>
-          new Set(
-            added
-              .filter(isCreate)
-              .flatMap((record) => (leaving.has(record.node) ? [record.node] : [])),
-          );
-        const order = [...changes].sort(
-          (a, b) => Number(arrivedIn(a.added).size > 0) - Number(arrivedIn(b.added).size > 0),
-        );
         const done = new Map<Held, CommittedTreeUpdate>();
-        for (const { held: each, before, added, earlier } of order) {
-          const arrived = arrivedIn(added);
+        for (const { held: each, before, added, earlier } of changes) {
           // A node's id is claimed by its first create: a copy of a create (Apply's live copy of
           // a drafted one, a restored Discard's) names a node the list holds already.
           const known = new Set(earlier.filter(isCreate).map((record) => record.node));
           const claimed = added.filter(isCreate).filter((record) => {
-            const first = !known.has(record.node) && !arrived.has(record.node);
+            const first = !known.has(record.node);
             known.add(record.node);
             return first;
           });
@@ -452,7 +416,6 @@ export function createDrizzleTreeListStore(deps: {
             before,
             claimed,
             claimed,
-            arrived,
           );
           if (committed) done.set(each, committed);
         }

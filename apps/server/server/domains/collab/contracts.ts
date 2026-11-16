@@ -182,6 +182,7 @@ export type TreeReceiptNode = {
   nodeId: string;
   beforeAt: string | null;
   afterAt: string | null;
+  copiedFrom?: string;
 };
 
 /** One record a model's tree call admitted, as its receipt keeps it. */
@@ -201,23 +202,9 @@ export type TreeReceiptInput = {
   draftBranchId?: import("@meridian/contracts").BranchId;
   /** The path the model gave. */
   shownAt: string;
-  /** The change moved a document between two lists (a project's and the account's). */
-  acrossLists?: true;
   /** An undo or redo names the receipt it reverses. */
   reverses?: { kind: "undo" | "redo"; receipt: string };
 };
-
-/**
- * The server's move back for a receipt of a move between a project's files and the account's:
- * the context port's own `moveAcrossLists`, which the caller builds from the thread's context.
- * `superseded`: the node was moved or changed since, or is gone; else the move was refused.
- */
-export type MoveBackAcrossLists = (
-  receipt: TreeReceipt,
-) => Promise<
-  | { ok: true; records: { left: string; entered: string } }
-  | { ok: false; cause: "superseded" | "refused" }
->;
 
 export type TreeReceipt = {
   id: string;
@@ -238,8 +225,6 @@ export type TreeReceipt = {
   handle: number;
   /** Every node the call changed. */
   nodes: string[];
-  /** For a move between two lists: the subject's address before and after. */
-  across?: { from: string; to: string };
 };
 
 /**
@@ -314,8 +299,6 @@ export type ReverseThreadContextInput = {
     lockNamespaces(): Promise<void>;
     run(outcome: ReversalOutcome): Promise<ReversalOutcome>;
   };
-  /** How a move between lists is taken back; without it, such a step is refused. */
-  moveBackAcrossLists?: MoveBackAcrossLists;
 };
 
 export type TurnReversalAccess = {
@@ -325,7 +308,6 @@ export type TurnReversalAccess = {
     direction: "undo" | "redo";
     actor: { type: "user"; userId: string } | { type: "agent" };
     documentIds?: DocumentId[];
-    moveBackAcrossLists?: MoveBackAcrossLists;
   }): Promise<ReversalOutcome>;
   reverseThreadContext(input: ReverseThreadContextInput): Promise<ReversalOutcome>;
 };
@@ -407,7 +389,7 @@ export type MarkdownDocumentStore = LinkBinder & {
     base: string;
     target: string;
     origin: DocumentWriteOrigin;
-  }): Promise<Result<void, SyncError>>;
+  }): Promise<Result<{ text: string; clashes: number; changed: boolean }, SyncError>>;
   /**
    * The live coordinator's lease on a document, taken outside any transaction (contract
    * §6.3 B3): a revealed document's first content is admitted under it.

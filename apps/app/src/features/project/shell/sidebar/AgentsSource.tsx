@@ -379,14 +379,15 @@ function LevelSection({
   const state = writable ? (
     <PackageSave projectId={projectId} pkg={own} status={statusOf(packages, own)} />
   ) : null;
-  // A removed import has no row in the tree: its line stands under the heading while it, or its
-  // Save's word, lasts.
-  const removed: PackageRef[] = [
-    ...(packages ?? [])
-      .filter((item) => item.level === level && item.folder !== "" && item.state === "removed")
-      .map(({ folder }) => ({ level, folder })),
-    ...saves.removedWithWord(level, packages),
-  ];
+  const removed: PackageRef[] = (packages ?? [])
+    .filter(
+      (item) =>
+        item.level === level &&
+        item.folder !== "" &&
+        (item.state === "removed" ||
+          (item.state === "saved" && item.savedAt === null && item.undoable !== null)),
+    )
+    .map(({ folder }) => ({ level, folder }));
   const notes = (packages ?? [])
     .filter((item) => item.level === level)
     .flatMap((item) => {
@@ -426,7 +427,7 @@ function LevelSection({
                 data-removed-package={name}
               >
                 <span className="min-w-0 flex-1">
-                  {statusOf(packages, pkg) ? (
+                  {statusOf(packages, pkg)?.state === "removed" ? (
                     <Trans>{name} was removed. Save to stop using it.</Trans>
                   ) : (
                     <Trans>{name} was removed.</Trans>

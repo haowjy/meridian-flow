@@ -1,8 +1,9 @@
 # Code
 
 The apps, and the packages under them. An arrow means "calls code from". The page shows layers,
-not a path, so no arrow is numbered. No package imports an app, and `gateway`, `prosemirror-schema`, `yjs-inspect` and
-`design-tokens` import no workspace code. Where the code breaks its written rules is on
+not a path, so no arrow is numbered. No package imports an app, and `prosemirror-schema`, `yjs-inspect` and
+`design-tokens` import no workspace code. `gateway` is not in this repository: it is
+the `@meridian-flow/runtime/gateway` entry of [`@meridian-flow/runtime`](https://github.com/haowjy/meridian-runtime/tree/main/src/gateway) from npm. Where the code breaks its written rules is on
 [dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
 [system](system.md#mf).
 
@@ -21,7 +22,7 @@ flowchart TB
   database["database<br/><small>Postgres schema and migrations</small>"]:::package
   contracts["contracts<br/><small>the shapes that cross the wire</small>"]:::package
   design-tokens["design-tokens<br/><small>the one place for colours</small>"]:::package
-  gateway["gateway<br/><small>one port to the model providers</small>"]:::package
+  gateway["gateway<br/><small>one port to the model providers, from npm</small>"]:::external
   yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
   app -->|"follows a chat with"| thread-client
   server -->|"applies the model's edits with"| agent-edit
@@ -89,11 +90,11 @@ One schema per HTTP response. A chat's run state is one versioned record, always
 
 The model gateway: one streaming port to Anthropic, OpenAI, Gemini and OpenAI-compatible providers.
 
-Published to npm as `@meridian-flow/gateway` for other products, so it imports no workspace code, reads no environment variables and takes keys through its provider config. The server builds it from `FLOW_` variables in `lib/gateway/`.
+Not code in this repository: the `meridian-runtime` repository publishes it to npm in `@meridian-flow/runtime` (entry `/gateway`), and Flow depends on it by version. The server builds it from `FLOW_` variables in `lib/gateway/`; `contracts` re-exports its `shapes` entry, which is free of Node built-ins and SDKs so the browser bundle can take it.
 
-- Kind: package
-- Paths: `packages/gateway/src`
-- Docs: [CONTEXT](../../packages/gateway/.context/CONTEXT.md)
+- Kind: external
+- Paths: `apps/server/server/lib/gateway`
+- Docs: [server gateway wiring CONTEXT](../../apps/server/server/lib/gateway/.context/CONTEXT.md), [package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/src/gateway/.context/CONTEXT.md)
 
 ## database
 

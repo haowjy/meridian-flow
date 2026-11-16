@@ -18,6 +18,7 @@ import type {
 } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
+import type { TreeList } from "../../context/ports/tree-list-store.js";
 
 // ---------------------------------------------------------------------------
 // Levels
@@ -79,6 +80,11 @@ export interface BranchOwnerRef {
 export interface Principal {
   accountId: UserId;
   agent?: {
+    /**
+     * The project the agent's thread runs in: where its branch is and what its links read in.
+     * Never the file's project (`FileFacts.owner`), which for a home document is none.
+     */
+    projectId: ProjectId;
     chain: AgentChain;
     branchOwner: BranchOwnerRef;
     writeMode: AiWriteMode;
@@ -117,6 +123,8 @@ export interface SkillFacts {
 
 export type FileOwnerRef =
   | { scope: "project"; projectId: ProjectId }
+  /** The account's own: its home folder. */
+  | { scope: "account"; userId: UserId }
   | { scope: "work"; workId: WorkId }
   | { scope: "lineage"; projectId: ProjectId; rootThreadId: ThreadId }
   | { scope: "chat"; projectId: ProjectId; threadId: ThreadId };
@@ -143,7 +151,8 @@ export type FileNode =
   | { kind: "folder"; id: FolderId }
   | { kind: "source"; id: ContextSourceId }
   | { kind: "work"; id: WorkId }
-  | { kind: "project"; id: ProjectId };
+  | { kind: "project"; id: ProjectId }
+  | { kind: "account"; id: UserId };
 
 export interface FileWorkFacts {
   id: WorkId;
@@ -171,8 +180,11 @@ export interface FileBranchOwnerFacts {
 /** Everything the policy decides on, loaded by the `FileFacts` port. */
 export interface FileFacts {
   target: FileTarget;
-  projectId: ProjectId;
+  /** Who owns the file: a project, or the account for a home document. */
+  owner: TreeList;
+  /** The account the owner answers to: the project's owner, or the account itself. */
   ownerAccountId: UserId;
+  /** The owning project is deleted; never for an account's file. */
   projectDeleted: boolean;
   /** The Work owning the file's source; null when the project owns it. */
   ownerWork: FileWorkFacts | null;
@@ -192,7 +204,7 @@ export interface FileFacts {
   contentScheme: ContextUriScheme;
   /** The document itself; null for a container. */
   self: FileNode | null;
-  /** Nearest first: folders up to the source, the source, the owning Work, the project. */
+  /** Nearest first: folders up to the source, the source, the owning Work, the project or account. */
   ancestors: readonly FileNode[];
   /**
    * The settings on the file and its folders, source and Work in the *live* tree, nearest first;
@@ -296,6 +308,20 @@ export function grantOwnerLocks(facts: FileFacts): OwnerLocks {
 }
 
 export type { OwnerLocks };
+
+/** The project an agent's grant was asked in (its thread's); only an agent's grant has one. */
+export function agentProject(grant: Pick<FileGrant, "principal">): ProjectId {
+  const projectId = grant.principal.agent?.projectId;
+  if (!projectId) throw new Error("The grant is not an agent's");
+  return projectId;
+}
+
+/** The node that stands for a file's owner, where its owner's grant attaches. */
+export function ownerNode(owner: TreeList): FileNode {
+  return owner.kind === "project"
+    ? { kind: "project", id: owner.projectId as ProjectId }
+    : { kind: "account", id: owner.userId as UserId };
+}
 
 export function isFileAccessDenied(value: unknown): value is FileAccessDenied {
   return (

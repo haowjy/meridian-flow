@@ -6,7 +6,7 @@ export type { ArtifactRef } from "../artifacts/index.js";
  * Barrel: re-exports AG-UI, sequence, HTTP, path, transport, WebSocket, and Yjs protocol helpers.
  */
 
-export * from "@meridian-flow/gateway/mock-script";
+export * from "@meridian-flow/runtime/gateway/mock-script";
 
 /** Route of the dev-only mock-model script queue. */
 export const API_DEBUG_MOCK_MODEL_SCRIPT_PATH = "/api/debug/mock-model/script";

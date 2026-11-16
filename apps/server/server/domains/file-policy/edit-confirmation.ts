@@ -91,20 +91,28 @@ async function grantsCover(
 
 function holds(container: Extract<FileTarget, { kind: "container" }>, facts: FileFacts): boolean {
   if (container.scheme !== facts.scheme) return false;
-  if (container.owner.scope === "lineage")
-    return (
-      facts.projectId === container.owner.projectId &&
-      facts.ownerRootThreadId === container.owner.rootThreadId
-    );
-  if (container.owner.scope === "chat")
-    return (
-      facts.projectId === container.owner.projectId &&
-      facts.ownerChatThreadId === container.owner.threadId
-    );
-  return container.owner.scope === "project"
-    ? facts.ownerWork === null &&
+  const inProject = (projectId: string) =>
+    facts.owner.kind === "project" && facts.owner.projectId === projectId;
+  switch (container.owner.scope) {
+    case "lineage":
+      return (
+        inProject(container.owner.projectId) &&
+        facts.ownerRootThreadId === container.owner.rootThreadId
+      );
+    case "chat":
+      return (
+        inProject(container.owner.projectId) && facts.ownerChatThreadId === container.owner.threadId
+      );
+    case "project":
+      return (
+        facts.ownerWork === null &&
         !facts.ownerRootThreadId &&
         !facts.ownerChatThreadId &&
-        facts.projectId === container.owner.projectId
-    : facts.ownerWork?.id === container.owner.workId;
+        inProject(container.owner.projectId)
+      );
+    case "account":
+      return facts.owner.kind === "account" && facts.owner.userId === container.owner.userId;
+    case "work":
+      return facts.ownerWork?.id === container.owner.workId;
+  }
 }

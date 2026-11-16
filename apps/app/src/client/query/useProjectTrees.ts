@@ -24,6 +24,11 @@ export function ownerOfSource({ owner }: ContextSource): ContextOwner {
 export type DocumentPlace = { file: TreeFile; source: ContextSource };
 
 export type ProjectTrees = {
+  /**
+   * Both lists and the server's answer of their sources have come, so `find` can place a document.
+   * A list can be read from this browser's copy long before the sources come from the server.
+   */
+  ready: boolean;
   /** Every list asked for has synced or can be stood in for by its copy. */
   isComplete: boolean;
   /** An account has no access to a list asked for. */
@@ -34,6 +39,7 @@ export type ProjectTrees = {
 };
 
 const WAITING: ProjectTrees = {
+  ready: false,
   isComplete: false,
   isError: false,
   sources: [],
@@ -89,6 +95,7 @@ export function useProjectTrees(
       return held.tree;
     };
     return {
+      ready: true,
       isComplete: lists.every(({ list }) => listIsComplete(list.snapshot?.status ?? "waiting")),
       isError: lists.some(({ list }) => list.snapshot?.status === "denied"),
       sources: entries.map((entry) => entry.source),

@@ -17,7 +17,7 @@
 import type { ToolPolicy } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
-import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/gateway";
+import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import {
@@ -385,7 +385,7 @@ export async function persistPreparedPromptBake(
     (message) => message.role === "system",
   );
   const systemMessage = assembled.generateRequest.messages[systemIndex];
-  if (!systemMessage) throw new Error("Prepared request has no system prompt");
+  if (systemMessage?.role !== "system") throw new Error("Prepared request has no system prompt");
   assembled.generateRequest.messages[systemIndex] = {
     ...systemMessage,
     content: systemMessage.content.map((part) =>

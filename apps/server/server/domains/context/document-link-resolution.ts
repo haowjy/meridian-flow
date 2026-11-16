@@ -20,8 +20,8 @@ import type {
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
 
-/** Whose source an address is in; `user` is the reader's own list. */
-type Owner = ContextSourceOwner | { kind: "user" };
+/** Whose source an address is in; `account` is the reader's own home folder. */
+type Owner = ContextSourceOwner;
 type Location = { owner: Owner; scheme: ContextUriScheme; path: string };
 
 export function createDocumentLinkResolver({
@@ -48,7 +48,7 @@ export function createDocumentLinkResolver({
     if (!parsed.ok || !parsed.value.path) return null;
     const { scheme, path, authority } = parsed.value;
     let scope: Owner | null;
-    if (scheme === "user") scope = { kind: "user" };
+    if (scheme === "user") scope = { kind: "account" };
     else if (isProjectScopedScheme(scheme)) scope = { kind: "project" };
     else if (scheme === "scratch" && authority.kind === "lineage") {
       const lineage = await lineages?.byRef(input.projectId, authority.rootThreadRef);
@@ -81,7 +81,7 @@ export function createDocumentLinkResolver({
     const address = await location(input, uri);
     if (!address) return null;
     const candidates =
-      address.owner.kind === "user"
+      address.owner.kind === "account"
         ? await sources.ofUser(input.userId)
         : await sources.ownedBy(input.projectId, address.owner);
     const source = candidates.find((candidate) => candidate.scheme === address.scheme);

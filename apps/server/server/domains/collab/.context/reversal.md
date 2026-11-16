@@ -73,23 +73,14 @@ never refuses it. An item that is already gone is skipped ("Stayed as you edited
 the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
 writer deleted), a heading level or other attribute the writer set after the edit. An
 element the edit created that the writer typed in stays, holding only the writer's text.
-A replacement is a deleted run with the part's insertion beside it. The deleted run stays
-gone only when the insertion is gone and text written after the edit (the writer or a pull
-replaced it; a clock at or past the part's `frontier`, read on the original of an
-Undo- or Redo-restored copy) stands at its edge, so Undo doesn't
-double it. When the writer only deleted the insertion, the original comes back. A pull or Apply
-writes only the insertions inside a changed run that only gained characters (`retainShared` in
-`packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the run whole), so
-Undo after a pull equals Undo of the same typing on the draft when the writer inserted inside
-the AI's text. A writer's letter swap or deletion inside it lands as a replacement and stays.
-Redo runs the same rule on the Undo's receipt. A part is `active` (Undo can act) while one
-item can still be removed or restored, `undone` when only Redo can, else `changed`.
-Un-Apply adds one rule the card does not have: an inverse never changes a word that holds writing
-made after the Apply, so a group whose reversal would (a writer's letters inside or joined to the
-AI's word) stays applied and is named in `skippedGroupIds`. A whole word typed after the AI's
-text usually doesn't stop it, but one typed just before a replacement does: restoring the old word
-there would join it to the writer's ("smallvery"). `packages/agent-edit/.context/CONTEXT.md` has the definition and its known gap, a
-later deletion that glues words.
+A replacement undoes as plain Yjs does: the deleted run comes back where it was, beside whatever
+the writer put there ("One huge cat." becomes "One smallhuge cat."), and Undo never drops an
+original word. A pull or Apply writes only the insertions inside a changed run that only gained
+characters (`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change
+writes the run whole), so Undo after a pull equals Undo of the same typing on the draft when the
+writer inserted inside the AI's text. Redo runs the same rule on the Undo's receipt. A part is
+`active` (Undo can act) while one item can still be removed or restored, `undone` when only Redo
+can, else `changed`. Un-Apply inverts a group the same way as the card.
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`): a restore in live acts only through deletes that
 still hold its nodes in Trash (`deleteStands`; the writer's restore or later delete, or a purge,
@@ -166,11 +157,9 @@ create made on the way (outermost first), so its Undo takes them back with it. I
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
 each back by `undoChange` in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. A receipt something changed since answers `superseded`
-(a skip, as `cant_undo_changed` is the model's answer); a move between a project and `user://`
-goes back by the model's own move the other way (`moveBackAcrossLists`, the context port's
-`moveAcrossLists`, which the reverse route builds from the thread's context and hands down as
-`moveBackAcrossLists`; locking both lists), and is `superseded` once a later change moved or
-renamed the node. A reply that only changed the tree has a card: its documents are listed from the
+(a skip, as `cant_undo_changed` is the model's answer). A reply that touched both a project's
+files and `user://` locks both lists; nothing moves between them, so each receipt goes back in
+its own list. A reply that only changed the tree has a card: its documents are listed from the
 turn's tree receipts too (`readTurnTreeTargets`), its folders as well (`readTurnFolderTargets`:
 a folder has no document, so the item carries the node id with `folder: true` and no door), and
 the receipt chip counts the tree steps. Its lists' keys are taken before the documents' (in
@@ -190,9 +179,9 @@ own stack gives, `modelStack`). Model `undo` takes the newest `count` of them ac
 the handle names. Tree records go back through the package's `undoChange`, which finds the live
 copy of an applied or restored change by `carries`, and takes back only what the receipt did:
 what others put in a folder it made stands and keeps it standing. The records an Undo makes name
-what they take back (`undoes`), a Redo's included. A move between a project and `user://` is two
-lists' records; its receipt is marked `across_lists` and is taken back by the same move the other
-way. A model `undo` that takes tree and text steps together is one command (the tree receipts
+what they take back (`undoes`), a Redo's included. A model `move` between a project and `user://`
+is a copy into the other list: its receipt is the copy's `create`, and its Undo deletes the copy.
+A model `undo` that takes tree and text steps together is one command (the tree receipts
 first, then the text engine's), so a refusal of the text half takes the tree half back with it.
 The receipts carry the command's id (`tree_edit_receipts.command_id`), as the text receipts do,
 and Undo counts by it: the steps of one command (a create with content is a node and its text)

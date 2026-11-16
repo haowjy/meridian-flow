@@ -110,8 +110,12 @@ export const agentFilesSchema = z.object({
   ),
   packages: z.array(agentPackageStatusSchema),
 }) satisfies z.ZodType<AgentFiles>;
-/** A built-in file's text: built-ins are not documents, so they are read here. */
-export const agentBuiltinFileSchema = z.object({ text: z.string() });
+/**
+ * `GET /api/agents/saved-file`: a file's text as its package's latest Save holds it, by
+ * level-relative path; a built-in's as shipped, since built-ins are not documents.
+ */
+export const savedAgentFileQuerySchema = z.object({ level: agentLevelSchema, path: z.string() });
+export const savedAgentFileSchema = z.object({ text: z.string() });
 
 /** The Agent file a chat is bound to, as saved; `stale` when a newer save exists. */
 export const threadAgentSchema = z.object({

@@ -11,6 +11,8 @@ import type { ProjectContextTreeScheme } from "./http-types.js";
 /** Whose a source is. */
 export type ContextSourceOwner =
   | { kind: "project" }
+  /** The account's own: the home folder (`user://`). */
+  | { kind: "account" }
   | { kind: "work"; workId: WorkId }
   | { kind: "lineage"; rootThreadId: string }
   | { kind: "chat"; chatId: string };

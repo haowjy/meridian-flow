@@ -241,3 +241,15 @@ $$;
 CREATE TRIGGER projects_create_tree_list_head AFTER INSERT ON public.projects FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
 
 CREATE TRIGGER users_create_tree_list_head AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
+
+CREATE FUNCTION public.create_account_source() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- An account's home folder has its source from the moment the account exists.
+  INSERT INTO context_sources (user_id, name, slug, scope) VALUES (NEW.id, 'User Files', 'user', 'account');
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER users_create_account_source AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_account_source();

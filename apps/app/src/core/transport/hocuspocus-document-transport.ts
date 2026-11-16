@@ -2,7 +2,7 @@
  * hocuspocus-document-transport — binds HocuspocusProvider to DocumentSession.
  *
  * DocumentSession remains the owner of the Y.Doc, Awareness, and IndexedDB
- * cache. The patched provider (`patches/@hocuspocus__provider@4.3.0.patch`)
+ * cache. The patched provider (`patches/@hocuspocus__provider@4.8.0.patch`)
  * destroys only an Awareness it created, so `provider.destroy()` here removes
  * its listeners and leaves presence to the session. This adapter owns one
  * socket per room because WebSocket closes are connection-wide, while schema
@@ -11,7 +11,9 @@
  * seam.
  *
  * It also reports whether the server has acknowledged every local change
- * (`server-acknowledgement.ts`). That is read off the socket's own send and
+ * (`server-acknowledgement.ts`), and what the server holds (`server-has.ts`): after each server
+ * frame an editable room sends what the document holds beyond that, which a local peer's pending
+ * items released in the provider's transaction would otherwise never upload. That is read off the socket's own send and
  * receive path rather than provider events: the provider emits its outgoing
  * message before the socket decides to queue it, and queued messages can be
  * dropped, so only the socket knows what actually reached the wire.
@@ -21,7 +23,9 @@
  * `access-changed` close freezes the room until the reconnect names the new
  * scope. It never resets the room: unacknowledged local edits stay in this
  * Y.Doc, and the reconnect's admission decides. An edit admission's handshake
- * delivers them; a read-only one holds them on screen.
+ * delivers them. A read-only one never gets an Update frame (the socket drops
+ * it), and each of its handshakes says what the document holds that the server
+ * lacks (`handshake-difference.ts`); the session decides what to do with that.
  *
  * A draft room's update refusal (`1008`) is bounded. One refusal reconnects
  * and resends, as any close does; after `MAX_DRAFT_UPDATE_REFUSALS` in a row
@@ -69,16 +73,23 @@ import {
   type DocumentSessionResetReason,
   type DocumentSessionTransportProvider,
   DRAFT_UPDATES_REFUSED,
+  type HandshakeDifference,
   type ResetDisposition,
 } from "@/core/editor/document-session";
 
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import {
+  createHandshakeDifferenceReader,
+  type HandshakeDifferenceReader,
+  readServerStateVector,
+} from "./handshake-difference";
+import {
   createServerAcknowledgementTracker,
   readDocumentSyncType,
   type ServerAcknowledgementTracker,
 } from "./server-acknowledgement";
+import { createServerHasTracker, type ServerHasTracker } from "./server-has";
 import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
 
 const TERMINAL_DENIAL_CODES = new Set<number>([
@@ -102,6 +113,9 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private reconnectGeneration = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly acknowledgement: ServerAcknowledgementTracker;
+  private readonly difference: HandshakeDifferenceReader;
+  private readonly serverHas: ServerHasTracker;
+  private readonly onServerFrame: (frame: Uint8Array) => void;
   private readonly handshakeUploadFirst: boolean;
   // Per socket: whether its SyncStep2 has been written, and the Updates held until then.
   private handshakeUploaded = false;
@@ -110,10 +124,16 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   constructor(
     configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
     acknowledgement: ServerAcknowledgementTracker,
+    difference: HandshakeDifferenceReader,
+    serverHas: ServerHasTracker,
+    onServerFrame: (frame: Uint8Array) => void,
     handshakeUploadFirst: boolean,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
+    this.difference = difference;
+    this.serverHas = serverHas;
+    this.onServerFrame = onServerFrame;
     this.handshakeUploadFirst = handshakeUploadFirst;
   }
 
@@ -124,6 +144,8 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   override async onOpen(event: Event) {
     this.dropHeldUpdates();
     this.acknowledgement.beginConnection();
+    this.difference.reset();
+    this.serverHas.reset();
     const cancel = this.cancelWebsocketRetry;
     void super.onOpen(event);
     this.cancelWebsocketRetry = cancel;
@@ -136,6 +158,9 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   // Update is counted only when it is released and written.
   override send(message: unknown) {
     if (message instanceof Uint8Array) {
+      // The server drops a read-admitted connection's updates and answers each `false`.
+      if (this.acknowledgement.readOnly && readDocumentSyncType(message) === messageYjsUpdate)
+        return;
       const open = this.webSocket?.readyState === SOCKET_OPEN;
       if (open && this.handshakeUploadFirst && !this.handshakeUploaded) {
         const syncType = readDocumentSyncType(message);
@@ -145,6 +170,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
         }
         if (syncType === messageYjsSyncStep2) {
           this.acknowledgement.noteFrameSent(message);
+          this.serverHas.noteFrameSent(message);
           super.send(message);
           this.handshakeUploaded = true;
           const released = this.heldUpdates;
@@ -153,8 +179,10 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
           return;
         }
       }
-      if (open) this.acknowledgement.noteFrameSent(message);
-      else this.acknowledgement.noteFrameQueued(message);
+      if (open) {
+        this.acknowledgement.noteFrameSent(message);
+        this.serverHas.noteFrameSent(message);
+      } else this.acknowledgement.noteFrameQueued(message);
     }
     super.send(message);
   }
@@ -167,11 +195,17 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   }
 
   override onMessage(event: MessageEvent) {
+    // Same read the base class makes: frames arrive as ArrayBuffer.
+    const frame = new Uint8Array(event.data);
+    const sync = this.serverHas.noteFrameReceived(frame);
     try {
       super.onMessage(event);
     } finally {
-      // Same read the base class makes: frames arrive as ArrayBuffer.
-      this.acknowledgement.noteFrameReceived(new Uint8Array(event.data));
+      // Before the acknowledgement: what the frame left unsent goes out first, so the server
+      // acknowledging everything still means it holds the whole document.
+      if (sync) this.onServerFrame(frame);
+      this.acknowledgement.noteFrameReceived(frame);
+      if (this.acknowledgement.readOnly) this.difference.noteFrameReceived(frame);
     }
   }
 
@@ -288,10 +322,18 @@ export function createHocuspocusDocumentTransport({
   const accessListeners = new Set<(access: DocumentSessionAccess) => void>();
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
+  const differenceListeners = new Set<(difference: HandshakeDifference | null) => void>();
+  const serverHasListeners = new Set<(vector: Uint8Array, handshake: boolean) => void>();
+  const reportServerHas = (vector: Uint8Array, handshake: boolean) => {
+    for (const listener of serverHasListeners) listener(vector, handshake);
+  };
+  const serverHas = createServerHasTracker();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
     if (acknowledged && !terminal) {
       outbox = null;
       refusals = 0;
+      // Everything written on this socket is applied.
+      reportServerHas(serverHas.vector, false);
     }
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
@@ -302,6 +344,11 @@ export function createHocuspocusDocumentTransport({
       autoConnect: false,
     },
     acknowledgement,
+    createHandshakeDifferenceReader(document, (difference) => {
+      for (const listener of differenceListeners) listener(difference);
+    }),
+    serverHas,
+    handleServerFrame,
     isDraftRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
@@ -365,16 +412,47 @@ export function createHocuspocusDocumentTransport({
         notifyYjsRoomAttached(roomName, observedClientID);
       }
     }
-    if (origin !== provider) {
-      const wasEmpty = outbox === null;
-      outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
-      if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
-    }
+    if (origin !== provider) noteUnacknowledged(update);
+  }
+
+  function noteUnacknowledged(update: Uint8Array): void {
+    const wasEmpty = outbox === null;
+    outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
+    if (wasEmpty) for (const listener of acknowledgementListeners) listener(false);
+  }
+
+  // After the provider applied the frame and every transaction it opened (`server-has.ts`).
+  function handleServerFrame(frame: Uint8Array): void {
+    if (terminal || destroyed) return;
+    const vector = readServerStateVector(frame);
+    if (vector) reportServerHas(vector, true);
+    // A read admission's socket drops every update; its handshakes report the difference instead.
+    if (acknowledgement.readOnly) return;
+    const lacking = serverHas.lacking(document);
+    if (!lacking) return;
+    provider.documentUpdateHandler(lacking, null);
+    noteUnacknowledged(lacking);
   }
 
   function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
     if (terminal || destroyed) return;
+    if (scope === "readonly") acknowledgement.admitReadOnly();
     publishAccess(scope === "readonly" ? "read" : "edit");
+  }
+
+  // A read admission's document can no longer upload, so a change it did not make while drawing
+  // asks for one handshake, and that handshake decides. The server's answer is applied with the
+  // provider as origin, so this cannot loop; on a draft room each handshake costs the server a
+  // reconcile, hence one per task.
+  let handshakeRequested = false;
+  function requestHandshake(): void {
+    if (handshakeRequested || terminal || destroyed || !acknowledgement.readOnly) return;
+    handshakeRequested = true;
+    queueMicrotask(() => {
+      handshakeRequested = false;
+      if (acknowledgement.readOnly && websocket.status === WebSocketStatus.Connected)
+        provider.forceSync();
+    });
   }
 
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
@@ -451,6 +529,8 @@ export function createHocuspocusDocumentTransport({
   if (provider.synced) resolveSynced();
 
   return {
+    serverOrigin: provider,
+    requestHandshake,
     unacknowledgedUpdates: () => outbox,
     whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     get synced() {
@@ -462,6 +542,18 @@ export function createHocuspocusDocumentTransport({
       listener(acknowledgement.acknowledged);
       return () => {
         acknowledgementListeners.delete(listener);
+      };
+    },
+    subscribeDifference(listener) {
+      differenceListeners.add(listener);
+      return () => {
+        differenceListeners.delete(listener);
+      };
+    },
+    subscribeServerHas(listener) {
+      serverHasListeners.add(listener);
+      return () => {
+        serverHasListeners.delete(listener);
       };
     },
     subscribeStatus(listener) {
@@ -493,6 +585,8 @@ export function createHocuspocusDocumentTransport({
       listeners.clear();
       accessListeners.clear();
       acknowledgementListeners.clear();
+      differenceListeners.clear();
+      serverHasListeners.clear();
       changeEventListeners.clear();
     },
   };

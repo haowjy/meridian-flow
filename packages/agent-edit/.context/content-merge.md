@@ -210,9 +210,10 @@ A rescue gives typed text back to its author after something else took it away. 
 - **The schema witness's removed text**, in the browser: when the binding's repair removes text, the
   witness (`schema-repair-witness.ts`) reports the removed prose, and the "Some text was removed"
   bar's Details show it.
-- **Unsent typing**, in the browser: before a room's local copy goes with typing the server never
-  acknowledged (a draft closed or removed, a document removed, the writer's access changed), the
-  session registry reads the words that typing inserted and a toast hands them back
+- **Unsent typing**, in the browser: before a room's local copy goes with typing the server lacks
+  (a draft closed or removed, a document removed, the writer's access changed), the session
+  registry reads the words the copy holds beyond its mark of what the server is known to have, and
+  a toast hands them back
   (`observeUnsentTyping`; the editor's [CONTEXT](../../../apps/app/src/core/editor/.context/CONTEXT.md),
   "Unsent typing handed back"). It hands back only those words, not the whole document.
 
@@ -258,7 +259,9 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
 - Late typing recovery (Work drafts), what stays lost or doubled:
   - Typing sent after the typist's own client already held the deletion: the client collected the
     text (a browser doc collects deleted content), so the update carries no characters, except what
-    its undo history retains. The browser's handback is the only rescue for the rest. What the undo
+    its undo history retains. The browser's handback is the only rescue for the rest; for a room
+    admitted read-only it reads the difference from the handshake, so no typing is lost to the
+    outbox's blind spots (a reload, another tab). What the undo
     history retains is recovered, and a word deleted and restored offline may then show twice.
   - A typist's backspace of text that arrived hidden, in a frame after the one that recovered it, is not
     applied, and neither is a peer's deletion of the typist's original that it saw before the
@@ -279,10 +282,6 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
   recovered no model word.
 - Typing into a live document's block that a peer or the model deletes, from a tab that was offline, is
   swallowed (collab TODO); the Work draft case is recovered.
-- Unsent typing in a room this tab has no session for: a document or draft not open in any tab
-  keeps its unsent typing only in IndexedDB, and a removal, a close or an access change clears it
-  with no hand-back. So does typing from before the tab's connection began (typed offline, then
-  the tab reloaded), which the connection never counted as unacknowledged.
 - The words a schema repair removed, after a reload: the notice lives in the session's memory, and
   the words are no longer in the document.
 - Undoing a Discard, or restoring a document, after its room closed brings back the server's text

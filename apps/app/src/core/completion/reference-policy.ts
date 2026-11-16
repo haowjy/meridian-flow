@@ -126,7 +126,7 @@ export function referenceSourceOf(
               chatId: source.owner.chatId,
               chatRef: "chatRef" in address ? address.chatRef : null,
             }
-          : source.scheme === "user"
+          : source.owner.kind === "account"
             ? { kind: "user", userId: accountId }
             : { kind: "project", projectId };
   return {

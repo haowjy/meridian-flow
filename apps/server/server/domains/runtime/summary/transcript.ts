@@ -5,7 +5,7 @@ import {
   type TokenizerFamily,
   ToolCallPairing,
   type ToolUsePart,
-} from "@meridian-flow/gateway";
+} from "@meridian-flow/runtime/gateway";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import type { ProjectedActiveHistory } from "../loop/compaction/index.js";
@@ -53,7 +53,7 @@ export function transcriptSegments(
     const wrap = (parts: string[]) => `[${label}]\n${parts.join("\n")}`;
     const fits = (value: string) => estimateModelJsonTokens(`\n\n${value}`, tokenizer) < budget;
     let content = turnContextMessages(turn, blocks)
-      .flatMap((message) => message.content)
+      .flatMap((message): readonly ContentPart[] => message.content)
       .filter((part) => part.type !== "reasoning");
     let parts = content.map(renderPart);
     if (!parts.some(Boolean)) continue;
@@ -63,7 +63,7 @@ export function transcriptSegments(
       content = [...blocks]
         .sort((a, b) => a.sequence - b.sequence)
         .flatMap((block) => turnContextMessages(turn, [block]))
-        .flatMap((message) => message.content)
+        .flatMap((message): readonly ContentPart[] => message.content)
         .filter((part) => part.type !== "reasoning");
       parts = content.map(renderPart);
     }

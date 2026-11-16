@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
         availability: app.projectContextAvailability,
         liveDocuments: app.liveDocuments,
         documentSync: app.documentSync,
+        links: app.linkScopes,
         objectStore: app.objectStore,
         eventSink: app.eventSink,
       },

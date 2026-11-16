@@ -3,8 +3,10 @@
  * pre-repair document and the repair's delete set), and the typing a room never delivered (the
  * room's document and its unacknowledged updates).
  */
+import { textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import * as Y from "yjs";
 
+import { insertedBy, type Ranges } from "./item-ranges";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type SchemaRepairEvidence = {
@@ -17,8 +19,6 @@ export type SchemaRepairEvidence = {
 // Yjs exports DeleteSet's constructor only through internals; its typed shape
 // is reachable from the public Transaction.
 type DeleteSet = Y.Transaction["deleteSet"];
-/** Item clock ranges by client: a delete set, or the items an update inserts. */
-type ItemRanges = { clients: Map<number, ReadonlyArray<{ clock: number; len: number }>> };
 export type ExtractedEvidence = {
   evidence: SchemaRepairEvidence;
   resolvedClockCount: number;
@@ -31,65 +31,6 @@ export function deletedClockCount(deleteSet: DeleteSet): number {
     for (const range of ranges) total += range.len;
   }
   return total;
-}
-
-function slicesIn(item: Y.Item, ranges: ItemRanges): Array<{ from: number; to: number }> {
-  const clientRanges = ranges.clients.get(item.id.client);
-  if (!clientRanges) return [];
-  const itemStart = item.id.clock;
-  const itemEnd = itemStart + item.length;
-  const slices: Array<{ from: number; to: number }> = [];
-  for (const range of clientRanges) {
-    const from = Math.max(itemStart, range.clock);
-    const to = Math.min(itemEnd, range.clock + range.len);
-    if (from < to) slices.push({ from: from - itemStart, to: to - itemStart });
-  }
-  return slices;
-}
-
-/**
- * The text of the items in `ranges`, in document order, one line per block; with `liveOnly`,
- * only items nothing has deleted (a repair's items are already deleted when the live witness
- * reads them). Text outside the ranges between two kept runs starts a new line too, so typing in
- * two places never reads as one word.
- *
- * Traversal follows Y item identity and logical XML order. It never compares
- * sibling positions between before and after documents, which would be
- * ambiguous when repeated or nested siblings have the same shape.
- */
-function textInRanges(fragment: Y.XmlFragment, ranges: ItemRanges, liveOnly = false) {
-  const nodeTypes: string[] = [];
-  let resolvedClockCount = 0;
-  let contentUnavailable = false;
-  let text = "";
-  let pendingBreak = false;
-  const walk = (start: Y.Item | null) => {
-    for (let item = start; item; item = item.right) {
-      const slices = slicesIn(item, ranges);
-      const content = item.content;
-      resolvedClockCount += slices.reduce((total, slice) => total + slice.to - slice.from, 0);
-      if (content instanceof Y.ContentString && !(liveOnly && item.deleted)) {
-        const kept = slices.map((slice) => content.str.slice(slice.from, slice.to)).join("");
-        if (kept.length < content.str.length && text) pendingBreak = true;
-        if (kept) {
-          if (pendingBreak) text += "\n";
-          text += kept;
-          pendingBreak = false;
-        }
-      } else if (slices.length > 0 && content instanceof Y.ContentDeleted) {
-        contentUnavailable = true;
-      }
-      if (!(content instanceof Y.ContentType)) continue;
-      const child = content.type;
-      const nodeName = child instanceof Y.XmlElement ? child.nodeName : undefined;
-      if (slices.length > 0 && nodeName && !nodeTypes.includes(nodeName)) nodeTypes.push(nodeName);
-      if (nodeName && text) pendingBreak = true;
-      walk(child._start);
-      if (nodeName && text) pendingBreak = true;
-    }
-  };
-  walk(fragment._start);
-  return { text, nodeTypes, resolvedClockCount, contentUnavailable };
 }
 
 /** Resolve a repair's delete-set clocks against the pre-repair clone's item graph. */
@@ -138,28 +79,45 @@ export function documentText(document: Y.Doc): string | null {
   const { text } = textInRanges(
     document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
     { clients: all },
-    true,
+    { liveOnly: true },
   );
   return text || null;
 }
 
-/**
- * The words this browser typed into `document` that the server never acknowledged: the text
- * `unacknowledged` inserted and nothing has deleted since. Null when it holds no words (a format
- * change, a deletion).
- */
-export function unsentText(document: Y.Doc, unacknowledged: Uint8Array): string | null {
-  const inserted = new Map<number, { clock: number; len: number }[]>();
-  for (const struct of Y.decodeUpdate(unacknowledged).structs) {
-    if (!(struct instanceof Y.Item)) continue;
-    const ranges = inserted.get(struct.id.client) ?? [];
-    ranges.push({ clock: struct.id.clock, len: struct.length });
-    inserted.set(struct.id.client, ranges);
-  }
+/** The live words of the items in `ranges`; null when they hold none. */
+export function typedText(document: Y.Doc, ranges: Ranges): string | null {
+  const clients = new Map(
+    [...ranges].map(([client, list]) => [
+      client,
+      list.map(([from, to]) => ({ clock: from, len: to - from })),
+    ]),
+  );
   const { text } = textInRanges(
     document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    { clients: inserted },
-    true,
+    { clients },
+    { liveOnly: true },
   );
   return text || null;
+}
+
+/** `read` on `copy` (an update) in a scratch document, which lives until `read` settles. */
+export async function readCopy<T>(copy: Uint8Array, read: (document: Y.Doc) => T | Promise<T>) {
+  const scratch = new Y.Doc();
+  try {
+    Y.applyUpdate(scratch, copy);
+    return await read(scratch);
+  } finally {
+    scratch.destroy();
+  }
+}
+
+/** `read` on the items of `copy` (an update) beyond `server` (a state vector), in a scratch document. */
+export function readBeyond<T>(
+  copy: Uint8Array,
+  server: Uint8Array,
+  read: (document: Y.Doc, lacking: Ranges) => T | Promise<T>,
+) {
+  return readCopy(copy, (document) =>
+    read(document, insertedBy(Y.encodeStateAsUpdate(document, server))),
+  );
 }

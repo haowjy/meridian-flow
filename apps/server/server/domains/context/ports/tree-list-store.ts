@@ -5,7 +5,7 @@
  * leaves no record and no row.
  */
 
-import type { ListEnd } from "@meridian/project-tree";
+import type { TreeWriter } from "@meridian/project-tree";
 
 /**
  * A list is one project's, or one account's (`user://`). Its journal id is the owner's
@@ -14,11 +14,11 @@ import type { ListEnd } from "@meridian/project-tree";
 export type TreeList = { kind: "project"; projectId: string } | { kind: "account"; userId: string };
 
 /** One list's copy handed to a change or a read: the writer on it, and the list's journal id. */
-export type ListWriter = ListEnd;
+export type ListWriter = { writer: TreeWriter; list: string };
 
 /**
  * What the server's own change makes, in the lists' copies under their locks: each writer makes
- * its list's records (names numbered, ranks placed against the copy's own view, settlements
+ * its list's records (ranks placed against the copy's own view, settlements
  * appended), in the order of the `lists` the caller named, and `make` returns whatever the
  * caller reads back from the replay (the names a node ended at, what a delete took). The store
  * derives the new nodes from what the copies gained. `make` is synchronous: a copy is never
@@ -79,8 +79,6 @@ export interface TreeListStore {
    * `onCommitted` after the outermost commit. `make` runs under the keys on copies at the
    * journal's head, holds no document or namespace key and does no I/O. `committed` has an entry
    * per list, in the caller's order, null where the list gained nothing.
-   *
-   * A move between two lists is `moveBetweenLists` over both writers: the node's claim follows it.
    */
   submit<T>(input: {
     lists: readonly TreeList[];
@@ -94,9 +92,10 @@ export interface TreeListStore {
    */
   read<T>(input: { lists: readonly TreeList[]; view: ServerChange<T> }): Promise<T>;
   /**
-   * Takes the lists' keys in list-id order and nothing else: the list step of a command that
-   * takes document keys. Every list the command will write or resync is locked here, before
-   * its first document key; `submit` and `resync` then wait on nothing. Idempotent.
+   * Takes the lists' keys in list-id order, plus the seam Works' locks those lists need: the list
+   * step of a command that takes document keys. Every list the command will write or resync is
+   * locked here, before its first document key; `submit` and `resync` then wait on nothing. The
+   * keys are transaction locks, so call it inside the command's transaction. Idempotent.
    */
   lock(lists: readonly TreeList[]): Promise<void>;
   /**

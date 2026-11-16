@@ -6,13 +6,14 @@
  * (project-tree rule 14), so every path reaches one node. A document the view does not place (in Trash, deleted in the Work, or in no view) is never visible,
  * and one in no view has no place at all.
  */
-import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import { addressCandidates, readSegment } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { inArray, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
+import type { TreeList } from "../ports/tree-list-store.js";
 import {
   chainPrefix,
   type DocumentCoordinates,
@@ -20,9 +21,9 @@ import {
   loadFolderChains,
   type NodeAddress,
   type NodeLocation,
+  ownerOfDocument,
   placedNodesSql,
   presentSourceId,
-  projectOfDocument,
   spellNodeAddresses,
 } from "./tree-addresses.js";
 import {
@@ -155,19 +156,19 @@ export interface TreeReader {
     view: TreeView,
     ids: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, DocumentLineage>>;
-  /** The project that owns the document, whether or not a view places it. */
-  projectOfDocument(id: DocumentId): Promise<ProjectId | null>;
+  /** Who owns the document, a project or an account, whether or not a view places it. */
+  ownerOfDocument(id: DocumentId): Promise<TreeList | null>;
 }
 
 /** The key `occupantsAt` answers under. */
 export function coordinatesKey(
   at: Pick<
     DocumentCoordinates,
-    "projectId" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
+    "owner" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
   >,
 ): string {
   return JSON.stringify([
-    at.projectId,
+    at.owner,
     at.scheme,
     at.workId,
     at.rootThreadId ?? null,
@@ -525,7 +526,7 @@ export function createTreeReader(db: Database): TreeReader {
     const sources = new Map<string, Promise<ContextSourceId | null>>();
     const sourceOf = (at: DocumentCoordinates) => {
       const key = JSON.stringify([
-        at.projectId,
+        at.owner,
         at.scheme,
         at.workId,
         at.rootThreadId ?? null,
@@ -538,7 +539,7 @@ export function createTreeReader(db: Database): TreeReader {
           workId: at.workId,
           rootThreadId: at.rootThreadId ?? null,
           chatThreadId: at.chatThreadId ?? null,
-          project: { id: at.projectId },
+          owner: at.owner,
         });
       sources.set(key, known);
       return known;
@@ -616,7 +617,7 @@ export function createTreeReader(db: Database): TreeReader {
     identityStatus,
     occupantsAt,
     lineages,
-    projectOfDocument: (id) => projectOfDocument(tx(), id),
+    ownerOfDocument: (id) => ownerOfDocument(tx(), id),
   };
 }
 

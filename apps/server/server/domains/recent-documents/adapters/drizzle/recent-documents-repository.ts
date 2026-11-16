@@ -1,7 +1,7 @@
 /** Drizzle recents repository: owner-gated upsert, prune unlistable rows, list with identity. */
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
-import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, userRecentDocuments, works } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNull, lt, not, or, type SQL, sql } from "drizzle-orm";
@@ -11,6 +11,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { mapAuthoritativeFile } from "../../../context/adapters/context-file-entry.js";
 import { classifyAuthoritativeIdentity } from "../../../context/adapters/project-context-availability.js";
+import { sourceOwnerProjectId } from "../../../context/tree/source-owner.js";
 import {
   LIVE_TREE,
   visibleDocumentFields,
@@ -33,7 +34,8 @@ const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
  * Rows the list will return. Record, list, and prune share this so cap slots are
  * listable rows.
  *
- * The liveness facts here (live source, live owning project, live-or-absent work)
+ * The liveness facts here (live source, live owning project or the user's own home folder,
+ * live-or-absent work)
  * are the same facts `context/adapters/document-address` resolves for a path and
  * `context/adapters/project-context-availability` reads for an id. They are
  * written out at each site rather than shared: this one filters by document id
@@ -42,10 +44,12 @@ const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
  */
 function visibleIdentity(userId: UserId): SQL {
   const predicate = and(
-    eq(projects.userId, userId),
+    or(
+      eq(contextSources.userId, userId),
+      and(eq(projects.userId, userId), isNull(projects.deletedAt)),
+    ),
     inArray(contextSources.slug, CONTENT_SCHEMES),
     isNull(contextSources.deletedAt),
-    isNull(projects.deletedAt),
     or(isNull(works.id), and(isNull(works.deletedAt), isNull(works.archivedAt))),
   );
   if (!predicate) throw new Error("Recent document visibility predicate is empty");
@@ -54,8 +58,9 @@ function visibleIdentity(userId: UserId): SQL {
 
 type Db = ReturnType<typeof currentDrizzleDb>;
 
+/** The source's owning project; none for the home folder, which its account owns. */
 function projectIdentity() {
-  return sql`${projects.id} = coalesce(${contextSources.projectId}, ${works.projectId})`;
+  return sql`${projects.id} = ${sourceOwnerProjectId}`;
 }
 
 async function prune(tx: Db, userId: UserId) {
@@ -115,7 +120,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           .from(documents)
           .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
           .leftJoin(works, eq(contextSources.workId, works.id))
-          .innerJoin(projects, projectIdentity())
+          .leftJoin(projects, projectIdentity())
           .where(and(eq(documents.id, documentId), visibleIdentity(userId)))
           .limit(1);
         if (!visible) throw new RecentDocumentUnavailableError(documentId);
@@ -143,6 +148,11 @@ export function createDrizzleRecentDocumentsRepository(deps: {
     },
     async listForProject(projectId: string, userId: UserId) {
       const tx = db();
+      const [requestProject] = await tx
+        .select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .where(and(eq(projects.id, projectId as ProjectId), eq(projects.userId, userId)));
+      if (!requestProject) return [];
       const rows = await tx
         .select({
           document: visibleDocumentFields(documents),
@@ -155,11 +165,12 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         .innerJoin(documents, eq(userRecentDocuments.documentId, documents.id))
         .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
         .leftJoin(works, eq(contextSources.workId, works.id))
-        .innerJoin(projects, projectIdentity())
+        .leftJoin(projects, projectIdentity())
         .where(
           and(
             eq(userRecentDocuments.userId, userId),
-            eq(projects.id, projectId),
+            // This project's documents, and the home folder's, which every project lists.
+            or(eq(projects.id, projectId as ProjectId), eq(contextSources.userId, userId)),
             visibleIdentity(userId),
           ),
         )
@@ -180,12 +191,12 @@ export function createDrizzleRecentDocumentsRepository(deps: {
       const documentsOut: RecentDocumentItem[] = [];
       for (const row of rows) {
         const { document, source, sourceProject, work, openedAt } = row;
-        if (!source || !sourceProject) {
+        if (!source) {
           throw new Error(`Recent document ${document.id} is missing source identity`);
         }
         const classification = classifyAuthoritativeIdentity({
           row: { document, source, sourceProject, work },
-          requestProjectId: sourceProject.id,
+          requestProjectId: requestProject.id,
           actorUserId: userId,
           foldersById,
         });
@@ -206,8 +217,8 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         });
         documentsOut.push({
           documentId: document.id,
-          projectId: sourceProject.id,
-          projectName: sourceProject.name,
+          projectId: requestProject.id,
+          projectName: requestProject.name,
           workHandle,
           scheme: classification.identity.scheme,
           path: `/${entry.path.join("/")}`,

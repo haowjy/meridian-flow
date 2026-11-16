@@ -75,7 +75,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         name: "Namespace tools",
         slug: "namespace-tools",
-        isPersonal: true,
       });
       await db.insert(schema.works).values([
         { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "No Work", isNoWork: true },
@@ -99,12 +98,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId: PROJECT_ID,
         name: "Manuscript",
         slug: "manuscript",
-        scope: "project",
-      });
-      await db.insert(schema.contextSources).values({
-        projectId: PROJECT_ID,
-        name: "User Files",
-        slug: "user",
         scope: "project",
       });
       await db.insert(schema.contextSources).values({
@@ -793,7 +786,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placement(CH1))?.deletedAt).toBeNull();
       });
 
-      it("a reply that only moved and created has a card, and its Undo and Redo take it back, across lists too", async () => {
+      it("a reply that only moved, copied and created has a card, and its Undo and Redo take it back", async () => {
         const script = await start();
         const { call } = await script.begin();
         await call("write", { command: "move", from: { path: "ch1" }, path: "user://mine" });
@@ -805,7 +798,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           THREAD.turnId as never,
         );
         expect(listed.map((document) => document.documentId)).toEqual(
-          expect.arrayContaining([CH1, CH2] as never[]),
+          expect.arrayContaining([CH2] as never[]),
         );
         const chip = await sync.getTurnReceiptChip(
           THREAD.threadId as never,
@@ -864,7 +857,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: other.user,
           name: "B",
           slug: "copy-b",
-          isPersonal: true,
         });
         const mine = createCopyCommands(db, { userId: USER_ID, projectId: PROJECT_ID });
         const theirs = createCopyCommands(db, { userId: other.user, projectId: other.project });
@@ -896,7 +888,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(ran).toBe(1);
       });
 
-      it("a document moves to the account's files and back, and Undo takes it back across both lists", async () => {
+      it("a move to the account's files copies under the path's name, and Undo and Redo take the copy", async () => {
         const call = await live(await start());
         const moved = await call("write", {
           command: "move",
@@ -904,11 +896,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           path: "user://mine",
         });
         expect(moved.isError, text(moved)).toBeFalsy();
+        expect(text(moved)).toContain("the original is still at");
         expect(await ls(call, "user://")).toContain("mine");
+        expect(await ls(call, "manuscript://")).toContain("ch1");
         const undone = await call("write", { command: "undo", path: "user://mine" });
         expect(undone.isError, text(undone)).toBeFalsy();
+        expect(await ls(call, "user://")).not.toContain("mine");
         expect(await ls(call, "manuscript://")).toContain("ch1");
-        const redone = await call("write", { command: "redo", path: "ch1" });
+        const redone = await call("write", { command: "redo", path: "user://mine" });
         expect(redone.isError, text(redone)).toBeFalsy();
         expect(await ls(call, "user://")).toContain("mine");
       });

@@ -317,8 +317,10 @@ change entry, an Uploads entry, a selected Editor link. The
 hover accepts with the first thing the menu would offer and an ellipsis ("Move to
 Act 2…", or "Copy to Act 2…" when Move is disabled); the drop opens a compact menu
 at the pointer, no heading: "Move to Act 2", "Copy to Act 2", then Cancel. A drop
-into Your files (the `user` scheme) from outside offers Copy only: what lives in a
-project stays there. A
+between the project's files and Your files (the `user` scheme), either way, offers Copy and
+Cancel: those are two lists, a list is the unit of history, and nothing moves between two
+(`crossesLists` in `move-plan.ts`). A drop into Your files from anywhere else offers Copy
+only. A
 disabled item says why, tied to it with `aria-describedby` ("Can't move these from
 here" for a surface that grants Copy only, "Already there", "Some of these items
 are no longer there", "Can't go inside itself"). Escape, Cancel and a click outside
@@ -328,7 +330,8 @@ nothing it offers is enabled: a folder over its own subtree and a selection that
 lost a row refuse on hover instead. Choosing Move goes through `moveRows`, the path
 Move… and a same-system drop use.
 Choosing Copy goes through `copyRows` (below). Phones have no drag, so no menu: they
-use Move… and Copy to…, which already cross systems.
+use Move… and Copy to…. Move… offers the folders of the row's own list only; Copy to… offers
+every place.
 
 The hover verdict, the decision to ask and the menu all come from `dropChoices`
 for a crossing drop (`planMove` alone serves a same-system drop), so a new action

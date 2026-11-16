@@ -208,12 +208,9 @@ document keys; a caller holds no document or namespace key when it submits. `con
   writer's records through the list's room and the AI's through `submit` take the same path.
 - **Move and rename.** Within a list a move, rename or reorder is a record of a tree command
   (`port.treeCommand`; the model's `move`, the browser's own records). A move writes no document
-  bytes. A move between a project and the account (`user://`) crosses two lists:
-  `port.moveAcrossLists` (`SourceTree.moveAcrossLists`) makes `moveBetweenLists`' pair in one
-  `submit` on both lists, live only, documents and files only (a folder or a Work's draft answers
-  `invalid_operation`), and the browser reaches it at `POST /api/projects/:id/context/move`.
-  `undoMoveBetweenLists` takes the pair back across both lists. A destination name another node
-  has makes a twin.
+  bytes. A move stays in one list: a project's files are one, the account's `user://` another.
+  Between the two the action is Copy (`port.copy`, `copy/copy-command.ts`), which leaves the
+  original where it is; the model's `move` across the two runs it (`lib/model-tools/tree-copy-across.ts`).
 - **Delete.** `port.delete` is the live one-record delete the upload remove uses (`SourceTree.delete`): the node and its subtree go to Trash together; the result
   lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
   that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.
@@ -258,6 +255,10 @@ one source's tree contributes.
   identity destination through the router's one resolver (`destination_missing` when the
   folder is gone, `permission_denied` when the writer cannot edit it), then the destination
   adapter inserts the plan (`copyInto`) as one `submit`.
+  Copy and Agent files share `copy/bind-tree.ts` and `adapters/context-fs/copy-tree.ts`:
+  Copy binds document blocks; Agent files bind plain code text for the planned address. The
+  insertion accepts several destination folders in one submission, installs their initial
+  states atomically, and schedules projections after commit. A failed plan creates no folders.
 - A copy keeps its source's names ([naming conflicts never
   block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)):
   beside a node of that name it is a twin. The plan (`planCopy`) reads nothing of the destination;
@@ -334,9 +335,9 @@ a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
   record like a document's, used or not: a sent file has the chat's own copy
   (`chat-media/<threadId>/`), and Trash and the 30-day purge treat it as any document.
 
-A delete or a move across lists is addressed by entry id: the router takes the node
+A delete is addressed by entry id: the router takes the node
 (`{kind, nodeId}`) and an area; the area only decides which adapter to ask. The adapter finds the
-node in the list's replay inside `make` (`SourceTree.delete`, `moveAcrossLists`), so a rename or
+node in the list's replay inside `make` (`SourceTree.delete`), so a rename or
 move by another writer in the gap is neither undone nor refused; the only facts it checks are about
 the target (the occupant, `onlyAt`, the source the caller found the node in). A node that left the
 source answers `stale_target`. A move keeps the node's name; into a folder that shows it, the node
