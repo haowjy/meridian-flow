@@ -67,6 +67,9 @@ stateDiagram-v2
   and the identity bar's placement field doesn't open (`TreeVersion.ended`). Its Scratch on Live reads and
   offers no change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
   server wakes the Works list with the Work's `draft-owner-hint`.
+- Copy uses the destination tree shown by the toggle: on Draft it creates the copy in the
+  Work's draft, and on Live it creates the copy live. A source in Draft reads its draft content
+  where it has any, otherwise live content.
 - The sidebar's **Ctrl+Z** takes back the latest step of the source on screen made in the view
   showing (`core/project-tree/tree-undo.ts`). It hears the press anywhere in the sidebar, which
   takes focus itself when a click lands on no control. The latest gesture's rows (delete, rename,

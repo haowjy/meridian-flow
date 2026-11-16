@@ -1,3 +1,4 @@
+import type { CopySourceView } from "../ports/context-port.js";
 /**
  * The port's Copy: turn a request of canonical addresses into the adapters that own them and
  * hand the command its sources, destination and (for an identity destination) a way to
@@ -5,6 +6,7 @@
  * reads or writes is `copy-command.ts`.
  */
 
+import { isDraftedScheme } from "@meridian/contracts/context-uri";
 import type { CopyContextEntriesResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
@@ -35,14 +37,20 @@ export interface ContextCopyPortDeps {
   /** The router's one identity-destination resolver, re-run under the command's locks. */
   resolveIdentityDestination: (
     parent: { folderId: string; createFolders?: readonly string[] },
-    options: { authorize?: (uri: string) => Promise<boolean> },
+    options: {
+      authorize?: (uri: string) => Promise<boolean>;
+      view?: CopySourceView;
+    },
   ) => Promise<Result<CopyEnd, ContextError>>;
   resolve(uri: string): Promise<Result<CopyEnd, ContextError>>;
 }
 
 export function createContextCopyPort(deps: ContextCopyPortDeps) {
   /** A destination this scheme can copy into, or null when it has no copy capability. */
-  const handoff = (end: CopyEnd): CopyDestinationHandoff | null => {
+  const handoff = (
+    end: CopyEnd,
+    branch?: ContextCopyRequest["destinationBranch"],
+  ): CopyDestinationHandoff | null => {
     const copy = end.adapter.copy;
     return copy
       ? {
@@ -51,6 +59,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           scheme: end.adapter.name as ContextScheme,
           dir: end.path.split("/").filter(Boolean),
           workScopeId: end.workScopeId,
+          branch: isDraftedScheme(end.adapter.name as ContextScheme) ? (branch ?? null) : null,
         }
       : null;
   };
@@ -92,7 +101,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
 
     const destination = await deps.resolve(request.destinationUri);
     if (!destination.ok) return destination;
-    const destinationHandoff = handoff(destination.value);
+    const destinationHandoff = handoff(destination.value, request.destinationBranch);
     if (!destinationHandoff) {
       return Err({
         code: "invalid_operation",
@@ -112,12 +121,15 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
         ? {
             resolveDestination: async (): Promise<Result<CopyDestinationHandoff, ContextError>> => {
               const target = await deps.resolveIdentityDestination(folderParent, {
+                ...(destinationHandoff.branch
+                  ? { view: { kind: "draft" as const, owner: destinationHandoff.branch.owner } }
+                  : {}),
                 ...(request.authorizeDestination
                   ? { authorize: request.authorizeDestination }
                   : {}),
               });
               if (!target.ok) return target;
-              const current = handoff(target.value);
+              const current = handoff(target.value, request.destinationBranch);
               return current
                 ? Ok(current)
                 : Err({

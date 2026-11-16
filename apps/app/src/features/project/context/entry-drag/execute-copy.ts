@@ -64,6 +64,7 @@ export async function copyRows(projectId: string, copy: ReadyCopy): Promise<read
       ? (copy.area.owner.rootThreadId ?? null)
       : null,
     destinationParent: destination,
+    ...(copy.area.view?.kind === "draft" ? { destinationView: copy.area.view } : {}),
     ...(copy.position ? { position: copy.position } : {}),
   };
   const { entries } = await copyContextEntries(projectId, body);
