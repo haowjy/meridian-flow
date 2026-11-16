@@ -1143,6 +1143,10 @@ msgstr "A file path in this selection is too long to import."
 msgid "A folder named {name} already exists in this location."
 msgstr "A folder named {name} already exists in this location."
 
+#: src/features/agents/UndoSave.tsx
+msgid "A later Save is in use. Nothing changed."
+msgstr "A later Save is in use. Nothing changed."
+
 #: src/components/app/AppStatus.tsx
 msgid "A new version of Meridian is ready."
 msgstr "A new version of Meridian is ready."
@@ -1595,6 +1599,10 @@ msgstr "Back to live"
 #: src/features/agents/PackageSave.tsx
 msgid "Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved."
 msgstr "Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved."
+
+#: src/features/agents/UndoSave.tsx
+msgid "Back to the previous saved version. Your later edits are kept."
+msgstr "Back to the previous saved version. Your later edits are kept."
 
 #: src/features/billing/BillingPage.tsx
 msgid "Back to workspace"
@@ -2679,8 +2687,7 @@ msgstr "Couldn't reach the server, so nothing was saved. Retry tries again."
 msgid "Couldn't reach the server. Check your connection."
 msgstr "Couldn't reach the server. Check your connection."
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Couldn't reach the server. Undo tries again."
 msgstr "Couldn't reach the server. Undo tries again."
 
@@ -7506,6 +7513,10 @@ msgstr "Unavailable Work"
 #~ msgid "Unavailable:"
 #~ msgstr "Unavailable:"
 
+#: src/features/agents/UndoSave.tsx
+msgid "Unchanged"
+msgstr "Unchanged"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr "Undid"
@@ -7519,8 +7530,7 @@ msgstr "Undid"
 msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
@@ -7557,7 +7567,7 @@ msgstr "Undo discard of {count} changes"
 msgid "Undo discard of {name}"
 msgstr "Undo discard of {name}"
 
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays."
 msgstr "Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays."
 
@@ -7585,8 +7595,7 @@ msgstr "Undo restore of {name}"
 msgid "Undo restore of {title}"
 msgstr "Undo restore of {title}"
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo save of {label}"
 msgstr "Undo save of {label}"
 
@@ -7623,8 +7632,8 @@ msgstr "Undoing Apply"
 msgid "Undoing…"
 msgstr "Undoing…"
 
-#: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undone"
 msgstr "Undone"
 

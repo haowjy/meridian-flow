@@ -76,6 +76,10 @@ export const agentPackageSaves = pgTable(
     packageRevisionId: uuid("package_revision_id").references(() => agentPackageRevisions.id, {
       onDelete: "restrict",
     }),
+    undoneSaveId: uuid("undone_save_id"),
+    savedBy: text("saved_by", { enum: ["writer", "ai"] })
+      .notNull()
+      .default("writer"),
     /** Orders the rows; `created_at` is a transaction's start, so two Saves can tie or invert. */
     seq: bigint("seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
     createdAt: createdAt(),

@@ -14,6 +14,7 @@ import {
   type AgentsLevel,
   type SaveOutcome,
   shownFindings,
+  type UndoSaveResponse,
 } from "@meridian/contracts/agents";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type { AgentRevisionStore, PackageSave } from "../ports/agent-revision-store.js";
@@ -38,7 +39,11 @@ export interface PackageSaver {
    */
   savePackages(
     userId: string,
-    input: { projectId?: string; packages: "all" | Array<{ level: AgentsLevel; folder: string }> },
+    input: {
+      by?: "writer" | "ai";
+      projectId?: string;
+      packages: "all" | Array<{ level: AgentsLevel; folder: string }>;
+    },
   ): Promise<SaveOutcome[]>;
   /**
    * Saves the version before `saveId` again and brings the previous save's text into the
@@ -50,7 +55,7 @@ export interface PackageSaver {
   undoSave(
     userId: string,
     input: { projectId?: string; level: AgentsLevel; saveId: string },
-  ): Promise<{ undone: boolean }>;
+  ): Promise<UndoSaveResponse>;
 }
 
 const WRITER_LEVELS = ["user", "project"] as const;
@@ -113,6 +118,7 @@ export function createPackageSaver(input: {
   store: AgentRevisionStore;
   levels: PackageLevels;
   levelFiles: AgentLevelFiles;
+  onSaved?: (userId: string, projectId: string | undefined, level: AgentsLevel) => void;
 }) {
   const { store, levels, levelFiles } = input;
   type Saves = Awaited<ReturnType<PackageLevels["readSaves"]>>;
@@ -176,17 +182,16 @@ export function createPackageSaver(input: {
     const result: AgentPackageStatus[] = [];
     for (const level of WRITER_LEVELS) {
       const here = packagesOf(all.find((item) => item.level === level));
-      const folders = new Set([
-        ...here.keys(),
-        ...saves[level].filter((save) => save.packageRevisionId).map((save) => save.folder),
-      ]);
+      const folders = new Set([...here.keys(), ...saves[level].map((save) => save.folder)]);
       for (const folder of [...folders].sort(byFolder)) {
         const pkg = here.get(folder);
         const save = saves[level].find((item) => item.folder === folder);
         const saved = save?.packageRevisionId ? save : undefined;
         const check = pkg ? checkPackage(pkg) : undefined;
         const state: AgentPackageStatus["state"] = !pkg
-          ? "removed"
+          ? saved
+            ? "removed"
+            : "saved"
           : check && check.blocking.length > 0
             ? "cant-save"
             : !saved
@@ -200,6 +205,11 @@ export function createPackageSaver(input: {
           state,
           savedAt: saved ? saved.createdAt.toISOString() : null,
           saveId: save?.id ?? null,
+          undoneSaveIds: save?.undoneSaveIds ?? [],
+          undoable:
+            save?.hasPrevious && !save.undoneSaveId
+              ? { saveId: save.id, at: save.createdAt.toISOString(), by: save.savedBy }
+              : null,
           changes: changesOf(await savedFiles(saved), pkg?.files, level, folder),
           findings: (check?.findings ?? []).map(findingOf),
         });
@@ -209,7 +219,7 @@ export function createPackageSaver(input: {
   }
 
   const saver: PackageSaver = {
-    async savePackages(userId, { projectId, packages }) {
+    async savePackages(userId, { projectId, packages, by = "writer" }) {
       const [all, saves] = await Promise.all([
         levels.fromFiles(userId, projectId),
         levels.readSaves(userId, projectId),
@@ -219,7 +229,7 @@ export function createPackageSaver(input: {
           ? WRITER_LEVELS.flatMap((level) => {
               const folders = new Set([
                 ...packagesOf(all.find((item) => item.level === level)).keys(),
-                ...saves[level].filter((save) => save.packageRevisionId).map((save) => save.folder),
+                ...saves[level].map((save) => save.folder),
               ]);
               return [...folders].sort(byFolder).map((folder) => ({ level, folder }));
             })
@@ -285,7 +295,7 @@ export function createPackageSaver(input: {
             const revision = effective ? await levels.install(effective) : undefined;
             return {
               value: { ...base, outcome: "saved" as const, findings: shown },
-              publish: { packageRevisionId: revision?.packageRevisionId ?? null },
+              publish: { packageRevisionId: revision?.packageRevisionId ?? null, savedBy: by },
             };
           },
         );
@@ -294,7 +304,12 @@ export function createPackageSaver(input: {
           outcomes.push(outcome);
           continue;
         }
-        saves[level] = [...saves[level].filter((item) => item.folder !== folder), row];
+        input.onSaved?.(userId, projectId, level);
+        const undone = saves[level].find((item) => item.folder === folder)?.undoneSaveIds ?? [];
+        saves[level] = [
+          ...saves[level].filter((item) => item.folder !== folder),
+          { ...row, undoneSaveIds: undone },
+        ];
         const after = namesOf(await levels.fromSaves(saves));
         outcomes.push({
           ...outcome,
@@ -342,7 +357,11 @@ export function createPackageSaver(input: {
             await prepared.applyFiles();
           }
         }));
-      return { undone: Boolean(result?.undone) };
+      if (result?.undone) input.onSaved?.(userId, projectId, level);
+      return {
+        undone: Boolean(result?.undone),
+        reason: result?.undone ? null : (result?.reason ?? "not-found"),
+      };
     },
   };
   return { ...saver, statuses };
