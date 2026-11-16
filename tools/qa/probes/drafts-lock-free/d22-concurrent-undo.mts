@@ -48,12 +48,16 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   Y.applyUpdate(pre, before);
   let parts: ReturnType<typeof captureReceiptRows>;
   try {
-    parts = captureReceiptRows(pre, [
-      {
-        update,
-        origin: { kind: "pending", draftId: documentDraft.draftId, rowId: 0 },
-      },
-    ]);
+    parts = captureReceiptRows(
+      pre,
+      [
+        {
+          update,
+          origin: { kind: "pending", draftId: documentDraft.draftId, rowId: 0 },
+        },
+      ],
+      true,
+    );
   } finally {
     pre.destroy();
   }

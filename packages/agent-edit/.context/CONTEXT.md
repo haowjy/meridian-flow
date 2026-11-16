@@ -82,11 +82,17 @@ holding a live descendant outside the receipt stays (`delete-filter.ts`) with al
 leaves a writer's later attribute value.
 
 A replacement is judged per change, not per part: one `replace` that touches two places in a
-paragraph is one part with several changes. `replacedText` pairs each deleted run with the inserted
-text that took its place, from the immutable items: the inserted run's `origin` or `rightOrigin`
-sits on the deleted run (up to restoration lineage, so a redone change still pairs), and
-consecutive deleted siblings are one run. It is derived rather than stored, so receipts written
-before it work the same. A deleted run comes back while any visible text of its replacement still
+paragraph is one part with several changes. `pairEdit` pairs each deleted run with the
+inserted text that took its place (`pairChanges`, from the immutable items: the inserted run's
+`origin` or `rightOrigin` sits on the deleted run, consecutive deleted siblings are one run, and
+text deleted before the write is stepped over, since every backspace leaves some) and stores the
+pairs in `effect.replaced`. Each write is paired right after it applied, before the next write in
+the same call or batch changes the document, so a later write's deletions never count as earlier
+ones; `captureEditParts` only drops cross-part transients from the pairs. Only a receipt that can
+be undone is paired (an agent write, a Revert, an Undo), never a writer's frame. The walk itself
+can still pair wrongly at the write (a restore receipt whose neighbours the writer deleted).
+`replacedGone` pairs a receipt written before this from the document as it stands, up to
+restoration lineage, the one place a later deletion can still change the answer. A deleted run comes back while any visible text of its replacement still
 stands: beside whatever the writer put there, so a writer who typed before the word gets "One
 smallvery  cat.", and a partly overtyped word joins ("kneltkn"). Once none of the replacement's text
 is visible (a Discard took it out, or the writer typed over every letter), that run stays deleted

@@ -252,11 +252,12 @@ export function DraftNoticeLine({
     );
   }
   if (notice.status === "partial") {
-    const count = notice.leftOut;
+    const first = notice.appliedFirst.length;
+    const left = leftOutSentence(notice.leftOut);
     return (
       <ActionNotice
         data-command-notice="undo-partial"
-        sentence={leftOutSentence(count)}
+        sentence={first === 0 ? left : `${left} ${appliedFirstLine(first)}`}
         onDismiss={notice.dismiss}
         className={className}
       />
