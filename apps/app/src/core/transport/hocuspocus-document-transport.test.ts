@@ -76,61 +76,59 @@ describe("Hocuspocus document transport adapter", () => {
     },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: null },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: false, disposition: null },
-  ] as const)("classifies $signal $contract.reason with pending=$pending", async ({
-    signal,
-    contract,
-    pending,
-    disposition,
-  }) => {
-    const roomName = "draft:draft-1";
-    const document = new Y.Doc();
-    const awareness = new Awareness(document);
-    const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
-    const states: DocumentSessionConnectionState[] = [];
-    const access: string[] = [];
-    transport.subscribeStatus?.((state) => states.push(state));
-    transport.subscribeAccess?.((scope) => access.push(scope));
-    try {
-      await vi.advanceTimersByTimeAsync(0);
-      const socket = DocumentSocketHarness.instances.at(-1);
-      if (!socket) throw new Error("missing document socket");
-      socket.open();
-      socket.syncStep1(roomName, document);
-      socket.acknowledge(roomName);
-      if (pending) document.getText("body").insert(0, "writer");
-      const carry = transport.unacknowledgedUpdates();
-      if (signal === "denial") {
-        socket.receive(roomName, MessageType.Auth, (encoder) => {
-          encoding.writeVarUint(encoder, 1);
-          encoding.writeVarString(encoder, contract.reason);
-        });
-      } else if (signal === "native") {
-        socket.deliverClose(contract.code, contract.reason);
-      } else {
-        socket.receive(roomName, MessageType.CLOSE, (encoder) =>
-          encoding.writeVarString(encoder, contract.reason),
-        );
+  ] as const)(
+    "classifies $signal $contract.reason with pending=$pending",
+    async ({ signal, contract, pending, disposition }) => {
+      const roomName = "draft:draft-1";
+      const document = new Y.Doc();
+      const awareness = new Awareness(document);
+      const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
+      const states: DocumentSessionConnectionState[] = [];
+      const access: string[] = [];
+      transport.subscribeStatus?.((state) => states.push(state));
+      transport.subscribeAccess?.((scope) => access.push(scope));
+      try {
+        await vi.advanceTimersByTimeAsync(0);
+        const socket = DocumentSocketHarness.instances.at(-1);
+        if (!socket) throw new Error("missing document socket");
+        socket.open();
+        socket.syncStep1(roomName, document);
+        socket.acknowledge(roomName);
+        if (pending) document.getText("body").insert(0, "writer");
+        const carry = transport.unacknowledgedUpdates();
+        if (signal === "denial") {
+          socket.receive(roomName, MessageType.Auth, (encoder) => {
+            encoding.writeVarUint(encoder, 1);
+            encoding.writeVarString(encoder, contract.reason);
+          });
+        } else if (signal === "native") {
+          socket.deliverClose(contract.code, contract.reason);
+        } else {
+          socket.receive(roomName, MessageType.CLOSE, (encoder) =>
+            encoding.writeVarString(encoder, contract.reason),
+          );
+        }
+        if (disposition) {
+          expect(states.at(-1)).toEqual({
+            kind: "reset",
+            reason: contract.reason,
+            disposition,
+            code: signal === "denial" ? undefined : 1000,
+          });
+          document.getText("body").insert(0, "after reset");
+          expect(transport.unacknowledgedUpdates()).toEqual(carry);
+        } else {
+          expect(states.at(-1)?.kind).not.toBe("reset");
+          expect(access.at(-1)).toBe("read");
+          expect(transport.unacknowledgedUpdates()).toEqual(carry);
+        }
+      } finally {
+        transport.destroy();
+        awareness.destroy();
+        document.destroy();
       }
-      if (disposition) {
-        expect(states.at(-1)).toEqual({
-          kind: "reset",
-          reason: contract.reason,
-          disposition,
-          code: signal === "denial" ? undefined : 1000,
-        });
-        document.getText("body").insert(0, "after reset");
-        expect(transport.unacknowledgedUpdates()).toEqual(carry);
-      } else {
-        expect(states.at(-1)?.kind).not.toBe("reset");
-        expect(access.at(-1)).toBe("read");
-        expect(transport.unacknowledgedUpdates()).toEqual(carry);
-      }
-    } finally {
-      transport.destroy();
-      awareness.destroy();
-      document.destroy();
-    }
-  });
+    },
+  );
 
   // #940: a draft the server keeps refusing must stop resending and keep its outbox.
   it.each([
@@ -225,38 +223,41 @@ describe("Hocuspocus document transport adapter", () => {
   it.each([
     [4406, "client-schema-superseded"],
     [4407, "document-schema-stale"],
-  ] as const)("delivers native schema refusal %i through the real provider", async (code, reason) => {
-    const document = new Y.Doc();
-    const awareness = new Awareness(document);
-    const transport = createHocuspocusDocumentTransport({
-      roomName: "document-1",
-      document,
-      awareness,
-    });
-    const states: DocumentSessionConnectionState[] = [];
-    const unsubscribe = transport.subscribeStatus?.((state) => states.push(state));
+  ] as const)(
+    "delivers native schema refusal %i through the real provider",
+    async (code, reason) => {
+      const document = new Y.Doc();
+      const awareness = new Awareness(document);
+      const transport = createHocuspocusDocumentTransport({
+        roomName: "document-1",
+        document,
+        awareness,
+      });
+      const states: DocumentSessionConnectionState[] = [];
+      const unsubscribe = transport.subscribeStatus?.((state) => states.push(state));
 
-    try {
-      await vi.advanceTimersByTimeAsync(0);
-      const socket = DocumentSocketHarness.instances.at(-1);
-      if (!socket) throw new Error("missing schema socket");
-      socket.open();
-      socket.syncStep1("document-1", document);
-      await vi.advanceTimersByTimeAsync(0);
-      socket.deliverClose(code, reason);
+      try {
+        await vi.advanceTimersByTimeAsync(0);
+        const socket = DocumentSocketHarness.instances.at(-1);
+        if (!socket) throw new Error("missing schema socket");
+        socket.open();
+        socket.syncStep1("document-1", document);
+        await vi.advanceTimersByTimeAsync(0);
+        socket.deliverClose(code, reason);
 
-      expect(states.at(-1)).toEqual({ kind: "reset", reason, disposition: "schema", code });
-      expect(socket.closeCalls).toBeGreaterThan(0);
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(DocumentSocketHarness.instances).toEqual([socket]);
-      expect(states.at(-1)).toEqual({ kind: "reset", reason, disposition: "schema", code });
-    } finally {
-      unsubscribe?.();
-      transport.destroy();
-      awareness.destroy();
-      document.destroy();
-    }
-  });
+        expect(states.at(-1)).toEqual({ kind: "reset", reason, disposition: "schema", code });
+        expect(socket.closeCalls).toBeGreaterThan(0);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(DocumentSocketHarness.instances).toEqual([socket]);
+        expect(states.at(-1)).toEqual({ kind: "reset", reason, disposition: "schema", code });
+      } finally {
+        unsubscribe?.();
+        transport.destroy();
+        awareness.destroy();
+        document.destroy();
+      }
+    },
+  );
 });
 
 describe("Hocuspocus document transport isolation", () => {

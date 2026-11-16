@@ -138,52 +138,52 @@ it("preserves typed errors in catchup and live envelopes", async () => {
 });
 
 // HTTP availability proofs never become attested WebSocket disappearance proofs.
-it.each([
-  "thread_not_found",
-  "thread_deleted",
-])("keeps a %s subscribe refusal as an unattested not_found frame", async (code) => {
-  const frames: WsServerMessage[] = [];
-  const app = {
-    eventSink: createNoopEventSink(),
-    threadRuntime: {
-      requireOwnedThread: async () =>
-        throwHttpInterrupt(
-          {
-            code,
-            message: code === "thread_deleted" ? "Thread deleted" : "Thread not found",
-            retryable: false,
-            source: "system",
-            details: { authenticatedUserId: USER_ID },
-          },
-          404,
-        ),
-    },
-  } as unknown as AppServices;
-  const session = createThreadWebSocketSession({
-    request: new Request("https://app.localhost/api/threads/ws"),
-    context: { app, userId: USER_ID, traceId: "concealment-test" },
-    send: (data) => frames.push(JSON.parse(data) as WsServerMessage),
-    close() {},
-  });
-  session.open();
-  await session.onMessage(
-    JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID, lastSeq: "0" }),
-  );
-  const expected = (requestId: string) => ({
-    type: "error",
-    requestId,
-    threadId: THREAD_ID,
-    kind: "error",
-    error: {
-      code: "not_found",
-      message: "Thread not found",
-      retryable: false,
-      source: "system",
-    },
-  });
-  expect(frames.filter((frame) => frame.type === "error")).toEqual([expected("r1")]);
-  session.onClose();
-});
+it.each(["thread_not_found", "thread_deleted"])(
+  "keeps a %s subscribe refusal as an unattested not_found frame",
+  async (code) => {
+    const frames: WsServerMessage[] = [];
+    const app = {
+      eventSink: createNoopEventSink(),
+      threadRuntime: {
+        requireOwnedThread: async () =>
+          throwHttpInterrupt(
+            {
+              code,
+              message: code === "thread_deleted" ? "Thread deleted" : "Thread not found",
+              retryable: false,
+              source: "system",
+              details: { authenticatedUserId: USER_ID },
+            },
+            404,
+          ),
+      },
+    } as unknown as AppServices;
+    const session = createThreadWebSocketSession({
+      request: new Request("https://app.localhost/api/threads/ws"),
+      context: { app, userId: USER_ID, traceId: "concealment-test" },
+      send: (data) => frames.push(JSON.parse(data) as WsServerMessage),
+      close() {},
+    });
+    session.open();
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", requestId: "r1", threadId: THREAD_ID, lastSeq: "0" }),
+    );
+    const expected = (requestId: string) => ({
+      type: "error",
+      requestId,
+      threadId: THREAD_ID,
+      kind: "error",
+      error: {
+        code: "not_found",
+        message: "Thread not found",
+        retryable: false,
+        source: "system",
+      },
+    });
+    expect(frames.filter((frame) => frame.type === "error")).toEqual([expected("r1")]);
+    session.onClose();
+  },
+);
 
 function createRequestHarness(options: {
   liveState: (threadId: ThreadId) => Promise<ThreadLiveState>;
@@ -289,41 +289,41 @@ describe("thread WS handler request ids", () => {
   });
 });
 
-it.each([
-  "close",
-  "unsubscribe",
-])("cancels catalog acquisition when %s wins the ownership read", async (outcome) => {
-  let resolve!: (project: unknown) => void;
-  const ownership = new Promise((done) => {
-    resolve = done;
-  });
-  let listeners = 0;
-  const { session } = createRequestHarness({
-    liveState: async () => LIVE_STATE,
-    projectRepo: { findById: () => ownership },
-    projectWakeHub: {
-      subscribe: () => {
-        listeners++;
-        return () => {
-          listeners--;
-        };
+it.each(["close", "unsubscribe"])(
+  "cancels catalog acquisition when %s wins the ownership read",
+  async (outcome) => {
+    let resolve!: (project: unknown) => void;
+    const ownership = new Promise((done) => {
+      resolve = done;
+    });
+    let listeners = 0;
+    const { session } = createRequestHarness({
+      liveState: async () => LIVE_STATE,
+      projectRepo: { findById: () => ownership },
+      projectWakeHub: {
+        subscribe: () => {
+          listeners++;
+          return () => {
+            listeners--;
+          };
+        },
       },
-    },
-  });
-  const projectId = "00000000-0000-4000-8000-000000000777";
-  const pending = session.onMessage(
-    JSON.stringify({ type: "catalog.subscribe", requestId: "r1", projectId }),
-  );
-  if (outcome === "close") session.onClose();
-  else
-    await session.onMessage(
-      JSON.stringify({ type: "catalog.unsubscribe", requestId: "r2", projectId }),
+    });
+    const projectId = "00000000-0000-4000-8000-000000000777";
+    const pending = session.onMessage(
+      JSON.stringify({ type: "catalog.subscribe", requestId: "r1", projectId }),
     );
-  resolve({ userId: USER_ID, deletedAt: null });
-  try {
-    await pending;
-    expect(listeners).toBe(0);
-  } finally {
-    session.onClose();
-  }
-});
+    if (outcome === "close") session.onClose();
+    else
+      await session.onMessage(
+        JSON.stringify({ type: "catalog.unsubscribe", requestId: "r2", projectId }),
+      );
+    resolve({ userId: USER_ID, deletedAt: null });
+    try {
+      await pending;
+      expect(listeners).toBe(0);
+    } finally {
+      session.onClose();
+    }
+  },
+);

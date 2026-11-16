@@ -81,27 +81,28 @@ describe("applyEdits update fidelity", () => {
         block: toRef(baseModel.getBlocks(doc)[1]),
       }),
     ],
-  ] satisfies Array<
-    [string, string, string, (doc: Y.Doc) => ResolvedEdit]
-  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, expected, makeEdit) => {
-    const doc = createDoc(markdown, 1);
-    doc.clientID = 2;
-    const fresh = cloneDoc(doc, 9);
-    const prevVector = Y.encodeStateVector(doc);
+  ] satisfies Array<[string, string, string, (doc: Y.Doc) => ResolvedEdit]>)(
+    "replays %s update bytes into an identical fresh doc",
+    (_name, markdown, expected, makeEdit) => {
+      const doc = createDoc(markdown, 1);
+      doc.clientID = 2;
+      const fresh = cloneDoc(doc, 9);
+      const prevVector = Y.encodeStateVector(doc);
 
-    const result = applyEdits(doc, baseModel, makeEdit(doc), origin);
+      const result = applyEdits(doc, baseModel, makeEdit(doc), origin);
 
-    expectOk(result);
-    const update = Y.encodeStateAsUpdate(doc, prevVector);
-    Y.applyUpdate(fresh, update);
-    expect(documentJson(fresh)).toEqual(documentJson(doc));
-    expect(
-      joinEntries(
-        codec.serializeBlockBodies(baseModel.projectBlocks(doc).map((block) => block.node)),
-      ),
-    ).toBe(expected);
-    expectNoOrphanedElements(doc);
-  });
+      expectOk(result);
+      const update = Y.encodeStateAsUpdate(doc, prevVector);
+      Y.applyUpdate(fresh, update);
+      expect(documentJson(fresh)).toEqual(documentJson(doc));
+      expect(
+        joinEntries(
+          codec.serializeBlockBodies(baseModel.projectBlocks(doc).map((block) => block.node)),
+        ),
+      ).toBe(expected);
+      expectNoOrphanedElements(doc);
+    },
+  );
 });
 
 describe("applyEdits preflight safety", () => {

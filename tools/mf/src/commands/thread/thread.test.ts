@@ -583,55 +583,55 @@ describe("thread send", () => {
     expect(wire.requestsOf("admit")).toHaveLength(1);
   });
 
-  it.each([
-    "delayed",
-    "empty",
-  ] as const)("keeps a proven send when its diagnostic read is %s", async (fault) => {
-    // The first read joins with the reply running; the next shows it complete and proves the claim
-    // while the stream has not yet ended the turn. Then a frame makes the sync start one more read,
-    // which the harness holds for 5 s or answers with an empty body.
-    wire.snapshot = (read) => {
-      if (read === 1)
+  it.each(["delayed", "empty"] as const)(
+    "keeps a proven send when its diagnostic read is %s",
+    async (fault) => {
+      // The first read joins with the reply running; the next shows it complete and proves the claim
+      // while the stream has not yet ended the turn. Then a frame makes the sync start one more read,
+      // which the harness holds for 5 s or answers with an empty body.
+      wire.snapshot = (read) => {
+        if (read === 1)
+          return snapshotOf({
+            seq: 0,
+            turns: [
+              userTurn("u1", 1, "hold", "a1"),
+              replyTurn("a1", 2, { prevTurnId: "u1", status: "streaming" }),
+            ],
+            record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } },
+          });
         return snapshotOf({
-          seq: 0,
+          seq: wire.head,
           turns: [
             userTurn("u1", 1, "hold", "a1"),
-            replyTurn("a1", 2, { prevTurnId: "u1", status: "streaming" }),
+            replyTurn("a1", 2, { prevTurnId: "u1", text: "Hello there" }),
           ],
-          record: { execution: { executionId: "exec-a1", currentTurnId: "a1" } },
         });
-      return snapshotOf({
-        seq: wire.head,
-        turns: [
-          userTurn("u1", 1, "hold", "a1"),
-          replyTurn("a1", 2, { prevTurnId: "u1", text: "Hello there" }),
-        ],
+      };
+      wire.play(async () => {
+        await wire.until(() => wire.subscriptions >= 1);
+        wire.publish(frames.started("a1"));
+        publishRecord(wire);
+        await wire.until(() => wire.reads >= 2);
+        // Let the proving answer leave, so the held fault is for the read after it.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        wire.fail("snapshot", fault === "delayed" ? { delayMs: 5000 } : { status: 204, text: "" });
+        wire.publish(frames.finished("a1"));
       });
-    };
-    wire.play(async () => {
-      await wire.until(() => wire.subscriptions >= 1);
-      wire.publish(frames.started("a1"));
-      publishRecord(wire);
-      await wire.until(() => wire.reads >= 2);
-      // Let the proving answer leave, so the held fault is for the read after it.
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      wire.fail("snapshot", fault === "delayed" ? { delayMs: 5000 } : { status: 204, text: "" });
-      wire.publish(frames.finished("a1"));
-    });
-    const result = await send("hold", "--timeout", "10s", "--json");
-    expect(result.code).toBe(EXIT.ok);
-    expect(lastRecord(result.stdout)).toMatchObject({
-      outcome: "complete",
-      finalText: "Hello there",
-    });
-    if (fault === "delayed") {
-      // The command ended with a read still open: the harness saw the client close it.
-      await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
-    } else {
-      expect(lastRecord(result.stdout)).toMatchObject({ observationIncomplete: true });
-    }
-    expect(result.stderr).toBe("");
-  });
+      const result = await send("hold", "--timeout", "10s", "--json");
+      expect(result.code).toBe(EXIT.ok);
+      expect(lastRecord(result.stdout)).toMatchObject({
+        outcome: "complete",
+        finalText: "Hello there",
+      });
+      if (fault === "delayed") {
+        // The command ended with a read still open: the harness saw the client close it.
+        await wire.until(() => wire.aborted.some((request) => request.kind === "snapshot"));
+      } else {
+        expect(lastRecord(result.stdout)).toMatchObject({ observationIncomplete: true });
+      }
+      expect(result.stderr).toBe("");
+    },
+  );
 
   it("--no-wait proves admission only, never complete", async () => {
     const result = await send("hi", "--no-wait", "--json");
@@ -703,26 +703,25 @@ describe("thread view, cancel, events, answer", () => {
     });
   });
 
-  it.each([
-    "events",
-    "send",
-    "tail",
-  ] as const)("keeps %s terminal socket close 4401 at exit 4", async (command) => {
-    runningReply();
-    wire.onSubscribe = () => ({ close: 4401 });
-    const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
-    const result = await wire.mf([
-      "thread",
-      command,
-      THREAD_ID,
-      ...args,
-      "--timeout",
-      "1s",
-      "--json",
-    ]);
-    expect(result.code).toBe(EXIT.unavailable);
-    expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
-  });
+  it.each(["events", "send", "tail"] as const)(
+    "keeps %s terminal socket close 4401 at exit 4",
+    async (command) => {
+      runningReply();
+      wire.onSubscribe = () => ({ close: 4401 });
+      const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
+      const result = await wire.mf([
+        "thread",
+        command,
+        THREAD_ID,
+        ...args,
+        "--timeout",
+        "1s",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.unavailable);
+      expect(JSON.parse(result.stderr)).toMatchObject({ code: "unavailable" });
+    },
+  );
 });
 
 describe("thread tail --until-idle", () => {
@@ -771,46 +770,45 @@ describe("thread tail --until-idle", () => {
 });
 
 describe("replay outcomes", () => {
-  it.each([
-    "send",
-    "tail",
-    "events",
-  ] as const)("%s recovers retryable errors but ends on a refusal", async (command) => {
-    runningReply();
-    let attempts = 0;
-    wire.onSubscribe = (cursor) => {
-      attempts += 1;
-      return {
-        type: "error",
-        kind: "error",
-        requestId: cursor.requestId,
-        threadId: cursor.threadId,
-        error: {
-          code: "internal",
-          source: "system",
-          message: attempts === 1 ? "temporary read failure" : "refused replay",
-          retryable: attempts === 1,
-        },
+  it.each(["send", "tail", "events"] as const)(
+    "%s recovers retryable errors but ends on a refusal",
+    async (command) => {
+      runningReply();
+      let attempts = 0;
+      wire.onSubscribe = (cursor) => {
+        attempts += 1;
+        return {
+          type: "error",
+          kind: "error",
+          requestId: cursor.requestId,
+          threadId: cursor.threadId,
+          error: {
+            code: "internal",
+            source: "system",
+            message: attempts === 1 ? "temporary read failure" : "refused replay",
+            retryable: attempts === 1,
+          },
+        };
       };
-    };
-    const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
-    const result = await wire.mf([
-      "thread",
-      command,
-      THREAD_ID,
-      ...args,
-      "--timeout",
-      "2s",
-      "--json",
-    ]);
-    expect(result.code).toBe(EXIT.failed);
-    expect(result.stderr).toContain("refused replay");
-    expect(result.stdout).not.toContain('"outcome":"complete"');
-    expect(attempts).toBe(2);
-    expect(wire.connections).toBe(1);
-    const requests = wire.clientMessages.filter((message) => message.type === "subscribe");
-    expect(requests[0].requestId).not.toBe(requests[1].requestId);
-  });
+      const args = command === "send" ? ["hang"] : command === "tail" ? ["--until-idle"] : [];
+      const result = await wire.mf([
+        "thread",
+        command,
+        THREAD_ID,
+        ...args,
+        "--timeout",
+        "2s",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.failed);
+      expect(result.stderr).toContain("refused replay");
+      expect(result.stdout).not.toContain('"outcome":"complete"');
+      expect(attempts).toBe(2);
+      expect(wire.connections).toBe(1);
+      const requests = wire.clientMessages.filter((message) => message.type === "subscribe");
+      expect(requests[0].requestId).not.toBe(requests[1].requestId);
+    },
+  );
 });
 
 it("keeps a sibling live on the same socket while a replay retries", async () => {

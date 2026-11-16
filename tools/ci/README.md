@@ -151,10 +151,11 @@ every unit and DB run and compares the **expanded case count per test file**
   check what changed, not as a gate.
 - It also samples RSS across the whole process tree (descendants included, so a
   `forks` pool's children count) and enforces `TEST_MEMORY_CEILING_MB` (default
-  4096) **on every run except a refresh**: a `TEST_BUDGET_UPDATE=1` run writes
+  5120) **on every run except a refresh**: a `TEST_BUDGET_UPDATE=1` run writes
   the baseline and returns before both the growth and memory checks. Memory
   blocks everywhere else because it is a property of the suite, not of the
-  machine's load. Known peaks: unit 3.0 GB at 8 workers,
+  machine's load. Known peaks: unit 4.2-4.3 GB at 8 workers (Vitest 5; Vitest 4 peaked at 2.7 GB for the same cases in
+  the same wall time),
   DB 3.5 GB at 4 fork workers; the DB suite reaches 6.0 GB at 8 workers, so an
   eight-worker local DB run will trip the ceiling — that is the intended signal.
 - The DB suite is not sharded, but it uses the same baseline file so one number

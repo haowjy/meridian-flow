@@ -474,79 +474,80 @@ if (!RUN) {
       });
     });
 
-    it.each([
-      "lookup",
-    ] as const)("recovers expired orphan admissions through %s", async (operation) => {
-      const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
-      const { canonicalAdmissionFingerprint } = await import("./user-turn-admission.js");
-      const input = {
-        actorUserId: USER as never,
-        threadId: THREAD,
-        submissionId: "orphan",
-        text: "saved",
-        blocks: [{ type: "text" as const, text: "saved" }],
-        references: [],
-      };
-      await records.reserve({
-        ...input,
-        fingerprint: canonicalAdmissionFingerprint(input),
-        claimExpiresAt: new Date(0),
-      });
-      const service = createUserTurnAdmission({
-        chatMedia: {
-          admit: async () => ({ mediaType: "image/png", sizeBytes: 5, name: "image.png" }),
-        },
-        records,
-        runClaim: createDrizzleRunClaim(firstDb),
-        availability: {
-          async placed() {
-            throw new Error("Recovery entered reference effects");
+    it.each(["lookup"] as const)(
+      "recovers expired orphan admissions through %s",
+      async (operation) => {
+        const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
+        const { canonicalAdmissionFingerprint } = await import("./user-turn-admission.js");
+        const input = {
+          actorUserId: USER as never,
+          threadId: THREAD,
+          submissionId: "orphan",
+          text: "saved",
+          blocks: [{ type: "text" as const, text: "saved" }],
+          references: [],
+        };
+        await records.reserve({
+          ...input,
+          fingerprint: canonicalAdmissionFingerprint(input),
+          claimExpiresAt: new Date(0),
+        });
+        const service = createUserTurnAdmission({
+          chatMedia: {
+            admit: async () => ({ mediaType: "image/png", sizeBytes: 5, name: "image.png" }),
           },
-          async held() {
-            throw new Error("Recovery entered held-id effects");
+          records,
+          runClaim: createDrizzleRunClaim(firstDb),
+          availability: {
+            async placed() {
+              throw new Error("Recovery entered reference effects");
+            },
+            async held() {
+              throw new Error("Recovery entered held-id effects");
+            },
+            async serializeCreate() {
+              throw new Error("Recovery entered create effects");
+            },
           },
-          async serializeCreate() {
-            throw new Error("Recovery entered create effects");
+          async threadProject() {
+            throw new Error("Recovery entered project resolution");
           },
-        },
-        async threadProject() {
-          throw new Error("Recovery entered project resolution");
-        },
-        producer: {
-          async enqueue() {
-            throw new Error("Recovery started a duplicate turn");
+          producer: {
+            async enqueue() {
+              throw new Error("Recovery started a duplicate turn");
+            },
           },
-        },
-      });
-      const remoteOwnership = createDrizzleRunClaim(secondDb);
-      const liveClaim = await remoteOwnership.startExecution(
-        THREAD,
-        crypto.randomUUID(),
-        async () => {},
-      );
-      expect(liveClaim).not.toBeNull();
-      try {
-        await expect(service[operation](input)).resolves.toMatchObject({ kind: "pending" });
-      } finally {
-        if (liveClaim) await remoteOwnership.release(liveClaim);
-      }
-      await expect(service[operation](input)).resolves.toMatchObject({
-        kind: "rejected",
-        code: "recovery_no_committed_turn",
-      });
-      await expect(
-        service.admit({ ...input, text: "changed", blocks: [{ type: "text", text: "changed" }] }),
-      ).rejects.toMatchObject({ code: "idempotency_conflict" });
-      expect(await firstDb.select().from(schema.turns)).toHaveLength(0);
-      expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
-      const releasedClaim = await remoteOwnership.startExecution(
-        THREAD,
-        crypto.randomUUID(),
-        async () => {},
-      );
-      expect(releasedClaim).not.toBeNull();
-      if (releasedClaim) await remoteOwnership.release(releasedClaim);
-    });
+        });
+        const remoteOwnership = createDrizzleRunClaim(secondDb);
+        const liveClaim = await remoteOwnership.startExecution(
+          THREAD,
+          crypto.randomUUID(),
+          async () => {},
+        );
+        expect(liveClaim).not.toBeNull();
+        try {
+          await expect(service[operation](input)).resolves.toMatchObject({ kind: "pending" });
+        } finally {
+          if (liveClaim) await remoteOwnership.release(liveClaim);
+        }
+        await expect(service[operation](input)).resolves.toMatchObject({
+          kind: "rejected",
+          code: "recovery_no_committed_turn",
+        });
+        await expect(
+          service.admit({ ...input, text: "changed", blocks: [{ type: "text", text: "changed" }] }),
+        ).rejects.toMatchObject({ code: "idempotency_conflict" });
+        expect(await firstDb.select().from(schema.turns)).toHaveLength(0);
+        expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
+        const releasedClaim = await remoteOwnership.startExecution(
+          THREAD,
+          crypto.randomUUID(),
+          async () => {},
+        );
+        expect(releasedClaim).not.toBeNull();
+        if (releasedClaim) await remoteOwnership.release(releasedClaim);
+      },
+    );
 
     it("does not turn claim expiry into rejection until recovery proves no live claim or committed turn", async () => {
       await firstDb.insert(schema.userTurnAdmissions).values({

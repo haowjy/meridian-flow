@@ -222,49 +222,58 @@ describe("schema repair witness", () => {
       3,
       ["invalid prose"],
     ],
-  ] as const)("attributes only the repair when a writer deletion shares a batch with %s", async (_name, remoteNode, remoteText, writerOrder, deleteTo, expectedRemovedText) => {
-    const doc = new Y.Doc();
-    appendElement(doc, "paragraph", "writer prose");
-    const events: SchemaRepairEvent[] = [];
-    let editor: Editor;
-    let deleted = false;
-    const deleteWriterText = () => {
-      if (deleted) return;
-      deleted = true;
-      expect(editor.commands.deleteRange({ from: 1, to: deleteTo })).toBe(true);
-    };
-    const deleteBeforeBindingCleanup = () => {
-      if (writerOrder === "before") deleteWriterText();
-    };
-    if (writerOrder === "before") {
-      doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).observeDeep(deleteBeforeBindingCleanup);
-    }
-    editor = constructEditor(doc, events);
-    if (writerOrder === "bold") {
-      expect(editor.chain().setTextSelection({ from: 1, to: deleteTo }).setBold().run()).toBe(true);
-    }
-    const deleteDuringCleanup = (transaction: Y.Transaction) => {
-      if (
-        ((writerOrder === "remote" || writerOrder === "bold") &&
-          transaction.origin === "remote-provider-origin") ||
-        (writerOrder === "after" &&
-          transaction.origin === ySyncPluginKey &&
-          transaction.deleteSet.clients.size > 0)
-      ) {
-        deleteWriterText();
+  ] as const)(
+    "attributes only the repair when a writer deletion shares a batch with %s",
+    async (_name, remoteNode, remoteText, writerOrder, deleteTo, expectedRemovedText) => {
+      const doc = new Y.Doc();
+      appendElement(doc, "paragraph", "writer prose");
+      const events: SchemaRepairEvent[] = [];
+      let editor: Editor;
+      let deleted = false;
+      const deleteWriterText = () => {
+        if (deleted) return;
+        deleted = true;
+        expect(editor.commands.deleteRange({ from: 1, to: deleteTo })).toBe(true);
+      };
+      const deleteBeforeBindingCleanup = () => {
+        if (writerOrder === "before") deleteWriterText();
+      };
+      if (writerOrder === "before") {
+        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).observeDeep(deleteBeforeBindingCleanup);
       }
-    };
-    doc.on("afterTransaction", deleteDuringCleanup);
+      editor = constructEditor(doc, events);
+      if (writerOrder === "bold") {
+        expect(editor.chain().setTextSelection({ from: 1, to: deleteTo }).setBold().run()).toBe(
+          true,
+        );
+      }
+      const deleteDuringCleanup = (transaction: Y.Transaction) => {
+        if (
+          ((writerOrder === "remote" || writerOrder === "bold") &&
+            transaction.origin === "remote-provider-origin") ||
+          (writerOrder === "after" &&
+            transaction.origin === ySyncPluginKey &&
+            transaction.deleteSet.clients.size > 0)
+        ) {
+          deleteWriterText();
+        }
+      };
+      doc.on("afterTransaction", deleteDuringCleanup);
 
-    Y.applyUpdate(doc, foreignElementUpdate(doc, remoteNode, remoteText), "remote-provider-origin");
-    await finishFlush();
-    doc.off("afterTransaction", deleteDuringCleanup);
-    if (writerOrder === "before") {
-      doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).unobserveDeep(deleteBeforeBindingCleanup);
-    }
+      Y.applyUpdate(
+        doc,
+        foreignElementUpdate(doc, remoteNode, remoteText),
+        "remote-provider-origin",
+      );
+      await finishFlush();
+      doc.off("afterTransaction", deleteDuringCleanup);
+      if (writerOrder === "before") {
+        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).unobserveDeep(deleteBeforeBindingCleanup);
+      }
 
-    expect(events.map((event) => event.removedText)).toEqual(expectedRemovedText);
-  });
+      expect(events.map((event) => event.removedText)).toEqual(expectedRemovedText);
+    },
+  );
 
   it("does not carry remote fallback eligibility into a new Yjs batch", async () => {
     const doc = new Y.Doc();

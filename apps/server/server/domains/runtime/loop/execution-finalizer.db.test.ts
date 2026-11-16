@@ -57,249 +57,251 @@ else
     afterAll(async () => {
       await db.close();
     });
-    it.each([
-      "tool",
-      "rollback",
-    ] as const)("splits an ordered mixed batch at %s with one lease and report", async (boundary) => {
-      const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
-      const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
-      const { persistWriterEnqueue } = await import("./writer-enqueue.js");
-      const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
-      const { readThreadReport } = await import("../spawn/read-thread-report.js");
-      const { readRunStateAtHead } = await import("../adapters/drizzle-run-state.js");
-      const { createInertGateway } = await import("./__tests__/test-gateway.js");
-      const inbox = createLockedDrizzleInbox(db);
-      const authority = createDrizzleRunClaim(db);
-      const producer = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority });
-      const controller = new AbortController();
-      const requests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
-      const messageIds: string[] = [];
-      let selector: TurnId;
-      let terminal: TurnId | null = null;
-      let splitState: unknown;
-      const cleanupWakes: ThreadId[] = [];
-      let failSplit = boundary === "rollback";
-      const splitWriter: typeof eventWriter = {
-        ...noFailureRecorder,
-        async appendEvents(threadId, events) {
-          let seq = 0n;
-          for (const event of events) seq = await this.appendEvent(threadId, event);
-          return seq;
-        },
-        async appendEvent(threadId, event) {
-          if (
-            failSplit &&
-            selector &&
-            event.type === "turn.created" &&
-            event.turn.role === "assistant" &&
-            event.turn.id !== selector
-          ) {
-            failSplit = false;
-            throw new Error("split journal failed");
-          }
-          return eventWriter.appendEvent(threadId, event);
-        },
-      };
-      const harness = createRuntimeHarness({
-        backgroundTasks: processDetachedWork,
-        repos,
-        eventWriter: splitWriter,
-        ...(boundary === "rollback"
-          ? {
-              wakeIfRunnable: async (threadId: ThreadId) => {
-                cleanupWakes.push(threadId);
-              },
+    it.each(["tool", "rollback"] as const)(
+      "splits an ordered mixed batch at %s with one lease and report",
+      async (boundary) => {
+        const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
+        const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
+        const { persistWriterEnqueue } = await import("./writer-enqueue.js");
+        const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
+        const { readThreadReport } = await import("../spawn/read-thread-report.js");
+        const { readRunStateAtHead } = await import("../adapters/drizzle-run-state.js");
+        const { createInertGateway } = await import("./__tests__/test-gateway.js");
+        const inbox = createLockedDrizzleInbox(db);
+        const authority = createDrizzleRunClaim(db);
+        const producer = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority });
+        const controller = new AbortController();
+        const requests: import("@meridian-flow/runtime/gateway").GenerateRequest[] = [];
+        const messageIds: string[] = [];
+        let selector: TurnId;
+        let terminal: TurnId | null = null;
+        let splitState: unknown;
+        const cleanupWakes: ThreadId[] = [];
+        let failSplit = boundary === "rollback";
+        const splitWriter: typeof eventWriter = {
+          ...noFailureRecorder,
+          async appendEvents(threadId, events) {
+            let seq = 0n;
+            for (const event of events) seq = await this.appendEvent(threadId, event);
+            return seq;
+          },
+          async appendEvent(threadId, event) {
+            if (
+              failSplit &&
+              selector &&
+              event.type === "turn.created" &&
+              event.turn.role === "assistant" &&
+              event.turn.id !== selector
+            ) {
+              failSplit = false;
+              throw new Error("split journal failed");
             }
-          : {}),
-        delivery: createTestDrizzleDelivery(db, {
+            return eventWriter.appendEvent(threadId, event);
+          },
+        };
+        const harness = createRuntimeHarness({
+          backgroundTasks: processDetachedWork,
           repos,
           eventWriter: splitWriter,
+          ...(boundary === "rollback"
+            ? {
+                wakeIfRunnable: async (threadId: ThreadId) => {
+                  cleanupWakes.push(threadId);
+                },
+              }
+            : {}),
+          delivery: createTestDrizzleDelivery(db, {
+            repos,
+            eventWriter: splitWriter,
+            runClaim: authority,
+          }),
           runClaim: authority,
-        }),
-        runClaim: authority,
-        boundThreads: () => [ids.caller, ids.child],
-        gateway: {
-          ...createInertGateway("gpt-5.6-luna"),
-          async *stream(request) {
-            requests.push(request);
-            if (requests.length === 1) {
-              const child = await producer.enqueue({
-                threadId: ids.child,
-                intent: "message",
-                provenance: {
-                  kind: "child",
-                  threadId: ids.caller,
-                  reportId: ids.callerTurn,
-                  handle: "p1",
-                  outcome: "succeeded",
-                  agentName: "Subagent",
-                },
-                body: { kind: "text", text: "child notification" },
-                idempotencyKey: "child",
-              });
-              messageIds.push(child.id);
-              const writerId = crypto.randomUUID();
-              await persistWriterEnqueue({
-                persistence: { repos, eventWriter },
-                hub: {
-                  async headSeq() {
-                    return 0n;
+          boundThreads: () => [ids.caller, ids.child],
+          gateway: {
+            ...createInertGateway("gpt-5.6-luna"),
+            async *stream(request) {
+              requests.push(request);
+              if (requests.length === 1) {
+                const child = await producer.enqueue({
+                  threadId: ids.child,
+                  intent: "message",
+                  provenance: {
+                    kind: "child",
+                    threadId: ids.caller,
+                    reportId: ids.callerTurn,
+                    handle: "p1",
+                    outcome: "succeeded",
+                    agentName: "Subagent",
                   },
-                },
-                delivery: producer,
-                threadId: ids.child,
-                userTurnId: writerId,
-                userBlocks: [{ type: "text", text: "writer steer" }],
-                draft: {
-                  id: writerId,
+                  body: { kind: "text", text: "child notification" },
+                  idempotencyKey: "child",
+                });
+                messageIds.push(child.id);
+                const writerId = crypto.randomUUID();
+                await persistWriterEnqueue({
+                  persistence: { repos, eventWriter },
+                  hub: {
+                    async headSeq() {
+                      return 0n;
+                    },
+                  },
+                  delivery: producer,
+                  threadId: ids.child,
+                  userTurnId: writerId,
+                  userBlocks: [{ type: "text", text: "writer steer" }],
+                  draft: {
+                    id: writerId,
+                    threadId: ids.child,
+                    intent: "message",
+                    provenance: { kind: "writer", actorId: ids.user },
+                    body: { kind: "text", text: "writer steer" },
+                    idempotencyKey: "writer",
+                  },
+                  settle: async () => true,
+                });
+                messageIds.push(writerId);
+                // Replay cannot duplicate the queue row or its eventual turn.
+                await producer.enqueue({
                   threadId: ids.child,
                   intent: "message",
                   provenance: { kind: "writer", actorId: ids.user },
                   body: { kind: "text", text: "writer steer" },
                   idempotencyKey: "writer",
-                },
-                settle: async () => true,
-              });
-              messageIds.push(writerId);
-              // Replay cannot duplicate the queue row or its eventual turn.
-              await producer.enqueue({
-                threadId: ids.child,
-                intent: "message",
-                provenance: { kind: "writer", actorId: ids.user },
-                body: { kind: "text", text: "writer steer" },
-                idempotencyKey: "writer",
-              });
-            } else {
-              terminal = await authority.readRunningTurnId(ids.child);
-              splitState = {
-                run: await authority.holder(ids.child),
-                report: await repos.executionReports.findByExecution(ids.child, selector),
-                lookup: await readThreadReport({
-                  callerThreadId: ids.caller,
-                  ref: "p1",
+                });
+              } else {
+                terminal = await authority.readRunningTurnId(ids.child);
+                splitState = {
+                  run: await authority.holder(ids.child),
+                  report: await repos.executionReports.findByExecution(ids.child, selector),
+                  lookup: await readThreadReport({
+                    callerThreadId: ids.caller,
+                    ref: "p1",
 
-                  repos,
-                }),
-                pending: (await readRunStateAtHead(db, ids.child)).items,
+                    repos,
+                  }),
+                  pending: (await readRunStateAtHead(db, ids.child)).items,
+                };
+              }
+              yield {
+                type: "end",
+                result: {
+                  content: [
+                    { type: "text", text: requests.length === 1 ? "before steer" : "after steer" },
+                  ],
+                  toolCalls:
+                    requests.length === 1 && boundary === "tool"
+                      ? [{ id: "tool-1", name: "unregistered", arguments: {} }]
+                      : [],
+                  finishReason:
+                    requests.length === 1 && boundary === "tool" ? "tool_use" : "end_turn",
+                  usage: { inputTokens: 1000000, outputTokens: 1000000 },
+                  provider: "openai",
+                  model: "gpt-5.6-luna",
+                },
               };
-            }
-            yield {
-              type: "end",
-              result: {
-                content: [
-                  { type: "text", text: requests.length === 1 ? "before steer" : "after steer" },
-                ],
-                toolCalls:
-                  requests.length === 1 && boundary === "tool"
-                    ? [{ id: "tool-1", name: "unregistered", arguments: {} }]
-                    : [],
-                finishReason:
-                  requests.length === 1 && boundary === "tool" ? "tool_use" : "end_turn",
-                usage: { inputTokens: 1000000, outputTokens: 1000000 },
-                provider: "openai",
-                model: "gpt-5.6-luna",
-              },
-            };
-          },
-        },
-      });
-      await harness.creditLedger.grant({
-        userId: ids.user,
-        source: "manual",
-        amountMillicredits: "1000000",
-        reason: "split",
-      });
-      {
-        const run = await harness.orchestrator.prepare({
-          threadId: ids.child,
-          userText: "start",
-          signal: controller.signal,
-          onCurrentTurnChanged: ({ id }) => {
-            terminal = id;
+            },
           },
         });
-        selector = run.executionTurnId;
-        const outcome = await run.execute();
-        const events = (await journalEventsByThread(db, ids.child)).map(
-          (entry) => entry.payload as OrchestratorEvent,
-        );
-        expect(outcome.status).toBe(boundary === "rollback" ? "error" : "complete");
-        const turns = await repos.turns.listByThread(ids.child);
-        if (boundary === "rollback") {
-          // The fixture gates the cleanup wake: assert the released lease and pending
-          // messages at that barrier, then drive the successor separately.
-          await processDetachedWork.drain();
-          expect(cleanupWakes).toEqual([ids.child]);
-          expect(terminal).toBeNull();
-          expect((await repos.turns.findById(selector))?.status).toBe("error");
-          expect(await repos.executionReports.findByExecution(ids.child, selector)).toMatchObject({
-            terminalTurnId: selector,
-            outcome: "failed",
-            summary: "before steer",
-          });
-          expect(events.filter((event) => event.type === "turn.completed")).toEqual([]);
-          expect((await inbox.selectPending(ids.child)).map((message) => message.id)).toEqual(
-            messageIds,
-          );
-          expect(await authority.holder(ids.child)).toBeNull();
-          const { createWakeIfRunnable } = await import("./wake-if-runnable.js");
-          const wake = createWakeIfRunnable({
-            delivery: harness.deps.delivery,
-            runStarter: {
-              async start(threadId) {
-                const successor = await harness.orchestrator.prepare({ threadId, drain: true });
-                expect(successor.executionId).not.toBe(run.executionId);
-                expect(await authority.holder(threadId)).toBe(successor.executionId);
-                expect((await successor.execute()).status).toBe("complete");
-              },
+        await harness.creditLedger.grant({
+          userId: ids.user,
+          source: "manual",
+          amountMillicredits: "1000000",
+          reason: "split",
+        });
+        {
+          const run = await harness.orchestrator.prepare({
+            threadId: ids.child,
+            userText: "start",
+            signal: controller.signal,
+            onCurrentTurnChanged: ({ id }) => {
+              terminal = id;
             },
           });
-          while (cleanupWakes.length) {
-            const threadId = cleanupWakes.shift();
-            if (threadId) await wake(threadId);
+          selector = run.executionTurnId;
+          const outcome = await run.execute();
+          const events = (await journalEventsByThread(db, ids.child)).map(
+            (entry) => entry.payload as OrchestratorEvent,
+          );
+          expect(outcome.status).toBe(boundary === "rollback" ? "error" : "complete");
+          const turns = await repos.turns.listByThread(ids.child);
+          if (boundary === "rollback") {
+            // The fixture gates the cleanup wake: assert the released lease and pending
+            // messages at that barrier, then drive the successor separately.
             await processDetachedWork.drain();
+            expect(cleanupWakes).toEqual([ids.child]);
+            expect(terminal).toBeNull();
+            expect((await repos.turns.findById(selector))?.status).toBe("error");
+            expect(await repos.executionReports.findByExecution(ids.child, selector)).toMatchObject(
+              {
+                terminalTurnId: selector,
+                outcome: "failed",
+                summary: "before steer",
+              },
+            );
+            expect(events.filter((event) => event.type === "turn.completed")).toEqual([]);
+            expect((await inbox.selectPending(ids.child)).map((message) => message.id)).toEqual(
+              messageIds,
+            );
+            expect(await authority.holder(ids.child)).toBeNull();
+            const { createWakeIfRunnable } = await import("./wake-if-runnable.js");
+            const wake = createWakeIfRunnable({
+              delivery: harness.deps.delivery,
+              runStarter: {
+                async start(threadId) {
+                  const successor = await harness.orchestrator.prepare({ threadId, drain: true });
+                  expect(successor.executionId).not.toBe(run.executionId);
+                  expect(await authority.holder(threadId)).toBe(successor.executionId);
+                  expect((await successor.execute()).status).toBe("complete");
+                },
+              },
+            });
+            while (cleanupWakes.length) {
+              const threadId = cleanupWakes.shift();
+              if (threadId) await wake(threadId);
+              await processDetachedWork.drain();
+            }
+            expect(await inbox.selectPending(ids.child)).toEqual([]);
+            expect(await authority.holder(ids.child)).toBeNull();
+            return;
           }
+          const b = turns.find((turn) => turn.id === terminal);
+          if (!terminal) throw new Error("expected split terminal turn");
+          expect(b?.parentTurnId).toBe(messageIds[1]);
+          expect(turns.find((turn) => turn.id === messageIds[1])?.parentTurnId).toBe(messageIds[0]);
+          expect(turns.find((turn) => turn.id === messageIds[0])?.parentTurnId).toBe(selector);
+          expect(turns.filter((turn) => messageIds.includes(turn.id))).toHaveLength(2);
+          expect((await repos.turns.findById(selector))?.status).toBe("complete");
+          const report = await repos.executionReports.findByExecution(ids.child, selector);
+          expect(report).toMatchObject({
+            executionTurnId: selector,
+            terminalTurnId: terminal,
+            outcome: "succeeded",
+            summary: "after steer",
+          });
+          expect(await repos.executionReports.findByExecution(ids.child, terminal)).toBeNull();
+          const costs = await Promise.all(
+            [selector, terminal].map((id) => repos.modelResponses.listByTurn(id)),
+          );
+          expect(report?.costMillicredits).toBe(
+            costs.flat().reduce((sum, response) => sum + Number(response.millicredits), 0),
+          );
           expect(await inbox.selectPending(ids.child)).toEqual([]);
           expect(await authority.holder(ids.child)).toBeNull();
-          return;
+          expect(events.filter((event) => event.type === "turn.completed").length).toBe(2);
+          {
+            expect(splitState).toMatchObject({
+              run: run.executionId,
+              report: { outcome: null, terminalTurnId: null },
+              lookup: { status: "unavailable" },
+              pending: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
+            });
+            const text = JSON.stringify(requests[1]?.messages);
+            expect(text.indexOf("before steer")).toBeLessThan(text.indexOf("child notification"));
+            expect(text.indexOf("child notification")).toBeLessThan(text.indexOf("writer steer"));
+          }
         }
-        const b = turns.find((turn) => turn.id === terminal);
-        if (!terminal) throw new Error("expected split terminal turn");
-        expect(b?.parentTurnId).toBe(messageIds[1]);
-        expect(turns.find((turn) => turn.id === messageIds[1])?.parentTurnId).toBe(messageIds[0]);
-        expect(turns.find((turn) => turn.id === messageIds[0])?.parentTurnId).toBe(selector);
-        expect(turns.filter((turn) => messageIds.includes(turn.id))).toHaveLength(2);
-        expect((await repos.turns.findById(selector))?.status).toBe("complete");
-        const report = await repos.executionReports.findByExecution(ids.child, selector);
-        expect(report).toMatchObject({
-          executionTurnId: selector,
-          terminalTurnId: terminal,
-          outcome: "succeeded",
-          summary: "after steer",
-        });
-        expect(await repos.executionReports.findByExecution(ids.child, terminal)).toBeNull();
-        const costs = await Promise.all(
-          [selector, terminal].map((id) => repos.modelResponses.listByTurn(id)),
-        );
-        expect(report?.costMillicredits).toBe(
-          costs.flat().reduce((sum, response) => sum + Number(response.millicredits), 0),
-        );
-        expect(await inbox.selectPending(ids.child)).toEqual([]);
-        expect(await authority.holder(ids.child)).toBeNull();
-        expect(events.filter((event) => event.type === "turn.completed").length).toBe(2);
-        {
-          expect(splitState).toMatchObject({
-            run: run.executionId,
-            report: { outcome: null, terminalTurnId: null },
-            lookup: { status: "unavailable" },
-            pending: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
-          });
-          const text = JSON.stringify(requests[1]?.messages);
-          expect(text.indexOf("before steer")).toBeLessThan(text.indexOf("child notification"));
-          expect(text.indexOf("child notification")).toBeLessThan(text.indexOf("writer steer"));
-        }
-      }
-    });
+      },
+    );
 
     it("rolls terminal turn and report obligation back together, then retries idempotently", async () => {
       // Risk: a failure logged for a settlement that never committed, or logged twice for one that retried.

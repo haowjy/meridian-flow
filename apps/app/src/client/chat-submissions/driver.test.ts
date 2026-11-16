@@ -251,45 +251,48 @@ describe("the journal driver", () => {
   });
 });
 
-it.each([
-  "refusal",
-  "retry",
-  "remint",
-  "creation",
-] as const)("%s rewrite refusal leaves the attempted row failed without changing durable identity", async (transition) => {
-  const r = rig({
-    lookup: async ({ submissionId }) => ({ kind: "rejected", submissionId, code: "refused" }),
-  });
-  const original = {
-    ...record(),
-    creation: transition === "creation" || transition === "refusal" ? record().creation : undefined,
-    state: transition === "retry" ? ("rejected" as const) : undefined,
-  };
-  r.records.set("record-1", original);
-  const statuses: Array<{ status: string; local?: "unsaved" | "lost" }> = [];
-  try {
-    const owner = r.mount({
-      journal: { entries: () => [...r.records.values()], record: () => false, retire: () => false },
-      status: (_entry, status, local) => {
-        statuses.push({ status, local });
-      },
-      ...(transition === "refusal"
-        ? {
-            create: async () => {
-              throw new HttpResponseError("refused", 400, null);
-            },
-          }
-        : {}),
-    }).owner;
-    if (transition === "retry" || transition === "remint") await owner.retry("sub-1");
-    else await owner.drive("thread_1");
-    expect(statuses.at(-1)).toEqual({ status: "error", local: "unsaved" });
-    expect(r.records.get("record-1")).toEqual(original);
-    expect(r.scenario.appendRequests).toHaveLength(0);
-  } finally {
-    r.dispose();
-  }
-});
+it.each(["refusal", "retry", "remint", "creation"] as const)(
+  "%s rewrite refusal leaves the attempted row failed without changing durable identity",
+  async (transition) => {
+    const r = rig({
+      lookup: async ({ submissionId }) => ({ kind: "rejected", submissionId, code: "refused" }),
+    });
+    const original = {
+      ...record(),
+      creation:
+        transition === "creation" || transition === "refusal" ? record().creation : undefined,
+      state: transition === "retry" ? ("rejected" as const) : undefined,
+    };
+    r.records.set("record-1", original);
+    const statuses: Array<{ status: string; local?: "unsaved" | "lost" }> = [];
+    try {
+      const owner = r.mount({
+        journal: {
+          entries: () => [...r.records.values()],
+          record: () => false,
+          retire: () => false,
+        },
+        status: (_entry, status, local) => {
+          statuses.push({ status, local });
+        },
+        ...(transition === "refusal"
+          ? {
+              create: async () => {
+                throw new HttpResponseError("refused", 400, null);
+              },
+            }
+          : {}),
+      }).owner;
+      if (transition === "retry" || transition === "remint") await owner.retry("sub-1");
+      else await owner.drive("thread_1");
+      expect(statuses.at(-1)).toEqual({ status: "error", local: "unsaved" });
+      expect(r.records.get("record-1")).toEqual(original);
+      expect(r.scenario.appendRequests).toHaveLength(0);
+    } finally {
+      r.dispose();
+    }
+  },
+);
 
 it("reports a projection exception and fails only the attempted record", async () => {
   const reported = vi.fn();
@@ -464,40 +467,39 @@ it("stops on owner-attested deletion from send, lookup or retire, without reject
   }
 });
 
-it.each([
-  "retry",
-  "edit",
-  "wake",
-])("incomplete deletion settles Couldn't send and can finish on %s", async (action) => {
-  const r = rig();
-  const entry = r.records.get("record-1");
-  if (!entry) throw new Error("Missing fixture");
-  r.records.set(entry.recordId, { ...entry, creation: undefined });
-  let complete = false;
-  const deleted = vi.fn(async () => complete);
-  const status = vi.fn();
-  const outcome = async () => ({ kind: "deleted" as const, submissionId: "sub-1" });
-  const { owner } = r.mount({
-    status,
-    deleted,
-    controller: {
-      recoverSubmission: outcome,
-      lookupSubmission: outcome,
-      retireSubmission: outcome,
-    },
-  });
-  await owner.drive("thread_1");
-  expect(status).toHaveBeenLastCalledWith(
-    expect.objectContaining({ recordId: "record-1" }),
-    "error",
-  );
-  complete = true;
-  if (action === "retry") await owner.retry("sub-1");
-  else if (action === "edit") await owner.edit("sub-1");
-  else await owner.drive("thread_1");
-  expect(deleted).toHaveBeenCalledTimes(2);
-  r.dispose();
-});
+it.each(["retry", "edit", "wake"])(
+  "incomplete deletion settles Couldn't send and can finish on %s",
+  async (action) => {
+    const r = rig();
+    const entry = r.records.get("record-1");
+    if (!entry) throw new Error("Missing fixture");
+    r.records.set(entry.recordId, { ...entry, creation: undefined });
+    let complete = false;
+    const deleted = vi.fn(async () => complete);
+    const status = vi.fn();
+    const outcome = async () => ({ kind: "deleted" as const, submissionId: "sub-1" });
+    const { owner } = r.mount({
+      status,
+      deleted,
+      controller: {
+        recoverSubmission: outcome,
+        lookupSubmission: outcome,
+        retireSubmission: outcome,
+      },
+    });
+    await owner.drive("thread_1");
+    expect(status).toHaveBeenLastCalledWith(
+      expect.objectContaining({ recordId: "record-1" }),
+      "error",
+    );
+    complete = true;
+    if (action === "retry") await owner.retry("sub-1");
+    else if (action === "edit") await owner.edit("sub-1");
+    else await owner.drive("thread_1");
+    expect(deleted).toHaveBeenCalledTimes(2);
+    r.dispose();
+  },
+);
 
 it("later Sends behind incomplete deletion settle every row without admission", async () => {
   const r = rig();
