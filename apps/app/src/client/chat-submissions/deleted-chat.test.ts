@@ -102,7 +102,6 @@ function fixture() {
       {
         visible: () => visible,
         title: () => "Arc 2 notes",
-        recordIds: () => new Set(records.map((row) => row.recordId)),
         leave: (moved) => {
           left = moved;
         },
@@ -158,27 +157,26 @@ it("moves the shown failed row and box ahead of New chat with a reload-safe note
   expect(empty.target.notices).toEqual([]);
   expect(empty.left()).toBe(false);
 });
-it("off-screen discards without moving or leaving a note", async () => {
-  const f = fixture();
-  f.hide();
-  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
-  expect(f.target.notices).toEqual([]);
-  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "Existing writing",
-  );
-  expect(f.source.initialDraft).toBeNull();
-  expect(f.records()).toEqual([]);
-  expect(f.left()).toBe(false);
-});
-it("own Delete and deleted projects retain nothing and never annotate", async () => {
-  for (const reason of ["own-delete", "project-deleted"] as const) {
+it("off-screen, own-delete and deleted-project cleanups move the words too", async () => {
+  for (const reason of ["deleted", "own-delete", "project-deleted"] as const) {
     const f = fixture();
+    f.hide();
     await cleanDeletedChat("owner", "chat", "project", reason, f.ports);
-    expect(f.records()).toEqual([]);
+    expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+      "Make the elder colder\n\nAnd quieter\n\nExisting writing",
+    );
+    expect(f.target.notices).toEqual([{ threadId: "chat", title: "Arc 2 notes", count: 2 }]);
     expect(f.source.initialDraft).toBeNull();
-    expect(f.target.notices).toEqual([]);
-    expect(f.left()).toBe(false);
+    expect(f.records()).toEqual([]);
   }
+});
+it("a chat whose project is unknown keeps its words in place", async () => {
+  const f = fixture();
+  expect(await cleanDeletedChat("owner", "chat", null, "deleted", f.ports)).toBe(true);
+  const g = fixture();
+  g.ports.records = () => g.records().map((row) => ({ ...row, projectId: null }));
+  expect(await cleanDeletedChat("owner", "chat", null, "deleted", g.ports)).toBe(false);
+  expect(g.source.initialDraft).not.toBeNull();
 });
 it("not-found keeps main's classification and has no deletion disposition", () => {
   expect(threadAvailability(proof("thread_not_found"), "owner")).toBe("not-found");
@@ -329,7 +327,7 @@ it("a held own delete keeps the chat's words and records through a send's deleti
   own.release();
   await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
   expect(f.records()).toEqual([]);
-  expect(f.target.notices).toEqual([]);
+  expect(f.target.notices).toHaveLength(1);
   await new Promise((resolve) => setTimeout(resolve, 0));
   lock.mockRestore();
 });

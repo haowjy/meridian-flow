@@ -1,4 +1,4 @@
-/** Attested deletion clears browser copies. Only the visible surface transfers words. */
+/** Attested deletion clears browser copies after the chat's unsent words move to its project's New chat box. */
 import {
   type ComposerDraftScope,
   type ComposerSessionDraft,
@@ -24,7 +24,6 @@ import { probeChatDestination, type ThreadAvailability } from "./thread-availabi
 export type DeletedChatSurface = {
   visible(): boolean;
   title(): string | null;
-  recordIds(): Set<string>;
   leave(moved: boolean): void;
 };
 export type DeletedChatPorts = {
@@ -97,37 +96,34 @@ export async function cleanDeletedChat(
   const clean = async () => {
     if (!ports.current() || !eligible()) return false;
     const mark = ownDeletes.get(key);
-    const ownDelete = mark?.epoch === getChatSubmissionEpoch();
-    if (ownDelete && mark.held) return false;
+    if (mark?.epoch === getChatSubmissionEpoch() && mark.held) return false;
     const panes = ports.surfaces();
-    const visible =
-      reason === "deleted" && !ownDelete ? panes.find((pane) => pane.visible()) : undefined;
     const source = ports.draft(accountId, { kind: "chat", id: threadId });
     const snapshot = ports.records();
     if (snapshot === null) return false;
     const records = snapshot.filter((entry) => entry.threadId === threadId);
+    // The box remembers its project for a chat no pane is showing (a reload, another tab's delete).
+    const project = projectId ?? source.project ?? records.find((e) => e.projectId)?.projectId;
+    const unsent = records.filter((entry) => !entry.control).sort(compareSubmissions);
+    const snapshots = unsent.map(
+      (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
+    );
+    const receipts = unsent.map((entry) => entry.recordId);
+    const box = source.initialDraft;
+    if (box && serializeComposerDraft(box.doc).text) snapshots.push(box);
     let moved = false;
-    if (visible && projectId) {
-      const shown = visible.recordIds();
-      const drafts = records.filter((entry) => shown.has(entry.recordId)).sort(compareSubmissions);
-      const snapshots = drafts.map(
-        (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
-      );
-      const receipts = drafts.map((entry) => entry.recordId);
-      const box = source.initialDraft;
-      if (box && serializeComposerDraft(box.doc).text) {
-        snapshots.push(box);
-      }
-      if (snapshots.length) {
-        const target = ports.draft(accountId, { kind: "new-chat", id: projectId });
-        moved = target.prependSnapshots(snapshots, receipts, {
+    if (snapshots.length) {
+      // No project to receive them: the words stay in this box and nothing is cleared.
+      if (!project) return false;
+      moved = ports
+        .draft(accountId, { kind: "new-chat", id: project })
+        .prependSnapshots(snapshots, receipts, {
           threadId,
-          title: visible.title(),
+          title: panes.map((pane) => pane.title()).find(Boolean) ?? null,
           count: snapshots.length,
         });
-        // Preserve the source if the tab cannot durably receive its words.
-        if (!moved) return false;
-      }
+      // Preserve the source if the tab cannot durably receive its words.
+      if (!moved) return false;
     }
     source.handoff();
     for (const entry of records) {

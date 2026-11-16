@@ -1,7 +1,7 @@
 /** Memoized composer lifecycle: drafts and typing do not follow transcript frames. */
 import type { Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { memo, type ReactNode, type Ref, useCallback, useRef } from "react";
+import { memo, type ReactNode, type Ref, useCallback, useEffect, useRef } from "react";
 import { chatUploadPort } from "@/client/api/context-upload-api";
 import type { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import {
@@ -73,6 +73,8 @@ function ChatComposerComponent({
 }: ChatComposerProps) {
   const place = usePanePlace();
   const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
+  const { setProject } = draft;
+  useEffect(() => setProject(projectId), [setProject, projectId]);
   const composer = useRef<ComposerHandle | null>(null);
   const composerRef = useCallback(
     (handle: ComposerHandle | null) => {

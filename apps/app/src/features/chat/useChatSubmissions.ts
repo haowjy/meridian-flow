@@ -74,7 +74,6 @@ export function useChatSubmissions(
     const unregisterDeletion = registerDeletedChatSurface(accountId, threadId, {
       visible: () => latest.current.deletion?.visible ?? false,
       title: () => latest.current.deletion?.title ?? null,
-      recordIds: owner.shownRecordIds,
       leave: (moved) => latest.current.deletion?.leave(moved),
     });
     driver.current = owner;

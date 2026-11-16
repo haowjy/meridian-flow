@@ -445,9 +445,6 @@ export class ChatSubmissionOwner {
       if (binding.options.current()) binding.publishPresentation();
   }
 
-  shownRecordIds = () =>
-    new Set([...this.model.rows.keys()].map((id) => id.slice(this.options.accountId.length + 1)));
-
   private entries() {
     return this.options.current()
       ? readChatSubmissions(this.options.accountId).filter(

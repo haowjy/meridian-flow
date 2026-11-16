@@ -29,6 +29,8 @@ type StoredComposerDraft = (ComposerDraftSnapshot | { doc: null }) & {
   chatId?: string;
   parked?: ParkedDraft[];
   about?: AttachedAbout;
+  /** A chat box's project, so its words can find the New chat box when no pane shows the chat. */
+  project?: string;
 };
 
 /** A document chip the composer put in a new chat on its own: it may replace it, unlike the writer's. */
@@ -87,8 +89,21 @@ export class ComposerSessionDraft {
   private readonly mintsChat: boolean;
   private parked: ParkedDraft[] = [];
   private attached: AttachedAbout | null = null;
-  private chatField(): { chatId?: string; parked?: ParkedDraft[]; about?: AttachedAbout } {
-    if (!this.mintsChat) return {};
+  /** Set once a pane shows the chat; saved with the draft's next write. */
+  project: string | null = null;
+  setProject = (project: string): void => {
+    if (this.mintsChat || this.project === project) return;
+    this.project = project;
+    this.dirty = true;
+    this.flush();
+  };
+  private chatField(): {
+    chatId?: string;
+    parked?: ParkedDraft[];
+    about?: AttachedAbout;
+    project?: string;
+  } {
+    if (!this.mintsChat) return this.project ? { project: this.project } : {};
     return {
       chatId: this.chatId,
       parked: this.parked,
@@ -356,6 +371,7 @@ export class ComposerSessionDraft {
                 ? { parked: value.parked.filter(isParkedDraft) }
                 : {}),
               ...(isAttachedAbout(value.about) ? { about: value.about } : {}),
+              ...(typeof value.project === "string" ? { project: value.project } : {}),
             };
       },
     );
@@ -368,6 +384,7 @@ export class ComposerSessionDraft {
     this.chatId = saved?.chatId ?? crypto.randomUUID();
     this.parked = saved?.parked ?? [];
     this.attached = saved?.about ?? null;
+    this.project = saved?.project ?? null;
   }
 
   get initialDraft(): ComposerDraftSnapshot | null {
