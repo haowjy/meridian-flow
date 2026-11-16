@@ -77,7 +77,7 @@ export function useComposerAgentToolbarControl(
   const value = !modelLabel
     ? name
     : fallsBack
-      ? t`${name}; ${modelLabel} isn't available, so it runs on its own model`
+      ? t`${name}; ${modelLabel} isn't available, so it runs on its default model`
       : t`${name} on ${modelLabel}`;
   const item = { ariaLabel: t`Agent: ${value}`, label: t`Agent`, value };
   // The other model's name; on a phone a chip icon, so the Agent's name keeps its place inline.
@@ -88,18 +88,15 @@ export function useComposerAgentToolbarControl(
         <>
           <span
             className={cn(
-              "ml-1.5 hidden font-normal sm:inline",
-              fallsBack ? "text-muted-foreground line-through" : "text-jade-text",
+              "ml-1.5 hidden font-normal text-muted-foreground sm:inline",
+              fallsBack && "line-through",
             )}
           >
             {modelLabel}
           </span>
           <Cpu
             aria-hidden
-            className={cn(
-              "ml-1 inline size-3.5 align-[-2px] sm:hidden",
-              fallsBack ? "text-muted-foreground" : "text-jade-text",
-            )}
+            className="ml-1 inline size-3.5 align-[-2px] text-muted-foreground sm:hidden"
           />
         </>
       ) : null}

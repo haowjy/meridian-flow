@@ -9,8 +9,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { dropdownGroupLabelClass } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { DisclosureMark } from "@/components/ui/marks";
-import { Picker, PickerSection } from "@/components/ui/picker";
+import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { cn } from "@/lib/utils";
@@ -23,8 +22,9 @@ export type ModelOption = { id: string; name: string; available: boolean };
 export type AgentChoice = { agent: CreationAgent; model: string | null };
 
 const ROW_PX = 32;
-const VISIBLE_ROWS = 8;
-const MIN_ROWS = 7;
+const VISIBLE_ROWS = 10;
+const MIN_ROWS = 8;
+const SEARCH_PX = 44;
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
@@ -53,9 +53,9 @@ type AgentPickerPanelProps = {
 };
 
 /**
- * The Agent picker: names on the left, the Agent pointed at on the right. Its size follows the
- * number of Agents alone, so nothing moves while the writer points or opens "Runs on"; each side
- * scrolls inside it.
+ * The Agent picker: a search and names on the left, the Agent pointed at and its models on the
+ * right. Its size follows the number of Agents alone, so nothing moves while the writer points or
+ * searches; each side scrolls inside it.
  */
 export function AgentPickerPanel({
   status,
@@ -70,6 +70,8 @@ export function AgentPickerPanel({
   focusRefs,
 }: AgentPickerPanelProps) {
   const [pointed, setPointed] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
   // A touch has no hover: its first tap on a row shows the row's detail, a second tap picks it.
   // Decided at pointer-down: Android focuses the row on tap, which points it before the click.
   const tapPicks = useRef(true);
@@ -99,17 +101,27 @@ export function AgentPickerPanel({
     );
 
   const own = started ? agents.find((agent) => agent.slug === current.slug) : undefined;
-  const listed = own ? agents.filter((agent) => agent !== own) : agents;
+  const needle = query.trim().toLowerCase();
+  const listed = agents.filter(
+    (agent) =>
+      agent !== own &&
+      (!needle ||
+        agent.name.toLowerCase().includes(needle) ||
+        agent.description.toLowerCase().includes(needle)),
+  );
   const shown =
-    agents.find((agent) => agent.slug === (pointed ?? current.slug)) ?? own ?? agents[0];
+    [...(own ? [own] : []), ...listed].find((agent) => agent.slug === (pointed ?? current.slug)) ??
+    own ??
+    listed[0] ??
+    agents[0];
   const sameName = new Set(
     agents.map((agent) => agent.name).filter((name, index, names) => names.indexOf(name) !== index),
   );
   const firstPickable = listed.find(pickable)?.slug;
   // A short list still leaves the detail room for its model choices.
-  const rows = Math.min(Math.max(listed.length + (own ? 2 : 0), MIN_ROWS), VISIBLE_ROWS);
-  // Header and footer lines plus the rows: the one height, whatever is pointed at.
-  const height = (rows + 1) * ROW_PX + 24;
+  const rows = Math.min(Math.max(agents.length + (own ? 1 : 0), MIN_ROWS), VISIBLE_ROWS);
+  // The search, the footer line and the rows: the one height, whatever is pointed at or searched.
+  const height = SEARCH_PX + (rows + 1) * ROW_PX + 24;
 
   const choose = (agent: AgentCatalogItem, model: string | null) => {
     if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), model });
@@ -170,6 +182,19 @@ export function AgentPickerPanel({
           <div
             ref={listRef}
             onKeyDown={(event) => {
+              // Typing on a row searches, as it would with the search focused.
+              if (
+                event.key.length === 1 &&
+                !event.metaKey &&
+                !event.ctrlKey &&
+                !event.altKey &&
+                event.target !== searchRef.current
+              ) {
+                event.preventDefault();
+                setQuery((value) => value + event.key);
+                searchRef.current?.focus();
+                return;
+              }
               if (event.key === "ArrowRight" && event.target instanceof HTMLElement) {
                 if (!event.target.closest("li[data-agent]")) return;
                 event.preventDefault();
@@ -186,6 +211,21 @@ export function AgentPickerPanel({
             }}
             className="flex min-h-0 flex-1 flex-col @[28rem]/agents:w-52 @[28rem]/agents:flex-none @[28rem]/agents:border-r @[28rem]/agents:border-border-subtle @[28rem]/agents:pr-1"
           >
+            <div className="shrink-0 pb-1">
+              <PickerSearch
+                ref={searchRef}
+                value={query}
+                onChange={(value) => {
+                  setQuery(value);
+                  setPointed(null);
+                }}
+                onSubmit={() => {
+                  const first = listed.find(pickable);
+                  if (first) choose(first, null);
+                }}
+                label={t`Search Agents`}
+              />
+            </div>
             {own ? (
               <section aria-label={t`This chat`} className="shrink-0">
                 <h3 className={dropdownGroupLabelClass}>
@@ -203,7 +243,17 @@ export function AgentPickerPanel({
                   <Trans>Hand off to</Trans>
                 </h3>
               ) : null}
-              <PickerSection>{listed.map(row)}</PickerSection>
+              <PickerSection
+                state={
+                  listed.length === 0 ? (
+                    <ListLine density="menu" status>
+                      <Trans>No Agents match.</Trans>
+                    </ListLine>
+                  ) : undefined
+                }
+              >
+                {listed.map(row)}
+              </PickerSection>
             </section>
             <ul className="mt-1 shrink-0 border-t border-border-subtle pt-1">
               <li>
@@ -282,7 +332,6 @@ function AgentDetail({
   onChoose: (model: string | null) => void;
   onOpenFile: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const runsOn = model ?? agent.model;
   const usable = pickable(agent);
   return (
@@ -315,7 +364,7 @@ function AgentDetail({
         // Touch picks here, having no hover to point with; a mouse or the keyboard picks the row.
         <button
           type="button"
-          className="hidden self-start rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground [@media(hover:none)]:inline-flex coarse:inline-flex"
+          className="hidden self-start rounded-md bg-ink-fill-strong px-3 py-1.5 text-sm font-medium text-foreground [@media(hover:none)]:inline-flex coarse:inline-flex"
           onClick={onUse}
         >
           {useLabel}
@@ -334,7 +383,7 @@ function AgentDetail({
           {agent.path && agent.level !== "builtin" ? (
             <button
               type="button"
-              className="self-start text-sm font-medium text-jade-text hover:underline underline-offset-2"
+              className="self-start text-sm font-medium underline underline-offset-2"
               onClick={onOpenFile}
             >
               {t`Open ${fileName(agent)}`}
@@ -342,40 +391,27 @@ function AgentDetail({
           ) : null}
         </div>
       ) : (
-        <div className="flex flex-col">
-          <button
-            type="button"
-            aria-expanded={open}
-            className="flex items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm hover:bg-ink-fill"
-            onClick={() => setOpen((value) => !value)}
-          >
-            <span className="text-muted-foreground">
-              {thisChat ? <Trans>This chat runs on</Trans> : <Trans>Runs on</Trans>}
-            </span>
-            <span className={cn("min-w-0 truncate", model && "text-jade-text")}>
-              {runsOn ? modelName(models, runsOn) : t`the default model`}
-            </span>
-            <DisclosureMark open={open} className="ml-auto" />
-          </button>
+        <section
+          aria-label={t`Model`}
+          className="-mx-2 flex flex-col border-t border-border-subtle px-2 pt-2"
+        >
           {runsOn && models && !runsAvailable(models, runsOn) ? (
-            <p className="px-1 pb-1 text-xs text-muted-foreground">
+            <p className="pb-1 text-xs text-muted-foreground">
               {t`${modelName(models, runsOn)} isn't available now, so replies use ${agent.model ? modelName(models, agent.model) : t`the default model`}.`}
             </p>
           ) : null}
-          {open && thisChat ? (
-            <p className="px-1 pb-1 text-xs text-muted-foreground">
-              <Trans>Changing the model rebuilds this chat's cache on the next reply.</Trans>
+          {thisChat ? (
+            <p className="pb-1 text-xs text-muted-foreground">
+              <Trans>Changing it rebuilds the chat's cache.</Trans>
             </p>
           ) : null}
-          {open ? (
-            <ModelChoices
-              own={agent.model}
-              runsOn={runsOn}
-              models={models}
-              onChoose={(id) => onChoose(id === agent.model ? null : id)}
-            />
-          ) : null}
-        </div>
+          <ModelChoices
+            own={agent.model}
+            runsOn={runsOn}
+            models={models}
+            onChoose={(id) => onChoose(id === agent.model ? null : id)}
+          />
+        </section>
       )}
     </div>
   );
@@ -409,14 +445,10 @@ function ModelChoices({
             density="menu"
             disabled={!option.available}
             leading={
-              <Check
-                aria-hidden
-                className={cn("size-3.5 text-jade-text", option.id !== runsOn && "invisible")}
-              />
+              <Check aria-hidden className={cn("size-3.5", option.id !== runsOn && "invisible")} />
             }
-            current={option.id === runsOn}
             title={option.name}
-            meta={option.id === own ? t`its own` : undefined}
+            meta={option.id === own ? t`Default` : undefined}
             onOpen={() => onChoose(option.id)}
           />
         </li>

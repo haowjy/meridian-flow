@@ -114,17 +114,8 @@ export function ComposerToolbar({
         get contextElement() {
           return resolveAnchorHost();
         },
-        // Lined up with the trigger, but standing on the composer box's top edge: a panel
-        // opening upward from the trigger itself covers the box and reads as under it.
-        getBoundingClientRect: () => {
-          const host = resolveAnchorHost();
-          if (!host) return new DOMRect();
-          const trigger = host.getBoundingClientRect();
-          const box = host.closest("[data-composer]")?.getBoundingClientRect();
-          return box
-            ? new DOMRect(trigger.x, box.top, trigger.width, trigger.bottom - box.top)
-            : trigger;
-        },
+        // On the trigger itself, so a tall panel may cover the composer box above it.
+        getBoundingClientRect: () => resolveAnchorHost()?.getBoundingClientRect() ?? new DOMRect(),
       },
     }),
     // A new virtual element makes Radix re-register its reference after the new host commits.
