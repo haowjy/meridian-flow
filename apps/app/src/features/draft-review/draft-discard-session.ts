@@ -12,6 +12,7 @@ import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftRoomRegistry } from "@/core/editor/draft-room-read";
 import { readDraftRoom } from "@/core/editor/draft-room-read";
+import { endUndoStep } from "@/core/editor/editor-history";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
 import type { DiscardUndo } from "./draft-notices";
 import type { GroupsTarget } from "./review-model";
@@ -67,14 +68,12 @@ export function startDraftDiscardSession(input: {
   if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id))) return null;
   const doc = binding.session.document;
   const fragment = doc.getXmlFragment("prosemirror");
-  if (!editor)
-    for (const attached of binding.runtime.editors())
-      yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
+  if (!editor) for (const attached of binding.runtime.editors()) endUndoStep(attached.state);
   // Its own origin, so the write is one stack item the notice can name.
   const origin = {};
-  const history: Y.UndoManager = editor
-    ? yUndoPluginKey.getState(editor.state).undoManager
-    : new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
+  const history: Y.UndoManager =
+    (editor ? yUndoPluginKey.getState(editor.state)?.undoManager : undefined) ??
+    new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
   history.addTrackedOrigin(origin);
   recordRestorations(history);
   history.stopCapturing();
