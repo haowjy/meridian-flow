@@ -28,7 +28,8 @@
     "./release": "./src/release/index.ts",
     "./failures": "./src/failures/index.ts",
     "./errors": "./src/errors/index.ts",
-    "./artifacts": "./src/artifacts/index.ts"
+    "./artifacts": "./src/artifacts/index.ts",
+    "./mcp": "./src/mcp/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

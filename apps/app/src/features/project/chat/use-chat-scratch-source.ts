@@ -18,7 +18,7 @@ export function useChatScratchSource(
   projectId: string,
   threadId: string | null,
 ): ScratchSource | null {
-  const { works, noWork } = useWorks(projectId);
+  const { works, noWork, nameOf } = useWorks(projectId);
   const thread = useDisplayedThread(projectId, threadId);
   const work =
     thread?.workId && noWork
@@ -28,7 +28,7 @@ export function useChatScratchSource(
   const rootThreadId = owner?.kind === "lineage" ? owner.rootThreadId : null;
   const workId = owner?.kind === "work" ? owner.workId : null;
   const earlierRootThreadId = owner?.kind === "work" ? (thread?.rootThreadId ?? null) : null;
-  const workName = owner?.kind === "work" ? work?.name : undefined;
+  const workName = owner?.kind === "work" && work ? nameOf(work) : undefined;
   return useMemo(() => {
     if (!owner || !thread) return null;
     return {

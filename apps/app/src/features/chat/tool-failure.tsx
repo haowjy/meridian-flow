@@ -1,6 +1,7 @@
 /** Why a tool call failed, as a failed row says it: localized for codes the app knows. */
 
 import { t } from "@lingui/core/macro";
+import type { McpFailureCode } from "@meridian/contracts/mcp";
 import {
   meridianErrorFromStructuredToolOutput,
   TOOL_EXCEPTION_CODE,
@@ -23,7 +24,7 @@ const INVALID_ARGUMENTS = () => t`The assistant called this tool with arguments 
  * A refusal's own message, localized where the app knows the code. A caught exception
  * (`TOOL_EXCEPTION_CODE`) can carry SQL or internal ids, so it reads as generic copy.
  */
-function failureText(result: NonNullable<ToolView["result"]>): string {
+export function failureText(result: NonNullable<ToolView["result"]>): string {
   const record =
     typeof result === "object" && !Array.isArray(result) ? (result as { error?: unknown }) : null;
   if (record?.error === "invalid_arguments") return INVALID_ARGUMENTS();
@@ -31,6 +32,8 @@ function failureText(result: NonNullable<ToolView["result"]>): string {
   // Spawn and thread_message refusals nest their error under `error`.
   const nested = record?.error && typeof record.error === "object" ? record.error : null;
   const error = meridianErrorFromStructuredToolOutput((nested ?? result) as typeof result);
+  const mcp = mcpFailureText(error.code, record);
+  if (mcp !== null) return mcp;
   switch (error.code) {
     case "tool_arguments_parse":
       return INVALID_ARGUMENTS();
@@ -50,6 +53,32 @@ function failureText(result: NonNullable<ToolView["result"]>): string {
         : error.message;
     default:
       return error.message;
+  }
+}
+
+/** A connection tool's failure, named for its connection where the result names one. */
+function mcpFailureText(code: string, record: object | null): string | null {
+  const connection = record && "connection" in record ? record.connection : null;
+  const name = typeof connection === "string" ? connection : null;
+  switch (code as McpFailureCode) {
+    case "mcp_tool_error":
+      return t`The tool ran and reported a problem.`;
+    case "mcp_rejected":
+      return name ? t`${name} refused the request.` : t`The server refused the request.`;
+    case "mcp_too_large":
+      return t`The reply was too large to keep.`;
+    case "mcp_unreachable":
+      return name ? t`${name} couldn't be reached.` : t`The server couldn't be reached.`;
+    case "mcp_unauthorized":
+      return name ? t`${name} needs a valid token.` : t`The server needs a valid token.`;
+    case "mcp_aborted":
+      return t`This was stopped before it finished.`;
+    case "mcp_unknown_tool":
+      return t`This chat has no connection tool by that name.`;
+    case "mcp_connection_removed":
+      return name ? t`${name} was removed from your connections.` : t`This connection was removed.`;
+    default:
+      return null;
   }
 }
 

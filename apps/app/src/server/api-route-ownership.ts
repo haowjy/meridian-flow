@@ -27,6 +27,7 @@ const API_ROUTE_OWNERSHIP = [
   { owner: "server", path: "/api/projects", match: "family" },
   { owner: "server", path: "/api/imports", match: "family" },
   { owner: "server", path: "/api/works", match: "family" },
+  { owner: "server", path: "/api/mcp", match: "family" },
   { owner: "server", path: "/api/commands", match: "family" },
   { owner: "server", path: "/api/documents", match: "family" },
   { owner: "server", path: "/api/debug", match: "family" },

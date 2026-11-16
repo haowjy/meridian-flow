@@ -112,6 +112,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ownerThreadId: THREAD_ID,
         composedSystemPrompt: "concurrent bake",
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
         contentHash: "concurrent-bake",
       });

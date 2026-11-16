@@ -5,6 +5,7 @@
 
 import type { MeridianError } from "../errors/index.js";
 import type { PromptBakeId, TurnId } from "../ids.js";
+import type { McpScriptCall } from "../mcp/tool-results.js";
 import type { AgentReport, SavedOutcome, SpawnResult } from "../spawn/index.js";
 import type { WorkContextProjectionSignal } from "../works/index.js";
 import type { ThreadAsk } from "./asks.js";
@@ -90,6 +91,18 @@ export type OrchestratorEvent =
       stream: "stdout" | "stderr";
       /** Incremental chunk, not cumulative text. Consumers append chunks in event order. */
       text: string;
+    }
+  | {
+      /**
+       * A call a running `mcp_run` script made: sent when its record is written, then again with
+       * `call` when it completes. Live rows only; the final `tool.result` carries every call.
+       */
+      type: "tool.connection_call";
+      toolCallId: string;
+      sequence: number;
+      id: string;
+      arguments: JsonValue;
+      call?: McpScriptCall;
     }
   | {
       type: "tool.result";

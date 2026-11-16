@@ -4,12 +4,14 @@
  * credentials, and production auth placeholders.
  */
 import type { ObjectStoreProvider } from "./backend-policy.js";
+import { DEV_MCP_TOKEN_KEY } from "./mcp-token-key.js";
 
 const DEFAULT_DEV_SECRETS = new Set([
   "",
   "dev-workos-key",
   "dev-workos-client",
   "dev-object-store-secret",
+  DEV_MCP_TOKEN_KEY,
 ]);
 const WORKOS_TEST_API_KEY_PATTERN = /^sk_test_/i;
 
@@ -36,6 +38,7 @@ export type ApiStartupEnv = {
   WORKOS_API_KEY: string;
   WORKOS_CLIENT_ID: string;
   WORKOS_COOKIE_PASSWORD?: string;
+  MCP_TOKEN_KEY?: string;
   API_REPLICA_COUNT?: number;
   DURABLE_EVENT_BACKEND: string;
 };
@@ -134,6 +137,12 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
       config.WORKOS_CLIENT_ID,
       "must be set to a real WorkOS client id in production.",
     );
+    requireRealSecret(
+      errors,
+      "MCP_TOKEN_KEY",
+      config.MCP_TOKEN_KEY,
+      "must be set to 32 random bytes, base64 encoded (openssl rand -base64 32), in production.",
+    );
     requireValue(
       errors,
       "WORKOS_COOKIE_PASSWORD",
@@ -178,6 +187,7 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     WORKOS_API_KEY: env.WORKOS_API_KEY,
     WORKOS_CLIENT_ID: env.WORKOS_CLIENT_ID,
     WORKOS_COOKIE_PASSWORD: env.WORKOS_COOKIE_PASSWORD,
+    MCP_TOKEN_KEY: process.env.MCP_TOKEN_KEY,
     API_REPLICA_COUNT: process.env.API_REPLICA_COUNT
       ? Number(process.env.API_REPLICA_COUNT)
       : undefined,

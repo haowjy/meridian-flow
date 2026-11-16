@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
+import { WorkName } from "@/components/app/WorkName";
 import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
@@ -48,13 +49,14 @@ export function WorkScopePicker({
   /** Opens the Manage Works dialog: new, rename, archive, restore, delete, and a Work's changes. */
   onManage: () => void;
 }) {
-  const { works, deleted, noWork } = useWorks(projectId);
+  const { works, deleted, noWork, nameOf } = useWorks(projectId);
   const bringBack = useBringWorkBack(projectId);
   const { threads } = useProjectThreads(projectId);
   const needsYou = useMemo(() => countNeedsYou(threads), [threads]);
   const active = works?.filter((work) => work.archivedAt === null) ?? [];
   const archived = works?.filter((work) => work.archivedAt !== null) ?? [];
   const scoped = [...(works ?? []), ...deleted].find((work) => work.id === workId) ?? null;
+  const scopedName = scoped ? nameOf(scoped) : "";
   const ended = scoped ? workLifecycleState(scoped) : "active";
   const noWorkScoped = workId !== null && workId === noWork?.id;
   // The chip says whose drafts the toggle and Changes show, and the count Changes has.
@@ -113,9 +115,9 @@ export function WorkScopePicker({
           <>
             <DropdownMenuItem onSelect={() => void bringBack(scoped)}>
               {ended === "deleted" ? (
-                <Trans>Restore {scoped.name}</Trans>
+                <Trans>Restore {scopedName}</Trans>
               ) : (
-                <Trans>Unarchive {scoped.name}</Trans>
+                <Trans>Unarchive {scopedName}</Trans>
               )}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -135,7 +137,7 @@ export function WorkScopePicker({
             {active.map((work) => (
               <PickRow
                 key={work.id}
-                name={work.name}
+                name={<WorkName work={work} />}
                 selected={work.id === scoped?.id}
                 onSelect={() => onPick(work.id)}
                 detail={<WorkState work={work} needsYou={needsYou.get(work.id) ?? 0} />}
@@ -153,7 +155,7 @@ export function WorkScopePicker({
               {archived.map((work) => (
                 <PickRow
                   key={work.id}
-                  name={work.name}
+                  name={<WorkName work={work} />}
                   selected={work.id === scoped?.id}
                   onSelect={() => onPick(work.id)}
                   detail={null}
@@ -176,14 +178,14 @@ function PickRow({
   onSelect,
   detail,
 }: {
-  name: string;
+  name: React.ReactNode;
   selected: boolean;
   onSelect: () => void;
   detail: React.ReactNode;
 }) {
   return (
     <DropdownMenuItem selected={selected} onSelect={onSelect}>
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="flex min-w-0 flex-1">{name}</span>
       {detail}
     </DropdownMenuItem>
   );

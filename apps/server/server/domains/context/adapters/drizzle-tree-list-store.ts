@@ -127,6 +127,8 @@ export function createDrizzleTreeListStore(deps: {
    * outside any Work lock: the Works boundary recounts them once the commit lands.
    */
   recountAfterCommit?: (owners: OwnerLocks) => void;
+  /** Branches with rows on nodes live changed: their owners' lists are read again after commit. */
+  liveChangedUnder?: (branchIds: readonly string[]) => void;
 }): PgTreeListStore {
   const { db, journal } = deps;
   const copies = new Map<string, Copy>();
@@ -288,7 +290,12 @@ export function createDrizzleTreeListStore(deps: {
     // Delivered at the commit, to every instance: a room on another process catches up from it.
     await tx.execute(sql`select pg_notify(${CHANNEL}, ${listId})`);
     await testHook("treeList.afterAppend");
-    const { created: made, changedBranches } = await syncRows(tx, list, listId, copy.doc, created);
+    const {
+      created: made,
+      changedBranches,
+      liveChangedUnder,
+    } = await syncRows(tx, list, listId, copy.doc, created);
+    if (liveChangedUnder.length > 0) deps.liveChangedUnder?.(liveChangedUnder);
     if (changedBranches.length > 0 && deps.recountAfterCommit) {
       const owners = await tx
         .select({ work: branches.originWorkId, root: branches.originRootThreadId })

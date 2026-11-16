@@ -15,6 +15,7 @@ import {
   isSourceRoot,
   LIVE,
   listRecords,
+  type MovePlace,
   type NodeKind,
   sourceIdOf,
   sourceRoot,
@@ -384,33 +385,45 @@ function keptTrashed(cx: Context, projection: TreeProjection, trashed: readonly 
 }
 
 /**
- * The place among the destination folder's shown children a position names, and what to say if its
- * anchor left. The anchor's name is looked up in the destination folder.
+ * Where a position puts the nodes moved into `parent`, and what to say when it puts them at the end
+ * instead: its anchor left the folder, or is one of the nodes being moved. The anchor's name is
+ * looked up in the destination folder.
  */
-function indexFor(
+function placeFor(
   cx: Context,
   parent: string,
-  moving: string | undefined,
+  moving: readonly string[],
   position: Placement | undefined,
-): { index: number; atEnd?: string } {
+): { place: MovePlace; atEnd?: string } {
+  if (!position || position.kind === "end" || position.kind === "start")
+    return { place: { kind: position?.kind ?? "end" } };
   const projection = cx.scope.writer.view(cx.scope.view);
-  const siblings = childrenOf(projection, parent).filter((node) => node.id !== moving);
-  if (!position || position.kind === "end") return { index: siblings.length };
-  if (position.kind === "start") return { index: 0 };
   const written = pathFrom(cx, position.sibling);
   const name = written.segments.at(-1);
   const sibling =
     name === undefined
       ? undefined
       : resolveShown(projection, cx.shown, parent, { segments: [name], folder: written.folder });
-  const at =
-    sibling?.kind === "node" ? siblings.findIndex((node) => node.id === sibling.node.id) : -1;
-  if (at < 0)
-    return {
-      index: siblings.length,
-      atEnd: `${uriOfPath(cx, position.sibling)} is no longer in this folder`,
-    };
-  return { index: position.kind === "before" ? at : at + 1 };
+  const anchor = sibling?.kind === "node" ? sibling.node : undefined;
+  const uri = uriOfPath(cx, position.sibling);
+  if (!anchor || anchor.parent !== parent || anchor.trashed)
+    return { place: { kind: "end" }, atEnd: `${uri} is no longer in this folder` };
+  if (moving.includes(anchor.id))
+    return { place: { kind: "end" }, atEnd: `${uri} is itself being moved` };
+  return { place: { kind: position.kind, siblingId: anchor.id } };
+}
+
+/** The nearest folder above `node` that is in `named`. */
+function carrierOf<T>(
+  projection: TreeProjection,
+  node: string,
+  named: ReadonlyMap<string, T>,
+): T | undefined {
+  for (let at = projection.nodes.get(node)?.parent; at; at = projection.nodes.get(at)?.parent) {
+    const carrier = named.get(at);
+    if (carrier) return carrier;
+  }
+  return undefined;
 }
 
 /** Whether `parent` is `node` or inside it: a move there would put a folder inside itself. */
@@ -456,24 +469,37 @@ type Skipped = {
   leftOut?: LeftOut;
 };
 
+/** A move decided: its notes are written and its destination folder made; its records follow. */
+type Decided = {
+  node: TreeNode;
+  folder: string;
+  /** Whether it needs a move record; a rename alone does not. */
+  moves: boolean;
+  rename?: { name: string; filetype?: Filetype };
+  shownAt: string;
+  toUri: string;
+  oldParent: string;
+  oldName: string;
+  kept?: string;
+};
+
 /**
- * One node moved, renamed or placed. Everything that can stop it is decided before the first
+ * One node to move, rename or place. Everything that can stop it is decided before the first
  * record is made, so a move that does nothing stores nothing (and neither does a call whose
  * items all do nothing: `SourceTree.run` drops what a call without records made).
  */
-function moveOne(
+function decideMove(
   cx: Context,
   from: string,
   to: Located,
   toUri: string,
   position: Placement | undefined,
   filled: Array<{ folder: string; name: string; node: string }>,
-  emptied: Array<{ folder: string; name: string }>,
   viaMany: boolean,
 ):
-  | { done: Done; fail?: undefined; skip?: undefined }
-  | { fail: Refused; done?: undefined; skip?: undefined }
-  | { skip: Skipped; fail?: undefined; done?: undefined } {
+  | { go: Decided; fail?: undefined; skip?: undefined }
+  | { fail: Refused; go?: undefined; skip?: undefined }
+  | { skip: Skipped; fail?: undefined; go?: undefined } {
   const { scope } = cx;
   const projection = scope.writer.view(scope.view);
   const source = pathFrom(cx, from);
@@ -541,47 +567,79 @@ function moveOne(
       `deleted: ${fromUri}; this move brought it back`,
     );
   const folder = makeDestination(cx, destination, filled);
-  const { index, atEnd } = indexFor(cx, folder, node.id, position);
-  const oldParent = node.parent;
-  const oldName = node.displayName;
-  if (!sameParent || position || node.trashed) {
-    const record = scope.writer.move(scope.view, scope.actor, node.id, folder, index);
-    remember(cx, record.id, node.id);
-  }
-  if (name !== undefined) {
+  const kept = keptTrashed(cx, projection, destination.trashed);
+  return {
+    go: {
+      node,
+      folder,
+      moves: !sameParent || position !== undefined || node.trashed,
+      ...(name !== undefined
+        ? {
+            rename: {
+              name,
+              ...(filetype && filetype !== node.filetype ? { filetype } : {}),
+            },
+          }
+        : {}),
+      shownAt: from,
+      toUri,
+      oldParent: node.parent,
+      oldName: node.displayName,
+      ...(kept ? { kept } : {}),
+    },
+  };
+}
+
+/**
+ * The records for decided moves into one folder: one `moveAll` at `place`, so several land
+ * together in the order given, then any rename.
+ */
+function writeMoves(cx: Context, decided: readonly Decided[], folder: string, place: MovePlace) {
+  const { scope } = cx;
+  const moving = decided.filter((item) => item.moves).map((item) => item.node.id);
+  if (moving.length > 0)
+    for (const record of scope.writer.moveAll(scope.view, scope.actor, moving, folder, place))
+      remember(cx, record.id, record.node);
+  for (const item of decided) {
+    if (!item.rename) continue;
     const record = scope.writer.rename(
       scope.view,
       scope.actor,
-      node.id,
-      name,
-      filetype && filetype !== node.filetype ? filetype : undefined,
+      item.node.id,
+      item.rename.name,
+      item.rename.filetype,
     );
-    remember(cx, record.id, node.id);
+    remember(cx, record.id, item.node.id);
   }
-  const final = scope.writer.view(scope.view);
-  const landedNode = final.nodes.get(node.id) as TreeNode;
-  emptied.push({ folder: oldParent, name: oldName });
-  filled.push({ folder: landedNode.parent, name: landedNode.displayName, node: node.id });
+}
+
+/** What a decided move did, once its records are written. */
+function landed(
+  cx: Context,
+  item: Decided,
+  filled: Array<{ folder: string; name: string; node: string }>,
+  emptied: Array<{ folder: string; name: string }>,
+): Done {
+  const final = cx.scope.writer.view(cx.scope.view);
+  const landedNode = final.nodes.get(item.node.id) as TreeNode;
+  emptied.push({ folder: item.oldParent, name: item.oldName });
+  filled.push({ folder: landedNode.parent, name: landedNode.displayName, node: item.node.id });
   const landedAt = nodeUri(cx, final, landedNode);
-  const kept = keptTrashed(cx, projection, destination.trashed);
   return {
-    done: {
-      ok: true,
-      subject: node.id,
-      made: [],
-      shownAt: from,
-      landedAt,
-      ...(landedAt !== toUri ? { landed: landedAt } : {}),
-      ...(atEnd ? { placedAtEnd: atEnd } : {}),
-      ...(kept ? { kept } : {}),
-      ...(landedNode.keptByPending ? { deletedInLive: true as const } : {}),
-      notMoved: [],
-      concurrent: [],
-      taken: [],
-      arrived: node.kind === "folder" ? [] : [node.id],
-      touched: [],
-      delta: { whole: [], names: [] },
-    },
+    ok: true,
+    subject: item.node.id,
+    made: [],
+    shownAt: item.shownAt,
+    landedAt,
+    ...(landedAt !== item.toUri ? { landed: landedAt } : {}),
+    ...(item.kept ? { kept: item.kept } : {}),
+    ...(landedNode.keptByPending ? { deletedInLive: true as const } : {}),
+    notMoved: [],
+    concurrent: [],
+    taken: [],
+    arrived: item.node.kind === "folder" ? [] : [item.node.id],
+    touched: [],
+    delta: { whole: [], names: [] },
   };
 }
 
@@ -805,14 +863,13 @@ export function runTreeCommand(
         const target: Located = into
           ? { ...to, segments: [...to.segments, leaf], folder: fromPath.folder }
           : to;
-        const moved = moveOne(
+        const moved = decideMove(
           cx,
           from,
           target,
           into ? uriOf(to.area, target.segments, target.folder) : toUri,
           command.position,
           filled,
-          emptied,
           false,
         );
         if (moved.skip)
@@ -824,7 +881,18 @@ export function runTreeCommand(
             }),
           );
         if (moved.fail) return moved.fail;
-        return finish({ ...moved.done, delta: changeDelta(emptied, filled) });
+        const { place, atEnd } = placeFor(
+          cx,
+          moved.go.folder,
+          [moved.go.node.id],
+          command.position,
+        );
+        writeMoves(cx, [moved.go], moved.go.folder, place);
+        return finish({
+          ...landed(cx, moved.go, filled, emptied),
+          ...(atEnd ? { placedAtEnd: atEnd } : {}),
+          delta: changeDelta(emptied, filled),
+        });
       }
       // Several into one folder: each on its own, what could be moved is moved.
       const folder = destinationParent(cx, to, to.segments);
@@ -838,9 +906,10 @@ export function runTreeCommand(
       if (folder.kind === "refused") return folder.refused;
       const notMoved: string[] = [];
       const leftOut: LeftOut[] = [];
-      const arrived: string[] = [];
+      const going: Decided[] = [];
+      /** Each node named, first naming first, and whether it moves: what a folder carries goes with it. */
+      const named = new Map<string, { from: string; goes: boolean }>();
       let nothingToMake: string | undefined;
-      let made = 0;
       for (const from of command.from) {
         const fromPath = pathFrom(cx, from);
         const leaf = fromPath.segments.at(-1) ?? "";
@@ -849,24 +918,59 @@ export function runTreeCommand(
           segments: [...to.segments, leaf],
           folder: fromPath.folder,
         };
-        const result = moveOne(
+        const result = decideMove(
           cx,
           from,
           item,
           uriOf(to.area, item.segments, item.folder),
-          undefined,
+          command.position,
           filled,
-          emptied,
           true,
         );
         if (result.skip) {
           if (result.skip.notMoved) notMoved.push(result.skip.notMoved);
           if (result.skip.leftOut) leftOut.push(result.skip.leftOut);
           nothingToMake ??= result.skip.node;
-        } else if (result.done) {
-          made += 1;
-          arrived.push(...result.done.arrived);
+          if (result.skip.node && !named.has(result.skip.node))
+            named.set(result.skip.node, { from, goes: false });
+        } else if (result.go) {
+          going.push(result.go);
+          if (!named.has(result.go.node.id)) named.set(result.go.node.id, { from, goes: true });
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
+      }
+      // As the sidebar's `outermost`: a node named twice, or inside a folder also named, moves once,
+      // with that folder; it counts as moved when the folder does.
+      const decided: Decided[] = [];
+      let made = 0;
+      for (const item of going) {
+        const carrier = carrierOf(projection, item.node.id, named);
+        if (carrier && !carrier.goes) {
+          notMoved.push(`${uriOfPath(cx, item.shownAt)} (inside ${uriOfPath(cx, carrier.from)})`);
+          continue;
+        }
+        made += 1;
+        if (!carrier && !decided.some((other) => other.node.id === item.node.id))
+          decided.push(item);
+      }
+      // Every item shares the destination and the anchor: one placement, so they land in order.
+      const into = decided[0]?.folder;
+      let placedAtEnd: string | undefined;
+      let deletedInLive = false;
+      const arrived: string[] = [];
+      if (into !== undefined) {
+        const placed = placeFor(
+          cx,
+          into,
+          decided.filter((item) => item.moves).map((item) => item.node.id),
+          command.position,
+        );
+        placedAtEnd = placed.atEnd;
+        writeMoves(cx, decided, into, placed.place);
+        for (const item of decided) {
+          const done = landed(cx, item, filled, emptied);
+          deletedInLive ||= done.deletedInLive === true;
+          arrived.push(...done.arrived);
+        }
       }
       if (made === 0) {
         // Everything was already there or left out: the call is done. Anything else named nothing.
@@ -889,6 +993,8 @@ export function runTreeCommand(
         notMoved,
         ...(leftOut.length > 0 ? { leftOut } : {}),
         ...(kept ? { kept } : {}),
+        ...(placedAtEnd ? { placedAtEnd } : {}),
+        ...(deletedInLive ? { deletedInLive: true as const } : {}),
         concurrent: [],
         taken: [],
         arrived,

@@ -70,11 +70,13 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           {
             composedSystemPrompt: "First retained prompt",
             bakedSkillSlugs: ["first-skill"],
+            bakedConnections: [],
             bakedTools: [],
           },
           {
             composedSystemPrompt: "Second retained prompt",
             bakedSkillSlugs: ["second-skill"],
+            bakedConnections: [],
             bakedTools: [],
           },
         ];
@@ -90,6 +92,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         expect(candidates).toContainEqual({
           composedSystemPrompt: winners[0].bake.composedSystemPrompt,
           bakedSkillSlugs: winners[0].bake.bakedSkillSlugs,
+          bakedConnections: [],
           bakedTools: winners[0].bake.bakedTools,
         });
         const reloaded = await otherThreads.findById(THREAD);

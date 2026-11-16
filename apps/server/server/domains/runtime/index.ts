@@ -149,6 +149,11 @@ export {
 } from "./loop/write-mode-switch.js";
 export type { ChatMediaPort } from "./ports/chat-media.js";
 export type { CommandResolver } from "./ports/command-resolver.js";
+export type {
+  ConnectionBake,
+  ConnectionsPort,
+  ConnectionToolCaller,
+} from "./ports/connections.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { DocumentEvidence, FrontierLookups } from "./ports/document-evidence.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";

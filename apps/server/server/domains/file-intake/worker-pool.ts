@@ -104,8 +104,9 @@ export function createWorkerPool<In, Out>(options: {
         slot = spawnSlot();
         slots.push(slot);
       }
-      const job = queue.shift();
-      if (!slot || !job) return;
+      // Take a job only once a worker is free to run it; a busy pool leaves the queue for `settle`.
+      if (!slot) return;
+      const job = queue.shift() as Job<In, Out>;
       const taken = slot;
       const id = nextJobId++;
       const timer = setTimeout(() => {

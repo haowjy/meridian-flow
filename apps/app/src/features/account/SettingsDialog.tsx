@@ -18,7 +18,7 @@ import { Trans } from "@lingui/react/macro";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import type { LucideIcon } from "lucide-react";
-import { CircleUserRound, CreditCard, SlidersHorizontal } from "lucide-react";
+import { CircleUserRound, CreditCard, Plug, SlidersHorizontal } from "lucide-react";
 import { type ReactNode, useCallback, useEffect } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { UsageCard } from "@/features/billing/UsageCard";
+import { ConnectionsSection } from "@/features/connections/ConnectionsSection";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useTextSize } from "@/hooks/use-text-size";
 import { SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
@@ -87,6 +88,7 @@ export function useSettingsNavigation() {
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   profile: CircleUserRound,
   preferences: SlidersHorizontal,
+  connections: Plug,
   usage: CreditCard,
 };
 
@@ -96,6 +98,8 @@ function SectionLabel({ section }: { section: SettingsSection }) {
       return <Trans>Profile</Trans>;
     case "preferences":
       return <Trans>Preferences</Trans>;
+    case "connections":
+      return <Trans>Connections</Trans>;
     case "usage":
       return <Trans>Usage</Trans>;
   }
@@ -117,6 +121,7 @@ function phoneSections(): PhoneSettingsSectionItem[] {
 const SECTION_CONTENT: Record<SettingsSection, (presentation: SectionPresentation) => ReactNode> = {
   profile: (presentation) => <ProfileSection presentation={presentation} />,
   preferences: (presentation) => <PreferencesSection presentation={presentation} />,
+  connections: () => <ConnectionsSection />,
   usage: () => <UsageSection />,
 };
 

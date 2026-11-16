@@ -1,3 +1,4 @@
+import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import { freeName, shownName } from "./names.js";
 import {
@@ -22,6 +23,17 @@ import type { TreeProjection } from "./replay.js";
 import { childrenOf, descendantsOf, nameAmong, rankAmong } from "./shape.js";
 import { writable } from "./validate.js";
 import { LIVE, lastOfFamily, replayView, type View } from "./view.js";
+
+/** Where moved nodes land among the parent's children: an index there, or an edge by sibling id. */
+export type MovePlace = number | ContextSiblingPosition;
+
+function indexOf(kids: readonly { id: string }[], place: MovePlace): number {
+  if (typeof place === "number") return Math.max(0, Math.min(place, kids.length));
+  if (!("siblingId" in place)) return place.kind === "start" ? 0 : kids.length;
+  const at = kids.findIndex((kid) => kid.id === place.siblingId);
+  if (at < 0) return kids.length;
+  return place.kind === "before" ? at : at + 1;
+}
 
 /**
  * Makes records in one copy of the list, against what that copy's own view shows. The browser
@@ -167,7 +179,7 @@ export class TreeWriter {
     return out;
   }
 
-  /** One move: `moveAll` of one. */
+  /** One move: `moveAll` of one, at `index` among the parent's children without `node`. */
   move(
     view: View,
     actor: Actor,
@@ -175,42 +187,45 @@ export class TreeWriter {
     parent: string,
     index = Number.MAX_SAFE_INTEGER,
   ): MoveRecord {
-    return this.moveAll(view, actor, [{ node, parent, index }])[0] as MoveRecord;
+    return this.moveAll(view, actor, [node], parent, index)[0] as MoveRecord;
   }
 
   /**
-   * Moves, in order, against one replay of the view: a rank is placed among the siblings as the
-   * earlier moves left them, and a name taken there is numbered and carried by the move itself,
-   * so the number stays when the other node is renamed. Two nodes moved into one folder under
-   * one name are numbered in turn.
+   * Moves `nodes` into `parent` together, in order, against one replay of the view: the first
+   * lands at `place`, each later one right after the one before it. An index counts the parent's
+   * children without the node being placed; a sibling `place` names gone from the parent means
+   * the end. A name taken there is numbered and carried by the move itself, so the number stays
+   * when the other node is renamed; two nodes moved under one name are numbered in turn. Callers
+   * pass distinct nodes, none inside another, and no anchor among them.
    */
   moveAll(
     view: View,
     actor: Actor,
-    moves: readonly { node: string; parent: string; index?: number }[],
+    nodes: readonly string[],
+    parent: string,
+    place: MovePlace = { kind: "end" },
   ): MoveRecord[] {
     const projection = this.view(view);
     const siblings = new Map<string, { id: string; name: string; rank: string }[]>();
-    const kidsOf = (parent: string) => {
-      let kids = siblings.get(parent);
+    const kidsOf = (folder: string) => {
+      let kids = siblings.get(folder);
       if (!kids) {
-        kids = childrenOf(projection, parent).map((child) => ({
+        kids = childrenOf(projection, folder).map((child) => ({
           id: child.id,
           name: child.displayName,
           rank: child.rank,
         }));
-        siblings.set(parent, kids);
+        siblings.set(folder, kids);
       }
       return kids;
     };
-    const placed = new Map<string, string>();
     const out: MoveRecord[] = [];
+    let previous: string | undefined;
     this.transact(() => {
-      for (const { node, parent, index = Number.MAX_SAFE_INTEGER } of moves) {
+      for (const node of nodes) {
         const current = projection.nodes.get(node);
-        const was = placed.get(node) ?? current?.parent;
-        if (was !== undefined) {
-          const left = kidsOf(was);
+        if (current) {
+          const left = kidsOf(current.parent);
           const at = left.findIndex((kid) => kid.id === node);
           if (at >= 0) left.splice(at, 1);
         }
@@ -218,13 +233,16 @@ export class TreeWriter {
         const name = current
           ? freeName(current.kind, current.name, new Set(kids.map((kid) => kid.name)))
           : "";
-        const at = Math.max(0, Math.min(index, kids.length));
+        const at = indexOf(
+          kids,
+          previous === undefined ? place : { kind: "after", siblingId: previous },
+        );
         const rank = rankAmong(
           kids.map((kid) => kid.rank),
           at,
         );
-        kids.splice(at, 0, { id: node, name: current ? name : "", rank });
-        placed.set(node, parent);
+        kids.splice(at, 0, { id: node, name, rank });
+        previous = node;
         out.push(
           this.author(view, actor, {
             type: "move",

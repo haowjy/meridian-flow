@@ -44,6 +44,7 @@ export function defineTranscriptPageContract(
     const rootBake = await repos.threads.bakeInitialPrompt(root.id as ThreadId, {
       composedSystemPrompt: "initial root prompt",
       bakedSkillSlugs: [],
+      bakedConnections: [],
       bakedTools: [],
       contentHash: id("root-hash"),
     });
@@ -52,6 +53,7 @@ export function defineTranscriptPageContract(
         ownerThreadId: root.id as ThreadId,
         composedSystemPrompt: label,
         bakedSkillSlugs: [],
+        bakedConnections: [],
         bakedTools: [],
         contentHash: id(`${label}-hash`),
       });

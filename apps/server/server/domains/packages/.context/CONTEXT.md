@@ -52,7 +52,11 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   coverage logic. `allow` and `ask` names become `tools` when the file has an allow-list
   (`*: deny`), `[]` included; `deny` becomes `disallowed-tools`. A rule Mars calls `unknown` or
   `unscopable` makes the Agent unavailable with Mars's note; `absent` is met; `ask` runs as
-  `allow` with a warning.
+  `allow` with a warning. Flow's connection tools (`mcp_describe`, `mcp_call`, `mcp_run`) are one set for
+  every connection, so an `mcp(...)` deny of any scope disallows all three, and an `mcp(...)` allow or
+  ask under an allow-list is `known` with no tools and Mars's note, shown as a warning: the Agent
+  stays available with no connection tool. Names in Mars's lists that Flow does not publish
+  are dropped from `tools` (`TOOL_CATALOG` is the list of what it publishes).
 - A revision's key includes `GRAMMAR_VERSION` (the Mars version and Flow's
   `flow-N`). Whoever changes the availability table or the tool projection bumps
   `flow-N`. A revision an older reader compiled is read again with the running reader
@@ -138,6 +142,19 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   rules are supported, deleting that manifest drops them.
 - The adapter reads files one by one, so a multi-file Apply can be seen half done; an Agent's
   access comes from its own file and the chain takes the minimum, so this never widens one.
+- **Fetching a tree** goes through the `PackageFetcher` port (`ports/package-fetcher.ts`): `fetchTree({ url, pin? }, budget)`
+  returns the resolved commit SHA, the ref and import root the URL named, and the files as bytes under that root. A
+  `pin` (the `commit`, `ref` and `path` an earlier fetch returned) makes the fetch read exactly that commit with no ref call, so import's second call matches inspect's and survives a deleted branch. A returned tree is read-only. `createGithubPackageFetcher`
+  (wired in `lib/compose.ts` behind `createCachedPackageFetcher`, which keeps recent trees by URL and commit so a repeat
+  costs no download) resolves the longest leading run of URL segments that names a branch or tag (one `matching-refs` call per kind), peels annotated tags to a
+  commit, and streams `codeload.github.com`'s tarball through gunzip and a tar reader. One `FetchBudget` per import
+  (`createFetchBudget`, limits in `FETCH_LIMITS`) is counted as bytes arrive; crossing one throws
+  `FetchBudgetError` naming it (`download`, `expanded`, `entries`, `wall-time`). Every request hop must be on github.com,
+  api.github.com or codeload.github.com, and `FLOW_GITHUB_TOKEN` goes only to api.github.com. Archive paths that are
+  absolute, use `..` or repeat are refused; links are dropped and listed, files over 2 MB are dropped and listed, and
+  files under `node_modules/`, `.git/`, `dist/` or `build/` directories, and archives are skipped without a word. A second adapter (a pack
+  bundle answering a pinned commit) goes behind a wrapper that picks by URL; callers don't change. `./mf package fetch`
+  reaches it through `GET /api/debug/package-fetch`.
 - Callers authorize source, Project, and thread access before selecting or
   binding. Root, child, fork, handoff, and derived-primary creation bind through
   the threads domain's atomic operation.
@@ -145,7 +162,8 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   owner with thread repositories so a completed transaction cannot leak writes.
 
 Checks: `tools/qa/probes/agents-through-mars/run.mts` (database) and
-`tools/qa/agents-through-mars/server-gate.mts` (running stack).
+`tools/qa/agents-through-mars/server-gate.mts` (running stack); the fetch budgets by
+[`qa/package-fetch.md`](qa/package-fetch.md).
 
 [definitions]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md
 [packages]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/agents/definitions.md#packages-and-availability
