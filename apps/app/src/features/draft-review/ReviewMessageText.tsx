@@ -3,6 +3,8 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
+import { reloadNow } from "@/client/release/release";
+import { ReloadWords } from "@/components/app/AppStatus";
 import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
@@ -79,6 +81,15 @@ export function ReviewMessageText({
     case "unapply-refused":
       return <Trans>Couldn't undo this Apply. Try again.</Trans>;
     case "apply-refused":
+      if (serverCode === "needs_reload")
+        return (
+          <>
+            <Trans>Couldn't apply this draft.</Trans>{" "}
+            <button type="button" className="text-button coarse:min-h-11" onClick={reloadNow}>
+              <ReloadWords />
+            </button>
+          </>
+        );
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}

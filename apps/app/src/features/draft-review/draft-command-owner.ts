@@ -909,16 +909,18 @@ export class DraftCommandOwner {
    * A text click again, for a room that ended before the server had its typing: the whole draft
    * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
    * server now. A chosen change whose id isn't there stays (`stayed`): a choice is never widened.
-   * `chosen` null: the whole draft. `unreadable` is what goes when the room can't be read.
+   * `chosen` null: the whole draft. `unreadable` is what goes when the room can't be read;
+   * `needsReload` when only a reload of this tab could read it.
    */
   private rebuilder(
     draftId: string,
     chosen: readonly string[] | null,
     body: ApplyClick,
     unreadable?: ApplyClick,
-  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[] } {
+  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[]; needsReload: boolean } {
     const result = {
       stayed: [] as string[],
+      needsReload: false,
       rebuild: async () => {
         const fields = {
           commandId: body.commandId,
@@ -933,7 +935,10 @@ export class DraftCommandOwner {
             patched: [],
           };
         const fresh = await readRoomOnce(draftRoomName(draftId));
-        if (!fresh) return unreadable && { body: unreadable, optimistic: [], patched: [] };
+        if (!(fresh instanceof Y.Doc)) {
+          result.needsReload = fresh === "schema";
+          return unreadable && { body: unreadable, optimistic: [], patched: [] };
+        }
         try {
           const content = roomContent(fresh);
           const schema = content.doc.type.schema;
@@ -966,13 +971,20 @@ export class DraftCommandOwner {
     draftId: string,
     outcome: Promise<ApplyClickOutcome>,
     restore: boolean,
-    rebuilt: { stayed: string[] },
+    rebuilt: { stayed: string[]; needsReload: boolean },
     joint?: Joint,
   ): Promise<CommandOutcome> {
     return outcome.then((answer) => {
       joint?.answered(answer);
       const settled = this.settled(ref, draftId, answer, restore);
-      if (rebuilt.stayed.length && settled.kind !== "change-refused")
+      // The server can't take a click from this build until the tab reloads: say that, not "try again".
+      if (rebuilt.needsReload && answer.status === "refused" && answer.reason === "unsynced")
+        this.setState(
+          ref.itemKey,
+          { failure: { code: "apply-refused", serverCode: "needs_reload" } },
+          draftId,
+        );
+      else if (rebuilt.stayed.length && settled.kind !== "change-refused")
         this.setState(
           ref.itemKey,
           { failure: { code: "apply-refused", serverCode: "left_out_not_on_server" } },
