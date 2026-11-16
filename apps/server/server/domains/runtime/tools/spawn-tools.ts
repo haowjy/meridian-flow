@@ -4,6 +4,7 @@
  * ChildRunCoordinator owns lifecycle. Each registration's zod input is parsed by
  * the executor before its handler runs.
  */
+
 import {
   type InvocationPatch,
   invocationPatchSchema,
@@ -14,6 +15,7 @@ import {
   returnResultCaptureSchema,
   type SpawnResult,
 } from "@meridian/contracts/spawn";
+import { effortLevels } from "@meridian-flow/mars-schema";
 import { z } from "zod";
 import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
 import { renderThreadReportOutput } from "../spawn/model-thread-report.js";
@@ -68,6 +70,12 @@ const DisallowedToolsSchema = z
 const SpawnOverridesSchema = z
   .object({
     ...invocationPatchShape,
+    effort: z
+      .enum(effortLevels() as [string, ...string[]])
+      .describe(
+        `How hard the child thinks, least to most: ${effortLevels().join(", ")}. "none" turns thinking off where the model can; a level the child's model doesn't offer runs at the nearest one it does. Omitted keeps the child's own.`,
+      )
+      .optional(),
     permission: invocationPatchShape.permission.describe(
       'Lower to "read" so this run edits only scratch://; it can\'t raise a read agent to "edit".',
     ),

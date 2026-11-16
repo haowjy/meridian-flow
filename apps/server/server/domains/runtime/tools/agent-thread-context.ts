@@ -1,10 +1,8 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
 import {
-  AGENT_EFFORT_CHOICE,
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
   projectToolPolicy,
-  type ReasoningChoice,
   type ResolvedAgentConfiguration,
   type ToolPolicy,
 } from "@meridian/contracts/agents";
@@ -49,18 +47,13 @@ export const SUBAGENT_GUIDANCE =
 const READ_PERMISSION_GUIDANCE =
   "Your permission is read: you can read every file, and edit only scratch://.";
 
-/** The gateway's form of a wire reasoning setting; `AGENT_EFFORT_CHOICE` maps an Agent file's effort onto it. */
-export function reasoningOfChoice(choice: ReasoningChoice): GenerateRequest["reasoning"] {
-  return choice === "disabled" || choice === "adaptive" ? choice : { effort: choice };
-}
-
-/** Translate canonical Mars effort names into the gateway's provider-neutral contract. */
+/** An Agent's model and level as the gateway's request carries them. */
 export function agentGatewayMetaToGenerateParams(
   meta: Pick<ResolvedAgentConfiguration, "model" | "effort">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
   const params: Pick<GenerateRequest, "model" | "reasoning"> = {};
   if (meta.model) params.model = meta.model;
-  if (meta.effort) params.reasoning = reasoningOfChoice(AGENT_EFFORT_CHOICE[meta.effort]);
+  if (meta.effort) params.reasoning = meta.effort;
   return params;
 }
 

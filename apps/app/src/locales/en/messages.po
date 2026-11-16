@@ -1361,8 +1361,8 @@ msgid "Actually…"
 msgstr "Actually…"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Adaptive"
-msgstr "Adaptive"
+#~ msgid "Adaptive"
+#~ msgstr "Adaptive"
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
@@ -3940,6 +3940,10 @@ msgstr "Export project…"
 msgid "Exporting {project}."
 msgstr "Exporting {project}."
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Extra high"
+msgstr "Extra high"
+
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
 msgstr "Extra usage"
@@ -4804,6 +4808,10 @@ msgstr "Merging works on a rectangle of cells."
 #: src/components/app/composer/Composer.tsx
 msgid "Message"
 msgstr "Message"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Minimal"
+msgstr "Minimal"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx

@@ -7,6 +7,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WriteToolInputSchema } from "@meridian/agent-edit/integration";
+import { effortLevels } from "@meridian-flow/mars-schema";
 import { createGateway, type GenerateRequest, user } from "@meridian-flow/runtime/gateway";
 import { expect, it } from "vitest";
 import { WorkCommandSchema } from "../../domains/runtime/tools/core-tools.js";
@@ -43,12 +44,12 @@ async function wireTools(
     const reasoning =
       providerId === "deepseek"
         ? {
-            efforts: ["low", "high", "max"] as const,
-            canDisable: true as const,
+            efforts: ["none", "low", "high", "max"] as const,
             thinksByDefault: true as const,
           }
         : { efforts: ["low", "medium", "high", "max"] as const };
     const gateway = createGateway({
+      reasoningLevels: effortLevels(),
       providers: [
         {
           id: providerId,

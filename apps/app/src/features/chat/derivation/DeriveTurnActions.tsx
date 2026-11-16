@@ -105,7 +105,7 @@ function HandoffPicker({
   const searchRef = useRef<HTMLInputElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const models = useModelOptions(open);
+  const options = useModelOptions(open);
   const agents = catalog.status === "ready" ? (catalog.agents ?? []) : [];
   const selected = boundAgentRow(pickableAgents(agents), derivation.sourceAgent);
   const label = t`Hand off from here`;
@@ -144,7 +144,7 @@ function HandoffPicker({
           status={catalog}
           current={{ slug: selected?.selection.slug ?? null, overrides: NO_OVERRIDES }}
           mode={{ kind: "turn", onHandoff: (choice) => derivation.handoff(turnId, choice) }}
-          models={models}
+          options={options}
           focusRefs={{ search: searchRef, retry: retryRef }}
           projectId={derivation.projectId}
           onClose={() => setOpen(false)}

@@ -1,12 +1,12 @@
 /** Stored chat identity and its HTTP response validator. Run state lives on the live record. */
 import { z } from "zod";
-import { reasoningChoiceSchema } from "../agents/execution-knobs.js";
+import { reasoningLevelSchema } from "../agents/execution-knobs.js";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
 
 /** What a chat runs on instead of its Agent's own; `null` leaves that part to the Agent. */
 export const threadOverridesSchema = z.strictObject({
   model: z.string().min(1).nullable(),
-  effort: reasoningChoiceSchema.nullable(),
+  effort: reasoningLevelSchema.nullable(),
 });
 export type ThreadOverrides = z.infer<typeof threadOverridesSchema>;
 export const NO_OVERRIDES: ThreadOverrides = { model: null, effort: null };

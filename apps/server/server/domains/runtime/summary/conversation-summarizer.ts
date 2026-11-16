@@ -363,7 +363,7 @@ export function createConversationSummarizer(
         let keptModel = model.id;
         const requestFor = (segment: string[]): GenerateRequest => ({
           model: model.id,
-          reasoning: "disabled",
+          reasoning: "none",
           // A rolling summary is a one-shot call: a cache write would never be read.
           promptCacheRetention: "none",
           messages: [
