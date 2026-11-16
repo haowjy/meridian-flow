@@ -8,7 +8,7 @@
 import { Editor } from "@tiptap/core";
 import { Slice } from "@tiptap/pm/model";
 import { afterEach, expect, it } from "vitest";
-
+import { linkIndexOf } from "@/test-support/link-trees";
 import { createStandaloneEditorExtensions } from "../config";
 import { editorReferenceNode } from "../extensions/at-reference";
 import { insertLinkAhead } from "../extensions/at-reference/document-link-insertion";
@@ -37,7 +37,7 @@ function editor(content = "<p>Kael waits.</p>", projectId = "project-1"): Editor
   live.push(created);
   getLinkAnswerCache(created)?.registerResolver(
     {
-      index: { documents: DOCUMENTS, folders: [] },
+      index: linkIndexOf(DOCUMENTS),
       remote: async (questions) => questions.map(() => null),
     },
     { baseUri: HOLDER, projectId },

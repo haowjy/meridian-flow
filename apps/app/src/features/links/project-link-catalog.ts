@@ -57,8 +57,7 @@ export function createProjectLinkCatalog(
     indexed: (documentId) => byId.get(documentId),
     indexedFolder: (folderId) => foldersById.get(folderId),
     folder: (folderId) => (index.complete ? catalogFolder(foldersById.get(folderId)) : undefined),
-    folderAt: (uri) =>
-      index.complete ? catalogFolder(indexedFolderAt(index.folders, uri)) : undefined,
+    folderAt: (uri) => (index.complete ? catalogFolder(indexedFolderAt(index, uri)) : undefined),
     document: (documentId) => (index.complete ? held(byId.get(documentId)) : undefined),
     settlement(aheadId) {
       const settled = settlements.get(aheadId);
@@ -74,7 +73,7 @@ export function createProjectLinkCatalog(
     },
     documentFor(uri) {
       if (!index.complete) return undefined;
-      return held(indexedDocumentAt(index.documents, uri)) ?? null;
+      return held(indexedDocumentAt(index, uri)) ?? null;
     },
     assetAddress: () => undefined,
     assetFor: () => undefined,
