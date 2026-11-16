@@ -16,7 +16,6 @@ import { useLingui } from "@lingui/react";
 import { Info, X } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
-import { documentBasename } from "@/client/query/work-branch-files";
 import type { OpenDocument } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -55,11 +54,6 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
     () => owner.wasRestored(projectId, documentId),
     () => false,
   );
-  const renamedPath = useSyncExternalStore(
-    owner.subscribe,
-    () => owner.renamedPath(projectId, documentId),
-    () => null,
-  );
   useEffect(() => owner.keepApplyFactsOnly(projectId, documentId), [owner, projectId, documentId]);
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedLive(item);
@@ -82,15 +76,11 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   }
   const { scheme } = tabLocation(tab);
   const area = schemeLabel(scheme);
-  const renamed = renamedPath ? documentBasename(renamedPath) : null;
-  if (restored || renamed)
+  if (restored)
     return {
       kind: "applied",
-      sentence: appliedSentence(
-        restored ? [{ name: title, scheme }] : [],
-        renamed ? [renamed] : [],
-      ),
-      label: renamed ? t`Added as ${renamed}` : t`Back in ${area}`,
+      sentence: appliedSentence([{ name: title, scheme }]),
+      label: t`Back in ${area}`,
       dismiss: () => owner.forgetApplyFacts(projectId, documentId),
     };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>

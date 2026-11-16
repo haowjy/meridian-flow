@@ -465,12 +465,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const branch = await branchOf(OTHER_WORK_ID);
       const live = await store().read({
         lists: [await treeListOfSource(db, SOURCE_ID)],
-        view: ([{ writer }]) => [...writer.view(LIVE).nodes.values()].map((n) => n.displayName),
+        view: ([{ writer }]) => [...writer.view(LIVE).nodes.values()].map((n) => n.name),
       });
       const work = await store().read({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         view: ([{ writer }]) =>
-          [...writer.view({ draft: branch }).nodes.values()].map((n) => n.displayName),
+          [...writer.view({ draft: branch }).nodes.values()].map((n) => n.name),
       });
       expect(live).not.toContain("Part Three");
       expect(work).toContain("Part Three");
@@ -625,9 +625,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const call = await live(await start());
         await call("write", { command: "create", path: "newfolder/" });
         await asWriter((writer) => {
-          const folder = [...writer.view(LIVE).nodes.values()].find(
-            (n) => n.displayName === "newfolder",
-          );
+          const folder = [...writer.view(LIVE).nodes.values()].find((n) => n.name === "newfolder");
           writer.create(LIVE, WRITER, {
             kind: "document",
             filetype: "markdown",
@@ -732,9 +730,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await call("ls", { path: "manuscript://part1/" });
         await call("ls", { path: "manuscript://" });
         await asWriter((writer) => {
-          const folder = [...writer.view(LIVE).nodes.values()].find(
-            (n) => n.displayName === "part1",
-          );
+          const folder = [...writer.view(LIVE).nodes.values()].find((n) => n.name === "part1");
           writer.delete(LIVE, WRITER, folder?.id as string);
         });
         const moved = await call("write", {

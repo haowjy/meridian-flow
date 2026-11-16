@@ -52,7 +52,7 @@ Contracts:
   `use-identity-commit.ts`. The hook finds the document's node and the destination folder (or
   the source's top) in the replay, then appends a `move` and a `rename` record to the browser's
   copy of the list through `useTreeActions`. The replay updates the host's descriptor and route
-  at once, and the commit reports the name the writer's copy gave it (a clash is numbered there).
+  at once, and the commit reports the name the writer typed (beside a sibling of that name it is a twin).
   A same-name explicit Save clears provisional presentation. Navigation additionally requires
   that the committed document is still active. The field does not blur-dismiss while a save is
   pending. A move between a project and the account's files is a server route, not offered here.

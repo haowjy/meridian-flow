@@ -44,8 +44,8 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    settled: [restored] }`; A is living with the draft's text. The same race runs unattended as rows of
    `pnpm exec tsx tools/qa/probes/atomic-apply/run.mts`.
 7. **A taken path.** Delete A live, then create a document at A's path. PASS:
-   Apply is `applied`; A is restored at the next free name and
-   A's tree half carries a `renamed` note with the requested and landed paths.
+   Apply is `applied`; A is restored as a twin and
+   the result identifies the landed path with its distinct segment.
 8. **The receipt names who removed it.** Start the stack with
    `HOOK_PAUSE_AT=command.beforeClaim` (the edit must not hold the Work lock the
    delete needs). A draft-mode chat replaces a line; pause, `./mf doc rm` the document,

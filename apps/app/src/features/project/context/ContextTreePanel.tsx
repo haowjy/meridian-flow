@@ -113,7 +113,7 @@ export function useContextTree({
   const changed = shell?.showing === "live" && shell.offered ? shell.changed : null;
   const activeLocationPath =
     (activeDocumentId && tree?.findDocument(activeDocumentId)?.path) || null;
-  const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
+  const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
   const [createdFolder, setCreatedFolder] = useState<string | null>(null);
   // Where the header's New file and New folder go: the folder the writer last opened or closed
   // into, else the open document's folder, else the top.
@@ -129,12 +129,12 @@ export function useContextTree({
       if (segments.length === 0) return;
       setExpandedEntryIds((current) => {
         const next = { ...current };
-        let ancestor = "";
-        for (const segment of segments) {
-          ancestor += `/${segment}`;
-          const entry = tree.findPath(ancestor);
-          if (entry?.kind === "dir") next[entry.entryId] = true;
+        for (let at = 1; at < segments.length; at += 1) {
+          const folder = tree.findFolder(segments.slice(0, at).join("/"));
+          if (folder) next[folder.entryId] = true;
         }
+        const entry = tree.findPath(path);
+        if (entry?.kind === "dir") next[entry.entryId] = true;
         return next;
       });
     },
@@ -179,10 +179,10 @@ export function useContextTree({
   // A created file opens once its row shows in the tree, in the version it was made in.
   const openCreated = useOpenCreatedDocument();
   useEffect(() => {
-    if (!pendingOpenPath || !tree) return;
-    const entry = tree.findPath(pendingOpenPath);
+    if (!pendingOpenId || !tree) return;
+    const entry = tree.entry(pendingOpenId);
     if (entry?.kind !== "file") return;
-    setPendingOpenPath(null);
+    setPendingOpenId(null);
     void openCreated(
       {
         documentId: entry.documentId,
@@ -192,7 +192,7 @@ export function useContextTree({
       async () => onSelectFile(scheme, entry, { focus: true }),
       onPicked,
     );
-  }, [pendingOpenPath, tree, onSelectFile, onPicked, scheme, openCreated]);
+  }, [pendingOpenId, tree, onSelectFile, onPicked, scheme, openCreated]);
 
   const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
   const deleteEntries = useDeleteContextEntries(projectId);
@@ -221,7 +221,7 @@ export function useContextTree({
                   creating,
                   request: requestCreate,
                   done: onCreateDone,
-                  createdFile: setPendingOpenPath,
+                  createdFile: setPendingOpenId,
                   createdFolder,
                   setCreatedFolder,
                   placeAt: (folderPath) => setPlace({ folderPath, activePath: activeLocationPath }),
@@ -287,9 +287,8 @@ export function useContextTree({
       : activeLocationPath && parentContextEntryPath(activeLocationPath);
   const inRoot = (path: string | null): path is string =>
     path !== null && (rootPath === "" || path === rootPath || path.startsWith(`${rootPath}/`));
-  const here = inRoot(placed) && tree?.findPath(placed)?.kind === "dir" ? placed : rootPath;
-  const root = rootPath === "" ? tree?.root : tree?.findPath(rootPath);
-  const rootFolder = root?.kind === "dir" ? root : null;
+  const here = inRoot(placed) && tree?.findFolder(placed) ? placed : rootPath;
+  const rootFolder = tree?.findFolder(rootPath) ?? null;
   const empty = Boolean(
     env &&
       isComplete &&
@@ -315,8 +314,8 @@ export function useContextTree({
     pickImport,
     openFolder,
     notices,
-    /** Opens the file made at this path once its row shows. */
-    openWhenListed: setPendingOpenPath,
+    /** Opens the file made with this id once its row shows. */
+    openWhenListed: setPendingOpenId,
   };
 }
 
@@ -484,6 +483,7 @@ function FoundEntries({
               key={entry.entryId}
               icon={Folder}
               title={entry.name}
+              suffix={entry.suffix}
               meta={match.parents.at(-1)}
               onOpen={() => onOpenFolder(entry.entryId)}
             />
@@ -493,6 +493,7 @@ function FoundEntries({
             key={entry.documentId}
             icon={fileKindIcon(entry)}
             title={entry.name}
+            suffix={entry.suffix}
             meta={match.parents.at(-1)}
             current={entry.documentId === activeDocumentId}
             onOpen={() => onOpen(entry)}

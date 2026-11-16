@@ -2,6 +2,7 @@
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import { readSegment } from "@meridian/contracts/protocol";
 import type { TreeView } from "@/core/project-tree/tree-view";
 import type { ContextUri } from "@/lib/context-uri";
 import { parseContextUri } from "@/lib/context-uri";
@@ -86,6 +87,6 @@ export function sortDraftFiles<
 export function documentBasename(contextPath: string | null | undefined): string | null {
   if (!contextPath) return null;
   const trimmed = contextPath.replace(/\/+$/, "");
-  const base = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  const base = readSegment(trimmed.slice(trimmed.lastIndexOf("/") + 1)).name;
   return base.length > 0 ? base : null;
 }

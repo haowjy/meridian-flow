@@ -1,6 +1,7 @@
 /** Deterministic creation graph and placement derived only from durable import outcomes. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import { firstFreeName, renderFilename } from "@meridian/contracts/protocol";
+import { entrySegment, renderFilename } from "@meridian/contracts/protocol";
+import { shownName, suffixesInArrival } from "@meridian/project-tree";
 import type { ImportEntry, ImportRecord } from "../../ports/import-repository.js";
 import type { ImportPlacement } from "../placement.js";
 import { type PlannedNode, planWithDerivedIds } from "../plan.js";
@@ -11,7 +12,7 @@ export type DestinationSnapshot = {
   uri: string;
   fellBack: boolean;
   /** What the destination holds, by the names it shows (a document's carries its extension). */
-  children: readonly { kind: "folder" | "file"; name: string }[];
+  children: readonly { id: string; kind: "folder" | "file"; name: string }[];
 };
 
 export type OrganizedTree = {
@@ -36,7 +37,9 @@ function effectiveNode(node: PlannedNode, entries: ReadonlyMap<string, ImportEnt
 /**
  * The creation graph and the plan. The first pass plans against the destinations as they are and
  * the plan is kept on the import (`imports.placement`); later passes pass it back as `fixed`, so
- * the names the stored text spells its links with stay the ones planned.
+ * the paths the stored text spells its links with stay the ones planned. Every node keeps its
+ * name; one that meets a name already in its folder lands as a twin, and its path spells the
+ * `~id` the replay will give it (it arrives after what the folder holds, in plan order).
  */
 export async function buildOrganizedTree(input: {
   record: ImportRecord;
@@ -93,40 +96,45 @@ export async function buildOrganizedTree(input: {
     input.destinations.map((destination) => [destination.area, destination]),
   );
   const parentKey = (area: string, id: string | null) => JSON.stringify([area, id]);
-  const occupied = new Map<string, Set<string>>();
-  for (const destination of input.destinations) {
-    occupied.set(
+  // Each folder's children in the order they arrive: what it holds, then the plan's nodes.
+  const arrivals = new Map<string, { id: string; name: string }[]>();
+  for (const destination of input.destinations)
+    arrivals.set(
       parentKey(destination.area, destination.folderId),
-      new Set(destination.children.map((child) => child.name)),
+      destination.children.map(({ id, name }) => ({ id, name })),
     );
-  }
   for (const node of nodes) {
     if (node.state === "planned" && node.kind === "folder" && node.area)
-      occupied.set(parentKey(node.area, node.id), new Set());
+      arrivals.set(parentKey(node.area, node.id), []);
   }
-  const topLevelNames: Record<string, string> = {};
+  const topLevel = new Set<string>();
   for (const node of nodes) {
     if (node.state !== "planned" || !node.area) continue;
-    const topLevel = !node.parentId || !plannedFolders.has(node.parentId);
-    if (topLevel) {
+    if (!node.parentId || !plannedFolders.has(node.parentId)) {
       const destination = destinations.get(node.area);
       if (!destination) throw new Error(`Import tree has no destination for ${node.area}`);
       node.parentId = destination.folderId;
+      topLevel.add(node.id);
     }
-    const siblings = occupied.get(parentKey(node.area, node.parentId));
+    const siblings = arrivals.get(parentKey(node.area, node.parentId));
     if (!siblings) throw new Error(`Import tree has no sibling group for ${node.id}`);
-    const planned = topLevel ? input.fixed?.topLevelNames[node.id] : undefined;
-    const free =
-      planned === undefined
-        ? firstFreeName(node, siblings)
-        : {
-            name: planned,
-            filename: renderFilename(planned, node.kind === "folder" ? "" : node.extension),
-          };
-    node.name = free.name;
-    node.filename = free.filename;
-    if (topLevel) topLevelNames[node.id] = node.name;
-    siblings.add(free.filename);
+    // The name the node lands under: a converted document drops its source's extension.
+    node.filename = renderFilename(node.name, node.kind === "folder" ? "" : node.extension);
+    // The name the tree will store, as the replay compares it.
+    const kind = node.kind === "folder" ? "folder" : node.kind === "binary" ? "file" : "document";
+    siblings.push({ id: node.id, name: shownName(kind, node.filename, node.filetype) });
+  }
+  const suffixes = new Map(
+    [...arrivals.values()].flatMap((siblings) => [...suffixesInArrival(siblings)]),
+  );
+  const topLevelSegments: Record<string, string> = {};
+  for (const node of nodes) {
+    if (node.state !== "planned") continue;
+    const suffix = suffixes.get(node.id);
+    const planned = topLevel.has(node.id) ? input.fixed?.topLevelSegments[node.id] : undefined;
+    const segment = planned ?? entrySegment(node.filename, suffix);
+    if (segment !== node.filename) node.segment = segment;
+    if (topLevel.has(node.id)) topLevelSegments[node.id] = segment;
   }
   if (nodes.some((node) => node.state === "planned" && !node.area))
     throw new Error("Import tree has a node without an area");
@@ -136,7 +144,7 @@ export async function buildOrganizedTree(input: {
     nodes,
     placement: {
       destinations: input.destinations.map(({ children: _, ...destination }) => destination),
-      topLevelNames,
+      topLevelSegments,
     },
   };
 }

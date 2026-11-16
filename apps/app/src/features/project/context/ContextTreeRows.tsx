@@ -18,16 +18,10 @@ import { contentInset, ListRow, ListRowField } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
 import { useRevealImport } from "@/features/import/ImportProvider";
-import {
-  type ImportedTree,
-  type PendingRow,
-  plainTree,
-  rowId,
-  siblingsOf,
-} from "@/features/import/tree-rows";
+import { type ImportedTree, type PendingRow, plainTree, rowId } from "@/features/import/tree-rows";
 import { focusWhenFree } from "@/lib/focus-follow";
 import type { ContextCreateKind } from "./context-create-kind";
-import { type ContextEntrySibling, parentContextEntryPath } from "./context-entry-name";
+import { parentContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { EntryDestinationPicker } from "./EntryDestinationPicker";
 import { EntryNameField } from "./EntryNameField";
@@ -66,10 +60,10 @@ export type TreeEnv = {
     creating: { kind: ContextCreateKind; parentPath: string } | null;
     request: EntryCreation;
     done: () => void;
-    createdFile: (path: string) => void;
-    /** The folder creation just made, until its row takes focus. */
+    createdFile: (node: string) => void;
+    /** The id of the folder creation just made, until its row takes focus. */
     createdFolder: string | null;
-    setCreatedFolder: (path: string | null) => void;
+    setCreatedFolder: (node: string | null) => void;
     /** The writer opened or closed a folder: the header's New file and New folder go there. */
     placeAt: (folderPath: string) => void;
   };
@@ -136,7 +130,6 @@ export function TreeChildren({
   const env = useTreeEnv();
   const rows = useMemo(() => env.rows ?? plainTree(env.tree), [env.rows, env.tree]);
   const children = rows.rows(parentId);
-  const siblings = useMemo(() => siblingsOf(children), [children]);
   const shown = children.filter(
     (child) =>
       child.origin === "import" || !env.visibleIds || env.visibleIds.has(child.node.entryId),
@@ -160,21 +153,9 @@ export function TreeChildren({
         return child.origin === "import" ? (
           <PendingTreeRow key={child.id} row={child} depth={depth} />
         ) : child.node.kind === "dir" ? (
-          <DirRow
-            key={item.key}
-            dir={child.node}
-            depth={depth}
-            siblings={siblings}
-            parent={parent}
-          />
+          <DirRow key={item.key} dir={child.node} depth={depth} parent={parent} />
         ) : (
-          <FileRow
-            key={item.key}
-            file={child.node}
-            depth={depth}
-            siblings={siblings}
-            parent={parent}
-          />
+          <FileRow key={item.key} file={child.node} depth={depth} parent={parent} />
         );
       })}
       {/* At the end of the folder: where the new entry lands, so nothing moves on Enter. */}
@@ -184,7 +165,6 @@ export function TreeChildren({
           parentId={parentId}
           parent={parentPath}
           depth={depth}
-          siblings={siblings}
         />
       ) : null}
     </>
@@ -202,12 +182,10 @@ const FOLDER_EDGE_BAND = 1 / 4;
 function DirRow({
   dir,
   depth,
-  siblings,
   parent,
 }: {
   dir: TreeDirectory;
   depth: number;
-  siblings: readonly ContextEntrySibling[];
   parent: DropFolder | null;
 }) {
   const env = useTreeEnv();
@@ -225,7 +203,7 @@ function DirRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
-    arriving: env.creation?.createdFolder === dir.path,
+    arriving: env.creation?.createdFolder === dir.entryId,
     onArrived: () => env.creation?.setCreatedFolder(null),
     importHere: env.importHere
       ? {
@@ -233,7 +211,6 @@ function DirRow({
           start: (kind) => env.importHere?.start(folder, kind),
         }
       : undefined,
-    siblings,
   });
   const isOpen = env.isExpanded(dir.entryId);
   // An open folder's bottom borders its first child, so "after" it is the next sibling's top edge.
@@ -262,6 +239,7 @@ function DirRow({
           // The open or closed folder is the twistie: rows need no chevron column.
           icon={isOpen ? FolderOpen : Folder}
           title={dir.name}
+          suffix={dir.suffix}
           onOpen={() => {
             if (env.creation?.creating) env.creation.done();
             env.creation?.placeAt(isOpen ? parentContextEntryPath(dir.path) : dir.path);
@@ -319,12 +297,10 @@ function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
 function FileRow({
   file,
   depth,
-  siblings,
   parent,
 }: {
   file: TreeFile;
   depth: number;
-  siblings: readonly ContextEntrySibling[];
   parent: DropFolder | null;
 }) {
   const env = useTreeEnv();
@@ -340,7 +316,6 @@ function FileRow({
     scheme: env.scheme,
     capabilities: env.capabilities,
     onRequestDelete: env.onRequestDelete,
-    siblings,
   });
   const active = file.documentId === env.activeDocumentId;
   const row = useEntryRow(interaction.entry, { active });
@@ -356,6 +331,7 @@ function FileRow({
         depth={depth}
         icon={fileKindIcon(file)}
         title={file.name}
+        suffix={file.suffix}
         meta={env.meta?.(file)}
         crossedOut={env.crossedOut?.(file)}
         onOpen={() => env.onSelectFile(env.scheme, file)}
@@ -405,13 +381,11 @@ function CreateRow({
   parentId,
   parent,
   depth,
-  siblings,
 }: {
   kind: ContextCreateKind;
   parentId: string;
   parent: string;
   depth: number;
-  siblings: readonly ContextEntrySibling[];
 }) {
   const env = useTreeEnv();
   const creation = env.creation;
@@ -424,7 +398,6 @@ function CreateRow({
     kind,
     parentId,
     parent,
-    siblings,
     onDone: creation.done,
     onCancel: () => {
       creation.done();

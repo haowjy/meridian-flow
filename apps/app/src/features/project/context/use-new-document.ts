@@ -1,7 +1,7 @@
 import { newId } from "@meridian/project-tree";
 import { useCallback } from "react";
 import { useProjectContextSources } from "@/client/query/useContextSources";
-import { sourceFor, useTreeList } from "@/client/query/useProjectTree";
+import { sourceFor } from "@/client/query/useProjectTree";
 import { useTreeActions } from "@/client/query/useTreeActions";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { useOpenCreatedDocument } from "../review-launch";
@@ -24,7 +24,6 @@ export function useNewDocument(
   const actions = useTreeActions({ kind: "project", projectId });
   const version = useTreeVersion();
   const openCreated = useOpenCreatedDocument();
-  const { session } = useTreeList({ kind: "project", projectId });
   const unfiled = useProjectContextSources(projectId);
   const unfiledId = unfiled ? sourceFor(unfiled, "unfiled", {})?.id : undefined;
   const create = useCallback(async () => {
@@ -38,17 +37,15 @@ export function useNewDocument(
       provisional: true,
       kind: "document",
     });
-    // The replay's name for the node, at the top of Unfiled: its address.
-    const name =
-      session?.replay(version.view, version.pendingText).nodes.get(documentId)?.displayName ??
-      made.name;
+    const { path } = made;
+    if (!path) throw new Error("The new document is not in Unfiled");
     const document = {
       documentId,
-      contextLocation: { scheme: "unfiled" as const, path: `/${name}` },
+      contextLocation: { scheme: "unfiled" as const, path },
     };
     await openCreated(document, async () => {
       const result = await open(
-        { scheme: "unfiled", path: name, documentId },
+        { scheme: "unfiled", path: path.slice(1), documentId },
         {
           isCurrent,
           focus: true,
@@ -57,7 +54,7 @@ export function useNewDocument(
       );
       if (result.kind === "failed") throw result.error;
     });
-  }, [actions, open, openCreated, captureNavigation, session, unfiledId, version]);
+  }, [actions, open, openCreated, captureNavigation, unfiledId, version]);
   return open && unfiledId && version.ended !== "deleted"
     ? () => void create().catch((error: unknown) => reportError(error))
     : undefined;

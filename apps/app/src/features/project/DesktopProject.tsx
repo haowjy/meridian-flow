@@ -121,7 +121,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const masked = isProjectRouteMasked(mask);
   const trashedId = useTrashNavigation().shown;
   const trashed = useDocumentStanding(projectId, trashedId ?? null);
-  const trashedName = trashed.kind === "in-trash" ? trashed.node.displayName : undefined;
+  const trashedName = trashed.kind === "in-trash" ? trashed.node.name : undefined;
   // A masked address paints no document: a removed one shows its removed state in place.
   const mainTab = !mainChat && !masked && props.contextLive ? main.document.document : null;
 

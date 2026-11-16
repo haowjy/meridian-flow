@@ -529,7 +529,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       arrivals: deps.arrivals,
       treeLists: deps.treeLists,
       tree: treeReader,
-      branchTree: branchTreeState,
       close: deps.draftClose,
       onCommitted: async (documentId) => {
         await draftPulls.flushLivePull(documentId);

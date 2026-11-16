@@ -14,7 +14,6 @@ import {
   childrenOf,
   LIVE,
   sourceRoot,
-  type TreeRecord,
   type TreeWriter,
   type View,
 } from "@meridian/project-tree";
@@ -68,7 +67,7 @@ function ensureDir(
   let parent = sourceRoot(sourceId);
   for (const name of dir) {
     const existing = childrenOf(writer.view(view), parent).find(
-      (node) => node.kind === "folder" && node.displayName === name,
+      (node) => node.kind === "folder" && node.name === name,
     );
     if (existing) {
       parent = existing.id;
@@ -104,7 +103,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
     });
   }
 
-  /** A document at `path`, its folders made as needed. A taken name is numbered, as any create's is. */
+  /** A document at `path`, its folders made as needed. A taken name creates a twin. */
   async function document(sourceId: string, path: string, options: SeedDocumentOptions = {}) {
     const segments = segmentsOf(path);
     const leaf = segments.pop();

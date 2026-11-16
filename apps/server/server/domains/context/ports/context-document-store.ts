@@ -13,14 +13,19 @@ export interface ContextFolder {
   id: string;
   parentId: string | null;
   name: string;
+  /** Its path segment: the name, and a later twin's `~` suffix. A path joins these. */
+  segment: string;
   rank?: string | null;
 }
 
 export interface ContextDocument {
   id: string;
   folderId: string | null;
+  /** The stem: the filename is `renderFilename(name, extension)`. */
   name: string;
   extension: string;
+  /** The path segment: the filename, and a later twin's `~` suffix. A path joins these. */
+  segment: string;
   fileType: DocumentFileType | null;
   filetype: Filetype | null;
   storageUrl: string | null;
@@ -57,8 +62,8 @@ export interface ContextDocumentStore {
   existingContextSourceId(): Promise<string | null>;
   /**
    * What `view` shows at a source-relative path, by the tree reader's one meaning of "same
-   * path": two nodes there answer `ambiguous`, never a pick. A path of the other kind is
-   * `not_found`. The source root (`""`) is the folder `null`.
+   * path" (segments, so a twin's `~id` reaches it). A path of the other kind is `not_found`.
+   * The source root (`""`) is the folder `null`.
    */
   resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>>;
   resolveFolderAt(view: TreeView, path: string): Promise<PathResolution<ContextFolder | null>>;
@@ -72,8 +77,6 @@ export interface ContextDocumentStore {
   readSubtree(id: string): Promise<ContextSubtree | null>;
   /** Every folder and document the view shows in this source, in one pass. */
   listTree(view: TreeView): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }>;
-  /** The rendered filenames of every folder and document directly under `parentId`. */
-  namesAt(view: TreeView, parentId: string | null): Promise<Set<string>>;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(view: TreeView, folderId: string | null): Promise<ContextDocument[]>;
 }

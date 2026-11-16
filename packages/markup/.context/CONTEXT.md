@@ -213,8 +213,8 @@ agent-edit's static catalog, the client's document index plus its settlement
 memo). `undefined` from a catalog lookup is "not held": the server records a
 snapshot miss, the client asks the server. `assignFreshLink` is pass 3 of ref
 assignment for a written href or source: classify, then bind a directory href
-through `folderFor`, or a document href through `documentFor` (exact, then unique
-extension-omitted); only a missing document address mints an ahead ref. Agent-edit's
+through `folderFor`, or a document href through `documentFor` (the document the tree's walk reaches: the exact name or its alias, then the unique
+extension-omitted one); only a missing document address mints an ahead ref. Agent-edit's
 `assignOccurrences` and the client's `assignWrittenHref` both call it. Only the
 `stored-links` entry reads Yjs (`yjs`, plus the fragment name from the
 side-effect-free `@meridian/prosemirror-schema/protocol`); markup stays a leaf

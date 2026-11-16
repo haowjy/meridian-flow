@@ -153,8 +153,8 @@ Existence of a deleted document is its own fact, never read from a name conflict
 An Apply brings a deleted document back to land what the click carries for it: the click
 carries no `restore`, and the item's answer says `restored`. The question a
 strip or Apply all asks first (it names the deletes and restores) is the writer's
-heads-up, not a precondition. The account owner keeps the answer's `restored` and `renamed`
-facts, so an editor Apply keeps its result after navigation.
+heads-up, not a precondition. The account owner keeps the answer's `restored`
+fact, so an editor Apply keeps its result after navigation.
 
 An Apply never answers refused. The answer is `applied` with one entry per item in `items`,
 each half `landed` or settled with lines (`itemOf`). `outcomeOf` reads them: an item with a

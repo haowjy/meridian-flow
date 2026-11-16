@@ -383,7 +383,7 @@ function copyTenses(tool: ToolView): ToolActivityVocabulary {
 
 /**
  * Where a settled undo or move put its document, when that is not the path the model asked
- * for: a free name was taken, or a copy landed beside a namesake. The row names and opens this.
+ * for: it landed beside a namesake, so its path carries a `~` suffix. The row names and opens this.
  */
 export function settledDocumentPath(tool: ToolView): string | undefined {
   const command = toolCommand(tool);

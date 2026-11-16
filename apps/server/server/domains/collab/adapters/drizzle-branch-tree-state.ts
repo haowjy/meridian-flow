@@ -1,6 +1,7 @@
 /**
  * The tree half of the review list, read from the Work's rows (`branch_tree_nodes`, written by
  * the replay of the list) against live's (`tree_nodes`). Addresses are spelled by the tree reader.
+ * A row the Work did not change (`changed` false: only a twin's suffix differs) is no row here.
  */
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -31,7 +32,7 @@ export async function branchFolderIds(db: Database, branchId: BranchId): Promise
   const rows = await currentDrizzleDb(db).execute<{ id: string }>(sql`
     SELECT b.id::text AS id
     FROM branch_tree_nodes b
-    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder'`);
+    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder' AND b.changed`);
   return [...rows];
 }
 
@@ -70,7 +71,8 @@ export function createDrizzleBranchTreeState(
           t.id IS NOT NULL AS live, coalesce(t.trash_record IS NOT NULL, false) AS live_trashed,
           d.storage_url IS NOT NULL AS binary
         FROM documents d
-          LEFT JOIN branch_tree_nodes b ON b.id = d.id AND b.branch_id = ${branchId}::uuid
+          LEFT JOIN branch_tree_nodes b
+            ON b.id = d.id AND b.branch_id = ${branchId}::uuid AND b.changed
           LEFT JOIN tree_nodes t ON t.id = d.id
         WHERE (b.id IS NOT NULL
           OR (t.trash_record IS NULL AND t.id IS NOT NULL

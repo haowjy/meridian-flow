@@ -9,17 +9,14 @@
  */
 
 import type { NamedRow } from "@meridian/contracts/protocol";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import type { ContextCreateKind } from "./context-create-kind";
-import type { ContextEntrySibling } from "./context-entry-name";
 import {
-  allocateContextEntryArrivalName,
   entryNameStemEnd,
   storedDocumentName,
   validateContextEntryName,
 } from "./context-entry-name";
-import { describeRenames } from "./entry-drag/drop-choice";
 import { useEntryActions } from "./entry-drag/entry-actions";
 
 export type UseRenameEntryFormOptions = {
@@ -29,8 +26,6 @@ export type UseRenameEntryFormOptions = {
   currentName: string;
   /** The renamed file's own naming facts; absent for a folder. */
   row?: NamedRow;
-  /** Sibling names for the clash warning (should include all siblings). */
-  siblings: readonly ContextEntrySibling[];
   kind: ContextCreateKind;
   /** Called when the form completes (successful rename or cancel). */
   onDone: () => void;
@@ -43,7 +38,6 @@ export function useRenameEntryForm({
   entryId,
   currentName,
   row,
-  siblings,
   kind,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
@@ -52,7 +46,7 @@ export function useRenameEntryForm({
     const stored = storedDocumentName(typed, row);
     return stored.ok ? stored.name : typed;
   };
-  // The name is appended as a `rename` record and shows at once; the copy numbers a taken name.
+  // The name is appended as a `rename` record and shows at once; a sibling's name makes a twin.
   const rename = (typed: string) => {
     const stored = kind === "file" ? storedDocumentName(typed, row) : null;
     if (stored && !stored.ok) throw new Error(stored.message);
@@ -60,17 +54,6 @@ export function useRenameEntryForm({
       .holding(entryId)
       .list.rename(entryId, stored?.name ?? typed, stored?.filename.filetype ?? undefined);
   };
-
-  // Another entry may have a codec-equivalent name; only this identity is excluded.
-  const filteredSiblings = useMemo(
-    () => siblings.filter((sibling) => sibling.entryId !== entryId),
-    [siblings, entryId],
-  );
-
-  const occupancy = useMemo(
-    () => new Set(filteredSiblings.map((sibling) => sibling.name)),
-    [filteredSiblings],
-  );
 
   // Select the name sans a visible extension on focus ("outline" in
   // "outline.json"); a prose name has none, so all of it.
@@ -84,14 +67,7 @@ export function useRenameEntryForm({
   return useInlineEdit({
     initial: currentName,
     unchanged: currentName,
-    validate: (draft) => {
-      const invalid = validateContextEntryName(draft, [], kind, row);
-      if (invalid || !draft.trim()) return invalid;
-      const as = allocateContextEntryArrivalName(draft, occupancy, kind, row);
-      const name = allocateContextEntryArrivalName(draft, new Set<string>(), kind, row);
-      const message = as === name ? null : describeRenames([{ name, as }]);
-      return message ? { level: "warning", message } : null;
-    },
+    validate: (draft) => validateContextEntryName(draft, kind, row),
     onCommit: (typed) => {
       // Typing the name it already has, another way (`Chapter 13.md`), is no change.
       if (kind === "file" && storedName(typed) === currentName) return onDone();

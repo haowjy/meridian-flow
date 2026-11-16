@@ -3,6 +3,7 @@
 import { validateContextEntryName } from "./context-entry-validation.js";
 import { classifyHandleToken, decodeWorkHandle, parseHandle, type WorkHandle } from "./handles.js";
 import { canonicalLeaf } from "./protocol/document-filename.js";
+import { readSegment } from "./protocol/entry-segment.js";
 import type { ResolvedWorkAuthority } from "./works/index.js";
 
 export const CONTEXT_URI_SCHEMES = [
@@ -636,7 +637,7 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   const parsed = parseUnifiedContextUri(uri);
   const segment = (parsed.ok ? parsed.value.path : uri).split("/").filter(Boolean).at(-1);
   if (!segment) return null;
-  return canonicalLeaf(segment);
+  return canonicalLeaf(readSegment(segment).name);
 }
 
 const uploadsBelongToChat =

@@ -55,6 +55,8 @@ export type ReferenceSelectAction<Reference extends AuthoritativeReference = Doc
 type NavigationRowBase = {
   rowId: string;
   label: string;
+  /** A twin's `~id`, which the label doesn't carry. */
+  suffix?: string;
   location: string;
   matchAliases: readonly string[];
   action: ReferenceNavigationAction;
@@ -68,6 +70,8 @@ export type ReferenceRow =
       kind: "file";
       rowId: string;
       label: string;
+      /** As a folder row's. */
+      suffix?: string;
       location: string;
       fileKind: "document" | "asset";
       aliases: readonly string[];
@@ -200,6 +204,7 @@ export function referenceRowForFile(
     kind: "file",
     rowId: `file:${file.documentId}`,
     label: file.name,
+    ...(file.suffix ? { suffix: file.suffix } : {}),
     location: locationOf(file.path),
     fileKind: file.editable ? "document" : "asset",
     aliases: file.aliases ?? [],

@@ -440,7 +440,7 @@ export interface ContextPort {
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(
     uri: string,
-    options?: import("./context-adapter.js").ContextEnsureTrackedOptions,
+    options?: import("./context-adapter.js").ContextEnsureTrackedPortOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */

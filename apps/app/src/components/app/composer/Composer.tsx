@@ -2,7 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts";
-import type { UploadIntakeResult } from "@meridian/contracts/protocol";
+import { readSegment, type UploadIntakeResult } from "@meridian/contracts/protocol";
 import { imageCapable } from "@meridian/thread-client";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
@@ -120,7 +120,7 @@ function uploadChips(editor: Editor): Map<string, number> {
 function uploadLabel(uri: UploadIntakeResult["uri"], fallback: string): string {
   const parsed = parseContextUri(uri);
   if (!parsed.ok) return fallback;
-  const name = parsed.value.path.split("/").at(-1);
+  const name = readSegment(parsed.value.path.split("/").at(-1) ?? "").name;
   return name || fallback;
 }
 export type ComposerUploadPort = Readonly<{

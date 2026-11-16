@@ -7,10 +7,13 @@ it may write, whether a node id is in use) comes in as plain inputs.
 
 - A record is one act by one actor. The list never deletes, and nothing here edits a record:
   a record's state is its last settlement in the `settle` array, never a field on it.
-- Replay is a pure function of the records. It never changes what Yjs merged; the thirteen rules
+- Replay is a pure function of the records. It never changes what Yjs merged; the fourteen rules
   in [.context/CONTEXT.md](.context/CONTEXT.md) are the only place the product decides
-  anything, each beside the Yjs default it replaces. A fourteenth rule goes there, in `replay.ts`,
+  anything, each beside the Yjs default it replaces. A fifteenth rule goes there, in `replay.ts`,
   and in a casebook test that fails without it.
+- Two siblings may share a name (rule 14): a node's `name` is its label, and the later twin's
+  path segment adds `~` and its `suffix` (`segmentOf`). A reader that spells or walks a path
+  uses the segment (`childAtSegment`, in `@meridian/contracts/protocol`); one that shows a title uses the name.
 - A client may write five record kinds with its own account as the actor. Everything else
   (copies, which carry `carries`; files, `purge`, settlements) is the server's, and `guard`
   closes a copy whose update carries it (`CopyFault`): nothing else is refused. `clientMayWrite`
@@ -19,7 +22,7 @@ it may write, whether a node id is in use) comes in as plain inputs.
   Nothing reads a decoded record's fields directly: `replay`, `listRecords` and the list index
   read through `readStored`.
 - No name is refused. The replay and the writer store and show `normalEntryName(kind, typed)`
-  (contracts) for every create, rename and move name. **Frozen as the replay uses it:** the list
+  (contracts) for every create and rename name. **Frozen as the replay uses it:** the list
   keeps what was typed and every client replays it through that function, so a change to what it
   returns for an input needs a migration of the list. **Frozen the same way:** `classifyFiletype`
   and `schemaType` as rules 11 and 12 read them (a document of an untracked type, or a rename

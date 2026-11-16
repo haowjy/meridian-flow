@@ -29,7 +29,7 @@ export type ImportRevealNode = {
 
 export interface ContextImportReveal {
   /**
-   * Joins the caller's transaction. Never refused: a name taken meanwhile is numbered, and a
+   * Joins the caller's transaction. Never refused: a name taken meanwhile becomes a twin, and a
    * destination folder deleted meanwhile stands again (the list's replay). Each document's first
    * text is already in the journal under its id.
    */

@@ -37,6 +37,7 @@ import { createDrizzleContextSources } from "./adapters/context-sources.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 import { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
 import { createDocumentLinkResolver } from "./document-link-resolution.js";
+import { createTreeReader } from "./tree/tree-view.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -177,6 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       return createDocumentLinkResolver({
         sources: createDrizzleContextSources(db),
+        tree: createTreeReader(db),
         history: createDrizzleDocumentLinkHistory(db),
         workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         chats: createDrizzleChatUploadsOwners(db),

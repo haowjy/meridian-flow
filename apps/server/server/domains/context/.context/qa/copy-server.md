@@ -40,9 +40,9 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    `kb://Hidden/Vault/Note` (`./mf thread send <chat> go --mock @script.json`, a
    `write` create each). Copy a live `Sheet` and a live `Vault` folder into
    `kb://Hidden`: the copies take the names `Sheet` and `Vault` (a hidden node never
-   vetoes a visible one), and the hidden rows stay hidden and yield to `Sheet (2)` and
-   `Vault (2)` in the draft, still holding the draft's text. The same copy where the
-   name is held by a live document lands at `Sheet (2)`.
+   vetoes a visible one), and the hidden rows stay hidden; in the draft both keep their
+   names as twins (`Sheet~…`, `Vault~…`), still holding the draft's text. The same copy where
+   the name is held by a live document lands as its twin, `Sheet~…`, and the entry says so.
 3. **Draft source.** The same chat overwrites `manuscript://Outside/Sheet` in its
    draft. Copy it with `--draft-work w1`: the copy holds the draft text and
    `metadata.copiedFrom.version` is `draft`. Copy without the flag: the live text,
@@ -98,9 +98,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
     copy, and its other links keep their targets. The turn's live lineage gives the
     copy `tree: {op: "copy", from, to}`, which the chat receipt reads as
     `Copied <source> to <name>`. The model names the exact path, so a path another
-    entry holds answers `invalid_write` ("File already exists: …") as a typed tool
-    error and creates nothing; the model chooses another path. The command's copy
-    instead plans a free name (steps 2 and 17).
+    entry holds with text makes a twin there, and the result prints its `~id` path; one
+    that holds an empty document fills it.
 13. **Arrival.** Write a link to an address that does not exist yet, then copy a
     document to that address: `link_ahead_refs.settled_document_id` is the copy.
 14. **Nested selection.** `./mf doc copy "manuscript://Book" "manuscript://Book/Ch1"
@@ -122,8 +121,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
     transaction, ten or more of them held every pool connection and waited for one
     more.)
 18. **A taken name.** While a `./mf doc copy` prepares, create the folder or file it
-    would take in the destination: the copy lands under the next free name (`Book (2)`)
-    and its internal links name the copy. Only a temporary sleep between the plan and
+    would take in the destination: the copy lands as its twin (`Book~…`) and its internal
+    links name the copy. Only a temporary sleep between the plan and
     the lock makes the race reproducible, so no step here reaches it without one. The
     model's copy has no plan to reallocate, so it refuses instead; step 11.
 

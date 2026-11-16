@@ -311,9 +311,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     roots: readonly CopySourceEntry[],
     documents: ReadonlyMap<string, PreparedDocument>,
   ): Promise<Result<PlannedCopy, ContextError>> {
-    const owner = destination.branch;
-    const view = owner ? await deps.branches.viewForOwner(owner.owner) : { kind: "live" as const };
-    const planned = await destination.copy.planCopy({ dir: destination.dir, roots, view });
+    const planned = await destination.copy.planCopy({ dir: destination.dir, roots });
     if (!planned.ok) return Err(adapterFaultToContextError(planned.error, destination.uri));
     return Ok(await bind(planned.value, documents));
   }

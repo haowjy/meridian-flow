@@ -356,8 +356,6 @@ export function createPackageSaver(input: {
               userId,
               projectId,
               files,
-              create: false,
-              delete: false,
             });
             await prepared.applyFiles();
           }

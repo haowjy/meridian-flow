@@ -66,11 +66,11 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
             folderId ? eq(column as never, folderId) : isNull(column as never);
           const [folders, files] = await Promise.all([
             currentDrizzleDb(db)
-              .select({ name: vf.name })
+              .select({ id: vf.id, name: vf.name })
               .from(vf)
               .where(and(eq(vf.contextSourceId, sourceId), parent(vf.parentId))),
             currentDrizzleDb(db)
-              .select({ name: vd.name })
+              .select({ id: vd.id, name: vd.name })
               .from(vd)
               .where(and(eq(vd.contextSourceId, sourceId), parent(vd.folderId))),
           ]);
@@ -80,8 +80,8 @@ export function createDrizzleContextImportRead(db: Database, projectId: string):
             uri,
             fellBack: area === originalArea && input.folderId !== null && !destinationFolder,
             children: [
-              ...folders.map(({ name }) => ({ kind: "folder" as const, name })),
-              ...files.map(({ name }) => ({ kind: "file" as const, name })),
+              ...folders.map(({ id, name }) => ({ id, kind: "folder" as const, name })),
+              ...files.map(({ id, name }) => ({ id, kind: "file" as const, name })),
             ],
           };
         }),

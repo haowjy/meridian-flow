@@ -7,6 +7,7 @@ import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerResults, PickerSearch, PickerSection } from "@/components/ui/picker";
+import { twinSuffix } from "@/core/project-tree/tree-view";
 import { fileKindIcon } from "../context/context-file-icon";
 import { fileSuggestion, matchFileSuggestions } from "../context/file-suggestions/file-suggestions";
 import { SideExplorer } from "./SideExplorer";
@@ -64,7 +65,7 @@ export function DocumentChoices({
   const recents = recent.documents
     .filter((item) => !openIds.has(item.documentId) && item.editable)
     .slice(0, RECENT_LIMIT);
-  const row = (documentId: string, name: string, meta?: string) => {
+  const row = (documentId: string, name: string, meta?: string, suffix?: string) => {
     const Icon = fileKindIcon(name);
     return (
       <li key={documentId}>
@@ -74,6 +75,7 @@ export function DocumentChoices({
           onOpen={() => choose(documentId)}
           leading={<Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
           title={name}
+          suffix={suffix}
           meta={meta}
         />
       </li>
@@ -109,7 +111,7 @@ export function DocumentChoices({
               ) : undefined
             }
           >
-            {found.map((file) => row(file.entryId, file.name, file.parents.at(-1)))}
+            {found.map((file) => row(file.entryId, file.name, file.parents.at(-1), file.suffix))}
           </PickerSection>
         ) : (
           <>
@@ -120,6 +122,7 @@ export function DocumentChoices({
                     document.documentId,
                     document.name,
                     document.kind === "new" ? undefined : parentFolder(document.path),
+                    document.kind === "new" ? undefined : twinSuffix(document.path),
                   ),
                 )}
               </PickerSection>
@@ -144,6 +147,7 @@ export function DocumentChoices({
                     item.documentId,
                     item.name,
                     item.address.kind === "document" ? parentFolder(item.address.path) : undefined,
+                    item.address.kind === "document" ? twinSuffix(item.address.path) : undefined,
                   ),
                 )}
               </PickerSection>

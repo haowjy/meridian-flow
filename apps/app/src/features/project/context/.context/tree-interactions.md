@@ -45,15 +45,16 @@ swallowing a same-tick `focus()`.
 |---|---|---|
 | initial | `""` | `entry.name` (or the failed repair name) |
 | unchanged | — | current name |
-| validate siblings | all sibling identities and kinds | syntax only; the list numbers a taken name |
+| validate | the codec and whitespace; a sibling's name makes a twin | the same |
 | select | — | the part before a visible extension; all of a prose name |
 
 Names are compared and submitted as the contracts codec stores them
 (`storedFilename` in `context-entry-name.ts`), given the row's own
 facts (`NamedRow`: its stored `extension` and whether it is `editable`, never read from
-the suffix): a prose name has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change and
-beside `Chapter 13` predicts `Chapter 13 (2)`; a bare name keeps the renamed file's visible
-extension (`settings` on `config.toml`). Siblings of either kind compare by their literal rendered names. Create conflict copy names the occupant's kind, not the requested kind. Rename and move never block on a sibling claim: the shared allocator predicts the landed name for the warning, and the list numbers it when the record is written (rename, create) or when the replay shows it (move). The codec's `invalid_name` message
+the suffix): a prose name has no extension, so `Chapter 13.md` typed on `Chapter 13` is no change; a
+bare name keeps the renamed file's visible extension (`settings` on `config.toml`). No create,
+rename or move checks or warns about a sibling's name: one a sibling has makes a twin (the later's
+path carries `~id`). The codec's `invalid_name` message
 shows on the field. A rename sends the stored name (`storedFilename`) and the type it changes to, if any; a canonical name is never fed back into extension inheritance.
 
 ## Dual-trigger caveat
@@ -186,7 +187,7 @@ is a destination (`MenuArea.writable`: an ended Work's Scratch, by `useWorkSourc
 every tree on a deleted Work's Draft take none), so it is left off the top level and offers no
 Copy here or Move here; Copy to… from a row in it still works, opening at the project root.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
-position choices (it always adds, and its copy takes the next free name in the
+position choices (it always adds, and its copy is a twin of the row in the
 parent the row is already in), and it calls `copyRows` where Move… calls `moveRows`.
 `EntryDestinationPicker` mounts `useProjectMenuSource` and `DrillInMenu` only while open; closed rows keep only their stable row anchor. It starts inside
 the current parent for a new move or copy (at the project's root when no area is given). A retry opens at the refused destination
@@ -197,13 +198,9 @@ opens the places among its siblings in place of the tree (`DrillAction.choices`)
 sibling, the bottom, read from the tree's complete sibling order (`children`, not what a search
 shows), without the place it already holds. It reads "Already in <folder>" only when the entry has no
 siblings. The phone uses the same picker; it has no drag.
-A taken name never refuses: the row arrives at the next free name (predicted
-from the destination's rows, decided by the server) through `setLocation` for
-files and `setFolderLocation` for folders. Before the click, a Move action carries a
-warning line under it ("chapter-1 will be renamed chapter-1 (2)", the `note` of a
-`DrillAction`): a move renames something the writer already has, and until tree
-Undo exists dragging it back doesn't restore the name. A Copy shows none, since
-nothing the writer has changes. Either pick opens the destination folder.
+A taken name never refuses: the row arrives under its own name, as a twin, through
+`setLocation` for files and `setFolderLocation` for folders. Either pick opens the destination
+folder.
 Trees span areas, so menu lookups check source identity as well as entry identity; equal paths in
 different areas remain distinct destinations.
 
@@ -214,13 +211,13 @@ plan holds its rows and one `TreeDestination` (`{ parentId, position? }`, the fo
 source's id at the top); hover prediction and `moveRows` consume it without resolving the
 destination again. `moveRows` (`entry-drag/execute-move.ts`) appends the rows' `move` records as
 one gesture to the destination's list (`TreeActions.moveAll`) and returns the rows it moved. A
-move sends no name: the replay numbers a clash, and `renamesOnArrival` only predicts it for the
-warning shown before the drop. A positional destination (an edge drop, the picker's "Change
-position", a Trash row dragged to an edge) names a sibling by id, or the top or bottom, never an
-index: `TreeWriter.moveAll` lands the first row there and each next one right after the one
-before it, so several rows arrive together in screen order wherever they started (the AI's
-`move` of several paths places through the same call, after the same `outermost` rule: a path
-inside a folder it also names moves with that folder), and a same-parent placement is a reorder rather than "already there". A move between the account's files
+move sends no name and keeps the row's: beside a sibling of that name it is a twin. A positional
+destination (an edge drop, the picker's "Change position", a Trash row dragged to an edge) names
+a sibling by id, or the top or bottom, never an index: `TreeWriter.moveAll` lands the first row
+there and each next one right after the one before it, so several rows arrive together in screen
+order wherever they started (the AI's `move` of several paths places through the same call, after
+the same `outermost` rule: a path inside a folder it also names moves with that folder), and a
+same-parent placement is a reorder rather than "already there". A move between the account's files
 and a project is not a record the browser can append to two lists; the drop offers Copy there.
 Copy stays a server route: `copyRows` (`entry-drag/execute-copy.ts`) mints the copies' ids and the
 command's id, sends them once, and the copies arrive through the list. A refused Copy toasts with
@@ -285,15 +282,10 @@ Each list has a `TreeDropScope` whose entries route (`use-entry-list.tsx`,
 planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2"; "Move to Act 2…"
 when the drop will ask, see below), refuse ("Can't go inside
 itself", a folder over its own subtree), or nothing (the row is already there, the target is a
-navigation-only folder, or the selection holds a row that can't move or has gone). A taken name never refuses: each row arrives at the next free
-name (`chapter-2 (2)`), predicted (`arrivals` in `execute-move.ts`) against the destination's
-rows plus the rows placed before it in the same drop; the record's writer numbers
-the name in the replay, so a concurrent create can still move it. The hover shows that prediction before a move: an accept whose rows
-would arrive renamed carries a warning, drawn as a second line under the hint
-("chapter-1 will be renamed chapter-1 (2)", or "3 items will be renamed"). Letting
-go accepts it; Escape or another target declines it. A drop moves every carried row through
-`moveRows` (`entry-drag/execute-move.ts`) and shows where they landed (`revealPlaced`, below). The
-tree is the whole report of a move that works.
+navigation-only folder, or the selection holds a row that can't move or has gone). A taken name
+never refuses and is never warned about: each row keeps its name, a twin beside a sibling of that
+name. A drop moves every carried row through `moveRows` (`entry-drag/execute-move.ts`) and shows
+where they landed (`revealPlaced`, below). The tree is the whole report of a move that works.
 A row no list will take (read-only, not open) toasts "Couldn't move chapter-3 to Act 2."
 ("Couldn't move 3 items to Act 2." for several) with Retry for the rows it refused. The server
 refuses no move; one into a Work that closed meanwhile bounces on its row ("Not moved").
@@ -431,8 +423,8 @@ already leaves a drag that starts inside it alone.
 
 Copy duplicates the carried rows into the destination and leaves the sources where
 they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
-copied, the one already in the destination's parent included (its copy takes the
-next free name), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
+copied, the one already in the destination's parent included (its copy is a
+twin), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
 server with its root: a tree row copies the live document, a draft title or receipt row the draft it
 shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
 of the document, and a Work with no draft of it refuses the Copy (it never reads live text). The copies are

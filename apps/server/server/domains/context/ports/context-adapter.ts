@@ -41,16 +41,32 @@ export type ContextEnsureTrackedOptions = ContextWriteOptions & {
    * the folder those names find now.
    */
   into?: string;
+  /**
+   * A new document at the path even where it reaches one: the model's `create` where the document
+   * there holds text makes another document of that name (a twin) instead of refusing.
+   */
+  beside?: true;
   /** Keeps a newly created document's receipt in the same transaction as its tree placement. */
-  recordCreate?: (created: {
-    documentId: import("@meridian/contracts").DocumentId;
-    /** The create record, which the receipt names for Undo. */
-    record: string;
-    /** The folders the create made on the way, outermost first; its Undo takes them back too. */
-    folders: readonly { record: string; node: string }[];
-    /** The Work's branch it was drafted in; absent for a live create. */
-    draftBranchId?: import("@meridian/contracts").BranchId;
-  }) => Promise<void>;
+  recordCreate?: (created: CreatedDocument & { path: string }) => Promise<void>;
+};
+
+/** A document an ensure created, for its receipt. */
+export type CreatedDocument = {
+  documentId: import("@meridian/contracts").DocumentId;
+  /** The create record, which the receipt names for Undo. */
+  record: string;
+  /** The folders the create made on the way, outermost first; its Undo takes them back too. */
+  folders: readonly { record: string; node: string }[];
+  /** The Work's branch it was drafted in; absent for a live create. */
+  draftBranchId?: import("@meridian/contracts").BranchId;
+};
+
+/** The port's ensure options: the receipt hears the URI the document landed at. */
+export type ContextEnsureTrackedPortOptions = Omit<
+  ContextEnsureTrackedOptions,
+  "recordCreate" | "parsedFilename"
+> & {
+  recordCreate?: (created: CreatedDocument & { uri: string }) => Promise<void>;
 };
 
 /** What a scheme adapter supports. Checked by the router before dispatch. */
@@ -82,7 +98,7 @@ export type AdapterFault =
   | { code: "not_found" }
   | { code: "destination_missing" }
   | { code: "permission_denied" }
-  | { code: "conflict"; occupantKind?: "file" | "folder" }
+  | { code: "conflict" }
   | { code: "stale_source" }
   | { code: "stale_target" }
   | { code: "invalid_operation"; message?: string; reason?: InvalidOperationReason }
@@ -117,6 +133,12 @@ export type AdapterGrepResult = {
 };
 export type AdapterContextReadResult = Omit<ContextReadResult, "uri">;
 export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
+
+/**
+ * A create's answer from the adapter: the source-relative path it landed at, which the router
+ * spells as the URI (a twin's leaf carries its `~id`, so it is not always the path asked for).
+ */
+export type Landed<T> = Omit<T, "uri"> & { path: string };
 
 export type AdapterLocatedDocument = { documentId: string; path: string; name: string };
 
@@ -210,22 +232,22 @@ export interface ContextSchemeAdapter {
     path: string,
     markdown: string,
     options?: ContextWriteOptions,
-  ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
+  ): Promise<Result<Landed<ContextCreateTrackedDocumentResult>, AdapterFault>>;
   createBoundDocument(
     path: string,
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
-  ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
+  ): Promise<Result<Landed<ContextCreateTrackedDocumentResult>, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */
   locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
     options?: ContextEnsureTrackedOptions,
-  ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
+  ): Promise<Result<Landed<ContextEnsureTrackedDocumentResult>, AdapterFault>>;
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<Omit<ContextBinaryWriteResult, "uri">, AdapterFault>>;
+  ): Promise<Result<Landed<ContextBinaryWriteResult>, AdapterFault>>;
   list(
     path: string,
     options?: ContextListOptions,

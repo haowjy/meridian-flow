@@ -8,7 +8,6 @@ import type {
   ContextOwner,
   ContextSiblingPosition,
   CopyContextEntryView,
-  NamedRow,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { TreeDestination, TreeEntry, TreeView } from "@/core/project-tree/tree-view";
@@ -42,13 +41,10 @@ export type PlacedEntry = {
   entry: TreeEntry;
 };
 
-/** One row ready to move: its current name and parent. */
+/** One row ready to move: its current parent. */
 export type MoveRow = {
   entry: EntryRef;
-  name: string;
   from: string;
-  /** The file's naming facts, for the name it would arrive under; absent for a folder. */
-  named?: NamedRow;
 };
 
 export type MovePlan =
@@ -73,10 +69,6 @@ const NONE: MovePlan = { kind: "none" };
 
 /** Whether a tree belongs to the account's list (`user://`) rather than the project's. */
 export const isAccountArea = (area: Pick<MoveArea, "scheme">) => area.scheme === "user";
-
-/** A file's naming facts as its row shows them; a folder has none. */
-export const namedRowOf = (entry: TreeEntry): NamedRow | undefined =>
-  entry.kind === "file" ? { extension: entry.extension, editable: entry.editable } : undefined;
 
 const kindOf = (entry: TreeEntry): EntryRef["kind"] => (entry.kind === "dir" ? "folder" : "file");
 
@@ -252,7 +244,7 @@ export function planMove(resolved: ResolvedDrop | null): MovePlan {
   if (!resolved.canMove || resolved.unavailable.length > 0 || resolved.crossesLists) return NONE;
   if (resolved.insideItself) return { kind: "inside-itself" };
   if (position) return planPositioned(sources, resolved, position);
-  // Rows already there stay put; a taken name never refuses (the row arrives at the next free name).
+  // Rows already there stay put; a taken name never refuses a move: twins are made.
   const moves = sources.flatMap((source) => (source.parentId === into ? [] : [moveRowOf(source)]));
   return moves.length === 0
     ? NONE
@@ -289,7 +281,7 @@ export type ReadyCopy = Extract<CopyPlan, { kind: "ready" }>;
 
 /**
  * What a resolved drop would do as a Copy. Every carried row is copied, the one already in the
- * target's parent included (its copy takes the next free name), and an edge drop may anchor on a
+ * target's parent included, and an edge drop may anchor on a
  * carried row, which stays where it is. A selection that lost a row copies nothing.
  */
 export function planCopy(resolved: ResolvedDrop | null): CopyPlan {
@@ -321,12 +313,7 @@ export function planCopy(resolved: ResolvedDrop | null): CopyPlan {
 
 const NONE_COPY: CopyPlan = { kind: "none" };
 
-const moveRowOf = (source: PlacedEntry): MoveRow => ({
-  entry: source.ref,
-  name: source.name,
-  from: source.parentId,
-  named: namedRowOf(source.entry),
-});
+const moveRowOf = (source: PlacedEntry): MoveRow => ({ entry: source.ref, from: source.parentId });
 
 /**
  * An edge drop: the carried rows land together, in screen order, beside the anchor in `into`.

@@ -79,9 +79,8 @@ worded by `treeLeftSentence`, the review row's and Ctrl+Z's own sentence ("Not
 undone. The move stayed: it was changed since."), and the parts list doesn't
 repeat what that line already says. The chip carries the tree changes that stay
 in its `skips` before any press, so a card with nothing left to undo says why
-when opened. A taken leaf
-is not a refusal: the inverse lands at the next free name and the card says where,
-for example "Restored as ch2 (2)." from the committed transition.
+when opened. A taken leaf is not a refusal: the inverse lands beside it as a twin,
+and the card says where from the committed transition.
 Copy covers the whole wire status union through an exhaustive switch that fails
 the build when a status is added, and a command that never reached a status at
 all — rejected fetch, HTTP error envelope — gets its own retry line naming the

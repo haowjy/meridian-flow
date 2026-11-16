@@ -28,12 +28,12 @@ particular, verify that:
   dependent clicks, repeated paragraphs, and another tab's Apply.
 - Live writes, deletions, moves, another Work, and a rebase merge with the
   frozen click. Overlapping live words report `overrode`.
-- A deleted document is restored by the click, with `restored` on its text half, and a
-  taken path returns a `renamed` note on its tree half.
+- A deleted document is restored by the click, with `restored` on its text half; a taken
+  name makes a twin with a distinct path segment.
 - A Work's drafted create (in the Work's tree view only, no live row) goes live
   inside its Apply with the same document id and no `branch_tree_nodes` row left;
   a live-deleted document sits in Trash until a click brings it
-  back, and a taken path returns a `renamed` note. The fixtures write the tree
+  back, and a taken name creates a twin with a distinct path segment. The fixtures write the tree
   through `treeListStore.submit` (`test-support/tree-seed.ts`), never by row.
 
 ## Late closure at the append door

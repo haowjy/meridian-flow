@@ -6,7 +6,6 @@ import {
   canonicalContextUri,
   documentTitleFromUri,
   isProjectScopedScheme,
-  matchDocumentPath,
   parseContextUri,
 } from "@meridian/contracts";
 import type { ContextSource, ContextSourceOwner } from "@meridian/contracts/protocol";
@@ -19,6 +18,7 @@ import type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+import { LIVE_TREE, type TreeReader } from "./tree/tree-view.js";
 
 /** Whose source an address is in; `account` is the reader's own home folder. */
 type Owner = ContextSourceOwner;
@@ -26,12 +26,14 @@ type Location = { owner: Owner; scheme: ContextUriScheme; path: string };
 
 export function createDocumentLinkResolver({
   sources,
+  tree,
   workAuthorityResolver,
   history,
   lineages,
   chats,
 }: {
   sources: ContextSources;
+  tree: Pick<TreeReader, "resolveDocumentAddress">;
   lineages?: import("./scratch-owner.js").ScratchLineages;
   chats?: ChatUploadsOwners;
   history?: DocumentLinkHistory;
@@ -86,9 +88,13 @@ export function createDocumentLinkResolver({
         : await sources.ownedBy(input.projectId, address.owner);
     const source = candidates.find((candidate) => candidate.scheme === address.scheme);
     if (!source) return null;
-    const files = await sources.liveDocuments(source.id);
-    const match = matchDocumentPath(files, address.path, (file) => file.path);
-    if (match) return resolvedLink(source, match);
+    const found = await tree.resolveDocumentAddress(LIVE_TREE, {
+      contextSourceId: source.id,
+      path: address.path,
+    });
+    if (found.kind === "found" && found.node.kind === "document") {
+      return resolvedLink(source, found.node.document);
+    }
     const previous = allowHistory
       ? await history?.previous(input, { sourceId: source.id, path: address.path })
       : null;

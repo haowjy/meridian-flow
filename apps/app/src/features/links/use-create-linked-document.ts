@@ -25,7 +25,7 @@ import {
   isCreatableLinkScheme,
   linkedDocumentName,
 } from "@/core/editor/links";
-import type { TreeActions } from "@/core/project-tree/tree-actions";
+import { makeFolders, type TreeActions } from "@/core/project-tree/tree-actions";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeView } from "@/core/project-tree/tree-view";
 
@@ -58,8 +58,8 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
 }
 
 export type CreateLinkedDocument = {
-  /** The new document's id, or null when it could not be created. */
-  create(target: LinkCreationTarget): string | null;
+  /** The new document's id and the path it landed at, or null when it could not be made there. */
+  create(target: LinkCreationTarget): { node: string; path: string } | null;
   failed: boolean;
 };
 
@@ -77,9 +77,9 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
     (target: LinkCreationTarget) => {
       const tree = trees[target.scheme].tree;
       const actions = target.scheme === "user" ? accountActions : projectActions;
-      const documentId = tree ? createAt(tree, actions, target) : null;
-      setFailed(documentId === null);
-      return documentId;
+      const made = tree && createAt(tree, actions, target);
+      setFailed(made === null);
+      return made;
     },
     [accountActions, projectActions, trees],
   );
@@ -87,21 +87,12 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
   return { create, failed };
 }
 
-/** The deepest folder of the address that exists holds the missing ones, then the document. */
-function createAt(tree: TreeView, actions: TreeActions, target: LinkCreationTarget): string {
-  const folders = target.folderPath.split("/").filter(Boolean);
-  const missing: string[] = [];
-  let parentId = tree.root.entryId;
-  while (folders.length) {
-    const found = tree.findPath(`/${folders.join("/")}`);
-    if (found?.kind === "dir") {
-      parentId = found.entryId;
-      break;
-    }
-    missing.unshift(folders.pop() as string);
-  }
-  for (const name of missing) {
-    parentId = actions.create({ parentId, name, kind: "folder" }).node;
-  }
-  return actions.create({ parentId, name: target.name, kind: "document" }).node;
+function createAt(
+  tree: TreeView,
+  actions: TreeActions,
+  target: LinkCreationTarget,
+): { node: string; path: string } | null {
+  const parentId = makeFolders(tree, actions, target.folderPath);
+  const { node, path } = actions.create({ parentId, name: target.name, kind: "document" });
+  return path ? { node, path } : null;
 }

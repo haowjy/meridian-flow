@@ -72,7 +72,7 @@ export function MobileProject(props: MobileProjectProps) {
   }, [asked]);
   const trashedId = useTrashNavigation().shown;
   const trashed = useDocumentStanding(props.projectId, trashedId ?? null);
-  const trashedName = trashed.kind === "in-trash" ? trashed.node.displayName : undefined;
+  const trashedName = trashed.kind === "in-trash" ? trashed.node.name : undefined;
   const crumbs = trashedId
     ? [{ label: trashedName ?? t`Trash` }]
     : contextBreadcrumbSegments(props);

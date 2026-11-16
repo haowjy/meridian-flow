@@ -6,6 +6,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import { closeHistory } from "@tiptap/pm/history";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { type Ref, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -17,6 +18,7 @@ import {
   ContextMenuLabel,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { EntryName } from "@/components/ui/entry-name";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import {
@@ -27,6 +29,7 @@ import {
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { linkChipAttributes, referenceChip } from "@/core/editor/links";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
+import { twinSuffix } from "@/core/project-tree/tree-view";
 import { ReferenceSuggestionMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { FolderMenu, useFolderMenuHost } from "@/features/project/context/FolderMenu";
@@ -55,6 +58,11 @@ export function ComposerReferenceMenu({
   // Opening before the menu releases its focus scope immediately dismisses the picker.
   const changeAfterClose = useRef<"destination" | "label" | null>(null);
   const label = reference.displayText ?? reference.label;
+  // Words the writer gave the chip are theirs; its own label is the name, which a twin's `~id` ends.
+  const parsed = parseContextUri(reference.uri);
+  const suffix =
+    reference.displayText === undefined && parsed.ok ? twinSuffix(parsed.value.path) : undefined;
+  const spoken = suffix ? `${label}~${suffix}` : label;
   const runtime = readRuntime();
   const follow =
     reference.kind === "document" && runtime.onOpen
@@ -108,10 +116,10 @@ export function ComposerReferenceMenu({
         {...linkChipAttributes(referenceChip(reference))}
         aria-haspopup="menu"
         aria-disabled={!folderHost}
-        aria-label={label}
+        aria-label={spoken}
         {...drag}
       >
-        {label}
+        <EntryName name={label} suffix={suffix} />
       </button>
     ) : (
       // biome-ignore lint/a11y/useSemanticElements: Internal document references have no browser URL.
@@ -122,7 +130,7 @@ export function ComposerReferenceMenu({
         tabIndex={0}
         role="link"
         aria-disabled={!follow}
-        aria-label={label}
+        aria-label={spoken}
         {...drag}
         // A click on the chip follows it and leaves the caret beside it, never on it: a chip the
         // click selected (or a focused chip holding the DOM selection) is replaced by the next keystroke.
@@ -140,7 +148,7 @@ export function ComposerReferenceMenu({
           follow?.();
         }}
       >
-        {label}
+        <EntryName name={label} suffix={suffix} />
       </span>
     );
   return (

@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, FilePlus2, FileText, Folder, Image } from "l
 import { useSyncExternalStore } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { EntryName } from "@/components/ui/entry-name";
 import { ListLine } from "@/components/ui/list-row";
 import {
   closedSuggestionMenu,
@@ -120,7 +121,9 @@ export function ReferenceSuggestionMenu({
           ) : (
             <>
               <ReferenceIcon row={row} />
-              <span className="truncate">{row.label}</span>
+              <span className="min-w-0 truncate">
+                <EntryName name={row.label} suffix={row.suffix} truncate />
+              </span>
               <span className="ml-auto shrink-0 pl-4 text-muted-foreground text-xs">
                 {rowLocation(row)}
               </span>

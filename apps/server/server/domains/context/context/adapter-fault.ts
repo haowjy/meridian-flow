@@ -11,11 +11,7 @@ export function adapterFaultToContextError(fault: AdapterFault, uri: string): Co
     case "permission_denied":
       return { code: "permission_denied", uri };
     case "conflict":
-      return {
-        code: "conflict",
-        uri,
-        ...(fault.occupantKind ? { occupantKind: fault.occupantKind } : {}),
-      };
+      return { code: "conflict", uri };
     case "stale_source":
       return { code: "stale_source", uri };
     case "stale_target":

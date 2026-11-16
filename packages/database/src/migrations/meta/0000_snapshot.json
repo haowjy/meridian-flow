@@ -7985,6 +7985,22 @@
           "primaryKey": false,
           "notNull": true
         },
+        "suffix": {
+          "name": "suffix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "segment": {
+          "name": "segment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "name || coalesce('~' || suffix, '')",
+            "type": "stored"
+          }
+        },
         "extension": {
           "name": "extension",
           "type": "text",
@@ -8012,6 +8028,12 @@
         },
         "exists_only_in_draft": {
           "name": "exists_only_in_draft",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "changed": {
+          "name": "changed",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true
@@ -8061,7 +8083,7 @@
               "nulls": "last"
             },
             {
-              "expression": "name",
+              "expression": "segment",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -8270,6 +8292,22 @@
           "primaryKey": false,
           "notNull": true
         },
+        "suffix": {
+          "name": "suffix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "segment": {
+          "name": "segment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "name || coalesce('~' || suffix, '')",
+            "type": "stored"
+          }
+        },
         "extension": {
           "name": "extension",
           "type": "text",
@@ -8342,7 +8380,7 @@
               "nulls": "last"
             },
             {
-              "expression": "name",
+              "expression": "segment",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

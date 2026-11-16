@@ -1,9 +1,10 @@
 /**
  * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
- * for addresses with no document yet, settled by the first live document that
- * arrives at the exact address (or at registration, if one is already there). Binding
+ * for addresses with no document yet, settled by the first live document the tree's
+ * walk reaches at the address (or at registration, if one is already there). Binding
  * is global and once; branches store nothing about ahead refs.
  */
+import type { ContextSourceId } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
@@ -33,7 +34,11 @@ import {
   UnregistrableAheadRefError,
 } from "../ports/link-ahead-registry.js";
 import { ownerColumns, ownerFrom, sourceOwnerProjectId } from "../tree/source-owner.js";
-import { type DocumentCoordinates, loadDocumentAddresses } from "../tree/tree-addresses.js";
+import {
+  type DocumentCoordinates,
+  loadDocumentAddresses,
+  presentSourceId,
+} from "../tree/tree-addresses.js";
 import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { assertNamespaceKeysHeld, lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
@@ -192,30 +197,56 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     if (addresses.length === 0) return 0;
     const arrivals = addresses.map((address) => ({
       document_id: address.documentId,
+      source_id: address.contextSourceId,
       project_id: ownerColumns(address.owner).projectId,
       user_id: ownerColumns(address.owner).userId,
       scheme: address.scheme,
       work_id: address.workId,
       root_thread_id: address.rootThreadId ?? null,
       chat_thread_id: address.chatThreadId ?? null,
-      path: address.path,
     }));
-    const [result] = await currentDrizzleDb(this.db).execute<{ count: number }>(sql`
+    // Every unsettled ref in an arrival's source may now reach it: a link's path is read through
+    // the tree's walk (`Kael/Note` reaches a Note in a twin folder), not compared as text.
+    const pending = await currentDrizzleDb(this.db).execute<{
+      ahead_id: string;
+      path: string;
+      document_id: string;
+      source_id: string;
+    }>(sql`
       with arrivals as (
         select * from jsonb_to_recordset(${JSON.stringify(arrivals)}::jsonb) as a(
-          document_id uuid, project_id uuid, user_id uuid, scheme text, work_id uuid,
-          root_thread_id uuid, chat_thread_id uuid, path text
+          document_id uuid, source_id uuid, project_id uuid, user_id uuid, scheme text,
+          work_id uuid, root_thread_id uuid, chat_thread_id uuid
         )
-      ), settled as (
-        update link_ahead_refs r set settled_document_id = a.document_id, settled_at = now()
-        from arrivals a
-        where r.settled_document_id is null
-          and r.project_id is not distinct from a.project_id
-          and r.user_id is not distinct from a.user_id and r.scheme = a.scheme
-          and r.work_id is not distinct from a.work_id
-          and r.root_thread_id is not distinct from a.root_thread_id
-          and r.chat_thread_id is not distinct from a.chat_thread_id
-          and md5(r.path) = md5(a.path) and r.path = a.path
+      )
+      select r.ahead_id::text, r.path, a.document_id::text, a.source_id::text
+      from link_ahead_refs r join arrivals a
+        on r.project_id is not distinct from a.project_id
+        and r.user_id is not distinct from a.user_id and r.scheme = a.scheme
+        and r.work_id is not distinct from a.work_id
+        and r.root_thread_id is not distinct from a.root_thread_id
+        and r.chat_thread_id is not distinct from a.chat_thread_id
+      where r.settled_document_id is null`);
+    if (pending.length === 0) return 0;
+    const reached = await createTreeReader(this.db).resolveDocumentAddresses(
+      LIVE_TREE,
+      pending.map((ref) => ({ contextSourceId: ref.source_id as ContextSourceId, path: ref.path })),
+    );
+    const settled = new Map<string, string>();
+    pending.forEach((ref, index) => {
+      const answer = reached[index];
+      if (answer?.kind === "found" && answer.node.kind === "document") {
+        if (answer.node.document.id === ref.document_id) settled.set(ref.ahead_id, ref.document_id);
+      }
+    });
+    if (settled.size === 0) return 0;
+    const [result] = await currentDrizzleDb(this.db).execute<{ count: number }>(sql`
+      with settled as (
+        update link_ahead_refs r set settled_document_id = s.document_id, settled_at = now()
+        from jsonb_to_recordset(${JSON.stringify(
+          [...settled].map(([ahead_id, document_id]) => ({ ahead_id, document_id })),
+        )}::jsonb) as s(ahead_id uuid, document_id uuid)
+        where r.ahead_id = s.ahead_id and r.settled_document_id is null
         returning r.ahead_id
       ) select count(*)::integer as count from settled`);
     return result?.count ?? 0;
@@ -274,9 +305,13 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   }
 
   private async liveDocumentAt(address: Address): Promise<DocumentId | null> {
-    const occupants = await createTreeReader(this.db).occupantsAt(LIVE_TREE, [address]);
-    const ids = [...occupants.values()][0] ?? [];
-    return ids.length === 1 ? (ids[0] ?? null) : null;
+    const contextSourceId = await presentSourceId(currentDrizzleDb(this.db), address);
+    if (!contextSourceId) return null;
+    const found = await createTreeReader(this.db).resolveDocumentAddress(LIVE_TREE, {
+      contextSourceId,
+      path: address.path,
+    });
+    return found.kind === "found" && found.node.kind === "document" ? found.node.document.id : null;
   }
 
   /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */

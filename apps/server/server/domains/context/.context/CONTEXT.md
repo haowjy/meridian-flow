@@ -42,10 +42,14 @@ out of a lineage, but may not create notes or move files into one.
 
 URI paths reject `..`, normalize slash segments, and reserve a leading `@` in
 writer-created names for authority qualifiers. Canonical filename parsing is
-owned by `@meridian/contracts/protocol`. Every tree lookup of a typed name asks
+owned by `@meridian/contracts/protocol`. A path is a list of segments: a node's name, or for a
+later twin its name, `~` and the start of its id (`Kael~b21c`, project-tree rule 14), so every
+path reaches one node. The relations and the placed nodes expose `segment`; whatever spells or
+walks a path uses it, whatever shows a title uses `name`, and `readSegment` is the one reader of a
+typed segment. Every tree lookup of a typed name asks
 `addressCandidates` (literal, then the codec's alias), and whatever holds the literal name
 answers whatever its kind: `TreeReader.resolveAddress` is the one tree walk over them,
-`matchDocumentAddress` and the client catalog's `findPath` the same order over a list. A caller
+and the client's `TreeView.findPath`/`findFolder` the same walk over its replay (`childAtSegment`). A caller
 that wants a document (`read`, a link, a document address) asks `resolveDocumentAddress` or
 `resolveDocumentAt`, which skips a folder and tries the alias. Only a link may also leave a registered extension off (`outline` for
 `outline.json`): `matchDocumentPath` adds that unique-match step after the address, and no
@@ -59,8 +63,8 @@ document's rendered filename (folder `binary.md` beside a kept `binary.md`), and
 two folders or two documents clash the same way. Folder `Lore.md` and document `Lore`
 coexist; a link to `Lore.md` still reaches the document, because a document lookup skips the folder,
 while a path that names a folder acts on the folder: `ls` lists it and a reorder moves it. The model's `move` and `delete` refuse it with `source_is_folder`.
-A free name is chosen by the list's writer against its own copy of the tree
-(`@meridian/project-tree`), never by a reader. A node's `name` in `tree_nodes` is its filename as
+No writer picks a free name: a name may repeat in a folder, and replay gives every later twin a
+`~` suffix from its id (rule 14 in `@meridian/project-tree`). A node's `name` in `tree_nodes` is its filename as
 shown, extension included; readers never render a filename from a name and an extension.
 
 ## Access, source capabilities, and transactions
@@ -192,8 +196,13 @@ document keys; a caller holds no document or namespace key when it submits. `con
   remains only where no document has been decided: a create, and `port.read` of a path for a person
   opening a thread's context.
 - **Create.** The record, the document's first Yjs state and its arrival are one unit
-  (`documentCreation.createDocumentAtomically`; `live-create.ts`). An occupied name refuses with
-  `conflict`; a create never replaces or joins another document. A text document created in a
+  (`documentCreation.createDocumentAtomically`; `live-create.ts`). A create never replaces or
+  joins another document, and is never refused for a name: beside a node of that name it makes a
+  twin (rule 14), and the answer's URI is the path it landed at (`Landed`, spelled by the router),
+  a twin's leaf with its `~id`. A `~id` segment that reaches no node reads as its name, for writers
+  and readers alike (`childAtSegment`, the SQL walk), so a create there lands under the name. The
+  model's `create` reuses the empty document its path reaches; one with text makes a twin
+  (agent-edit marks the write `occupied`, and the host ensures again with `beside`). A text document created in a
   Work's version gets its Yjs authority and its Work text draft from the list store, in the
   transaction that admits the create (`draftCreatedDocuments`, wired in `lib/compose.ts`): the
   writer's records through the list's room and the AI's through `submit` take the same path.
@@ -260,11 +269,10 @@ one source's tree contributes.
   `commandTransaction.run`, before anything is written, and `copy()` stores a `done` receipt with
   no entries and `settled: [{ rule: "returned", why }]`, releasing the duplicated objects since
   that transaction commits.
-- Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
-  against occupants in the destination view and the rest of the batch, from a lock-free read of the destination
-  parent ([naming conflicts never
-  block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)).
-  Only the roots meet existing occupants.
+- A copy keeps its source's names ([names
+  repeat](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#names-repeat)):
+  beside a node of that name it is a twin. The plan (`planCopy`) reads nothing of the destination;
+  the entries the insert answers carry the paths that landed (`insertTree`).
   A selected root may carry the device's `copyId` (a UUID); the root copy takes it and
   every descendant keeps a server-minted identity. A node id already taken (`NodeIdRefusedError`
   from the list store's claim) makes the insert a typed `conflict`; a replay is not recognised
@@ -357,7 +365,8 @@ A delete is addressed by entry id: the router takes the node
 node in the list's replay inside `make` (`SourceTree.delete`), so a rename or
 move by another writer in the gap is neither undone nor refused; the only facts it checks are about
 the target (the occupant, `onlyAt`, the source the caller found the node in). A node that left the
-source answers `stale_target`.
+source answers `stale_target`. A move keeps the node's name; into a folder that shows it, the node
+is a twin.
 
 ## Document content and filetype rules
 
@@ -392,7 +401,7 @@ Moves and renames therefore do not rewrite document content. An ahead ref is a
 path until an arrival claims it; once a document arrives, settlement binds the
 ref through the final tree. Every tracked create, upload, move-in, Work
 restore, and Apply settles arrivals once in its completion transaction. A ref
-binds once, to the first live document at its exact address, for every holder:
+binds once, to the first live document its address reaches through the tree's walk (a `Kael/Note` link reaches a Note in a folder `Kael~f1` beside a document `Kael`), for every holder:
 a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A branch's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
@@ -461,5 +470,5 @@ it is `domains/recent-documents`.
 
 ## Import reveal
 
-An import stages nothing in tables of its own: each planned text is written to the document journal under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` numbers each name against the list as it stands at the reveal (a name taken since the plan is renumbered), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
+An import stages nothing in tables of its own: each planned text is written to the document journal under the id its node will have, and the reveal (`adapters/drizzle-import-reveal.ts`) is one `submit` of `create` records for every planned node, in the transaction that finishes the import. The writer's `createAll` stores each name as planned (beside a node of that name it is a twin), ranks the top level after what the destination folder holds and a new folder's children in name order, and the store derives the `documents` rows from the records. A destination folder deleted meanwhile stands again (the replay). Then the reveal writes the properties and previews the records do not carry, registers ahead refs under the namespace keys they settle, and settles the arrivals.
 

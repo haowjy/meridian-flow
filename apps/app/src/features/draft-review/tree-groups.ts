@@ -111,8 +111,8 @@ function folderChange(
     (lastUndo >= 0 || records.some((record) => record.type === "rename")) &&
     before &&
     shown &&
-    before.displayName !== shown.displayName
-      ? before.displayName
+    before.name !== shown.name
+      ? before.name
       : null;
   // Where the Work sends it, which is not where it stands when the move cannot land.
   const into =
@@ -129,7 +129,7 @@ function folderChange(
         ? null
         : isSourceRoot(into)
           ? "top"
-          : { into: work.nodes.get(into)?.displayName ?? "" },
+          : { into: work.nodes.get(into)?.name ?? "" },
   };
 }
 
@@ -162,7 +162,7 @@ export function groupByChangedFolder<T extends { documentId: string }>(
     groups.set(id, {
       folder: {
         id,
-        name: work.nodes.get(id)?.displayName ?? "",
+        name: work.nodes.get(id)?.name ?? "",
         change: folderChange({ work, live }, records),
         fault: faults.get(id) ?? null,
         deletedLive: work.nodes.get(id)?.keptByPending

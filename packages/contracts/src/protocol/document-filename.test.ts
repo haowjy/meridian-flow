@@ -6,7 +6,6 @@
 import { describe, expect, it } from "vitest";
 import {
   filenameForBinary,
-  firstFreeName,
   type NamedRow,
   parseDocumentFilename,
   renderFilename,
@@ -181,22 +180,5 @@ describe("storedFilename", () => {
       /^refused: .*data\.json\.md.*would show as .*data\.json/,
     );
     expect(stored(".md")).toMatch(/^refused: /);
-  });
-});
-
-describe("free filenames", () => {
-  it("counts documents and folders by their literal rendered names", () => {
-    const taken = new Set(["Lore.md", "Map", "Map (2)"]);
-    expect(firstFreeName({ name: "Map" }, taken)).toEqual({
-      name: "Map (3)",
-      extension: "",
-      filename: "Map (3)",
-    });
-    expect(firstFreeName({ name: "Lore" }, taken).filename).toBe("Lore");
-    expect(firstFreeName({ name: "Lore", extension: "md" }, taken)).toEqual({
-      name: "Lore (2)",
-      extension: "md",
-      filename: "Lore (2).md",
-    });
   });
 });

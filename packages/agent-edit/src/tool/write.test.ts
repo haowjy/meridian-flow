@@ -154,7 +154,7 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
   });
 
-  it("rejects create for a non-empty file with overwrite guidance, even one filled just before admission", async () => {
+  it("writes no create into a document with text and marks it occupied for the host, even one filled just before admission", async () => {
     const ctx = harness({ "chapter.md": "Already here." });
 
     const result = await ctx.core.write(
@@ -164,9 +164,8 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(result)).toContain("status: invalid_write");
     expectOutcome(result, "invalid_write", true);
-    expect(outcomeText(result)).toContain(
-      "File already exists: chapter.md. Read it, then edit it; use overwrite=true only to replace all of its content.",
-    );
+    expect(outcomeText(result)).toContain("chapter.md holds text; nothing was written.");
+    expect(result.occupied).toBe(true);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
 
     // A host's fresh bound write: empty when checked and restored, then a writer's paragraph is
@@ -206,7 +205,7 @@ describe("write tool dispatch", () => {
     expect(writerLanded).toBeDefined();
     await writerLanded;
     expectOutcome(fresh, "invalid_write", true);
-    expect(outcomeText(fresh)).toContain("File already exists: chapter.md");
+    expect(fresh.occupied).toBe(true);
     expect(blockTexts(raced.liveDoc("chapter.md"))).toEqual(["Writer content."]);
     expect((await raced.journal.read("chapter.md")).updates).toHaveLength(1);
   });
