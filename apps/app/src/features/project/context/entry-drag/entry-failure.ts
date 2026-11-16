@@ -6,7 +6,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
-import { notifyFailure } from "@/components/app/failure-toast";
+import { notifyFailure, notifyNote } from "@/components/app/failure-toast";
 import type { TreeStep } from "@/core/project-tree/tree-undo";
 import {
   type DiscardUndo,
@@ -74,7 +74,6 @@ function refusalOf(error: unknown): CopyRefusal {
   const { details } = error;
   const reason = details && typeof details === "object" && "reason" in details && details.reason;
   if (reason === "source_behind") return retry(t`The latest edits hadn't reached the server.`);
-  if (reason === "no_draft") return retry(t`That Work no longer has a draft of it.`);
   switch (error.code) {
     case "not_found":
     case "stale_source":
@@ -140,7 +139,14 @@ export async function runCopy(
   const { copies, answered } = copyRows(context.projectId, copy);
   revealPlaced(copy.into, copies, selection);
   try {
-    await answered;
+    const { fromLive } = await answered;
+    if (fromLive)
+      notifyNote(
+        plural(fromLive, {
+          one: "Copied the live text of # document: that Work has no draft of it.",
+          other: "Copied the live text of # documents: that Work has no draft of them.",
+        }),
+      );
   } catch (error) {
     leaveSelections(copies);
     showCopyFailure(

@@ -8,6 +8,7 @@ import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type {
   ContextDestinationParent,
   CopyContextEntriesRequest,
+  CopyContextEntriesResult,
 } from "@meridian/contracts/protocol";
 import { copyContextEntries } from "@/client/api/projects-api";
 import type { EntryRef } from "./entry";
@@ -41,12 +42,12 @@ function ownerFields(area: Pick<MoveArea, "owner" | "scheme">) {
 
 /**
  * Sends one Copy of the plan's rows. The copies' identities are the browser's, so they come back
- * at once, before the server answers; `answered` rejects with the route's error on a refusal.
+ * at once, before the server answers; `answered` resolves with the route's answer, or rejects with its error on a refusal.
  */
 export function copyRows(
   projectId: string,
   copy: ReadyCopy,
-): { copies: readonly EntryRef[]; answered: Promise<void> } {
+): { copies: readonly EntryRef[]; answered: Promise<CopyContextEntriesResult> } {
   const minted = copy.copies.map((row) => ({ row, copyId: crypto.randomUUID() }));
   const destination = destinationOf(copy);
   const folder = copy.into === copy.area.tree.root.entryId ? null : copy.area.tree.entry(copy.into);
@@ -72,6 +73,6 @@ export function copyRows(
   };
   return {
     copies: minted.map(({ row, copyId }) => ({ kind: row.entry.kind, id: copyId })),
-    answered: copyContextEntries(projectId, body).then(() => undefined),
+    answered: copyContextEntries(projectId, body),
   };
 }

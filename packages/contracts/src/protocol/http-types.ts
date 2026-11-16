@@ -250,6 +250,8 @@ export const copyContextEntriesResultSchema = z.object({
   ),
   /** The ids of the folders the copy made to reach its destination, outermost first. */
   folders: z.array(z.string().min(1)),
+  /** How many documents copied from a Work's draft view had no draft there, so came from live text. */
+  fromLive: z.number().int().positive().optional(),
 });
 export type CopyContextEntriesResult = z.infer<typeof copyContextEntriesResultSchema>;
 
