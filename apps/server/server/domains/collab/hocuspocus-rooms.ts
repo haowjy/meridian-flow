@@ -30,7 +30,7 @@ export function closeRoom(
   }
   void processDetachedWork
     .track(hocuspocus.unloadDocument(document), "unload closed room")
-    .catch(() => {});
+    .catch((cause) => process.emitWarning(`closed-room unload failed: ${String(cause)}`));
 }
 
 /**

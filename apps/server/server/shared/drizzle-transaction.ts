@@ -288,10 +288,10 @@ export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
 export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
   const active = activeTransaction();
   if (!active) {
-    // A failure is dropped here as `dispatchAfterCommit` drops it for a callback in a transaction.
+    // `dispatchAfterCommit` settles a callback's failure without throwing; so does this.
     void processDetachedWork
       .track(Promise.resolve(runOutsideWrite(callback)), "after-commit callback")
-      .catch(() => {});
+      .catch((cause) => process.emitWarning(`after-commit callback failed: ${String(cause)}`));
     return false;
   }
   active.afterCommit.push(callback);
