@@ -121,7 +121,10 @@ from that read, so the snapshot is the server's exactly. A chosen change whose i
 of typing the server never got, or changed since by another client) stays in the draft, shown as
 `left_out_not_on_server`: a choice is never widened to the server's version. Nothing left sends
 nothing. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
-server won't open (closed, access ended) sends the frame's own cut and the server says why. A click
+server won't open (closed, access ended) sends the frame's own cut and the server says why. A room
+this build can't open (schema stale or superseded) can't be read either: when the server then
+answers `unsynced`, the item says `needs_reload` with the deploy notice's own words
+(`ReloadWords`), since only a reload lets the click succeed. A click
 whose typing was acknowledged before the room ended goes frozen as it is. Either way a click whose
 room ended settles on its answer, and never waits on the server's sync (`unsynced` stays for live
 rooms). The queue keeps its own `readDraftRoom` lease until
