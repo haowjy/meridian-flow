@@ -22,6 +22,61 @@ export type ReviewFrame = ProjectedReview;
 let schema: ReturnType<typeof buildDocumentSchema> | null = null;
 const roomSchema = () => (schema ??= buildDocumentSchema());
 
+export const inSchema = (schema: Schema, blocks: readonly PMNode[]) =>
+  blocks.every((block) => block.type.schema === schema)
+    ? blocks
+    : blocks.map((block) => schema.nodeFromJSON(block.toJSON()));
+
+const family = (id: string) => id.replace(/~\d+$/, "");
+const range = (tokens: "baseTokens" | "draftTokens", group: ReviewGroup) =>
+  group.hunks.map((h) => `${h[tokens].from}-${h[tokens].to}`).join(",");
+
+/** The base tokens a few steps either side of each hunk: where an edit sits, whichever copy it is. */
+const SURROUND = 3;
+const surround = (frame: ReviewFrame, group: ReviewGroup) => {
+  const toks = frame.diff.base.toks;
+  const keys = (from: number, to: number) => toks.slice(Math.max(0, from), to).map((t) => t.key);
+  return group.hunks
+    .map((h) => {
+      const { from, to } = h.baseTokens;
+      return `${keys(from - SURROUND, from)}|${keys(to, to + SURROUND)}`;
+    })
+    .join(";");
+};
+
+/**
+ * The changes chosen on `shown` as `read` names them. Identical edits share an id up to the `~n`
+ * they take in document order, so one id can name another edit in the other frame; where the two
+ * frames share their draft, the draft tokens an edit covers tell repeats apart, where they share
+ * their base, the base tokens it replaces do, and otherwise only an edit with no repeat in either
+ * frame, with the same base words round it in both, is named. A chosen change `read` has no name for is in `stayed`.
+ */
+export function readChosen(
+  shown: ReviewFrame,
+  read: ReviewFrame,
+  chosen: readonly string[],
+): { going: { shown: string; read: string }[]; stayed: string[] } {
+  const schema = read.doc.type.schema;
+  const sameDraft = blocksEqual(read.diff.draft.blocks, inSchema(schema, shown.diff.draft.blocks));
+  const sameBase = blocksEqual(read.diff.base.blocks, inSchema(schema, shown.diff.base.blocks));
+  const going: { shown: string; read: string }[] = [];
+  for (const group of shown.groups) {
+    if (!chosen.includes(group.id)) continue;
+    const repeats = (groups: readonly ReviewGroup[]) =>
+      groups.filter((other) => family(other.id) === family(group.id));
+    const candidates = repeats(read.groups);
+    const named = sameDraft
+      ? candidates.find((other) => range("draftTokens", other) === range("draftTokens", group))
+      : sameBase
+        ? candidates.find((other) => range("baseTokens", other) === range("baseTokens", group))
+        : repeats(shown.groups).length === 1 && candidates.length === 1
+          ? candidates.find((other) => surround(shown, group) === surround(read, other))
+          : undefined;
+    if (named) going.push({ shown: group.id, read: named.id });
+  }
+  return { going, stayed: chosen.filter((id) => !going.some((pair) => pair.shown === id)) };
+}
+
 /** Draft position of a change's first mark, where the stepper scrolls to. */
 export function groupAnchor(group: ReviewGroup): number {
   return Math.min(...group.hunks.map((hunk) => hunk.inserted?.from ?? hunk.anchor));

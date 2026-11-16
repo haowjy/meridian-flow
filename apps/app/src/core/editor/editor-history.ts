@@ -109,6 +109,8 @@ export class DocumentHistory implements EditorHistoryHandle {
   /** The range selected when the dispatch now running began, for the stack item that dispatch adds. */
   private rangeBeforeDispatch: RelativeSelection | null = null;
   private active = true;
+  /** Apply entries hidden while an Un-Apply sent from elsewhere is out: they may come back. */
+  private hiddenApplies = 0;
   /** The editors showing this document now. */
   private readonly editors = new Set<Editor>();
   private readonly listeners = new Set<() => void>();
@@ -141,6 +143,7 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.manager.destroy();
     this.undo.length = 0;
     this.redo.length = 0;
+    this.hiddenApplies = 0;
     this.listeners.clear();
   }
 
@@ -159,25 +162,37 @@ export class DocumentHistory implements EditorHistoryHandle {
       }
       this.changed();
     };
+    const unhide = () => {
+      if (!hidden) return;
+      hidden = false;
+      this.hiddenApplies--;
+    };
     return {
-      remove: take,
+      remove: () => {
+        unhide();
+        take();
+      },
       hide: () => {
         if (hidden) return;
         hidden = true;
+        this.hiddenApplies++;
         take();
       },
       show: () => {
         if (!hidden || !this.active) return;
-        hidden = false;
+        unhide();
         insert(this.undo, entry);
         this.changed();
       },
     };
   }
 
-  /** Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. */
+  /**
+   * Whether undoing or redoing has anything to lose, a hidden Apply that may come back included;
+   * the owner of the session keeps it while so.
+   */
   hasEntries(): boolean {
-    return this.canUndo() || this.canRedo();
+    return this.canUndo() || this.canRedo() || (this.active && this.hiddenApplies > 0);
   }
 
   /** Calls `listener` after the stacks change. Returns the unsubscribe. */
