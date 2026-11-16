@@ -427,6 +427,7 @@
     ],
     "decision-id": [],
     "middle-dot": [],
+    "row-note": [],
     "test-timing": [
       {
         "path": "apps/app/src/client/chat-submissions/deleted-chat.test.ts",

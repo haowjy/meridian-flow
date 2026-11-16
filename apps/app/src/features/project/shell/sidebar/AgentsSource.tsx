@@ -36,6 +36,7 @@ import {
   ListRowField,
 } from "@/components/ui/list-row";
 import { ListSectionHeader } from "@/components/ui/list-section";
+import { LabelNote } from "@/components/ui/marks";
 import { useInlineEdit } from "@/components/ui/use-inline-edit";
 import { makeFolders, type TreeActions } from "@/core/project-tree/tree-actions";
 import type { TreeDirectory, TreeFile, TreeView } from "@/core/project-tree/tree-view";
@@ -267,8 +268,7 @@ function InsideCount({
   inside: NonNullable<ReturnType<typeof outOfUseInside>>;
   short: boolean;
 }) {
-  if (!short)
-    return <span className="shrink-0 px-1 text-muted-foreground text-xs">{inside.word}</span>;
+  if (!short) return <LabelNote className="shrink-0 px-1">{inside.word}</LabelNote>;
   return (
     <RowWord
       tone="note"

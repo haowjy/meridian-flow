@@ -37,7 +37,6 @@ import {
   EditorMenu,
   EditorMenuItem,
   EditorMenuSeparator,
-  EditorMenuShortcut,
   EditorMenuSub,
   EditorMenuSubContent,
   EditorMenuSubTrigger,
@@ -224,10 +223,10 @@ function FormattingItem({
     <EditorMenuItem
       blockedReason={formattingBlockedMessage(subject, state.blockedBy)}
       onSelect={onSelect}
+      note={shortcut}
     >
       <Icon />
       {label}
-      {shortcut ? <EditorMenuShortcut>{shortcut}</EditorMenuShortcut> : null}
     </EditorMenuItem>
   );
 }
