@@ -67,7 +67,7 @@ export type EntrySelection = {
   focus(): void;
   /**
    * Soon after `focus`, puts focus back on the first selected row on screen when it was lost or
-   * sits on another selected row. Moved rows arrive in their folder over several commits, and a
+   * sits on another selected row or where `focus` waited for one. Moved and copied rows arrive in their folder over several commits, and a
    * keyed reorder moves a focused row's node, which blurs it without remounting it.
    */
   settleFocus(): void;
@@ -110,6 +110,8 @@ export function useEntrySelection(): EntrySelection {
   );
   const root = useRef<HTMLDivElement>(null);
   const focusUntil = useRef(0);
+  // The row `focus` fell back to while no selected row was drawn yet (a copy still arriving).
+  const parked = useRef<HTMLElement | null>(null);
   const shown = useRef<ReadonlySet<string> | null>(null);
   shown.current = explicit;
   const painting = useRef(false);
@@ -163,7 +165,7 @@ export function useEntrySelection(): EntrySelection {
       ).filter((row) => selected?.has(row.getAttribute(KEY_ATTRIBUTE) ?? ""));
       const [first] = rows;
       const active = document.activeElement;
-      const lost = active === null || active === document.body;
+      const lost = active === null || active === document.body || active === parked.current;
       if (first && first !== active && (lost || rows.some((row) => row === active))) first.focus();
     });
   }, []);
@@ -281,7 +283,9 @@ export function useEntrySelection(): EntrySelection {
         const first = Array.from(rows).find((row) =>
           current().has(row.getAttribute(KEY_ATTRIBUTE) ?? ""),
         );
-        (first ?? rows[0])?.focus();
+        const target = first ?? rows[0];
+        target?.focus();
+        parked.current = first ? null : (target ?? null);
         focusUntil.current = Date.now() + FOCUS_RECLAIM_MS;
       },
       settleFocus,

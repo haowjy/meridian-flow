@@ -47,6 +47,7 @@ import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { revealPlaced, subscribePlacedReveal } from "../../context/tree-reveal";
 import { useScopeScratchSource } from "../../context/use-scratch-trees";
 import { useWorkSourceWritable } from "../../context/use-work-source-writable";
 import { useAiDraftLauncher } from "../../review-launch";
@@ -249,9 +250,19 @@ function isTreeTab(key: string): key is TreeTab {
   return (TREE_TABS as readonly string[]).includes(key);
 }
 
-/** The source that lists a document of this scheme. */
-function sourceOfScheme(scheme: ProjectContextTreeScheme): SourceKey | null {
-  return (TREE_SCHEMES as readonly string[]).includes(scheme) ? (scheme as TreeKey) : null;
+/** Whether Agents lists the entry at this tree path ("/.agents/skills", or "" at the top). */
+function listedInAgents(scheme: TreeKey, path: string): boolean {
+  return agentsLocationOf(scheme, path.replace(/^\//, "")) !== null;
+}
+
+/**
+ * The source that shows an entry of `scheme`: the one on screen when it lists the entry, else
+ * Agents for one it lists, else the scheme's own tree. Agents and Your files both list
+ * `~/.agents/`, so neither takes the other's place.
+ */
+function sourceShowing(scheme: TreeKey, inAgents: boolean, shown: SourceKey): SourceKey {
+  if (shown === scheme || (shown === "agents" && inAgents)) return shown;
+  return inAgents ? "agents" : scheme;
 }
 
 /**
@@ -306,6 +317,8 @@ export function SourcesBody({
       : mainChat.kind
     : null;
   const [picked, setPicked] = useState<SourceKey>(mainChat ? "chat" : "manuscript");
+  const shownRef = useRef(picked);
+  shownRef.current = picked;
   // Changes stays: it is the list the writer opens drafts from, whatever tree they live in.
   // `picked` is Changes only while it is shown (see below).
   const follow = useCallback(
@@ -331,13 +344,16 @@ export function SourcesBody({
     if (trashShown) follow("trash");
   }, [trashShown, follow]);
   // A new file or folder asked for elsewhere (the empty Editor) appears in its source.
-  const creatingScheme = useOptionalTreeCreation()?.request?.scheme;
+  const creating = useOptionalTreeCreation()?.request;
+  const creatingScheme = creating && isTreeKey(creating.scheme) ? creating.scheme : null;
+  const creatingInAgents =
+    creating && creatingScheme ? listedInAgents(creatingScheme, creating.parentPath) : false;
   useEffect(() => {
-    const source = creatingScheme && sourceOfScheme(creatingScheme);
-    if (!source) return;
+    if (!creatingScheme) return;
+    const source = sourceShowing(creatingScheme, creatingInAgents, shownRef.current);
     if (isTreeTab(source)) showTab(source);
     setPicked(source);
-  }, [creatingScheme, showTab]);
+  }, [creatingScheme, creatingInAgents, showTab]);
   const changes = useChangesScope(projectId, chatThreadId);
   // Under None, Changes is offered only while the chat on screen has drafts, but it stays
   // while it is the pane on show, so emptying it keeps the last command's Undo in view.
@@ -350,9 +366,7 @@ export function SourcesBody({
   // tree tab, else Chat.
   const fallback: SourceKey = mainChat
     ? "chat"
-    : (tabs.find((key) => activeScheme !== null && key === sourceOfScheme(activeScheme)) ??
-      chosen[0] ??
-      "chat");
+    : (tabs.find((key) => key === activeScheme) ?? chosen[0] ?? "chat");
   const foot = FOOT_SOURCES.filter((key) => key !== "scratch" || scratchWorkId);
   const source =
     tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
@@ -374,24 +388,29 @@ export function SourcesBody({
     enabled: contextLive,
     version,
   });
-  // A file of `~/.agents/` is listed by Agents and by Your files: Agents shows it, unless Your
-  // files already does.
+  const mainTree = activeScheme && isTreeKey(activeScheme) ? activeScheme : null;
+  // Only a file of yours can be listed by two sources; which is known once your tree shows it.
   const activePath =
-    activeScheme === "user" && activeDocumentId
+    mainTree === "user" && activeDocumentId
       ? (catalogs.user.tree?.findDocument(activeDocumentId)?.path ?? null)
       : null;
-  const inAgents = activePath !== null && agentsLocationOf("user", activePath.slice(1)) !== null;
-  const shownRef = useRef(picked);
-  shownRef.current = picked;
-  // Which tab lists a document of yours is known once the account's tree shows it.
-  const placed = activeScheme !== "user" || activePath !== null;
+  const placed = mainTree !== "user" || activePath !== null;
+  const inAgents = mainTree !== null && listedInAgents(mainTree, activePath ?? "");
   useEffect(() => {
-    const source = activeScheme && sourceOfScheme(activeScheme);
-    if (!source || !placed) return;
-    if (inAgents) {
-      if (shownRef.current !== "user") follow("agents");
-    } else follow(source);
-  }, [activeScheme, placed, inAgents, follow]);
+    if (mainTree && placed) follow(sourceShowing(mainTree, inAgents, shownRef.current));
+  }, [mainTree, placed, inAgents, follow]);
+  // Rows an action placed show in the source that holds them.
+  const placedIn = useRef<(folderId: string) => void>(() => undefined);
+  placedIn.current = (folderId) => {
+    for (const scheme of TREE_SCHEMES) {
+      const tree = catalogs[scheme].tree;
+      const path = tree?.root.entryId === folderId ? "" : tree?.entry(folderId)?.path;
+      if (path === undefined) continue;
+      follow(sourceShowing(scheme, listedInAgents(scheme, path), shownRef.current));
+      return;
+    }
+  };
+  useEffect(() => subscribePlacedReveal((folderId) => placedIn.current(folderId)), []);
   const undo = useSidebarUndo(projectId, version);
   const { openReviewFile } = useAiDraftLauncher();
   // On Draft a document the Work drafts opens on its draft, as its Changes row does.
@@ -449,7 +468,10 @@ export function SourcesBody({
       },
       drop: (target, items) => {
         const destination = destinationOf(target.scheme, target.folder);
-        if (destination) dropImport?.(destination, items);
+        if (!destination || !dropImport) return;
+        dropImport(destination, items);
+        // The imported rows' ids come from the server: the folder opens, and they arrive in it.
+        revealPlaced(target.folder?.entryId ?? target.treeRootId, [], null);
       },
     }),
     [dropImport],

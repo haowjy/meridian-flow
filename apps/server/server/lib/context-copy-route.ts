@@ -198,7 +198,8 @@ function parseSourceLocator(source: Record<string, unknown>): CopySourceLocator 
     };
   }
   if (isWorkScopedScheme(scheme)) {
-    return workId ? { scope: "work", scheme, workId, path } : { scope: "none", scheme, path };
+    if (!workId) throwContextWorkUnavailableHttpError("work_missing");
+    return { scope: "work", scheme, workId, path };
   }
   if (workId !== null) {
     throw createError({ statusCode: 400, message: "`workId` is not valid for this scheme" });
@@ -266,7 +267,8 @@ function parseDestination(body: Record<string, unknown>): CopyDestinationLocator
     };
   }
   if (isWorkScopedScheme(scheme)) {
-    return workId ? { scope: "work", scheme, workId, path } : { scope: "none", scheme, path };
+    if (!workId) throwContextWorkUnavailableHttpError("work_missing");
+    return { scope: "work", scheme, workId, path };
   }
   if (workId !== null) {
     throw createError({ statusCode: 400, message: "`workId` is not valid for this scheme" });

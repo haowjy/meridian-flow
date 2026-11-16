@@ -7022,6 +7022,7 @@ msgstr "The uploaded file is no longer available."
 msgid "The Work did not change. Try again."
 msgstr "The Work did not change. Try again."
 
+#: src/features/project/context/entry-drag/entry-failure.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "The Work was closed."
 msgstr "The Work was closed."
@@ -7302,6 +7303,10 @@ msgstr "This document's chat was deleted. Restore the chat to reverse this chang
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document's Work is archived. Unarchive the Work to reverse this change."
 msgstr "This document's Work is archived. Unarchive the Work to reverse this change."
+
+#: src/features/chat/turn-receipt-copy.ts
+msgid "This document's Work was deleted, so this change can't be reversed."
+msgstr "This document's Work was deleted, so this change can't be reversed."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft changed since you looked. Check it, then discard again."
