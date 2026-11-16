@@ -56,5 +56,5 @@ export function createDetachedWorkTracker(): DetachedWorkTracker {
   };
 }
 
-/** Explicitly wired by DB test harnesses and resets; apps own their tracker. */
+/** The process's tracker: the app singleton, DB test harnesses and resets all drain this one. */
 export const processDetachedWork = createDetachedWorkTracker();

@@ -271,7 +271,11 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
-import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
+import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+  processDetachedWork,
+} from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
@@ -454,7 +458,6 @@ const WAKE_SWEEP_LIMIT = 100;
 
 export async function createProductionAppPorts(input: {
   db: Database;
-  backgroundTasks?: DetachedWorkTracker;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
@@ -500,7 +503,7 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
+  const backgroundTasks = processDetachedWork;
   const projectWakeHub = createProjectWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
   const contextSources = createDrizzleContextSources(db);
@@ -589,7 +592,6 @@ export async function createProductionAppPorts(input: {
   });
   const documentSync = createCollabDomain({
     db,
-    backgroundTasks,
     arrivals,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
