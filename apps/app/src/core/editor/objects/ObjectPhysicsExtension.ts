@@ -1,5 +1,11 @@
 import { type Editor, Extension, isMacOS } from "@tiptap/core";
-import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import {
+  NodeSelection,
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Transaction,
+} from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { isRemoteDocumentRebuild } from "../anchors";
 import { getEditorChrome } from "../chrome/ChromeKernelExtension";
@@ -9,7 +15,8 @@ import {
   caretBesideObjectTransaction,
   caretInsideObjectTransaction,
   deleteObjectTransaction,
-  documentEdgeTransaction,
+  documentEndTransaction,
+  documentStartTransaction,
   type ObjectAt,
   objectBeside,
   objectSelectionForDOM,
@@ -470,22 +477,22 @@ function prepareObjectSelectionExtension(direction: 1 | -1): KeymapBinding {
 const removeSelected: KeymapBinding = (state, dispatch) => {
   const selected = selectedObject(state);
   if (!selected) return false;
-  const transaction = deleteObjectTransaction(state, selected.pos);
+  return dispatchIfAny(deleteObjectTransaction(state, selected.pos), dispatch);
+};
+
+const toDocumentStart: KeymapBinding = (state, dispatch) =>
+  dispatchIfAny(documentStartTransaction(state), dispatch);
+const toDocumentEnd: KeymapBinding = (state, dispatch) =>
+  dispatchIfAny(documentEndTransaction(state), dispatch);
+
+function dispatchIfAny(
+  transaction: Transaction | null,
+  dispatch: Parameters<KeymapBinding>[1],
+): boolean {
   if (!transaction) return false;
   dispatch?.(transaction);
   return true;
-};
-
-const toDocumentEdge =
-  (edge: "start" | "end"): KeymapBinding =>
-  (state, dispatch) => {
-    const transaction = documentEdgeTransaction(state, edge);
-    if (!transaction) return false;
-    dispatch?.(transaction);
-    return true;
-  };
-const toDocumentStart = toDocumentEdge("start");
-const toDocumentEnd = toDocumentEdge("end");
+}
 
 const walkForward: KeymapBinding = (state, dispatch) => walk(state, dispatch, 1);
 const walkBackward: KeymapBinding = (state, dispatch) => walk(state, dispatch, -1);
@@ -498,19 +505,20 @@ function walk(
   // Second press: pass beyond the object the first press selected.
   const selected = selectedObject(state);
   if (selected) {
-    const transaction = caretBesideObjectTransaction(state, selected.pos, direction);
-    if (!transaction) return false;
-    dispatch?.(transaction);
-    return true;
+    const endsDocument =
+      direction === 1 && selected.pos + selected.node.nodeSize === state.doc.content.size;
+    return dispatchIfAny(
+      endsDocument
+        ? documentEndTransaction(state)
+        : caretBesideObjectTransaction(state, selected.pos, direction),
+      dispatch,
+    );
   }
 
   // First press: the caret is beside an object, so walk onto it.
   const beside = objectBeside(state, direction);
   if (!beside) return false;
-  const transaction = selectObjectTransaction(state, beside.pos);
-  if (!transaction) return false;
-  dispatch?.(transaction);
-  return true;
+  return dispatchIfAny(selectObjectTransaction(state, beside.pos), dispatch);
 }
 
 /** Registrations already reported as unengageable, so the warning fires once. */

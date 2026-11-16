@@ -9,7 +9,7 @@ import {
 } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 
-import { isEditorObject, isOpaqueObject, objectBody } from "./object-types";
+import { isEditorObject, isOpaqueObject, isSourceBlock, objectBody } from "./object-types";
 
 export type ObjectAt = { node: PMNode; pos: number };
 
@@ -303,18 +303,28 @@ function gapPastFollowingNodes(state: EditorState, from: ResolvedPos): Selection
 }
 
 /**
- * Ctrl/Cmd+Home and End: the document's first or last caret. When a table or other block
- * object ends the document, that is the gap cursor beside it, the one ArrowDown out of its
- * last cell gives; the browser's own key would put the caret inside the cell. Declines
- * where a text caret is the document's end, which the browser's key reaches already.
+ * Ctrl/Cmd+Home: when a table or other block object opens the document, the gap cursor
+ * before it; the browser's own key would put the caret inside it. Declines where a text
+ * caret is the document's start, which the browser's key reaches already.
  */
-export function documentEdgeTransaction(
-  state: EditorState,
-  edge: "start" | "end",
-): Transaction | null {
-  const $edge = state.doc.resolve(edge === "start" ? 0 : state.doc.content.size);
-  if (!gapCursorFits($edge)) return null;
-  return state.tr.setSelection(new GapCursor($edge)).scrollIntoView();
+export function documentStartTransaction(state: EditorState): Transaction | null {
+  const $start = state.doc.resolve(0);
+  if (!gapCursorFits($start)) return null;
+  return state.tr.setSelection(new GapCursor($start)).scrollIntoView();
+}
+
+/**
+ * The document's end, one place however the writer reaches it: Ctrl/Cmd+End, a press below
+ * the last block, or an arrow off it. After a table or other block object that is the gap
+ * cursor. After a fence or diagram, which no gap cursor can follow, it is a new empty line,
+ * written only by this action. Declines where the end is text the browser's caret reaches.
+ */
+export function documentEndTransaction(state: EditorState): Transaction | null {
+  const { doc } = state;
+  const $end = doc.resolve(doc.content.size);
+  if (gapCursorFits($end)) return state.tr.setSelection(new GapCursor($end)).scrollIntoView();
+  if (!isSourceBlock(Selection.atEnd(doc).$head.parent)) return null;
+  return paragraphAfterTransaction(state, $end)?.scrollIntoView() ?? null;
 }
 
 /** prosemirror-gapcursor ships `GapCursor.valid` but does not declare it, so the reach into an undeclared static lives here and nowhere else. */
