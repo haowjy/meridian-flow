@@ -121,11 +121,13 @@ A click on some changes is built again when it reaches the head of the queue (`r
 draft is read as the server holds it into a fresh document (`readRoomOnce`, one sync, nothing sent),
 its review recomputed, and the chosen changes it finds go as an ordinary frozen click from that
 read, so the snapshot is the server's exactly. A chosen change goes only when the read has the
-same change (`changeKey`): the same id up to its `~n`, over the same base tokens. Identical edits
-are numbered `X`, `X~1` in document order, so one id can name another edit in the other frame;
-both frames diff the same base, so the base range tells them apart. Any other chosen change
-(typing the server never got, an edit changed since by another client) stays in the
-draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
+same change (`sameChange`). Identical edits are numbered `X`, `X~1` in document order, so one id
+can name another edit in the other frame. When the read's base equals the base the writer chose
+on, an edit is the one with the same id up to its `~n` over the same base tokens. When the bases
+differ (another tab applied a change, an earlier click left part out), a shift can line one
+repeat up with another, so only an edit with no repeat in either frame goes, by its id; a
+repeated one stays. Any other chosen change (typing the server never got, an edit changed since
+by another client) stays in the draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
 The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
 the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
 server won't open (closed, access ended) sends the frame's own cut and the server says why. A room

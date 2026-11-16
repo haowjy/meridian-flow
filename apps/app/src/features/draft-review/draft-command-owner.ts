@@ -171,13 +171,27 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
       return "gone";
   }
 }
+const family = (id: string) => id.replace(/~\d+$/, "");
+const baseRange = (group: ReviewGroup) =>
+  group.hunks.map((h) => `${h.baseTokens.from}-${h.baseTokens.to}`).join(",");
 /**
- * What names one change in two frames on the same base: identical edits share an id up to the
- * `~n` they take in document order, so the same id can name another edit in another frame; the
- * base tokens they replace tell them apart.
+ * The id `read` gives the change `shown` calls `group`. Identical edits share an id up to the `~n`
+ * they take in document order, so one id can name another edit in the other frame. On the same
+ * base the base tokens an edit replaces tell repeats apart; on different bases a shift can line one
+ * repeat up with another, so only an edit with no repeat in either frame is named.
  */
-const changeKey = (group: ReviewGroup) =>
-  `${group.id.replace(/~\d+$/, "")}@${group.hunks.map((h) => `${h.baseTokens.from}-${h.baseTokens.to}`).join(",")}`;
+const sameChange = (
+  shown: readonly ReviewGroup[],
+  read: readonly ReviewGroup[],
+  sameBase: boolean,
+  group: ReviewGroup,
+) => {
+  const repeats = (groups: readonly ReviewGroup[]) =>
+    groups.filter((other) => family(other.id) === family(group.id));
+  const candidates = repeats(read);
+  if (sameBase) return candidates.find((other) => baseRange(other) === baseRange(group))?.id;
+  return repeats(shown).length === 1 && candidates.length === 1 ? candidates[0].id : undefined;
+};
 const inSchema = (schema: Schema, blocks: readonly PMNode[]) =>
   blocks.every((block) => block.type.schema === schema)
     ? blocks
@@ -948,7 +962,7 @@ export class DraftCommandOwner {
    * A text click again, for a room that ended before the server had its typing: the whole draft
    * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
    * server now. A choice is never widened: a chosen change goes only when the server's read has
-   * the same change (`changeKey`); any other stays (`stayed`).
+   * the same change (`sameChange`); any other stays (`stayed`).
    * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
    * it applies (the read's own blocks are another schema's). A room that
    * can't be read sends the click as it was frozen, and the server says why; `needsReload` when
@@ -986,10 +1000,11 @@ export class DraftCommandOwner {
           const schema = content.doc.type.schema;
           const base = readBase(fresh, schema);
           const frame = buildFrame(fresh, base, content.doc);
-          const readIds = new Map(frame.groups.map((group) => [changeKey(group), group.id]));
+          const sameBase = blocksEqual(base, inSchema(schema, shown.diff.base.blocks));
           const going = shown.groups.flatMap((group) => {
-            const read = readIds.get(changeKey(group));
-            return chosen.includes(group.id) && read ? [{ shown: group.id, read }] : [];
+            const read =
+              chosen.includes(group.id) && sameChange(shown.groups, frame.groups, sameBase, group);
+            return read ? [{ shown: group.id, read }] : [];
           });
           result.stayed = chosen.filter((id) => !going.some((pair) => pair.shown === id));
           if (!going.length) return null;
