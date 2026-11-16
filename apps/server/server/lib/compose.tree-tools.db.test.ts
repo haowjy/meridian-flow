@@ -585,7 +585,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .set({ deletedAt: new Date() })
           .where(eq(schema.works.id, OTHER_WORK_ID));
         const undone = await cardUndo();
-        expect(undone).toMatchObject({ status: "permission_denied", denial: "not_found" });
+        expect(undone).toMatchObject({ status: "permission_denied", denial: "work_deleted" });
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {
