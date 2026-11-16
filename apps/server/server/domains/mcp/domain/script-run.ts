@@ -15,6 +15,7 @@ import {
   type ScriptResult,
   type ScriptRunner,
 } from "@meridian-flow/runtime/script";
+import { answeredStatus, callLine, capLines, cut, textOf } from "./call-list.js";
 import { type ConnectionCall, type ConnectionTools, DO_NOT_REPEAT } from "./connection-tools.js";
 import { createLimiter, type Limiter } from "./limiter.js";
 import { prepareScript } from "./script-code.js";
@@ -42,9 +43,6 @@ const REJECTION_CHARS = 8_192;
 const ROW_ARGUMENT_BYTES = 2_000;
 const ROW_REPLY_CHARS = 1_000;
 /** What the model reads of each call in a failed script's list, and of the list. */
-const LIST_ARGUMENT_CHARS = 300;
-const LIST_REPLY_CHARS = 400;
-const LIST_CHARS = 12_000;
 
 const MEDIA_LEFT_OUT = (count: number) =>
   `[${count} picture or audio part${count === 1 ? "" : "s"} left out of a script's reply. Call this tool with mcp_call to see ${count === 1 ? "it" : "them"}.]`;
@@ -58,14 +56,6 @@ export interface ScriptRunRequest {
   /** A call was sent (no `call`) or finished (`call`): the writer's live rows. */
   emit(event: { sequence: number; id: string; arguments: JsonObject; call?: McpScriptCall }): void;
 }
-
-const cut = (text: string, chars: number) =>
-  text.length > chars ? `${text.slice(0, chars)}…` : text;
-
-const textOf = (reply: JsonObject) =>
-  toContent(reply)
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-    .join("\n");
 
 const mediaCount = (reply: JsonObject) =>
   toContent(reply).filter((part) => part.type === "media").length;
@@ -326,8 +316,7 @@ export function createScriptRuns(deps: {
   function listRefused(refused: McpScriptCall[]): string {
     if (!refused.length) return "";
     const lines = refused.map(
-      (call) =>
-        `${call.sequence + 1}. ${call.id}: ${cut(call.message ?? call.outcome, LIST_REPLY_CHARS)}`,
+      (call) => `${call.sequence + 1}. ${call.id}: ${cut(call.message ?? call.outcome)}`,
     );
     return `Refused before they were sent (nothing ran):\n${lines.join("\n")}`;
   }
@@ -335,32 +324,20 @@ export function createScriptRuns(deps: {
   function listRan(typed: Omit<McpRunResult, "text">, ran: McpScriptCall[]): string {
     if (!ran.length) return "";
     const full = typed.ended !== "returned";
-    const lines: string[] = [];
-    let size = 0;
-    for (const call of ran) {
-      const line = `${call.sequence + 1}. ${callLine(call, full)}`;
-      if (size + line.length > LIST_CHARS) {
-        lines.push(
-          `(${ran.length - lines.length} more calls not shown; each is kept in its record.)`,
-        );
-        break;
-      }
-      lines.push(line);
-      size += line.length + 1;
-    }
+    const lines = capLines(
+      ran.map((call) => `${call.sequence + 1}. ${scriptCallLine(call, full)}`),
+    );
     return `${full ? DO_NOT_REPEAT : "Calls made:"}\n${lines.join("\n")}`;
   }
 
-  function callLine(call: McpScriptCall, full: boolean): string {
+  function scriptCallLine(call: McpScriptCall, full: boolean): string {
     if (!full) return `${call.id}: ${call.outcome}`;
-    const sent = cut(JSON.stringify(call.arguments), LIST_ARGUMENT_CHARS);
-    const head = `${call.id}(${sent}): `;
     if (call.outcome === "answered")
-      return `${head}answered ${cut(call.reply?.text ?? "", LIST_REPLY_CHARS)}`;
-    const why = cut(call.reply?.text || call.message || "", LIST_REPLY_CHARS);
+      return callLine(call.id, call.arguments, answeredStatus(call.reply?.text ?? ""));
+    const why = cut(call.reply?.text || call.message || "");
     const unknown =
       call.outcome === "aborted" ? " (outcome not known: it was cancelled and may have run)" : "";
-    return `${head}failed, ${call.outcome}${unknown}: ${why}`;
+    return callLine(call.id, call.arguments, `failed, ${call.outcome}${unknown}: ${why}`);
   }
 
   return { run };

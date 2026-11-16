@@ -3,7 +3,7 @@ import type { McpConnectionId, McpPinId } from "@meridian/contracts/mcp";
 import type { Database } from "@meridian/database";
 import { mcpCalls } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import type { CallStore } from "../../ports/call-store.js";
+import type { CallStore, RecordedCall } from "../../ports/call-store.js";
 
 /** Plain `db`, never the ambient transaction: a call's record must commit before the call leaves. */
 export function createDrizzleCallStore({ db }: { db: Database }): CallStore {
@@ -54,7 +54,7 @@ export function createDrizzleCallStore({ db }: { db: Database }): CallStore {
         toolName: row.toolName,
         arguments: row.arguments as never,
         outcomeKind: row.outcomeKind,
-        replyKept: typeof (row.replyRef as { key?: unknown } | null)?.key === "string",
+        reply: row.replyRef as RecordedCall["reply"],
         sentAt: row.sentAt,
       }));
     },

@@ -23,8 +23,9 @@ import {
   type PinnedTool,
   toContent,
 } from "@meridian-flow/runtime/mcp";
-import type { CallStore } from "../ports/call-store.js";
+import type { CallStore, RecordedCall } from "../ports/call-store.js";
 import type { ConnectionStore } from "../ports/connection-store.js";
+import { answeredStatus, callLine, capLines, cut, textOf } from "./call-list.js";
 import { connectionCatalogue, toolId } from "./connection-bake.js";
 import type { McpConnections } from "./connection-service.js";
 
@@ -44,6 +45,8 @@ export interface ReplyStore {
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<{ key: string }>;
+  /** The bytes `put` stored under this key. */
+  get(key: string): Promise<Uint8Array>;
 }
 
 export interface ConnectionToolsDeps {
@@ -406,29 +409,51 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
   /**
    * One line for each recorded call of these turns, for the stub of a call that did not finish:
    * the call as `mcp_call` takes it (the connection's name from the bake), what was sent, and how
-   * far it got. The stub opens with `DO_NOT_REPEAT`, the same rule a failed script's list states.
+   * far it got, with the kept reply as a failed script's list shows it. The stub opens with
+   * `DO_NOT_REPEAT`. Each stub's lines are capped as that list is.
    */
   async function recordedCalls(
     threadId: string,
     turnIds: readonly string[],
     baked: readonly McpBakedConnection[],
   ) {
-    return (await deps.calls.listForTurns(threadId, turnIds)).map((call) => {
-      const sent = JSON.stringify(call.arguments);
-      const arguments_ = sent.length > 300 ? `${sent.slice(0, 300)}…` : sent;
-      const connection = baked.find((held) => held.connectionId === call.connectionId)?.name;
-      const id = connection ? toolId(connection, call.toolName) : call.toolName;
-      const ended = !call.outcomeKind
-        ? "sent, and its end was not recorded, so it may have run"
-        : call.replyKept
-          ? `${call.outcomeKind}; its reply was kept but is not shown here`
-          : `${call.outcomeKind}`;
-      return {
+    const calls = await deps.calls.listForTurns(threadId, turnIds);
+    const lines = await Promise.all(
+      calls.map(async (call) => {
+        const connection = baked.find((held) => held.connectionId === call.connectionId)?.name;
+        const id = connection ? toolId(connection, call.toolName) : call.toolName;
+        return callLine(id, call.arguments, await endOf(call));
+      }),
+    );
+    const byStub = new Map<string, { turnId: string; toolCallId: string; lines: string[] }>();
+    calls.forEach((call, index) => {
+      const key = `${call.turnId}\u0000${call.toolCallId}`;
+      const stub = byStub.get(key) ?? {
         turnId: call.turnId,
         toolCallId: call.toolCallId,
-        line: `- ${id}(${arguments_}): ${ended}`,
+        lines: [],
       };
+      stub.lines.push(`- ${lines[index]}`);
+      byStub.set(key, stub);
     });
+    return [...byStub.values()].flatMap(({ turnId, toolCallId, lines }) =>
+      capLines(lines).map((line) => ({ turnId, toolCallId, line })),
+    );
+  }
+
+  async function endOf(call: RecordedCall): Promise<string> {
+    if (!call.outcomeKind) return "sent, and its end was not recorded, so it may have run";
+    if (!call.reply) return call.outcomeKind;
+    if ("notKept" in call.reply) return `${call.outcomeKind}; its reply was not kept`;
+    try {
+      const reply = JSON.parse(new TextDecoder().decode(await deps.replies.get(call.reply.key)));
+      return call.outcomeKind === "answered"
+        ? answeredStatus(textOf(reply))
+        : `${call.outcomeKind}: ${cut(textOf(reply))}`;
+    } catch (cause) {
+      deps.warn("read a kept reply", cause);
+      return `${call.outcomeKind}; its reply was kept but could not be read`;
+    }
   }
 
   return { callConnectionTool, mcpCall, shapeCall, describe, recordedCalls };

@@ -34,7 +34,7 @@ export function createConnections(deps: {
   calls: CallStore;
   client: McpClient;
   runner: ScriptRunner;
-  objectStore: Pick<ObjectStorePort, "put">;
+  objectStore: Pick<ObjectStorePort, "put" | "get">;
   repos: Pick<ThreadRepositories, "threads" | "turns" | "promptBakes">;
   eventSink: EventSink;
 }): ConnectionsPort {
@@ -57,6 +57,11 @@ export function createConnections(deps: {
         const stored = await deps.objectStore.put(key, bytes, mimeType);
         if (!stored.ok) throw new Error(`A connection reply was not stored: ${stored.error.code}`);
         return { key };
+      },
+      async get(key) {
+        const stored = await deps.objectStore.get(key);
+        if (!stored.ok) throw new Error(`A connection reply was not read: ${stored.error.code}`);
+        return stored.value.bytes;
       },
     },
   });
