@@ -30,7 +30,10 @@ distinguish hidden diagram source from visible prose.
 An arrow asks for the adjacent object and may stop at a dead end. Left and
 right walk onto it from the block's first or last character; up and down from
 its first or last line (`endOfTextblock`), since the browser's own vertical
-move cannot enter an opaque object and, with nothing after it, does nothing. Escape searches
+move cannot enter an opaque object and, with nothing after it, does nothing. Up and
+down never take the next cell in a row, which is to the right on screen, not below:
+the table's own arrows move between rows, and the walk looks past the table only from
+its first or last row. Escape searches
 forward for writable prose, skipping opaque objects; a gap after a trailing object
 is a valid destination. It looks behind only when nothing is ahead, and can create
 a paragraph when the object is the whole document. These searches stay inside the

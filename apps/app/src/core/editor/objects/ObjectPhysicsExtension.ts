@@ -17,6 +17,7 @@ import {
   deleteObjectTransaction,
   documentEndTransaction,
   documentStartTransaction,
+  enterCellTransaction,
   type ObjectAt,
   objectBeside,
   objectSelectionForDOM,
@@ -24,6 +25,7 @@ import {
   selectedObject,
   selectObjectTransaction,
   typeBesideObjectTransaction,
+  verticalStepFrom,
 } from "./object-selection";
 import { EDITOR_OBJECT_TYPES, isEditorObject, objectBody, objectTypeSpec } from "./object-types";
 import { pictureCapped } from "./picture-cap";
@@ -506,12 +508,17 @@ function walk(
   // Second press: pass beyond the object the first press selected.
   const selected = selectedObject(state);
   if (selected) {
+    const step = lines ? verticalStepFrom(state, selected, direction) : { beside: selected };
+    if ("into" in step) {
+      return dispatchIfAny(enterCellTransaction(state, step.into, direction), dispatch);
+    }
+    const { beside } = step;
     const endsDocument =
-      direction === 1 && selected.pos + selected.node.nodeSize === state.doc.content.size;
+      direction === 1 && beside.pos + beside.node.nodeSize === state.doc.content.size;
     return dispatchIfAny(
       endsDocument
         ? documentEndTransaction(state)
-        : caretBesideObjectTransaction(state, selected.pos, direction),
+        : caretBesideObjectTransaction(state, beside.pos, direction),
       dispatch,
     );
   }
@@ -521,7 +528,9 @@ function walk(
   const beside = objectBeside(
     state,
     direction,
-    lines && inText ? lines.endOfTextblock(direction === 1 ? "down" : "up", state) : undefined,
+    lines && {
+      atEdge: inText ? lines.endOfTextblock(direction === 1 ? "down" : "up", state) : undefined,
+    },
   );
   if (!beside) return false;
   return dispatchIfAny(selectObjectTransaction(state, beside.pos), dispatch);

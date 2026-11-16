@@ -7,7 +7,7 @@ import {
   TextSelection,
   type Transaction,
 } from "@tiptap/pm/state";
-import { CellSelection } from "@tiptap/pm/tables";
+import { CellSelection, TableMap } from "@tiptap/pm/tables";
 
 import { landAt } from "../extensions/nesting";
 import { isEditorObject, isOpaqueObject, isSourceBlock, objectBody } from "./object-types";
@@ -52,14 +52,14 @@ export function selectedObject(state: EditorState): ObjectAt | null {
 }
 
 /**
- * The object the caret would walk onto next. `atEdge` says whether the caret stands at its
- * block's edge: by default its first or last character, but for an up or down arrow its first
- * or last line, which only the view can tell.
+ * The object the caret would walk onto next. The caret must stand at its block's edge: its
+ * first or last character, or for an up or down arrow (`vertical`) its first or last line,
+ * which only the view can tell and passes as `atEdge`.
  */
 export function objectBeside(
   state: EditorState,
   direction: 1 | -1,
-  atEdge?: boolean,
+  vertical?: { atEdge?: boolean },
 ): ObjectAt | null {
   const { selection } = state;
   if (!selection.empty) return null;
@@ -71,12 +71,19 @@ export function objectBeside(
   }
 
   const edge =
-    atEdge ??
+    vertical?.atEdge ??
     (direction === 1 ? $pos.parentOffset === $pos.parent.content.size : $pos.parentOffset === 0);
   if (!edge) return null;
 
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
     const parent = $pos.node(depth - 1);
+    if (vertical && parent.type.spec.tableRole === "row") {
+      const cell = cellAcross($pos, depth, direction);
+      if (cell) return entryObject(cell.node, cell.pos, direction);
+      // Past the first or last row: the table's own edge, so climb beside the table.
+      depth -= 1;
+      continue;
+    }
     const siblingIndex = $pos.index(depth - 1) + direction;
     // No sibling at this depth: the edge belongs to the level above, so keep
     // climbing (the last paragraph of a list item shares its edge with the list).
@@ -95,6 +102,56 @@ export function objectBeside(
   }
 
   return null;
+}
+
+/**
+ * The cell above or below the one at `depth` of `$pos`, or null past the table's first or last
+ * row. Up and down need this because document order is not screen order across a row: the cell
+ * after this one is to the right, not below.
+ */
+function cellAcross($pos: ResolvedPos, depth: number, direction: 1 | -1): ObjectAt | null {
+  const table = $pos.node(depth - 2);
+  const start = $pos.start(depth - 2);
+  const next = TableMap.get(table).nextCell($pos.before(depth) - start, "vert", direction);
+  const node = next === null ? null : table.nodeAt(next);
+  return node && next !== null ? { node, pos: start + next } : null;
+}
+
+/**
+ * An up or down arrow off the selected object at `object`: when the object is the first or last
+ * block of a table cell, the cell above or below it, else past the first or last row the table
+ * (the arrow passes beside it); elsewhere the object itself.
+ */
+export function verticalStepFrom(
+  state: EditorState,
+  object: ObjectAt,
+  direction: 1 | -1,
+): { into: ObjectAt } | { beside: ObjectAt } {
+  let at = object;
+  for (;;) {
+    const $at = state.doc.resolve(at.pos);
+    const atCellEdge =
+      $at.parent.type.spec.tableRole?.includes("cell") &&
+      $at.index() === (direction === 1 ? $at.parent.childCount - 1 : 0);
+    if (!atCellEdge) return { beside: at };
+    const cell = cellAcross($at, $at.depth, direction);
+    if (cell) return { into: cell };
+    at = { node: $at.node($at.depth - 2), pos: $at.before($at.depth - 2) };
+  }
+}
+
+/** Walk into `cell` from above (`1`) or below (`-1`): onto its entry object, else to its nearest text. */
+export function enterCellTransaction(
+  state: EditorState,
+  cell: ObjectAt,
+  direction: 1 | -1,
+): Transaction | null {
+  const entry = entryObject(cell.node, cell.pos, direction);
+  if (entry) return selectObjectTransaction(state, entry.pos);
+  const inside = direction === 1 ? cell.pos + 1 : cell.pos + cell.node.nodeSize - 1;
+  return state.tr
+    .setSelection(Selection.near(state.doc.resolve(inside), direction))
+    .scrollIntoView();
 }
 
 /** The object the caret meets first when it walks into `node` from `direction` (`1` enters through the first block, `-1` through the last), or null when the entry is prose the caret may simply move into. */

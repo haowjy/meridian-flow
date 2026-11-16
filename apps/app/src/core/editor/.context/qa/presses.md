@@ -30,7 +30,11 @@ which line a caret is on).
 4. **Cell padding.** Click the padding and borders of each cell, including the
    cell with two paragraphs, at its edges. The caret stays in the pressed cell
    every time. In a table wider than the pane, click the margin beside the
-   clipped part: the caret goes to the last visible cell.
+   clipped part: the caret goes to the last visible cell. In a 2×2 table with
+   a rendered diagram in the top-right cell, ArrowDown from the middle of the
+   top-left cell's word goes to the cell below, not onto the diagram; ArrowUp
+   from the bottom-right cell selects the diagram (its source stays hidden),
+   and ArrowDown from the selected diagram goes to the cell below it.
 5. **Diagram and component block.** Click beside the rendered diagram, above
    and below its middle. The caret goes to the neighbouring paragraph's line
    (prose beats the diagram), the diagram stays rendered, and no source opens.
