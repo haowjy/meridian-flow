@@ -1,6 +1,6 @@
 /** Resolves execution authority before asking collab for atomic document identities. */
 
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentLinkScopes, DraftPeerShadowAccess } from "../collab/index.js";
 import type { AgentChain, FileAccess, Principal } from "../file-policy/index.js";
 import type { WorkRepository } from "../projects/index.js";
@@ -43,6 +43,7 @@ export function createDocumentRevisions(deps: {
           {
             accountId: thread.userId as Principal["accountId"],
             agent: {
+              projectId: thread.projectId as ProjectId,
               chain: await deps.readAgentChain(threadId),
               branchOwner: {
                 owner: threadExecutionContext(work, thread).branchOwner,

@@ -21,8 +21,13 @@ export const PROTOCOL_HEADER = "x-meridian-protocol";
 export const PROTOCOL_VERSION = 4;
 
 /**
- * Older tabs reload at a pause. Until then, a numbered name they send remains a literal name;
- * an old stored move's retired name field is ignored when replaying it.
+ * The oldest protocol a tab may keep running against this server. Raise it, with
+ * `PROTOCOL_VERSION`, when a tab below it can no longer work right here: a request it sends is
+ * gone, an answer it would misread, or a control it shows no longer does anything. Those tabs then
+ * reload at a pause. Keep a compatibility answer for them until they have reloaded, so nothing they
+ * send meanwhile is refused; delete it in a later release. Until then, a numbered name an older tab
+ * sends remains a literal name, and an old stored move's retired name field is ignored when
+ * replaying it.
  */
 export const MIN_PROTOCOL_VERSION = 4;
 

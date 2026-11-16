@@ -18,7 +18,6 @@ import {
   discardedBy,
   fingerprint,
   LIVE,
-  moveBetweenLists,
   pendingRecords,
   rankAt,
   recordsOf,
@@ -835,9 +834,7 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
   });
 });
 
-describe("part 5: what a document is, and a move between two lists", () => {
-  const MINE = sourceRoot("user-files");
-
+describe("part 5: what a document is", () => {
   it("29. a document's type is its create's until a rename changes it; a provisional name ends at the first rename by a person, even to the same name", () => {
     const t = start();
     const ch = t.w.create(LIVE, WRITER, {
@@ -855,62 +852,6 @@ describe("part 5: what a document is, and a move between two lists", () => {
     });
     t.w.rename(LIVE, WRITER, ch, "Untitled.toml");
     expect(t.at(ch)).toMatchObject({ filetype: "text", provisional: false });
-  });
-
-  it("30. a document moved to another list is in no view and no Trash there, and a record arriving for it after is skipped", () => {
-    const here = start();
-    const there = start();
-    const ch = here.chapter("Chapter 1");
-    const folder = here.folder("Arc");
-    here.w.rename(LIVE, WRITER, ch, "Chapter One", "text");
-    const { left, entered } = moveBetweenLists(
-      { writer: here.w, list: "project" },
-      { writer: there.w, list: "account", parent: MINE },
-      WRITER,
-      ch,
-    );
-    expect(left).toMatchObject({ type: "move", parent: "list:account" });
-    expect(entered).toMatchObject({
-      type: "create",
-      node: ch,
-      name: "Chapter One",
-      filetype: "text",
-    });
-    expect(here.names(ROOT)).toEqual(["Arc"]);
-    expect(here.at(ch)).toBeUndefined();
-    expect(there.at(ch)).toMatchObject({ name: "Chapter One", source: "user-files", parent: MINE });
-    // A client that had not seen the move renames it in the list it left.
-    const late = here.w.rename(LIVE, WRITER, ch, "Late");
-    expect(here.w.view(LIVE).skipped).toContainEqual({ record: late.id, reason: "missing-node" });
-    expect(there.at(ch)?.name).toBe("Chapter One");
-    expect(() =>
-      moveBetweenLists(
-        { writer: here.w, list: "project" },
-        { writer: there.w, list: "account", parent: MINE },
-        WRITER,
-        folder,
-      ),
-    ).toThrow();
-  });
-
-  it("31. a document moved out and back stands in the list it returned to, with its type, and was never in Trash", () => {
-    const here = start();
-    const there = start();
-    const ch = here.w.create(LIVE, WRITER, {
-      kind: "document",
-      filetype: "markdown",
-      name: "Chapter 1",
-      parent: ROOT,
-    }).node;
-    const out = { writer: here.w, list: "project" };
-    const away = { writer: there.w, list: "account" };
-    moveBetweenLists(out, { ...away, parent: MINE }, WRITER, ch);
-    moveBetweenLists(away, { ...out, parent: ROOT }, WRITER, ch);
-    expect(here.at(ch)).toMatchObject({ name: "Chapter 1", filetype: "markdown", trashed: false });
-    expect(there.at(ch)).toBeUndefined();
-    expect(here.w.view(LIVE).trash).toEqual([]);
-    expect(there.w.view(LIVE).trash).toEqual([]);
-    here.valid();
   });
 
   it("32. undoes a drafted create after Discard then restore: takes back the pending copy", () => {
@@ -1314,5 +1255,256 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     t.w.author(D, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Notes" });
     applyDraft(t.w, "work-1", WRITER, cmd());
     expect(shown()).toEqual([undefined, idHex(second).slice(0, 4)]);
+  });
+});
+
+/**
+ * Two copies of the list out of step: each case is a list two or three writers built offline and
+ * merged. A move or rename is in force unless the last record about it is an Undo; a node's name
+ * and place are what the last move or rename in force says; an Undo or Redo sets nothing itself.
+ */
+describe("Undo and Redo of names and places read the changes in force", () => {
+  const W = WRITER;
+  const replica = (client: number, from?: TreeWriter) => {
+    const doc = new Y.Doc({ gc: false });
+    doc.clientID = client;
+    if (from) Y.applyUpdate(doc, Y.encodeStateAsUpdate(from.doc));
+    return new TreeWriter(doc);
+  };
+  const sync = (...writers: TreeWriter[]) => {
+    for (const into of writers)
+      for (const from of writers)
+        if (into !== from) Y.applyUpdate(into.doc, Y.encodeStateAsUpdate(from.doc));
+  };
+  const folder = (w: TreeWriter, name: string, parent = ROOT) =>
+    w.create(LIVE, W, { kind: "folder", name, parent }).node;
+  const at = (w: TreeWriter, node: string, view: View = LIVE) => {
+    const shown = w.view(view).nodes.get(node);
+    return shown && { name: shown.name, parent: shown.parent, trashed: shown.trashed };
+  };
+  const nameOf = (w: TreeWriter, node: string, view: View = LIVE) => at(w, node, view)?.name;
+  const parentOf = (w: TreeWriter, node: string, view: View = LIVE) => at(w, node, view)?.parent;
+  /** What a press answered: the kind of record it wrote, or why it wrote none. */
+  const said = (answer: TreeRecord | string) => (typeof answer === "string" ? answer : answer.type);
+  const undo = (w: TreeWriter, id: string, view: View = LIVE) =>
+    undoChange(w, view, W, id) as TreeRecord;
+
+  it("a Work's rename and its Undo drafted over a live rename they never saw: Apply and Un-Apply keep the live rename", () => {
+    const a = replica(1000);
+    const node = folder(a, "Original");
+    const b = replica(2000, a);
+    const drafted = b.rename(D, W, node, "Target");
+    undo(b, drafted.id, D);
+    a.rename(LIVE, W, node, "Earlier");
+    sync(a, b);
+    const applied = applyDraft(a, "work-1", W, cmd());
+    expect(nameOf(a, node)).toBe("Earlier");
+    expect(undoApply(a, applied.command, W, cmd()).left.map((left) => left.why)).toEqual([]);
+    expect([nameOf(a, node), nameOf(a, node, D)]).toEqual(["Earlier", "Earlier"]);
+  });
+
+  it("two copies Undo one rename: the rename neither saw stays", () => {
+    const a = replica(1000);
+    const node = folder(a, "Original");
+    const b = replica(2000, a);
+    a.rename(LIVE, W, node, "Earlier");
+    const target = b.rename(LIVE, W, node, "Target");
+    const c = replica(3000, b);
+    undo(b, target.id);
+    undo(c, target.id);
+    sync(a, b, c);
+    expect(
+      viewRecords(a.doc, LIVE).map((record) =>
+        record.type === "rename" ? record.name : record.type,
+      ),
+    ).toEqual(["create", "Earlier", "Target", "Original", "Original"]);
+    expect(nameOf(a, node)).toBe("Earlier");
+  });
+
+  it("a stale Undo of a move leaves the move its author never saw", () => {
+    const a = replica(1000);
+    const node = folder(a, "Node");
+    const p = folder(a, "P");
+    const q = folder(a, "Q");
+    const b = replica(2000, a);
+    const toP = a.move(LIVE, W, node, p);
+    const toQ = b.move(LIVE, W, node, q);
+    undo(b, toQ.id);
+    sync(a, b);
+    expect(parentOf(a, node)).toBe(p);
+    expect(said(undoChange(a, LIVE, W, toP.id))).toBe("move");
+    expect(parentOf(a, node)).toBe(ROOT);
+  });
+
+  it("one stale Undo of a rename: the unseen rename stays", () => {
+    const a = replica(1000);
+    const node = folder(a, "Original");
+    const b = replica(2000, a);
+    a.rename(LIVE, W, node, "Earlier");
+    const target = b.rename(LIVE, W, node, "Target");
+    undo(b, target.id);
+    sync(a, b);
+    expect(nameOf(a, node)).toBe("Earlier");
+  });
+
+  it("a move that set a name, renamed since: Undo takes the place back and keeps the name", () => {
+    const a = replica(1000);
+    const into = folder(a, "Into");
+    folder(a, "Name", into);
+    const node = folder(a, "Name");
+    const move = a.move(LIVE, W, node, into);
+    a.rename(LIVE, W, node, "Mine");
+    const back = undo(a, move.id);
+    expect([back.type, nameOf(a, node), parentOf(a, node)]).toEqual(["move", "Mine", ROOT]);
+  });
+
+  it("an Undo's record says what its author's copy then shows", () => {
+    const a = replica(1000);
+    const into = folder(a, "Into");
+    const node = folder(a, "Node");
+    const move = a.move(LIVE, W, node, into);
+    const rename = a.rename(LIVE, W, node, "Renamed");
+    expect(undo(a, rename.id)).toMatchObject({ type: "rename", name: "Node" });
+    const home = undo(a, move.id);
+    expect(home).toMatchObject({ type: "move", parent: ROOT });
+  });
+
+  it("a stale Undo whose place would put a folder inside itself is skipped, and the move stands", () => {
+    const a = replica(1000);
+    const p = folder(a, "P");
+    const q = folder(a, "Q");
+    const node = folder(a, "Node", p);
+    const b = replica(2000, a);
+    const toQ = b.move(LIVE, W, node, q);
+    a.move(LIVE, W, node, q);
+    a.move(LIVE, W, p, node);
+    undo(b, toQ.id);
+    sync(a, b);
+    expect([parentOf(a, node), parentOf(a, p)]).toEqual([q, node]);
+    expect(treeViolations(a.view(LIVE))).toEqual([]);
+  });
+
+  it("a rename that changed the type is undone with its type", () => {
+    const a = replica(1000);
+    const node = a.create(LIVE, W, {
+      kind: "document",
+      filetype: "markdown",
+      name: "notes.md",
+      parent: ROOT,
+    }).node;
+    const typeOf = () => a.view(LIVE).nodes.get(node)?.filetype;
+    const rename = a.rename(LIVE, W, node, "notes.txt", "text");
+    undo(a, rename.id);
+    expect(typeOf()).toBe("markdown");
+  });
+
+  it("an Undo whose change is not in the view sets nothing", () => {
+    const a = replica(1000);
+    const node = folder(a, "Original");
+    a.rename(LIVE, W, node, "Kept");
+    a.author(
+      LIVE,
+      W,
+      { type: "rename", node, name: "Original", fromName: "Gone" },
+      { undoes: crypto.randomUUID() },
+    );
+    expect(nameOf(a, node)).toBe("Kept");
+  });
+
+  it("an Undo asked in a Work's view of a live rename lands in live; a later live rename and its Undo leave it", () => {
+    const a = replica(1000);
+    const node = folder(a, "Orig");
+    const rename = a.rename(LIVE, W, node, "X");
+    expect(undoChange(a, D, W, rename.id)).toMatchObject({ type: "rename", name: "Orig" });
+    a.rename(LIVE, W, node, "Y");
+    expect(nameOf(a, node, D)).toBe("Y");
+    const applied = applyDraft(a, "work-1", W, cmd());
+    expect([nameOf(a, node), nameOf(a, node, D)]).toEqual(["Y", "Y"]);
+    const later = a.rename(LIVE, W, node, "Z");
+    expect(undoChange(a, LIVE, W, later.id)).toMatchObject({ type: "rename", name: "Y" });
+    expect(undoApply(a, applied.command, W, cmd()).left.map((left) => left.why)).toEqual([]);
+    expect([nameOf(a, node), nameOf(a, node, D)]).toEqual(["Y", "Y"]);
+  });
+
+  it("an Undo that brings back an older name gives the node its old arrival", () => {
+    const a = replica(1000);
+    const p = folder(a, "P");
+    const x = folder(a, "Doc", p);
+    const y = folder(a, "Other", p);
+    a.rename(LIVE, W, y, "Doc");
+    const suffixed = () => [x, y].map((id) => a.view(LIVE).nodes.get(id)?.suffix !== undefined);
+    expect(suffixed()).toEqual([false, true]);
+    undo(a, a.rename(LIVE, W, x, "Tmp").id);
+    expect(suffixed()).toEqual([false, true]);
+  });
+
+  it("Un-Apply of an applied stale Undo, after live undid the move itself: the move stays out", () => {
+    const a = replica(1000);
+    const f = folder(a, "F");
+    const node = folder(a, "X");
+    const drafted = a.move(D, W, node, f);
+    const b = replica(2000, a);
+    const applied = applyDraft(a, "work-1", W, cmd());
+    undo(a, (applied.copies[0] as TreeRecord).id);
+    undo(b, drafted.id, D);
+    sync(a, b);
+    expect(parentOf(a, node)).toBe(ROOT);
+    const again = applyDraft(a, "work-1", W, cmd());
+    expect(parentOf(a, node)).toBe(ROOT);
+    expect(undoApply(a, again.command, W, cmd()).left).toEqual([]);
+    expect(parentOf(a, node)).toBe(ROOT);
+  });
+
+  it("an Undo back into a folder that has since gone inside the node writes nothing until the folder leaves", () => {
+    const a = replica(1000);
+    const node = folder(a, "N");
+    const f = folder(a, "F");
+    a.move(LIVE, W, node, f);
+    const out = a.move(LIVE, W, node, ROOT);
+    const inside = a.move(LIVE, W, f, node);
+    const before = viewRecords(a.doc, LIVE).length;
+    expect(said(undoChange(a, LIVE, W, out.id))).toBe("changed_since");
+    expect(said(undoChange(a, LIVE, W, out.id))).toBe("changed_since");
+    expect(viewRecords(a.doc, LIVE)).toHaveLength(before);
+    expect(a.view(LIVE).skipped).toEqual([]);
+    expect(said(undoChange(a, LIVE, W, inside.id))).toBe("move");
+    expect(parentOf(a, f)).toBe(ROOT);
+    expect(said(undoChange(a, LIVE, W, out.id))).toBe("move");
+    expect(parentOf(a, node)).toBe(f);
+  });
+
+  it("an applied delete undone on two copies: the Apply's tree half has ended", () => {
+    const a = replica(1000);
+    const node = folder(a, "N");
+    a.delete(D, W, node);
+    const applied = applyDraft(a, "work-1", W, cmd());
+    const copy = viewRecords(a.doc, LIVE).at(-1) as TreeRecord;
+    expect(appliedNodes(a.doc, applied.command, [])).toEqual([node]);
+    const b = replica(2000, a);
+    undo(a, copy.id);
+    undo(b, copy.id);
+    sync(a, b);
+    expect(appliedNodes(a.doc, applied.command, [])).toEqual([]);
+  });
+
+  it("who last renamed a node after an Undo is the Undo's author", () => {
+    const a = replica(1000);
+    const node = folder(a, "Orig");
+    undoChange(a, LIVE, "user:bob", a.rename(LIVE, W, node, "X").id);
+    expect(a.view(LIVE).history.get(node)?.label).toEqual([]);
+    expect(a.view(LIVE).nodes.get(node)?.lastChangedBy).toBe("user:bob");
+  });
+
+  it("a rename undone on one copy while the other restores the node: both land", () => {
+    const a = replica(1000);
+    const node = folder(a, "A");
+    const rename = a.rename(LIVE, W, node, "B");
+    const removal = a.delete(LIVE, W, node);
+    const b = replica(2000, a);
+    const restore = undo(a, removal.id);
+    const back = undo(b, rename.id);
+    expect([restore.type, back.type]).toEqual(["restore", "rename"]);
+    sync(a, b);
+    expect(at(a, node)).toMatchObject({ name: "A", trashed: false });
   });
 });

@@ -1,0 +1,313 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 3182a2c995b6ee655dfff2dd77446d37c6c0b396..a8296f2211df17961a7ce764ee3aa769f0350253 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -2183,6 +2183,9 @@ function replaceNodes(nodes, from, to, view, replacement) {
+   }
+   return result;
+ }
++function domSelectionSource(view) {
++  return view.someProp("selectionForDOM", function (f) { return f(view); }) || view.state.selection;
++}
+ function selectionFromDOM(view) {
+   var origin = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : null;
+   var domSel = view.domSelectionRange(),
+@@ -2201,7 +2204,7 @@ function selectionFromDOM(view) {
+     if (nearestDesc && nearestDesc.node.isAtom && prosemirrorState.NodeSelection.isSelectable(nearestDesc.node) && nearestDesc.parent && !(nearestDesc.node.isInline && isOnEdge(domSel.focusNode, domSel.focusOffset, nearestDesc.dom))) {
+       var pos = nearestDesc.posBefore;
+       selection = new prosemirrorState.NodeSelection(head == pos ? $head : doc.resolve(pos));
+-    } else if (gecko && origin == "key" && head > view.state.selection.to && isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length && nearestDesc && nearestDesc.posAtStart > view.state.selection.to) {
++    } else if (gecko && origin == "key" && head > domSelectionSource(view).to && isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length && nearestDesc && nearestDesc.posAtStart > domSelectionSource(view).to) {
+       for (var scan = domSel.focusNode;; scan = scan.parentNode) {
+         if (getComputedStyle(scan).overflow != "visible") {
+           selection = prosemirrorState.Selection.findFrom(doc.resolve(nearestDesc.posAtStart), 1);
+@@ -2220,7 +2223,7 @@ function selectionFromDOM(view) {
+         max = Math.max(max, view.docView.posFromDOM(range.endContainer, range.endOffset, -1));
+       }
+       if (min < 0) return null;
+-      var _ref3 = max == view.state.selection.anchor ? [max, min] : [min, max];
++      var _ref3 = max == domSelectionSource(view).anchor ? [max, min] : [min, max];
+       var _ref4 = _slicedToArray(_ref3, 2);
+       anchor = _ref4[0];
+       head = _ref4[1];
+@@ -2232,7 +2235,7 @@ function selectionFromDOM(view) {
+   }
+   var $anchor = doc.resolve(anchor);
+   if (!selection) {
+-    var bias = origin == "pointer" || view.state.selection.head < $head.pos && !inWidget ? 1 : -1;
++    var bias = origin == "pointer" || domSelectionSource(view).head < $head.pos && !inWidget ? 1 : -1;
+     selection = selectionBetween(view, $anchor, $head, bias);
+   }
+   return selection;
+@@ -2258,13 +2261,14 @@ function selectionToDOM(view) {
+   if (view.cursorWrapper) {
+     selectCursorWrapper(view);
+   } else {
+-    var anchor = sel.anchor,
+-      head = sel.head,
++    var projected = domSelectionSource(view);
++    var anchor = projected.anchor,
++      head = projected.head,
+       resetEditableFrom,
+       resetEditableTo;
+-    if (brokenSelectBetweenUneditable && !(sel instanceof prosemirrorState.TextSelection)) {
+-      if (!sel.$from.parent.inlineContent) resetEditableFrom = temporarilyEditableNear(view, sel.from);
+-      if (!sel.empty && !sel.$from.parent.inlineContent) resetEditableTo = temporarilyEditableNear(view, sel.to);
++    if (brokenSelectBetweenUneditable && !(projected instanceof prosemirrorState.TextSelection)) {
++      if (!projected.$from.parent.inlineContent) resetEditableFrom = temporarilyEditableNear(view, projected.from);
++      if (!projected.empty && !projected.$from.parent.inlineContent) resetEditableTo = temporarilyEditableNear(view, projected.to);
+     }
+     view.docView.setSelection(anchor, head, view, force);
+     if (brokenSelectBetweenUneditable) {
+@@ -2371,7 +2375,7 @@ function hasSelection(view) {
+   }
+ }
+ function anchorInRightPlace(view) {
+-  var anchorDOM = view.docView.domFromPos(view.state.selection.anchor, 0);
++  var anchorDOM = view.docView.domFromPos(domSelectionSource(view).anchor, 0);
+   var domSel = view.domSelectionRange();
+   return isEquivalentPosition(anchorDOM.node, anchorDOM.offset, domSel.anchorNode, domSel.anchorOffset);
+ }
+@@ -4720,7 +4724,7 @@ function rangeToSelectionRange(view, range) {
+     anchorOffset = range.startOffset;
+   var focusNode = range.endContainer,
+     focusOffset = range.endOffset;
+-  var currentAnchor = view.domAtPos(view.state.selection.anchor);
++  var currentAnchor = view.domAtPos(domSelectionSource(view).anchor);
+   if (isEquivalentPosition(currentAnchor.node, currentAnchor.offset, focusNode, focusOffset)) {
+     var _ref7 = [focusNode, focusOffset, anchorNode, anchorOffset];
+     anchorNode = _ref7[0];
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index f738f6876f3fae6b4f055e0c9e8532404f793f73..8a49f88bd038a9d1180beabb6b442e90e887c801 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -726,6 +726,14 @@ interface EditorProps<P = any> {
+     */
+     dragCopies?: (event: DragEvent) => boolean;
+     /**
++    Overrides only the native DOM selection, leaving model selection, visibility
++    and node selection styling unchanged. Return a collapsed TextSelection in
++    view.state.doc, or null to use the model selection. Browser selection changes
++    can read this caret back into the model; it must be a valid editing position.
++    This function must not dispatch transactions or mutate the DOM.
++    */
++    selectionForDOM?: (this: P, view: EditorView) => Selection | null;
++    /**
+     Can be used to override the way a selection is created when
+     reading a DOM selection between the given anchor and head.
+     */
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index f738f6876f3fae6b4f055e0c9e8532404f793f73..8a49f88bd038a9d1180beabb6b442e90e887c801 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -726,6 +726,14 @@ interface EditorProps<P = any> {
+     */
+     dragCopies?: (event: DragEvent) => boolean;
+     /**
++    Overrides only the native DOM selection, leaving model selection, visibility
++    and node selection styling unchanged. Return a collapsed TextSelection in
++    view.state.doc, or null to use the model selection. Browser selection changes
++    can read this caret back into the model; it must be a valid editing position.
++    This function must not dispatch transactions or mutate the DOM.
++    */
++    selectionForDOM?: (this: P, view: EditorView) => Selection | null;
++    /**
+     Can be used to override the way a selection is created when
+     reading a DOM selection between the given anchor and head.
+     */
+diff --git a/dist/index.js b/dist/index.js
+index e7afadb77457943de14e5108aaee7c60f0c590d2..e0042ed78c14558d840e6ed213484e2d200f4996 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -2231,6 +2231,9 @@ function replaceNodes(nodes, from, to, view, replacement) {
+     return result;
+ }
+ 
++function domSelectionSource(view) {
++    return view.someProp("selectionForDOM", f => f(view)) || view.state.selection;
++}
+ function selectionFromDOM(view, origin = null) {
+     let domSel = view.domSelectionRange(), doc = view.state.doc;
+     if (!domSel.focusNode)
+@@ -2250,9 +2253,9 @@ function selectionFromDOM(view, origin = null) {
+             let pos = nearestDesc.posBefore;
+             selection = new NodeSelection(head == pos ? $head : doc.resolve(pos));
+         }
+-        else if (gecko && origin == "key" && head > view.state.selection.to &&
++        else if (gecko && origin == "key" && head > domSelectionSource(view).to &&
+             isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length &&
+-            nearestDesc && nearestDesc.posAtStart > view.state.selection.to) {
++            nearestDesc && nearestDesc.posAtStart > domSelectionSource(view).to) {
+             // Firefox will jump across scrollable wrapper nodes on keyboard
+             // cursor motion (#1594). This tries to detect this situation
+             // and work around it.
+@@ -2276,7 +2279,7 @@ function selectionFromDOM(view, origin = null) {
+             }
+             if (min < 0)
+                 return null;
+-            [anchor, head] = max == view.state.selection.anchor ? [max, min] : [min, max];
++            [anchor, head] = max == domSelectionSource(view).anchor ? [max, min] : [min, max];
+             $head = doc.resolve(head);
+         }
+         else {
+@@ -2287,7 +2290,7 @@ function selectionFromDOM(view, origin = null) {
+     }
+     let $anchor = doc.resolve(anchor);
+     if (!selection) {
+-        let bias = origin == "pointer" || (view.state.selection.head < $head.pos && !inWidget) ? 1 : -1;
++        let bias = origin == "pointer" || (domSelectionSource(view).head < $head.pos && !inWidget) ? 1 : -1;
+         selection = selectionBetween(view, $anchor, $head, bias);
+     }
+     return selection;
+@@ -2318,12 +2321,13 @@ function selectionToDOM(view, force = false) {
+         selectCursorWrapper(view);
+     }
+     else {
+-        let { anchor, head } = sel, resetEditableFrom, resetEditableTo;
+-        if (brokenSelectBetweenUneditable && !(sel instanceof TextSelection)) {
+-            if (!sel.$from.parent.inlineContent)
+-                resetEditableFrom = temporarilyEditableNear(view, sel.from);
+-            if (!sel.empty && !sel.$from.parent.inlineContent)
+-                resetEditableTo = temporarilyEditableNear(view, sel.to);
++        let projected = domSelectionSource(view);
++        let { anchor, head } = projected, resetEditableFrom, resetEditableTo;
++        if (brokenSelectBetweenUneditable && !(projected instanceof TextSelection)) {
++            if (!projected.$from.parent.inlineContent)
++                resetEditableFrom = temporarilyEditableNear(view, projected.from);
++            if (!projected.empty && !projected.$from.parent.inlineContent)
++                resetEditableTo = temporarilyEditableNear(view, projected.to);
+         }
+         view.docView.setSelection(anchor, head, view, force);
+         if (brokenSelectBetweenUneditable) {
+@@ -2457,7 +2461,7 @@ function hasSelection(view) {
+     }
+ }
+ function anchorInRightPlace(view) {
+-    let anchorDOM = view.docView.domFromPos(view.state.selection.anchor, 0);
++    let anchorDOM = view.docView.domFromPos(domSelectionSource(view).anchor, 0);
+     let domSel = view.domSelectionRange();
+     return isEquivalentPosition(anchorDOM.node, anchorDOM.offset, domSel.anchorNode, domSel.anchorOffset);
+ }
+@@ -5034,7 +5038,7 @@ function checkCSS(view) {
+ function rangeToSelectionRange(view, range) {
+     let anchorNode = range.startContainer, anchorOffset = range.startOffset;
+     let focusNode = range.endContainer, focusOffset = range.endOffset;
+-    let currentAnchor = view.domAtPos(view.state.selection.anchor);
++    let currentAnchor = view.domAtPos(domSelectionSource(view).anchor);
+     // Since such a range doesn't distinguish between anchor and head,
+     // use a heuristic that flips it around if its end matches the
+     // current anchor.
+diff --git a/src/domobserver.ts b/src/domobserver.ts
+index 618f2cff6ad02951fe80bd4f4c4c113ac22142d1..ea921d5276c52b339609c718bac9890c4839375d 100644
+--- a/src/domobserver.ts
++++ b/src/domobserver.ts
+@@ -1,7 +1,7 @@
+ import {Selection} from "prosemirror-state"
+ import * as browser from "./browser"
+ import {domIndex, isEquivalentPosition, selectionCollapsed, parentNode, DOMSelectionRange, DOMNode, DOMSelection, isText, isElt} from "./dom"
+-import {hasFocusAndSelection, selectionToDOM, selectionFromDOM} from "./selection"
++import {hasFocusAndSelection, selectionToDOM, selectionFromDOM, domSelectionSource} from "./selection"
+ import {EditorView} from "./index"
+ 
+ const observeOptions = {
+@@ -326,7 +326,7 @@ function rangeToSelectionRange(view: EditorView, range: StaticRange) {
+   let anchorNode = range.startContainer, anchorOffset = range.startOffset
+   let focusNode = range.endContainer, focusOffset = range.endOffset
+ 
+-  let currentAnchor = view.domAtPos(view.state.selection.anchor)
++  let currentAnchor = view.domAtPos(domSelectionSource(view).anchor)
+   // Since such a range doesn't distinguish between anchor and head,
+   // use a heuristic that flips it around if its end matches the
+   // current anchor.
+diff --git a/src/index.ts b/src/index.ts
+index 7d4205736a5533b8c22b2ce9a8ea719f8f52f143..bb9e20ecacc37236225866493ab4f475ed95e6f1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -682,6 +682,13 @@ export interface EditorProps<P = any> {
+   /// used on macOS, `ctrlKey` on other platforms.
+   dragCopies?: (event: DragEvent) => boolean
+ 
++  /// Overrides only the native DOM selection, leaving model selection, visibility
++  /// and node selection styling unchanged. Return a collapsed TextSelection in
++  /// view.state.doc, or null to use the model selection. Browser selection changes
++  /// can read this caret back into the model; it must be a valid editing position.
++  /// This function must not dispatch transactions or mutate the DOM.
++  selectionForDOM?: (this: P, view: EditorView) => Selection | null
++
+   /// Can be used to override the way a selection is created when
+   /// reading a DOM selection between the given anchor and head.
+   createSelectionBetween?: (this: P, view: EditorView, anchor: ResolvedPos, head: ResolvedPos) => Selection | null
+diff --git a/src/selection.ts b/src/selection.ts
+index 2cc1de165cafd2ede4f6b96d4eff0a7d1e6553a5..f53612a04d011fd0eacb5a77e02a532a0ade998c 100644
+--- a/src/selection.ts
++++ b/src/selection.ts
+@@ -6,6 +6,10 @@ import {isEquivalentPosition, domIndex, isOnEdge, selectionCollapsed, isElt, con
+ import {EditorView} from "./index"
+ import {NodeViewDesc} from "./viewdesc"
+ 
++export function domSelectionSource(view: EditorView): Selection {
++  return view.someProp("selectionForDOM", f => f(view)) || view.state.selection
++}
++
+ export function selectionFromDOM(view: EditorView, origin: string | null = null) {
+   let domSel = view.domSelectionRange(), doc = view.state.doc
+   if (!domSel.focusNode) return null
+@@ -21,9 +25,9 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
+         !(nearestDesc.node!.isInline && isOnEdge(domSel.focusNode, domSel.focusOffset, nearestDesc.dom))) {
+       let pos = nearestDesc.posBefore
+       selection = new NodeSelection(head == pos ? $head : doc.resolve(pos))
+-    } else if (browser.gecko && origin == "key" && head > view.state.selection.to &&
++    } else if (browser.gecko && origin == "key" && head > domSelectionSource(view).to &&
+                isElt(domSel.focusNode) && domSel.focusOffset == domSel.focusNode.childNodes.length &&
+-               nearestDesc && nearestDesc.posAtStart > view.state.selection.to) {
++               nearestDesc && nearestDesc.posAtStart > domSelectionSource(view).to) {
+       // Firefox will jump across scrollable wrapper nodes on keyboard
+       // cursor motion (#1594). This tries to detect this situation
+       // and work around it.
+@@ -45,7 +49,7 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
+         max = Math.max(max, view.docView.posFromDOM(range.endContainer, range.endOffset, -1))
+       }
+       if (min < 0) return null
+-      ;[anchor, head] = max == view.state.selection.anchor ? [max, min] : [min, max]
++      ;[anchor, head] = max == domSelectionSource(view).anchor ? [max, min] : [min, max]
+       $head = doc.resolve(head)
+     } else {
+       anchor = view.docView.posFromDOM(domSel.anchorNode!, domSel.anchorOffset, 1)
+@@ -55,7 +59,7 @@ export function selectionFromDOM(view: EditorView, origin: string | null = null)
+   let $anchor = doc.resolve(anchor)
+ 
+   if (!selection) {
+-    let bias = origin == "pointer" || (view.state.selection.head < $head.pos && !inWidget) ? 1 : -1
++    let bias = origin == "pointer" || (domSelectionSource(view).head < $head.pos && !inWidget) ? 1 : -1
+     selection = selectionBetween(view, $anchor, $head, bias)
+   }
+   return selection
+@@ -91,12 +95,13 @@ export function selectionToDOM(view: EditorView, force = false) {
+   if (view.cursorWrapper) {
+     selectCursorWrapper(view)
+   } else {
+-    let {anchor, head} = sel, resetEditableFrom, resetEditableTo
+-    if (brokenSelectBetweenUneditable && !(sel instanceof TextSelection)) {
+-      if (!sel.$from.parent.inlineContent)
+-        resetEditableFrom = temporarilyEditableNear(view, sel.from)
+-      if (!sel.empty && !sel.$from.parent.inlineContent)
+-        resetEditableTo = temporarilyEditableNear(view, sel.to)
++    let projected = domSelectionSource(view)
++    let {anchor, head} = projected, resetEditableFrom, resetEditableTo
++    if (brokenSelectBetweenUneditable && !(projected instanceof TextSelection)) {
++      if (!projected.$from.parent.inlineContent)
++        resetEditableFrom = temporarilyEditableNear(view, projected.from)
++      if (!projected.empty && !projected.$from.parent.inlineContent)
++        resetEditableTo = temporarilyEditableNear(view, projected.to)
+     }
+     view.docView.setSelection(anchor, head, view, force)
+     if (brokenSelectBetweenUneditable) {
+@@ -223,7 +228,7 @@ export function hasSelection(view: EditorView) {
+ }
+ 
+ export function anchorInRightPlace(view: EditorView) {
+-  let anchorDOM = view.docView.domFromPos(view.state.selection.anchor, 0)
++  let anchorDOM = view.docView.domFromPos(domSelectionSource(view).anchor, 0)
+   let domSel = view.domSelectionRange()
+   return isEquivalentPosition(anchorDOM.node, anchorDOM.offset, domSel.anchorNode!, domSel.anchorOffset)
+ }

@@ -27,7 +27,7 @@ import type { DocumentId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseDocumentFilename, readSegment } from "@meridian/contracts/protocol";
-import type { ModelInfo } from "@meridian-flow/gateway";
+import type { ModelInfo } from "@meridian-flow/runtime/gateway";
 import {
   createCopyIdentityMap,
   ModelEditRefusal,
@@ -616,9 +616,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
     // grant under its locks (seam C).
-    const target = creates
-      ? await threadContainerTarget(deps.works, context.resolution, parsed.path)
-      : null;
+    const target = creates ? await threadContainerTarget(context.resolution, parsed.path) : null;
 
     // A copy reads its source before it creates anything, so a bad source leaves no file.
     let copied: CopiedSource | undefined;

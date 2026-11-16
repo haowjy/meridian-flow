@@ -3,9 +3,18 @@ import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import { type RefObject, useLayoutEffect, useMemo, useRef } from "react";
+import type { DocumentSession } from "./document-session";
 import { captureReadingPosition, restoreReadingPosition } from "./reading-position";
 import { mayRestoreReadingPosition } from "./reading-position-navigation";
 import { type ReadingPosition, ReadingPositionStore } from "./reading-position-store";
+
+/**
+ * A review mount keeps no place between visits. Across a replaced session (a room that came back
+ * read-only and was rebuilt from the server) its editor remounts, and the place carries over here:
+ * the anchors are Yjs relative positions, which resolve in the new document for every item the
+ * server has, and one inside dropped text falls back to the top.
+ */
+const carried = new Map<string, ReadingPosition>();
 
 export function useReadingPosition({
   editor,
@@ -14,6 +23,7 @@ export function useReadingPosition({
   documentId,
   active,
   review,
+  session,
   signal,
 }: {
   editor: Editor | null;
@@ -22,6 +32,7 @@ export function useReadingPosition({
   documentId: string;
   active: boolean;
   review: boolean;
+  session: DocumentSession;
   signal: AbortSignal;
 }): void {
   const store = useMemo(() => new ReadingPositionStore(accountId), [accountId]);
@@ -31,17 +42,21 @@ export function useReadingPosition({
 
   useLayoutEffect(() => {
     const scroller = pane.current;
-    if (!editor || !scroller || review || signal.aborted) return;
+    if (!editor || !scroller || signal.aborted) return;
+    const carryKey = `${accountId}|${session.roomKey}`;
     if (initialized.current !== editor) {
       // Hidden warm mounts have no layout. Their first reveal is their first restoration.
       if (!active || !scroller.clientHeight) return;
       initialized.current = editor;
-      if (mayRestoreReadingPosition(editor, documentId, review, window.location.href)) {
-        const place = store.load(documentId);
-        // A frame later, past the commit: React's development double mount remounts the editor
-        // content, which redraws the prose and drops any scroll set before it.
-        if (place) requestAnimationFrame(() => restoreReadingPosition(editor, scroller, place));
-      }
+      const place = review
+        ? carried.get(carryKey)
+        : mayRestoreReadingPosition(editor, documentId, review, window.location.href)
+          ? store.load(documentId)
+          : null;
+      carried.delete(carryKey);
+      // A frame later, past the commit: React's development double mount remounts the editor
+      // content, which redraws the prose and drops any scroll set before it.
+      if (place) requestAnimationFrame(() => restoreReadingPosition(editor, scroller, place));
     }
     let candidate: { place: ReadingPosition; at: number } | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -60,6 +75,10 @@ export function useReadingPosition({
       if (restoring || !visible.current || signal.aborted || !scroller.clientHeight) return;
       const place = captureReadingPosition(editor, scroller);
       if (!place) return;
+      if (review) {
+        carried.set(carryKey, place);
+        return;
+      }
       candidate = { place, at: performance.timeOrigin + performance.now() };
       if (timer) clearTimeout(timer);
       timer = setTimeout(flush, 200);
@@ -73,10 +92,11 @@ export function useReadingPosition({
     window.addEventListener("pagehide", flush);
     return () => {
       flush();
+      if (review && !session.replaced) carried.delete(carryKey);
       cancelAnimationFrame(frame);
       scroller.removeEventListener("scroll", save);
       editor.off("selectionUpdate", selection);
       window.removeEventListener("pagehide", flush);
     };
-  }, [editor, pane, store, documentId, active, review, signal]);
+  }, [editor, pane, store, accountId, documentId, active, review, session, signal]);
 }

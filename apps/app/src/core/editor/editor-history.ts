@@ -4,11 +4,13 @@
  */
 import type { Editor } from "@tiptap/core";
 import { TextSelection, type Transaction } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 import {
   defaultDeleteFilter,
   defaultProtectedNodes,
   getRelativeSelection,
   relativePositionToAbsolutePosition,
+  resolveRelativeCellSelection,
   ySyncPluginKey,
 } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
@@ -79,7 +81,11 @@ function createDocumentUndoManager(document: Y.Doc): Y.UndoManager {
     trackedOrigins: new Set([ySyncPluginKey]),
     deleteFilter: (item) =>
       item.parentSub !== "id" && defaultDeleteFilter(item, defaultProtectedNodes),
-    captureTransaction: (transaction) => transaction.meta.get("addToHistory") !== false,
+    // A binding write is the writer's only with the sync plugin's mark: its own repairs open a
+    // transaction with the same origin and no mark, and never land on the writer's undo stack. Other
+    // origins (this manager's undo and redo, a Discard, an Apply) are tracked by their own.
+    captureTransaction: (transaction) =>
+      transaction.origin !== ySyncPluginKey || transaction.meta.get("addToHistory") === true,
   });
 }
 
@@ -231,7 +237,9 @@ export class DocumentHistory implements EditorHistoryHandle {
    * from a range carries it in `RANGE_META`: taken by `rememberRange` before
    * the dispatch that made the item, then carried through the items UndoManager
    * generates for later redo and undo runs. Redo leaves y-tiptap's mapped
-   * selection alone. (y-tiptap saves its own copy on each item, but reads
+   * selection alone. Cell ranges use the binding's identity-aware resolver; if
+   * either endpoint is gone, the binding's mapped result stays.
+   * (y-tiptap saves its own copy on each item, but reads
    * it from the last transaction of a dispatch, which is the wrong range when a
    * plugin appends one.) Carets keep the mapped result, and so do node
    * selections, unless their object has gone, which `ObjectPhysicsExtension`
@@ -240,7 +248,13 @@ export class DocumentHistory implements EditorHistoryHandle {
   private restoreRange(popped: StackItem, editor: Editor): void {
     const binding = ySyncPluginKey.getState(editor.state)?.binding;
     const before = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
-    if (!binding || before?.type !== "text") return;
+    if (!binding || !before) return;
+    if (before.type === "cell") {
+      const { selection } = resolveRelativeCellSelection(editor.state.doc, before, binding);
+      if (selection) editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView());
+      return;
+    }
+    if (before.type !== "text") return;
     const anchor = liveAbsolutePosition(binding, before.anchor);
     const head = liveAbsolutePosition(binding, before.head);
     if (anchor === null || head === null || anchor === head) return;
@@ -273,7 +287,7 @@ export class DocumentHistory implements EditorHistoryHandle {
       !binding ||
       !transaction.docChanged ||
       transaction.getMeta(ySyncPluginKey) ||
-      !(selection instanceof TextSelection) ||
+      !(selection instanceof TextSelection || selection instanceof CellSelection) ||
       selection.empty
     ) {
       return;

@@ -193,7 +193,7 @@ keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedF
 sentence says it was applied, with where it landed, the name a clash gave it or that it came back
 to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
 takes (`undoApply`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
-answers ends the applied notice, so its result ("Skipped", "Partly undone", "Retry") shows on the
+answers ends the applied notice, so its result ("Skipped", "Retry") shows on the
 rows as a press's does. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
@@ -303,8 +303,11 @@ While frozen:
 A local revert checks its room's access when it writes. A room the server already admits
 read-only refuses it (`read_only`) and the list re-reads, so a stale `frozen: false` never
 shows a revert the room drops. The freeze itself closes the socket with `ACCESS_CHANGED`,
-which marks the room read-only at once; an unacknowledged revert stays on screen, held
-until a Restore admits the room for editing again.
+which marks the room read-only at once. An unacknowledged revert is found at the read admission's
+handshake: the room is replaced by one loaded from the server, so the revert's change is back in
+the list, and its typing (not a Discard, which has no words) is handed back. Until the Discard's
+`returned` answer on replacement lands (it needs the closed-Work notices of never-refuse PR B),
+the Discard's local write is simply gone with the old room and shows no chip.
 
 Restore restores the lineage's first chat and thaws only once the list says so. Thawing
 first would let the writer type into a room that still drops their text.

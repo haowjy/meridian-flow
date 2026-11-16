@@ -29,6 +29,8 @@ CREATE TABLE "agent_package_saves" (
 	"project_id" uuid,
 	"folder" text NOT NULL,
 	"package_revision_id" uuid,
+	"undone_save_id" uuid,
+	"saved_by" text DEFAULT 'writer' NOT NULL,
 	"seq" bigint GENERATED ALWAYS AS IDENTITY (sequence name "agent_package_saves_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "agent_package_saves_one_owner" CHECK (("agent_package_saves"."user_id" IS NULL) <> ("agent_package_saves"."project_id" IS NULL))
@@ -400,6 +402,7 @@ CREATE TABLE "branches" (
 CREATE TABLE "context_sources" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"project_id" uuid,
+	"user_id" uuid,
 	"work_id" uuid,
 	"root_thread_id" uuid,
 	"chat_thread_id" uuid,
@@ -411,9 +414,10 @@ CREATE TABLE "context_sources" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"deleted_at" timestamp with time zone,
-	CONSTRAINT "context_sources_exactly_one_scope" CHECK (("context_sources"."scope" = 'project' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL) OR ("context_sources"."scope" = 'work' AND "context_sources"."project_id" IS NULL AND "context_sources"."work_id" IS NOT NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL) OR ("context_sources"."scope" = 'lineage' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NOT NULL AND "context_sources"."chat_thread_id" IS NULL AND "context_sources"."slug" = 'scratch') OR ("context_sources"."scope" = 'chat' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NOT NULL AND "context_sources"."slug" = 'uploads')),
+	CONSTRAINT "context_sources_exactly_one_scope" CHECK (("context_sources"."scope" = 'project' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."user_id" IS NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL) OR ("context_sources"."scope" = 'work' AND "context_sources"."project_id" IS NULL AND "context_sources"."user_id" IS NULL AND "context_sources"."work_id" IS NOT NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL) OR ("context_sources"."scope" = 'lineage' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."user_id" IS NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NOT NULL AND "context_sources"."chat_thread_id" IS NULL AND "context_sources"."slug" = 'scratch') OR ("context_sources"."scope" = 'chat' AND "context_sources"."project_id" IS NOT NULL AND "context_sources"."user_id" IS NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NOT NULL AND "context_sources"."slug" = 'uploads') OR ("context_sources"."scope" = 'account' AND "context_sources"."user_id" IS NOT NULL AND "context_sources"."project_id" IS NULL AND "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL AND "context_sources"."slug" = 'user')),
 	CONSTRAINT "context_sources_uploads_chat_only" CHECK ("context_sources"."slug" <> 'uploads' OR "context_sources"."scope" = 'chat'),
-	CONSTRAINT "context_sources_scope_valid" CHECK ("context_sources"."scope" IN ('project', 'work', 'lineage', 'chat')),
+	CONSTRAINT "context_sources_user_account_only" CHECK ("context_sources"."slug" <> 'user' OR "context_sources"."scope" = 'account'),
+	CONSTRAINT "context_sources_scope_valid" CHECK ("context_sources"."scope" IN ('project', 'work', 'lineage', 'chat', 'account')),
 	CONSTRAINT "context_sources_scope_work_fk" CHECK ("context_sources"."scope" <> 'work' OR "context_sources"."work_id" IS NOT NULL),
 	CONSTRAINT "context_sources_scope_project_fk" CHECK ("context_sources"."scope" = 'work' OR "context_sources"."work_id" IS NULL)
 );
@@ -437,7 +441,8 @@ CREATE TABLE "document_previous_locations" (
 --> statement-breakpoint
 CREATE TABLE "documents" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"project_id" uuid NOT NULL,
+	"project_id" uuid,
+	"user_id" uuid,
 	"storage_url" text,
 	"mime_type" text,
 	"size_bytes" bigint,
@@ -448,12 +453,14 @@ CREATE TABLE "documents" (
 	"content_purged_at" timestamp with time zone,
 	"in_no_view_since" timestamp with time zone,
 	CONSTRAINT "documents_stored_mime_type" CHECK ("documents"."storage_url" IS NULL OR "documents"."mime_type" IS NOT NULL),
-	CONSTRAINT "documents_size_bytes_nonneg" CHECK ("documents"."size_bytes" IS NULL OR "documents"."size_bytes" >= 0)
+	CONSTRAINT "documents_size_bytes_nonneg" CHECK ("documents"."size_bytes" IS NULL OR "documents"."size_bytes" >= 0),
+	CONSTRAINT "documents_one_owner" CHECK (num_nonnulls("documents"."project_id", "documents"."user_id") = 1)
 );
 --> statement-breakpoint
 CREATE TABLE "link_ahead_refs" (
 	"ahead_id" uuid PRIMARY KEY NOT NULL,
-	"project_id" uuid NOT NULL,
+	"project_id" uuid,
+	"user_id" uuid,
 	"scheme" text NOT NULL,
 	"work_id" uuid,
 	"root_thread_id" uuid,
@@ -461,7 +468,8 @@ CREATE TABLE "link_ahead_refs" (
 	"path" text NOT NULL,
 	"settled_document_id" uuid,
 	"registered_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"settled_at" timestamp with time zone
+	"settled_at" timestamp with time zone,
+	CONSTRAINT "link_ahead_refs_one_holder" CHECK (num_nonnulls("link_ahead_refs"."project_id", "link_ahead_refs"."user_id") = 1)
 );
 --> statement-breakpoint
 CREATE TABLE "projects" (
@@ -469,9 +477,7 @@ CREATE TABLE "projects" (
 	"user_id" uuid NOT NULL,
 	"name" text NOT NULL,
 	"slug" text NOT NULL,
-	"is_personal" boolean DEFAULT false NOT NULL,
 	"tree_list_id" uuid DEFAULT gen_random_uuid() NOT NULL,
-	"default_bootstrap_ready" boolean DEFAULT false NOT NULL,
 	"system_prompt" text,
 	"settings" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"last_activity_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -566,6 +572,7 @@ CREATE TABLE "tree_edit_receipt_nodes" (
 	"thread_id" uuid,
 	"node_id" uuid NOT NULL,
 	"w_id" integer NOT NULL,
+	"copied_from" text,
 	"before_at" text,
 	"after_at" text,
 	CONSTRAINT "tree_edit_receipt_nodes_receipt_id_node_id_pk" PRIMARY KEY("receipt_id","node_id")
@@ -585,7 +592,6 @@ CREATE TABLE "tree_edit_receipts" (
 	"kind" text DEFAULT 'write' NOT NULL,
 	"reverses" uuid,
 	"draft_branch_id" uuid,
-	"across_lists" boolean DEFAULT false NOT NULL,
 	"shown_at" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "tree_edit_receipts_op_valid" CHECK ("tree_edit_receipts"."op" IN ('create','move','delete','restore')),
@@ -864,7 +870,6 @@ CREATE TABLE "commands" (
 CREATE TABLE "document_block_rooms" (
 	"room_id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "document_block_rooms_room_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"document_id" uuid NOT NULL,
-	"project_id" uuid NOT NULL,
 	"block_order" text[] NOT NULL,
 	"word_count" integer NOT NULL,
 	"document_hash" "bytea" NOT NULL,
@@ -877,7 +882,6 @@ CREATE TABLE "document_block_rooms" (
 CREATE TABLE "document_blocks" (
 	"room_id" bigint NOT NULL,
 	"block_id" text NOT NULL,
-	"project_id" uuid NOT NULL,
 	"text" text NOT NULL,
 	"content_hash" "bytea" NOT NULL,
 	CONSTRAINT "document_blocks_room_id_block_id_pk" PRIMARY KEY("room_id","block_id")
@@ -1039,12 +1043,15 @@ ALTER TABLE "branches" ADD CONSTRAINT "branches_origin_thread_id_threads_id_fk" 
 ALTER TABLE "branches" ADD CONSTRAINT "branches_origin_work_id_works_id_fk" FOREIGN KEY ("origin_work_id") REFERENCES "public"."works"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "branches" ADD CONSTRAINT "branches_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_work_id_works_id_fk" FOREIGN KEY ("work_id") REFERENCES "public"."works"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_links" ADD CONSTRAINT "document_links_source_document_id_documents_id_fk" FOREIGN KEY ("source_document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_previous_locations" ADD CONSTRAINT "document_previous_locations_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_previous_locations" ADD CONSTRAINT "document_previous_locations_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "documents" ADD CONSTRAINT "documents_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "documents" ADD CONSTRAINT "documents_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "link_ahead_refs" ADD CONSTRAINT "link_ahead_refs_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "link_ahead_refs" ADD CONSTRAINT "link_ahead_refs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "link_ahead_refs" ADD CONSTRAINT "link_ahead_refs_work_id_works_id_fk" FOREIGN KEY ("work_id") REFERENCES "public"."works"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "link_ahead_refs" ADD CONSTRAINT "link_ahead_refs_settled_document_id_documents_id_fk" FOREIGN KEY ("settled_document_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "projects" ADD CONSTRAINT "projects_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1159,6 +1166,7 @@ CREATE UNIQUE INDEX "context_sources_project_scope_slug" ON "context_sources" US
 CREATE UNIQUE INDEX "context_sources_work_slug" ON "context_sources" USING btree ("work_id","slug") WHERE "context_sources"."work_id" IS NOT NULL AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_lineage_slug" ON "context_sources" USING btree ("root_thread_id","slug") WHERE "context_sources"."root_thread_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_chat_slug" ON "context_sources" USING btree ("chat_thread_id","slug") WHERE "context_sources"."chat_thread_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "context_sources_account_slug" ON "context_sources" USING btree ("user_id","slug") WHERE "context_sources"."scope" = 'account' AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "context_sources_project_sort" ON "context_sources" USING btree ("project_id","sort_order") WHERE "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "document_links_target_document" ON "document_links" USING btree ("target_document_id");--> statement-breakpoint
 CREATE INDEX "document_links_ahead" ON "document_links" USING btree ("ahead_id");--> statement-breakpoint
@@ -1166,12 +1174,12 @@ CREATE INDEX "document_previous_locations_path" ON "document_previous_locations"
 CREATE INDEX "document_previous_locations_source" ON "document_previous_locations" USING btree ("context_source_id");--> statement-breakpoint
 CREATE INDEX "document_previous_locations_document" ON "document_previous_locations" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "documents_project" ON "documents" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "documents_user" ON "documents" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "documents_in_no_view" ON "documents" USING btree ("in_no_view_since") WHERE "documents"."in_no_view_since" IS NOT NULL AND "documents"."content_purged_at" IS NULL;--> statement-breakpoint
-CREATE INDEX "link_ahead_refs_owner_unsettled" ON "link_ahead_refs" USING btree ("project_id","scheme","work_id","root_thread_id","chat_thread_id",md5("path")) WHERE "link_ahead_refs"."settled_document_id" IS NULL;--> statement-breakpoint
+CREATE INDEX "link_ahead_refs_owner_unsettled" ON "link_ahead_refs" USING btree ("project_id","user_id","scheme","work_id","root_thread_id","chat_thread_id",md5("path")) WHERE "link_ahead_refs"."settled_document_id" IS NULL;--> statement-breakpoint
 CREATE INDEX "link_ahead_refs_settled_document" ON "link_ahead_refs" USING btree ("settled_document_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "projects_user_slug" ON "projects" USING btree ("user_id","slug");--> statement-breakpoint
 CREATE INDEX "projects_user_last_activity_active" ON "projects" USING btree ("user_id","last_activity_at" DESC NULLS LAST) WHERE "projects"."deleted_at" IS NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "projects_user_personal" ON "projects" USING btree ("user_id") WHERE "projects"."is_personal" = true AND "projects"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "upload_intakes_owner_thread" ON "upload_intakes" USING btree ("owner_thread_id") WHERE "upload_intakes"."owner_thread_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "upload_intakes_open_updated" ON "upload_intakes" USING btree ("updated_at") WHERE "upload_intakes"."state" IN ('reserved', 'object_stored');--> statement-breakpoint
 CREATE INDEX "works_project_updated_active" ON "works" USING btree ("project_id","updated_at" DESC NULLS LAST) WHERE "works"."deleted_at" IS NULL;--> statement-breakpoint
@@ -1705,3 +1713,15 @@ $$;
 CREATE TRIGGER projects_create_tree_list_head AFTER INSERT ON public.projects FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
 
 CREATE TRIGGER users_create_tree_list_head AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_tree_list_head();
+
+CREATE FUNCTION public.create_account_source() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- An account's home folder has its source from the moment the account exists.
+  INSERT INTO context_sources (user_id, name, slug, scope) VALUES (NEW.id, 'User Files', 'user', 'account');
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER users_create_account_source AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_account_source();

@@ -17,7 +17,7 @@ import type { ProjectId } from "@meridian/contracts";
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
-import type { ModelInfo } from "@meridian-flow/gateway";
+import type { ModelInfo } from "@meridian-flow/runtime/gateway";
 import { evidenceFrontiers, type ShownLinkShowing } from "../../../shared/model-evidence.js";
 import type { DocumentEvidence } from "../ports/document-evidence.js";
 import {

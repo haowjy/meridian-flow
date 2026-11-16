@@ -10,6 +10,7 @@
  * a file is refused, is `ImageIngressOverlay`.
  */
 
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
@@ -23,13 +24,17 @@ import {
 export function ImageIngressRuntime({
   editor,
   projectId,
+  holderUri,
 }: {
   editor: Editor | null;
   projectId: string | undefined;
+  holderUri: string | null;
 }) {
+  const parsed = holderUri ? parseContextUri(holderUri) : null;
+  const scheme = parsed?.ok ? (parsed.value.scheme === "user" ? "user" : "manuscript") : null;
   const upload = useMemo<ImageUploadPort | null>(
-    () => (projectId ? pictureUploadPort(projectId) : null),
-    [projectId],
+    () => (projectId && scheme ? pictureUploadPort(projectId, scheme) : null),
+    [projectId, scheme],
   );
 
   useEffect(() => {
@@ -42,14 +47,13 @@ export function ImageIngressRuntime({
 
 /**
  * One project's picture upload, as the port the ingress calls. A picture goes into
- * `manuscript://assets/` whichever document holds it: bare picture sources are
- * manuscript-relative.
+ * the home folder for a home document, otherwise the manuscript.
  */
-function pictureUploadPort(projectId: string): ImageUploadPort {
+function pictureUploadPort(projectId: string, scheme: "user" | "manuscript"): ImageUploadPort {
   return async ({ id, file, alt, signal, onProgress }) => {
     const stored = await uploadContextFile({
       projectId,
-      scheme: "manuscript",
+      scheme,
       query: {},
       intakeId: id,
       file,

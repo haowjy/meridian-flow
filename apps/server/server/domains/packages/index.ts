@@ -28,7 +28,14 @@ export {
 export { generalAgentSource, readBuiltinPackages } from "./domain/default-package-seeding.js";
 export { type SkillListing, skillListingFromMarkdown } from "./domain/skill-listing.js";
 export type { SkillFiles } from "./domain/types.js";
-export { type AgentLevelFiles, type LevelFiles, noLevelFiles } from "./ports/agent-level-files.js";
+export {
+  type AgentLevelFiles,
+  type ApplyFilesInput,
+  type FileChange,
+  type FileChanges,
+  type LevelFiles,
+  noLevelFiles,
+} from "./ports/agent-level-files.js";
 export type {
   AgentRevision,
   AgentRevisionBinding,

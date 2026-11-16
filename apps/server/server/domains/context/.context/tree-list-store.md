@@ -19,8 +19,8 @@ are the other two:
 
 - `submit({ lists, make })` works on one list or several. The keys of all of them are taken in
   list-id order whatever order the caller names them, so no path on the same lists deadlocks with
-  another (Discard spans a project's list and the account's; retention takes both; a move between
-  them is `moveBetweenLists` over both writers). `make` is synchronous and gets a writer per list;
+  another (Discard spans a project's list and the account's; retention takes both; a card's Undo
+  of a reply that touched both). `make` is synchronous and gets a writer per list;
   it returns what the caller reads back. The store derives what was made from the copy's own
   change: the new nodes are the creates in the tail of the records that no earlier create names
   (a copy of a create, as Apply's live copy of a drafted one, claims nothing), and a state that
@@ -91,9 +91,8 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
   an applying transaction is never local, so wrapping the apply in `transact` does not help.
 - **A node id belongs to the list that claimed it, for good** (`tree_node_ids`). A row's
   `(id, list_id)` references the claim, and the upsert never writes `list_id`, so no write
-  moves a node between lists. A server move between a project's list and the account's is one
-  `submit` over both: the list the node leaves writes first, then the other takes its claim (and
-  the document's project) with the create.
+  moves a node between lists, and nothing does: between a project's list and the account's the
+  action is Copy, which makes new nodes.
 - **The delete in force is part of a row.** The comparison includes the trash record; a new
   delete in force gets a new `trashed_at`. A node's location version bumps on any change to
   its address, its source included, and so do its descendants'.

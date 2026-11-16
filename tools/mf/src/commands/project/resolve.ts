@@ -11,17 +11,19 @@ import type { Session } from "../../core/session";
 import { jsonResponse, unknownJsonResponse } from "../../core/session";
 
 /**
- * `--project <id>`; omitted or `default` reads the writer's personal project. Authentication
- * already provisioned it, so this never writes.
+ * `--project <id>`; omitted or `default` reads the writer's oldest live project. Authentication
+ * already made one when the account had none, so this never writes.
  */
 export async function resolveProjectId(session: Session, raw: string | undefined): Promise<string> {
   if (raw && raw !== "default") return raw;
   const { projects } = (await session.request("GET", API_PROJECTS_PATH, undefined, {
     decode: unknownJsonResponse,
   })) as ListProjectsResponse;
-  const personal = projects.find((project) => project.isPersonal);
-  if (!personal) throw new CliError("not_found", "The account has no default project");
-  return personal.id;
+  const oldest = projects
+    .filter((project) => !project.deletedAt)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  if (!oldest) throw new CliError("not_found", "The account has no project");
+  return oldest.id;
 }
 
 /** A Work as its handle names it (`w3` or `@w3`); a bare id passes through. */

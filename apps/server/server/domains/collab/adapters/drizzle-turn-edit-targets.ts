@@ -128,7 +128,7 @@ export async function readTurnFolderTargets(
       nodeId: treeEditReceiptNodes.nodeId,
       shownAt: sql<
         string | null
-      >`coalesce(${treeEditReceiptNodes.afterAt}, ${treeEditReceiptNodes.beforeAt})`,
+      >`coalesce(${treeEditReceiptNodes.afterAt}, ${treeEditReceiptNodes.beforeAt}, ${treeEditReceipts.shownAt})`,
       workId: owner.workId,
       rootThreadId: owner.rootThreadId,
     })

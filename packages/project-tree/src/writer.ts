@@ -6,7 +6,6 @@ import {
   type CreateRecord,
   type DeleteRecord,
   isSourceRoot,
-  listRoot,
   type MoveRecord,
   newId,
   type PurgeRecord,
@@ -20,7 +19,7 @@ import {
   type TreeRecordInput,
 } from "./record.js";
 import type { TreeProjection } from "./replay.js";
-import { childrenOf, descendantsOf, rankAmong, rankAt } from "./shape.js";
+import { childrenOf, descendantsOf, rankAmong } from "./shape.js";
 import { writable } from "./validate.js";
 import { LIVE, lastOfFamily, replayView, type View } from "./view.js";
 
@@ -308,54 +307,3 @@ export type CreateInput = {
   | { kind: "document"; filetype: string }
   | { kind: "file"; blob?: BlobRef }
 );
-
-/** One side of a move between two lists: the writer on that list's copy, and the list's id. */
-export type ListEnd = { writer: TreeWriter; list: string };
-
-/**
- * A move between two lists (a project's and the account's `user://`), as the pair the server
- * appends in one transaction: a `move` in the list the node leaves, whose parent names the
- * other list, and a `create` for the same node id in the list it enters, under `parent` there.
- * `name` and `filetype` are what it is called and typed as where it enters, when that differs.
- * Moving back is the same pair the other way. A folder stays: what is inside it has no pair.
- */
-export function moveBetweenLists(
-  out: ListEnd,
-  into: ListEnd & { parent: string; index?: number; name?: string; filetype?: string },
-  actor: Actor,
-  node: string,
-): { left: MoveRecord; entered: CreateRecord } {
-  const was = out.writer.view(LIVE).nodes.get(node);
-  if (!was || was.trashed || was.kind === "folder")
-    throw new Error(`${node} is not a document that can leave its list`);
-  const arrives = into.writer.view(LIVE);
-  const source = isSourceRoot(into.parent)
-    ? sourceIdOf(into.parent)
-    : arrives.nodes.get(into.parent)?.source;
-  if (source === undefined) throw new Error(`move into unknown parent ${into.parent}`);
-  const left = out.writer.prepare(LIVE, actor, {
-    type: "move",
-    node,
-    parent: listRoot(into.list),
-    rank: was.rank,
-    from: { parent: was.parent, rank: was.rank },
-  }) as MoveRecord;
-  const entered = into.writer.prepare(LIVE, actor, {
-    type: "create",
-    node,
-    kind: was.kind,
-    name: into.name ?? was.name,
-    parent: into.parent,
-    source,
-    rank: rankAt(arrives, into.parent, into.index ?? Number.MAX_SAFE_INTEGER),
-    ...((into.filetype ?? was.filetype) ? { filetype: into.filetype ?? was.filetype } : {}),
-    ...(was.provisional ? { provisional: true as const } : {}),
-    ...(was.aliases ? { aliases: was.aliases } : {}),
-    ...(was.hasProperties ? { hasProperties: true as const } : {}),
-    ...(was.blob ? { blob: was.blob } : {}),
-  }) as CreateRecord;
-  // Both are built before either is stored, so a move is never left half made.
-  out.writer.append(left);
-  into.writer.append(entered);
-  return { left, entered };
-}

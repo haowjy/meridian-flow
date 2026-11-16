@@ -9,27 +9,19 @@ import type {
   AgentFileChange,
   AgentFinding,
   AgentPackageStatus,
-  AgentsLevel,
   SaveOutcome,
 } from "@meridian/contracts/agents";
-import {
-  agentsFileOf,
-  agentsLocationOf,
-  agentsRootOf,
-  shownFindings,
-} from "@meridian/contracts/agents";
+import { agentsFileOf, agentsLocationOf, shownFindings } from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
 import { useAgentFiles } from "@/client/query/useAgentFiles";
-import { useProjectTreeViews } from "@/client/query/useProjectTree";
 import { RowWord } from "@/components/app/RowWord";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { cn } from "@/lib/utils";
+import { useOpenAgentFile } from "./agent-file-document";
 import { FindingsChip, SentenceList } from "./FindingsChip";
 import { findingSentence, type OutOfUse, outOfUseAfterSave, outOfUseWord } from "./findings";
+import { PackageChanges } from "./PackageChanges";
 import {
   failsSave,
   importName,
@@ -41,6 +33,7 @@ import {
   statusOf,
   usePackageSaves,
 } from "./package-save";
+import { UndoSave } from "./UndoSave";
 
 /**
  * `package` (a level's heading, an import's row, a removed import's line): Save alone says there
@@ -66,17 +59,36 @@ export function PackageSave({
 }) {
   const saves = usePackageSaves(projectId);
   const word = saves.wordOf(pkg, status);
+  const saveId = status?.undoable?.saveId;
+  const undo = saveId ? <UndoSave projectId={projectId} pkg={pkg} saveId={saveId} /> : null;
   const save = status ? () => void saves.save([status]) : undefined;
   const content = word ? (
     <Word projectId={projectId} pkg={pkg} word={word} onSave={save} look={look} />
   ) : status && status.state !== "saved" ? (
     <StateAndSave projectId={projectId} pkg={pkg} status={status} look={look} onSave={save} />
   ) : null;
-  if (!content) return null;
+  if (!content && !undo) return null;
+  const counted =
+    look === "package"
+      ? word?.kind !== "saved"
+      : word
+        ? word.kind !== "saved"
+        : status && failsSave(status);
+  const changes =
+    status && counted ? (
+      <PackageChanges
+        projectId={projectId}
+        pkg={pkg}
+        status={status}
+        undone={look === "package" && word?.kind === "undone"}
+      />
+    ) : null;
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1" data-package-save>
       {before}
+      {changes}
       {content}
+      {undo}
     </span>
   );
 }
@@ -95,13 +107,6 @@ function StateAndSave({
   onSave: (() => void) | undefined;
 }) {
   const label = packageLabel(pkg);
-  const differs =
-    status.state === "not-saved"
-      ? t`New chats can't use ${label} until it is saved.`
-      : plural(status.changes.length, {
-          one: "# file differs from the version new chats use.",
-          other: "# files differ from the version new chats use.",
-        });
   const problems = packageErrorsOf(status.findings);
   return (
     <>
@@ -119,36 +124,25 @@ function StateAndSave({
           }
         />
       ) : look === "file" ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Chip tabIndex={0} className="focus-ring" data-package-state={status.state}>
+        <PackageChanges
+          projectId={projectId}
+          pkg={pkg}
+          status={status}
+          word={
+            <span data-package-state={status.state}>
               {status.state === "not-saved" ? <Trans>Not saved yet</Trans> : <Trans>Unsaved</Trans>}
-            </Chip>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-64">
-            {differs}
-          </TooltipContent>
-        </Tooltip>
+            </span>
+          }
+        />
       ) : null}
       {/* A Save of a package nothing of which can be read can only fail. */}
-      {failsSave(status) ? null : (
-        <SaveButton label={label} onSave={onSave} tip={look === "package" ? differs : undefined} />
-      )}
+      {failsSave(status) ? null : <SaveButton label={label} onSave={onSave} />}
     </>
   );
 }
 
-function SaveButton({
-  label,
-  onSave,
-  tip,
-}: {
-  label: string;
-  onSave: (() => void) | undefined;
-  /** Where Save stands alone, what there is to save. */
-  tip?: string;
-}) {
-  const button = (
+function SaveButton({ label, onSave }: { label: string; onSave: (() => void) | undefined }) {
+  return (
     <Button
       type="button"
       variant="quiet"
@@ -163,15 +157,6 @@ function SaveButton({
     >
       <Trans>Save</Trans>
     </Button>
-  );
-  if (!tip) return button;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-64">
-        {tip}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -189,13 +174,10 @@ function Word({
   onSave: (() => void) | undefined;
   look: PackageSaveLook;
 }) {
-  const saves = usePackageSaves(projectId);
   const files = useAgentFiles(projectId);
   const label = packageLabel(pkg);
   switch (word.kind) {
     case "saved": {
-      const { saveId } = word.outcome;
-      const undoState = saveId ? saves.undoOf(saveId) : undefined;
       const out = outOfUseAfterSave(files?.files ?? [], files?.packages ?? [], pkg);
       // Nothing new was saved: the edits kept out of use are all the Save has to say.
       const nothingNew = word.outcome.outcome === "unchanged";
@@ -215,20 +197,6 @@ function Word({
               notes={savedNotes(word) ?? []}
             />
           ) : null}
-          {nothingNew ? null : (
-            <RowWord
-              tone={undoState === "failed" ? "warning" : "action"}
-              word={<Trans>Undo</Trans>}
-              label={t`Undo save of ${label}`}
-              sentence={
-                undoState === "failed"
-                  ? t`Couldn't reach the server. Undo tries again.`
-                  : t`Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays.`
-              }
-              pending={!saveId || undoState === "pending"}
-              onAction={saveId ? () => void saves.undo(pkg, saveId) : undefined}
-            />
-          )}
         </>
       );
     }
@@ -252,11 +220,13 @@ function Word({
     case "undone":
       return (
         <>
-          <RowWord
-            tone="done"
-            word={<Trans>Undone</Trans>}
-            sentence={t`Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved.`}
-          />
+          {look === "file" ? (
+            <RowWord
+              tone="done"
+              word={<Trans>Undone</Trans>}
+              sentence={t`Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved.`}
+            />
+          ) : null}
           <SaveButton label={label} onSave={onSave} />
         </>
       );
@@ -588,20 +558,6 @@ export function heldBack(outcome: SaveOutcome): AgentFinding[] {
       (outcome.kept.includes(finding.file) || outcome.leftOut.includes(finding.file)),
   );
 }
-
-/** Opens a level's file by its level-relative path, once the trees list it. */
-export function useOpenAgentFile(projectId: string) {
-  const trees = useProjectTreeViews(projectId, AGENTS_SCHEMES, {});
-  const open = useOpenProjectDocument(projectId);
-  return (level: AgentsLevel, path: string) => {
-    const root = agentsRootOf(level);
-    const tree = root.scheme === "user" ? trees.user.tree : trees.agents.tree;
-    const entry = tree?.findPath(`/${[root.path, path].filter(Boolean).join("/")}`);
-    if (entry?.kind === "file") void open({ documentId: entry.documentId, focus: true });
-  };
-}
-
-const AGENTS_SCHEMES = ["agents", "user"] as const;
 
 /**
  * The Save state of the package one file is in, for a place that speaks of that file (an open

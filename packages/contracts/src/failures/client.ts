@@ -52,7 +52,7 @@ const rescue = z
       z
         .object({
           kind: z.literal("unsent-typing"),
-          cause: z.enum(["closed", "removed", "access-changed"]),
+          cause: z.enum(["closed", "removed", "access-changed", "owner-closed"]),
           chars: count,
           passages: count,
         })

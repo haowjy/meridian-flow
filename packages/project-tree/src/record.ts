@@ -23,17 +23,6 @@ export function sourceIdOf(root: string): string {
   return root.slice("source:".length);
 }
 
-/**
- * The parent of a `move` out of this list into another (a project's list and the account's
- * `user://` list). Only the server writes one, as half of a move between two lists.
- */
-export function listRoot(listId: string): string {
-  return `list:${listId}`;
-}
-export function isListRoot(id: string): boolean {
-  return id.startsWith("list:");
-}
-
 /** A record or settlement id. A uuid, so two writers on one copy never repeat one. */
 export function newId(): string {
   return crypto.randomUUID();

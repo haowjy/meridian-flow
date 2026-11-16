@@ -229,7 +229,7 @@ export function useWorkBranchCommands({
           refresh(documentIds);
           if (answer.status !== "unapplied") return { answer: "skipped" };
           for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
-          return { answer: "unapplied", textLeft: answer.skippedGroupIds.length };
+          return { answer: "unapplied" };
         } catch {
           return { answer: "failed" };
         }

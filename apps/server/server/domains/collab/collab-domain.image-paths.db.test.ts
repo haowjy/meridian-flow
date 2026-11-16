@@ -9,7 +9,7 @@ import { modelResponses } from "@meridian/database/schema";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { testFileGrant } from "../../test-support/file-grants.js";
+import { grantInProject, testFileGrant } from "../../test-support/file-grants.js";
 import { grepQuery } from "../../test-support/grep-query.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 
@@ -89,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             sessionId: "session-map",
             threadId: THREAD_ID,
             turnId: TURN_ID,
-            grant: { ...grant, facts: { ...grant.facts, projectId: PROJECT_ID as never } },
+            grant: grantInProject(grant, PROJECT_ID),
           },
           { accountId: USER_ID, projectId: PROJECT_ID },
         ),
@@ -187,7 +187,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sessionId: "session-read",
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          grant: { ...grant, facts: { ...grant.facts, projectId: PROJECT_ID as never } },
+          grant: grantInProject(grant, PROJECT_ID),
         },
       );
       expect.soft(JSON.stringify(read.result), "model read").not.toMatch(/asset:|doc:/);
@@ -238,11 +238,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // The host's create materializes the document before the model's command runs.
       await collab.ensureDocumentAuthority(CREATED_ID as never);
       const granted = testFileGrant(DRAFT_DESTINATION, DOC_ID);
-      const grant = {
-        ...granted,
-        principal: { ...granted.principal, accountId: USER_ID as never },
-        facts: { ...granted.facts, projectId: PROJECT_ID as never },
-      };
+      const grant = grantInProject(granted, PROJECT_ID, USER_ID);
       const ctx = { sessionId: "session-create", threadId: THREAD_ID, turnId: TURN_ID, grant };
       const core = collab.agentEdit();
       const modelEdits = collab.modelEdits();

@@ -4,7 +4,7 @@
  * writes them: it replays live and each view the records can change, compares with what the
  * last replay wrote, and writes the rows that differ with the history text derivations need.
  */
-import type { DocumentId, ProjectId } from "@meridian/contracts";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts";
 import { entrySegment, filetypeForMimeType } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
@@ -39,7 +39,8 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { recordLocationHistory } from "../tree/node-locations.js";
-import { keptBranches, projectOfList } from "./tree-list-facts.js";
+import { ownerColumns, sourceOwnerProjectId } from "../tree/source-owner.js";
+import { keptBranches } from "./tree-list-facts.js";
 
 /** Rows per statement: bounds the parameter count, not the atomic operation. */
 const BATCH = 500;
@@ -302,35 +303,13 @@ async function dropUnowned(
 }
 
 /**
- * Moves the claims of nodes that arrived from another list to this one, with their documents'
- * project (an account's list is its personal project's). The list they left has written its
- * rows already, so no row stands on the old claim.
- */
-export async function arriveNodes(
-  tx: DrizzleDb,
-  list: TreeList,
-  listId: string,
-  ids: ReadonlySet<string>,
-): Promise<void> {
-  if (ids.size === 0) return;
-  const nodes = sql.join(
-    [...ids].map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
-  await tx.execute(sql`UPDATE tree_node_ids SET list_id = ${listId}::uuid WHERE id IN (${nodes})`);
-  await tx.execute(
-    sql`UPDATE documents SET project_id = ${await projectOfList(tx, list)}::uuid WHERE id IN (${nodes})`,
-  );
-}
-
-/**
  * A document or file made by an admitted `create` has its `documents` row from the same
  * transaction, drafted or live: its drafts, receipts and links point at it by foreign key. A
  * file's bytes are the record's blob. A node that no view shows has no row.
  */
 async function insertDocumentRows(
   tx: DrizzleDb,
-  projectId: string,
+  owner: TreeList,
   records: readonly TreeRecord[],
   shown: (id: string) => boolean,
 ): Promise<CreateRecord[]> {
@@ -341,7 +320,8 @@ async function insertDocumentRows(
     await tx.insert(documents).values(
       batch.map((record) => ({
         id: record.node as DocumentId,
-        projectId: projectId as ProjectId,
+        projectId: ownerColumns(owner).projectId as ProjectId | null,
+        userId: ownerColumns(owner).userId as UserId | null,
         ...(record.blob
           ? {
               storageUrl: record.blob.storageKey,
@@ -518,7 +498,6 @@ async function dropForeignSources(
 ): Promise<void> {
   const sources = new Set(views.flatMap((rows) => [...rows.values()].map((row) => row.sourceId)));
   if (sources.size === 0) return;
-  const projectId = await projectOfList(tx, list);
   const present = await tx
     .select({ id: contextSources.id })
     .from(contextSources)
@@ -526,7 +505,9 @@ async function dropForeignSources(
     .where(
       and(
         inArray(contextSources.id, [...sources]),
-        sql`(${contextSources.projectId} = ${projectId}::uuid OR ${works.projectId} = ${projectId}::uuid)`,
+        list.kind === "project"
+          ? sql`${sourceOwnerProjectId} = ${list.projectId}::uuid`
+          : eq(contextSources.userId, list.userId as UserId),
       ),
     );
   const kept = new Set(present.map((row) => row.id as string));
@@ -611,7 +592,7 @@ export async function syncRows(
     added.length > 0
       ? await insertDocumentRows(
           tx,
-          await projectOfList(tx, list),
+          list,
           added,
           (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
         )

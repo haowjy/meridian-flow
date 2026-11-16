@@ -4,11 +4,12 @@
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-
+import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import {
   DocumentSession,
+  type DocumentSessionAccess,
   type DocumentSessionSnapshot,
   type ResetDisposition,
 } from "./document-session";
@@ -17,15 +18,24 @@ import type {
   RetainedLiveDocumentReference,
   UnsentTyping,
   UnsentTypingCause,
+  UnsentTypingObserver,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
 import {
+  createHandBackNotices,
+  type HandBackNotice,
+  type HandBackNotices,
+} from "./hand-back-notices";
+import type { Ranges } from "./item-ranges";
+import {
   type CopyHold,
   documentSessionPersistenceKey,
   draftRoomPersistenceKey,
+  incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
+import { readBeyond, readCopy, typedText } from "./rescued-text";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
 const LIVE_DOC_SOFT_CAP = 50;
@@ -70,7 +80,7 @@ export class DocumentSessionRegistry {
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
     (session) => {
       const cause = UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
-      if (cause) this.handBackUnsent(session, cause);
+      if (cause) void this.handBackUnsent(session, cause).catch(reportError);
     },
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
@@ -87,8 +97,25 @@ export class DocumentSessionRegistry {
     string,
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
-  private readonly unsentTypingObservers = new Set<(typing: UnsentTyping) => void>();
-  private readonly handedBack = new WeakSet<DocumentSession>();
+  private readonly unsentTypingObservers = new Set<UnsentTypingObserver>();
+  /** Each retiring session's hand-back of its copy, once: a removal waits for it before the copy goes. */
+  private readonly handingBack = new WeakMap<DocumentSession, Promise<void>>();
+  /** Stops following the notice store; set when the first observer starts it. */
+  private stopNotices: (() => void) | null = null;
+  /**
+   * The stored notices shown in this tab, each once for the life of the page: Dismiss removes
+   * the toast before its `act` commits, and a read in between still finds it unacted.
+   */
+  private readonly shownNotices = new Set<string>();
+  /** Shown here and not acted on here: a tab that acts elsewhere takes these off this screen. */
+  private readonly showingNotices = new Set<string>();
+  /** Each session's copy: the room's key and the incarnation it opened. */
+  private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
+  private readonly replacing = new WeakSet<DocumentSession>();
+  private readonly replacementObservers = new Map<
+    string,
+    Set<(session: DocumentSession) => void>
+  >();
 
   constructor(
     private readonly accountId: AccountId,
@@ -99,17 +126,18 @@ export class DocumentSessionRegistry {
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
     private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
     copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
+    private readonly notices: HandBackNotices = createHandBackNotices(accountId),
   ) {
     this.copies = copies;
     this.draftRooms = new DraftRoomPool({
-      hold: (documentId) => this.copies.hold(documentId as DocumentId),
-      openSession: (roomKey, documentId) => {
-        const session = this.createSession(roomKey, {
-          kind: "indexeddb",
-          key: draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
-        });
+      open: (roomKey, documentId, replaced) => {
+        const { session, hold } = this.openCopy(
+          roomKey,
+          draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
+          replaced,
+        );
         this.attachSessionTransport(session);
-        return session;
+        return { session, hold };
       },
       teardownOwner: this.teardownOwner,
       teardownGraceMs,
@@ -137,12 +165,14 @@ export class DocumentSessionRegistry {
     const state = this.liveRooms.get(documentId);
     this.liveRooms.delete(documentId);
     if (state?.session) {
-      this.handBackUnsent(state.session, "removed");
       await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
+      await this.handingBack.get(state.session);
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
     (await state?.hold)?.release();
-    await this.copies.clear(documentId);
+    await this.copies.clear(documentId, (name, { update, lacking }) =>
+      readCopy(update, (document) => this.handBack("removed", name, document, lacking)),
+    );
   }
 
   /**
@@ -279,7 +309,7 @@ export class DocumentSessionRegistry {
 
   abandonDraftRoom(roomKey: string): Promise<void> {
     const session = this.draftRooms.peek(roomKey);
-    if (session) this.handedBack.add(session);
+    if (session) this.handingBack.set(session, Promise.resolve());
     return this.draftRooms.close(roomKey);
   }
 
@@ -297,6 +327,8 @@ export class DocumentSessionRegistry {
     if (this.accountCloseAttempt) return this.accountCloseAttempt;
     const attempt = this.invalidateAll().then(() => {
       this.accountRuntimeState = "closed";
+      this.stopNotices?.();
+      this.notices.close();
     });
     this.accountCloseAttempt = attempt;
     void attempt
@@ -362,22 +394,86 @@ export class DocumentSessionRegistry {
       }
       return state.session;
     }
-    state.hold = this.copies.hold(lease.documentId);
-    const session = this.createSession(lease.documentId, {
-      kind: "indexeddb",
-      key: documentSessionPersistenceKey(lease.accountId, lease.documentId),
-    });
+    const { session, hold } = this.openCopy(
+      lease.documentId,
+      documentSessionPersistenceKey(lease.accountId, lease.documentId),
+    );
+    state.hold = hold;
     state.session = session;
     if (attach) this.attachSessionTransport(session);
     this.maybeWarnLiveDocCap();
     return session;
   }
 
+  /**
+   * A session on the room's current incarnation, and the hold on it. The words an older incarnation
+   * held that the server lacks and no session handed back yet are handed back once the session has
+   * synced, and it goes. A copy is never deleted on one session's say-so: a session that `replaced`
+   * another retires it by the same path, once its editors have gone and its hold is released, so
+   * words another tab wrote into the same copy meanwhile come back too.
+   */
+  private openCopy(
+    roomKey: string,
+    copyKey: string,
+    replaced?: { session: DocumentSession; hold: Promise<CopyHold> | null | undefined },
+  ): { session: DocumentSession; hold: Promise<CopyHold> } {
+    const incarnation = this.copies.current(copyKey);
+    // Named from the incarnation just read: another tab can advance the pointer in between.
+    const name = incarnationName(copyKey, incarnation);
+    const hold = this.copies.hold(name);
+    const session = this.createSession(
+      roomKey,
+      { kind: "indexeddb", key: name },
+      replaced?.session.getSnapshot().access ?? null,
+    );
+    this.copyOf.set(session, { key: copyKey, incarnation });
+    if (replaced) {
+      void this.teardownOwner
+        .retireReplaced(replaced.session.room.kind === "live" ? "live" : "draft", replaced.session)
+        .catch((error: unknown) => reportError(error))
+        .then(async () => (await replaced.hold)?.release())
+        .then(() => this.handBackOlder(session, copyKey, incarnation))
+        .catch(reportError);
+    } else if (incarnation > 0) {
+      void this.handBackOlder(session, copyKey, incarnation).catch(reportError);
+    }
+    return { session, hold };
+  }
+
+  private async handBackOlder(
+    session: DocumentSession,
+    copyKey: string,
+    incarnation: number,
+  ): Promise<void> {
+    const older = await this.copies.openOlder(copyKey, incarnation);
+    if (older.length === 0) return;
+    // Until the first handshake the document is not the server's, and everything would look unsent.
+    await session.whenSynced();
+    const settled = session.getSnapshot().status !== "destroyed";
+    const server = Y.encodeStateVector(session.document);
+    await Promise.all(
+      older.map(async ({ name, update, finish }) => {
+        let claimed = false;
+        try {
+          claimed =
+            settled &&
+            (await readBeyond(update, server, (document, lacking) =>
+              this.handBack("owner-closed", name, document, lacking),
+            ));
+        } finally {
+          // A copy whose words the notice store could not take is read again at the next open.
+          await finish(!claimed);
+        }
+      }),
+    );
+  }
+
   private createSession(
     roomKey: string,
     persistence: DocumentSessionOptions["persistence"],
+    access: DocumentSessionAccess | null,
   ): DocumentSession {
-    const session = this.constructSession(roomKey, persistence);
+    const session = this.constructSession(roomKey, persistence, access);
     this.publishSession(roomKey, session);
     return session;
   }
@@ -385,22 +481,97 @@ export class DocumentSessionRegistry {
   private constructSession(
     roomKey: string,
     persistence: DocumentSessionOptions["persistence"],
+    access: DocumentSessionAccess | null,
   ): DocumentSession {
     let session!: DocumentSession;
     session = new DocumentSession({
       roomKey,
       persistence,
+      access,
       ownUserId: this.accountId,
       persistSchemaFence: (fence) => writeSchemaFenceQuarantine(session.documentId, fence),
     });
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
+    session.subscribe((snapshot) => {
+      if (snapshot.holdsUndeliverableEdits) this.requestReplacement(session);
+    });
     if (session.room.kind === "live")
       session.subscribe(() => {
         this.retireDrainedRoom(session);
         this.settleRetainedTransport(session);
       });
     return session;
+  }
+
+  /** In a microtask, never inside the session's own `emit`. */
+  private requestReplacement(session: DocumentSession): void {
+    if (this.replacing.has(session)) return;
+    queueMicrotask(() => void this.replaceRoom(session).catch(reportError));
+  }
+
+  private isRoomSession(session: DocumentSession): boolean {
+    return session.room.kind === "live"
+      ? this.liveRooms.get(session.documentId as DocumentId)?.session === session
+      : this.draftRooms.peek(session.roomKey) === session;
+  }
+
+  /**
+   * A room the server admitted read-only holds none of the writer's edits the server lacks
+   * (`.context/CONTEXT.md`, "Undeliverable edits"). A room found holding some hands back the
+   * typing and is replaced by a session on the next incarnation of its copy, which loads from the
+   * server; the old one is inert until its editors have gone. Nothing is emptied and nothing is
+   * said to other tabs: each tab replaces its own session at its own read admission.
+   */
+  private async replaceRoom(old: DocumentSession): Promise<void> {
+    if (this.replacing.has(old) || !this.isRoomSession(old)) return;
+    this.replacing.add(old);
+    // Words another tab stored that this one never received count too, and the verdict can end here.
+    if (!(await old.decideAgain()) || !this.isRoomSession(old)) {
+      this.replacing.delete(old);
+      return;
+    }
+    const copy = this.copyOfSession(old);
+    const name = incarnationName(copy.key, copy.incarnation);
+    const edits = old.undeliverableEdits();
+    void old.makeInert().catch(reportError);
+    // Typing into the old editor after this read goes to its copy, and the older-copy read's.
+    if (edits)
+      await readCopy(edits.copy, (document) =>
+        this.handBack("owner-closed", name, document, edits.lacking, edits.own),
+      );
+    await this.copies.advance(copy.key, copy.incarnation);
+    if (!this.isRoomSession(old)) return;
+    if (old.room.kind === "live") {
+      const state = this.liveRooms.get(old.documentId as DocumentId);
+      if (!state) return;
+      const { session, hold } = this.openCopy(old.roomKey, copy.key, {
+        session: old,
+        hold: state.hold,
+      });
+      state.session = session;
+      state.hold = hold;
+      this.attachSessionTransport(session);
+      this.notifyReplacement(old.roomKey, session);
+    } else {
+      const session = this.draftRooms.replace(old.roomKey, old);
+      if (session) this.notifyReplacement(old.roomKey, session);
+    }
+  }
+
+  /** Calls `observer` with the session that replaces a room's, live (by document id) or draft. */
+  observeReplacement(roomKey: string, observer: (session: DocumentSession) => void): () => void {
+    const observers = this.replacementObservers.get(roomKey) ?? new Set();
+    observers.add(observer);
+    this.replacementObservers.set(roomKey, observers);
+    return () => {
+      observers.delete(observer);
+      if (observers.size === 0) this.replacementObservers.delete(roomKey);
+    };
+  }
+
+  private notifyReplacement(roomKey: string, session: DocumentSession): void {
+    for (const observer of [...(this.replacementObservers.get(roomKey) ?? [])]) observer(session);
   }
 
   private requireAccountRuntimeOpen(): void {
@@ -414,20 +585,111 @@ export class DocumentSessionRegistry {
     session.attachTransport(this.transportFactory);
   }
 
-  observeUnsentTyping(observer: (typing: UnsentTyping) => void): () => void {
+  observeUnsentTyping(observer: UnsentTypingObserver): () => void {
     this.unsentTypingObservers.add(observer);
+    // The account's start: what any tab stored and no tab acted on, wherever its document is.
+    if (!this.stopNotices) {
+      const report = (error: unknown) => reportError(error);
+      this.stopNotices = this.notices.subscribe(() => void this.showUnacted().catch(report));
+      void this.showUnacted().catch(report);
+    }
     return () => {
       this.unsentTypingObservers.delete(observer);
     };
   }
 
-  private handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): void {
-    if (this.handedBack.has(session)) return;
-    const text = session.unsentText();
-    if (!text) return;
-    this.handedBack.add(session);
-    const typing = Object.freeze({ id: crypto.randomUUID(), cause, text });
-    for (const observer of this.unsentTypingObservers) observer(typing);
+  private copyOfSession(session: DocumentSession): { key: string; incarnation: number } {
+    const copy = this.copyOf.get(session);
+    if (!copy) throw new Error(`Session has no local copy: ${session.roomKey}`);
+    return copy;
+  }
+
+  /**
+   * What a retiring session's copy holds beyond its mark, handed back like every notice. Read
+   * from the copy, which has every write of the session's by now: a claim the store can't take is
+   * claimed again from it, by the removal that deletes it or by a later start.
+   */
+  private handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): Promise<void> {
+    const started = this.handingBack.get(session);
+    if (started) return started;
+    const copy = this.copyOfSession(session);
+    const name = incarnationName(copy.key, copy.incarnation);
+    const handing = this.copies.beyondMark(name).then(async (beyond) => {
+      if (beyond)
+        await readCopy(beyond.update, (document) =>
+          this.handBack(cause, name, document, beyond.lacking),
+        );
+    });
+    this.handingBack.set(session, handing);
+    return handing;
+  }
+
+  /**
+   * Hands back the words of `lacking` in `document`, from the copy `name`: the notice store takes
+   * what no notice from that copy holds yet, and this tab shows it (another tab that holds the
+   * same words shows the same notice). Never rejects. False when the store could not take them:
+   * the words are shown all the same, unstored, and the caller keeps the copy if it can. `own`: a
+   * change of this session's with no words (a deletion, a format change) is told too, unstored.
+   */
+  private async handBack(
+    cause: UnsentTypingCause,
+    name: string,
+    document: Y.Doc,
+    lacking: Ranges,
+    own = false,
+  ): Promise<boolean> {
+    const text = typedText(document, lacking);
+    if (text === null) {
+      if (own)
+        this.emit({ id: crypto.randomUUID(), cause, text: null, done: () => Promise.resolve() });
+      return true;
+    }
+    try {
+      const notice = await this.notices.claim(name, cause, lacking, (ranges) =>
+        typedText(document, ranges),
+      );
+      if (notice) this.showStored(notice);
+      return true;
+    } catch (error) {
+      reportError(error);
+      this.emit({ id: crypto.randomUUID(), cause, text, done: () => Promise.resolve() });
+      return false;
+    }
+  }
+
+  /** Shows what the store holds unacted that this tab has not shown, and withdraws what another tab acted on. */
+  private async showUnacted(): Promise<void> {
+    const showing = new Set(this.showingNotices);
+    const unacted = await this.notices.unacted();
+    const left = new Set(unacted.map(({ id }) => id));
+    for (const id of showing)
+      if (!left.has(id) && this.showingNotices.delete(id))
+        for (const observer of this.unsentTypingObservers) observer.withdraw(id);
+    for (const notice of unacted) this.showStored(notice);
+  }
+
+  private showStored({ id, cause, text }: HandBackNotice): void {
+    if (this.shownNotices.has(id)) return;
+    this.shownNotices.add(id);
+    this.showingNotices.add(id);
+    let acting: Promise<void> | null = null;
+    const done = () => {
+      acting ??= this.notices.act(id).then(
+        () => void this.showingNotices.delete(id),
+        (error: unknown) => {
+          acting = null;
+          reportError(error);
+          throw error;
+        },
+      );
+      return acting;
+    };
+    this.emit({ id, cause, text, done });
+  }
+
+  private emit(typing: UnsentTyping): void {
+    const frozen = Object.freeze(typing);
+    for (const observer of this.unsentTypingObservers) observer.show(frozen);
   }
 
   private retainedSnapshot(): readonly RetainedLiveDocumentReference[] {

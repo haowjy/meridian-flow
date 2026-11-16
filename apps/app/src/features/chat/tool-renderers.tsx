@@ -24,6 +24,8 @@ import {
   descriptorFor,
   failureOrReturnedVerb,
   humanizeToolName,
+  movedTo,
+  settledDocumentPath,
   type ToolActivityPhrase,
   toolActivityPhrase,
 } from "./command-descriptor";
@@ -74,15 +76,6 @@ function inputObject(tool: ToolView): Record<string, JsonValue> {
 
 function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/** Undo and redo can allocate a free name; their settled result owns the document door. */
-function settledDocumentPath(tool: ToolView, fallback: string | undefined): string | undefined {
-  const command = toolCommand(tool);
-  if (tool.status !== "complete" || (command !== "undo" && command !== "redo")) return fallback;
-  const result = tool.result;
-  if (result === null || typeof result !== "object" || Array.isArray(result)) return fallback;
-  return asString(result.path) ?? fallback;
 }
 
 /** A parameter the timeline shows as text rather than as a destination. */
@@ -427,7 +420,10 @@ function removedWriteCopy(
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const names = useOwnerNames();
   const input = inputObject(tool);
-  const path = settledDocumentPath(tool, asString(input.path));
+  const path =
+    toolCommand(tool) === "move"
+      ? movedTo(tool)
+      : (settledDocumentPath(tool) ?? asString(input.path));
   const descriptor = descriptorFor(tool);
   const command = toolCommand(tool);
 
@@ -453,8 +449,9 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   // and therefore offers no door onto one.
   if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
   if (!path) return descriptor.pathlessTitle?.() ?? <PhraseTitle phrase={phrase} />;
-  // A deleted document's old address may hold another document now: no door.
-  if (command === "delete") return <PhraseTitle phrase={phrase} />;
+  // A deleted document's old address may hold another document now, and a folder opens as no
+  // document: no door.
+  if (command === "delete" || path.endsWith("/")) return <PhraseTitle phrase={phrase} />;
   return (
     <CommandTitle
       verb={phrase.verb}

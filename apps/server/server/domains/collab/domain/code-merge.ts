@@ -14,7 +14,13 @@ const block = (text: string) => [
  * `live` with the change from `base` to `target` brought in. Where both sides changed the same
  * text, `live` stays: it is the draft side of the merge, whose version a conflict keeps.
  */
-export function mergeCodeText(input: { base: string; live: string; target: string }): string {
+export function mergeCodeText(input: { base: string; live: string; target: string }): {
+  text: string;
+  clashes: number;
+} {
   const merged = contentMerge(schema, block(input.base), block(input.target), block(input.live));
-  return merged.blocks.map((node) => node.textContent).join("\n");
+  return {
+    text: merged.blocks.map((node) => node.textContent).join("\n"),
+    clashes: merged.conflicts.length,
+  };
 }

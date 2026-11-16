@@ -3,7 +3,7 @@
  * the list as it stands at the reveal, in the transaction that marks the import finished. The texts are already in the journal under the
  * ids the nodes carry; the `documents` rows are written by the admission, like any create's.
  */
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { type CreateInput, LIVE, sourceRoot } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
@@ -115,7 +115,7 @@ export function createDrizzleContextImportReveal(deps: {
         node.kind === "document"
           ? node.aheadMints.map((mint) => ({
               aheadId: mint.ref.slice("ahead:".length),
-              holderProjectId: mint.holderProjectId as AheadRegistration["holderProjectId"],
+              holderProjectId: mint.holderProjectId as ProjectId,
               address: mint.address,
             }))
           : [],

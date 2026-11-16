@@ -4,14 +4,10 @@
  * adapter faults into boundary ContextErrors enriched with the canonical URI.
  */
 
-import {
-  validateContextEntryName,
-  validateContextEntryPath,
-} from "@meridian/contracts/context-entry-validation";
+import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
 import { contextRootUri } from "@meridian/contracts/context-uri";
 import {
-  type ContextEntryRef,
   documentFilenameAt,
   entrySegment,
   filenameForBinary,
@@ -34,8 +30,6 @@ import type {
   ContextError,
   ContextListing,
   ContextListOptions,
-  ContextMoveAcrossListsChange,
-  ContextMovedAcrossLists,
   ContextPort,
   ContextReadResult,
   ContextScheme,
@@ -122,13 +116,6 @@ function joinContextPath(base: string, segments: readonly string[]): string {
   return segments.length === 0 ? base : [base.replace(/\/$/, ""), ...segments].join("/");
 }
 
-function sameOwner(a: CanonicalContextAuthority, b: CanonicalContextAuthority): boolean {
-  if (!("kind" in a)) return !("kind" in b) && a.workId === b.workId;
-  if (!("kind" in b) || a.kind !== b.kind) return false;
-  if (a.kind === "chat") return b.kind === "chat" && a.chatRef === b.chatRef;
-  return a.kind !== "lineage" || (b.kind === "lineage" && a.rootThreadRef === b.rootThreadRef);
-}
-
 /** Intake bypasses general entry creation, never the source's actor policy. */
 function mutationDispatch(dispatch: Dispatch, origin?: WriteProvenance): MutationDispatch {
   const { adapter, authority, canonical } = dispatch;
@@ -144,15 +131,6 @@ function mutationDispatch(dispatch: Dispatch, origin?: WriteProvenance): Mutatio
       return Ok(undefined);
     },
   };
-}
-
-function moveCreationDenied(source: Dispatch, destination: MutationDispatch) {
-  if (source.scheme === destination.scheme && sameOwner(source.authority, destination.authority))
-    return null;
-  const permission = destination.requireCreation(
-    source.scheme === destination.scheme ? "intake" : "entry",
-  );
-  return permission.ok ? null : permission;
 }
 
 /** One source a port can find a document in, and the Work scope it answers for. */
@@ -475,54 +453,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return created.ok ? Ok(landedAt(r.value, created.value)) : created;
   }
 
-  /**
-   * Move `node` from the list of `source` into the destination's: the destination adapter
-   * writes both lists, wherever the node is by then, and the command is refused when it no
-   * longer stands in the area the caller named.
-   */
-  async function moveNodeAcrossLists(
-    node: ContextEntryRef,
-    source: Dispatch,
-    destination: Dispatch,
-    change: ContextMoveAcrossListsChange,
-  ): Promise<Result<ContextMovedAcrossLists, ContextError>> {
-    let leaf: string | undefined;
-    if (change.name !== undefined) {
-      const named = validateContextEntryName(change.name);
-      if (!named.ok) return Err(invalidEntryError(destination.canonical, named));
-      leaf = named.value;
-    }
-    const { adapter } = destination;
-    if (!source.adapter.capabilities.writable || !adapter.capabilities.writable || !adapter.tree)
-      return Err({ code: "permission_denied", uri: destination.canonical });
-    const tree = adapter.tree;
-    const sourceTree = source.adapter.tree;
-    if (!sourceTree) return Err({ code: "permission_denied", uri: source.canonical });
-    const moved = await callAdapter(destination.canonical, async () =>
-      tree.moveAcrossLists({
-        node,
-        fromSourceId: await sourceTree.sourceId(),
-        dir: destination.path.split("/").filter(Boolean),
-        ...(leaf !== undefined ? { leaf } : {}),
-        ...(change.position ? { position: change.position } : {}),
-        ...(change.onlyAt !== undefined ? { onlyAt: change.onlyAt } : {}),
-        ...(change.origin ? { origin: change.origin } : {}),
-        afterWrite: (written) =>
-          change.inTransaction?.({
-            destinationUri: uriFor(destination.scheme, written.path, destination.authority),
-            node: written.node,
-            records: written.records,
-          }) ?? Promise.resolve(),
-      }),
-    );
-    if (!moved.ok) return moved;
-    return Ok({
-      destinationUri: uriFor(destination.scheme, moved.value.path, destination.authority),
-      node: moved.value.node,
-      records: moved.value.records,
-    });
-  }
-
   return {
     async resolveFolderUri(folderId: string): Promise<Result<{ uri: string }, ContextError>> {
       const uri = await deps.resolveDestinationFolder?.(folderId);
@@ -662,16 +592,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         adapter.writeBinary(path, { ...options, filename: r.value.filename }),
       );
       return result.ok ? Ok(landedAt(r.value, result.value)) : result;
-    },
-
-    async moveAcrossLists(node, area, change) {
-      const source = await resolve(area);
-      if (!source.ok) return source;
-      const folder = await resolveMutation(change.folderUri);
-      if (!folder.ok) return folder;
-      const denied = moveCreationDenied(source.value, folder.value);
-      if (denied) return denied;
-      return moveNodeAcrossLists(node, source.value, folder.value, change);
     },
 
     async delete(node, area, options = {}) {

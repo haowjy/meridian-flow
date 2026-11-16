@@ -23,7 +23,6 @@ import {
   apiProjectChatFeedPath,
   apiProjectContextCopyPath,
   apiProjectContextLineagePath,
-  apiProjectContextMovePath,
   apiProjectContextSourcesPath,
   apiProjectDocumentReadPath,
   apiProjectPath,
@@ -259,25 +258,6 @@ export async function createProjectThread(
     headers: init?.headers,
     signal: init?.signal,
   });
-}
-
-/**
- * Moves one document between the project's files and the account's (`user://`), the one move the
- * browser cannot write as records because it spans two lists. `from` is the root URI of the source
- * the document stands in, `to` the URI of the folder it goes into; `name` is set when the writer
- * typed one. The answer is where it stands now.
- */
-export async function moveDocumentAcrossLists(
-  projectId: string,
-  body: { nodeId: string; from: string; to: string; name?: string },
-  init?: RequestInitOptions,
-): Promise<{ uri: string }> {
-  const { nodeId, ...rest } = body;
-  return postJson(
-    urlFor(apiProjectContextMovePath(projectId), init),
-    { expected: { kind: "file", nodeId }, ...rest },
-    { headers: init?.headers, signal: init?.signal },
-  );
 }
 
 /**

@@ -22,6 +22,9 @@ import {
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import type { DocumentAddressStore } from "../ports/document-address.js";
+import type { AheadHolder } from "../ports/link-ahead-registry.js";
+import type { TreeList } from "../ports/tree-list-store.js";
+import { sameOwner } from "../tree/source-owner.js";
 import {
   type DocumentAddress,
   type DocumentCoordinates,
@@ -34,11 +37,11 @@ export { loadDocumentAddresses, loadFolderAddresses } from "../tree/tree-address
 
 type CoordinateKey = Pick<
   DocumentCoordinates,
-  "projectId" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
+  "owner" | "scheme" | "workId" | "rootThreadId" | "chatThreadId" | "path"
 >;
 
 export const sameCoordinates = (a: CoordinateKey, b: CoordinateKey) =>
-  a.projectId === b.projectId &&
+  sameOwner(a.owner, b.owner) &&
   a.scheme === b.scheme &&
   a.workId === b.workId &&
   a.rootThreadId === b.rootThreadId &&
@@ -67,7 +70,7 @@ export async function documentAt(
     workId: at.workId,
     rootThreadId: at.rootThreadId,
     chatThreadId: at.chatThreadId,
-    project: { id: at.projectId },
+    owner: at.owner,
   });
   if (!sourceId) return null;
   const filename = at.path.slice(at.path.lastIndexOf("/") + 1);
@@ -77,8 +80,7 @@ export async function documentAt(
 
 /**
  * An address that can never name a document from this holder: not canonical, no file
- * extension, no Work authority where one is needed, or a Work or personal space that
- * doesn't exist. Asking again never helps.
+ * extension, no Work authority where one is needed, or a Work or chat that doesn't exist. Asking again never helps.
  */
 export class UnresolvableAddressError extends RangeError {
   constructor(
@@ -93,12 +95,12 @@ export class UnresolvableAddressError extends RangeError {
 /**
  * A decoded canonical address named from a holder in `holderProjectId`, resolved
  * to storage coordinates. Throws `UnresolvableAddressError` when the address is not
- * canonical, names no file, or names a Work or personal space that does not exist;
+ * canonical, names no file, or names a Work or chat that does not exist;
  * a plain error when the holder's own project or No Work row is missing.
  */
 export async function resolveCanonicalAddress(
   db: DrizzleDb,
-  input: { holderProjectId: ProjectId; address: string },
+  input: AheadHolder & { address: string },
 ): Promise<DocumentCoordinates> {
   return resolveAddressCoordinates(db, input, "document");
 }
@@ -113,14 +115,14 @@ export async function resolveCanonicalFolderAddress(
 
 export function resolveCanonicalAddresses(
   db: Database,
-  inputs: readonly { holderProjectId: ProjectId; address: string }[],
+  inputs: readonly (AheadHolder & { address: string })[],
 ): Promise<DocumentCoordinates[]> {
   return Promise.all(inputs.map((input) => resolveCanonicalAddress(db, input)));
 }
 
 async function resolveAddressCoordinates(
   db: DrizzleDb,
-  input: { holderProjectId: ProjectId; address: string },
+  input: AheadHolder & { address: string },
   kind: "document" | "folder",
 ): Promise<DocumentCoordinates> {
   const parsed = parseContextUri(input.address);
@@ -141,32 +143,33 @@ async function resolveAddressCoordinates(
     );
   }
   const tx = currentDrizzleDb(db);
+  if ("holderUserId" in input) {
+    if (scheme !== "user")
+      throw new UnresolvableAddressError(
+        input.address,
+        `A home document read in no project names only the home folder: ${input.address}`,
+      );
+    return {
+      owner: { kind: "account", userId: input.holderUserId },
+      userId: input.holderUserId,
+      scheme,
+      workId: null,
+      lockWorkId: null,
+      rootThreadId: null,
+      chatThreadId: null,
+      path,
+    };
+  }
   const [holder] = await tx
     .select({ userId: projects.userId })
     .from(projects)
     .where(and(eq(projects.id, input.holderProjectId), isNull(projects.deletedAt)));
   if (!holder) throw new Error(`Holder project ${input.holderProjectId} does not exist`);
-
-  let projectId = input.holderProjectId;
-  if (scheme === "user") {
-    const [personal] = await tx
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(
-          eq(projects.userId, holder.userId),
-          eq(projects.isPersonal, true),
-          isNull(projects.deletedAt),
-        ),
-      );
-    if (!personal) {
-      throw new UnresolvableAddressError(
-        input.address,
-        `Personal project for ${holder.userId} does not exist`,
-      );
-    }
-    projectId = personal.id as ProjectId;
-  }
+  // The home folder is the holder's account's, not any project's.
+  const owner: TreeList =
+    scheme === "user"
+      ? { kind: "account", userId: holder.userId }
+      : { kind: "project", projectId: input.holderProjectId };
 
   let workId: string | null = null;
   let lockWorkId: string | null = null;
@@ -227,7 +230,7 @@ async function resolveAddressCoordinates(
     workId = lockWorkId = work.id;
   }
   return {
-    projectId,
+    owner,
     userId: holder.userId,
     scheme,
     workId,
@@ -268,7 +271,10 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           workId: input.workId,
           rootThreadId: input.rootThreadId,
           chatThreadId: input.chatThreadId,
-          project: input.scheme === "user" ? { personalOf: input.userId } : { id: input.projectId },
+          owner:
+            input.scheme === "user"
+              ? { kind: "account", userId: input.userId }
+              : { kind: "project", projectId: input.projectId },
         });
         if (!sourceId) return null;
         const tree = createTreeReader(db);

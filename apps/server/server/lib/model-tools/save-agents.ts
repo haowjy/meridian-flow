@@ -148,6 +148,7 @@ export function createSaveAgentsRegistration(
           };
         }
         const outcomes = await deps.agentCatalog.savePackages(thread.userId, {
+          by: "ai",
           projectId: thread.projectId,
           packages: targets.flatMap((item) => item.target ?? []),
         });
