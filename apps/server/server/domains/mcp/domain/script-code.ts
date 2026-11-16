@@ -25,14 +25,15 @@ export function prepareScript(source: string): PreparedCode {
     return { ok: true, code: stripped.slice(OPEN.length, stripped.length - CLOSE.length) };
   } catch (cause) {
     const error = cause as Error & { code?: string; stack?: string };
-    // The stripper's stack opens with `:<line>` of the wrapped code, whose first line is the code's first.
+    // The stripper's stack opens with `:<line>` of the wrapped code, whose first line is the code's first;
+    // an error at the end of the input points at the wrapper's closing line, past the code.
     const line = /^:(\d+)\n/.exec(error.stack ?? "")?.[1];
     return {
       ok: false,
       error: {
         name: "SyntaxError",
         message: error.message,
-        ...(line ? { line: Number(line) } : {}),
+        ...(line ? { line: Math.min(Number(line), code.split("\n").length) } : {}),
       },
     };
   }
