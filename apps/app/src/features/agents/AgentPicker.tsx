@@ -85,6 +85,11 @@ export function AgentPickerPanel({
   focusRefs,
 }: AgentPickerPanelProps) {
   const [pointed, setPointed] = useState<string | null>(null);
+  // The model and reasoning set up for a handoff, which only the handoff itself carries out.
+  const [handoffDraft, setHandoffDraft] = useState<{
+    slug: string;
+    overrides: ThreadOverrides;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const searchRef = focusRefs.search;
   // A handoff leaves the chat, so a touch's first tap on a handoff row only shows it; its card's
@@ -145,9 +150,18 @@ export function AgentPickerPanel({
   // The search, the rows and the footer: the one height, whatever is pointed at.
   const height = SEARCH_PX + rows * ROW_PX + headings * LINE_PX + LINE_PX + 24;
 
-  /** The current Agent runs at the overrides chosen here; any other starts on its own. */
+  /**
+   * A handoff runs at what was set up for it; the current Agent at the overrides chosen here; any
+   * other starts on its own.
+   */
   const overridesFor = (agent: AgentCatalogItem) =>
-    agent.slug === current.slug ? current.overrides : NO_OVERRIDES;
+    handsOff(agent)
+      ? handoffDraft?.slug === agent.slug
+        ? handoffDraft.overrides
+        : NO_OVERRIDES
+      : agent.slug === current.slug
+        ? current.overrides
+        : NO_OVERRIDES;
   const pick = (agent: AgentCatalogItem, next = overridesFor(agent)) => {
     if (!pickable(agent)) return;
     const choice = { agent: creationAgentOf(agent), overrides: next };
@@ -159,6 +173,9 @@ export function AgentPickerPanel({
     if (agent.slug === current.slug && sameOverrides(next, current.overrides)) return;
     if (mode.kind !== "turn") mode.onChoose(choice);
   };
+  /** A model or level: picked at once, except for a handoff, which it only sets up. */
+  const adjust = (agent: AgentCatalogItem, next: ThreadOverrides) =>
+    handsOff(agent) ? setHandoffDraft({ slug: agent.slug, overrides: next }) : pick(agent, next);
   const row = (agent: AgentCatalogItem) => {
     const isCurrent = agent.slug === current.slug;
     return (
@@ -304,12 +321,12 @@ export function AgentPickerPanel({
                 key={shown.slug}
                 agent={shown}
                 thisChat={mode.kind === "chat" && shown === own ? mode.threadId : null}
-                useLabel={
+                action={
                   handsOff(shown)
-                    ? t`Hand off to ${shown.name}`
+                    ? { label: t`Hand off to ${shown.name}`, touchOnly: false }
                     : shown.slug === current.slug
                       ? null
-                      : t`Use ${shown.name}`
+                      : { label: t`Use ${shown.name}`, touchOnly: true }
                 }
                 onUse={() => pick(shown)}
               />
@@ -346,7 +363,7 @@ export function AgentPickerPanel({
                       // it is the new model's own level.
                       const next = option(id);
                       const effort = overrides.effort && settledReasoning(overrides.effort, next);
-                      pick(shown, {
+                      adjust(shown, {
                         model: id === shown.model ? null : id,
                         effort: effort === settledReasoning(shown.effort, next) ? null : effort,
                       });
@@ -357,7 +374,7 @@ export function AgentPickerPanel({
                     own={ownLevel}
                     thinksAt={thinksAt}
                     onChoose={(level) =>
-                      pick(shown, { ...overrides, effort: level === ownLevel ? null : level })
+                      adjust(shown, { ...overrides, effort: level === ownLevel ? null : level })
                     }
                   />
                 </>
@@ -392,14 +409,18 @@ function focusCurrent(pane: HTMLElement | null) {
 function AgentCard({
   agent,
   thisChat,
-  useLabel,
+  action,
   onUse,
 }: {
   agent: AgentCatalogItem;
   /** The chat's id when this is the Agent the chat runs. */
   thisChat: string | null;
-  /** Picks this Agent on its own model; null when it is already the one picked. */
-  useLabel: string | null;
+  /**
+   * Picks this Agent at what the columns show; null when it is already the one picked. A handoff's
+   * shows everywhere, as the way to hand off at the model and level set up for it; "Use" only on
+   * touch, where a tap has no hover to point with first.
+   */
+  action: { label: string; touchOnly: boolean } | null;
   onUse: () => void;
 }) {
   return (
@@ -408,25 +429,28 @@ function AgentCard({
       className="flex h-32 flex-col gap-1 overflow-hidden rounded-lg border border-border-subtle p-3"
       title={agent.path && agent.level !== "builtin" ? fileAddress(agent) : undefined}
     >
-      <p className="text-sm font-medium">{agent.name}</p>
+      <div className="flex min-h-8 items-center justify-between gap-2">
+        <p className="truncate text-sm font-medium">{agent.name}</p>
+        {action && pickable(agent) ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className={cn(
+              "shrink-0",
+              action.touchOnly && "hidden [@media(hover:none)]:inline-flex coarse:inline-flex",
+            )}
+            onClick={onUse}
+          >
+            {action.label}
+          </Button>
+        ) : null}
+      </div>
       {agent.description ? (
         <p className="line-clamp-2 text-sm text-foreground" title={agent.description}>
           {agent.description}
         </p>
       ) : null}
       {thisChat ? <ThreadAgentDefinition threadId={thisChat} /> : null}
-      {useLabel && pickable(agent) ? (
-        // Touch confirms a handoff here, having no hover to point with; a mouse or the keyboard
-        // picks the row.
-        <Button
-          variant="secondary"
-          size="sm"
-          className="hidden self-start [@media(hover:none)]:inline-flex coarse:inline-flex"
-          onClick={onUse}
-        >
-          {useLabel}
-        </Button>
-      ) : null}
     </div>
   );
 }

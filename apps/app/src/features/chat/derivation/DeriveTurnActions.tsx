@@ -17,6 +17,7 @@ import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useModelOptions } from "@/client/query/useModelOptions";
+import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -99,6 +100,7 @@ function HandoffPicker({
   align: "start" | "end";
 }) {
   const [open, setOpen] = useState(false);
+  const collision = useDensityPopoverCollisionProps();
   const catalog = useAgentCatalog(open, derivation.projectId);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
@@ -130,6 +132,7 @@ function HandoffPicker({
         ref={contentRef}
         tabIndex={-1}
         align={align}
+        {...collision}
         aria-label={t`Hand off to an Agent`}
         className={cn(dropdownSurfaceVariants({ measure: "split" }), "text-tier-chat")}
         onOpenAutoFocus={(event) => {
