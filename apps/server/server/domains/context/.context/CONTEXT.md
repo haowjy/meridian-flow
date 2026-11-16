@@ -301,7 +301,7 @@ one source's tree contributes.
   each document, and a Work outside the project is refused as `work_missing`. A draft view
   never refuses for lack of a draft: a document the Work holds no draft of copies its live text
   (`copiedFrom.version` `live`), so a folder copies each document as the Work shows it. The
-  answer's `fromLive` counts those documents, and the client says so in a note.
+  copy is what the writer saw: Draft view shows a document with no draft as its live text.
 - A client-held source sends its Yjs state vector with a document source (a folder source
   with a vector is a 400). The vector is compared with the room of the view being read, live
   or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to

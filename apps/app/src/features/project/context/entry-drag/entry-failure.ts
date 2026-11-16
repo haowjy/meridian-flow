@@ -6,7 +6,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
-import { notifyFailure, notifyNote } from "@/components/app/failure-toast";
+import { notifyFailure } from "@/components/app/failure-toast";
 import type { TreeStep } from "@/core/project-tree/tree-undo";
 import {
   type DiscardUndo,
@@ -139,14 +139,7 @@ export async function runCopy(
   const { copies, answered } = copyRows(context.projectId, copy);
   revealPlaced(copy.into, copies, selection);
   try {
-    const { fromLive } = await answered;
-    if (fromLive)
-      notifyNote(
-        plural(fromLive, {
-          one: "Copied the live text of # document: that Work has no draft of it.",
-          other: "Copied the live text of # documents: that Work has no draft of them.",
-        }),
-      );
+    await answered;
   } catch (error) {
     leaveSelections(copies);
     showCopyFailure(

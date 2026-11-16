@@ -674,10 +674,6 @@ msgstr "{files, plural, one {Imported {organized} of # file} other {Imported {or
 msgid "{files} and {folders}"
 msgstr "{files} and {folders}"
 
-#: src/features/project/context/entry-drag/entry-failure.ts
-msgid "{fromLive, plural, one {Copied the live text of # document: that Work has no draft of it.} other {Copied the live text of # documents: that Work has no draft of them.}}"
-msgstr "{fromLive, plural, one {Copied the live text of # document: that Work has no draft of it.} other {Copied the live text of # documents: that Work has no draft of them.}}"
-
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "{full}, summary"
 msgstr "{full}, summary"

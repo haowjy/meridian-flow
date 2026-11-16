@@ -409,7 +409,6 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         aheadSettlements: read.value.aheadSettlements,
         revision: read.value.revision,
         version: read.value.version,
-        draftView: draft !== null,
       });
     }
   }
@@ -446,15 +445,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       if (replans > 0) throw new Error("A copy planned under the namespace lock did not hold");
       planned = await planAndBind(dest, prepared.ready, prepared.documents);
     }
-    const fromLive = [...prepared.documents.values()].filter(
-      (read) => read.version === "live" && read.draftView,
-    ).length;
-    return Ok({
-      status: "copied",
-      entries: entries.map(toEntry),
-      folders,
-      ...(fromLive > 0 ? { fromLive } : {}),
-    });
+    return Ok({ status: "copied", entries: entries.map(toEntry), folders });
   }
 
   async function resolvedDestination(
@@ -496,8 +487,6 @@ interface PreparedDocument {
   aheadSettlements: ReadonlyMap<string, string>;
   revision: string | null;
   version: "live" | "draft";
-  /** Whether the source asked for a Work's draft, so a `live` read is a document it holds no draft of. */
-  draftView: boolean;
 }
 
 interface PreparedCopy {

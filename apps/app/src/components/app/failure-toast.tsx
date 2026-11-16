@@ -1,8 +1,7 @@
 /**
  * Failure toasts: `notifyFailure` from anywhere, one `FailureToaster` at the app root. Only for a
  * failure that has no place of its own on a document or in the import popup; a success never
- * toasts, though `notifyNote` says what an action did that its result doesn't show. A failure
- * stays until dismissed, and `visibleToasts` caps how many show at once.
+ * toasts. A failure stays until dismissed, and `visibleToasts` caps how many show at once.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
@@ -47,11 +46,6 @@ export function notifyFailure({
       : undefined,
   });
   shown.set(key, id);
-}
-
-/** A plain note on what an action did, where the result doesn't show it: it closes itself. */
-export function notifyNote(title: string) {
-  toast(title);
 }
 
 /** Closes a failure that no longer applies, without counting as the writer closing it. */
