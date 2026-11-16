@@ -10,14 +10,13 @@
           "tokenizer": {
             "value": "anthropic",
             "source": "https://platform.claude.com/docs/en/build-with-claude/token-counting",
-            "checked": "2026-11-16",
-            "note": "Moved from families.ts on 2026-11-16 without re-reading the source."
+            "checked": "2026-11-16"
           },
           "projectToolSchema": {
             "value": true,
             "source": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
             "checked": "2026-11-16",
-            "note": "Anthropic-format hosts that need the tool-schema projection; the first-party API is the only one today. Moved from families.ts on 2026-11-16 without re-reading the source."
+            "note": "Anthropic-format hosts that need the tool-schema projection; the first-party API is the only one today."
           },
           "promptCache": {
             "value": {
@@ -49,7 +48,7 @@
             "value": "o200k",
             "source": "https://github.com/openai/tiktoken",
             "checked": "2026-11-16",
-            "note": "OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate. Moved from families.ts on 2026-11-16 without re-reading the source."
+            "note": "OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate."
           },
           "promptCache": {
             "value": {
@@ -81,14 +80,13 @@
           "tokenizer": {
             "value": "deepseek",
             "source": "https://api-docs.deepseek.com/quick_start/token_usage",
-            "checked": "2026-11-16",
-            "note": "Moved from families.ts on 2026-11-16 without re-reading the source."
+            "checked": "2026-11-16"
           },
           "thinksByDefault": {
             "value": true,
             "source": "https://api-docs.deepseek.com/guides/thinking_mode",
             "checked": "2026-11-16",
-            "note": "The model thinks unless told not to; models.dev does not say. Moved from families.ts on 2026-11-16 without re-reading the source."
+            "note": "The model thinks unless told not to; models.dev does not say."
           },
           "promptCache": {
             "value": {
@@ -125,14 +123,13 @@
           "tokenizer": {
             "value": "gemini",
             "source": "https://ai.google.dev/gemini-api/docs/tokens",
-            "checked": "2026-11-16",
-            "note": "Moved from families.ts on 2026-11-16 without re-reading the source."
+            "checked": "2026-11-16"
           },
           "maxLinkBytes": {
             "value": 15000000,
             "source": "https://ai.google.dev/gemini-api/docs/file-input-methods",
             "checked": "2026-11-16",
-            "note": "Gemini fetches a link up to 15 MB. Moved from families.ts on 2026-11-16 without re-reading the source."
+            "note": "Gemini fetches a link up to 15 MB."
           },
           "promptCache": {
             "value": {
