@@ -11,6 +11,8 @@ import type { Database } from "@meridian/database";
 import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { MockScriptQueue } from "@meridian-flow/runtime/gateway/mock";
 import type { McpClient } from "@meridian-flow/runtime/mcp";
+import type { ScriptRunner } from "@meridian-flow/runtime/script";
+import { createQuickJsRunner } from "@meridian-flow/runtime/script/quickjs";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -343,7 +345,7 @@ export type AppServices = {
   accountSettings: AccountSettingsRepository;
   /** The writer's MCP connections, over the process's one MCP client. */
   mcpConnections: McpConnections;
-  /** The connections as the runtime reads them: the prompt's catalogue and the two tools. */
+  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
   connections: ConnectionsPort;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -445,10 +447,12 @@ export type ProductionAppPorts = {
   accountSettings: AccountSettingsRepository;
   mcpConnections: McpConnections;
   mcpStore: ConnectionStore;
-  /** The connections as the runtime reads them: the prompt's catalogue and the two tools. */
+  /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
   connections: ConnectionsPort;
   /** The one MCP client, closed with the app. */
   mcpClient: McpClient;
+  /** The one script runner behind `mcp_run`, closed with the app. */
+  scriptRunner: ScriptRunner;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -577,6 +581,8 @@ export async function createProductionAppPorts(input: {
         ),
       });
   });
+  // Throws here when the bundle lost the runner's worker or .wasm, so a broken build fails at boot.
+  const scriptRunner = createQuickJsRunner();
   const mcpStore = createDrizzleConnectionStore({ db });
   const mcpConnections = createMcpConnections({
     store: mcpStore,
@@ -602,6 +608,7 @@ export async function createProductionAppPorts(input: {
     store: mcpStore,
     calls: createDrizzleCallStore({ db }),
     client: mcpClient,
+    runner: scriptRunner,
     objectStore,
     repos: threadRepos,
     eventSink,
@@ -837,6 +844,7 @@ export async function createProductionAppPorts(input: {
     mcpStore,
     connections,
     mcpClient,
+    scriptRunner,
     workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
@@ -1386,6 +1394,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async shutdown() {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
+      await ports.scriptRunner.close();
       await ports.mcpClient.close();
       await ports.documentSync.dispose();
       await ports.documentSync.documentDerivations.stop();

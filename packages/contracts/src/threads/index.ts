@@ -223,6 +223,7 @@ export type JournalEventType =
   | "stream.delta"
   | "tool.executing"
   | "tool.output_delta"
+  | "tool.connection_call"
   | "tool.result"
   | "permission.denied"
   /**

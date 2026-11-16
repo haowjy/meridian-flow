@@ -221,6 +221,30 @@ export async function dispatchToolCall(
     }
   };
 
+  // A script's call rows are journaled in the order the calls were sent and finished.
+  let connectionCalls: Promise<unknown> = Promise.resolve();
+  const emitConnectionCall = (
+    toolCallId: string,
+    event: Omit<
+      Extract<OrchestratorEvent, { type: "tool.connection_call" }>,
+      "type" | "toolCallId"
+    >,
+  ) => {
+    connectionCalls = connectionCalls.then(() =>
+      deps.persistenceDeps.eventWriter
+        .appendEvents(ctx.threadId, [{ type: "tool.connection_call", toolCallId, ...event }])
+        .catch((cause: unknown) =>
+          emitEvent(deps.eventSink, {
+            level: "warn",
+            source: "runtime.orchestrator",
+            name: "tool_connection_call.append_failed",
+            correlation: { threadId: ctx.threadId, turnId: ctx.currentTurn.id },
+            payload: unknownToEventPayload(cause),
+          }),
+        ),
+    );
+  };
+
   const transcript: SpawnTranscript = {
     persistence: deps.persistenceDeps,
     threadId: ctx.threadId,
@@ -369,6 +393,7 @@ export async function dispatchToolCall(
       signal: ctx.signal,
       ...(ctx.model ? { model: ctx.model } : {}),
       emitOutputDelta,
+      emitConnectionCall,
       spawn,
       threadMessage,
       threadReport,
@@ -385,6 +410,7 @@ export async function dispatchToolCall(
   );
   outputJournal.seal();
   await drainOutput();
+  await connectionCalls;
   // A command's outcome is stored even when the run was stopped: its edit may have committed.
   if (ctx.signal?.aborted && !execResult.blockId) {
     return { kind: "cancelled" };

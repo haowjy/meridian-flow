@@ -1,5 +1,11 @@
 /** What the runtime asks of a writer's MCP connections: the prompt's catalogue, and the two tools. */
-import type { McpBakedConnection, McpCallResult, McpDescribeResult } from "@meridian/contracts/mcp";
+import type {
+  McpBakedConnection,
+  McpCallResult,
+  McpDescribeResult,
+  McpRunResult,
+  McpScriptCall,
+} from "@meridian/contracts/mcp";
 import type { JsonObject, Thread } from "@meridian/contracts/threads";
 
 export interface ConnectionBake {
@@ -17,7 +23,16 @@ export interface ConnectionToolCaller {
   signal: AbortSignal;
 }
 
+/** What a script's limits are, for the tool description: the rest are the host's own. */
+export interface ScriptLimitsPort {
+  wallMs: number;
+  maxCalls: number;
+  maxValueBytes: number;
+}
+
 export interface ConnectionsPort {
+  /** The limits `mcp_run` tells the model. */
+  scriptLimits: ScriptLimitsPort;
   /**
    * The connections and catalogue a prompt written now for this thread holds: the writer's own
    * for a chat, its parent's bake in effect for a subagent. Reads the stored status and waits for
@@ -43,6 +58,19 @@ export interface ConnectionsPort {
     caller: ConnectionToolCaller,
     input: { id: string; arguments: JsonObject },
   ): Promise<{ result: McpCallResult; isError: boolean }>;
+  /** Runs the model's script; each call it makes is recorded and `emit`ted as it is sent and as it finishes. */
+  run(
+    caller: ConnectionToolCaller,
+    input: {
+      code: string;
+      emit(event: {
+        sequence: number;
+        id: string;
+        arguments: JsonObject;
+        call?: McpScriptCall;
+      }): void;
+    },
+  ): Promise<{ result: McpRunResult; isError: boolean }>;
   describe(
     caller: ConnectionToolCaller,
     input: { names: string[] },

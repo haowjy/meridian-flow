@@ -21,6 +21,7 @@ export const TOOL_CATALOG = [
   "return_result",
   "mcp_describe",
   "mcp_call",
+  "mcp_run",
 ] as const;
 
 /**

@@ -57,8 +57,15 @@ export default defineConfig({
     },
   ],
   // CommonJS packages that read `__dirname` (libheif's WASM loader) break when inlined into
-  // the ESM worker chunk (the mars-schema WASM loader too), so they stay external and are traced into the output.
-  traceDeps: ["heic-decode", "libheif-js", "bmp-ts", "@meridian-flow/mars-schema"],
+  // the ESM worker chunk (the mars-schema WASM loader too), so they stay external and are traced into the output. The script runner's worker and `.wasm`
+  // are found beside the package, so all of `@meridian-flow/runtime` stays external too.
+  traceDeps: [
+    "heic-decode",
+    "libheif-js",
+    "bmp-ts",
+    "@meridian-flow/mars-schema",
+    "@meridian-flow/runtime",
+  ],
   features: {
     websocket: true,
   },

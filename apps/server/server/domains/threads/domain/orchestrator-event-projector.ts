@@ -333,6 +333,21 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      case "tool.connection_call":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.tool.connection_call",
+            value: {
+              toolCallId: event.toolCallId,
+              sequence: event.sequence,
+              id: event.id,
+              arguments: event.arguments,
+              ...(event.call ? { call: event.call } : {}),
+            },
+          }),
+        ];
+
       case "tool.result": {
         // TOOL_CALL_RESULT.messageId is the owning assistant run, not the tool
         // call. tool.result only fires mid-turn, so activeRunId is set; if it
