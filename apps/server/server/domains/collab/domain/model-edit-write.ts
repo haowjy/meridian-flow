@@ -16,13 +16,13 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DraftOwner, LinkView, ProjectId, ThreadId } from "@meridian/contracts";
+import type { DraftOwner, LinkView, ThreadId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
-import type { FileAccess, FileGrant } from "../../file-policy/index.js";
+import { agentProject, type FileAccess, type FileGrant } from "../../file-policy/index.js";
 import type { LiveAgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { Branches } from "./branches.js";
@@ -196,7 +196,8 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     approveBranchWriteJoin();
     const branch = await deps.branches.ensureActiveForWrite({
       owner,
-      projectId: grant.facts.projectId as ProjectId,
+      // The thread's project, not the file's: a home document has none.
+      projectId: agentProject(grant),
       threadId: (given.threadId as ThreadId | undefined) ?? null,
       userId: grant.principal.accountId,
     });

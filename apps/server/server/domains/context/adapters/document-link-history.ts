@@ -1,11 +1,14 @@
 /** Chat-only previous-location fallback, authorized against the reader's projects. */
+
+import type { UserId } from "@meridian/contracts";
 import { matchDocumentPath } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentPreviousLocations, documents, projects } from "@meridian/database/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { createDocumentUriResolver } from "../document-uri-resolver.js";
 import type { DocumentLinkHistory } from "../ports/document-link-resolver.js";
+import { ownedByRequestSql } from "../tree/source-owner.js";
 
 export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHistory {
   const currentUri = createDocumentUriResolver(db);
@@ -14,13 +17,18 @@ export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHist
     const [row] = await tx
       .select({ id: documents.id })
       .from(documents)
-      .innerJoin(projects, eq(projects.id, documents.projectId))
+      .leftJoin(projects, eq(projects.id, documents.projectId))
       .where(
         and(
           eq(documents.id, documentId),
-          eq(projects.userId, input.userId),
-          isNull(projects.deletedAt),
-          or(eq(projects.id, input.projectId), eq(projects.isPersonal, true)),
+          ownedByRequestSql(
+            { projectId: sql`${documents.projectId}`, userId: sql`${documents.userId}` },
+            { projectId: sql`${input.projectId}::uuid`, accountId: sql`${input.userId}::uuid` },
+          ),
+          or(
+            isNull(documents.projectId),
+            and(eq(projects.userId, input.userId as UserId), isNull(projects.deletedAt)),
+          ),
         ),
       );
     return row ? currentUri(documentId) : null;

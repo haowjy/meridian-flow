@@ -4,7 +4,7 @@
  * writes them: it replays live and each view the records can change, compares with what the
  * last replay wrote, and writes the rows that differ with the history text derivations need.
  */
-import type { DocumentId, ProjectId } from "@meridian/contracts";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts";
 import { filetypeForMimeType } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
@@ -39,7 +39,8 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { recordLocationHistory } from "../tree/node-locations.js";
-import { keptBranches, projectOfList } from "./tree-list-facts.js";
+import { ownerColumns, sourceOwnerProjectId } from "../tree/source-owner.js";
+import { keptBranches } from "./tree-list-facts.js";
 
 /** Rows per statement: bounds the parameter count, not the atomic operation. */
 const BATCH = 500;
@@ -304,7 +305,7 @@ async function dropUnowned(
  */
 async function insertDocumentRows(
   tx: DrizzleDb,
-  projectId: string,
+  owner: TreeList,
   records: readonly TreeRecord[],
   shown: (id: string) => boolean,
 ): Promise<CreateRecord[]> {
@@ -315,7 +316,8 @@ async function insertDocumentRows(
     await tx.insert(documents).values(
       batch.map((record) => ({
         id: record.node as DocumentId,
-        projectId: projectId as ProjectId,
+        projectId: ownerColumns(owner).projectId as ProjectId | null,
+        userId: ownerColumns(owner).userId as UserId | null,
         ...(record.blob
           ? {
               storageUrl: record.blob.storageKey,
@@ -488,7 +490,6 @@ async function dropForeignSources(
 ): Promise<void> {
   const sources = new Set(views.flatMap((rows) => [...rows.values()].map((row) => row.sourceId)));
   if (sources.size === 0) return;
-  const projectId = await projectOfList(tx, list);
   const present = await tx
     .select({ id: contextSources.id })
     .from(contextSources)
@@ -496,7 +497,9 @@ async function dropForeignSources(
     .where(
       and(
         inArray(contextSources.id, [...sources]),
-        sql`(${contextSources.projectId} = ${projectId}::uuid OR ${works.projectId} = ${projectId}::uuid)`,
+        list.kind === "project"
+          ? sql`${sourceOwnerProjectId} = ${list.projectId}::uuid`
+          : eq(contextSources.userId, list.userId as UserId),
       ),
     );
   const kept = new Set(present.map((row) => row.id as string));
@@ -580,7 +583,7 @@ export async function syncRows(
     added.length > 0
       ? await insertDocumentRows(
           tx,
-          await projectOfList(tx, list),
+          list,
           added,
           (id) => liveRows.has(id) || [...next.values()].some((view) => view.has(id)),
         )

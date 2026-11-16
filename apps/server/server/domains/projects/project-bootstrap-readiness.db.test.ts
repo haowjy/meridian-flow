@@ -2,7 +2,7 @@
  * Postgres coverage for bootstrap readiness fast and repair paths.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - durable bootstrap readiness that bypasses locking and reseeding on the fast path
+ * - readiness is "the account has a live project", read without the lock or a reseed
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -91,11 +91,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]).then((rows) => rows.map((row) => row.length)),
       ).resolves.toEqual([1, 1, 5, 1, 0]);
 
-      const [project] = await db
-        .select({ ready: schema.projects.defaultBootstrapReady })
-        .from(schema.projects);
-      expect(project?.ready).toBe(true);
-
       let lockHeld = false;
       let probeLockAcquired = false;
       let warmCall: Promise<boolean> | undefined;
@@ -178,11 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documents: collab,
       });
       await expect(repaired.ensureDefaultBootstrapReady(USER_ID as never)).resolves.toBe(true);
-
-      const [ready] = await db
-        .select({ ready: schema.projects.defaultBootstrapReady })
-        .from(schema.projects);
-      expect(ready?.ready).toBe(true);
+      await expect(db.select().from(schema.projects)).resolves.toHaveLength(1);
       const [document] = await db.select({ id: schema.documents.id }).from(schema.documents);
       expect(await collab.readAsMarkdown(document?.id as never)).toEqual({
         ok: true,

@@ -21,8 +21,9 @@
  * it (`openOlder`).
  *
  * A copy is working storage only: what a notice offered from it and whether the writer acted on
- * it are in the account's notice store (`hand-back-notices.ts`). A caller about to delete a copy
- * whose words the server lacks has the store claim them first, and keeps the copy if it can't.
+ * it are in the account's notice store (`hand-back-notices.ts`). What the server is known to have
+ * is in the copy, its mark (`server-mark.ts`): a copy is deleted only once what it holds beyond its
+ * mark is claimed (`clear`), and kept when the claim can't be stored.
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -33,7 +34,9 @@ import { browserStorage, type RecordStorage } from "@/client/storage/browser-rec
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
 import { HAND_BACK_NOTICES_PREFIX, handBackNoticesName } from "./hand-back-notices";
+import type { Ranges } from "./item-ranges";
 import { documentText, readCopy } from "./rescued-text";
+import { beyondMark, SERVER_MARK_KEY } from "./server-mark";
 
 const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
 const DRAFT_PREFIX = `meridian:document:${collabSchemaKeyTag()}:draft/`;
@@ -108,6 +111,21 @@ function documentOf(name: string, accountId: AccountId): DocumentId | null {
   return null;
 }
 
+const NO_MARK = Y.encodeStateVector(new Map());
+
+/** A copy's items beyond its mark, and the copy they are read from. */
+export type BeyondMark = { update: Uint8Array; lacking: Ranges };
+
+function markedBeyond(
+  loaded: { update: Uint8Array; mark: Uint8Array | null } | null,
+): BeyondMark | null {
+  if (!loaded) return null;
+  // No mark proves nothing the server holds (a copy written before marks, or a first write lost):
+  // the whole copy is offered.
+  const lacking = beyondMark(loaded.update, loaded.mark ?? NO_MARK);
+  return lacking.size > 0 ? { update: loaded.update, lacking } : null;
+}
+
 /** A copy no tab held, read whole; it stays locked until `finish`. */
 export type UnheldCopy = {
   /** Its database name. */
@@ -118,14 +136,24 @@ export type UnheldCopy = {
   finish(keep: boolean): Promise<void>;
 };
 
-/** Everything the database `name` holds, read under a hold that keeps it; null when it is gone, and none is created. */
-async function load(idb: IDBFactory, name: string): Promise<Uint8Array | null> {
+/**
+ * Everything the database `name` holds, and its mark; read under a hold that keeps it. Null when
+ * it is gone, and none is created.
+ */
+async function load(
+  idb: IDBFactory,
+  name: string,
+): Promise<{ update: Uint8Array; mark: Uint8Array | null } | null> {
   if (!(await withExisting(idb, name, async () => true))) return null;
   const document = new Y.Doc();
   const persistence = new IndexeddbPersistence(name, document);
   try {
     await persistence.whenSynced;
-    return Y.encodeStateAsUpdate(document);
+    const mark: unknown = await persistence.get(SERVER_MARK_KEY);
+    return {
+      update: Y.encodeStateAsUpdate(document),
+      mark: mark instanceof Uint8Array ? mark : null,
+    };
   } finally {
     await persistence.destroy();
     document.destroy();
@@ -200,9 +228,13 @@ export class LocalDocumentCopies {
     void locks
       .request(this.lockName(name), { mode: "exclusive", ifAvailable: true }, async (lock) => {
         if (!lock) return ready.resolve(null);
-        const update = await load(idb, name);
-        if (!update) return ready.resolve(null);
-        ready.resolve({ name, update, finish: async (keep) => finished.resolve(keep) });
+        const loaded = await load(idb, name);
+        if (!loaded) return ready.resolve(null);
+        ready.resolve({
+          name,
+          update: loaded.update,
+          finish: async (keep) => finished.resolve(keep),
+        });
         if (!(await finished.promise)) await this.deleteDatabase(name);
       })
       .catch(ready.reject);
@@ -258,8 +290,8 @@ export class LocalDocumentCopies {
     try {
       const texts = await Promise.all(
         names.map(async (name) => {
-          const update = await load(idb, name);
-          return update && readCopy(update, documentText);
+          const loaded = await load(idb, name);
+          return loaded && readCopy(loaded.update, documentText);
         }),
       );
       return texts.reduce<string | null>(
@@ -288,22 +320,47 @@ export class LocalDocumentCopies {
   }
 
   /**
-   * Deletes every copy of the document, which can never come back. False when another tab holds
-   * one open: that tab's own reading of the list clears it, and a copy left behind is found at the
-   * next start.
+   * What the copy `name` holds beyond its mark, read under a shared hold; null when it is gone or
+   * holds nothing beyond it.
    */
-  async clear(documentId: DocumentId): Promise<boolean> {
-    const names = await this.namesOf(documentId);
-    if (!this.locks) {
-      await this.deleteCopies(documentId, names);
-      return true;
+  async beyondMark(name: string): Promise<BeyondMark | null> {
+    const idb = this.idb;
+    if (!idb) return null;
+    const hold = await this.hold(name);
+    try {
+      return markedBeyond(await load(idb, name));
+    } finally {
+      hold.release();
     }
-    return (
-      (await this.exclusively(names, { ifAvailable: true }, async () => {
-        await this.deleteCopies(documentId, names);
-        return true;
-      })) ?? false
-    );
+  }
+
+  /**
+   * Deletes every copy of the document, which can never come back, once `claim` has stored what
+   * each holds beyond its mark; a copy whose claim fails stays, and the next start claims it again.
+   * False when another tab holds one open: that tab's own
+   * reading of the list clears it, and a copy left behind is found at the next start.
+   */
+  async clear(
+    documentId: DocumentId,
+    claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
+  ): Promise<boolean> {
+    const names = await this.namesOf(documentId);
+    const run = async () => {
+      const claimed = await Promise.all(
+        names.map(async (name) => {
+          const beyond = this.idb && markedBeyond(await load(this.idb, name));
+          return !beyond || (await claim(name, beyond));
+        }),
+      );
+      await this.deleteCopies(
+        documentId,
+        names.filter((_, index) => claimed[index]),
+        claimed.every(Boolean),
+      );
+      return true;
+    };
+    if (!this.locks) return run();
+    return (await this.exclusively(names, { ifAvailable: true }, run)) ?? false;
   }
 
   /**
@@ -354,8 +411,10 @@ export class LocalDocumentCopies {
     return (await this.names()).filter((name) => documentOf(name, this.accountId) === documentId);
   }
 
-  private async deleteCopies(documentId: DocumentId, names: readonly string[]) {
+  /** `all`: no copy of the document is left, so its pointers and its place in `known` go too. */
+  private async deleteCopies(documentId: DocumentId, names: readonly string[], all = true) {
     await Promise.all(names.map((name) => this.deleteDatabase(name)));
+    if (!all) return;
     for (const { key } of names.map(parseName)) this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
     if (this.known?.delete(documentId)) this.publish();
   }

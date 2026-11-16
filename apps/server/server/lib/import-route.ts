@@ -36,7 +36,12 @@ export async function resolveImportRoute(event: H3Event) {
           requireFileGrant(
             app.fileAccess,
             user.userId,
-            await containerTarget(app.workRepo, { projectId, scheme, workId: null }),
+            await containerTarget(app.workRepo, {
+              projectId,
+              userId: user.userId,
+              scheme,
+              workId: null,
+            }),
             "edit",
           ),
         ),

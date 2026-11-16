@@ -8,6 +8,7 @@ import type { Connection } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList } from "../ports/tree-list-store.js";
+import { ownerFrom, ownerProjectIdSql } from "../tree/source-owner.js";
 
 /** The list's id: its project's or its account's `tree_list_id`, or null when that is gone. */
 export async function listIdOf(db: DrizzleDb, list: TreeList): Promise<string | null> {
@@ -20,37 +21,17 @@ export async function listIdOf(db: DrizzleDb, list: TreeList): Promise<string | 
   return row?.id ?? null;
 }
 
-/**
- * The list a source's nodes are in: the account's for its `user://` source (the personal
- * project's source with slug `user`), else the list of the project that holds the source (a
- * Work's source belongs to the Work's project).
- */
+/** The list a source's nodes are in: its owner's, a project's (a Work's source is its project's) or the account's. */
 export async function treeListOfSource(db: DrizzleDb, sourceId: string): Promise<TreeList> {
   const [row] = await currentDrizzleDb(db as Database).execute<{
-    project_id: string;
-    user_id: string;
-    account: boolean;
+    project_id: string | null;
+    user_id: string | null;
   }>(sql`
-    SELECT p.id::text AS project_id, p.user_id::text AS user_id,
-      (s.scope = 'project' AND s.slug = 'user') AS account
-    FROM context_sources s
-      LEFT JOIN works w ON w.id = s.work_id
-      JOIN projects p ON p.id = COALESCE(s.project_id, w.project_id)
+    SELECT ${ownerProjectIdSql("s", "w")}::text AS project_id, s.user_id::text AS user_id
+    FROM context_sources s LEFT JOIN works w ON w.id = s.work_id
     WHERE s.id = ${sourceId}::uuid`);
   if (!row) throw new Error(`Context source ${sourceId} is gone`);
-  return row.account
-    ? { kind: "account", userId: row.user_id }
-    : { kind: "project", projectId: row.project_id };
-}
-
-/** The project that owns the documents a list's creates make: an account's list is its personal project's. */
-export async function projectOfList(db: DrizzleDb, list: TreeList): Promise<string> {
-  if (list.kind === "project") return list.projectId;
-  const [row] = await currentDrizzleDb(db as Database).execute<{ id: string }>(
-    sql`SELECT id::text FROM projects WHERE user_id = ${list.userId}::uuid AND is_personal AND deleted_at IS NULL`,
-  );
-  if (!row) throw new Error("The account has no personal project");
-  return row.id;
+  return ownerFrom({ projectId: row.project_id, userId: row.user_id });
 }
 
 /**
@@ -89,9 +70,8 @@ export const keptBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db
 export const openBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db, list, true);
 
 /**
- * The facts the server decides a create by: the open branches, and the sources of Works that are
- * closed (archived or deleted), which nothing may be created in. Null when the list is not the
- * account's (the project or account is gone or another's).
+ * The facts admission needs: open branches and whether each source is closed or gone.
+ * Null when the list is not the account's (the project or account is gone or another's).
  */
 export async function readConnection(
   db: DrizzleDb,
@@ -99,20 +79,28 @@ export async function readConnection(
   accountId: string,
 ): Promise<Connection | null> {
   const tx = currentDrizzleDb(db as Database);
-  const [project] = await tx.execute<{ id: string; owner: string }>(
-    list.kind === "project"
-      ? sql`SELECT id::text, user_id::text AS owner FROM projects
-          WHERE id = ${list.projectId}::uuid AND deleted_at IS NULL`
-      : sql`SELECT id::text, user_id::text AS owner FROM projects
-          WHERE user_id = ${list.userId}::uuid AND is_personal AND deleted_at IS NULL`,
-  );
-  if (!project || project.owner !== accountId) return null;
+  if (list.kind === "account") {
+    const [account] = await tx.execute<{ id: string }>(
+      sql`SELECT id::text FROM users WHERE id = ${list.userId}::uuid`,
+    );
+    if (!account || account.id !== accountId) return null;
+  } else {
+    const [project] = await tx.execute<{ id: string; owner: string }>(
+      sql`SELECT id::text, user_id::text AS owner FROM projects
+      WHERE id = ${list.projectId}::uuid AND deleted_at IS NULL`,
+    );
+    if (!project || project.owner !== accountId) return null;
+  }
   const sources = await tx.execute<{ id: string; closed: boolean }>(sql`
     SELECT s.id::text AS id,
       (s.deleted_at IS NOT NULL OR (s.scope = 'work' AND (w.id IS NULL OR w.archived_at IS NOT NULL OR w.deleted_at IS NOT NULL))) AS closed
     FROM context_sources s
     LEFT JOIN works w ON w.id = s.work_id
-    WHERE COALESCE(s.project_id, w.project_id) = ${project.id}::uuid`);
+    WHERE ${
+      list.kind === "project"
+        ? sql`${ownerProjectIdSql("s", "w")} = ${list.projectId}::uuid`
+        : sql`s.user_id = ${list.userId}::uuid`
+    }`);
   const openSources = new Set(
     sources.filter((source) => !source.closed).map((source) => source.id),
   );

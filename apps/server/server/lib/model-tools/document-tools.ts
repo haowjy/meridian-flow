@@ -612,9 +612,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     // A create or copy needs edit on the folder it makes the file in, at the
     // destination the file lands in; the namespace transaction confirms that
     // grant under its locks (seam C).
-    const target = creates
-      ? await threadContainerTarget(deps.works, context.resolution, parsed.path)
-      : null;
+    const target = creates ? await threadContainerTarget(context.resolution, parsed.path) : null;
 
     // A copy reads its source before it creates anything, so a bad source leaves no file.
     let copied: CopiedSource | undefined;

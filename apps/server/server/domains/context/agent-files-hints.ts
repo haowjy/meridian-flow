@@ -34,9 +34,9 @@ export function createAgentFilesHints(deps: {
     const at = address && !address.deleted ? agentsLocationOf(address.scheme, address.path) : null;
     const place: Place = !at
       ? null
-      : at.level === "user"
-        ? { user: address.userId }
-        : { project: address.projectId };
+      : address.owner.kind === "account"
+        ? { user: address.owner.userId }
+        : { project: address.owner.projectId as ProjectId };
     places.delete(documentId);
     places.set(documentId, { place, at: Date.now() });
     if (places.size > PLACES) places.delete(places.keys().next().value as string);

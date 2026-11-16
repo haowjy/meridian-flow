@@ -648,7 +648,27 @@ export async function createProductionAppPorts(input: {
   });
   const agentCatalog = createBoundAgentCatalog({
     store: agentRevisions,
-    levelFiles: createAgentLevelFiles({ db, documentSync, treeLists, arrivals }),
+    levelFiles: createAgentLevelFiles({
+      db,
+      documentSync,
+      treeLists,
+      arrivals,
+      links: documentLinks,
+    }),
+    onSaved: (userId, projectId, level) =>
+      runAfterDrizzleCommit(() => {
+        if (level === "project" && projectId) {
+          projectWakeHub.publish({
+            type: "agent-files-hint",
+            projectId: projectId as import("@meridian/contracts/runtime").ProjectId,
+          });
+        } else if (level === "user") {
+          projectWakeHub.publishToUser(userId, (id) => ({
+            type: "agent-files-hint",
+            projectId: id as import("@meridian/contracts/runtime").ProjectId,
+          }));
+        }
+      }),
     builtins: await readBuiltinPackages(defaultModel),
     defaultModel: () => gateway.getDefaultModel(),
     unavailableReasons: (definition, model) =>

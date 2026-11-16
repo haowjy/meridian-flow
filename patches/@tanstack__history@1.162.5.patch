@@ -1,8 +1,8 @@
 diff --git a/dist/cjs/index.cjs b/dist/cjs/index.cjs
-index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea220b21a46a 100644
+index 6d3ac1455b19f0509d34521acbe56f1a1799e955..3ea53c3b55be10fc8fd64abd5633ab4d15fae145 100644
 --- a/dist/cjs/index.cjs
 +++ b/dist/cjs/index.cjs
-@@ -142,6 +142,7 @@ function createHistory(opts) {
+@@ -137,6 +137,7 @@ function createHistory(opts) {
  			};
  		},
  		flush: () => opts.flush?.(),
@@ -10,7 +10,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea22
  		destroy: () => opts.destroy?.(),
  		notify,
  		_getBlockers: () => opts.getBlockers?.() ?? []
-@@ -193,7 +194,14 @@ function createBrowserHistory(opts) {
+@@ -187,7 +188,14 @@ function createBrowserHistory(opts) {
  	let currentLocation = parseLocation();
  	let rollbackLocation;
  	let nextPopIsGo = false;
@@ -26,7 +26,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea22
  	let skipBlockerNextPop = false;
  	let ignoreNextBeforeUnload = false;
  	const getLocation = () => currentLocation;
-@@ -206,8 +214,26 @@ function createBrowserHistory(opts) {
+@@ -200,8 +208,26 @@ function createBrowserHistory(opts) {
  		next = void 0;
  		rollbackLocation = void 0;
  	};
@@ -53,7 +53,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea22
  		const hasPendingAction = !!next;
  		if (!hasPendingAction) rollbackLocation = currentLocation;
  		currentLocation = parseHref(destHref, state);
-@@ -219,17 +245,32 @@ function createBrowserHistory(opts) {
+@@ -213,17 +239,32 @@ function createBrowserHistory(opts) {
  		if (!hasPendingAction) queueMicrotask(() => flush());
  	};
  	const onPushPop = (type) => {
@@ -90,7 +90,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea22
  		const isForward = delta === 1;
  		const isBack = delta === -1;
  		const isGo = !isForward && !isBack || nextPopIsGo;
-@@ -243,19 +284,23 @@ function createBrowserHistory(opts) {
+@@ -237,19 +278,23 @@ function createBrowserHistory(opts) {
  		else {
  			const blockers = _getBlockers();
  			if (typeof document !== "undefined" && blockers.length) {
@@ -124,9 +124,9 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea22
  		history.notify(notify);
  	};
  	const onBeforeUnload = (e) => {
-@@ -310,7 +355,10 @@ function createBrowserHistory(opts) {
+@@ -304,7 +349,10 @@ function createBrowserHistory(opts) {
  		},
- 		createHref: (href) => createHref(href),
+ 		createHref,
  		flush,
 +		settlePendingTraversal,
  		destroy: () => {
@@ -136,7 +136,7 @@ index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..cc344b9f4edfa7a45203726af75bea22
  			win.history.replaceState = originalReplaceState;
  			win.removeEventListener(beforeUnloadEvent, onBeforeUnload, { capture: true });
 diff --git a/dist/cjs/index.d.cts b/dist/cjs/index.d.cts
-index a4ea04442bdc4a09bd8cc8066d679ee71356c12b..24031067526a00a51061e06b77075ecde4b1b467 100644
+index e35a50b2c99d534733ad6a09c0a5264633d7e77b..f73f1e6b747a0e2a66520e33376d78dabcda8ba9 100644
 --- a/dist/cjs/index.d.cts
 +++ b/dist/cjs/index.d.cts
 @@ -25,6 +25,7 @@ export interface RouterHistory {
@@ -156,7 +156,7 @@ index a4ea04442bdc4a09bd8cc8066d679ee71356c12b..24031067526a00a51061e06b77075ecd
      onBlocked?: () => void;
      getBlockers?: () => Array<NavigationBlocker>;
 diff --git a/dist/esm/index.d.ts b/dist/esm/index.d.ts
-index a4ea04442bdc4a09bd8cc8066d679ee71356c12b..24031067526a00a51061e06b77075ecde4b1b467 100644
+index e35a50b2c99d534733ad6a09c0a5264633d7e77b..f73f1e6b747a0e2a66520e33376d78dabcda8ba9 100644
 --- a/dist/esm/index.d.ts
 +++ b/dist/esm/index.d.ts
 @@ -25,6 +25,7 @@ export interface RouterHistory {
@@ -176,10 +176,10 @@ index a4ea04442bdc4a09bd8cc8066d679ee71356c12b..24031067526a00a51061e06b77075ecd
      onBlocked?: () => void;
      getBlockers?: () => Array<NavigationBlocker>;
 diff --git a/dist/esm/index.js b/dist/esm/index.js
-index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c58b6d070b 100644
+index 795c98a8eb0cf6c961b0133956cf879f328a9656..fa24e505302f2ec0648f93be32852608263f297e 100644
 --- a/dist/esm/index.js
 +++ b/dist/esm/index.js
-@@ -141,6 +141,7 @@ function createHistory(opts) {
+@@ -136,6 +136,7 @@ function createHistory(opts) {
  			};
  		},
  		flush: () => opts.flush?.(),
@@ -187,7 +187,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c5
  		destroy: () => opts.destroy?.(),
  		notify,
  		_getBlockers: () => opts.getBlockers?.() ?? []
-@@ -192,7 +193,14 @@ function createBrowserHistory(opts) {
+@@ -186,7 +187,14 @@ function createBrowserHistory(opts) {
  	let currentLocation = parseLocation();
  	let rollbackLocation;
  	let nextPopIsGo = false;
@@ -203,7 +203,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c5
  	let skipBlockerNextPop = false;
  	let ignoreNextBeforeUnload = false;
  	const getLocation = () => currentLocation;
-@@ -205,8 +213,26 @@ function createBrowserHistory(opts) {
+@@ -199,8 +207,26 @@ function createBrowserHistory(opts) {
  		next = void 0;
  		rollbackLocation = void 0;
  	};
@@ -230,7 +230,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c5
  		const hasPendingAction = !!next;
  		if (!hasPendingAction) rollbackLocation = currentLocation;
  		currentLocation = parseHref(destHref, state);
-@@ -218,17 +244,32 @@ function createBrowserHistory(opts) {
+@@ -212,17 +238,32 @@ function createBrowserHistory(opts) {
  		if (!hasPendingAction) queueMicrotask(() => flush());
  	};
  	const onPushPop = (type) => {
@@ -267,7 +267,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c5
  		const isForward = delta === 1;
  		const isBack = delta === -1;
  		const isGo = !isForward && !isBack || nextPopIsGo;
-@@ -242,19 +283,23 @@ function createBrowserHistory(opts) {
+@@ -236,19 +277,23 @@ function createBrowserHistory(opts) {
  		else {
  			const blockers = _getBlockers();
  			if (typeof document !== "undefined" && blockers.length) {
@@ -301,9 +301,9 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c5
  		history.notify(notify);
  	};
  	const onBeforeUnload = (e) => {
-@@ -309,7 +354,10 @@ function createBrowserHistory(opts) {
+@@ -303,7 +348,10 @@ function createBrowserHistory(opts) {
  		},
- 		createHref: (href) => createHref(href),
+ 		createHref,
  		flush,
 +		settlePendingTraversal,
  		destroy: () => {
@@ -313,7 +313,7 @@ index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..e634ad26690ed867ac50ee7545d7d9c5
  			win.history.replaceState = originalReplaceState;
  			win.removeEventListener(beforeUnloadEvent, onBeforeUnload, { capture: true });
 diff --git a/src/index.ts b/src/index.ts
-index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55fafd1bc0491 100644
+index d2f80581b9ad775dcabc66ca9ca5b0f33a6c35f3..50695df269c7636a6e689eb14c3576a1f0057397 100644
 --- a/src/index.ts
 +++ b/src/index.ts
 @@ -34,6 +34,8 @@ export interface RouterHistory {
@@ -333,7 +333,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
    destroy?: () => void
    onBlocked?: () => void
    getBlockers?: () => Array<NavigationBlocker>
-@@ -274,6 +277,7 @@ export function createHistory(opts: {
+@@ -268,6 +271,7 @@ export function createHistory(opts: {
        }
      },
      flush: () => opts.flush?.(),
@@ -341,7 +341,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
      destroy: () => opts.destroy?.(),
      notify,
      _getBlockers: () => opts.getBlockers?.() ?? [],
-@@ -353,7 +357,20 @@ export function createBrowserHistory(opts?: {
+@@ -344,7 +348,20 @@ export function createBrowserHistory(opts?: {
    let rollbackLocation: HistoryLocation | undefined
  
    let nextPopIsGo = false
@@ -363,7 +363,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
    // TODO: An ignored traversal past a history boundary emits neither popstate
    // nor beforeunload, leaving these bypasses active for a later navigation.
    // The History API provides no completion signal for such no-op traversals.
-@@ -397,6 +414,21 @@ export function createBrowserHistory(opts?: {
+@@ -388,6 +405,23 @@ export function createBrowserHistory(opts?: {
      rollbackLocation = undefined
    }
  
@@ -375,6 +375,8 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
 +    if (sameEntry(actual, currentLocation)) return
 +    const delta = currentLocation.state[stateIndexKey] - actual.state[stateIndexKey]
 +    if (delta === 0) return Promise.resolve(false)
++    // An entry this router did not write (no index, another build's) or a distance the stack cannot hold: go() would reload or leave the page.
++    if (!Number.isInteger(delta) || Math.abs(delta) >= win.history.length) return
 +    let finish!: (restored: boolean) => void
 +    const promise = new Promise<boolean>((resolve) => { finish = resolve })
 +    restoration = { source: currentLocation, promise, finish }
@@ -385,7 +387,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
    // This function queues up a call to update the browser history
    const queueHistoryAction = (
      isPush: boolean,
-@@ -406,6 +438,8 @@ export function createBrowserHistory(opts?: {
+@@ -397,6 +431,8 @@ export function createBrowserHistory(opts?: {
      // A formatter changes the URL space and must receive the original input.
      // Otherwise parseHref below already produces the browser destination.
      const href = opts?.createHref ? createHref(destHref) : undefined
@@ -394,7 +396,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
      const hasPendingAction = !!next
  
      if (!hasPendingAction) {
-@@ -430,6 +464,8 @@ export function createBrowserHistory(opts?: {
+@@ -421,6 +457,8 @@ export function createBrowserHistory(opts?: {
  
    // NOTE: this function can probably be removed
    const onPushPop = (type: 'PUSH' | 'REPLACE') => {
@@ -403,7 +405,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
      currentLocation = parseLocation()
      history.notify({ type })
    }
-@@ -439,14 +475,29 @@ export function createBrowserHistory(opts?: {
+@@ -430,14 +468,29 @@ export function createBrowserHistory(opts?: {
      // exemption here instead of carrying it into a later document navigation.
      ignoreNextBeforeUnload = false
  
@@ -439,7 +441,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
      const isForward = delta === 1
      const isBack = delta === -1
      const isGo = (!isForward && !isBack) || nextPopIsGo
-@@ -469,13 +520,14 @@ export function createBrowserHistory(opts?: {
+@@ -460,13 +513,14 @@ export function createBrowserHistory(opts?: {
        if (typeof document !== 'undefined' && blockers.length) {
          for (const blocker of blockers) {
            const isBlocked = await blocker.blockerFn({
@@ -457,7 +459,7 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
              history.notify(notify)
              return
            }
-@@ -483,7 +535,8 @@ export function createBrowserHistory(opts?: {
+@@ -474,7 +528,8 @@ export function createBrowserHistory(opts?: {
        }
      }
  
@@ -467,9 +469,9 @@ index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55faf
      history.notify(notify)
    }
  
-@@ -551,7 +604,10 @@ export function createBrowserHistory(opts?: {
+@@ -542,7 +597,10 @@ export function createBrowserHistory(opts?: {
      },
-     createHref: (href) => createHref(href),
+     createHref,
      flush,
 +    settlePendingTraversal,
      destroy: () => {

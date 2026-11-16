@@ -46,7 +46,7 @@ function file(
 ): FileFacts {
   return {
     target: { kind: "document", documentId: "doc" },
-    projectId: PROJECT,
+    owner: { kind: "project", projectId: PROJECT },
     ownerAccountId: OWNER,
     projectDeleted: false,
     ownerWork,
@@ -74,6 +74,7 @@ const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
   accountId: OWNER,
   agent: {
+    projectId: PROJECT,
     chain,
     branchOwner: { owner: { kind: "work", workId: "a" }, handle: null },
     writeMode: "direct",
@@ -129,6 +130,7 @@ describe("file policy", () => {
       {
         accountId: OWNER,
         agent: {
+          projectId: PROJECT,
           chain: [link("edit", branchWork.id)],
           branchOwner: {
             owner: { kind: "work", workId: branchWork.id },

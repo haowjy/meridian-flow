@@ -27,7 +27,6 @@ function mapProject(row: ProjectRow): Project {
     name: row.name,
     slug: row.slug,
     systemPrompt: row.systemPrompt,
-    isPersonal: row.isPersonal,
     settings: row.settings,
     lastActivityAt: row.lastActivityAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -69,12 +68,11 @@ export function createDrizzleProjectRepository(
               title,
               reserved.map((row) => row.slug),
             ),
-            isPersonal: false,
             systemPrompt: input.description ?? null,
           })
           .returning();
         if (!row) throw new Error("Failed to create project");
-        await provisionProjectSources(db, row.id, { personal: false });
+        await provisionProjectSources(db, row.id);
         await deps.ensureNoWork(row.id);
         return mapProject(row);
       });
