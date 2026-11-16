@@ -92,6 +92,12 @@ export interface WriteContext {
   responseIdentity?: ResponseAuthorship;
   /** Host-routed: the Work draft a draft call reads and saves (`DocumentAccess.workDraftId`). */
   workDraftId?: string;
+  /**
+   * Host-routed: the closed Work draft the model's latest view of this document came from, when
+   * `workDraftId` is the new draft opened after it. A block the model names that the new draft
+   * lacks is found in that view, and its words land at the nearest block both hold.
+   */
+  supersededWorkDraftId?: string;
   /** Version requested at the routing boundary, independent of the view used to render links. */
   documentVersion?: "live" | "draft";
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */

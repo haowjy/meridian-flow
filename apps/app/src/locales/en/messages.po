@@ -1193,8 +1193,8 @@ msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
-msgstr "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+#~ msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+#~ msgstr "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "A skill named {name} is already here."
@@ -8263,8 +8263,8 @@ msgid "You can't open these files."
 msgstr "You can't open these files."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
-msgstr "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+#~ msgid "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+#~ msgstr "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "You don't have access to change this."

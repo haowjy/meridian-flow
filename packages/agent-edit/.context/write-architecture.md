@@ -148,12 +148,19 @@ a paragraph alone never joins independent writes. A live write merges one update
   to the host's provenance, never a text diff. Every person prints as `the user`.
 - A result never tells the model to read again or to retry. A write that cannot land because the
   document changed under its view answers `returned` (`returnedWriteResult`): the block it named
-  is gone (`block_gone`, decided by `hasMissingTarget` against the room copy), or the host found
-  its draft closed, its Work closed or its document removed. The result carries the document as
-  it stands, recorded as the model's latest view, so its next write plans on it. A hash or
-  number the view does not hold (`not_found`) carries the current text for the same reason. An
-  insert whose anchor block was deleted is not missing its target: it is new words, applied on
-  the view, and Yjs places it after the anchor's tombstone, where the anchor was. An undo
+  is gone from a draft still open (`block_gone`, decided by `hasMissingTarget` against the room
+  copy), or the host found its Work closed or its document removed. The result carries the
+  document as it stands, recorded as the model's latest view, so its next write plans on it. A
+  hash or number the view does not hold (`not_found`) carries the current text for the same
+  reason. An insert whose anchor block was deleted is not missing its target: it is new words,
+  applied on the view, and Yjs places it after the anchor's tombstone, where the anchor was. A
+  draft the writer discarded is not one of these: the host opens a new draft over the document
+  and names the closed one in `WriteContext.supersededWorkDraftId`. The write plans on the new
+  draft's text; a one-block `in`, `after` or `before` that names a block only the closed draft
+  held is resolved in the model's view of it (`gone-targets.ts`) and re-aimed after the nearest
+  block both hold, a replace becoming an insert there and a remove changing nothing, so every
+  word lands. A range or an `around` that names such a block is not re-aimed and answers
+  `not_found` with the current text. An undo
   or revert that finds its text applied, discarded or changed since is `done` and says what was
   left (`cant_*`, `insufficient_*`, `nothing_to_revert` are outcomes, not errors).
 - Provider tool IDs are response-local: the host keys a write by response and tool call, so

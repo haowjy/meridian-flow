@@ -24,6 +24,7 @@ import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
 import type { DocumentSave } from "./document-save.js";
+import { retargetGoneBlock } from "./gone-targets.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import { type ListingSource, recordObservation } from "./observation.js";
@@ -362,6 +363,15 @@ export function createWriteCommands(deps: {
     const actor = mutationActor(session, address.documentId, context);
     return withRoom({ docId: address.documentId, commandName: command.command, context }, (room) =>
       withPlanDoc(room, address.documentId, context, actor, async (planDoc) => {
+        const gone = await withSupersededView(context, address.documentId, (view) =>
+          retargetGoneBlock(
+            options.model,
+            { ...selectors, documentAddress: address },
+            toDocHandle(view),
+            toDocHandle(planDoc),
+          ),
+        );
+        if (gone && gone.aimed === null) return formatUnchangedSuccess();
         const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
         const links = await openCommandLinks(options, {
           documentId: address.documentId,
@@ -372,6 +382,7 @@ export function createWriteCommands(deps: {
         });
         // Planning fixes scope, matches and a find's reconstructed groups; what
         // ref assignment will see is only known then, so it loads before assignment runs.
+        const aimed = gone?.aimed ?? { ...selectors, documentAddress: address };
         const plan = planWrite(
           {
             doc: toDocHandle(planDoc),
@@ -379,8 +390,7 @@ export function createWriteCommands(deps: {
             codec: links.codec,
           },
           {
-            ...selectors,
-            documentAddress: address,
+            ...aimed,
             ...(copiedNodes ? { blocks: copiedNodes } : {}),
           },
         );
@@ -429,7 +439,7 @@ export function createWriteCommands(deps: {
         }
         validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
         if (resolved.edits.length === 0) return formatUnchangedSuccess();
-        return finishPreparedEdit({
+        const finished = await finishPreparedEdit({
           command,
           session,
           context,
@@ -443,8 +453,53 @@ export function createWriteCommands(deps: {
           plan: { edits: resolved.edits, ir: resolved.ir },
           ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
         });
+        const note = gone?.aimed ? gone.note : undefined;
+        return note
+          ? {
+              ...finished,
+              model: {
+                ...finished.model,
+                message: [note, finished.model?.message].filter(Boolean).join("\n"),
+              },
+            }
+          : finished;
       }),
     );
+  }
+
+  /**
+   * `use` with the model's view of the closed draft this write's new draft replaced, or none
+   * when the host names no such draft or the model's cut of it is gone.
+   */
+  async function withSupersededView<T>(
+    context: WriteContext,
+    docId: string,
+    use: (view: Y.Doc) => T,
+  ): Promise<T | undefined> {
+    const prior = context.supersededWorkDraftId;
+    const planning = context.frontiers?.planning;
+    if (!prior || !planning) return undefined;
+    const opened = await openRoom(options.coordinator, {
+      docId,
+      commandName: "replace",
+      workDraftId: prior,
+    });
+    if (isInternalWriteResult(opened)) return undefined;
+    let view: Y.Doc | null = null;
+    try {
+      const snapshot = opened.room
+        ? planningSnapshot(opened.doc, opened.room, await planning(opened.room))
+        : null;
+      view =
+        snapshot &&
+        createPlanningView(opened.doc, snapshot, [
+          ...(context.frontiers?.reply?.updates(docId) ?? []),
+        ]);
+      return view ? use(view) : undefined;
+    } finally {
+      view?.destroy();
+      opened.dispose();
+    }
   }
 
   interface PreparedEdit {

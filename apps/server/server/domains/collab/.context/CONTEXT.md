@@ -229,13 +229,17 @@ An undo or revert records in the room its inverse committed into
 (`DocumentEditResult.room`). `format: "edits"` reads record none.
 A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
-A write to a Work draft that closed after the model last read it is returned by the
-closed-draft rule in `model-edit-write.ts` (`closedDraftSeen`), before a branch or draft opens:
-a `done` row with `settled: returned`, and the document as that chat reads it now, its evidence
-stored in the row so the model's next write plans on it. The same answer covers an archived or
-deleted Work's draft, a removed document and a block the writer deleted, merged or moved
-(`block_gone`, from the write core). An insert whose anchor block the writer deleted lands where
-the anchor was: it is new words, and the anchor's tombstone still places them.
+A write to a Work draft that a Discard or a restore closed after the model last read it lands in
+a new draft (`closedDraftSeen` in `model-edit-write.ts`), seeded from the document as it stands,
+and the result says the earlier draft closed and this edit opened a new one. The core plans on
+the current text, and finds a block only the closed draft held in the model's view of it
+(`supersededWorkDraftId`, `tool/gone-targets.ts`): its words land after the nearest block both
+hold, and a remove of it changes nothing. A removed document, an archived or deleted Work's draft
+return the write instead: a `done` row with `settled: returned`, and the document as that chat
+reads it now, its evidence stored in the row so the model's next write plans on it. A block the
+writer deleted, merged or moved in a draft that is still open is returned too (`block_gone`, from
+the write core). An insert whose anchor block the writer deleted lands where the anchor was: it is
+new words, and the anchor's tombstone still places them.
 
 Replay treats ordinary concurrent chat edits and writer deletions as Yjs peers. A
 planning-visible item disappearing is not by itself evidence against a write. Only

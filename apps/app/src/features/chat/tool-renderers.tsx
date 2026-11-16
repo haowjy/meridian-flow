@@ -359,10 +359,6 @@ function documentFailureRemoval(tool: ToolView): {
 /** An edit the document's state returned: nothing was kept, and the AI was shown the document as it stands. */
 function returnedWriteCopy(why: string | null, name: string | null, tool: ToolView): string {
   switch (why) {
-    case "draft_discarded":
-      return t`You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
-    case "draft_replaced":
-      return t`A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
     case "document_removed":
       return removedWriteCopy(name, documentFailureRemoval(tool));
     case "work_archived":
