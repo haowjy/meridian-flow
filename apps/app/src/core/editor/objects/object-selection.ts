@@ -9,6 +9,7 @@ import {
 } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 
+import { landAt } from "../extensions/nesting";
 import { isEditorObject, isOpaqueObject, isSourceBlock, objectBody } from "./object-types";
 
 export type ObjectAt = { node: PMNode; pos: number };
@@ -323,8 +324,27 @@ export function documentEndTransaction(state: EditorState): Transaction | null {
   const { doc } = state;
   const $end = doc.resolve(doc.content.size);
   if (gapCursorFits($end)) return state.tr.setSelection(new GapCursor($end)).scrollIntoView();
-  if (!isSourceBlock(Selection.atEnd(doc).$head.parent)) return null;
-  return paragraphAfterTransaction(state, $end)?.scrollIntoView() ?? null;
+  const last = Selection.atEnd(doc);
+  if (!isSourceBlock(last.$head.parent)) return null;
+  const transaction = state.tr.setSelection(last);
+  return exitFence(transaction) ? transaction : null;
+}
+
+/**
+ * A new line after the fence the caret is in, inside the same quotes and list item as the fence:
+ * Enter on its closing blank line, ArrowDown off its end, and the document's end all make it here.
+ */
+export function exitFence(tr: Transaction): boolean {
+  const { $head } = tr.selection;
+  const fence = $head.parent;
+  const above = $head.node(-1);
+  const after = $head.indexAfter(-1);
+  const line = above.contentMatchAt(after).defaultType?.createAndFill();
+  if (!line || !above.canReplaceWith(after, after, line.type)) return false;
+  const pos = $head.after();
+  tr.insert(pos, landAt([line], fence));
+  tr.setSelection(Selection.near(tr.doc.resolve(pos + 1))).scrollIntoView();
+  return true;
 }
 
 /** prosemirror-gapcursor ships `GapCursor.valid` but does not declare it, so the reach into an undeclared static lives here and nowhere else. */

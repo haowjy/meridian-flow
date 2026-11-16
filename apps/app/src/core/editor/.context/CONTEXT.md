@@ -144,7 +144,8 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
   text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the forced-render
   selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
-  capture and restore (`resolveRelativeCellSelection`), and `recoverSelectionEndpoint` trusting a
+  capture and restore (`resolveRelativeCellSelection`), the gap-cursor restore (a remote edit
+  used to turn the gap below a final table into a caret in its last cell), and `recoverSelectionEndpoint` trusting a
   position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`; upstream
   [tiptap#8594](https://github.com/ueberdosis/tiptap/issues/8594), open: drop this change once a release fixes it).
 - Undo step boundaries: y-tiptap 3.x closes the capture window only for a document-changing
@@ -371,10 +372,13 @@ keyboard, pointer, drop, or draft-recovery answer.
   the last block all go through `documentEndTransaction`. After a table, figure,
   rule or other block object that is the gap cursor. After a fence or diagram,
   which no gap cursor can follow, it is a new empty line, the only way to reach
-  that spot; the fence's own ArrowDown (`exitFence`) makes the same line. The
-  line is written by that one action, never kept as a standing trailing node
-  (every client would write one at once and fight), so one undo removes it, and
-  a document already ending on an empty paragraph gets the caret there. A press
+  that spot. `exitFence` builds it, the same line the fence's own ArrowDown and
+  Enter make, in the fence's quotes and list item. The line is written by that
+  one action, never kept as a standing trailing node: a standing node would be
+  written by every client on every load; this one only by the writer who acts.
+  So one undo removes it, a document already ending on an empty paragraph gets
+  the caret there, and two writers pressing at once get two lines (both writes
+  kept). A press
   never makes a paragraph anywhere else, and a press in a cell never makes one.
   Ctrl/Cmd+Home goes to the gap cursor before a table or object that starts the
   document (`documentStartTransaction`). A press that lands
