@@ -13,7 +13,7 @@ page says where each part lives and what the code decided where the design left 
 | `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`), `freeName`: numbering, from the contracts filename codec |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
-| `replay.ts` | `replay`: rules 1 to 13, then one pass over the nodes for Trash, kept folders and names |
+| `replay.ts` | `startReplay`, an open replay (`push`, `wouldTake`, `standing`, `finish`); `replay` is `startReplay(values).finish()`: rules 1 to 13, then one pass over the nodes for Trash and kept folders (`stand`), then the names |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
 | `writer.ts` | `TreeWriter`: makes records in one copy of the list |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
@@ -126,28 +126,28 @@ the replay uses them (package `AGENTS.md`).
   stale Undo has to take that copy out, so a later Undo of the other Undo doesn't find the change
   still taken out by the Apply. The record is a move when the place turns, a rename when only the
   name does (the replay's Trash reads that: a rename leaves the deletes a move lifted lifted), and
-  otherwise of the base change's type. `takeBack` is the same, saying which fact of a move that
+  otherwise of the base change's type. `takeBackAll` also says which fact of a move that
   also set a name stays (`kept`), for `undoApply`'s `left`.
-  Every Undo asks `closed(source)` of the sources its record's replay reports
-  (`Change.sources`): a record into a closed source is not written and answers
-  `{ closed: source }`. The record is judged on `writer.preview` (a replay of the view with the
-  record appended, the list untouched) and written only when it lands, with that replay kept as the
-  writer's view (`append(record, { view, projection })`): one replay per record either way, and a
-  held Undo leaves no trace in the list, which has no deletions and no server writes but real
-  records. Never append and take back: the Yjs delete set it leaves is journaled and broadcast, and
-  admission refuses a copy that has one.
-  `undoReports` is the estimate: what each record's Undo would do and the sources it would change,
-  for the owners to lock and the chip, from one replay with every opposite record in it, given in
-  the order the Undo takes them. With `closed`, the records that hit a closed source are held and
-  one more replay reads the rest without them, until a replay finds no hit (`holdClosed`). A hit
-  whose node or destination sits under a folder an earlier hit keeps out waits for that replay, so
-  a held parent folder's return does not hold an independent child rename, however many records
-  hit: the replays are the length of that chain plus one, not one per record. Two records on one
-  node are read from one list state here.
-  `takeBackAll` is the press for one command's records (Un-Apply): the same replays shared, and
-  only the records that land are written, in one transaction. A node's records go a layer at a time
-  (its newest first, then the next), since the Undo of the first changes what the Undo of the
-  second means. `undoChange` and `takeBack` stay one record at a time, for the receipts.
+  Every Undo is one walk (`takeBack` in `undo.ts`; `undoChange` is a walk of one step, `takeBackAll`
+  the press of many, `undoReports` the estimate): the steps (`{ id, view }`) are taken back in the
+  order given, each against the tree the earlier ones left. Per view one replay stays open
+  (`startReplay`). A step's opposite record is made from `replay.standing()`, `replay.wouldTake`
+  says whether the replay would skip it (`purged`, `changed_since`) or the sources it would change
+  (`Change.sources`), and only a record that lands is `push`ed. `closed(source)` is asked of those
+  sources: a record into a closed source is never pushed or written and answers `{ closed: source }`,
+  so what the steps after it read is the tree without it, and a held Undo leaves no trace in the
+  list, which has no deletions and no server writes but real records. Never append and take back:
+  the Yjs delete set it leaves is journaled and broadcast, and admission refuses a copy that has
+  one. The records that landed are written at the end in one transaction (`appendAll`), and the open
+  replays are kept as the writer's views. The estimate is the same walk with nothing written, so it
+  equals its press only on the same steps in the same order: each caller builds both from one list
+  of steps. A Work's view is live then its pending records, so the Work's replay is started again
+  when a record landed in live since (a card's reply that alternates applied and drafted receipts);
+  `pendingText` is the text a Work's view holds pending, which the list cannot show. An id given
+  twice is walked once. A step costs one pass over the nodes (`standing`), about 5 ms per 25,000.
+  `push` and `wouldTake` refuse a purge (rule 10 reads purges before the fold starts), and `push`
+  after `finish` throws. `step` in `replay.ts` is the loop body for both: every check that skips a
+  record comes before anything it changes, which is what makes `wouldTake` change nothing.
 - **Creates, deletes and restores** follow the same in-force rule, but Trash keeps its own
   record-order account: it counts each delete of a node, and a restore lifts deletes outside any
   Undo chain (a plain restore, rule 9). `undoChange` on them takes back the record in force
@@ -206,7 +206,7 @@ the replay uses them (package `AGENTS.md`).
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
   `purged`, `already`, `has_text`, `closed` with the source). A move that also set a name is two facts: its Undo changes
   whichever no later change holds (a move without the name, or a rename whose undo puts no delete
-  back), and `left` names the one that stays (`fact`, from `takeBack`'s `kept`). `undoChange` answers
+  back), and `left` names the one that stays (`fact`, from `takeBackAll`'s `kept`). `undoChange` answers
   `changed_since | purged | already | unknown`, or `{ closed }`. `changeUndone` reads a change's
   records together: `acts`, `changed_since`, `purged`, `closed` (the one that can pass, so last),
   or `taken`.

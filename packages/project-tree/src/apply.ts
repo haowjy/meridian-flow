@@ -582,9 +582,8 @@ export function undoApply(
     );
     const answers = takeBackAll(
       writer,
-      LIVE,
       by,
-      asked.map((copy) => copy.id),
+      asked.map((copy) => ({ id: copy.id, view: LIVE })),
       options.closed,
     );
     for (const copy of copies) {

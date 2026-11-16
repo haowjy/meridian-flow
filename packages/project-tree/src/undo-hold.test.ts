@@ -16,12 +16,13 @@ function setup() {
   const X = w.create(LIVE, "system", { parent: P.node, name: "X", kind: "folder" });
   return { doc, w, P, X };
 }
+const inLive = (...ids: string[]) => ids.map((id) => ({ id, view: LIVE }));
 it("independent: held parent move, child rename in the same moved folder", () => {
   const { w, P, X } = setup();
   const r1 = w.rename(LIVE, "system", X.node, "Y");
   const r2 = w.move(LIVE, "system", P.node, "source:A");
   const before = Y.encodeStateVector(w.doc);
-  const reports = undoReports(w, LIVE, [r2.id, r1.id], closed);
+  const reports = undoReports(w, inLive(r2.id, r1.id), closed);
   expect(reports.get(r1.id)?.sources.some(closed)).toBe(false);
   expect(reports.get(r2.id)?.sources.some(closed)).toBe(true);
   // the press, record by record
@@ -37,11 +38,11 @@ it("dependent: child's way back goes into the parent, which stays out", () => {
   const { w, P, X } = setup();
   const r1 = w.move(LIVE, "system", X.node, "source:A");
   const r2 = w.move(LIVE, "system", P.node, "source:A");
-  const reports = undoReports(w, LIVE, [r2.id, r1.id], closed);
+  const reports = undoReports(w, inLive(r2.id, r1.id), closed);
   expect(reports.get(r2.id)?.sources.some(closed)).toBe(true);
   expect(reports.get(r1.id)?.sources.some(closed)).toBe(false);
   // without `closed` the batch reads the child through the parent's return: B
-  const naive = undoReports(w, LIVE, [r2.id, r1.id]);
+  const naive = undoReports(w, inLive(r2.id, r1.id));
   expect(naive.get(r1.id)?.sources.some(closed)).toBe(true);
   expect(undoChange(w, LIVE, "system", r2.id, closed)).toEqual({ closed: "B" });
   const back = undoChange(w, LIVE, "system", r1.id, closed);

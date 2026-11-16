@@ -23,7 +23,7 @@ import {
   sourceIdOf,
   type TreeProjection,
   TreeWriter,
-  undoChange,
+  takeBackAll,
   type View,
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
@@ -467,12 +467,15 @@ function takeBack(
   pendingText?: ReadonlySet<string>,
 ): boolean {
   const writer = writerOf(session, view, pendingText);
-  let undone = 0;
-  // One update per opposite record: each is judged against the replay the one before it left.
-  for (const record of [...step.records].reverse()) {
-    // No source is closed here: admission drops a record into one when the update reaches the server.
-    const answer = undoChange(writer, view, actor, record, () => false);
-    if (typeof answer !== "string") undone += 1;
-  }
-  return undone > 0;
+  // One walk: each record is judged against the list the one before it left, and the records that
+  // land go into the list as one update. No source is closed here: admission drops a record into
+  // one when the update reaches the server.
+  const walked = takeBackAll(
+    writer,
+    actor,
+    [...step.records].reverse().map((id) => ({ id, view })),
+    () => false,
+    pendingText,
+  );
+  return [...walked.values()].some((back) => typeof back !== "string");
 }

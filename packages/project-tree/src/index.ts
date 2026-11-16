@@ -84,9 +84,11 @@ export {
   type ClosedUndo,
   changeUndone,
   deleteStands,
+  type TakenBack,
   takeBackAll,
   type UndoAnswer,
   type UndoReport,
+  type UndoStep,
   undoChange,
   undoReports,
 } from "./undo.js";

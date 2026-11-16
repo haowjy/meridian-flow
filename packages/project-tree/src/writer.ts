@@ -18,10 +18,10 @@ import {
   type TreeRecord,
   type TreeRecordInput,
 } from "./record.js";
-import { replay, type TreeProjection } from "./replay.js";
+import type { TreeProjection } from "./replay.js";
 import { childrenOf, descendantsOf, nameAmong, rankAmong } from "./shape.js";
 import { writable } from "./validate.js";
-import { LIVE, lastOfFamily, replayView, type View, viewValues } from "./view.js";
+import { droppedRecords, LIVE, lastOfFamily, replayView, type View } from "./view.js";
 
 /**
  * Makes records in one copy of the list, against what that copy's own view shows. The browser
@@ -80,29 +80,26 @@ export class TreeWriter {
     } as TreeRecord);
   }
 
-  /**
-   * The view's tree as it would stand with `records` appended in order, replayed from the list's
-   * values. The list is not written: a record judged on this and held leaves no trace in it,
-   * which only ever grows.
-   */
-  preview(view: View, records: readonly TreeRecord[]): TreeProjection {
-    return {
-      ...replay([...viewValues(this.doc, view), ...records], { draft: view.draft }),
-      dropped: this.view(view).dropped,
-    };
+  /** Appends one record. */
+  append(record: TreeRecord): void {
+    this.transact(() => recordsOf(this.doc).push([record]));
   }
 
   /**
-   * Appends one record. `seen` is `preview(view, [record])`, which the writer then keeps as the
-   * view's replay: the next read of the view is not another replay of the whole list.
+   * Appends records in one transaction. `seen` are the replays of the views with them appended,
+   * which the writer then keeps: the next read of each is not another replay of the whole list.
    */
-  append(record: TreeRecord, seen?: { view: View; projection: TreeProjection }): void {
-    this.transact(() => recordsOf(this.doc).push([record]));
-    if (seen)
-      this.replays.set(seen.view.draft, {
+  appendAll(
+    records: readonly TreeRecord[],
+    seen: ReadonlyArray<{ view: View; projection: TreeProjection }>,
+  ): void {
+    this.transact(() => recordsOf(this.doc).push([...records]));
+    const dropped = droppedRecords(this.doc);
+    for (const { view, projection } of seen)
+      this.replays.set(view.draft, {
         records: recordsOf(this.doc).length,
         settles: settleLogOf(this.doc).length,
-        projection: seen.projection,
+        projection: { ...projection, dropped },
       });
   }
 

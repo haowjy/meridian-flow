@@ -3,7 +3,7 @@
  * its tree receipts and its text edits, ordered by the write ordinal both take from the node's
  * counter, with what was undone left out. Undo takes the newest of them (`count` of them), so a
  * move is reached after a later text edit has been undone, and a text edit made after a move is
- * taken first. The tree receipts are taken back here, each record by the package's `undoChange`
+ * taken first. The tree receipts are taken back here, in one walk of the package's `takeBackAll`
  * (which finds the record's copy when an Apply or a restored Discard replaced it); what is left
  * for the text engine goes back to the caller. A drafted change is taken back in the Work's
  * draft, and in live once an Apply has landed it.
@@ -208,8 +208,8 @@ async function reverseReceipt(
       read: ({ writer, view }) =>
         undoReports(
           writer,
-          view,
-          receipt.records.map((entry) => entry.record),
+          // The order `runTreeUndo` takes them: an estimate equals its press only on the same steps.
+          receipt.records.toReversed().map((entry) => ({ id: entry.record, view })),
         ),
     });
     return new Set(read.ok ? [...read.value.values()].flatMap((report) => report.sources) : []);

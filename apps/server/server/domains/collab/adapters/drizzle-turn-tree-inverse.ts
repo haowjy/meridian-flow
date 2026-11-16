@@ -1,6 +1,6 @@
 /**
  * The tree half of a card's Undo of a reply: the reply's tree receipts (the model's moves,
- * renames, deletes and creates), taken back by the package's `undoChange` in the list that
+ * renames, deletes and creates), taken back by the package's `takeBackAll` in the list that
  * holds each node, as one step of the card's command. The receipts are the history the
  * model's own `undo` chooses from (`tree_edit_receipts` and their `reverses` links), and each
  * reversal is recorded as a receipt in turn, so the model's `undo` and the card's see one order.
@@ -15,10 +15,12 @@ import {
   type DraftedFate,
   draftedFates,
   LIVE,
+  type TakenBack,
   type TreeWriter,
+  takeBackAll,
   type UndoAnswer,
   type UndoReport,
-  undoChange,
+  type UndoStep,
   undoReports,
   type View,
 } from "@meridian/project-tree";
@@ -174,7 +176,7 @@ export function createTurnTreeInverse(deps: {
   }
 
   /**
-   * The reply's receipts by what the card's Undo would do with each, judged by `undoChange` on
+   * The reply's receipts by what the card's Undo would do with each, judged by `takeBackAll` on
    * the lists as they stand: the steps it takes, those already taken, and those that stay.
    */
   async function plan(
@@ -396,13 +398,14 @@ export function createTurnTreeInverse(deps: {
       const { result } = await deps.treeLists.submit({
         lists: [list],
         make: ([{ writer }]) => {
+          const walked = takeBackAll(writer, actor, stepsOf(receipts), judge.closed);
           const taken = receipts.map((receipt) => {
             const made: { record: string; node: string }[] = [];
             const answers: UndoAnswer[] = [];
             let inLive = receipt.draftBranchId === null;
             let closed: ClosedSource | undefined;
-            for (const entry of [...receipt.records].reverse()) {
-              const back = undoChange(writer, viewOf(receipt), actor, entry.record, judge.closed);
+            for (const entry of receipt.records.toReversed()) {
+              const back = walked.get(entry.record) as TakenBack;
               if (typeof back === "string") answers.push(back);
               else if ("closed" in back) {
                 answers.push(closedAnswer(judge, back.closed));
@@ -410,8 +413,8 @@ export function createTurnTreeInverse(deps: {
                 if (fate?.kind === "closed") closed ??= fate;
               } else {
                 answers.push("undoes");
-                if (back.draft === null) inLive = true;
-                made.push({ record: back.id, node: entry.node });
+                if (back.record.draft === null) inLive = true;
+                made.push({ record: back.record.id, node: entry.node });
               }
             }
             const fate = changeUndone(answers.filter((answer) => answer !== "undoes"));
@@ -463,25 +466,18 @@ export function createTurnTreeInverse(deps: {
 }
 
 /**
- * What `undoChange` would do with each of the receipts' records, in each receipt's own view,
- * writing nothing: the records in the order the Undo takes them (a receipt's newest first).
+ * The steps of an Undo of the receipts, in the order the press takes them: each receipt's records
+ * newest first, each in its receipt's own view. An estimate walks these same steps, so it equals
+ * the press. A record belongs to one receipt: a walk answers an id once.
  */
-function reportsOf(
+const stepsOf = (receipts: readonly TreeReceipt[]): UndoStep[] =>
+  receipts.flatMap((receipt) =>
+    receipt.records.toReversed().map((entry) => ({ id: entry.record, view: viewOf(receipt) })),
+  );
+
+/** What the Undo of the receipts' records would do, writing nothing (`stepsOf`'s walk). */
+const reportsOf = (
   writer: TreeWriter,
   receipts: readonly TreeReceipt[],
   closed?: (source: string) => boolean,
-) {
-  const byView = new Map<string | null, TreeReceipt[]>();
-  for (const step of receipts)
-    byView.set(step.draftBranchId, [...(byView.get(step.draftBranchId) ?? []), step]);
-  const reports = new Map<string, UndoReport>();
-  for (const steps of byView.values())
-    for (const [record, report] of undoReports(
-      writer,
-      viewOf(steps[0] as TreeReceipt),
-      steps.flatMap((step) => step.records.toReversed().map((entry) => entry.record)),
-      closed,
-    ))
-      reports.set(record, report);
-  return reports;
-}
+) => undoReports(writer, stepsOf(receipts), closed);

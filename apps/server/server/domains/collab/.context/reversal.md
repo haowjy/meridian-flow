@@ -100,7 +100,7 @@ be removed or restored, else `changed`; a part an Undo already took out is `chan
 `kernelCause` words it `already_undone` from the action index. Un-Apply inverts a group the same
 way as the card.
 A card's reversal decides which tree steps can still act before it plans or admits any text
-(`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from `undoChange`'s answers as the lists
+(`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists
 stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's branch
 places the node. A step that can't act is a skip and never runs, so one purged document never
 refuses the rest of the reply. The text targets and the grants come from the steps that act. A
@@ -168,7 +168,7 @@ what the reply did, and the card leaves it). The receipts one list holds go back
 it redraws once for the whole Undo, not once a receipt. A create's receipt holds the folders the
 create made on the way (outermost first), so its Undo takes them back with it. It
 chooses from the same receipts and `reverses` links the model's `undo` does (`turnSteps`), takes
-each back by `undoChange` in the list that holds the node, and records the reversal as a
+each list's receipts back in one walk (`takeBackAll`) in the list that holds the node, and records the reversal as a
 receipt, so the two histories are one. The model's `undo` reads the same fate (`runTreeUndo`):
 `taken` answers `reversed` and records the empty reversal, a receipt that stayed answers
 `cant_undo_changed`, the card's skip, or `purged` when what it touched is gone (the card's `purged` too). A reply that touched both a project's
@@ -200,7 +200,7 @@ with what was undone left out (`TreeHistory.historyOf`: the receipts that took a
 not reversed, and the ordinals the text engine's
 own stack gives, `modelStack`). Model `undo` takes the newest `count` of them across both kinds,
 and `revert` the receipt
-the handle names. Tree records go back through the package's `undoChange`, which finds the live
+the handle names. Tree records go back through the package's `takeBackAll`, which finds the live
 copy of an applied or restored change by `carries`, and takes back only what the receipt did:
 what others put in a folder it made stands and keeps it standing. The records an Undo makes name
 what they take back (`undoes`), including Undo receipts. A model `move` between a project and `user://`
@@ -256,14 +256,14 @@ those outcomes and refresh the turn query. Every skipped part carries a typed `c
 (`TurnInverseSkipCause`) and the app words it; a tree skip names the path its entry was shown
 at, its `op`, and `changed_since`, `purged` or `returned`.
 
-Each tree receipt's fate is decided once, from `undoChange`'s own answers for its records
+Each tree receipt's fate is decided once, from the walk's own answers for its records
 (`changeUndone` in `@meridian/project-tree`), and the planner, the reversal's status, the chip
 and the model's `undo` all read it. The card's planner (`drizzle-turn-tree-inverse.ts` `plan`)
-asks with `undoReports`, which writes nothing, inside its one read of each list (one replay with
-every opposite record in it), then judges the sources they name (`answerOf`). When an owner is
-closed it reads the lists again with `judge.closed`, so a held record is out of the replay its
-neighbours are read from (a parent's return to an archived Work does not hold an independent
-child rename), and it judges the sources that read names, until they hold:
+asks with `undoReports`, which writes nothing, inside its one read of each list (one walk over
+the list's receipts in press order, each record in its receipt's view: the estimate equals its press
+only on the same steps in the same order), then judges the sources they name (`answerOf`). When an
+owner is closed it reads the lists again with `judge.closed`, so a held record is out of the tree
+its successors are read from, and it judges the sources that read names, until they hold:
 - `acts`: some record would be taken back. Only these are steps the chip offers Undo for.
 - `taken`: every record's opposite already stands (the writer restored what the model
   deleted, or deleted what it created). It counts as taken back: the Undo records an empty

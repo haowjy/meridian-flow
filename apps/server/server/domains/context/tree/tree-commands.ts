@@ -20,12 +20,13 @@ import {
   settledRecords,
   sourceIdOf,
   sourceRoot,
+  type TakenBack,
   type TrashEntry,
   type TreeNode,
   type TreeProjection,
   type TreeRecord,
+  takeBackAll,
   type UndoAnswer,
-  undoChange,
 } from "@meridian/project-tree";
 import { type ClosedSource, closedAnswer, type TreeJudge } from "../../../shared/tree-owners.js";
 import type { TreeScope } from "../ports/context-adapter.js";
@@ -1062,8 +1063,8 @@ export type UndoneTree = {
 };
 
 /**
- * Takes a receipt's records back, newest first, each by the package's `undoChange` (which finds
- * a record's copy after an Apply or a restored Discard). Only what the receipt did is taken back:
+ * Takes a receipt's records back, newest first, in one walk of the package's `takeBackAll` (which
+ * finds a record's copy after an Apply or a restored Discard). Only what the receipt did is taken back:
  * what others put in a folder it made stands, and keeps the folder standing.
  */
 export function runTreeUndo(
@@ -1087,8 +1088,15 @@ export function runTreeUndo(
   const answers: UndoAnswer[] = [];
   let inLive = scope.view.draft === null;
   let closed: ClosedSource | undefined;
-  for (const entry of [...records].reverse()) {
-    const back = undoChange(scope.writer, scope.view, scope.actor, entry.record, judge.closed);
+  const newestFirst = [...records].reverse();
+  const walked = takeBackAll(
+    scope.writer,
+    scope.actor,
+    newestFirst.map((entry) => ({ id: entry.record, view: scope.view })),
+    judge.closed,
+  );
+  for (const entry of newestFirst) {
+    const back = walked.get(entry.record) as TakenBack;
     if (typeof back === "string") answers.push(back);
     else if ("closed" in back) {
       answers.push(closedAnswer(judge, back.closed));
@@ -1096,8 +1104,8 @@ export function runTreeUndo(
       if (fate?.kind === "closed") closed ??= fate;
     } else {
       answers.push("undoes");
-      if (back.draft === null) inLive = true;
-      remember(cx, back.id, entry.node);
+      if (back.record.draft === null) inLive = true;
+      remember(cx, back.record.id, entry.node);
     }
   }
   // The answers about sources the locks missed were guesses: nothing of this commits.
