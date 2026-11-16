@@ -303,8 +303,8 @@ importers:
         specifier: ^6.4.0
         version: 6.4.0(babel-plugin-macros@3.1.0)(react@19.2.7)(supports-color@7.2.0)
       '@meridian-flow/mars-schema':
-        specifier: 0.34.1
-        version: 0.34.1
+        specifier: 0.34.5
+        version: 0.34.5
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -592,8 +592,8 @@ importers:
         specifier: 4.8.0
         version: 4.8.0(srvx@1.0.8)(y-protocols@1.0.7(yjs@13.6.33(patch_hash=599ba77cec8aac3ffb466d8939d0139c385fa337e88629ed88247bab7f485ed5)))(yjs@13.6.33(patch_hash=599ba77cec8aac3ffb466d8939d0139c385fa337e88629ed88247bab7f485ed5))
       '@meridian-flow/mars-schema':
-        specifier: 0.34.1
-        version: 0.34.1
+        specifier: 0.34.5
+        version: 0.34.5
       '@meridian-flow/runtime':
         specifier: 'catalog:'
         version: 0.3.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(ws@8.21.0)
@@ -2418,8 +2418,8 @@ packages:
       rolldown:
         optional: true
 
-  '@meridian-flow/mars-schema@0.34.1':
-    resolution: {integrity: sha512-/5bJ7TjK9TtWAp04iRvDJ8ioG+w1bM28LYlWaxGSJpxtn0nv7bDN6z0UOU2UPez7RmgzdBB1WsFnHHGgeabGvw==}
+  '@meridian-flow/mars-schema@0.34.5':
+    resolution: {integrity: sha512-f0BMCOCb2m2KeqTBw8SpD6YL1HfCH0hAXfLMyvLuZnTfUojwHISPWYS6DYSSJNYo/TLxY9P3OmjVWUGnduvkHQ==}
 
   '@meridian-flow/runtime@0.3.0':
     resolution: {integrity: sha512-OZDjDp736KjP2m8g31PstcRIRHsonySj5FfNWP8qLgOXRMjDZgE+Wx5yXOcHakqf5jqsiZ62P2BnkYk6GPaR9A==}
@@ -8541,7 +8541,7 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  '@meridian-flow/mars-schema@0.34.1': {}
+  '@meridian-flow/mars-schema@0.34.5': {}
 
   '@meridian-flow/runtime@0.3.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(ws@8.21.0)':
     dependencies:

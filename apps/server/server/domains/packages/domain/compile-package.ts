@@ -479,13 +479,15 @@ function projectTools(rules: AgentFields["tools"], file: string, draft: Draft): 
     "meridian-flow",
   );
   projection.rules.forEach((projected, position) => {
-    if (projected.status !== "unscopable" && projected.status !== "unknown") return;
     const { capability, pattern, action } = projected.rule;
     const named = `${capability}${pattern === null ? "" : `(${pattern})`}: ${action}`;
     const message = `Tool rule ${named}: ${projected.note ?? projected.status}`;
-    draft.errors.push(
-      flow(file, `tools-${projected.status}`, message, "error", ["tools", sent[position].index]),
-    );
+    const at = ["tools", sent[position].index];
+    if (projected.status === "unscopable" || projected.status === "unknown")
+      draft.errors.push(flow(file, `tools-${projected.status}`, message, "error", at));
+    // A rule Mars knows but Flow can only meet more narrowly (an `mcp` rule for one server) says so.
+    else if (projected.status === "known" && projected.note)
+      draft.warnings.push(flow(file, "tools-narrowed", message, "warning", at));
   });
   if (projection.ask.length || projection.default === "ask") {
     const named = projection.default === "ask" ? ["*", ...projection.ask] : projection.ask;
@@ -603,9 +605,10 @@ function toolsOf(
   if (!projection) return {};
   const on = [...optIn];
   // An opt-in tool beside no allow-list must not turn the file's default (every tool) into just it.
+  const published = new Set<string>(TOOL_CATALOG);
   const tools =
     projection.default === "deny"
-      ? [...projection.allow, ...projection.ask, ...on]
+      ? [...[...projection.allow, ...projection.ask].filter((name) => published.has(name)), ...on]
       : on.length
         ? [...TOOL_CATALOG, ...on]
         : undefined;
