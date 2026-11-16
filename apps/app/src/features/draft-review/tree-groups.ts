@@ -55,6 +55,7 @@ export function groupsOf<T>(groups: readonly ChangeGroup<T>[]): ChangeGroup<T>[]
  */
 export type WorkTreeChanges = {
   work: Pick<TreeProjection, "nodes" | "skipped">;
+  live: Pick<TreeProjection, "nodes">;
   pending: readonly TreeRecord[];
   faults: ReadonlyMap<string, LandingFault>;
   /** `changedFolders`: each is a row of the Changes list and one in the Work's review count. */
@@ -82,27 +83,51 @@ export function workTreeChanges(lists: readonly ListChanges[]): WorkTreeChanges 
       nodes: new Map(lists.flatMap(({ work }) => [...work.nodes])),
       skipped: lists.flatMap(({ work }) => work.skipped),
     },
+    live: { nodes: new Map(lists.flatMap(({ live }) => [...live.nodes])) },
     pending: lists.flatMap(({ pending }) => pending),
     faults,
     folders,
   };
 }
 
-function folderChange(work: WorkTreeChanges["work"], records: readonly TreeRecord[]): FolderChange {
+function folderChange(
+  { work, live }: Pick<WorkTreeChanges, "work" | "live">,
+  records: readonly TreeRecord[],
+): FolderChange {
   if (records.some((record) => record.type === "create")) return { kind: "new" };
   if (records.at(-1)?.type === "delete") return { kind: "deleted" };
-  const renamed = records.find((record) => record.type === "rename");
+  // The name and place the Work's tree shows against live's. An Undo carries what its author's
+  // copy showed, and sets nothing itself, so after one the trees say what changed.
+  const node = records[0]?.node;
+  const shown = node === undefined ? undefined : work.nodes.get(node);
+  const before = node === undefined ? undefined : live.nodes.get(node);
+  const lastUndo = records.findLastIndex((record) => record.undoes !== undefined);
+  const move = records.findLast(
+    (record, at) => record.type === "move" && record.undoes === undefined && at > lastUndo,
+  );
+  const was =
+    (lastUndo >= 0 || records.some((record) => record.type === "rename")) &&
+    before &&
+    shown &&
+    before.displayName !== shown.displayName
+      ? before.displayName
+      : null;
   // Where the Work sends it, which is not where it stands when the move cannot land.
-  const move = records.filter((record) => record.type === "move").at(-1);
+  const into =
+    move?.type === "move"
+      ? move.parent
+      : shown && shown.parent !== before?.parent
+        ? shown.parent
+        : undefined;
   return {
     kind: "changed",
-    was: renamed?.type === "rename" ? renamed.fromName : null,
+    was,
     moved:
-      move?.type !== "move"
+      into === undefined
         ? null
-        : isSourceRoot(move.parent)
+        : isSourceRoot(into)
           ? "top"
-          : { into: work.nodes.get(move.parent)?.displayName ?? "" },
+          : { into: work.nodes.get(into)?.displayName ?? "" },
   };
 }
 
@@ -115,7 +140,7 @@ function folderChange(work: WorkTreeChanges["work"], records: readonly TreeRecor
  */
 export function groupByChangedFolder<T extends { documentId: string }>(
   files: readonly T[],
-  { work, pending, faults, folders }: WorkTreeChanges,
+  { work, live, pending, faults, folders }: WorkTreeChanges,
 ): ChangeGroup<T>[] {
   const byFolder = new Map<string, TreeRecord[]>();
   for (const record of pending) {
@@ -136,7 +161,7 @@ export function groupByChangedFolder<T extends { documentId: string }>(
       folder: {
         id,
         name: work.nodes.get(id)?.displayName ?? "",
-        change: folderChange(work, records),
+        change: folderChange({ work, live }, records),
         fault: faults.get(id) ?? null,
         folders: [id],
       },
