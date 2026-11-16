@@ -356,7 +356,8 @@ whatever the revision.
 Lists' rows read that answer (`has_effect OR has_effect_revision < revision`) only for a
 document live does not show (rule 7). `writeTextAnswer` is the one writer of the answer on a
 judgement or an Un-Apply: it resyncs the document's list, under the list's key taken before the
-draft row's, only when the document is in Trash and the answer differs from what the rows may
+draft row's (a judgement holds no document key, so it takes it; Un-Apply holds document keys, so
+it locks the lists of its documents in Trash upfront and passes `listsHeld`), only when the document is in Trash and the answer differs from what the rows may
 hold (a different stored answer, or a stale draft judged false). Un-Apply writes `true` with the
 stale watermark in its own transaction, so its row is right at its commit.
 A sweep (the `draft-effects` recovery lane, every 30 s)
