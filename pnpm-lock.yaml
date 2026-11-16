@@ -706,7 +706,7 @@ importers:
         specifier: ^7.2.4
         version: 7.2.4
       undici:
-        specifier: ^8.12.4
+        specifier: 8.12.4
         version: 8.12.4
       unified:
         specifier: ^11.0.5

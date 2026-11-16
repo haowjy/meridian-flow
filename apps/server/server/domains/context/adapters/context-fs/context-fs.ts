@@ -105,6 +105,7 @@ export interface ContextFSDeps {
     Pick<CollabDomain, "refreshDocumentProjection"> &
     Pick<
       DraftPeerShadowAccess,
+      | "writeCreatedDraftContent"
       | "readEffectiveHashlines"
       | "readEffectiveMarkdown"
       | "readStoredGrepTexts"
@@ -227,7 +228,6 @@ export class ContextFS implements ContextSchemeAdapter {
       ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
       holderUri: (path) => this.holderUri(path),
       folderUri: (path) => canonicalContextUri(this.scheme, path, this.holder.authority),
-      refuseReceive: () => this.placement.refuse("receive a copy"),
     });
   }
 

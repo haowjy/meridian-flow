@@ -241,6 +241,7 @@ import {
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
 import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
+import { threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
@@ -283,7 +284,11 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
-import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
+import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+  processDetachedWork,
+} from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
@@ -486,7 +491,6 @@ const WAKE_SWEEP_LIMIT = 100;
 
 export async function createProductionAppPorts(input: {
   db: Database;
-  backgroundTasks?: DetachedWorkTracker;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
@@ -532,7 +536,7 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
+  const backgroundTasks = processDetachedWork;
   const projectWakeHub = createProjectWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
   const contextSources = createDrizzleContextSources(db);
@@ -667,7 +671,6 @@ export async function createProductionAppPorts(input: {
   });
   const documentSync = createCollabDomain({
     db,
-    backgroundTasks,
     arrivals,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
@@ -679,7 +682,7 @@ export async function createProductionAppPorts(input: {
     draftClose,
     treeLists,
     removals: createTrashRemovals(db),
-    onLiveTextChanged: createAgentFilesHints({ db, wake: projectWakeHub, eventSink }),
+    liveTextHints: createAgentFilesHints({ db, backgroundTasks, wake: projectWakeHub, eventSink }),
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -709,7 +712,7 @@ export async function createProductionAppPorts(input: {
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
     sourceHints: projectHints,
-    copy: { documentSync, objectStore, release: objectRelease },
+    copy: { documentSync, branches: documentSync.branches, objectStore, release: objectRelease },
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, projectHints),
@@ -1042,8 +1045,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     registry: toolRegistry,
     chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
-      const binding = await ports.agentRevisions.readThreadBinding(caller.id);
-      const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
+      const [binding, thread] = await Promise.all([
+        ports.agentRevisions.readThreadBinding(caller.id),
+        ports.threadRepos.threads.findById(caller.id),
+      ]);
+      const modelId =
+        (thread
+          ? threadModelId(ports.gateway, thread.overrides, binding?.configuration.model)
+          : binding?.configuration.model) ?? ports.gateway.getDefaultModel();
       const model = ports.gateway.listModels().find((model) => model.id === modelId);
       if (!model)
         return {
@@ -1232,6 +1241,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       gateway: ports.gateway,
       eventSink: ports.eventSink,
       agentRevisions: ports.agentRevisions,
+      threads: ports.threadRepos.threads,
       prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
         .prefixCacheStateFor,
       modelRequestDebug: ports.modelRequestDebug,

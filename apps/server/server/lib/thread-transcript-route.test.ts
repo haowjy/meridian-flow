@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** Writer authorization and inherited-transcript contract for the HTTP adapter. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -37,6 +38,7 @@ describe("handleReadThreadTranscript", () => {
       content: { text: "hidden provider detail", providerOptions: { private: true } },
     });
     const local = await repos.threads.createDerivedPrimary({
+      overrides: NO_OVERRIDES,
       aiWriteMode: "direct",
       id: "00000000-0000-4000-8000-0000000006c2" as ThreadId,
       userId: USER_ID,

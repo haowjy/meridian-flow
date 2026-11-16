@@ -40,6 +40,7 @@ function record(): ChatSubmission {
       workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
+      overrides: { model: null, effort: null },
       agentSelection: { slug: "general", definitionRevisionId: "rev" },
     },
   };

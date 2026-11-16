@@ -181,6 +181,8 @@ export function createDrizzleThreadRepository(
         createdByUserId: input.userId as string,
         kind: normalized.kind,
         aiWriteMode: input.aiWriteMode,
+        modelOverride: input.overrides?.model ?? null,
+        effortOverride: input.overrides?.effort ?? null,
         title: normalized.title,
         parentThreadId: normalized.parentThreadId,
         rootThreadId: threadId,
@@ -227,6 +229,8 @@ export function createDrizzleThreadRepository(
           originTurnId: thread.originTurnId,
           originType: thread.originType,
           spawnDepth: thread.spawnDepth,
+          modelOverride: thread.overrides.model,
+          effortOverride: thread.overrides.effort,
         },
         { ignoreIdConflict: true },
       );
@@ -538,6 +542,15 @@ export function createDrizzleThreadRepository(
         .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
+    },
+    async setOverrides(id, overrides) {
+      const [row] = await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({ modelOverride: overrides.model, effortOverride: overrides.effort })
+        .where(eq(schema.threads.id, id))
+        .returning(threadColumns);
+      if (!row) throw new Error(`Thread not found: ${id}`);
+      return mapThread(row);
     },
     async setAiWriteMode(id, mode) {
       const rows = await currentDrizzleDb(db)

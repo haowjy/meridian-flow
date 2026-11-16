@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * Stop and hand-back against PostgreSQL: the design A section 3 rows whose risk is a commit order under
  * the thread lock, adoption refusal, expiry, a repair path or a conversation read. The rows whose risk
@@ -724,6 +725,7 @@ else
       await handBack(rig, r1, [m2]);
       const fork = (
         await rig.repos.threads.createDerivedPrimary({
+          overrides: NO_OVERRIDES,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source: main,

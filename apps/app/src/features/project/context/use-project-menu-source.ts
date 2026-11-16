@@ -21,6 +21,7 @@ import {
   trailAlong,
 } from "./menu-tree";
 import { type ScratchSource, useScratchTrees } from "./use-scratch-trees";
+import { useWorkSourceWritable } from "./use-work-source-writable";
 
 export type ProjectMenuSource = {
   tree: DrillTree;
@@ -44,10 +45,16 @@ export type ProjectMenuSource = {
     tree: TreeView;
     /** The folder's id, or the source's id for an area's top: what a destination names as its parent. */
     entryId: string;
+    /** Whether the area takes changes (`MenuArea.writable`). */
+    writable: boolean;
   } | null;
+  /** Whether the area a root row names takes changes. */
+  areaWritable(areaId: string): boolean;
   /** The own area's tree and its opening trails. */
   own: {
     tree: TreeView | null;
+    /** Whether the own area takes changes. */
+    writable: boolean;
     /** Opens in the list holding the entry at `path`. */
     openAt(path: string): DrillNode[];
     /** Opens inside the folder at `folders` (names from the area root). */
@@ -91,6 +98,9 @@ export function useProjectMenuSource({
     version,
   });
   const { primary, earlier } = useScratchTrees(projectId, scratch);
+  // On a deleted Work's Draft no tree takes a change; a Work's Scratch takes none once it ends.
+  const open = version.ended !== "deleted";
+  const scratchWritable = useWorkSourceWritable(projectId, scratch?.owner.workId) && open;
   const scratchArea = useMemo<MenuArea | null>(
     () =>
       scratch
@@ -103,12 +113,13 @@ export function useProjectMenuSource({
             icon: schemeIcon("scratch"),
             tree: primary.tree,
             listed: true,
+            writable: scratchWritable,
             earlier: scratch.earlierRootThreadId
               ? { tree: earlier.tree, rootThreadId: scratch.earlierRootThreadId }
               : undefined,
           }
         : null,
-    [scratch, primary.tree, earlier.tree],
+    [scratch, primary.tree, earlier.tree, scratchWritable],
   );
   const documentScheme = own?.scheme ?? null;
   const documentOwner = own?.owner ?? null;
@@ -130,6 +141,11 @@ export function useProjectMenuSource({
     enabled: hiddenNeeded,
     version,
   });
+  const hiddenWritable =
+    useWorkSourceWritable(
+      projectId,
+      documentScheme === "scratch" ? documentOwner?.workId : undefined,
+    ) && open;
 
   const areas = useMemo(() => {
     const list: MenuArea[] = EDITOR_CONTEXT_SCHEMES.map((scheme) => ({
@@ -140,6 +156,7 @@ export function useProjectMenuSource({
       icon: schemeIcon(scheme),
       tree: projectViews[scheme]?.tree ?? null,
       listed: true,
+      writable: open,
     }));
     if (scratchArea) list.push(scratchArea);
     if (hiddenNeeded && documentScheme && documentOwner)
@@ -152,6 +169,7 @@ export function useProjectMenuSource({
         icon: schemeIcon(documentScheme),
         tree: hidden.tree,
         listed: false,
+        writable: hiddenWritable,
       });
     return list;
   }, [
@@ -162,6 +180,8 @@ export function useProjectMenuSource({
     documentOwner,
     documentHeading,
     hidden.tree,
+    open,
+    hiddenWritable,
   ]);
 
   const tree = useMemo(() => buildMenuTree({ heading: title, areas }), [areas, title]);
@@ -213,6 +233,7 @@ export function useProjectMenuSource({
             path: "/",
             tree,
             entryId: tree.root.entryId,
+            writable: area.writable,
           };
         const folder = menuEntryFor(tree, rowId);
         if (folder?.kind === "dir")
@@ -222,12 +243,15 @@ export function useProjectMenuSource({
             path: folder.path,
             tree,
             entryId: rowId,
+            writable: area.writable,
           };
       }
       return null;
     },
+    areaWritable: (areaId) => areas.find((area) => area.id === areaId)?.writable ?? false,
     own: {
       tree: ownArea?.tree ?? null,
+      writable: ownArea?.writable ?? false,
       openAt: (path) => (ownArea ? trailAlong(ownArea, pathSegments(path).slice(0, -1)) : []),
       openInside: (folders) => (ownArea ? trailAlong(ownArea, folders) : []),
       crumbTrail: (path, depth) => crumbTrailFor(ownArea, path, depth),

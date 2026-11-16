@@ -5,6 +5,7 @@
  */
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import {
   type EventSink,
@@ -66,6 +67,7 @@ export interface CreateThreadForProjectArgs {
   workId?: string | null;
   /** The writer's explicit mode; it also becomes the Work's default. Omitted, the chat copies it. */
   aiWriteMode?: AiWriteMode;
+  overrides: ThreadOverrides;
 }
 
 /**
@@ -128,6 +130,7 @@ export async function createThreadForProject(
           projectId: args.projectId,
           title: args.title ?? null,
           aiWriteMode: args.aiWriteMode ?? work.defaultAiWriteMode,
+          overrides: args.overrides,
         });
       },
       resolveWork: async (created) => {

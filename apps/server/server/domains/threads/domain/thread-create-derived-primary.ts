@@ -15,7 +15,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
-import type { Thread, ThreadOriginType } from "@meridian/contracts/threads";
+import type { Thread, ThreadOriginType, ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { toIsoString } from "./contract-serialization.js";
 
@@ -30,6 +30,8 @@ export interface CreateDerivedPrimaryThreadInput {
   source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth">;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
+  /** A fork copies its source's; a handoff takes the writer's pick. */
+  overrides: ThreadOverrides;
   title?: string | null;
   initialPromptBakeId?: PromptBakeId | null;
 }
@@ -49,6 +51,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     initialPromptBakeId: input.initialPromptBakeId ?? null,
     agentDefinitionRevisionId: null,
     agentName: null,
+    overrides: input.overrides,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: input.source.parentThreadId,

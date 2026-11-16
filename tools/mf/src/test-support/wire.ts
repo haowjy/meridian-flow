@@ -387,9 +387,11 @@ function staticRoute(route: string, path: string): [number, unknown, boolean?] {
         agents: [
           {
             slug: "general",
+            path: "agents/general.md",
             name: "General",
             description: "",
             model: null,
+            primary: true,
             level: "builtin",
             shadows: [],
             unavailableReasons: [],

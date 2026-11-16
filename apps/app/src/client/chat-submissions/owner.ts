@@ -128,6 +128,7 @@ export function recordAndProjectSubmission(
           timestamp: entry.createdAt,
           workId: entry.creation.workId,
           aiWriteMode: entry.creation.aiWriteMode ?? entry.creation.workAiWriteMode,
+          overrides: entry.creation.overrides,
           agent: {
             name: entry.creation.agentName,
             slug: entry.creation.agentSlug,
@@ -252,6 +253,7 @@ export class ChatSubmissionOwner {
             title: entry.creation.title,
             workId: entry.creation.workId,
             ...(entry.creation.aiWriteMode ? { aiWriteMode: entry.creation.aiWriteMode } : {}),
+            overrides: entry.creation.overrides,
             agentSelection: entry.creation.agentSelection,
           },
           { signal: requestSignal },

@@ -10,6 +10,7 @@
  * of its tree sources (`SourcesBody`).
  */
 import { t } from "@lingui/core/macro";
+import type { DraftOwnerKey } from "@meridian/contracts";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { Folder, FolderOpen } from "lucide-react";
 import { useMemo } from "react";
@@ -30,6 +31,7 @@ import { useTreeExpansion } from "../context/use-tree-expansion";
 import { treePlace, useTreeNoticeWords } from "../context/use-tree-notice-words";
 import { useWorkSourceWritable } from "../context/use-work-source-writable";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
+import { useShellTreeVersion } from "../tree-version";
 import { useOptionalMainItem } from "../views";
 import { useChatScratchSource } from "./use-chat-scratch-source";
 
@@ -41,6 +43,7 @@ function useOpenDocumentId(): string | undefined {
 
 /** A chat's Scratch: its trees, the list areas they make, and the load state. */
 function useChatScratch(projectId: string, threadId: string | null) {
+  const shell = useShellTreeVersion();
   const source = useChatScratchSource(projectId, threadId);
   const { primary, earlier } = useScratchTrees(projectId, source);
   // An ended Work's Scratch can be copied from, not changed.
@@ -54,6 +57,14 @@ function useChatScratch(projectId: string, threadId: string | null) {
               owner: source.owner,
               tree: primary.tree,
               writable: editable,
+              ...(shell?.showing === "draft"
+                ? {
+                    view: {
+                      kind: "draft" as const,
+                      owner: shell.ownerKey as DraftOwnerKey,
+                    },
+                  }
+                : {}),
             },
           ]
         : []),
@@ -64,11 +75,19 @@ function useChatScratch(projectId: string, threadId: string | null) {
               owner: { rootThreadId: source.earlierRootThreadId },
               tree: earlier.tree,
               writable: true,
+              ...(shell?.showing === "draft"
+                ? {
+                    view: {
+                      kind: "draft" as const,
+                      owner: shell.ownerKey as DraftOwnerKey,
+                    },
+                  }
+                : {}),
             },
           ]
         : []),
     ],
-    [primary.tree, earlier.tree, source, editable],
+    [primary.tree, earlier.tree, source, editable, shell],
   );
   const earlierId = source?.earlierRootThreadId;
   const hasEarlier = Boolean(earlierId && earlier.tree?.files().length);
