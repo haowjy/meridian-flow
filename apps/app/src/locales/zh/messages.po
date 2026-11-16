@@ -1110,7 +1110,12 @@ msgid "<0>{name}</0> has no tools chosen, so this chat won't have it."
 msgstr ""
 
 #: src/features/connections/NewChatConnectionMarks.tsx
-msgid "<0>{name}</0> refused the token."
+#~ msgid "<0>{name}</0> refused the token."
+#~ msgstr ""
+
+#. placeholder {0}: standing.reason
+#: src/features/connections/NewChatConnectionMarks.tsx
+msgid "<0>{name}</0>: {0}"
 msgstr ""
 
 #: src/features/chat/DeletedChatCard.tsx

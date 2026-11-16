@@ -3,6 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import type { McpConnectionLevel, McpConnectionView, McpToolView } from "@meridian/contracts/mcp";
 import { Plug, Plus } from "lucide-react";
 import { useState } from "react";
+import { httpErrorStatus } from "@/client/api/http-client";
 import {
   addMcpConnection,
   removeMcpConnection,
@@ -20,6 +21,7 @@ import { ListRow } from "@/components/ui/list-row";
 import { role } from "@/components/ui/roles";
 import {
   AddConnectionForm,
+  type AddError,
   type AddValues,
   addName,
   EMPTY_ADD,
@@ -29,7 +31,7 @@ import { ConnectionRow, type PanelFocus, RemovedConnectionRow } from "./Connecti
 
 type Adding =
   | { kind: "closed" }
-  | { kind: "form"; values: AddValues; error: string | null }
+  | { kind: "form"; values: AddValues; error: AddError | null }
   | { kind: "connecting"; values: AddValues };
 
 type Removed = GoneRow<McpConnectionView> & { undoing: boolean; failure: string | null };
@@ -72,7 +74,11 @@ export function ConnectionsSection() {
       setAdding({
         kind: "form",
         values,
-        error: error instanceof Error ? error.message : t`Couldn't add the connection.`,
+        error: {
+          // The form holds the name to the server's rule, so a refusal is about the address.
+          on: httpErrorStatus(error) === 400 ? "address" : "form",
+          message: error instanceof Error ? error.message : t`Couldn't add the connection.`,
+        },
       });
     }
   };
@@ -165,7 +171,13 @@ export function ConnectionsSection() {
             values={adding.values}
             inProject={projectId !== null}
             error={adding.error}
-            onChange={(values) => setAdding({ ...adding, values })}
+            onChange={(values) =>
+              setAdding({
+                ...adding,
+                values,
+                error: values.url === adding.values.url ? adding.error : null,
+              })
+            }
             onSubmit={() => void add(adding.values)}
             onCancel={() => setAdding({ kind: "closed" })}
           />
