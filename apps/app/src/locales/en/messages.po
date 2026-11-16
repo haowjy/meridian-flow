@@ -602,6 +602,10 @@ msgstr "{documents, plural, one {# document} other {# documents}}"
 msgid "{documents, plural, one {At least # document} other {At least # documents}}"
 msgstr "{documents, plural, one {At least # document} other {At least # documents}}"
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{effortLabel} reasoning"
+msgstr "{effortLabel} reasoning"
+
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "{failing, plural, one {# can't be saved} other {# can't be saved}}"
 msgstr "{failing, plural, one {# can't be saved} other {# can't be saved}}"
@@ -805,8 +809,12 @@ msgid "{name} is unavailable"
 msgstr "{name} is unavailable"
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "{name} on {modelLabel}"
-msgstr "{name} on {modelLabel}"
+#~ msgid "{name} on {modelLabel}"
+#~ msgstr "{name} on {modelLabel}"
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{name} on {runsAt}"
+msgstr "{name} on {runsAt}"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
@@ -852,9 +860,14 @@ msgstr "{name}, applied"
 msgid "{name}, renamed"
 msgstr "{name}, renamed"
 
+#. placeholder {0}: modelLabel ?? ""
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "{name}; {modelLabel} isn't available, so it runs on its default model"
-msgstr "{name}; {modelLabel} isn't available, so it runs on its default model"
+msgid "{name}; {0} isn't available, so it runs on its default model"
+msgstr "{name}; {0} isn't available, so it runs on its default model"
+
+#: src/features/agents/ComposerAgentControl.tsx
+#~ msgid "{name}; {modelLabel} isn't available, so it runs on its default model"
+#~ msgstr "{name}; {modelLabel} isn't available, so it runs on its default model"
 
 #: src/features/agents/ComposerAgentControl.tsx
 #~ msgid "{name}; {modelLabel} isn't available, so it runs on its own model"
@@ -1244,6 +1257,10 @@ msgstr "Active Work"
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "Actually…"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Adaptive"
+msgstr "Adaptive"
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
@@ -2562,10 +2579,13 @@ msgstr "Couldn't finish that step"
 msgid "Couldn't load"
 msgstr "Couldn't load"
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Couldn't load agents."
 msgstr "Couldn't load agents."
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't load Agents."
+msgstr "Couldn't load Agents."
 
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -3896,6 +3916,10 @@ msgstr "Hide removed text"
 msgid "Hide source"
 msgstr "Hide source"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "High"
+msgstr "High"
+
 #: src/components/app/composer/placeholders.ts
 msgid "Hold on…"
 msgstr "Hold on…"
@@ -4262,11 +4286,11 @@ msgstr "Live view"
 msgid "Loading"
 msgstr "Loading"
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
 msgstr "Loading agents…"
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "Loading Agents…"
 msgstr "Loading Agents…"
@@ -4369,6 +4393,10 @@ msgid "Looking for the document this link names."
 msgstr "Looking for the document this link names."
 
 #: src/features/agents/AgentPicker.tsx
+msgid "Low"
+msgstr "Low"
+
+#: src/features/agents/AgentPicker.tsx
 msgid "Manage Agents"
 msgstr "Manage Agents"
 
@@ -4407,12 +4435,17 @@ msgstr "mars.toml can't be read: line {0}, column {1} isn't valid TOML."
 msgid "mars.toml needs schema = 1 under [package]."
 msgstr "mars.toml needs schema = 1 under [package]."
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Max"
+msgstr "Max"
+
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
 msgstr "Maximum is {0}."
 
 #: src/features/account/SettingsDialog.tsx
+#: src/features/agents/AgentPicker.tsx
 msgid "Medium"
 msgstr "Medium"
 
@@ -4455,11 +4488,15 @@ msgstr "Missing figure source"
 msgid "missing kind"
 msgstr "missing kind"
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
 msgstr "Model"
+
+#. placeholder {0}: agent.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Model for {0}"
+msgstr "Model for {0}"
 
 #: src/features/agents/findings.ts
 msgid "model must be a model's name, like model: sonnet."
@@ -4775,12 +4812,21 @@ msgid "No Agent named {name} is in this package."
 msgstr "No Agent named {name} is in this package."
 
 #: src/features/agents/AgentPicker.tsx
-msgid "No agents available."
-msgstr "No agents available."
+#~ msgid "No agents available."
+#~ msgstr "No agents available."
 
 #: src/features/agents/AgentPicker.tsx
-msgid "No Agents match."
-msgstr "No Agents match."
+msgid "No Agents available."
+msgstr "No Agents available."
+
+#. placeholder {0}: query.trim()
+#: src/features/agents/AgentPicker.tsx
+msgid "No Agents match “{0}”."
+msgstr "No Agents match “{0}”."
+
+#: src/features/agents/AgentPicker.tsx
+#~ msgid "No Agents match."
+#~ msgstr "No Agents match."
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "No Agents or skills in this project yet."
@@ -5124,6 +5170,10 @@ msgstr "Now in {0}."
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
 msgstr "Numbered list"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Off"
+msgstr "Off"
 
 #: src/client/providers/TransportProvider.tsx
 msgid "Offline"
@@ -5508,6 +5558,15 @@ msgstr "Reading text size"
 #: src/features/chat/ReportContent.tsx
 msgid "Reason: {0}"
 msgstr "Reason: {0}"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Reasoning"
+msgstr "Reasoning"
+
+#. placeholder {0}: model.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Reasoning on {0}"
+msgstr "Reasoning on {0}"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Recent activity"
@@ -7080,8 +7139,12 @@ msgstr "This chat now uses {0}."
 #~ msgstr "This chat uses {0}."
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "This chat uses {name} on {modelLabel}."
-msgstr "This chat uses {name} on {modelLabel}."
+#~ msgid "This chat uses {name} on {modelLabel}."
+#~ msgstr "This chat uses {name} on {modelLabel}."
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {name} on {runsAt}."
+msgstr "This chat uses {name} on {runsAt}."
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat uses {name}."

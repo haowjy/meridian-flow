@@ -602,6 +602,10 @@ msgstr ""
 msgid "{documents, plural, one {At least # document} other {At least # documents}}"
 msgstr ""
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{effortLabel} reasoning"
+msgstr ""
+
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "{failing, plural, one {# can't be saved} other {# can't be saved}}"
 msgstr ""
@@ -805,7 +809,11 @@ msgid "{name} is unavailable"
 msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "{name} on {modelLabel}"
+#~ msgid "{name} on {modelLabel}"
+#~ msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{name} on {runsAt}"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -852,9 +860,14 @@ msgstr ""
 msgid "{name}, renamed"
 msgstr ""
 
+#. placeholder {0}: modelLabel ?? ""
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "{name}; {modelLabel} isn't available, so it runs on its default model"
+msgid "{name}; {0} isn't available, so it runs on its default model"
 msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+#~ msgid "{name}; {modelLabel} isn't available, so it runs on its default model"
+#~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 #~ msgid "{name}; {modelLabel} isn't available, so it runs on its own model"
@@ -1244,6 +1257,10 @@ msgstr ""
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "其实…"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Adaptive"
+msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
@@ -2562,9 +2579,12 @@ msgstr "这一步没能完成"
 msgid "Couldn't load"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Couldn't load agents."
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't load Agents."
 msgstr ""
 
 #: src/features/project/chat/RecentChatsLanding.tsx
@@ -3896,6 +3916,10 @@ msgstr ""
 msgid "Hide source"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "High"
+msgstr ""
+
 #: src/components/app/composer/placeholders.ts
 msgid "Hold on…"
 msgstr "等一下…"
@@ -4262,11 +4286,11 @@ msgstr ""
 msgid "Loading"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "Loading Agents…"
 msgstr ""
@@ -4369,6 +4393,10 @@ msgid "Looking for the document this link names."
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
+msgid "Low"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
 msgid "Manage Agents"
 msgstr ""
 
@@ -4407,12 +4435,17 @@ msgstr ""
 msgid "mars.toml needs schema = 1 under [package]."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Max"
+msgstr ""
+
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
+#: src/features/agents/AgentPicker.tsx
 msgid "Medium"
 msgstr ""
 
@@ -4455,11 +4488,15 @@ msgstr ""
 msgid "missing kind"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Model"
 msgstr "模型"
+
+#. placeholder {0}: agent.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Model for {0}"
+msgstr ""
 
 #: src/features/agents/findings.ts
 msgid "model must be a model's name, like model: sonnet."
@@ -4775,12 +4812,21 @@ msgid "No Agent named {name} is in this package."
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "No agents available."
+#~ msgid "No agents available."
+#~ msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "No Agents available."
+msgstr ""
+
+#. placeholder {0}: query.trim()
+#: src/features/agents/AgentPicker.tsx
+msgid "No Agents match “{0}”."
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "No Agents match."
-msgstr ""
+#~ msgid "No Agents match."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "No Agents or skills in this project yet."
@@ -5123,6 +5169,10 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Off"
 msgstr ""
 
 #: src/client/providers/TransportProvider.tsx
@@ -5507,6 +5557,15 @@ msgstr ""
 #. placeholder {0}: report.reason
 #: src/features/chat/ReportContent.tsx
 msgid "Reason: {0}"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Reasoning"
+msgstr ""
+
+#. placeholder {0}: model.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Reasoning on {0}"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -7080,7 +7139,11 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "This chat uses {name} on {modelLabel}."
+#~ msgid "This chat uses {name} on {modelLabel}."
+#~ msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {name} on {runsAt}."
 msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
