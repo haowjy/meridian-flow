@@ -1743,6 +1743,9 @@ CREATE TRIGGER turns_position_write_once BEFORE UPDATE OF "position" ON public.t
 
 CREATE TRIGGER turns_prompt_bake_write_once BEFORE UPDATE OF prompt_bake_id ON public.turns FOR EACH ROW EXECUTE FUNCTION public.enforce_prompt_bake_write_once('prompt_bake_id', 'turns_prompt_bake_write_once');
 
+ALTER TABLE ONLY public.mcp_connections
+    ALTER CONSTRAINT mcp_connections_current_pin_id_mcp_pins_id_fk DEFERRABLE INITIALLY DEFERRED;
+
 ALTER TABLE ONLY public.threads
     ALTER CONSTRAINT threads_initial_prompt_bake_id_prompt_bakes_id_fk DEFERRABLE INITIALLY DEFERRED;
 
