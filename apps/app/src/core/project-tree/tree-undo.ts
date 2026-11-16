@@ -317,8 +317,37 @@ export function waitsForClosed(step: UndoStep, closed: ClosedOwners): boolean {
   return waits.length > 0 && waits.every((source) => closed.source(source) !== null);
 }
 
-const holds = (step: UndoStep, source: string | null, view: View, closed: ClosedOwners) =>
-  !waitsForClosed(step, closed) &&
+/** What each step waits for that a press already said it passed over. */
+const toldWaiting = new WeakSet<readonly unknown[]>();
+
+/**
+ * True the first time a press passes over the step while it waits for what it waits for now: the
+ * writer is told once why an older change went instead, and never again for the same wait.
+ */
+export function firstPassOver(step: UndoStep): boolean {
+  const waits = step.kind === "apply" ? step.held : step.waits;
+  if (!waits || toldWaiting.has(waits)) return false;
+  toldWaiting.add(waits);
+  return true;
+}
+
+/** What a step a press passed over waits for, said once on its rows (`firstPassOver`). */
+function passedOverLeft(step: UndoStep, closed: ClosedOwners): Left | null {
+  if (!firstPassOver(step)) return null;
+  return step.kind === "apply"
+    ? {
+        taken: "nothing",
+        treeLeft: [],
+        held: step.held,
+        name: step.name,
+        nodes: step.nodes,
+        facts: step.facts,
+      }
+    : treeHeld(step, step.waits ?? [], closed);
+}
+
+/** The step is one a press in `view` on `source` (null: any) would take, waiting or not. */
+const fits = (step: UndoStep, source: string | null, view: View) =>
   (step.kind === "apply" || step.draft === view.draft) &&
   (source === null || step.sources.length === 0 || step.sources.includes(source));
 
@@ -341,8 +370,17 @@ export async function undoLatest(
 ): Promise<UndoOutcome> {
   actedIn(session);
   show(session, null);
-  const outcome = await takeLatest(session, source, view, actor, closed, pendingText);
-  show(session, saidOf(outcome));
+  const passed: Left[] = [];
+  const outcome = await takeLatest(session, source, view, actor, closed, passed, pendingText);
+  const said = saidOf(outcome);
+  // A step passed over for the first time says, on its rows, who it waits for.
+  const told = passed.map((left) => ({ kind: "left" as const, ...left }));
+  show(
+    session,
+    told.length
+      ? { kind: "said", said: [...told, ...(said?.kind === "said" ? said.said : [])] }
+      : said,
+  );
   return outcome;
 }
 
@@ -352,13 +390,19 @@ async function takeLatest(
   view: View,
   actor: string,
   closed: ClosedOwners,
+  passed: Left[],
   pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
   const stack = stackOf(session);
   const skipped: Skipped[] = [];
   for (let at = stack.length - 1; at >= 0; at -= 1) {
     const step = stack[at] as UndoStep;
-    if (!holds(step, source, view, closed)) continue;
+    if (!fits(step, source, view)) continue;
+    if (waitsForClosed(step, closed)) {
+      const left = passedOverLeft(step, closed);
+      if (left) passed.push(left);
+      continue;
+    }
     stack.splice(at, 1);
     if (step.kind === "apply") return answerApply(session, step, at, skipped);
     const names = step.nodes.flatMap(

@@ -31,6 +31,8 @@ type EditorHistoryAction = {
    * and its boundary still keeps the edits on either side apart.
    */
   passedOver?(): boolean;
+  /** An undo just passed over it: the writer pressed Undo and an older step went instead. */
+  passed?(): void;
 };
 /** An Apply boundary in a history. `remove` ends it when its action can no longer run. */
 type ApplyEntry = { remove(): void };
@@ -207,6 +209,9 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (!this.active) return false;
     const source = direction === "undo" ? this.undo : this.redo;
     const entry = direction === "undo" ? source.findLast((each) => !passedOver(each)) : source[0];
+    if (direction === "undo")
+      for (const over of source.slice(entry ? source.indexOf(entry) + 1 : 0))
+        if (over.kind === "apply") over.action.passed?.();
     if (!entry) return false;
     if (entry.kind === "apply") {
       source.splice(source.indexOf(entry), 1);

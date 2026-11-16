@@ -8,6 +8,7 @@ import type { DocumentApplyEntry, DocumentHistory } from "@/core/editor/editor-h
 import {
   type ApplyStep,
   type ClosedOwners,
+  firstPassOver,
   type Held,
   type TreeFact,
   type Unapplied,
@@ -75,6 +76,7 @@ class SharedApply {
           undo: () => this.apply.press(history).then(happened),
           redo: () => this.apply.redo(),
           passedOver: () => this.apply.passedOver(),
+          passed: () => this.apply.passedBy(history),
         }),
       );
     }
@@ -193,6 +195,19 @@ export class AppliedCommand implements ApplyStep {
   /** In force with something held, and every owner it waits for still closed. */
   passedOver(): boolean {
     return !this.asking && waitsForClosed(this, this.hooks.closed);
+  }
+
+  /**
+   * An editor's Ctrl+Z passed over it for an older step: the first time for what it waits for
+   * now, that editor's document says who it waits for (`firstPassOver`).
+   */
+  passedBy(from: DocumentHistory): void {
+    if (!firstPassOver(this)) return;
+    this.hooks.said?.({
+      from,
+      answer: { taken: "nothing", treeLeft: [], held: this.held },
+      step: this,
+    });
   }
 
   /** The Apply's port from now on: a band's review let go of its room. */

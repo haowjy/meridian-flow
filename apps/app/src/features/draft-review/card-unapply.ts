@@ -23,6 +23,9 @@ export function useCardUnapply(projectId: string | null) {
         applies.map(async (apply): Promise<Unapplied | { taken: "failed" }> => {
           // A band's Apply and the tree fact it handed the sidebar share an id: the later holds it.
           const held = [...owner.applied].findLast((one) => one.commandId === apply.commandId);
+          // Every owner it waits for is still closed: the press would be held again, so the card
+          // says who it waits for without asking.
+          if (held?.passedOver()) return { taken: "nothing", treeLeft: [], held: held.held };
           if (held) return (await held.press(null)) ?? { taken: "already", treeLeft: [], held: [] };
           if (!projectId) return { taken: "failed" };
           try {
