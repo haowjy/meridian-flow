@@ -58,8 +58,8 @@ type AgentPickerPanelProps = {
 };
 
 /**
- * The Agent picker, in columns: a search and the Agents; the models and reasoning levels of the
- * Agent pointed at; and a card about it. Its size follows the number of Agents alone, so nothing
+ * The Agent picker, in columns: a search and the Agents; a card about the Agent pointed at, beside
+ * its row; and that Agent's models and reasoning levels. Its size follows the number of Agents alone, so nothing
  * moves while the writer points or searches.
  */
 export function AgentPickerPanel({
@@ -274,6 +274,21 @@ export function AgentPickerPanel({
               </li>
             </ul>
           </div>
+          <div className="hidden min-h-0 w-56 flex-none flex-col @[40rem]/agents:flex">
+            <AgentCard
+              key={shown.slug}
+              agent={shown}
+              thisChat={started && shown === own ? started.threadId : null}
+              useLabel={
+                handsOff || (started && shown !== own)
+                  ? t`Hand off to ${shown.name}`
+                  : shown.slug === current.slug
+                    ? null
+                    : t`Use ${shown.name}`
+              }
+              onUse={() => choose(shown, NO_OVERRIDES)}
+            />
+          </div>
           {/* biome-ignore lint/a11y/noStaticElementInteractions: routes the choices' arrow keys; its rows are the controls. slop-lint: allow suppression the reason is stated in this comment */}
           <div
             ref={choicesRef}
@@ -323,21 +338,6 @@ export function AgentPickerPanel({
                 }}
               />
             )}
-          </div>
-          <div className="hidden min-h-0 w-56 flex-none flex-col @[40rem]/agents:flex">
-            <AgentCard
-              key={shown.slug}
-              agent={shown}
-              thisChat={started && shown === own ? started.threadId : null}
-              useLabel={
-                handsOff || (started && shown !== own)
-                  ? t`Hand off to ${shown.name}`
-                  : shown.slug === current.slug
-                    ? null
-                    : t`Use ${shown.name}`
-              }
-              onUse={() => choose(shown, NO_OVERRIDES)}
-            />
           </div>
         </div>
       </div>
