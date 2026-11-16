@@ -31,12 +31,13 @@ import {
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
-import { type DocumentSession, isSignInLapse } from "@/core/editor/document-session";
+import type { DocumentSession } from "@/core/editor/document-session";
 import {
   type DraftRoomRead,
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import { readRoomOnce } from "@/core/editor/room-read-once";
 import {
   type ApplyClickOutcome,
   ApplyClickQueue,
@@ -49,10 +50,9 @@ import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
-import { readBase } from "./review-frame";
+import { buildFrame, readBase, roomContent } from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
-import { cutWithoutUndelivered } from "./room-ended-cut";
 
 export type DraftCommandState = {
   applying: boolean;
@@ -418,13 +418,7 @@ export class DraftCommandOwner {
         (connection.disposition === "closed" || connection.disposition === "removed")
       ) {
         void this.resolveEnd(entry.ref, entry.draftId);
-      } else if (
-        snapshot.status === "destroyed" ||
-        connection?.kind === "reset" ||
-        connection?.kind === "terminal" ||
-        (connection?.kind === "unauthorized" && !isSignInLapse(connection))
-      ) {
-        // Before the detach: the cut reads the room's undelivered typing.
+      } else if (session.isRoomEnded()) {
         entry.item.queue.roomEnded(entry.draftId);
         this.detach(entry);
       }
@@ -731,6 +725,8 @@ export class DraftCommandOwner {
       return whole || tree
         ? this.captureOnReceipt(ref, { draftId: whole, tree }, restore, joint)
         : null;
+    if (target.kind === "groups" && !room)
+      return this.captureEnded(ref, target, restore, tree, joint);
     return this.captureText(ref, target, restore, tree, histories, joint);
   }
 
@@ -824,48 +820,15 @@ export class DraftCommandOwner {
       ...(restore ? { restore: true as const } : {}),
       ...(tree ? { tree: { revision: tree.revision } } : {}),
     };
-    const { session } = binding;
-    const acknowledged = session.whenCurrentChangesAcknowledged();
+    const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     this.setState(ref.itemKey, { failure: null });
-    /** Chosen changes a room-ended cut found nothing of on the server: they stay in the draft. */
-    let stayed: string[] = [];
-    const roomEndedCut: FrozenApply["roomEndedCut"] = () => {
-      // The whole draft is the server's whole cut: every change as it holds them.
-      if (target.kind === "draft")
-        return {
-          body: {
-            commandId: body.commandId,
-            draftId: entry.draftId,
-            whole: true as const,
-            groupIds: [],
-            baseViewDelta: [],
-            ...(restore ? { restore: true as const } : {}),
-            ...(tree ? { tree: { revision: tree.revision } } : {}),
-          },
-          optimistic: [],
-          patched: [],
-        };
-      const undelivered = session.unacknowledgedUpdates();
-      if (!undelivered) return undefined;
-      const cut = cutWithoutUndelivered({
-        document: session.document,
-        undelivered,
-        body: { ...body, snapshot: body.snapshot ?? "" },
-        optimistic,
-        chosen: frame.groups.filter((group) => ids.includes(group.id)),
-        schema,
-      });
-      stayed = cut?.stayed ?? [...ids];
-      return cut?.body.groupIds.length
-        ? { body: cut.body, optimistic, patched: cut.patched }
-        : null;
-    };
+    const rebuilt = this.rebuilder(entry.draftId, target.kind === "draft" ? null : ids, body);
     const frozen: FrozenApply = {
       body,
       optimistic,
       patched,
       acknowledged,
-      roomEndedCut,
+      rebuild: rebuilt.rebuild,
       ...(joint ? { send: joint.send } : {}),
     };
     const scheduled = histories
@@ -894,18 +857,129 @@ export class DraftCommandOwner {
       this.bandApplies.add(band);
     }
     binding.runtime.projectNow();
-    const outcome = scheduled.outcome.then((answer) => {
+    return {
+      sent: true,
+      outcome: this.textOutcome(ref, entry.draftId, scheduled.outcome, restore, rebuilt, joint),
+    };
+  }
+
+  /**
+   * Some changes chosen on a frame whose room has ended (or isn't open yet): the click is built
+   * from the draft as the server holds it when it is sent (`rebuilder`).
+   */
+  private captureEnded(
+    ref: DraftRef,
+    target: GroupsTarget,
+    restore: boolean,
+    tree: { revision: string | null } | undefined,
+    joint?: Joint,
+  ): StartedApply | null {
+    const draftId = this.identities.get(ref.itemKey);
+    if (!draftId || this.records.get(draftId)?.ended) return null;
+    const body: ApplyClick = {
+      commandId: joint?.commandId ?? crypto.randomUUID(),
+      draftId,
+      groupIds: [...target.groupIds],
+      baseViewDelta: [],
+      ...(restore ? { restore: true as const } : {}),
+      ...(tree ? { tree: { revision: tree.revision } } : {}),
+    };
+    // Unreadable (closed, access ended): the frame's own cut goes, and the server says why.
+    const rebuilt = this.rebuilder(draftId, target.groupIds, body, {
+      ...body,
+      snapshot: base64(Y.encodeSnapshotV2(target.frame.snapshot)),
+    });
+    this.setState(ref.itemKey, { failure: null });
+    const outcome = this.item(ref).queue.enqueue({
+      body,
+      optimistic: [],
+      patched: [],
+      acknowledged: Promise.resolve(),
+      madeAfterRoomEnded: true,
+      rebuild: rebuilt.rebuild,
+      ...(joint ? { send: joint.send } : {}),
+    });
+    return {
+      sent: true,
+      outcome: this.textOutcome(ref, draftId, outcome, restore, rebuilt, joint),
+    };
+  }
+
+  /**
+   * A text click again, for a room that ended before the server had its typing: the whole draft
+   * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
+   * server now. A chosen change whose id isn't there stays (`stayed`): a choice is never widened.
+   * `chosen` null: the whole draft. `unreadable` is what goes when the room can't be read.
+   */
+  private rebuilder(
+    draftId: string,
+    chosen: readonly string[] | null,
+    body: ApplyClick,
+    unreadable?: ApplyClick,
+  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[] } {
+    const result = {
+      stayed: [] as string[],
+      rebuild: async () => {
+        const fields = {
+          commandId: body.commandId,
+          draftId,
+          ...(body.restore ? { restore: true as const } : {}),
+          ...(body.tree ? { tree: body.tree } : {}),
+        };
+        if (!chosen)
+          return {
+            body: { ...fields, whole: true as const, groupIds: [], baseViewDelta: [] },
+            optimistic: [],
+            patched: [],
+          };
+        const fresh = await readRoomOnce(draftRoomName(draftId));
+        if (!fresh) return unreadable && { body: unreadable, optimistic: [], patched: [] };
+        try {
+          const content = roomContent(fresh);
+          const schema = content.doc.type.schema;
+          const base = readBase(fresh, schema);
+          const frame = buildFrame(fresh, base, content.doc);
+          const kept = frame.groups.map((group) => group.id).filter((id) => chosen.includes(id));
+          result.stayed = chosen.filter((id) => !kept.includes(id));
+          if (!kept.length) return null;
+          return {
+            body: {
+              ...fields,
+              snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+              groupIds: kept,
+              baseViewDelta: [],
+            },
+            optimistic: base,
+            patched: applySpanPatches(base, composeGroups(schema, frame, kept, "apply"), "base"),
+          };
+        } finally {
+          fresh.destroy();
+        }
+      },
+    };
+    return result;
+  }
+
+  /** A text click's outcome, with the changes a rebuild left in the draft said on its item. */
+  private textOutcome(
+    ref: DraftRef,
+    draftId: string,
+    outcome: Promise<ApplyClickOutcome>,
+    restore: boolean,
+    rebuilt: { stayed: string[] },
+    joint?: Joint,
+  ): Promise<CommandOutcome> {
+    return outcome.then((answer) => {
       joint?.answered(answer);
-      const settled = this.settled(ref, entry.draftId, answer, restore);
-      if (stayed.length && settled.kind !== "change-refused")
+      const settled = this.settled(ref, draftId, answer, restore);
+      if (rebuilt.stayed.length && settled.kind !== "change-refused")
         this.setState(
           ref.itemKey,
-          { failure: { code: "apply-refused", serverCode: "left_out_changed_since" } },
-          entry.draftId,
+          { failure: { code: "apply-refused", serverCode: "left_out_not_on_server" } },
+          draftId,
         );
       return settled;
     });
-    return { sent: true, outcome };
   }
 
   /**

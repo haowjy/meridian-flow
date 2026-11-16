@@ -37,8 +37,8 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This chat is in the trash, so its drafts are frozen. Restore the chat to apply them.`;
     case "ancestor_taken":
       return msg`A document blocks part of this location. Move or rename it, then apply again.`;
-    case "left_out_changed_since":
-      return msg`This draft moved on since you pressed Apply, so it wasn't applied.`;
+    case "left_out_not_on_server":
+      return msg`The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft.`;
     default:
       return undefined;
   }
@@ -50,7 +50,7 @@ function answersAlone(serverCode: string | undefined): boolean {
     serverCode === "stale" ||
     serverCode === "needs_restore" ||
     serverCode === "changed" ||
-    serverCode === "left_out_changed_since"
+    serverCode === "left_out_not_on_server"
   );
 }
 

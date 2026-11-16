@@ -114,13 +114,17 @@ room-base-to-O delta. Its acknowledgement barrier waits for the server to acknow
 local update in the cut before sending; a room that ends releases it, since it will deliver
 nothing more. A whole-draft target then goes as the whole cut below (`wholeCut`), the draft
 as the server holds it, and typing the room never delivered comes back through the hand-back.
-A click on some changes is cut again from the draft as the server holds it
-(`room-ended-cut.ts`): the clicked snapshot without the room's undelivered update (its items and
-deletions), projected against the same optimistic base. A chosen change whose id is there is kept;
-one the typing touched is taken as the server holds it, by the groups at its base tokens; one made
-only of that typing stays, shown as `left_out_changed_since`, and a click with nothing left sends
-nothing. With nothing undelivered the frozen click goes as it is. Either way a click whose room
-ended settles on its answer, and never waits on the server's sync (`unsynced` stays for live rooms). The queue keeps its own `readDraftRoom` lease until
+A click on some changes is built again when it reaches the head of the queue (`rebuilder`): the
+draft is read as the server holds it into a fresh document (`readRoomOnce`, one sync, nothing sent),
+its review recomputed, and the chosen changes whose ids are there go as an ordinary frozen click
+from that read, so the snapshot is the server's exactly. A chosen change whose id isn't there (made
+of typing the server never got, or changed since by another client) stays in the draft, shown as
+`left_out_not_on_server`: a choice is never widened to the server's version. Nothing left sends
+nothing. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
+server won't open (closed, access ended) sends the frame's own cut and the server says why. A click
+whose typing was acknowledged before the room ended goes frozen as it is. Either way a click whose
+room ended settles on its answer, and never waits on the server's sync (`unsynced` stays for live
+rooms). The queue keeps its own `readDraftRoom` lease until
 terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
 sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
 draft holds on receipt. That click has no optimistic base and no room to record it (`frozenOn`

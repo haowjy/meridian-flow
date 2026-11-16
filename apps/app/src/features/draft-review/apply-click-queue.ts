@@ -16,14 +16,16 @@ export type FrozenApply = {
   patched: readonly PMNode[];
   /**
    * Settles once the room can deliver no more of the typing in the click's cut: resolved when the
-   * server has it, rejected when the room ended first. Either way the click is then sent.
+   * server has it, so the frozen click goes; rejected when the room ended first, so it is rebuilt.
    */
   acknowledged: Promise<void>;
+  /** Made after its room ended: it is rebuilt before it is sent. */
+  madeAfterRoomEnded?: true;
   /**
-   * The click to send instead if its room ends before it is sent: the same choice cut from the
-   * draft as the server holds it. Undefined keeps the frozen click; null leaves nothing to send.
+   * The click again, from the draft as the server holds it when this click is the head: what to
+   * send, null when none of its changes is there, undefined to send it as it is.
    */
-  roomEndedCut?: () => Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | undefined;
+  rebuild?: () => Promise<Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | undefined>;
   /** A member of a several-item Apply sends through its group (`GroupApply`), not on its own. */
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
@@ -53,6 +55,8 @@ type ApplyCommand = FrozenApply & {
   released: boolean;
   /** Its room ended: no record of it will show, so its applied answer settles it. */
   roomEnded: boolean;
+  /** Its room ended before the server had its typing: `rebuild` runs before it is sent. */
+  rebuilding: boolean;
   answer?: ApplyClickResult;
   inFlight?: boolean;
   reading?: boolean;
@@ -269,18 +273,23 @@ export class ApplyClickQueue {
       stalled: false,
       closed: false,
       released: false,
-      roomEnded: false,
+      roomEnded: frozen.madeAfterRoomEnded === true,
+      rebuilding: frozen.madeAfterRoomEnded === true,
       outcome,
       finish,
     };
     this.commands.push(command);
-    // A room that ended delivers nothing more: the click goes anyway (`roomEnded`).
-    const go = () => {
+    // A room that ended delivers nothing more: the click goes anyway, rebuilt.
+    const go = (ended: boolean) => {
       if (!this.commands.includes(command)) return;
       command.released = true;
+      command.rebuilding ||= ended;
       if (this.commands[0] === command) void this.dispatch(command);
     };
-    void frozen.acknowledged.then(go, go);
+    void frozen.acknowledged.then(
+      () => go(false),
+      () => go(true),
+    );
     return command;
   }
 
@@ -349,25 +358,15 @@ export class ApplyClickQueue {
   }
 
   /**
-   * The draft's room ended, so it delivers and records nothing more. Its clicks still go: one not
-   * yet sent is cut again from the draft as the server holds it (`roomEndedCut`); typing the room
-   * never delivered comes back through the hand-back. An applied answer settles without the record.
+   * The draft's room ended, so it records nothing more: an applied answer settles without the
+   * record. Its clicks still go (`acknowledged` says which are rebuilt).
    */
   roomEnded(draftId: string): void {
-    for (const command of this.clicks) {
-      if (!frozenOn(command, draftId)) continue;
-      command.roomEnded = true;
-      if (command.sent) continue;
-      const cut = command.roomEndedCut?.();
-      if (cut === null) {
-        this.commands.splice(this.commands.indexOf(command), 1);
-        command.finish({ status: "cancelled" });
-      } else if (cut) Object.assign(command, cut);
-    }
+    for (const command of this.clicks) if (frozenOn(command, draftId)) command.roomEnded = true;
     const head = this.commands[0];
     if (head?.kind === "apply" && head.roomEnded && head.answer?.status === "applied")
       this.settle(head, head.answer);
-    else this.moveOn();
+    else this.port.changed();
   }
 
   close(draftId?: string): void {
@@ -431,6 +430,28 @@ export class ApplyClickQueue {
 
   private async dispatchApply(command: ApplyCommand): Promise<void> {
     if (!command.released) return;
+    if (command.rebuilding && command.rebuild) {
+      command.rebuilding = false;
+      // Holds the line: nothing is sent around a head that is being rebuilt.
+      this.request = command;
+      let rebuilt: Awaited<ReturnType<NonNullable<FrozenApply["rebuild"]>>>;
+      try {
+        rebuilt = await command.rebuild();
+      } catch (cause) {
+        reportError(cause);
+        rebuilt = undefined;
+      }
+      if (this.request === command) this.request = null;
+      if (this.commands[0] !== command) {
+        this.moveOn();
+        return;
+      }
+      if (rebuilt === null) {
+        this.settle(command, { status: "cancelled" });
+        return;
+      }
+      if (rebuilt) Object.assign(command, rebuilt);
+    }
     this.request = command;
     command.sent = true;
     command.inFlight = true;
