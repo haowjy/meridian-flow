@@ -130,7 +130,8 @@ for a delete made there, and on the page main goes back to when the delete took 
 the sidebar's rows say it themselves, so it has no sidebar entry. Its Undo and the sidebar's
 Ctrl+Z are one step (`core/project-tree/tree-undo.ts`). The notice ends when what it offers to undo
 no longer applies: once none of the delete's records has its Trash entry left (a Trash Restore of
-all of it, a peer's, a purge: the fact `deleteStands` reads, as the Undo does) the step leaves the
+all of it, a peer's, a purge, or an Apply that brought back everything it took while its folder
+stands holding them: the fact `deleteStands` reads, as the Undo and Trash do) the step leaves the
 stack (`endWhenRestored`). A delete across the project and account lists is one step per list, each
 with its Undo on its own rows.
 

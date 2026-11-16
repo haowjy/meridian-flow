@@ -15,7 +15,7 @@ import {
   type ReviewChange,
   targetOfChanges,
 } from "@/features/draft-review/review-model";
-import { hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
+import { hasApply, hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
@@ -151,9 +151,7 @@ export function useDraftDock({
     [openReviewFile, projectId, ownerKey],
   );
 
-  const applicable = actionableFiles.filter(
-    (file) => file.row.draft.hasDraft || file.row.draft.isNew || hasTreeLine(file.row.draft),
-  );
+  const applicable = actionableFiles.filter((file) => hasApply(file.row.draft));
 
   const discardItems = (files: readonly DockFile[]) => {
     // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
@@ -211,6 +209,7 @@ export function useDraftDock({
         (file) =>
           (!file.row.draft.hasDraft && file.row.draft.isNew) ||
           hasTreeLine(file.row.draft) ||
+          isDeletedLive(file.row.draft) ||
           (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
             ?.groups.length ?? 0) > 0,
       ),
