@@ -169,8 +169,11 @@ export function AgentPickerPanel({
   );
   const handsOff = (agent: AgentCatalogItem) =>
     mode.kind === "turn" || (mode.kind === "chat" && agent !== own);
-  const rows = Math.min(Math.max(agents.length, MIN_ROWS), VISIBLE_ROWS);
-  const headings = (own ? 1 : 0) + (mode.kind === "new" ? 0 : 1);
+  const rows = Math.min(
+    Math.max(agents.length + (mode.kind === "chat" && !own ? 1 : 0), MIN_ROWS),
+    VISIBLE_ROWS,
+  );
+  const headings = (mode.kind === "chat" ? 1 : 0) + (mode.kind === "new" ? 0 : 1);
   // The search, the rows and the footer: the one height, whatever is pointed at.
   const height = SEARCH_PX + rows * ROW_PX + headings * LINE_PX + LINE_PX + 24;
 
@@ -289,12 +292,23 @@ export function AgentPickerPanel({
                 label={t`Search Agents`}
               />
             </div>
-            {own ? (
+            {mode.kind === "chat" ? (
               <section aria-label={t`This chat`} className="shrink-0">
                 <h3 className={dropdownGroupLabelClass}>
                   <Trans>This chat</Trans>
                 </h3>
-                <ul className="flex flex-col">{row(own)}</ul>
+                {own ? (
+                  <ul className="flex flex-col">{row(own)}</ul>
+                ) : bound.isError ? (
+                  <InlineErrorRow
+                    message={t`Couldn't load what this chat runs.`}
+                    onRetry={() => void bound.refetch()}
+                  />
+                ) : (
+                  <ListLine density="menu" status>
+                    <Trans>Loading…</Trans>
+                  </ListLine>
+                )}
               </section>
             ) : null}
             <section

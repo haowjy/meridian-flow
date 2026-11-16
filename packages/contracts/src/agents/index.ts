@@ -133,7 +133,6 @@ export const agentFilesSchema = z.object({
 export const savedAgentFileQuerySchema = z.object({ level: agentLevelSchema, path: z.string() });
 export const savedAgentFileSchema = z.object({ text: z.string() });
 
-/** The Agent file a chat is bound to, as saved; `stale` when a newer save exists. */
 /**
  * The Agent a started chat runs, as its next turn runs it: the chat's own row in the picker comes
  * from this alone, since the catalog's newest save takes over only at a compaction.

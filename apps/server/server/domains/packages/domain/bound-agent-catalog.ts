@@ -443,13 +443,14 @@ export function createBoundAgentCatalog(input: {
       const bound = await store.readThreadBinding(thread.id);
       if (!bound?.revision) return undefined;
       const { revision } = bound;
-      const source = await store.readSource(revision.packageRevisionId);
-      const text = source?.files[agentPath(revision.slug)];
-      if (text === undefined) return undefined;
       // A binding that only moves to another model is not a newer saved version.
       const refreshed = await catalog.refreshBinding(userId, projectId, thread);
+      // Everything below describes the next turn, which a removed model has already moved.
       const runs = await effectiveBinding(userId, projectId, thread, bound, { refreshed });
       const agent = runs.revision ?? revision;
+      const source = await store.readSource(agent.packageRevisionId);
+      const text = source?.files[agentPath(agent.slug)];
+      if (text === undefined) return undefined;
       return {
         selection: { slug: agent.slug, definitionRevisionId: agent.id },
         name: agent.definition.metadata.name ?? agent.slug,
@@ -457,9 +458,10 @@ export function createBoundAgentCatalog(input: {
         text,
         stale:
           refreshed !== undefined &&
-          (refreshed.revision?.id !== revision.id ||
+          refreshed !== runs &&
+          (refreshed.revision?.id !== agent.id ||
             Object.entries(refreshed.invokedSkills).some(
-              ([slug, pin]) => pin.contentDigest !== bound.invokedSkills[slug]?.contentDigest,
+              ([slug, pin]) => pin.contentDigest !== runs.invokedSkills[slug]?.contentDigest,
             )),
         model: runs.configuration.model,
         effort: runs.configuration.effort ? AGENT_EFFORT_CHOICE[runs.configuration.effort] : null,
